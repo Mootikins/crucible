@@ -18,23 +18,21 @@ The `.agents` folder contains:
 ```
 .agents/
 ├── commands/           # Agent commands
-│   ├── search.rn      # Search knowledge base
-│   ├── create.rn      # Create new content
-│   ├── update.rn      # Update existing content
-│   └── analyze.rn     # Analyze patterns
+│   ├── search.rn      # Search codebase
+│   ├── generate.rn    # Generate code
+│   ├── refactor.rn    # Refactor code
+│   └── test.rn        # Generate tests
 ├── hooks/             # Event hooks
-│   ├── on-create.rn   # Triggered on content creation
-│   ├── on-update.rn   # Triggered on content updates
-│   ├── on-link.rn     # Triggered on link creation
-│   └── on-save.rn     # Triggered on save events
+│   ├── on-file-create.rn   # Triggered on file creation
+│   ├── on-file-update.rn   # Triggered on file updates
+│   └── on-commit.rn        # Triggered on git commits
 ├── tools/             # Reusable tools
-│   ├── embeddings.rn  # Text embedding utilities
-│   ├── similarity.rn  # Similarity calculations
-│   └── clustering.rn  # Content clustering
+│   ├── analysis.rn    # Code analysis utilities
+│   ├── docs.rn        # Documentation tools
+│   └── testing.rn     # Testing utilities
 ├── contexts/          # Context definitions
-│   ├── document.rn    # Document context
-│   ├── canvas.rn      # Canvas context
-│   └── global.rn      # Global context
+│   ├── project.rn     # Project context
+│   └── codebase.rn    # Codebase context
 └── config/            # Agent configuration
     ├── mcp.json       # MCP server config
     └── agents.json    # Agent definitions
