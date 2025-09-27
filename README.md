@@ -1,17 +1,18 @@
 # 🔥 Crucible
 
-> Where ideas transform
+> Where ideas transform through linked thinking
 
-A next-generation knowledge management system that grows with you. Crucible combines the zooming interface of Workflowy, the extensibility of Obsidian, and the power of AI agents to create a living knowledge system.
+A next-generation knowledge management system that grows with you. Crucible combines the zooming interface of Workflowy, the extensibility of Obsidian, and the power of AI agents to create a living knowledge system that promotes **linked thinking** - the seamless connection and evolution of ideas across time and context.
 
 ## Features
 
-- 🔍 **Infinite Zoom**: Navigate your knowledge at any scale
-- 🧬 **CRDT-based**: Real-time sync without conflicts
-- 🎨 **Canvas Mode**: Spatial organization of ideas
-- 🤖 **MCP Integration**: Your knowledge becomes agentic
-- 🔌 **Plugin System**: Extend with Rune scripts
-- ⚡ **Blazing Fast**: Rust core with GPU acceleration
+- 🔍 **Infinite Zoom**: Navigate your knowledge at any scale with smooth transitions
+- 🧬 **CRDT-based**: Real-time sync without conflicts, enabling collaborative thinking
+- 🎨 **Canvas Mode**: Spatial organization of ideas with visual connections
+- 🤖 **AI Agent Integration**: Your knowledge becomes agentic through MCP and A2A protocols
+- 🔌 **Plugin System**: Extend with Rune scripts and custom behaviors
+- ⚡ **Blazing Fast**: Rust core with GPU acceleration for responsive interactions
+- 🧠 **Linked Thinking**: Ideas connect, evolve, and generate new insights automatically
 
 ## Quick Start
 
@@ -37,10 +38,11 @@ pnpm dev
 
 ## Documentation
 
-- **[Architecture](./ARCHITECTURE.md)** - Complete system architecture and design
+- **[Architecture](./ARCHITECTURE.md)** - Complete system architecture and design principles
 - **[Specifications](./specs/)** - Technical specs organized by tech stack and sprint phases
-- **[Agent System](./AGENTS.md)** - AI agent integration and tooling
+- **[Agent System](./AGENTS.md)** - AI agent integration, code generation, and tooling
 - **[Roadmap](./crucible-roadmap.md)** - Development phases and timeline
+- **[Gap Analysis](./specs/GAP_ANALYSIS_COMPREHENSIVE.md)** - Comprehensive analysis of implementation gaps and context engineering needs
 
 ### Specification Structure
 
@@ -52,16 +54,23 @@ specs/
 ├── database/          # Persistence and vector search
 ├── plugin-system/     # Extensibility and Rune runtime
 ├── mcp-integration/   # AI agent tools and protocols
+├── code-generation/   # Agent code generation specifications
 ├── data-specs/        # Schemas and type definitions
 └── sprint-{1,2,3,4}/  # Implementation phases
 ```
 
 ### Sprint Phases
 
-- **Sprint 1**: Foundation (CRDT + Basic UI)
-- **Sprint 2**: Persistence & UI Polish  
-- **Sprint 3**: Canvas & Properties
-- **Sprint 4**: Intelligence Layer
+- **Sprint 1**: Foundation (CRDT + Basic UI) - *[See detailed specs](./specs/sprint-1/)*
+- **Sprint 2**: Persistence & UI Polish - *[See detailed specs](./specs/sprint-2/)*
+- **Sprint 3**: Canvas & Properties - *[See detailed specs](./specs/sprint-3/)*
+- **Sprint 4**: Intelligence Layer - *[See detailed specs](./specs/sprint-4/)*
+
+### Key Specifications
+
+- **[Agent Code Generation](./specs/code-generation/)** - AI agent specifications for automated code generation
+- **[A2A Protocol Integration](./specs/sprint-4/a2a-protocol-feature.md)** - Agent-to-agent communication protocols
+- **[Gap Analysis](./specs/GAP_ANALYSIS_COMPREHENSIVE.md)** - Comprehensive analysis of implementation gaps and context engineering needs
 
 ## License
 

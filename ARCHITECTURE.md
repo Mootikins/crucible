@@ -2,7 +2,15 @@
 
 ## Overview
 
-Crucible is a knowledge management system built with a modern, modular architecture that supports real-time collaboration, semantic search, and extensibility through plugins. The system is designed around CRDTs (Conflict-free Replicated Data Types) for seamless multi-user collaboration.
+Crucible is a knowledge management system built with a modern, modular architecture that supports real-time collaboration, semantic search, and extensibility through plugins. The system is designed around CRDTs (Conflict-free Replicated Data Types) for seamless multi-user collaboration and promotes **linked thinking** - the seamless connection and evolution of ideas across time and context.
+
+## 🧠 Linked Thinking Architecture
+
+Crucible's architecture is designed to support **linked thinking** through:
+- **Contextual Awareness**: Every component maintains awareness of related concepts and dependencies
+- **Evolutionary Development**: Ideas and code evolve through iterative refinement and connection
+- **Cross-Reference Intelligence**: The system understands and maintains relationships between ideas
+- **Temporal Context**: Changes are tracked and contextualized across time
 
 ## Tech Stack
 
@@ -99,6 +107,32 @@ Crucible is a knowledge management system built with a modern, modular architect
 - `tools.rs` - MCP tool implementations
 - `lib.rs` - MCP server setup
 
+### 7. Agent Code Generation (`specs/code-generation/`)
+**Purpose**: AI agent specifications for automated code generation
+**Components**:
+- Agent specifications and capabilities
+- Code generation templates and patterns
+- Workflow specifications (GitHub Actions-style)
+- Context management and state synchronization
+- Quality validation and testing patterns
+
+**Key Files**:
+- `agent-specifications.md` - Detailed agent capabilities and patterns
+- `workflow-specifications.md` - Workflow definitions for code generation
+
+### 8. A2A Protocol Integration (`specs/sprint-4/`)
+**Purpose**: Agent-to-agent communication and collaboration
+**Components**:
+- A2A protocol implementation
+- Agent discovery and management
+- Security and authentication
+- Streaming and asynchronous operations
+- Integration with Crucible's document and plugin systems
+
+**Key Files**:
+- `a2a-protocol-feature.md` - Feature specification and user experience
+- `a2a-protocol-tech-spec.md` - Technical implementation details
+
 ## Data Flow
 
 ### Document Operations
@@ -147,11 +181,12 @@ Crucible is a knowledge management system built with a modern, modular architect
 - Custom property types
 
 ### Sprint 4: Intelligence Layer (Weeks 13-16)
-**Focus**: AI-enhanced features
-- Vector embeddings
-- Semantic search
-- Auto-tagging
-- Smart suggestions
+**Focus**: AI-enhanced features and agent integration
+- Vector embeddings and semantic search
+- Auto-tagging and smart suggestions
+- A2A protocol integration for agent communication
+- Agent code generation capabilities
+- Context engineering for linked thinking
 
 ## Data Specifications
 
@@ -210,6 +245,20 @@ Crucible is a knowledge management system built with a modern, modular architect
 - Analysis and insights
 - Workflow automation
 
+### Agent Code Generation
+- Component generation from natural language
+- Pattern recognition and application
+- Context-aware code modification
+- Test and documentation generation
+- Quality validation and optimization
+
+### A2A Protocol
+- Agent discovery and registration
+- Inter-agent communication
+- Capability sharing and coordination
+- Security and authentication
+- Streaming and asynchronous operations
+
 ## Future Considerations
 
 ### Scalability
@@ -219,11 +268,19 @@ Crucible is a knowledge management system built with a modern, modular architect
 - Mobile applications
 
 ### Intelligence
-- Advanced AI models
-- Custom embedding models
-- Automated content organization
-- Predictive text and suggestions
+- Advanced AI models and agent coordination
+- Custom embedding models and semantic understanding
+- Automated content organization through linked thinking
+- Predictive text and suggestions with contextual awareness
+- Multi-agent collaboration and code generation
+
+## Key Resources
+
+- **[Gap Analysis](./specs/GAP_ANALYSIS_COMPREHENSIVE.md)**: Comprehensive analysis of implementation gaps and context engineering needs
+- **[Agent Specifications](./specs/code-generation/agent-specifications.md)**: Detailed specifications for AI agent code generation
+- **[Workflow Specifications](./specs/code-generation/workflow-specifications.md)**: GitHub Actions-style workflows for agent operations
+- **[A2A Protocol](./specs/sprint-4/a2a-protocol-feature.md)**: Agent-to-agent communication protocols
 
 ---
 
-*This architecture is designed for extensibility, performance, and user experience while maintaining the simplicity and power of a local-first knowledge management system.*
+*This architecture is designed for extensibility, performance, and user experience while maintaining the simplicity and power of a local-first knowledge management system that promotes linked thinking through AI agent integration and contextual awareness.*
