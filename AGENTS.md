@@ -27,6 +27,27 @@ The `.agents` folder contains:
 └── config/            # Agent configuration
     ├── mcp.json       # MCP server config
     └── agents.json    # Agent definitions
+
+specs/                 # Technical specifications organized by tech stack
+├── rust-core/         # Core Rust business logic specs
+│   └── sprint-1/      # Sprint-based implementation phases
+├── tauri-backend/     # Tauri desktop backend specs
+│   └── sprint-1/
+├── svelte-frontend/   # Svelte UI component specs
+│   └── sprint-1/
+├── database/          # Database and persistence specs
+│   └── sprint-2/
+├── plugin-system/     # Plugin and extensibility specs
+│   └── sprint-3/
+├── mcp-integration/   # MCP and agent integration specs
+│   └── sprint-4/
+├── data-specs/        # Data schemas and type definitions
+│   ├── document-schema.json
+│   ├── embeddings-schema.json
+│   ├── canvas-schema.json
+│   ├── document-types.ts
+│   └── embeddings-types.ts
+└── sprint-{1,2,3,4}/  # Sprint-based roadmap phases
 ```
 
 ## Available Tools
@@ -56,6 +77,29 @@ The `.agents` folder contains:
 - Planning and implementation phases
 - Testing and documentation workflows
 - Quality checklists and common pitfalls
+
+## Technical Specifications
+
+### Tech Stack Specifications (`specs/`)
+- **Rust Core** (`rust-core/`): Document CRDT operations, business logic
+- **Tauri Backend** (`tauri-backend/`): Desktop app commands and IPC
+- **Svelte Frontend** (`svelte-frontend/`): UI components and stores
+- **Database Layer** (`database/`): PGlite schemas and vector operations
+- **Plugin System** (`plugin-system/`): Rune runtime and extensibility
+- **MCP Integration** (`mcp-integration/`): AI agent tools and protocols
+
+### Data Specifications (`specs/data-specs/`)
+- **JSON Schemas**: API validation and documentation
+- **Zod Types**: TypeScript runtime validation
+- **Document Schema**: Hierarchical node structure
+- **Embeddings Schema**: Vector search specifications
+- **Canvas Schema**: Spatial positioning and connections
+
+### Sprint Phases (`specs/sprint-{1,2,3,4}/`)
+- **Sprint 1**: Foundation (CRDT + Basic UI)
+- **Sprint 2**: Persistence & UI Polish
+- **Sprint 3**: Canvas & Properties
+- **Sprint 4**: Intelligence Layer
 
 ## MCP Integration
 
