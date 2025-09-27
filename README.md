@@ -11,6 +11,7 @@ A knowledge management system that combines the zooming interface of Workflowy, 
 - 🎨 **Canvas Mode**: Spatial organization of ideas with visual connections
 - 🤖 **AI Agent Integration**: Your knowledge becomes agentic through MCP and A2A protocols
 - 🔌 **Plugin System**: Extend with Rune scripts and custom behaviors
+- 🔗 **Visual Programming**: Node-based workflow builder for agent orchestration
 - ⚡ **High Performance**: Rust core with GPU acceleration for responsive interactions
 - 🧠 **Linked Thinking**: Ideas connect, evolve, and generate new insights automatically
 
