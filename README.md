@@ -2,7 +2,7 @@
 
 > Where ideas transform through linked thinking
 
-A next-generation knowledge management system that grows with you. Crucible combines the zooming interface of Workflowy, the extensibility of Obsidian, and the power of AI agents to create a living knowledge system that promotes **linked thinking** - the seamless connection and evolution of ideas across time and context.
+A knowledge management system that combines the zooming interface of Workflowy, the extensibility of Obsidian, and AI agent integration to create a platform for organizing and connecting ideas. Crucible promotes **linked thinking** - the seamless connection and evolution of ideas across time and context.
 
 ## Features
 
@@ -11,7 +11,7 @@ A next-generation knowledge management system that grows with you. Crucible comb
 - 🎨 **Canvas Mode**: Spatial organization of ideas with visual connections
 - 🤖 **AI Agent Integration**: Your knowledge becomes agentic through MCP and A2A protocols
 - 🔌 **Plugin System**: Extend with Rune scripts and custom behaviors
-- ⚡ **Blazing Fast**: Rust core with GPU acceleration for responsive interactions
+- ⚡ **High Performance**: Rust core with GPU acceleration for responsive interactions
 - 🧠 **Linked Thinking**: Ideas connect, evolve, and generate new insights automatically
 
 ## Quick Start
