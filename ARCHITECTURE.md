@@ -2,7 +2,7 @@
 
 ## Overview
 
-Crucible is a knowledge management system built with a modern, modular architecture that supports real-time collaboration, semantic search, and extensibility through plugins. The system is designed around CRDTs (Conflict-free Replicated Data Types) for seamless multi-user collaboration and promotes **linked thinking** - the seamless connection and evolution of ideas across time and context.
+Crucible is a knowledge management system built with a modern, modular architecture that supports real-time collaboration, semantic search, and extensibility through plugins. The system is designed around CRDTs (Conflict-free Replicated Data Types) for seamless multi-user collaboration and promotes **linked thinking** - the seamless connection and evolution of ideas across time and context. The architecture is inspired by the concept of a knowledge forge, where information is processed and refined through multiple levels of AI-powered analysis.
 
 ## 🧠 Linked Thinking Architecture
 
