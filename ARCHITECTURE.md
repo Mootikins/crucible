@@ -120,28 +120,39 @@ Crucible's architecture is designed to support **linked thinking** through:
 - `agent-specifications.md` - Detailed agent capabilities and patterns
 - `workflow-specifications.md` - Workflow definitions for code generation
 
-### 8. A2A Protocol Integration (`specs/sprint-4/`)
-**Purpose**: Agent-to-agent communication and collaboration
+### 8. A2A Protocol Integration (`specs/sprint-4/`, `specs/a2a-protocol/A2A-SPEC.md`)
+**Purpose**: Agent-to-agent communication and configuration management
 **Components**:
-- A2A protocol implementation
-- Agent discovery and management
-- Security and authentication
+- A2A protocol implementation and communication framework
+- Agent discovery, management, and configuration systems
+- Security, authentication, and permission management
 - Streaming and asynchronous operations
+- Cross-platform agent deployment and symlink-based architecture
+- Semantic versioning and compatibility matrices
+- Standardized directory structures with `~/.agents/` shared source
+
+**Key Files**:
+- `A2A-SPEC.md` - Comprehensive A2A configuration specification (now in specs/a2a-protocol/)
+- Agent configuration schemas and registry management
+- Cross-platform deployment and symlink management
 
 ### 9. Visual Programming Interface (`docs/features/visual-node-editor.md`, `specs/visual-node-editor/`)
 **Purpose**: Node-based workflow builder for agent orchestration
 **Components**:
-- Visual node editor framework
-- Node registry and execution engine
-- A2A protocol integration for workflows
-- Canvas-based workflow visualization
-- Drag-and-drop node management
+- Visual node editor framework built on existing A2A protocol infrastructure
+- Node registry and execution engine with Rune runtime integration
+- A2A protocol integration for multi-agent workflow orchestration
+- Canvas-based workflow visualization (reusing existing Canvas infrastructure)
+- WebGL-accelerated rendering with performance optimizations
+- Drag-and-drop node management and connection systems
 - Template library and debugging tools
 - Integration with Crucible's document and plugin systems
+- Security sandboxing and resource management for node execution
 
 **Key Files**:
 - `technical-specs.md` - Technical implementation specifications
 - `visual-node-editor.md` - Feature documentation and UX design
+- Node execution engine and A2A coordinator integration
 
 ## Data Flow
 
@@ -192,11 +203,14 @@ Crucible's architecture is designed to support **linked thinking** through:
 
 ### Sprint 4: Intelligence Layer (Weeks 13-16)
 **Focus**: AI-enhanced features and agent integration
-- Vector embeddings and semantic search
-- Auto-tagging and smart suggestions
-- A2A protocol integration for agent communication
-- Agent code generation capabilities
-- Context engineering for linked thinking
+- Vector embeddings and semantic search with RAG capabilities
+- Auto-tagging and smart suggestions with ML pipelines
+- A2A protocol integration for agent communication and configuration management
+- Agent code generation capabilities with comprehensive templates and workflows
+- Context engineering for linked thinking with pattern recognition
+- Visual programming interface for multi-agent workflow orchestration
+- Cross-platform agent deployment with standardized configurations
+- Quality validation and testing frameworks for generated code
 
 ## Data Specifications
 
@@ -256,18 +270,31 @@ Crucible's architecture is designed to support **linked thinking** through:
 - Workflow automation
 
 ### Agent Code Generation
-- Component generation from natural language
-- Pattern recognition and application
-- Context-aware code modification
-- Test and documentation generation
-- Quality validation and optimization
+- Component generation from natural language with detailed templates
+- Pattern recognition and application with comprehensive validation
+- Context-aware code modification with learning capabilities
+- Test and documentation generation with quality metrics
+- Quality validation and optimization with automated feedback
+- GitHub Actions-style workflow execution with error handling
+- Context management and state synchronization across agents
 
 ### A2A Protocol
-- Agent discovery and registration
-- Inter-agent communication
-- Capability sharing and coordination
-- Security and authentication
-- Streaming and asynchronous operations
+- Agent discovery and registration with configuration management
+- Inter-agent communication with standardized message formats
+- Capability sharing and coordination with compatibility matrices
+- Security and authentication with granular permission controls
+- Streaming and asynchronous operations with cross-platform support
+- Semantic versioning and dependency management
+- Symlink-based architecture for shared resource management
+- Resource limits and sandboxing for security
+
+### Context Engineering
+- Project context management with pattern learning
+- Code quality assessment with automated feedback
+- Performance metrics collection and optimization
+- Integration testing with compatibility validation
+- User preference learning and adaptation
+- Gap analysis and specification generation
 
 ## Future Considerations
 
@@ -287,9 +314,11 @@ Crucible's architecture is designed to support **linked thinking** through:
 ## Key Resources
 
 - **[Gap Analysis](./specs/GAP_ANALYSIS_COMPREHENSIVE.md)**: Comprehensive analysis of implementation gaps and context engineering needs
-- **[Agent Specifications](./specs/code-generation/agent-specifications.md)**: Detailed specifications for AI agent code generation
-- **[Workflow Specifications](./specs/code-generation/workflow-specifications.md)**: GitHub Actions-style workflows for agent operations
-- **[A2A Protocol](./specs/sprint-4/a2a-protocol-feature.md)**: Agent-to-agent communication protocols
+- **[Agent Specifications](./specs/code-generation/agent-specifications.md)**: Detailed specifications for AI agent code generation with templates and validation
+- **[Workflow Specifications](./specs/code-generation/workflow-specifications.md)**: GitHub Actions-style workflows for agent operations with error handling
+- **[A2A Protocol Specification](./specs/a2a-protocol/A2A-SPEC.md)**: Comprehensive agent-to-agent configuration and communication framework
+- **[Visual Node Editor](./specs/visual-node-editor/technical-specs.md)**: Technical specifications for visual programming interface
+- **[Agent Configuration](./AGENTS.md)**: AI agent documentation and linked thinking principles
 
 ---
 

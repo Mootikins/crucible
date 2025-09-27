@@ -1,4 +1,4 @@
-// Test suite for symlink functionality
+// Enhanced Test suite for symlink functionality with MCP integration
 // Based on actual Rune syntax examples
 
 #[test]
@@ -18,7 +18,7 @@ fn test_object_syntax() {
     };
 
     assert_eq!(config.project, "crucible");
-    assert_eq!(configagents.len(), 3);
+    assert_eq!(config.agents.len(), 3);
 }
 
 #[test]
@@ -38,14 +38,14 @@ fn test_agent_mappings_structure() {
         ("contexts", "contexts"),
         ("tools", "tools"),
         ("workflows", "workflows"),
-        ("rules", "commands")  // Cursor uses 'rules' for commands
+        ("rules", "commands")  // Cursor uses "rules" for commands
     ];
 
     assert_eq!(claude_mappings.len(), 5);
     assert_eq!(cursor_mappings.len(), 6);
 
     // Verify cursor has the rules -> commands mapping
-    let has_rules_mapping = false;
+    let mut has_rules_mapping = false;
     for (agent_dir, global_dir) in cursor_mappings {
         if agent_dir == "rules" && global_dir == "commands" {
             has_rules_mapping = true;
@@ -62,8 +62,8 @@ fn test_path_operations() {
     let project_root = "/home/moot/crucible";
     let agent_name = "claude";
 
-    let agent_dir = `${project_root}/.${agent_name}`;
-    let commands_dir = `${agent_dir}/commands`;
+    let agent_dir = format!("{}/.{}", project_root, agent_name);
+    let commands_dir = format!("{}/commands", agent_dir);
 
     assert_eq!(agent_dir, "/home/moot/crucible/.claude");
     assert_eq!(commands_dir, "/home/moot/crucible/.claude/commands");
@@ -88,7 +88,97 @@ fn test_symlink_logic_simulation() {
     assert_eq!(mapping.1, "commands");
 }
 
+#[test]
+fn test_mcp_endpoint_structure() {
+    // Test MCP endpoint structure
+    let mcp_endpoints = [
+        #{
+            name: "agent-commands",
+            description: "Agent command definitions",
+            path: "commands" 
+        },
+        #{
+            name: "agent-configs",
+            description: "Agent configuration files",
+            path: "config"
+        },
+        #{
+            name: "agent-contexts", 
+            description: "Agent context definitions",
+            path: "contexts"
+        }
+    ];
+
+    assert_eq!(mcp_endpoints.len(), 3);
+    assert_eq!(mcp_endpoints[0].name, "agent-commands");
+    assert_eq!(mcp_endpoints[0].description, "Agent command definitions");
+    assert_eq!(mcp_endpoints[0].path, "commands");
+    
+    // Test that each endpoint has required properties
+    for endpoint in mcp_endpoints {
+        assert!(endpoint.name != null);
+        assert!(endpoint.description != null);
+        assert!(endpoint.path != null);
+    }
+}
+
+#[test]
+fn test_mcp_config_generation() {
+    // Test MCP config generation
+    let project_agents = "/home/moot/crucible/.agents";
+    let endpoint_path = "commands";
+    let config = #{
+        name: "agent-commands",
+        description: "Agent command definitions", 
+        path: format!("{}/{}", project_agents, endpoint_path),
+        enabled: true
+    };
+
+    assert_eq!(config.name, "agent-commands");
+    assert_eq!(config.enabled, true);
+    assert!(config.path.contains(project_agents));
+    assert!(config.path.contains(endpoint_path));
+}
+
+#[test]
+fn test_agent_configuration_structure() {
+    // Test agent configuration structure
+    let agent_configs = #{
+        claude: #{
+            commands: "commands",
+            config: "config",
+            contexts: "contexts",
+            tools: "tools",
+            workflows: "workflows"
+        },
+        cursor: #{
+            commands: "commands",
+            config: "config", 
+            contexts: "contexts",
+            tools: "tools",
+            workflows: "workflows",
+            rules: "commands"  // Cursor-specific mapping
+        }
+    };
+
+    assert!(agent_configs.claude.commands == "commands");
+    assert!(agent_configs.cursor.rules == "commands");  // Special mapping for cursor
+    assert!(agent_configs.cursor.commands == "commands");  // Normal mapping
+}
+
 fn main() {
-    println!("Running symlink tests...");
+    println!("Running enhanced symlink tests with MCP integration...");
     // Tests will be run by the test runner
+    
+    // Run some basic tests
+    test_basic_rune_syntax();
+    test_object_syntax();
+    test_agent_mappings_structure();
+    test_path_operations();
+    test_symlink_logic_simulation();
+    test_mcp_endpoint_structure();
+    test_mcp_config_generation();
+    test_agent_configuration_structure();
+    
+    println!("All enhanced tests passed!");
 }

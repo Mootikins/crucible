@@ -1,5 +1,3 @@
-// Test library for symlink functionality
-
 #[test]
 fn test_basic_rune_syntax() {
     let a = 10;
@@ -26,14 +24,14 @@ fn test_agent_mappings_structure() {
         ("contexts", "contexts"),
         ("tools", "tools"),
         ("workflows", "workflows"),
-        ("rules", "commands")  // Cursor uses 'rules' for commands
+        ("rules", "commands")  // Cursor uses "rules" for commands
     ];
 
     assert_eq!(claude_mappings.len(), 5);
     assert_eq!(cursor_mappings.len(), 6);
 
     // Verify cursor has the rules -> commands mapping
-    let has_rules_mapping = false;
+    let mut has_rules_mapping = false;
     for (agent_dir, global_dir) in cursor_mappings {
         if agent_dir == "rules" && global_dir == "commands" {
             has_rules_mapping = true;
@@ -50,8 +48,8 @@ fn test_path_operations() {
     let project_root = "/home/moot/crucible";
     let agent_name = "claude";
 
-    let agent_dir = `${project_root}/.${agent_name}`;
-    let commands_dir = `${agent_dir}/commands`;
+    let agent_dir = format!("{}/.{}", project_root, agent_name);
+    let commands_dir = format!("{}/commands", agent_dir);
 
     assert_eq!(agent_dir, "/home/moot/crucible/.claude");
     assert_eq!(commands_dir, "/home/moot/crucible/.claude/commands");
@@ -74,4 +72,91 @@ fn test_symlink_logic_simulation() {
     let mapping = ("commands", "commands");
     assert_eq!(mapping.0, "commands");
     assert_eq!(mapping.1, "commands");
+}
+
+#[test]
+fn test_mcp_endpoint_definition() {
+    // Test MCP endpoint definition structure
+    let endpoint = #{
+        name: "agent-commands",
+        description: "Agent command definitions",
+        path: "commands",
+        enabled: true
+    };
+
+    assert_eq!(endpoint.name, "agent-commands");
+    assert_eq!(endpoint.description, "Agent command definitions");
+    assert_eq!(endpoint.path, "commands");
+    assert_eq!(endpoint.enabled, true);
+}
+
+#[test]
+fn test_mcp_endpoint_array() {
+    // Test array of MCP endpoints
+    let endpoints = [
+        #{
+            name: "agent-commands",
+            description: "Agent command definitions",
+            path: "commands"
+        },
+        #{
+            name: "agent-configs",
+            description: "Agent configuration files", 
+            path: "config"
+        },
+        #{
+            name: "agent-contexts",
+            description: "Agent context definitions",
+            path: "contexts"
+        }
+    ];
+
+    assert_eq!(endpoints.len(), 3);
+    
+    for endpoint in endpoints {
+        assert!(endpoint.name != null);
+        assert!(endpoint.description != null);
+        assert!(endpoint.path != null);
+    }
+}
+
+#[test]
+fn test_agent_config_with_mcp() {
+    // Test agent configuration with MCP integration
+    let agent_config = #{
+        name: "claude",
+        paths: [
+            ("commands", "commands"),
+            ("config", "config"),
+            ("contexts", "contexts"),
+            ("tools", "tools"),
+            ("workflows", "workflows")
+        ],
+        mcp_enabled: true,
+        mcp_endpoints: [
+            "commands",
+            "config",
+            "contexts" 
+        ]
+    };
+
+    assert_eq!(agent_config.name, "claude");
+    assert_eq!(agent_config.paths.len(), 5);
+    assert_eq!(agent_config.mcp_endpoints.len(), 3);
+    assert_eq!(agent_config.mcp_enabled, true);
+}
+
+fn main() {
+    println!("🧪 Running library tests with MCP integration...");
+    
+    // Run all tests
+    test_basic_rune_syntax();
+    test_agent_mappings_structure();
+    test_path_operations();
+    test_symlink_logic_simulation();
+    test_mcp_endpoint_definition();
+    test_mcp_endpoint_array();
+    test_agent_config_with_mcp();
+    
+    println!("✅ All library tests passed with MCP integration!");
 }
