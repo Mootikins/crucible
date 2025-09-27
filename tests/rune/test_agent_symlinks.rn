@@ -7,7 +7,7 @@ fn test_basic_rune_syntax() {
     assert_eq!(result, 30);
 }
 
-##[test]
+#[test]
 fn test_agent_mappings_structure() {
     // Test the agent mappings structure
     let agent_mappings = #{
@@ -49,7 +49,7 @@ fn test_agent_mappings_structure() {
     assert!(has_rules_mapping);
 }
 
-##[test]
+#[test]
 fn test_mcp_endpoint_structure() {
     // Test MCP endpoint definition structure
     let mcp_endpoints = [
@@ -90,7 +90,7 @@ fn test_mcp_endpoint_structure() {
     }
 }
 
-##[test]
+#[test]
 fn test_path_construction() {
     // Test path construction for agent symlinks
     let project_root = "/home/moot/crucible";
@@ -106,7 +106,7 @@ fn test_path_construction() {
     assert_eq!(project_agents_dir, "/home/moot/crucible/.agents/commands");
 }
 
-##[test]
+#[test]
 fn test_mcp_config_generation() {
     // Test MCP configuration generation
     let project_agents = "/home/moot/crucible/.agents";
@@ -141,7 +141,7 @@ fn test_mcp_config_generation() {
     }
 }
 
-##[test]
+#[test]
 fn test_agent_directory_structure() {
     // Test agent directory structure validation
     let agents = ["claude", "crush", "cursor"];
@@ -159,7 +159,7 @@ fn test_agent_directory_structure() {
     }
 }
 
-##[test]
+#[test]
 fn test_global_agent_mappings() {
     // Test mappings between global and project-specific agent configs
     let global_agents_root = "/home/moot/dotfiles/agents";
@@ -176,7 +176,7 @@ fn test_global_agent_mappings() {
     assert!(project_commands.contains("crucible"));
 }
 
-##[test]
+#[test]
 fn test_mcp_integration_points() {
     // Test that MCP integration points exist and are properly configured
     let mcp_config = #{
@@ -203,7 +203,7 @@ fn test_mcp_integration_points() {
     assert!(mcp_config.endpoints.contains("workflows"));
 }
 
-##[test]
+#[test]
 fn test_symlink_validation() {
     // Test symlink validation logic
     let test_symlinks = #{
@@ -217,7 +217,7 @@ fn test_symlink_validation() {
     assert!(test_symlinks.valid == true);
 }
 
-##[test]
+#[test]
 fn test_agent_configuration_completeness() {
     // Test that all agents have complete configurations
     let agent_configs = #{
