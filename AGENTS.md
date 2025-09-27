@@ -20,6 +20,9 @@ The `.agents` folder contains:
 - **Hooks**: Event-driven triggers for automated code maintenance
 - **Context**: Shared knowledge about the project structure and conventions
 - **Tools**: Reusable utilities for code analysis and generation
+- **A2A Configuration**: Standardized agent-to-agent configuration management
+- **Workflow Specifications**: GitHub Actions-style workflows for agent operations
+- **Code Generation Templates**: Detailed templates for automated code generation
 
 ## Directory Structure
 
@@ -50,8 +53,12 @@ specs/                 # Technical specifications organized by tech stack
 ├── mcp-integration/   # MCP and agent integration specs
 │   └── sprint-4/
 ├── code-generation/   # Agent code generation specifications
-│   ├── agent-specifications.md
-│   └── workflow-specifications.md
+│   ├── agent-specifications.md    # Detailed agent capabilities and patterns
+│   ├── workflow-specifications.md # GitHub Actions-style workflows
+│   ├── templates/               # Code generation templates
+│   └── validation/              # Quality validation frameworks
+├── visual-node-editor/ # Visual programming interface specs
+│   └── technical-specs.md      # Implementation specifications
 ├── data-specs/        # Data schemas and type definitions
 │   ├── document-schema.json
 │   ├── embeddings-schema.json
@@ -59,7 +66,8 @@ specs/                 # Technical specifications organized by tech stack
 │   ├── document-types.ts
 │   └── embeddings-types.ts
 ├── sprint-{1,2,3,4}/  # Sprint-based roadmap phases
-└── GAP_ANALYSIS_COMPREHENSIVE.md  # Implementation gap analysis
+├── GAP_ANALYSIS_COMPREHENSIVE.md  # Implementation gap analysis
+└── A2A-SPEC.md        # A2A configuration framework specification (moved to specs/a2a-protocol/)
 ```
 
 ## Available Tools
@@ -196,8 +204,11 @@ specs/                 # Technical specifications organized by tech stack
 - Follow Crucible conventions from project context
 - Generate comprehensive tests and documentation
 - Reference [Agent Code Generation Specs](./specs/code-generation/) for automated code generation
-- Use [A2A Protocol Integration](./specs/sprint-4/a2a-protocol-feature.md) for agent-to-agent communication
+- Use [A2A Protocol Integration](./specs/a2a-protocol/A2A-SPEC.md) for agent-to-agent communication and configuration management
 - Apply linked thinking principles to maintain contextual awareness across generated code
+- Leverage [Visual Node Editor](./specs/visual-node-editor/) for workflow-based code generation
+- Utilize [Gap Analysis](./specs/GAP_ANALYSIS_COMPREHENSIVE.md) to identify missing specifications
+- Follow GitHub Actions-style workflows for complex multi-step code generation tasks
 
 ## Development
 
@@ -248,9 +259,11 @@ specs/                 # Technical specifications organized by tech stack
 ## Key Resources for Agents
 
 - **[Gap Analysis](./specs/GAP_ANALYSIS_COMPREHENSIVE.md)**: Comprehensive analysis of implementation gaps and context engineering needs
-- **[Agent Specifications](./specs/code-generation/agent-specifications.md)**: Detailed specifications for AI agent code generation
-- **[Workflow Specifications](./specs/code-generation/workflow-specifications.md)**: GitHub Actions-style workflows for agent operations
-- **[A2A Protocol](./specs/sprint-4/a2a-protocol-feature.md)**: Agent-to-agent communication protocols
+- **[Agent Specifications](./specs/code-generation/agent-specifications.md)**: Detailed specifications for AI agent code generation with templates and validation
+- **[Workflow Specifications](./specs/code-generation/workflow-specifications.md)**: GitHub Actions-style workflows for agent operations with error handling
+- **[A2A Protocol Specification](./specs/a2a-protocol/A2A-SPEC.md)**: Comprehensive agent-to-agent configuration and communication framework
+- **[Visual Node Editor](./specs/visual-node-editor/technical-specs.md)**: Technical specifications for visual programming interface
+- **[Architecture Documentation](./ARCHITECTURE.md)**: Complete system architecture and component integration guide
 
 ---
 
