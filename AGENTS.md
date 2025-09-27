@@ -17,171 +17,45 @@ The `.agents` folder contains:
 
 ```
 .agents/
-├── commands/           # Agent commands
-│   ├── search.rn      # Search codebase
-│   ├── generate.rn    # Generate code
-│   ├── refactor.rn    # Refactor code
-│   └── test.rn        # Generate tests
-├── hooks/             # Event hooks
-│   ├── on-file-create.rn   # Triggered on file creation
-│   ├── on-file-update.rn   # Triggered on file updates
-│   └── on-commit.rn        # Triggered on git commits
-├── tools/             # Reusable tools
-│   ├── analysis.rn    # Code analysis utilities
-│   ├── docs.rn        # Documentation tools
-│   └── testing.rn     # Testing utilities
-├── contexts/          # Context definitions
-│   ├── project.rn     # Project context
-│   └── codebase.rn    # Codebase context
+├── tools/             # AI agent tools and guides
+│   ├── codebase-analysis.md    # Code analysis patterns
+│   └── development-workflows.md # Development workflows
+├── contexts/          # Project context for AI agents
+│   └── project-context.md      # Essential project information
+├── workflows/         # Detailed workflow guides
+│   └── feature-development.md  # Feature development process
 └── config/            # Agent configuration
     ├── mcp.json       # MCP server config
     └── agents.json    # Agent definitions
 ```
 
-## Commands
+## Available Tools
 
-### Code Search Command (`commands/search.rn`)
-```rune
-// Search the codebase for specific patterns or functionality
-pub fn search_code(query: String, file_types: Vec<String>) -> Vec<CodeMatch> {
-    // Search through source files for patterns
-}
+### Codebase Analysis (`tools/codebase-analysis.md`)
+- Search patterns for Rust, TypeScript, and Svelte code
+- Common analysis tasks and workflows
+- File type patterns and conventions
+- Understanding project structure
 
-pub struct CodeMatch {
-    pub file_path: String,
-    pub line_number: i64,
-    pub content: String,
-    pub context: String,
-}
-```
+### Development Workflows (`tools/development-workflows.md`)
+- Code generation workflows
+- Testing strategies
+- Documentation processes
+- Refactoring approaches
+- Debugging techniques
 
-### Code Generation Command (`commands/generate.rn`)
-```rune
-// Generate new code based on specifications
-pub fn generate_code(template: String, context: Map<String, Any>) -> GeneratedCode {
-    // Generate code following project conventions
-}
+### Project Context (`contexts/project-context.md`)
+- Essential project information
+- Tech stack overview
+- Architecture patterns
+- Development guidelines
+- Common code patterns
 
-pub struct GeneratedCode {
-    pub content: String,
-    pub file_path: String,
-    pub dependencies: Vec<String>,
-}
-```
-
-### Refactor Command (`commands/refactor.rn`)
-```rune
-// Refactor existing code while maintaining functionality
-pub fn refactor(file_path: String, changes: Map<String, Any>) -> RefactorResult {
-    // Apply refactoring changes
-}
-```
-
-### Test Generation Command (`commands/test.rn`)
-```rune
-// Generate tests for existing code
-pub fn generate_tests(file_path: String, test_type: String) -> TestSuite {
-    // Generate comprehensive test coverage
-}
-```
-
-## Hooks
-
-### On File Create Hook (`hooks/on-file-create.rn`)
-```rune
-// Automatically process new files
-pub fn on_file_create(file_path: String, content: String) -> Vec<Action> {
-    // Add to git tracking
-    // Run linting
-    // Generate documentation
-    // Update imports
-}
-```
-
-### On File Update Hook (`hooks/on-file-update.rn`)
-```rune
-// Process file changes
-pub fn on_file_update(file_path: String, changes: Map<String, Any>) -> Vec<Action> {
-    // Update related files
-    // Refresh dependencies
-    // Run tests
-    // Update documentation
-}
-```
-
-### On Commit Hook (`hooks/on-commit.rn`)
-```rune
-// Process git commits
-pub fn on_commit(commit_hash: String, files: Vec<String>) -> Vec<Action> {
-    // Update changelog
-    // Run full test suite
-    // Check for breaking changes
-    // Update version numbers
-}
-```
-
-## Tools
-
-### Code Analysis Tool (`tools/analysis.rn`)
-```rune
-// Analyze code patterns and dependencies
-pub fn analyze_dependencies(file_path: String) -> DependencyGraph {
-    // Parse imports and dependencies
-}
-
-pub fn find_code_smells(file_path: String) -> Vec<CodeSmell> {
-    // Detect potential issues
-}
-```
-
-### Documentation Tool (`tools/docs.rn`)
-```rune
-// Generate and maintain documentation
-pub fn generate_docs(file_path: String) -> Documentation {
-    // Extract comments and generate docs
-}
-
-pub fn update_readme(changes: Map<String, Any>) -> String {
-    // Update README based on changes
-}
-```
-
-### Testing Tool (`tools/testing.rn`)
-```rune
-// Generate and run tests
-pub fn generate_test_cases(function: String) -> Vec<TestCase> {
-    // Generate comprehensive test cases
-}
-
-pub fn run_tests(file_path: String) -> TestResults {
-    // Execute test suite
-}
-```
-
-## Context Management
-
-### Project Context (`contexts/project.rn`)
-```rune
-// Project-wide context and conventions
-pub struct ProjectContext {
-    pub name: String,
-    pub tech_stack: Vec<String>,
-    pub conventions: Map<String, Any>,
-    pub file_structure: Map<String, String>,
-    pub dependencies: Vec<Dependency>,
-}
-```
-
-### Codebase Context (`contexts/codebase.rn`)
-```rune
-// Current codebase state
-pub struct CodebaseContext {
-    pub files: Vec<FileInfo>,
-    pub dependencies: DependencyGraph,
-    pub test_coverage: Map<String, f64>,
-    pub recent_changes: Vec<Change>,
-}
-```
+### Feature Development (`workflows/feature-development.md`)
+- Step-by-step feature development process
+- Planning and implementation phases
+- Testing and documentation workflows
+- Quality checklists and common pitfalls
 
 ## MCP Integration
 
@@ -249,58 +123,40 @@ pub struct CodebaseContext {
 
 ## Usage Examples
 
-### Basic Agent Interaction
-```rune
-// Search for code patterns
-let results = search_code("async function", vec!["*.rs", "*.ts"]);
+### Code Analysis
+- Use `tools/codebase-analysis.md` to understand search patterns
+- Follow `tools/development-workflows.md` for common tasks
+- Reference `contexts/project-context.md` for project conventions
 
-// Generate new component following conventions
-let component = generate_code("svelte_component", context);
+### Feature Development
+- Follow the step-by-step process in `workflows/feature-development.md`
+- Use the quality checklist to ensure completeness
+- Reference development workflows for specific tasks
 
-// Analyze dependencies
-let deps = analyze_dependencies("src/main.rs");
-```
-
-### Hook Implementation
-```rune
-// Auto-format and lint when creating files
-pub fn on_file_create(file_path: String, content: String) -> Vec<Action> {
-    let mut actions = Vec::new();
-    
-    if file_path.ends_with(".rs") {
-        actions.push(Action::RunCommand {
-            command: "cargo fmt".to_string(),
-            args: vec![file_path.clone()]
-        });
-        actions.push(Action::RunCommand {
-            command: "cargo clippy".to_string(),
-            args: vec![file_path]
-        });
-    }
-    
-    actions
-}
-```
+### Code Generation
+- Use MCP tools like `search_codebase` to understand existing patterns
+- Follow Crucible conventions from project context
+- Generate comprehensive tests and documentation
 
 ## Development
 
-### Adding New Commands
-1. Create a new `.rn` file in `commands/`
-2. Implement the command function following project conventions
-3. Register in `config/mcp.json`
-4. Test with AI agent interactions
-
-### Adding New Hooks
-1. Create a new `.rn` file in `hooks/`
-2. Implement the hook function for codebase events
-3. Register in `config/agents.json`
-4. Test with relevant file/git events
-
 ### Adding New Tools
-1. Create a new `.rn` file in `tools/`
-2. Implement utility functions for code analysis
-3. Import in commands/hooks as needed
-4. Document usage patterns
+1. Create a new markdown file in `tools/`
+2. Document patterns, workflows, or analysis techniques
+3. Include practical examples and use cases
+4. Reference in `AGENTS.md` and agent configurations
+
+### Adding New Workflows
+1. Create a new markdown file in `workflows/`
+2. Document step-by-step processes
+3. Include checklists and quality gates
+4. Reference from agent configurations
+
+### Updating Agent Configurations
+1. Add new capabilities to `config/mcp.json`
+2. Update agent definitions in `config/agents.json`
+3. Reference new tools and workflows
+4. Test with AI agent interactions
 
 ## Guidelines for AI Agents
 

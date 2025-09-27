@@ -5,34 +5,50 @@
   "tools": [
     {
       "name": "search_codebase",
-      "description": "Search the codebase for patterns",
+      "description": "Search the Crucible codebase for patterns, functions, or specific code",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "query": {"type": "string"},
-          "file_types": {"type": "array", "items": {"type": "string"}}
+          "query": {"type": "string", "description": "Search query (function names, patterns, etc.)"},
+          "file_types": {"type": "array", "items": {"type": "string"}, "description": "File extensions to search (.rs, .ts, .svelte, etc.)"},
+          "context_lines": {"type": "number", "description": "Number of context lines around matches"}
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "analyze_project_structure",
+      "description": "Analyze the project structure and dependencies",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "focus_area": {"type": "string", "description": "Area to focus on (rust, frontend, config, etc.)"}
         }
       }
     },
     {
-      "name": "generate_code",
-      "description": "Generate code following project conventions",
+      "name": "generate_implementation",
+      "description": "Generate code implementation following Crucible conventions",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "template": {"type": "string"},
-          "context": {"type": "object"}
-        }
+          "component_type": {"type": "string", "description": "Type of component to generate (rust_module, svelte_component, etc.)"},
+          "specification": {"type": "string", "description": "What the component should do"},
+          "context": {"type": "object", "description": "Additional context about the implementation"}
+        },
+        "required": ["component_type", "specification"]
       }
     },
     {
-      "name": "analyze_dependencies",
-      "description": "Analyze code dependencies and relationships",
+      "name": "check_code_quality",
+      "description": "Check code quality and suggest improvements",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "file_path": {"type": "string"}
-        }
+          "file_path": {"type": "string", "description": "Path to the file to check"},
+          "check_types": {"type": "array", "items": {"type": "string"}, "description": "Types of checks to perform"}
+        },
+        "required": ["file_path"]
       }
     }
   ]
