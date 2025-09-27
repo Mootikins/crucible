@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/crucible-core",
+    "crates/crucible-tauri",
+    "crates/crucible-mcp",
+    "crates/crucible-plugins",
+]
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Matthew Krohn <matthew.d.krohn@gmail.com>"]
+license = "MIT OR Apache-2.0"
+edition = "2021"
+rust-version = "1.75"
+
+[workspace.dependencies]
+yrs = "0.18"
+tokio = { version = "1.35", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.6", features = ["v4", "serde"] }
+anyhow = "1.0"
+thiserror = "1.0"
+rune = "0.13"
+tauri = { version = "2.0", features = [] }
+

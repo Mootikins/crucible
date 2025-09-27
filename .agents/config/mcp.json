@@ -1,0 +1,39 @@
+{
+  "name": "crucible-dev-mcp",
+  "version": "0.1.0",
+  "description": "Crucible development MCP server for AI agents",
+  "tools": [
+    {
+      "name": "search_codebase",
+      "description": "Search the codebase for patterns",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string"},
+          "file_types": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    {
+      "name": "generate_code",
+      "description": "Generate code following project conventions",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "template": {"type": "string"},
+          "context": {"type": "object"}
+        }
+      }
+    },
+    {
+      "name": "analyze_dependencies",
+      "description": "Analyze code dependencies and relationships",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "file_path": {"type": "string"}
+        }
+      }
+    }
+  ]
+}

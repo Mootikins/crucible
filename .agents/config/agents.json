@@ -1,0 +1,25 @@
+{
+  "agents": [
+    {
+      "name": "code_generator",
+      "description": "Generates code following project patterns",
+      "commands": ["generate", "refactor"],
+      "hooks": ["on-file-create", "on-file-update"],
+      "tools": ["analysis", "docs"]
+    },
+    {
+      "name": "test_automation",
+      "description": "Automates test generation and maintenance",
+      "commands": ["test", "analyze"],
+      "hooks": ["on-commit", "on-file-update"],
+      "tools": ["testing", "analysis"]
+    },
+    {
+      "name": "documentation_bot",
+      "description": "Maintains and updates documentation",
+      "commands": ["docs", "update"],
+      "hooks": ["on-file-create", "on-commit"],
+      "tools": ["docs", "analysis"]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+// Search the codebase for specific patterns or functionality
+pub fn search_code(query: String, file_types: Vec<String>) -> Vec<CodeMatch> {
+    // Search through source files for patterns
+    // This would use grep/ripgrep or similar tools
+    // to find code patterns across the codebase
+    vec![]
+}
+
+pub struct CodeMatch {
+    pub file_path: String,
+    pub line_number: i64,
+    pub content: String,
+    pub context: String,
+}
