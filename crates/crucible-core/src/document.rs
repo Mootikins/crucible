@@ -12,6 +12,8 @@ pub struct DocumentNode {
     pub parent_id: Option<Uuid>,
     pub children: Vec<Uuid>,
     pub properties: PropertyMap,
+    pub collapsed: bool,
+    pub position: i32,
 }
 
 impl DocumentNode {
@@ -26,6 +28,8 @@ impl DocumentNode {
             parent_id: None,
             children: Vec::new(),
             properties: PropertyMap::new(),
+            collapsed: false,
+            position: 0,
         }
     }
 }
