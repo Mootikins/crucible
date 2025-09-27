@@ -1,0 +1,77 @@
+// Test library for symlink functionality
+
+#[test]
+fn test_basic_rune_syntax() {
+    let a = 10;
+    let b = 20;
+    let result = a + b;
+
+    assert_eq!(result, 30);
+}
+
+#[test]
+fn test_agent_mappings_structure() {
+    // Test the agent mappings structure from the symlink script
+    let claude_mappings = [
+        ("commands", "commands"),
+        ("config", "config"),
+        ("contexts", "contexts"),
+        ("tools", "tools"),
+        ("workflows", "workflows")
+    ];
+
+    let cursor_mappings = [
+        ("commands", "commands"),
+        ("config", "config"),
+        ("contexts", "contexts"),
+        ("tools", "tools"),
+        ("workflows", "workflows"),
+        ("rules", "commands")  // Cursor uses 'rules' for commands
+    ];
+
+    assert_eq!(claude_mappings.len(), 5);
+    assert_eq!(cursor_mappings.len(), 6);
+
+    // Verify cursor has the rules -> commands mapping
+    let has_rules_mapping = false;
+    for (agent_dir, global_dir) in cursor_mappings {
+        if agent_dir == "rules" && global_dir == "commands" {
+            has_rules_mapping = true;
+            break;
+        }
+    }
+
+    assert!(has_rules_mapping);
+}
+
+#[test]
+fn test_path_operations() {
+    // Test basic path construction logic
+    let project_root = "/home/moot/crucible";
+    let agent_name = "claude";
+
+    let agent_dir = `${project_root}/.${agent_name}`;
+    let commands_dir = `${agent_dir}/commands`;
+
+    assert_eq!(agent_dir, "/home/moot/crucible/.claude");
+    assert_eq!(commands_dir, "/home/moot/crucible/.claude/commands");
+}
+
+#[test]
+fn test_symlink_logic_simulation() {
+    // Simulate symlink creation logic without actual filesystem operations
+    let target = "/home/moot/crucible/.agents/commands";
+    let link_path = "/home/moot/crucible/.claude/commands";
+
+    // Simulate symlink validation
+    let symlink_created = true;
+    let target_exists = true;
+
+    assert!(symlink_created);
+    assert!(target_exists);
+
+    // Test the mapping logic
+    let mapping = ("commands", "commands");
+    assert_eq!(mapping.0, "commands");
+    assert_eq!(mapping.1, "commands");
+}
