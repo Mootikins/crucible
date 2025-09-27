@@ -37,7 +37,31 @@ pnpm dev
 
 ## Documentation
 
-See [docs/](./docs) for detailed documentation.
+- **[Architecture](./ARCHITECTURE.md)** - Complete system architecture and design
+- **[Specifications](./specs/)** - Technical specs organized by tech stack and sprint phases
+- **[Agent System](./AGENTS.md)** - AI agent integration and tooling
+- **[Roadmap](./crucible-roadmap.md)** - Development phases and timeline
+
+### Specification Structure
+
+```
+specs/
+├── rust-core/         # Core business logic and CRDT operations
+├── tauri-backend/     # Desktop application backend
+├── svelte-frontend/   # UI components and user experience
+├── database/          # Persistence and vector search
+├── plugin-system/     # Extensibility and Rune runtime
+├── mcp-integration/   # AI agent tools and protocols
+├── data-specs/        # Schemas and type definitions
+└── sprint-{1,2,3,4}/  # Implementation phases
+```
+
+### Sprint Phases
+
+- **Sprint 1**: Foundation (CRDT + Basic UI)
+- **Sprint 2**: Persistence & UI Polish  
+- **Sprint 3**: Canvas & Properties
+- **Sprint 4**: Intelligence Layer
 
 ## License
 
