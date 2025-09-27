@@ -127,11 +127,21 @@ Crucible's architecture is designed to support **linked thinking** through:
 - Agent discovery and management
 - Security and authentication
 - Streaming and asynchronous operations
+
+### 9. Visual Programming Interface (`docs/features/visual-node-editor.md`, `specs/visual-node-editor/`)
+**Purpose**: Node-based workflow builder for agent orchestration
+**Components**:
+- Visual node editor framework
+- Node registry and execution engine
+- A2A protocol integration for workflows
+- Canvas-based workflow visualization
+- Drag-and-drop node management
+- Template library and debugging tools
 - Integration with Crucible's document and plugin systems
 
 **Key Files**:
-- `a2a-protocol-feature.md` - Feature specification and user experience
-- `a2a-protocol-tech-spec.md` - Technical implementation details
+- `technical-specs.md` - Technical implementation specifications
+- `visual-node-editor.md` - Feature documentation and UX design
 
 ## Data Flow
 
