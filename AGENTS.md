@@ -1,8 +1,16 @@
 # 🤖 Crucible AI Agents Documentation
 
-> AI agents working on the Crucible codebase
+> AI agents working on the Crucible codebase through linked thinking
 
-This documentation is for AI agents (like Claude, GPT, etc.) that are working on the Crucible project. It provides context, guidelines, and tools to help AI assistants understand and contribute to the codebase effectively.
+This documentation is for AI agents (like Claude, GPT, etc.) that are working on the Crucible project. It provides context, guidelines, and tools to help AI assistants understand and contribute to the codebase effectively through **linked thinking** - the seamless connection and evolution of ideas across time and context.
+
+## 🧠 Linked Thinking in Agent Workflows
+
+Crucible promotes **linked thinking** through:
+- **Contextual Connections**: Agents maintain awareness of related concepts and dependencies
+- **Evolutionary Development**: Ideas and code evolve through iterative refinement
+- **Cross-Reference Awareness**: Agents understand how changes affect related components
+- **Temporal Context**: Agents consider the history and future implications of changes
 
 ## Purpose
 
@@ -41,13 +49,17 @@ specs/                 # Technical specifications organized by tech stack
 │   └── sprint-3/
 ├── mcp-integration/   # MCP and agent integration specs
 │   └── sprint-4/
+├── code-generation/   # Agent code generation specifications
+│   ├── agent-specifications.md
+│   └── workflow-specifications.md
 ├── data-specs/        # Data schemas and type definitions
 │   ├── document-schema.json
 │   ├── embeddings-schema.json
 │   ├── canvas-schema.json
 │   ├── document-types.ts
 │   └── embeddings-types.ts
-└── sprint-{1,2,3,4}/  # Sprint-based roadmap phases
+├── sprint-{1,2,3,4}/  # Sprint-based roadmap phases
+└── GAP_ANALYSIS_COMPREHENSIVE.md  # Implementation gap analysis
 ```
 
 ## Available Tools
@@ -87,6 +99,8 @@ specs/                 # Technical specifications organized by tech stack
 - **Database Layer** (`database/`): PGlite schemas and vector operations
 - **Plugin System** (`plugin-system/`): Rune runtime and extensibility
 - **MCP Integration** (`mcp-integration/`): AI agent tools and protocols
+- **Code Generation** (`code-generation/`): Agent specifications for automated code generation
+- **A2A Protocol** (`sprint-4/a2a-protocol-*.md`): Agent-to-agent communication protocols
 
 ### Data Specifications (`specs/data-specs/`)
 - **JSON Schemas**: API validation and documentation
@@ -181,6 +195,9 @@ specs/                 # Technical specifications organized by tech stack
 - Use MCP tools like `search_codebase` to understand existing patterns
 - Follow Crucible conventions from project context
 - Generate comprehensive tests and documentation
+- Reference [Agent Code Generation Specs](./specs/code-generation/) for automated code generation
+- Use [A2A Protocol Integration](./specs/sprint-4/a2a-protocol-feature.md) for agent-to-agent communication
+- Apply linked thinking principles to maintain contextual awareness across generated code
 
 ## Development
 
@@ -222,6 +239,19 @@ specs/                 # Technical specifications organized by tech stack
 - Include both unit and integration tests
 - Test edge cases and error conditions
 
+### Linked Thinking Principles
+- **Contextual Awareness**: Always consider how changes affect related components
+- **Evolutionary Development**: Build upon existing patterns and conventions
+- **Cross-Reference Maintenance**: Update related documentation and specifications
+- **Temporal Consistency**: Ensure changes align with project history and future plans
+
+## Key Resources for Agents
+
+- **[Gap Analysis](./specs/GAP_ANALYSIS_COMPREHENSIVE.md)**: Comprehensive analysis of implementation gaps and context engineering needs
+- **[Agent Specifications](./specs/code-generation/agent-specifications.md)**: Detailed specifications for AI agent code generation
+- **[Workflow Specifications](./specs/code-generation/workflow-specifications.md)**: GitHub Actions-style workflows for agent operations
+- **[A2A Protocol](./specs/sprint-4/a2a-protocol-feature.md)**: Agent-to-agent communication protocols
+
 ---
 
-*This agent system is designed to help AI assistants work effectively with the Crucible codebase. Use these tools and conventions to maintain code quality and project consistency.*
+*This agent system is designed to help AI assistants work effectively with the Crucible codebase through linked thinking. Use these tools and conventions to maintain code quality, project consistency, and contextual awareness across all development activities.*
