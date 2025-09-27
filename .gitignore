@@ -43,3 +43,6 @@ Thumbs.db
 # Tauri
 src-tauri/target/
 
+.claude/
+.crush/
+.cursor/
