@@ -3,13 +3,13 @@
 // both global and project-specific configurations using the Rune programming language.
 //
 // Architecture:
-// - Global dotfiles: /home/moot/dotfiles/agents/
+// - Global dotfiles: ~/dotfiles/agents/
 //   - dot-agents/        # Global agent configurations (committed)
 //   - dot-claude/       # Claude-specific symlinks to global configs
 //   - dot-crush/        # Crush-specific symlinks to global configs
 //   - dot-cursor/       # Cursor-specific symlinks to global configs
 //
-// - Project-specific: /home/moot/crucible/
+// - Project-specific: [auto-detected project root]/
 //   - .agents/          # Project-specific configurations (committed)
 //   - .claude/          # Symlinks to project .agents/
 //   - .crush/           # Symlinks to project .agents/
@@ -26,8 +26,11 @@
 // - crush:  commands -> commands, config -> config, etc.
 // - cursor: commands -> rules, config -> config, etc. (Cursor uses 'rules')
 
-// Note: Using Rune's built-in functionality for now
-// Will need to use external commands for file system operations
+// Note: This is a planning/demonstration script showing the symlink structure.
+// For actual implementation, use the Python or Bash versions which include:
+// - Auto-detection of project root
+// - Environment variable configuration
+// - Full filesystem operations
 
 // Agent directory mappings: agent -> [(agent_dir, global_dir), ...]
 const AGENT_MAPPINGS = [
@@ -59,8 +62,9 @@ fn main() {
     println!("🔧 Setting up agent symlinks for Crucible project...");
     println!("Hello from Rune!");
 
-    let project_root = "/home/moot/crucible";
-    let global_agents_root = "/home/moot/dotfiles/agents";
+    // Get paths from environment variables or use defaults
+    let project_root = env::var("PROJECT_ROOT").unwrap_or_else(|_| format!("{}/.crucible", env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())));
+    let global_agents_root = env::var("GLOBAL_AGENTS_ROOT").unwrap_or_else(|_| format!("{}/dotfiles/agents", env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())));
 
     println!("  Project root: {}", project_root);
     println!("  Global agents root: {}", global_agents_root);

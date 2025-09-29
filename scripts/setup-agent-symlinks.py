@@ -6,13 +6,13 @@ This script creates the proper symlink structure for AI agents to access
 both global and project-specific configurations.
 
 Architecture:
-- Global dotfiles: /home/moot/dotfiles/agents/
+- Global dotfiles: ~/dotfiles/agents/
   - dot-agents/        # Global agent configurations (committed)
   - dot-claude/       # Claude-specific symlinks to global configs
   - dot-crush/        # Crush-specific symlinks to global configs
   - dot-cursor/       # Cursor-specific symlinks to global configs
 
-- Project-specific: /home/moot/crucible/
+- Project-specific: [auto-detected project root]/
   - .agents/          # Project-specific configurations (committed)
   - .claude/          # Symlinks to project .agents/
   - .crush/           # Symlinks to project .agents/
@@ -29,10 +29,12 @@ Symlink Mapping:
 - crush:  commands -> commands, config -> config, etc.
 - cursor: commands -> rules, config -> config, etc. (Cursor uses 'rules')
 
-Example Directory Structure:
-  Global: dotfiles/agents/dot-claude/commands -> dotfiles/agents/dot-agents/commands
-  Local:  crucible/.claude/commands -> crucible/.agents/commands
-  Home:   ~/.claude/.agents -> crucible/.agents
+Usage:
+  # Auto-detect project root (recommended)
+  python3 scripts/setup-agent-symlinks.py
+
+  # Specify custom paths
+  python3 scripts/setup-agent-symlinks.py --project-root /path/to/project --global-agents-root /path/to/global/configs
 """
 
 import argparse
@@ -41,6 +43,39 @@ import shutil
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
+
+# Configuration - auto-detect project root and allow overrides
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Auto-detect project root by walking up from scripts/ directory
+# until we find a directory that looks like a project root
+def detect_project_root():
+    """Auto-detect the project root by looking for common project indicators."""
+    current_dir = os.path.dirname(SCRIPT_DIR)  # Parent of scripts/
+
+    # Common indicators of a project root
+    project_indicators = [
+        '.git',           # Git repository
+        'package.json',   # Node.js project
+        'Cargo.toml',     # Rust project
+        'pyproject.toml', # Python project
+        'go.mod',         # Go project
+        'README.md',      # Documentation
+    ]
+
+    # Walk up the directory tree
+    while current_dir != os.path.dirname(current_dir):  # Stop at filesystem root
+        if any(os.path.exists(os.path.join(current_dir, indicator))
+               for indicator in project_indicators):
+            return current_dir
+        current_dir = os.path.dirname(current_dir)
+
+    # Fallback to parent of scripts/
+    return os.path.dirname(SCRIPT_DIR)
+
+DEFAULT_PROJECT_ROOT = detect_project_root()
+DEFAULT_GLOBAL_AGENTS_ROOT = os.path.expanduser("~/dotfiles/agents")
+DEFAULT_HOME_AGENTS = os.path.expanduser("~/.agents")
 
 
 # Agent directory mappings: agent -> [(agent_dir, global_dir), ...]
@@ -82,7 +117,7 @@ class AgentSymlinkManager:
     def cleanup_global_agents(self):
         """Remove individual agent directories from global system."""
         print("🧹 Cleaning up global agent directories...")
-        global_agents_path = Path("/home/moot/.agents")
+        global_agents_path = Path(DEFAULT_HOME_AGENTS)
         for agent in AGENT_MAPPINGS.keys():
             agent_dir = global_agents_path / agent
             if agent_dir.exists():
@@ -154,7 +189,7 @@ class AgentSymlinkManager:
     def create_home_symlinks(self):
         """Create home directory symlinks."""
         print("🏠 Creating home directory symlinks...")
-        home_agents = Path("/home/moot/.agents")
+        home_agents = Path(DEFAULT_HOME_AGENTS)
         home_agents.mkdir(parents=True, exist_ok=True)
 
         # Remove individual agent directories from home
@@ -193,10 +228,10 @@ class AgentSymlinkManager:
 
 def main():
     parser = argparse.ArgumentParser(description="Setup agent symlinks for Crucible project")
-    parser.add_argument("--project-root", default="/home/moot/crucible",
-                       help="Path to project root (default: /home/moot/crucible)")
-    parser.add_argument("--global-agents-root", default="/home/moot/dotfiles/agents",
-                       help="Path to global agents root (default: /home/moot/dotfiles/agents)")
+    parser.add_argument("--project-root", default=DEFAULT_PROJECT_ROOT,
+                       help=f"Path to project root (default: {DEFAULT_PROJECT_ROOT})")
+    parser.add_argument("--global-agents-root", default=DEFAULT_GLOBAL_AGENTS_ROOT,
+                       help=f"Path to global agents root (default: {DEFAULT_GLOBAL_AGENTS_ROOT})")
 
     args = parser.parse_args()
 

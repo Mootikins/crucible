@@ -27,13 +27,33 @@ declare -A AGENT_MAPPINGS=(
     ["cursor:workflows"]="workflows:workflows"
 )
 
-# Global agent system path
-GLOBAL_AGENTS="/home/moot/.agents"
+# Auto-detect project root by walking up from scripts/ directory
+# until we find a directory that looks like a project root
+detect_project_root() {
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local current_dir="$(dirname "$script_dir")"  # Parent of scripts/
 
-# Project root
-PROJECT_ROOT="/home/moot/crucible"
+    # Common indicators of a project root
+    local project_indicators=(".git" "package.json" "Cargo.toml" "pyproject.toml" "go.mod" "README.md")
 
-# Project agents path
+    # Walk up the directory tree
+    while [ "$current_dir" != "$(dirname "$current_dir")" ]; do
+        for indicator in "${project_indicators[@]}"; do
+            if [ -e "$current_dir/$indicator" ]; then
+                echo "$current_dir"
+                return 0
+            fi
+        done
+        current_dir="$(dirname "$current_dir")"
+    done
+
+    # Fallback to parent of scripts/
+    dirname "$script_dir"
+}
+
+# Default paths - can be overridden with environment variables
+GLOBAL_AGENTS="${GLOBAL_AGENTS:-$HOME/.agents}"
+PROJECT_ROOT="${PROJECT_ROOT:-$(detect_project_root)}"
 PROJECT_AGENTS="$PROJECT_ROOT/.agents"
 
 echo "🔧 Setting up agent symlinks for Crucible project..."
