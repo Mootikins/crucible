@@ -1,57 +1,51 @@
-/**
-Agent Symlink Setup Script (Rune Version)
+// Agent Symlink Setup Script (Rune Version)
+// This script creates the proper symlink structure for AI agents to access
+// both global and project-specific configurations using the Rune programming language.
+//
+// Architecture:
+// - Global dotfiles: /home/moot/dotfiles/agents/
+//   - dot-agents/        # Global agent configurations (committed)
+//   - dot-claude/       # Claude-specific symlinks to global configs
+//   - dot-crush/        # Crush-specific symlinks to global configs
+//   - dot-cursor/       # Cursor-specific symlinks to global configs
+//
+// - Project-specific: /home/moot/crucible/
+//   - .agents/          # Project-specific configurations (committed)
+//   - .claude/          # Symlinks to project .agents/
+//   - .crush/           # Symlinks to project .agents/
+//   - .cursor/          # Symlinks to project .agents/
+//
+// Agent Specification:
+// Each agent expects a specific directory structure with metadata headers
+// containing triggers, prompts, tools, workflows, etc. This script creates
+// the proper mapping between agent-specific directory names and the
+// standardized .agents/ structure.
+//
+// Symlink Mapping:
+// - claude: commands -> commands, config -> config, etc.
+// - crush:  commands -> commands, config -> config, etc.
+// - cursor: commands -> rules, config -> config, etc. (Cursor uses 'rules')
 
-This script creates the proper symlink structure for AI agents to access
-both global and project-specific configurations using the Rune programming language.
-
-Architecture:
-- Global dotfiles: /home/moot/dotfiles/agents/
-  - dot-agents/        # Global agent configurations (committed)
-  - dot-claude/       # Claude-specific symlinks to global configs
-  - dot-crush/        # Crush-specific symlinks to global configs
-  - dot-cursor/       # Cursor-specific symlinks to global configs
-
-- Project-specific: /home/moot/crucible/
-  - .agents/          # Project-specific configurations (committed)
-  - .claude/          # Symlinks to project .agents/
-  - .crush/           # Symlinks to project .agents/
-  - .cursor/          # Symlinks to project .agents/
-
-Agent Specification:
-Each agent expects a specific directory structure with metadata headers
-containing triggers, prompts, tools, workflows, etc. This script creates
-the proper mapping between agent-specific directory names and the
-standardized .agents/ structure.
-
-Symlink Mapping:
-- claude: commands -> commands, config -> config, etc.
-- crush:  commands -> commands, config -> config, etc.
-- cursor: commands -> rules, config -> config, etc. (Cursor uses 'rules')
-*/
-
-use std::env;
-use std::fs;
-use std::os::unix::fs::symlink;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+// Note: Using Rune's built-in functionality for now
+// Will need to use external commands for file system operations
 
 // Agent directory mappings: agent -> [(agent_dir, global_dir), ...]
-const AGENT_MAPPINGS: &[(&str, &[(&str, &str)])] = &[
-    ("claude", &[
+const AGENT_MAPPINGS = [
+    ("claude", [
         ("commands", "commands"),
         ("config", "config"),
         ("contexts", "contexts"),
         ("tools", "tools"),
         ("workflows", "workflows"),
     ]),
-    ("crush", &[
+    ("crush", [
         ("commands", "commands"),
         ("config", "config"),
         ("contexts", "contexts"),
         ("tools", "tools"),
         ("workflows", "workflows"),
     ]),
-    ("cursor", &[
+    ("cursor", [
         ("commands", "commands"),
         ("config", "config"),
         ("contexts", "contexts"),
@@ -61,201 +55,30 @@ const AGENT_MAPPINGS: &[(&str, &[(&str, &str)])] = &[
     ]),
 ];
 
-struct AgentSymlinkManager {
-    project_root: PathBuf,
-    global_agents_root: PathBuf,
-    project_agents: PathBuf,
-    global_dot_agents: PathBuf,
-}
-
-impl AgentSymlinkManager {
-    fn new(project_root: PathBuf, global_agents_root: PathBuf) -> Self {
-        let project_agents = project_root.join(".agents");
-        let global_dot_agents = global_agents_root.join("dot-agents");
-
-        Self {
-            project_root,
-            global_agents_root,
-            project_agents,
-            global_dot_agents,
-        }
-    }
-
-    fn cleanup_global_agents(&self) {
-        println!("🧹 Cleaning up global agent directories...");
-        let global_agents_path = PathBuf::from("/home/moot/.agents");
-
-        for (agent, _) in AGENT_MAPPINGS.iter() {
-            let agent_dir = global_agents_path.join(agent);
-            if agent_dir.exists() {
-                println!("  Removing {} directory from global system", agent);
-                if let Err(e) = fs::remove_dir_all(&agent_dir) {
-                    println!("  Failed to remove {}: {}", agent, e);
-                }
-            }
-        }
-    }
-
-    fn create_global_directories(&self) {
-        println!("📁 Creating global agent directories...");
-        for (agent, _) in AGENT_MAPPINGS.iter() {
-            let agent_root = self.global_agents_root.join(format!("dot-{}", agent));
-
-            if let Err(e) = fs::create_dir_all(&agent_root) {
-                println!("  Failed to create {} directory: {}", agent_root.display(), e);
-                continue;
-            }
-
-            // Create subdirectories
-            for (agent_dir, _) in AGENT_MAPPINGS.iter().find(|(a, _)| *a == agent).unwrap().1.iter() {
-                let subdir = agent_root.join(agent_dir);
-                if let Err(e) = fs::create_dir_all(&subdir) {
-                    println!("  Failed to create {} subdirectory: {}", subdir.display(), e);
-                }
-            }
-        }
-    }
-
-    fn create_project_directories(&self) {
-        println!("📁 Creating project-specific agent directories...");
-        for (agent, _) in AGENT_MAPPINGS.iter() {
-            let agent_root = self.project_root.join(format!(".{}", agent));
-
-            if let Err(e) = fs::create_dir_all(&agent_root) {
-                println!("  Failed to create {} directory: {}", agent_root.display(), e);
-                continue;
-            }
-
-            // Create subdirectories
-            for (agent_dir, _) in AGENT_MAPPINGS.iter().find(|(a, _)| *a == agent).unwrap().1.iter() {
-                let subdir = agent_root.join(agent_dir);
-                if let Err(e) = fs::create_dir_all(&subdir) {
-                    println!("  Failed to create {} subdirectory: {}", subdir.display(), e);
-                }
-            }
-        }
-    }
-
-    fn create_global_symlinks(&self) {
-        println!("🔗 Creating global symlinks...");
-        for (agent, mappings) in AGENT_MAPPINGS.iter() {
-            println!("  Creating symlinks for {}...", agent);
-            let agent_root = self.global_agents_root.join(format!("dot-{}", agent));
-
-            for (agent_dir, global_dir) in mappings.iter() {
-                let target = self.global_dot_agents.join(global_dir);
-                let link_path = agent_root.join(agent_dir);
-
-                // Remove existing symlink or file
-                if link_path.exists() {
-                    if let Err(e) = fs::remove_file(&link_path) {
-                        println!("    Failed to remove existing {}: {}", link_path.display(), e);
-                        continue;
-                    }
-                }
-
-                // Create symlink
-                if let Err(e) = symlink(&target, &link_path) {
-                    println!("    Failed to create symlink {} -> {}: {}", link_path.display(), target.display(), e);
-                } else {
-                    println!("    {} -> {}", agent_dir, target.display());
-                }
-            }
-        }
-    }
-
-    fn create_project_symlinks(&self) {
-        println!("🔗 Creating project symlinks...");
-        for (agent, mappings) in AGENT_MAPPINGS.iter() {
-            println!("  Creating symlinks for {} in project...", agent);
-            let agent_root = self.project_root.join(format!(".{}", agent));
-
-            for (agent_dir, global_dir) in mappings.iter() {
-                let target = self.project_agents.join(global_dir);
-                let link_path = agent_root.join(agent_dir);
-
-                // Remove existing symlink or file
-                if link_path.exists() {
-                    if let Err(e) = fs::remove_file(&link_path) {
-                        println!("    Failed to remove existing {}: {}", link_path.display(), e);
-                        continue;
-                    }
-                }
-
-                // Create symlink
-                if let Err(e) = symlink(&target, &link_path) {
-                    println!("    Failed to create symlink {} -> {}: {}", link_path.display(), target.display(), e);
-                } else {
-                    println!("    {} -> {}", agent_dir, target.display());
-                }
-            }
-        }
-    }
-
-    fn create_home_symlinks(&self) {
-        println!("🏠 Creating home directory symlinks...");
-        let home_agents = PathBuf::from("/home/moot/.agents");
-
-        // Ensure home agents directory exists
-        if let Err(e) = fs::create_dir_all(&home_agents) {
-            println!("  Failed to create home agents directory: {}", e);
-            return;
-        }
-
-        // Remove individual agent directories from home
-        for (agent, _) in AGENT_MAPPINGS.iter() {
-            let agent_dir = home_agents.join(agent);
-            if agent_dir.exists() {
-                if let Err(e) = fs::remove_dir_all(&agent_dir) {
-                    println!("  Failed to remove {} from home: {}", agent, e);
-                }
-            }
-        }
-
-        // Create symlinks to project .agents
-        for (agent, _) in AGENT_MAPPINGS.iter() {
-            let agent_link = home_agents.join(agent);
-            if let Err(e) = fs::remove_file(&agent_link) {
-                if e.kind() != std::io::ErrorKind::NotFound {
-                    println!("  Failed to remove existing {}: {}", agent_link.display(), e);
-                    continue;
-                }
-            }
-
-            if let Err(e) = symlink(&self.project_agents, &agent_link) {
-                println!("  Failed to create home symlink for {}: {}", agent, e);
-            } else {
-                println!("  ~/.agents/{} -> {}", agent, self.project_agents.display());
-            }
-        }
-    }
-
-    fn setup(&self) {
-        println!("🔧 Setting up agent symlinks for Crucible project...");
-        println!("  Project root: {}", self.project_root.display());
-        println!("  Global agents root: {}", self.global_agents_root.display());
-        println!("  Project agents: {}", self.project_agents.display());
-
-        self.cleanup_global_agents();
-        self.create_global_directories();
-        self.create_project_directories();
-        self.create_global_symlinks();
-        self.create_project_symlinks();
-        self.create_home_symlinks();
-
-        println!("✅ Agent symlink setup complete!");
-    }
-}
-
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    let project_root = args.get(1).map(|s| s.as_str()).unwrap_or("/home/moot/crucible");
-    let global_agents_root = args.get(2).map(|s| s.as_str()).unwrap_or("/home/moot/dotfiles/agents");
+    println!("🔧 Setting up agent symlinks for Crucible project...");
+    println!("Hello from Rune!");
 
-    let manager = AgentSymlinkManager::new(
-        PathBuf::from(project_root),
-        PathBuf::from(global_agents_root),
-    );
+    let project_root = "/home/moot/crucible";
+    let global_agents_root = "/home/moot/dotfiles/agents";
 
-    manager.setup();
+    println!("  Project root: {}", project_root);
+    println!("  Global agents root: {}", global_agents_root);
+
+    // For now, just print what we would do
+    for (agent, mappings) in AGENT_MAPPINGS {
+        println!("  Creating symlinks for {}:", agent);
+        for (agent_dir, global_dir) in mappings {
+            let global_target = format!("{}/dot-agents/{}", global_agents_root, global_dir);
+            let local_target = format!("{}/.agents/{}", project_root, global_dir);
+            let global_link = format!("{}/dot-{}/{}", global_agents_root, agent, agent_dir);
+            let local_link = format!("{}/.{}/{}", project_root, agent, agent_dir);
+
+            println!("    Global: {} -> {}", global_link, global_target);
+            println!("    Local:  {} -> {}", local_link, local_target);
+        }
+    }
+
+    println!("✅ Agent symlink setup planning complete!");
+    println!("Note: This is a planning script. Use the Python or Bash version for actual execution.");
 }
