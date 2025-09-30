@@ -5,8 +5,10 @@ export default defineConfig({
   plugins: [svelte()],
   clearScreen: false,
   server: {
+    host: '0.0.0.0',
     port: 5173,
     strictPort: true,
+    allowedHosts: ['crucible.terminal.krohnos.io'],
   },
   build: {
     target: 'esnext',
