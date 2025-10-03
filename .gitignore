@@ -51,3 +51,6 @@ src-tauri/target/
 .claude/
 .crush/
 .cursor/
+
+# AI agent symlinks
+CLAUDE.md
