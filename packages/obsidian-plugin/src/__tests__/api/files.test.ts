@@ -24,74 +24,63 @@ describe("FilesHandler", () => {
     const files = [new TFile("test1.md"), new TFile("test2.md")];
     app.vault.getMarkdownFiles.mockReturnValue(files);
 
-    // When implemented:
-    // const req = {} as IncomingMessage;
-    // const res = {
-    //   writeHead: vi.fn(),
-    //   end: vi.fn(),
-    // } as unknown as ServerResponse;
-    //
-    // await handler.listFiles(req, res);
-    //
-    // expect(res.writeHead).toHaveBeenCalledWith(200, expect.anything());
-    // expect(res.end).toHaveBeenCalled();
+    const req = {} as IncomingMessage;
+    const res = {
+      writeHead: vi.fn(),
+      end: vi.fn(),
+    } as unknown as ServerResponse;
 
-    expect(handler.listFiles).toBeDefined();
+    await handler.listFiles(req, res);
+
+    expect(res.writeHead).toHaveBeenCalledWith(200, expect.anything());
+    expect(res.end).toHaveBeenCalled();
   });
 
   it("should return empty list for empty vault", async () => {
     app.vault.getMarkdownFiles.mockReturnValue([]);
 
-    // When implemented:
-    // const req = {} as IncomingMessage;
-    // const res = {
-    //   writeHead: vi.fn(),
-    //   end: vi.fn(),
-    // } as unknown as ServerResponse;
-    //
-    // await handler.listFiles(req, res);
-    //
-    // const response = JSON.parse(res.end.mock.calls[0][0]);
-    // expect(response.files).toHaveLength(0);
+    const req = {} as IncomingMessage;
+    const res = {
+      writeHead: vi.fn(),
+      end: vi.fn(),
+    } as unknown as ServerResponse;
 
-    expect(handler.listFiles).toBeDefined();
+    await handler.listFiles(req, res);
+
+    const response = JSON.parse(res.end.mock.calls[0][0]);
+    expect(response.files).toHaveLength(0);
   });
 
   it("should get file content", async () => {
     const file = new TFile("test.md");
+    app.vault.getAbstractFileByPath.mockReturnValue(file);
     app.vault.read.mockResolvedValue("# Test\n\nContent");
 
-    // When implemented:
-    // const req = {} as IncomingMessage;
-    // const res = {
-    //   writeHead: vi.fn(),
-    //   end: vi.fn(),
-    // } as unknown as ServerResponse;
-    //
-    // await handler.getFile("test.md", req, res);
-    //
-    // expect(app.vault.read).toHaveBeenCalled();
-    // const response = JSON.parse(res.end.mock.calls[0][0]);
-    // expect(response.content).toBe("# Test\n\nContent");
+    const req = {} as IncomingMessage;
+    const res = {
+      writeHead: vi.fn(),
+      end: vi.fn(),
+    } as unknown as ServerResponse;
 
-    expect(handler.getFile).toBeDefined();
+    await handler.getFile("test.md", req, res);
+
+    expect(app.vault.read).toHaveBeenCalled();
+    const response = JSON.parse(res.end.mock.calls[0][0]);
+    expect(response.content).toBe("# Test\n\nContent");
   });
 
   it("should handle missing file gracefully", async () => {
     app.vault.getAbstractFileByPath.mockReturnValue(null);
 
-    // When implemented with error handling:
-    // const req = {} as IncomingMessage;
-    // const res = {
-    //   writeHead: vi.fn(),
-    //   end: vi.fn(),
-    // } as unknown as ServerResponse;
-    //
-    // await handler.getFile("missing.md", req, res);
-    //
-    // expect(res.writeHead).toHaveBeenCalledWith(404, expect.anything());
+    const req = {} as IncomingMessage;
+    const res = {
+      writeHead: vi.fn(),
+      end: vi.fn(),
+    } as unknown as ServerResponse;
 
-    expect(handler.getFile).toBeDefined();
+    await handler.getFile("missing.md", req, res);
+
+    expect(res.writeHead).toHaveBeenCalledWith(404, expect.anything());
   });
 
   it("should transform TFile to FileInfo correctly", () => {
@@ -100,14 +89,12 @@ describe("FilesHandler", () => {
     file.stat.ctime = 1696000000000;
     file.stat.mtime = 1696100000000;
 
-    // When implemented:
-    // const info = handler.fileToInfo(file);
-    // expect(info.path).toBe("Projects/AI/notes.md");
-    // expect(info.name).toBe("notes.md");
-    // expect(info.folder).toBe("Projects/AI");
-    // expect(info.size).toBe(1024);
-
-    expect(handler).toBeDefined();
+    // Access the private method via any cast for testing
+    const info = (handler as any).fileToInfo(file);
+    expect(info.path).toBe("Projects/AI/notes.md");
+    expect(info.name).toBe("notes.md");
+    expect(info.folder).toBe("Projects/AI");
+    expect(info.size).toBe(1024);
   });
 
   it("should filter non-markdown files", async () => {
@@ -117,19 +104,16 @@ describe("FilesHandler", () => {
     ];
     app.vault.getMarkdownFiles.mockReturnValue([files[0]]);
 
-    // When implemented:
-    // const req = {} as IncomingMessage;
-    // const res = {
-    //   writeHead: vi.fn(),
-    //   end: vi.fn(),
-    // } as unknown as ServerResponse;
-    //
-    // await handler.listFiles(req, res);
-    //
-    // const response = JSON.parse(res.end.mock.calls[0][0]);
-    // expect(response.files).toHaveLength(1);
-    // expect(response.files[0].name).toBe("test.md");
+    const req = {} as IncomingMessage;
+    const res = {
+      writeHead: vi.fn(),
+      end: vi.fn(),
+    } as unknown as ServerResponse;
 
-    expect(handler.listFiles).toBeDefined();
+    await handler.listFiles(req, res);
+
+    const response = JSON.parse(res.end.mock.calls[0][0]);
+    expect(response.files).toHaveLength(1);
+    expect(response.files[0].name).toBe("test.md");
   });
 });

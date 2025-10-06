@@ -6,13 +6,41 @@ export class FilesHandler {
   constructor(private app: App) {}
 
   async listFiles(req: IncomingMessage, res: ServerResponse) {
-    // TODO: Implement file listing
-    pass;
+    try {
+      const files = this.app.vault.getMarkdownFiles();
+      const fileInfos = files.map((file) => this.fileToInfo(file));
+      this.sendJSON(res, 200, { files: fileInfos });
+    } catch (error) {
+      this.sendJSON(res, 500, {
+        error: "Failed to list files",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   async getFile(filePath: string, req: IncomingMessage, res: ServerResponse) {
-    // TODO: Implement file content retrieval
-    pass;
+    try {
+      const file = this.app.vault.getAbstractFileByPath(filePath);
+
+      if (!file || !(file instanceof TFile)) {
+        this.sendJSON(res, 404, {
+          error: "File not found",
+          path: filePath,
+        });
+        return;
+      }
+
+      const content = await this.app.vault.read(file);
+      this.sendJSON(res, 200, {
+        content,
+        path: filePath,
+      });
+    } catch (error) {
+      this.sendJSON(res, 500, {
+        error: "Failed to read file",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private fileToInfo(file: TFile): FileInfo {
