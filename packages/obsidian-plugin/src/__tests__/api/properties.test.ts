@@ -22,6 +22,8 @@ describe("PropertiesHandler", () => {
 
   it("should update existing frontmatter properties", async () => {
     const file = new TFile("test.md");
+    app.vault.getAbstractFileByPath.mockReturnValue(file);
+
     const existingContent = `---
 status: draft
 ---
@@ -49,19 +51,18 @@ Content`;
       end: vi.fn(),
     } as unknown as ServerResponse;
 
-    // When implemented:
-    // await handler.updateProperties("test.md", req, res);
-    //
-    // expect(app.vault.modify).toHaveBeenCalled();
-    // const modifiedContent = app.vault.modify.mock.calls[0][1];
-    // expect(modifiedContent).toContain("status: published");
-    // expect(res.writeHead).toHaveBeenCalledWith(200, expect.anything());
+    await handler.updateProperties("test.md", req, res);
 
-    expect(handler.updateProperties).toBeDefined();
+    expect(app.vault.modify).toHaveBeenCalled();
+    const modifiedContent = app.vault.modify.mock.calls[0][1];
+    expect(modifiedContent).toContain("status: published");
+    expect(res.writeHead).toHaveBeenCalledWith(200, expect.anything());
   });
 
   it("should add frontmatter to file without it", async () => {
     const file = new TFile("test.md");
+    app.vault.getAbstractFileByPath.mockReturnValue(file);
+
     const existingContent = `# Test\n\nContent without frontmatter`;
 
     app.vault.read.mockResolvedValue(existingContent);
@@ -83,19 +84,18 @@ Content`;
       end: vi.fn(),
     } as unknown as ServerResponse;
 
-    // When implemented:
-    // await handler.updateProperties("test.md", req, res);
-    //
-    // const modifiedContent = app.vault.modify.mock.calls[0][1];
-    // expect(modifiedContent).toContain("---");
-    // expect(modifiedContent).toContain("status: draft");
-    // expect(modifiedContent).toContain("# Test");
+    await handler.updateProperties("test.md", req, res);
 
-    expect(handler.updateProperties).toBeDefined();
+    const modifiedContent = app.vault.modify.mock.calls[0][1];
+    expect(modifiedContent).toContain("---");
+    expect(modifiedContent).toContain("status: draft");
+    expect(modifiedContent).toContain("# Test");
   });
 
   it("should preserve content when updating frontmatter", async () => {
     const file = new TFile("test.md");
+    app.vault.getAbstractFileByPath.mockReturnValue(file);
+
     const existingContent = `---
 title: Original
 ---
@@ -125,19 +125,18 @@ Paragraph 2`;
       end: vi.fn(),
     } as unknown as ServerResponse;
 
-    // When implemented:
-    // await handler.updateProperties("test.md", req, res);
-    //
-    // const modifiedContent = app.vault.modify.mock.calls[0][1];
-    // expect(modifiedContent).toContain("# Heading");
-    // expect(modifiedContent).toContain("Paragraph 1");
-    // expect(modifiedContent).toContain("Paragraph 2");
+    await handler.updateProperties("test.md", req, res);
 
-    expect(handler.updateProperties).toBeDefined();
+    const modifiedContent = app.vault.modify.mock.calls[0][1];
+    expect(modifiedContent).toContain("# Heading");
+    expect(modifiedContent).toContain("Paragraph 1");
+    expect(modifiedContent).toContain("Paragraph 2");
   });
 
   it("should handle complex property values", async () => {
     const file = new TFile("test.md");
+    app.vault.getAbstractFileByPath.mockReturnValue(file);
+
     const existingContent = `---
 title: Test
 ---
@@ -171,19 +170,18 @@ Content`;
       end: vi.fn(),
     } as unknown as ServerResponse;
 
-    // When implemented:
-    // await handler.updateProperties("test.md", req, res);
-    //
-    // const modifiedContent = app.vault.modify.mock.calls[0][1];
-    // expect(modifiedContent).toContain("tags:");
-    // expect(modifiedContent).toContain("metadata:");
-    // expect(modifiedContent).toContain("count: 42");
+    await handler.updateProperties("test.md", req, res);
 
-    expect(handler.updateProperties).toBeDefined();
+    const modifiedContent = app.vault.modify.mock.calls[0][1];
+    expect(modifiedContent).toContain("tags:");
+    expect(modifiedContent).toContain("metadata:");
+    expect(modifiedContent).toContain("count: 42");
   });
 
   it("should handle invalid YAML gracefully", async () => {
     const file = new TFile("test.md");
+    app.vault.getAbstractFileByPath.mockReturnValue(file);
+
     const existingContent = `---
 invalid: : : yaml
 ---
@@ -191,6 +189,7 @@ invalid: : : yaml
 Content`;
 
     app.vault.read.mockResolvedValue(existingContent);
+    app.vault.modify.mockResolvedValue(undefined);
 
     const req = {
       on: vi.fn((event, handler) => {
@@ -208,13 +207,12 @@ Content`;
       end: vi.fn(),
     } as unknown as ServerResponse;
 
-    // When implemented with error handling:
-    // await handler.updateProperties("test.md", req, res);
-    //
-    // expect(res.writeHead).toHaveBeenCalledWith(400, expect.anything());
-    // // Or handle by replacing frontmatter entirely
+    // Invalid YAML is handled by replacing frontmatter entirely
+    await handler.updateProperties("test.md", req, res);
 
-    expect(handler.updateProperties).toBeDefined();
+    expect(app.vault.modify).toHaveBeenCalled();
+    const modifiedContent = app.vault.modify.mock.calls[0][1];
+    expect(modifiedContent).toContain("status: active");
   });
 
   it("should handle missing file", async () => {
@@ -236,11 +234,8 @@ Content`;
       end: vi.fn(),
     } as unknown as ServerResponse;
 
-    // When implemented with error handling:
-    // await handler.updateProperties("missing.md", req, res);
-    //
-    // expect(res.writeHead).toHaveBeenCalledWith(404, expect.anything());
+    await handler.updateProperties("missing.md", req, res);
 
-    expect(handler.updateProperties).toBeDefined();
+    expect(res.writeHead).toHaveBeenCalledWith(404, expect.anything());
   });
 });
