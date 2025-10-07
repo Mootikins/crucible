@@ -9,23 +9,21 @@ pub struct CreateDocumentRequest {
 }
 
 #[tauri::command]
-pub async fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
+pub async fn greet(name: &str) -> std::result::Result<String, String> {
+    Ok(format!("Hello, {}! You've been greeted from Rust!", name))
 }
 
 #[tauri::command]
 pub async fn create_document(
     request: CreateDocumentRequest,
-) -> Result<DocumentNode> {
+) -> std::result::Result<DocumentNode, String> {
     let document = DocumentNode::new(request.title, request.content);
     Ok(document)
 }
 
 #[tauri::command]
-pub async fn get_document(id: String) -> Result<DocumentNode> {
+pub async fn get_document(id: String) -> std::result::Result<DocumentNode, String> {
     // TODO: Implement document retrieval from database
-    Err(crucible_core::CrucibleError::DocumentNotFound(
-        uuid::Uuid::parse_str(&id).unwrap_or_default()
-    ))
+    Err(format!("Document not found: {}", id))
 }
 

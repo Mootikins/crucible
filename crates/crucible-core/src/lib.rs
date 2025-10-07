@@ -16,7 +16,7 @@ pub enum CrucibleError {
     InvalidOperation(String),
     
     #[error("CRDT error: {0}")]
-    CrdtError(#[from] yrs::Error),
+    CrdtError(String),
 }
 
 pub type Result<T> = std::result::Result<T, CrucibleError>;
