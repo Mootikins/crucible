@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "identifier": "com.crucible.app",
   "build": {
-    "devUrl": "http://localhost:3000",
+    "devUrl": "http://localhost:5173",
     "frontendDist": "../dist"
   },
   "app": {
@@ -16,6 +16,10 @@
     ]
   },
   "bundle": {
-    "active": false
+    "active": true,
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ]
   }
 }
