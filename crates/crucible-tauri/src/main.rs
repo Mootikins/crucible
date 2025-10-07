@@ -10,8 +10,19 @@ fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             commands::greet,
-            commands::create_document,
+            commands::initialize_database,
+            commands::search_documents,
             commands::get_document,
+            commands::create_document,
+            commands::update_document,
+            commands::delete_document,
+            commands::list_documents,
+            commands::search_by_tags,
+            commands::search_by_properties,
+            commands::semantic_search,
+            commands::index_vault,
+            commands::get_note_metadata,
+            commands::update_note_properties,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
