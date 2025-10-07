@@ -11,7 +11,6 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@electric-sql/pglite": "^0.2.0",
     "@tauri-apps/api": "^2.0.0",
     "@xenova/transformers": "^2.6.0",
     "svelte": "^5.0.0"
