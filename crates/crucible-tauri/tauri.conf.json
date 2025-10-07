@@ -1,0 +1,21 @@
+{
+  "productName": "Crucible",
+  "version": "0.1.0",
+  "identifier": "com.crucible.app",
+  "build": {
+    "devUrl": "http://localhost:3000",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Crucible",
+        "width": 1200,
+        "height": 800
+      }
+    ]
+  },
+  "bundle": {
+    "active": false
+  }
+}

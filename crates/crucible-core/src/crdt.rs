@@ -16,21 +16,21 @@ impl CrdtManager {
         &self.doc
     }
 
-    pub fn get_map(&self, name: &str) -> Map {
-        self.doc.get_map(name)
+    pub fn get_map(&self, name: &str) -> impl Map {
+        self.doc.get_or_insert_map(name)
     }
 
-    pub fn get_text(&self, name: &str) -> Text {
-        self.doc.get_text(name)
+    pub fn get_text(&self, name: &str) -> impl Text {
+        self.doc.get_or_insert_text(name)
     }
 
-    pub fn get_array(&self, name: &str) -> Array {
-        self.doc.get_array(name)
+    pub fn get_array(&self, name: &str) -> impl Array {
+        self.doc.get_or_insert_array(name)
     }
 
     pub fn transact<F, R>(&self, f: F) -> Result<R>
     where
-        F: FnOnce(&mut Transact) -> Result<R>,
+        F: FnOnce(&mut yrs::TransactionMut) -> Result<R>,
     {
         let mut txn = self.doc.transact_mut();
         f(&mut txn)

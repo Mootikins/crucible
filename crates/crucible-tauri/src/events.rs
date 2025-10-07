@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
+use tauri::{Manager, Emitter};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentCreatedEvent {
@@ -19,7 +19,7 @@ pub fn emit_document_created(app_handle: &tauri::AppHandle, document_id: String,
         title,
     };
     
-    app_handle.emit_all("document-created", &event)
+    app_handle.emit("document-created", &event)
         .expect("Failed to emit document-created event");
 }
 
@@ -29,7 +29,7 @@ pub fn emit_document_updated(app_handle: &tauri::AppHandle, document_id: String,
         changes,
     };
     
-    app_handle.emit_all("document-updated", &event)
+    app_handle.emit("document-updated", &event)
         .expect("Failed to emit document-updated event");
 }
 
