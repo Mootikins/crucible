@@ -3,12 +3,12 @@
   import { documentStore } from './lib/stores/document';
   import Editor from './lib/components/Editor.svelte';
   import PanelLayout from './lib/components/PanelLayout.svelte';
-  import { initializePGlite } from './lib/db';
+  import { initializeDatabase } from './lib/db';
   
   let initialized = false;
   
   onMount(async () => {
-    await initializePGlite();
+    await initializeDatabase();
     initialized = true;
   });
 </script>

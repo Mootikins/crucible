@@ -1,108 +1,53 @@
-import { PGlite } from '@electric-sql/pglite';
-import { vector } from '@electric-sql/pglite/vector';
+import { invoke } from '@tauri-apps/api/core';
 
-let db: PGlite | null = null;
-
-export async function initializePGlite(): Promise<PGlite> {
-  if (db) {
-    return db;
-  }
-
-  try {
-    // Initialize PGlite with vector extension
-    db = new PGlite({
-      extensions: {
-        vector
-      }
-    });
-
-    // Run initial setup
-    await setupDatabase(db);
-
-    console.log('🔥 PGlite initialized successfully');
-    return db;
-  } catch (error) {
-    console.error('Failed to initialize PGlite:', error);
-    throw error;
-  }
+export async function initializeDatabase(): Promise<void> {
+  await invoke('initialize_database');
 }
 
-export function getDatabase(): PGlite {
-  if (!db) {
-    throw new Error('Database not initialized');
-  }
-  return db;
+export async function searchDocuments(query: string) {
+  return await invoke('search_documents', { query });
 }
 
-async function setupDatabase(db: PGlite): Promise<void> {
-  try {
-    // Enable vector extension
-    await db.exec(`CREATE EXTENSION IF NOT EXISTS vector;`);
-
-    // Run migrations
-    await runMigrations(db);
-
-    console.log('Database setup completed');
-  } catch (error) {
-    console.error('Database setup failed:', error);
-    throw error;
-  }
+export async function getDocument(path: string) {
+  return await invoke('get_document', { path });
 }
 
-async function runMigrations(db: PGlite): Promise<void> {
-  // Create migrations table if it doesn't exist
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      version VARCHAR(255) PRIMARY KEY,
-      applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-
-  // Get applied migrations
-  const result = await db.query('SELECT version FROM schema_migrations ORDER BY version;');
-  const appliedMigrations = result.rows.map(row => row.version);
-
-  // Run pending migrations
-  const migrationFiles = [
-    '001_initial.sql',
-    '002_crdt.sql',
-    '003_embeddings.sql',
-    '004_canvas.sql'
-  ];
-
-  for (const migrationFile of migrationFiles) {
-    if (!appliedMigrations.includes(migrationFile)) {
-      await runMigration(db, migrationFile);
-    }
-  }
+export async function createDocument(title: string, content: string) {
+  return await invoke('create_document', { title, content });
 }
 
-async function runMigration(db: PGlite, filename: string): Promise<void> {
-  try {
-    const response = await fetch(`/lib/db/migrations/${filename}`);
-    if (!response.ok) {
-      throw new Error(`Failed to load migration ${filename}`);
-    }
-
-    const sql = await response.text();
-    await db.exec(sql);
-
-    // Record migration
-    await db.query(
-      'INSERT INTO schema_migrations (version) VALUES ($1);',
-      [filename]
-    );
-
-    console.log(`Applied migration: ${filename}`);
-  } catch (error) {
-    console.error(`Migration ${filename} failed:`, error);
-    throw error;
-  }
+export async function updateDocument(path: string, content: string) {
+  return await invoke('update_document', { path, content });
 }
 
-export async function closeDatabase(): Promise<void> {
-  if (db) {
-    await db.close();
-    db = null;
-  }
+export async function deleteDocument(path: string) {
+  return await invoke('delete_document', { path });
+}
+
+export async function listDocuments() {
+  return await invoke('list_documents');
+}
+
+export async function searchByTags(tags: string[]) {
+  return await invoke('search_by_tags', { tags });
+}
+
+export async function searchByProperties(properties: Record<string, any>) {
+  return await invoke('search_by_properties', { properties });
+}
+
+export async function semanticSearch(query: string, topK: number = 10) {
+  return await invoke('semantic_search', { query, topK });
+}
+
+export async function indexVault(force: boolean = false) {
+  return await invoke('index_vault', { force });
+}
+
+export async function getNoteMetadata(path: string) {
+  return await invoke('get_note_metadata', { path });
+}
+
+export async function updateNoteProperties(path: string, properties: Record<string, any>) {
+  return await invoke('update_note_properties', { path, properties });
 }
