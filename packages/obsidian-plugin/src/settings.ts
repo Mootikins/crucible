@@ -105,6 +105,97 @@ export class SettingsTab extends PluginSettingTab {
           })
       );
 
-    // TODO: Add button to fetch available models from API
+    // MCP Client settings
+    containerEl.createEl("h3", { text: "MCP Client Configuration" });
+
+    new Setting(containerEl)
+      .setName("Enable MCP Client")
+      .setDesc("Enable connection to Rust MCP server via stdio")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.mcp.enabled)
+          .onChange(async (value) => {
+            this.plugin.settings.mcp.enabled = value;
+            await this.plugin.saveSettings();
+
+            // Restart MCP client if needed
+            if (value && this.plugin.settings.mcp.serverPath) {
+              await this.plugin.startMcpClient();
+            } else if (!value && this.plugin.mcpClient) {
+              await this.plugin.stopMcpClient();
+            }
+
+            this.display(); // Refresh to show/hide MCP settings
+          })
+      );
+
+    if (this.plugin.settings.mcp.enabled) {
+      new Setting(containerEl)
+        .setName("MCP Server Path")
+        .setDesc("Path to the crucible-mcp executable")
+        .addText((text) =>
+          text
+            .setPlaceholder("/path/to/crucible-mcp")
+            .setValue(this.plugin.settings.mcp.serverPath)
+            .onChange(async (value) => {
+              this.plugin.settings.mcp.serverPath = value;
+              await this.plugin.saveSettings();
+            })
+        );
+
+      new Setting(containerEl)
+        .setName("Server Arguments")
+        .setDesc("Command-line arguments for the MCP server (comma-separated)")
+        .addText((text) =>
+          text
+            .setPlaceholder("--db-path, /path/to/vault.db")
+            .setValue(this.plugin.settings.mcp.serverArgs.join(", "))
+            .onChange(async (value) => {
+              this.plugin.settings.mcp.serverArgs = value
+                .split(",")
+                .map((arg) => arg.trim())
+                .filter((arg) => arg.length > 0);
+              await this.plugin.saveSettings();
+            })
+        );
+
+      new Setting(containerEl)
+        .setName("Debug Mode")
+        .setDesc("Enable debug logging for MCP communication")
+        .addToggle((toggle) =>
+          toggle
+            .setValue(this.plugin.settings.mcp.debug)
+            .onChange(async (value) => {
+              this.plugin.settings.mcp.debug = value;
+              await this.plugin.saveSettings();
+            })
+        );
+
+      new Setting(containerEl)
+        .setName("Restart MCP Client")
+        .setDesc("Restart the MCP client with current settings")
+        .addButton((button) =>
+          button
+            .setButtonText("Restart")
+            .onClick(async () => {
+              await this.plugin.restartMcpClient();
+            })
+        );
+
+      // Show connection status
+      const statusSetting = new Setting(containerEl)
+        .setName("Connection Status")
+        .setDesc(
+          this.plugin.mcpClient?.isReady()
+            ? `Connected to ${this.plugin.mcpClient.getServerInfo()?.serverInfo.name || "server"}`
+            : "Not connected"
+        );
+
+      if (this.plugin.mcpClient?.isReady()) {
+        statusSetting.descEl.style.color = "green";
+      } else {
+        statusSetting.descEl.style.color = "red";
+      }
+    }
   }
 }
