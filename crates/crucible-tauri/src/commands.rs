@@ -1,14 +1,13 @@
-use crucible_core::{DocumentNode, Result};
-use crucible_mcp::{McpServer, types::ToolCallArgs};
+use crucible_core::DocumentNode;
+use crucible_mcp::McpServer;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
-use tauri::State;
 
 // Global MCP server instance
 static mut MCP_SERVER: Option<McpServer> = None;
 
-async fn get_mcp_server() -> Result<&'static McpServer, String> {
+async fn get_mcp_server() -> std::result::Result<&'static McpServer, String> {
     unsafe {
         if MCP_SERVER.is_none() {
             let db_path = "crucible.db";

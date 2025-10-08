@@ -19,7 +19,7 @@ async fn test_server_initialization() {
 async fn test_get_tools() {
     let tools = McpServer::get_tools();
     
-    assert_eq!(tools.len(), 9);
+    assert_eq!(tools.len(), 13);
     
     let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
     assert!(tool_names.contains(&"search_by_properties"));
@@ -31,6 +31,10 @@ async fn test_get_tools() {
     assert!(tool_names.contains(&"index_vault"));
     assert!(tool_names.contains(&"get_note_metadata"));
     assert!(tool_names.contains(&"update_note_properties"));
+    assert!(tool_names.contains(&"index_document"));
+    assert!(tool_names.contains(&"search_documents"));
+    assert!(tool_names.contains(&"get_document_stats"));
+    assert!(tool_names.contains(&"update_document_properties"));
 }
 
 #[tokio::test]
