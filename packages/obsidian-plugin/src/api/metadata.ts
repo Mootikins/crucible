@@ -42,9 +42,18 @@ export class MetadataHandler {
       // Extract links
       const links = cache?.links?.map(l => l.link) || [];
 
-      // Get backlinks
-      const backlinksMap = this.app.metadataCache.getBacklinksForFile(file);
-      const backlinks = backlinksMap ? Array.from(backlinksMap.keys()).map(f => f.path) : [];
+      // Get backlinks (if method exists - not in all Obsidian versions)
+      const backlinks: string[] = [];
+      if ('getBacklinksForFile' in this.app.metadataCache) {
+        const backlinksMap = (this.app.metadataCache as any).getBacklinksForFile(file);
+        if (backlinksMap) {
+          backlinksMap.forEach((_: any, key: any) => {
+            if (key && key.path) {
+              backlinks.push(key.path);
+            }
+          });
+        }
+      }
 
       // Read content for word count
       const content = await this.app.vault.read(file);
