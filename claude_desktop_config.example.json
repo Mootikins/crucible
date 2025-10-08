@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "crucible": {
+      "command": "C:\\Users\\Matthew\\Documents\\crucible\\target\\release\\crucible-mcp-server.exe",
+      "args": [],
+      "env": {
+        "RUST_LOG": "info",
+        "OBSIDIAN_VAULT_PATH": "C:/Users/Matthew/Documents/test-vault"
+      }
+    }
+  }
+}

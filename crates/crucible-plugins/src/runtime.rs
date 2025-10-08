@@ -17,9 +17,12 @@ impl RuneRuntime {
         Ok(())
     }
 
-    pub async fn execute_command(&self, command: &str, args: serde_json::Value) -> Result<serde_json::Value> {
+    pub async fn execute_command(
+        &self,
+        command: &str,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value> {
         // Execute Rune command
         Ok(serde_json::Value::Null)
     }
 }
-

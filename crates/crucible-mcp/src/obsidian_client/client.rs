@@ -152,7 +152,8 @@ impl ObsidianClient {
 
         self.retry_request(|| async {
             let url = format!("{}/api/search/tags", self.base_url);
-            let response = self.client
+            let response = self
+                .client
                 .get(&url)
                 .query(&[("tags", tags.join(","))])
                 .send()
@@ -183,7 +184,8 @@ impl ObsidianClient {
 
         self.retry_request(|| async {
             let url = format!("{}/api/search/folder", self.base_url);
-            let response = self.client
+            let response = self
+                .client
                 .get(&url)
                 .query(&[("path", path), ("recursive", &recursive.to_string())])
                 .send()
@@ -226,11 +228,7 @@ impl ObsidianClient {
                 .map(|(k, v)| (format!("properties[{}]", k), v.clone()))
                 .collect();
 
-            let response = self.client
-                .get(&url)
-                .query(&query_params)
-                .send()
-                .await?;
+            let response = self.client.get(&url).query(&query_params).send().await?;
             let search_result: SearchResponse = self.handle_response(response).await?;
             Ok(search_result.files)
         })
@@ -256,7 +254,8 @@ impl ObsidianClient {
 
         self.retry_request(|| async {
             let url = format!("{}/api/search/content", self.base_url);
-            let response = self.client
+            let response = self
+                .client
                 .get(&url)
                 .query(&[("query", query)])
                 .send()
@@ -304,11 +303,7 @@ impl ObsidianClient {
                 properties: properties.clone(),
             };
 
-            let response = self.client
-                .put(&url)
-                .json(&request_body)
-                .send()
-                .await?;
+            let response = self.client.put(&url).json(&request_body).send().await?;
             self.handle_response(response).await
         })
         .await
@@ -367,11 +362,7 @@ impl ObsidianClient {
 
         self.retry_request(|| async {
             let url = format!("{}/api/settings/embeddings", self.base_url);
-            let response = self.client
-                .put(&url)
-                .json(settings)
-                .send()
-                .await?;
+            let response = self.client.put(&url).json(settings).send().await?;
             self.handle_response(response).await
         })
         .await
@@ -413,13 +404,10 @@ impl ObsidianClient {
         let status = response.status();
 
         if status.is_success() {
-            response
-                .json::<T>()
-                .await
-                .map_err(|e| {
-                    warn!("Failed to parse response JSON: {}", e);
-                    ObsidianError::InvalidResponse(format!("Invalid JSON response: {}", e))
-                })
+            response.json::<T>().await.map_err(|e| {
+                warn!("Failed to parse response JSON: {}", e);
+                ObsidianError::InvalidResponse(format!("Invalid JSON response: {}", e))
+            })
         } else {
             let status_code = status.as_u16();
 
@@ -432,9 +420,7 @@ impl ObsidianClient {
 
             // Handle specific status codes
             match status {
-                StatusCode::NOT_FOUND => {
-                    Err(ObsidianError::FileNotFound(error_message))
-                }
+                StatusCode::NOT_FOUND => Err(ObsidianError::FileNotFound(error_message)),
                 StatusCode::REQUEST_TIMEOUT | StatusCode::GATEWAY_TIMEOUT => {
                     Err(ObsidianError::Timeout)
                 }
@@ -481,10 +467,7 @@ impl ObsidianClient {
                     // Log retry attempt
                     warn!(
                         "Request failed (attempt {}/{}), retrying in {:?}: {}",
-                        attempts,
-                        self.retry_config.max_retries,
-                        delay,
-                        error
+                        attempts, self.retry_config.max_retries, delay, error
                     );
 
                     // Wait before retrying
@@ -501,9 +484,7 @@ impl ObsidianClient {
     fn is_retriable(&self, error: &ObsidianError) -> bool {
         match error {
             // Network errors are retriable
-            ObsidianError::RequestFailed(e) => {
-                e.is_timeout() || e.is_connect() || e.is_request()
-            }
+            ObsidianError::RequestFailed(e) => e.is_timeout() || e.is_connect() || e.is_request(),
 
             // Timeouts are retriable
             ObsidianError::Timeout => true,

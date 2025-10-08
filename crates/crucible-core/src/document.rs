@@ -1,7 +1,7 @@
+use crate::PropertyMap;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use crate::PropertyMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentNode {
@@ -55,4 +55,3 @@ impl Default for ViewportState {
         }
     }
 }
-

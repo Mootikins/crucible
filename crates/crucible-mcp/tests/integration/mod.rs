@@ -3,15 +3,15 @@
 //! This module contains integration tests for the Obsidian HTTP client,
 //! testing against a mock server to validate API interactions.
 
-pub mod mock_server;
-pub mod test_data;
-pub mod http_client_test;
-pub mod obsidian_integration_test;
-pub mod error_scenarios_test;
 pub mod e2e_workflow_test;
+pub mod error_scenarios_test;
+pub mod http_client_test;
+pub mod mock_server;
+pub mod obsidian_integration_test;
+pub mod test_data;
 
-use tempfile::TempDir;
 use std::path::PathBuf;
+use tempfile::TempDir;
 
 /// Common test setup - creates a temporary directory for test data
 pub fn setup_test_env() -> TempDir {

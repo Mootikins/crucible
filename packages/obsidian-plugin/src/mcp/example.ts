@@ -24,7 +24,7 @@ async function basicExample() {
   try {
     // Start the server and initialize
     const initResponse = await client.start();
-    console.log("Connected to:", initResponse.serverInfo);
+    console.log("Connected to:", initResponse.server_info);
 
     // List available tools
     const tools = await client.listTools();
@@ -64,7 +64,7 @@ async function eventDrivenExample() {
   });
 
   client.on("initialized", (response) => {
-    console.log("Initialized:", response.serverInfo.name);
+    console.log("Initialized:", response.server_info.name);
   });
 
   client.on("error", (error) => {
@@ -146,9 +146,9 @@ async function statusCheckExample() {
 
   const serverInfo = client.getServerInfo();
   if (serverInfo) {
-    console.log("Server name:", serverInfo.serverInfo.name);
-    console.log("Server version:", serverInfo.serverInfo.version);
-    console.log("Protocol version:", serverInfo.protocolVersion);
+    console.log("Server name:", serverInfo.server_info.name);
+    console.log("Server version:", serverInfo.server_info.version);
+    console.log("Protocol version:", serverInfo.protocol_version);
   }
 
   await client.stop();
