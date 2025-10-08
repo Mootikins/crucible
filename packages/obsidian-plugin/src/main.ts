@@ -4,24 +4,43 @@ import { DEFAULT_PORT, DEFAULT_SETTINGS, EmbeddingSettings } from "./api-spec";
 import { FilesHandler } from "./api/files";
 import { MetadataHandler } from "./api/metadata";
 import { PropertiesHandler } from "./api/properties";
+import { SearchHandler } from "./api/search";
+import { SettingsHandler } from "./api/settings";
 import { SettingsTab } from "./settings";
+import { McpClient } from "./mcp";
+import type { InitializeResponse } from "./mcp";
 
 interface MCPPluginSettings {
   port: number;
   embeddings: EmbeddingSettings;
+  mcp: {
+    enabled: boolean;
+    serverPath: string;
+    serverArgs: string[];
+    debug: boolean;
+  };
 }
 
 const DEFAULT_PLUGIN_SETTINGS: MCPPluginSettings = {
   port: DEFAULT_PORT,
   embeddings: DEFAULT_SETTINGS,
+  mcp: {
+    enabled: false,
+    serverPath: "",
+    serverArgs: [],
+    debug: false,
+  },
 };
 
 export default class MCPPlugin extends Plugin {
   settings: MCPPluginSettings;
   server: any;
+  mcpClient: McpClient | null = null;
   filesHandler: FilesHandler;
   metadataHandler: MetadataHandler;
   propertiesHandler: PropertiesHandler;
+  searchHandler: SearchHandler;
+  settingsHandler: SettingsHandler;
 
   async onload() {
     await this.loadSettings();
@@ -29,9 +48,16 @@ export default class MCPPlugin extends Plugin {
     this.filesHandler = new FilesHandler(this.app);
     this.metadataHandler = new MetadataHandler(this.app);
     this.propertiesHandler = new PropertiesHandler(this.app);
+    this.searchHandler = new SearchHandler(this.app);
+    this.settingsHandler = new SettingsHandler(this.app);
 
     // Start HTTP server
     this.startServer();
+
+    // Start MCP client if enabled
+    if (this.settings.mcp.enabled && this.settings.mcp.serverPath) {
+      await this.startMcpClient();
+    }
 
     // Add settings tab
     this.addSettingTab(new SettingsTab(this.app, this));
@@ -39,10 +65,14 @@ export default class MCPPlugin extends Plugin {
     new Notice(`MCP Plugin: Server started on port ${this.settings.port}`);
   }
 
-  onunload() {
+  async onunload() {
     if (this.server) {
       this.server.close();
       new Notice("MCP Plugin: Server stopped");
+    }
+
+    if (this.mcpClient) {
+      await this.stopMcpClient();
     }
   }
 
@@ -102,17 +132,24 @@ export default class MCPPlugin extends Plugin {
         this.sendNotFound(res);
       }
     } else if (path === "/api/search/tags" && method === "GET") {
-      // TODO: Implement tag search
-      pass;
+      const tags = url.searchParams.getAll("tags[]");
+      await this.searchHandler.searchByTags(tags, req, res);
     } else if (path === "/api/search/folder" && method === "GET") {
-      // TODO: Implement folder search
-      pass;
+      const folderPath = url.searchParams.get("path") || "";
+      const recursive = url.searchParams.get("recursive") === "true";
+      await this.searchHandler.searchByFolder(folderPath, recursive, req, res);
     } else if (path === "/api/search/properties" && method === "GET") {
-      // TODO: Implement property search
-      pass;
+      const properties: Record<string, any> = {};
+      url.searchParams.forEach((value, key) => {
+        if (key.startsWith("properties[")) {
+          const propKey = key.slice(11, -1); // Extract key from properties[key]
+          properties[propKey] = value;
+        }
+      });
+      await this.searchHandler.searchByProperties(properties, req, res);
     } else if (path === "/api/search/content" && method === "GET") {
-      // TODO: Implement content search
-      pass;
+      const query = url.searchParams.get("query") || "";
+      await this.searchHandler.searchByContent(query, req, res);
     } else if (path === "/api/settings/embeddings" && method === "GET") {
       this.sendJSON(res, 200, this.settings.embeddings);
     } else if (path === "/api/settings/embeddings" && method === "PUT") {
@@ -121,8 +158,7 @@ export default class MCPPlugin extends Plugin {
       await this.saveSettings();
       this.sendJSON(res, 200, { success: true });
     } else if (path === "/api/settings/embeddings/models" && method === "GET") {
-      // TODO: Implement model listing
-      pass;
+      await this.settingsHandler.listEmbeddingModels(this.settings.embeddings, req, res);
     } else {
       this.sendNotFound(res);
     }
@@ -146,7 +182,84 @@ export default class MCPPlugin extends Plugin {
       req.on("error", reject);
     });
   }
-}
 
-// TypeScript doesn't have 'pass', use a no-op
-function pass() {}
+  /**
+   * Start the MCP client and connect to the Rust MCP server
+   */
+  async startMcpClient(): Promise<void> {
+    if (this.mcpClient) {
+      console.warn("MCP client already started");
+      return;
+    }
+
+    try {
+      console.log("Starting MCP client...");
+
+      this.mcpClient = new McpClient({
+        serverPath: this.settings.mcp.serverPath,
+        serverArgs: this.settings.mcp.serverArgs,
+        clientName: "obsidian-plugin",
+        clientVersion: "1.0.0",
+        debug: this.settings.mcp.debug,
+      });
+
+      // Set up event listeners
+      this.mcpClient.on("initialized", (response: InitializeResponse) => {
+        console.log("MCP server initialized:", response.serverInfo);
+        new Notice(`MCP: Connected to ${response.serverInfo.name} v${response.serverInfo.version}`);
+      });
+
+      this.mcpClient.on("error", (error: Error) => {
+        console.error("MCP client error:", error);
+        new Notice(`MCP Error: ${error.message}`, 5000);
+      });
+
+      this.mcpClient.on("exit", (code: number | null, signal: string | null) => {
+        console.log("MCP server exited:", { code, signal });
+        new Notice("MCP: Server disconnected", 3000);
+        this.mcpClient = null;
+      });
+
+      // Start the client
+      await this.mcpClient.start();
+
+      // List available tools for debugging
+      if (this.settings.mcp.debug) {
+        const tools = await this.mcpClient.listTools();
+        console.log("Available MCP tools:", tools);
+      }
+    } catch (error) {
+      console.error("Failed to start MCP client:", error);
+      new Notice(`Failed to start MCP client: ${error.message}`, 5000);
+      this.mcpClient = null;
+    }
+  }
+
+  /**
+   * Stop the MCP client
+   */
+  async stopMcpClient(): Promise<void> {
+    if (!this.mcpClient) {
+      return;
+    }
+
+    try {
+      console.log("Stopping MCP client...");
+      await this.mcpClient.stop();
+      this.mcpClient = null;
+    } catch (error) {
+      console.error("Failed to stop MCP client:", error);
+    }
+  }
+
+  /**
+   * Restart the MCP client (useful when settings change)
+   */
+  async restartMcpClient(): Promise<void> {
+    await this.stopMcpClient();
+
+    if (this.settings.mcp.enabled && this.settings.mcp.serverPath) {
+      await this.startMcpClient();
+    }
+  }
+}
