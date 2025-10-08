@@ -75,6 +75,7 @@ pub struct ToolCallArgs {
 
 /// MCP Tool definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct McpTool {
     pub name: String,
     pub description: String,
@@ -106,6 +107,7 @@ pub struct ToolsCapability {
 
 /// MCP initialization request
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InitializeRequest {
     pub protocol_version: String,
     pub capabilities: ClientCapabilities,
@@ -120,6 +122,7 @@ pub struct ClientCapabilities {
 
 /// Client information
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ClientInfo {
     pub name: String,
     pub version: String,
@@ -127,6 +130,7 @@ pub struct ClientInfo {
 
 /// MCP initialization response
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InitializeResponse {
     pub protocol_version: String,
     pub capabilities: ServerCapabilities,
@@ -135,6 +139,7 @@ pub struct InitializeResponse {
 
 /// Server information
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ServerInfo {
     pub name: String,
     pub version: String,

@@ -82,18 +82,18 @@ export interface ServerInfo {
  * MCP initialization request parameters
  */
 export interface InitializeRequest {
-  protocolVersion: string;
+  protocol_version: string;
   capabilities: ClientCapabilities;
-  clientInfo: ClientInfo;
+  client_info: ClientInfo;
 }
 
 /**
  * MCP initialization response
  */
 export interface InitializeResponse {
-  protocolVersion: string;
+  protocol_version: string;
   capabilities: ServerCapabilities;
-  serverInfo: ServerInfo;
+  server_info: ServerInfo;
 }
 
 /**

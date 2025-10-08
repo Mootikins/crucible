@@ -1,5 +1,5 @@
-use yrs::{Doc, Map, Text, Array, Transact};
 use crate::Result;
+use yrs::{Array, Doc, Map, Text, Transact};
 
 pub struct CrdtManager {
     doc: Doc,
@@ -7,9 +7,7 @@ pub struct CrdtManager {
 
 impl CrdtManager {
     pub fn new() -> Self {
-        Self {
-            doc: Doc::new(),
-        }
+        Self { doc: Doc::new() }
     }
 
     pub fn get_document(&self) -> &Doc {
@@ -42,4 +40,3 @@ impl Default for CrdtManager {
         Self::new()
     }
 }
-

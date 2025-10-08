@@ -11,10 +11,7 @@ pub enum ObsidianError {
 
     /// Server returned an error status
     #[error("HTTP {status}: {message}")]
-    HttpError {
-        status: u16,
-        message: String,
-    },
+    HttpError { status: u16, message: String },
 
     /// JSON serialization/deserialization failed
     #[error("JSON error: {0}")]

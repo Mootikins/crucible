@@ -195,6 +195,9 @@ export default class MCPPlugin extends Plugin {
     try {
       console.log("Starting MCP client...");
 
+      // Clean up any stuck MCP server processes before starting
+      await this.cleanupStuckMcpProcesses();
+
       this.mcpClient = new McpClient({
         serverPath: this.settings.mcp.serverPath,
         serverArgs: this.settings.mcp.serverArgs,
@@ -205,8 +208,8 @@ export default class MCPPlugin extends Plugin {
 
       // Set up event listeners
       this.mcpClient.on("initialized", (response: InitializeResponse) => {
-        console.log("MCP server initialized:", response.serverInfo);
-        new Notice(`MCP: Connected to ${response.serverInfo.name} v${response.serverInfo.version}`);
+        console.log("MCP server initialized:", response.server_info);
+        new Notice(`MCP: Connected to ${response.server_info.name} v${response.server_info.version}`);
       });
 
       this.mcpClient.on("error", (error: Error) => {
@@ -220,7 +223,7 @@ export default class MCPPlugin extends Plugin {
         this.mcpClient = null;
       });
 
-      // Start the client
+      // Start the client (now waits for ready notification internally)
       await this.mcpClient.start();
 
       // List available tools for debugging
@@ -260,6 +263,71 @@ export default class MCPPlugin extends Plugin {
 
     if (this.settings.mcp.enabled && this.settings.mcp.serverPath) {
       await this.startMcpClient();
+    }
+  }
+
+  /**
+   * Clean up any stuck MCP server processes
+   * This prevents database lock errors when restarting
+   */
+  async cleanupStuckMcpProcesses(): Promise<void> {
+    try {
+      const { exec } = require('child_process');
+      const util = require('util');
+      const execPromise = util.promisify(exec);
+
+      // Get the server executable name
+      const serverPath = this.settings.mcp.serverPath;
+      if (!serverPath) return;
+
+      const serverExe = serverPath.split(/[/\\]/).pop() || '';
+      if (!serverExe) return;
+
+      console.log(`Checking for stuck ${serverExe} processes...`);
+
+      // Platform-specific process cleanup
+      if (process.platform === 'win32') {
+        // Windows: tasklist and taskkill
+        try {
+          const { stdout } = await execPromise(`tasklist | findstr ${serverExe}`);
+          if (stdout && stdout.trim()) {
+            const lines = stdout.trim().split('\n');
+            console.log(`Found ${lines.length} stuck MCP process(es), cleaning up...`);
+
+            // Kill all found processes
+            await execPromise(`taskkill /F /IM ${serverExe}`);
+            console.log('Stuck processes cleaned up successfully');
+
+            // Wait a bit for processes to fully terminate
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        } catch (err) {
+          // No processes found or already cleaned up
+          console.log('No stuck processes found');
+        }
+      } else {
+        // Unix-like: pgrep and pkill
+        try {
+          const { stdout } = await execPromise(`pgrep -f ${serverExe}`);
+          if (stdout && stdout.trim()) {
+            const pids = stdout.trim().split('\n');
+            console.log(`Found ${pids.length} stuck MCP process(es), cleaning up...`);
+
+            // Kill all found processes
+            await execPromise(`pkill -9 -f ${serverExe}`);
+            console.log('Stuck processes cleaned up successfully');
+
+            // Wait a bit for processes to fully terminate
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        } catch (err) {
+          // No processes found or already cleaned up
+          console.log('No stuck processes found');
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to cleanup stuck processes:', error);
+      // Don't throw - this is a best-effort cleanup
     }
   }
 }
