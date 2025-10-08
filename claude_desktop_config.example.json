@@ -5,7 +5,25 @@
       "args": [],
       "env": {
         "RUST_LOG": "info",
-        "OBSIDIAN_VAULT_PATH": "C:/Users/Matthew/Documents/test-vault"
+        "OBSIDIAN_VAULT_PATH": "C:/Users/Matthew/Documents/test-vault",
+
+        "_comment_provider": "Embedding Provider: 'ollama' (default) or 'openai'",
+        "EMBEDDING_PROVIDER": "ollama",
+
+        "_comment_ollama": "Ollama Configuration (free, local, no API key needed)",
+        "EMBEDDING_ENDPOINT": "https://llama.terminal.krohnos.io",
+        "EMBEDDING_MODEL": "nomic-embed-text",
+
+        "_comment_openai": "OpenAI Configuration (requires API key - uncomment to use)",
+        "_EMBEDDING_PROVIDER": "openai",
+        "_EMBEDDING_ENDPOINT": "https://api.openai.com/v1",
+        "_EMBEDDING_API_KEY": "sk-your-api-key-here",
+        "_EMBEDDING_MODEL": "text-embedding-3-small",
+
+        "_comment_optional": "Optional: Customize timeouts and batch processing",
+        "EMBEDDING_TIMEOUT_SECS": "30",
+        "EMBEDDING_MAX_RETRIES": "3",
+        "EMBEDDING_BATCH_SIZE": "10"
       }
     }
   }

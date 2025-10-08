@@ -275,6 +275,7 @@ impl McpProtocolHandler {
 pub struct StdioMcpServer {
     protocol_handler: McpProtocolHandler,
     mcp_server: Option<crate::McpServer>,
+    embedding_provider: Option<std::sync::Arc<dyn crate::embeddings::EmbeddingProvider>>,
 }
 
 impl StdioMcpServer {
@@ -282,12 +283,18 @@ impl StdioMcpServer {
         Self {
             protocol_handler: McpProtocolHandler::new(server_name, server_version),
             mcp_server: None,
+            embedding_provider: None,
         }
     }
 
-    /// Initialize with MCP server instance
-    pub async fn initialize(&mut self, db_path: &str) -> Result<()> {
-        self.mcp_server = Some(crate::McpServer::new(db_path).await?);
+    /// Initialize with MCP server instance and embedding provider
+    pub async fn initialize(
+        &mut self,
+        db_path: &str,
+        provider: std::sync::Arc<dyn crate::embeddings::EmbeddingProvider>,
+    ) -> Result<()> {
+        self.embedding_provider = Some(provider.clone());
+        self.mcp_server = Some(crate::McpServer::new(db_path, provider).await?);
         Ok(())
     }
 

@@ -1,13 +1,16 @@
+mod test_helpers;
+
 use crucible_mcp::{types::ToolCallArgs, McpServer};
 use serde_json::json;
 use tempfile::tempdir;
+use test_helpers::create_test_provider;
 
 #[tokio::test]
 async fn test_server_initialization() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
 
-    let _server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let _server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // Test that server was created successfully
     assert!(true); // If we get here, initialization succeeded
@@ -56,7 +59,7 @@ async fn test_unknown_tool_error() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
 
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     let result = server
         .handle_tool_call("unknown_tool", json!({}))
@@ -123,7 +126,7 @@ async fn test_server_start() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
 
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // Test that start doesn't panic (even though it's a no-op for now)
     let result = server.start().await;
@@ -136,7 +139,7 @@ async fn test_server_start() {
 async fn test_search_by_properties_success() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // First add some data
     let index_args = json!({ "force": true });
@@ -162,7 +165,7 @@ async fn test_search_by_properties_success() {
 async fn test_search_by_properties_missing_args() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     let args = json!({});
 
@@ -179,7 +182,7 @@ async fn test_search_by_properties_missing_args() {
 async fn test_search_by_tags_success() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // First add some data
     let index_args = json!({ "force": true });
@@ -205,7 +208,7 @@ async fn test_search_by_tags_success() {
 async fn test_search_by_tags_missing_args() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     let args = json!({});
 
@@ -222,7 +225,7 @@ async fn test_search_by_tags_missing_args() {
 async fn test_search_by_folder_success() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // First add some data
     let index_args = json!({ "force": true });
@@ -249,7 +252,7 @@ async fn test_search_by_folder_success() {
 async fn test_search_by_folder_missing_args() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     let args = json!({});
 
@@ -266,7 +269,7 @@ async fn test_search_by_folder_missing_args() {
 async fn test_search_by_filename_success() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // First add some data
     let index_args = json!({ "force": true });
@@ -292,7 +295,7 @@ async fn test_search_by_filename_success() {
 async fn test_search_by_filename_missing_args() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     let args = json!({});
 
@@ -309,7 +312,7 @@ async fn test_search_by_filename_missing_args() {
 async fn test_search_by_content_success() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // First add some data
     let index_args = json!({ "force": true });
@@ -335,7 +338,7 @@ async fn test_search_by_content_success() {
 async fn test_search_by_content_missing_args() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     let args = json!({});
 
@@ -352,7 +355,7 @@ async fn test_search_by_content_missing_args() {
 async fn test_semantic_search_success() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // First add some data
     let index_args = json!({ "force": true });
@@ -379,7 +382,7 @@ async fn test_semantic_search_success() {
 async fn test_semantic_search_missing_args() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     let args = json!({});
 
@@ -396,7 +399,7 @@ async fn test_semantic_search_missing_args() {
 async fn test_index_vault_success() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     let args = json!({
         "force": true
@@ -417,7 +420,7 @@ async fn test_index_vault_success() {
 async fn test_index_vault_incremental() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // First index
     let args1 = json!({ "force": true });
@@ -451,7 +454,7 @@ async fn test_index_vault_incremental() {
 async fn test_get_note_metadata_success() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // First add some data
     let index_args = json!({ "force": true });
@@ -477,7 +480,7 @@ async fn test_get_note_metadata_success() {
 async fn test_get_note_metadata_missing() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     let args = json!({
         "path": "nonexistent.md"
@@ -496,7 +499,7 @@ async fn test_get_note_metadata_missing() {
 async fn test_get_note_metadata_missing_args() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     let args = json!({});
 
@@ -513,7 +516,7 @@ async fn test_get_note_metadata_missing_args() {
 async fn test_update_note_properties_success() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // First add some data
     let index_args = json!({ "force": true });
@@ -543,7 +546,7 @@ async fn test_update_note_properties_success() {
 async fn test_update_note_properties_missing_file() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     let args = json!({
         "path": "nonexistent.md",
@@ -565,7 +568,7 @@ async fn test_update_note_properties_missing_file() {
 async fn test_update_note_properties_missing_args() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     let args = json!({
         "path": "test.md"
@@ -584,7 +587,7 @@ async fn test_update_note_properties_missing_args() {
 async fn test_tool_call_with_invalid_json() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // This should fail during JSON parsing
     let result = server
@@ -597,7 +600,7 @@ async fn test_tool_call_with_invalid_json() {
 async fn test_all_tools_with_empty_database() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("server_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // Test all tools with empty database
     let tools = [

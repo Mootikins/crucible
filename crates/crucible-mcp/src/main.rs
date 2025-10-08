@@ -1,5 +1,5 @@
 // crates/crucible-mcp/src/main.rs
-use crucible_mcp::McpServer;
+use crucible_mcp::{EmbeddingConfig, McpServer, create_provider};
 use std::env;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
@@ -41,12 +41,32 @@ async fn main() -> anyhow::Result<()> {
     let crucible_dir = format!("{}/.crucible", vault_path);
     std::fs::create_dir_all(&crucible_dir)?;
 
+    // Load embedding configuration from environment
+    let embedding_config = EmbeddingConfig::from_env().map_err(|e| {
+        tracing::error!("Failed to load embedding configuration: {}", e);
+        anyhow::anyhow!("Failed to load embedding configuration: {}", e)
+    })?;
+
+    // Log the embedding configuration
+    tracing::info!("Loading embedding provider:");
+    tracing::info!("  Provider: {:?}", embedding_config.provider);
+    tracing::info!("  Model: {}", embedding_config.model);
+    tracing::info!("  Endpoint: {}", embedding_config.endpoint);
+
+    // Create the embedding provider
+    let provider = create_provider(embedding_config).await.map_err(|e| {
+        tracing::error!("Failed to create embedding provider: {}", e);
+        anyhow::anyhow!("Failed to create embedding provider: {}", e)
+    })?;
+
+    tracing::info!("Embedding provider initialized successfully");
+
     tracing::info!("Starting MCP server");
     tracing::info!("  Vault path: {}", vault_path);
     tracing::info!("  Database: {}", db_path);
 
-    // Start the MCP server over stdio
-    McpServer::start_stdio(&db_path).await?;
+    // Start the MCP server over stdio with the embedding provider
+    McpServer::start_stdio(&db_path, provider).await?;
 
     Ok(())
 }
