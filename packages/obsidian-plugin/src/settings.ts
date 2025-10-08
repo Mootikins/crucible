@@ -187,7 +187,7 @@ export class SettingsTab extends PluginSettingTab {
         .setName("Connection Status")
         .setDesc(
           this.plugin.mcpClient?.isReady()
-            ? `Connected to ${this.plugin.mcpClient.getServerInfo()?.serverInfo.name || "server"}`
+            ? `Connected to ${this.plugin.mcpClient.getServerInfo()?.server_info.name || "server"}`
             : "Not connected"
         );
 

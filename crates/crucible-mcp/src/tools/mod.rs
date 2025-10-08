@@ -36,10 +36,7 @@ pub async fn search_by_properties(
 }
 
 /// Search notes by tags
-pub async fn search_by_tags(
-    db: &EmbeddingDatabase,
-    args: &ToolCallArgs,
-) -> Result<ToolCallResult> {
+pub async fn search_by_tags(db: &EmbeddingDatabase, args: &ToolCallArgs) -> Result<ToolCallResult> {
     let tags = match args.tags.as_ref() {
         Some(tags) => tags,
         None => {
@@ -124,7 +121,7 @@ pub async fn search_by_filename(
             });
         }
     };
-    
+
     match db.list_files().await {
         Ok(all_files) => {
             let filtered_files: Vec<String> = all_files
@@ -173,7 +170,7 @@ pub async fn search_by_content(
             });
         }
     };
-    
+
     match db.list_files().await {
         Ok(all_files) => {
             let mut results = Vec::new();
@@ -181,7 +178,11 @@ pub async fn search_by_content(
             for file_path in all_files {
                 match db.get_embedding(&file_path).await {
                     Ok(Some(embedding_data)) => {
-                        if embedding_data.content.to_lowercase().contains(&query.to_lowercase()) {
+                        if embedding_data
+                            .content
+                            .to_lowercase()
+                            .contains(&query.to_lowercase())
+                        {
                             results.push(serde_json::json!({
                                 "file_path": file_path,
                                 "content": embedding_data.content,
@@ -250,16 +251,11 @@ pub async fn semantic_search(
 }
 
 /// Generate embeddings for all vault notes
-pub async fn index_vault(
-    db: &EmbeddingDatabase,
-    args: &ToolCallArgs,
-) -> Result<ToolCallResult> {
+pub async fn index_vault(db: &EmbeddingDatabase, args: &ToolCallArgs) -> Result<ToolCallResult> {
     let force = args.force.unwrap_or(false);
 
     // Create some dummy files for testing
-    let dummy_files = vec![
-        "file0.md", "file1.md", "file2.md", "file3.md", "file4.md"
-    ];
+    let dummy_files = vec!["file0.md", "file1.md", "file2.md", "file3.md", "file4.md"];
 
     let mut indexed_count = 0;
     let mut errors = Vec::new();
@@ -288,7 +284,10 @@ pub async fn index_vault(
                 };
 
                 // Store embedding
-                match db.store_embedding(file_path, &dummy_content, &dummy_embedding, &metadata).await {
+                match db
+                    .store_embedding(file_path, &dummy_content, &dummy_embedding, &metadata)
+                    .await
+                {
                     Ok(_) => indexed_count += 1,
                     Err(e) => errors.push(format!("Failed to index {}: {}", file_path, e)),
                 }
@@ -330,7 +329,7 @@ pub async fn get_note_metadata(
             });
         }
     };
-    
+
     match db.get_embedding(path).await {
         Ok(Some(embedding_data)) => Ok(ToolCallResult {
             success: true,
@@ -376,17 +375,28 @@ pub async fn update_note_properties(
             });
         }
     };
-    
+
     match db.get_embedding(path).await {
         Ok(Some(mut embedding_data)) => {
             // Update properties in metadata
             for (key, value) in properties {
-                embedding_data.metadata.properties.insert(key.clone(), value.clone());
+                embedding_data
+                    .metadata
+                    .properties
+                    .insert(key.clone(), value.clone());
             }
             embedding_data.metadata.updated_at = chrono::Utc::now();
 
             // Store updated embedding
-            match db.store_embedding(path, &embedding_data.content, &embedding_data.embedding, &embedding_data.metadata).await {
+            match db
+                .store_embedding(
+                    path,
+                    &embedding_data.content,
+                    &embedding_data.embedding,
+                    &embedding_data.metadata,
+                )
+                .await
+            {
                 Ok(_) => Ok(ToolCallResult {
                     success: true,
                     data: Some(serde_json::json!({ "success": true })),
@@ -413,10 +423,7 @@ pub async fn update_note_properties(
 }
 
 /// Index a Crucible document
-pub async fn index_document(
-    db: &EmbeddingDatabase,
-    args: &ToolCallArgs,
-) -> Result<ToolCallResult> {
+pub async fn index_document(db: &EmbeddingDatabase, args: &ToolCallArgs) -> Result<ToolCallResult> {
     // Parse document from arguments
     let document_value = match args.properties.as_ref().and_then(|p| p.get("document")) {
         Some(doc) => doc,
@@ -431,13 +438,16 @@ pub async fn index_document(
 
     // In a real implementation, you would deserialize this to a DocumentNode
     // For now, we'll work with the JSON directly
-    let title = document_value.get("title")
+    let title = document_value
+        .get("title")
         .and_then(|t| t.as_str())
         .unwrap_or("Untitled");
-    let content = document_value.get("content")
+    let content = document_value
+        .get("content")
         .and_then(|c| c.as_str())
         .unwrap_or("");
-    let id = document_value.get("id")
+    let id = document_value
+        .get("id")
         .and_then(|i| i.as_str())
         .unwrap_or("unknown");
 
@@ -452,15 +462,24 @@ pub async fn index_document(
         folder: "documents".to_string(),
         properties: {
             let mut props = HashMap::new();
-            props.insert("document_id".to_string(), serde_json::Value::String(id.to_string()));
-            props.insert("type".to_string(), serde_json::Value::String("crucible_document".to_string()));
+            props.insert(
+                "document_id".to_string(),
+                serde_json::Value::String(id.to_string()),
+            );
+            props.insert(
+                "type".to_string(),
+                serde_json::Value::String("crucible_document".to_string()),
+            );
             props
         },
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     };
 
-    match db.store_embedding(&file_path, &full_content, &embedding, &metadata).await {
+    match db
+        .store_embedding(&file_path, &full_content, &embedding, &metadata)
+        .await
+    {
         Ok(_) => Ok(ToolCallResult {
             success: true,
             data: Some(serde_json::json!({
@@ -501,13 +520,15 @@ pub async fn search_documents(
         Ok(results) => {
             let documents: Vec<serde_json::Value> = results
                 .into_iter()
-                .map(|result| serde_json::json!({
-                    "file_path": result.id,
-                    "title": result.title,
-                    "content": result.content,
-                    "score": result.score,
-                    "type": "document"
-                }))
+                .map(|result| {
+                    serde_json::json!({
+                        "file_path": result.id,
+                        "title": result.title,
+                        "content": result.content,
+                        "score": result.score,
+                        "type": "document"
+                    })
+                })
                 .collect();
 
             Ok(ToolCallResult {
@@ -557,7 +578,12 @@ pub async fn update_document_properties(
     db: &EmbeddingDatabase,
     args: &ToolCallArgs,
 ) -> Result<ToolCallResult> {
-    let document_id = match args.properties.as_ref().and_then(|p| p.get("document_id")).and_then(|id| id.as_str()) {
+    let document_id = match args
+        .properties
+        .as_ref()
+        .and_then(|p| p.get("document_id"))
+        .and_then(|id| id.as_str())
+    {
         Some(id) => id,
         None => {
             return Ok(ToolCallResult {
@@ -568,7 +594,12 @@ pub async fn update_document_properties(
         }
     };
 
-    let properties = match args.properties.as_ref().and_then(|p| p.get("properties")).and_then(|props| props.as_object()) {
+    let properties = match args
+        .properties
+        .as_ref()
+        .and_then(|p| p.get("properties"))
+        .and_then(|props| props.as_object())
+    {
         Some(props) => props,
         None => {
             return Ok(ToolCallResult {
@@ -585,11 +616,22 @@ pub async fn update_document_properties(
         Ok(Some(mut embedding_data)) => {
             // Update properties in metadata
             for (key, value) in properties {
-                embedding_data.metadata.properties.insert(key.clone(), value.clone());
+                embedding_data
+                    .metadata
+                    .properties
+                    .insert(key.clone(), value.clone());
             }
             embedding_data.metadata.updated_at = chrono::Utc::now();
 
-            match db.store_embedding(&file_path, &embedding_data.content, &embedding_data.embedding, &embedding_data.metadata).await {
+            match db
+                .store_embedding(
+                    &file_path,
+                    &embedding_data.content,
+                    &embedding_data.embedding,
+                    &embedding_data.metadata,
+                )
+                .await
+            {
                 Ok(_) => Ok(ToolCallResult {
                     success: true,
                     data: Some(serde_json::json!({

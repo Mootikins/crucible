@@ -19,6 +19,7 @@ pub struct JsonRpcRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcResponse {
     pub jsonrpc: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<Value>,
@@ -52,17 +53,25 @@ impl McpProtocolHandler {
 
     /// Handle incoming JSON-RPC message
     pub async fn handle_message(&mut self, message: &str) -> Result<Option<String>> {
-        debug!("Received message: {}", message);
+        info!("Received message: {}", message);
 
-        // Try to parse as request first
-        if let Ok(request) = serde_json::from_str::<JsonRpcRequest>(message) {
-            return self.handle_request(request).await;
-        }
+        // Parse as generic JSON first to check for 'id' field
+        let json: Value = serde_json::from_str(message)?;
 
-        // Try to parse as notification
-        if let Ok(notification) = serde_json::from_str::<JsonRpcNotification>(message) {
-            self.handle_notification(notification).await;
-            return Ok(None); // Notifications don't require responses
+        // If it has an 'id' field, it's a request or response
+        if json.get("id").is_some() {
+            if let Ok(request) = serde_json::from_str::<JsonRpcRequest>(message) {
+                info!("Parsed as request: method={}", request.method);
+                return self.handle_request(request).await;
+            }
+        } else {
+            // No 'id' field means it's a notification
+            if let Ok(notification) = serde_json::from_str::<JsonRpcNotification>(message) {
+                info!("Parsed as notification: method={}", notification.method);
+                let response = self.handle_notification(notification).await;
+                info!("Notification handler returned: {:?}", response.is_some());
+                return Ok(response); // Some notifications may send responses
+            }
         }
 
         Err(anyhow!("Invalid JSON-RPC message format"))
@@ -74,6 +83,8 @@ impl McpProtocolHandler {
             "initialize" => self.handle_initialize(request.id, request.params).await?,
             "tools/list" => self.handle_list_tools(request.id).await?,
             "tools/call" => self.handle_call_tool(request.id, request.params).await?,
+            "prompts/list" => self.handle_list_prompts(request.id).await?,
+            "resources/list" => self.handle_list_resources(request.id).await?,
             _ => {
                 // Unknown method
                 JsonRpcResponse {
@@ -93,17 +104,21 @@ impl McpProtocolHandler {
     }
 
     /// Handle JSON-RPC notification
-    async fn handle_notification(&mut self, notification: JsonRpcNotification) {
+    async fn handle_notification(&mut self, notification: JsonRpcNotification) -> Option<String> {
+        info!("Received notification: method={}", notification.method);
         match notification.method.as_str() {
-            "initialized" => {
+            "initialized" | "notifications/initialized" => {
                 info!("Client confirmed initialization");
                 self.initialized = true;
+                None // MCP spec says initialized notification gets no response
             }
             "notifications/cancelled" => {
                 debug!("Request cancelled: {:?}", notification.params);
+                None
             }
             _ => {
                 warn!("Unknown notification method: {}", notification.method);
+                None
             }
         }
     }
@@ -114,6 +129,7 @@ impl McpProtocolHandler {
         id: Option<Value>,
         params: Option<Value>,
     ) -> Result<JsonRpcResponse> {
+        info!("Handling initialize request");
         let _init_request: InitializeRequest = if let Some(params) = params {
             serde_json::from_value(params)?
         } else {
@@ -142,17 +158,21 @@ impl McpProtocolHandler {
             },
         };
 
-        Ok(JsonRpcResponse {
+        let json_response = JsonRpcResponse {
             jsonrpc: "2.0".to_string(),
             id,
             result: Some(serde_json::to_value(response)?),
             error: None,
-        })
+        };
+
+        info!("Returning initialize response: {:?}", json_response.id);
+        Ok(json_response)
     }
 
     /// Handle list tools request
     async fn handle_list_tools(&self, id: Option<Value>) -> Result<JsonRpcResponse> {
         if !self.initialized {
+            warn!("tools/list called before initialization");
             return Ok(JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 id,
@@ -166,6 +186,7 @@ impl McpProtocolHandler {
         }
 
         let tools = crate::McpServer::get_tools();
+        info!("Returning {} tools", tools.len());
         let response = ListToolsResponse { tools };
 
         Ok(JsonRpcResponse {
@@ -223,6 +244,28 @@ impl McpProtocolHandler {
             jsonrpc: "2.0".to_string(),
             id,
             result: Some(serde_json::to_value(response)?),
+            error: None,
+        })
+    }
+
+    /// Handle list prompts request
+    async fn handle_list_prompts(&self, id: Option<Value>) -> Result<JsonRpcResponse> {
+        // Return empty prompts list (not implemented yet)
+        Ok(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(json!({ "prompts": [] })),
+            error: None,
+        })
+    }
+
+    /// Handle list resources request
+    async fn handle_list_resources(&self, id: Option<Value>) -> Result<JsonRpcResponse> {
+        // Return empty resources list (not implemented yet)
+        Ok(JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            id,
+            result: Some(json!({ "resources": [] })),
             error: None,
         })
     }

@@ -76,16 +76,49 @@ export class McpClient extends EventEmitter {
 
   private async initialize(): Promise<InitializeResponse> {
     const params: InitializeRequest = {
-      protocolVersion: "2024-11-05",
+      protocol_version: "2024-11-05",
       capabilities: {},
-      clientInfo: {
+      client_info: {
         name: this.config.clientName,
         version: this.config.clientVersion,
       },
     };
     const response = await this.sendRequest<InitializeResponse>("initialize", params);
+
+    if (this.config.debug) {
+      console.log("[McpClient] Initialize response received, sending initialized notification");
+    }
+
+    // Send initialized notification and wait for server ready confirmation
     await this.sendNotification("initialized");
+
+    if (this.config.debug) {
+      console.log("[McpClient] Initialized notification sent, waiting for ready...");
+    }
+
+    await this.waitForReady();
+
+    if (this.config.debug) {
+      console.log("[McpClient] Ready notification received!");
+    }
+
     return response;
+  }
+
+  private async waitForReady(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.removeListener("ready", readyHandler);
+        reject(new Error("Timeout waiting for server ready notification"));
+      }, 5000);
+
+      const readyHandler = () => {
+        clearTimeout(timeout);
+        resolve();
+      };
+
+      this.once("ready", readyHandler);
+    });
   }
 
   private async sendRequest<T>(method: string, params?: any): Promise<T> {
@@ -122,6 +155,19 @@ export class McpClient extends EventEmitter {
     }
   }
 
+  private handleNotification(notification: JsonRpcNotification): void {
+    if (this.config.debug) {
+      console.log("[McpClient] Received notification:", notification.method);
+    }
+
+    // Emit notification as event
+    if (notification.method === "notifications/ready") {
+      this.emit("ready");
+    } else {
+      this.emit("notification", notification);
+    }
+  }
+
   private handleStdout(data: Buffer): void {
     this.buffer += data.toString();
     let idx: number;
@@ -131,7 +177,12 @@ export class McpClient extends EventEmitter {
       if (line) {
         try {
           const parsed = JSON.parse(line);
-          if ("id" in parsed) this.handleResponse(parsed);
+          if ("id" in parsed) {
+            this.handleResponse(parsed);
+          } else if ("method" in parsed) {
+            // Handle server notifications
+            this.handleNotification(parsed);
+          }
         } catch (e) {
           if (this.config.debug) console.log("[McpClient] Parse error:", e);
         }

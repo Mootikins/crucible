@@ -1,19 +1,20 @@
 // crates/crucible-mcp/src/lib.rs
-pub mod tools;
-pub mod types;
 pub mod database;
-pub mod protocol;
+pub mod embeddings;
 pub mod integration;
 pub mod obsidian_client;
+pub mod protocol;
+pub mod tools;
+pub mod types;
 
 use anyhow::Result;
 use database::EmbeddingDatabase;
 use serde_json::Value;
 
 // Re-export important types for external use
-pub use protocol::{StdioMcpServer, McpProtocolHandler};
-pub use types::*;
 pub use integration::*;
+pub use protocol::{McpProtocolHandler, StdioMcpServer};
+pub use types::*;
 
 pub struct McpServer {
     database: EmbeddingDatabase,
@@ -22,7 +23,7 @@ pub struct McpServer {
 impl McpServer {
     pub async fn new(db_path: &str) -> Result<Self> {
         let database = EmbeddingDatabase::new(db_path).await?;
-        
+
         Ok(Self { database })
     }
 
@@ -216,52 +217,26 @@ impl McpServer {
         let args: ToolCallArgs = serde_json::from_value(arguments)?;
 
         match name {
-            "search_by_properties" => {
-                tools::search_by_properties(&self.database, &args).await
-            }
-            "search_by_tags" => {
-                tools::search_by_tags(&self.database, &args).await
-            }
-            "search_by_folder" => {
-                tools::search_by_folder(&self.database, &args).await
-            }
-            "search_by_filename" => {
-                tools::search_by_filename(&self.database, &args).await
-            }
-            "search_by_content" => {
-                tools::search_by_content(&self.database, &args).await
-            }
-            "semantic_search" => {
-                tools::semantic_search(&self.database, &args).await
-            }
-            "index_vault" => {
-                tools::index_vault(&self.database, &args).await
-            }
-            "get_note_metadata" => {
-                tools::get_note_metadata(&self.database, &args).await
-            }
-            "update_note_properties" => {
-                tools::update_note_properties(&self.database, &args).await
-            }
-            "index_document" => {
-                tools::index_document(&self.database, &args).await
-            }
-            "search_documents" => {
-                tools::search_documents(&self.database, &args).await
-            }
-            "get_document_stats" => {
-                tools::get_document_stats(&self.database, &args).await
-            }
+            "search_by_properties" => tools::search_by_properties(&self.database, &args).await,
+            "search_by_tags" => tools::search_by_tags(&self.database, &args).await,
+            "search_by_folder" => tools::search_by_folder(&self.database, &args).await,
+            "search_by_filename" => tools::search_by_filename(&self.database, &args).await,
+            "search_by_content" => tools::search_by_content(&self.database, &args).await,
+            "semantic_search" => tools::semantic_search(&self.database, &args).await,
+            "index_vault" => tools::index_vault(&self.database, &args).await,
+            "get_note_metadata" => tools::get_note_metadata(&self.database, &args).await,
+            "update_note_properties" => tools::update_note_properties(&self.database, &args).await,
+            "index_document" => tools::index_document(&self.database, &args).await,
+            "search_documents" => tools::search_documents(&self.database, &args).await,
+            "get_document_stats" => tools::get_document_stats(&self.database, &args).await,
             "update_document_properties" => {
                 tools::update_document_properties(&self.database, &args).await
             }
-            _ => {
-                Ok(ToolCallResult {
-                    success: false,
-                    data: None,
-                    error: Some(format!("Unknown tool: {}", name)),
-                })
-            }
+            _ => Ok(ToolCallResult {
+                success: false,
+                data: None,
+                error: Some(format!("Unknown tool: {}", name)),
+            }),
         }
     }
 
@@ -274,10 +249,7 @@ impl McpServer {
 
     /// Start the MCP server over stdio with full protocol support
     pub async fn start_stdio(db_path: &str) -> Result<()> {
-        let mut stdio_server = StdioMcpServer::new(
-            "crucible-mcp".to_string(),
-            "0.1.0".to_string(),
-        );
+        let mut stdio_server = StdioMcpServer::new("crucible-mcp".to_string(), "0.1.0".to_string());
 
         stdio_server.initialize(db_path).await?;
         stdio_server.run_stdio().await?;
@@ -285,4 +257,3 @@ impl McpServer {
         Ok(())
     }
 }
-

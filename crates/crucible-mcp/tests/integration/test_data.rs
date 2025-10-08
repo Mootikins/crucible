@@ -21,7 +21,11 @@ impl TestFileBuilder {
     pub fn new(path: &str) -> Self {
         let parts: Vec<&str> = path.rsplitn(2, '/').collect();
         let name = parts[0].to_string();
-        let folder = if parts.len() > 1 { parts[1].to_string() } else { String::new() };
+        let folder = if parts.len() > 1 {
+            parts[1].to_string()
+        } else {
+            String::new()
+        };
         let extension = name.split('.').last().unwrap_or("md").to_string();
 
         Self {
@@ -30,7 +34,7 @@ impl TestFileBuilder {
             folder,
             extension,
             size: 1024,
-            created: 1704067200000, // 2024-01-01
+            created: 1704067200000,  // 2024-01-01
             modified: 1704153600000, // 2024-01-02
             tags: vec![],
             properties: HashMap::new(),
@@ -104,17 +108,23 @@ Sample content for testing.",
 
     fn build_frontmatter(&self) -> String {
         let mut fm = String::new();
-        
+
         for (key, value) in &self.properties {
-            fm.push_str(&format!("{}: {}
-", key, value));
+            fm.push_str(&format!(
+                "{}: {}
+",
+                key, value
+            ));
         }
-        
+
         if !self.tags.is_empty() {
-            fm.push_str(&format!("tags: [{}]
-", self.tags.join(", ")));
+            fm.push_str(&format!(
+                "tags: [{}]
+",
+                self.tags.join(", ")
+            ));
         }
-        
+
         fm
     }
 }
@@ -130,26 +140,26 @@ impl TestFixtures {
                 .with_tags(vec!["project", "active"])
                 .with_property("status", json!("in-progress"))
                 .with_property("priority", json!("high"))
-                .with_content("# Project Alpha
+                .with_content(
+                    "# Project Alpha
 
-AI research project focusing on neural networks."),
-            
+AI research project focusing on neural networks.",
+                ),
             TestFileBuilder::new("projects/project-beta.md")
                 .with_tags(vec!["project", "completed"])
                 .with_property("status", json!("completed"))
                 .with_property("priority", json!("medium")),
-            
             TestFileBuilder::new("daily/2024-01-01.md")
                 .with_tags(vec!["daily", "journal"])
                 .with_property("mood", json!("productive")),
-            
             TestFileBuilder::new("notes/machine-learning.md")
                 .with_tags(vec!["ai", "research"])
                 .with_property("topic", json!("ml"))
-                .with_content("# Machine Learning
+                .with_content(
+                    "# Machine Learning
 
-Deep learning and neural networks overview."),
-            
+Deep learning and neural networks overview.",
+                ),
             TestFileBuilder::new("notes/productivity.md")
                 .with_tags(vec!["productivity", "self-improvement"])
                 .with_property("topic", json!("productivity")),
@@ -163,7 +173,6 @@ Deep learning and neural networks overview."),
                 .with_tags(vec!["ai", "research"])
                 .with_property("category", json!("research"))
                 .with_content("Artificial intelligence and machine learning research."),
-            
             TestFileBuilder::new("search/productivity-tips.md")
                 .with_tags(vec!["productivity"])
                 .with_property("category", json!("tips"))
@@ -207,7 +216,7 @@ mod tests {
         let file = TestFileBuilder::new("test/file.md")
             .with_tags(vec!["test"])
             .with_property("key", json!("value"));
-        
+
         assert_eq!(file.path, "test/file.md");
         assert_eq!(file.folder, "test");
         assert_eq!(file.name, "file.md");

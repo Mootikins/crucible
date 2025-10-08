@@ -17,8 +17,11 @@ impl PluginManager {
         self.runtime.load_script(path).await
     }
 
-    pub async fn execute_command(&self, command: &str, args: serde_json::Value) -> Result<serde_json::Value> {
+    pub async fn execute_command(
+        &self,
+        command: &str,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value> {
         self.runtime.execute_command(command, args).await
     }
 }
-

@@ -1,6 +1,6 @@
 //! Mock Obsidian HTTP server for integration testing
 
-use mockito::{Server, Mock, ServerGuard, Matcher};
+use mockito::{Matcher, Mock, Server, ServerGuard};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -51,7 +51,10 @@ impl MockObsidianServer {
     pub fn setup_get_metadata_mock(&mut self, path: &str, metadata: serde_json::Value) -> Mock {
         let encoded_path = urlencoding::encode(path);
         self.server
-            .mock("GET", format!("/api/file/{}/metadata", encoded_path).as_str())
+            .mock(
+                "GET",
+                format!("/api/file/{}/metadata", encoded_path).as_str(),
+            )
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(metadata.to_string())
@@ -61,16 +64,23 @@ impl MockObsidianServer {
     pub fn setup_update_properties_mock(&mut self, path: &str, success: bool) -> Mock {
         let encoded_path = urlencoding::encode(path);
         self.server
-            .mock("PUT", format!("/api/file/{}/properties", encoded_path).as_str())
+            .mock(
+                "PUT",
+                format!("/api/file/{}/properties", encoded_path).as_str(),
+            )
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(json!({ "success": success }).to_string())
             .create()
     }
 
-    pub fn setup_search_by_tags_mock(&mut self, tags: &[&str], files: Vec<serde_json::Value>) -> Mock {
+    pub fn setup_search_by_tags_mock(
+        &mut self,
+        tags: &[&str],
+        files: Vec<serde_json::Value>,
+    ) -> Mock {
         let tags_param = tags.join(",");
-        
+
         self.server
             .mock("GET", "/api/search/tags")
             .match_query(Matcher::UrlEncoded("tags".into(), tags_param))
@@ -80,7 +90,11 @@ impl MockObsidianServer {
             .create()
     }
 
-    pub fn setup_search_by_properties_mock(&mut self, properties: HashMap<String, serde_json::Value>, files: Vec<serde_json::Value>) -> Mock {
+    pub fn setup_search_by_properties_mock(
+        &mut self,
+        properties: HashMap<String, serde_json::Value>,
+        files: Vec<serde_json::Value>,
+    ) -> Mock {
         let mut query_params = vec![];
         for (key, value) in properties.iter() {
             let value_string = if let Some(s) = value.as_str() {
@@ -88,9 +102,12 @@ impl MockObsidianServer {
             } else {
                 value.to_string().trim_matches('"').to_string()
             };
-            query_params.push(Matcher::UrlEncoded(format!("properties[{}]", key), value_string));
+            query_params.push(Matcher::UrlEncoded(
+                format!("properties[{}]", key),
+                value_string,
+            ));
         }
-        
+
         self.server
             .mock("GET", "/api/search/properties")
             .match_query(Matcher::AllOf(query_params))
@@ -100,7 +117,12 @@ impl MockObsidianServer {
             .create()
     }
 
-    pub fn setup_search_by_folder_mock(&mut self, folder: &str, recursive: bool, files: Vec<serde_json::Value>) -> Mock {
+    pub fn setup_search_by_folder_mock(
+        &mut self,
+        folder: &str,
+        recursive: bool,
+        files: Vec<serde_json::Value>,
+    ) -> Mock {
         self.server
             .mock("GET", "/api/search/folder")
             .match_query(Matcher::AllOf(vec![
@@ -113,7 +135,11 @@ impl MockObsidianServer {
             .create()
     }
 
-    pub fn setup_search_by_content_mock(&mut self, query: &str, files: Vec<serde_json::Value>) -> Mock {
+    pub fn setup_search_by_content_mock(
+        &mut self,
+        query: &str,
+        files: Vec<serde_json::Value>,
+    ) -> Mock {
         self.server
             .mock("GET", "/api/search/content")
             .match_query(Matcher::UrlEncoded("query".into(), query.to_string()))
