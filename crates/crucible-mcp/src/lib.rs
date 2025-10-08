@@ -1,11 +1,19 @@
+// crates/crucible-mcp/src/lib.rs
 pub mod tools;
 pub mod types;
 pub mod database;
+pub mod protocol;
+pub mod integration;
+pub mod obsidian_client;
 
 use anyhow::Result;
 use database::EmbeddingDatabase;
-use types::{McpTool, ToolCallArgs, ToolCallResult};
 use serde_json::Value;
+
+// Re-export important types for external use
+pub use protocol::{StdioMcpServer, McpProtocolHandler};
+pub use types::*;
+pub use integration::*;
 
 pub struct McpServer {
     database: EmbeddingDatabase,
@@ -147,6 +155,59 @@ impl McpServer {
                     "required": ["path", "properties"]
                 }),
             },
+            McpTool {
+                name: "index_document".to_string(),
+                description: "Index a Crucible document for search".to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "document": {
+                            "type": "object",
+                            "description": "Document to index"
+                        }
+                    },
+                    "required": ["document"]
+                }),
+            },
+            McpTool {
+                name: "search_documents".to_string(),
+                description: "Search indexed Crucible documents".to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query"},
+                        "top_k": {
+                            "type": "integer",
+                            "description": "Number of results",
+                            "default": 10
+                        }
+                    },
+                    "required": ["query"]
+                }),
+            },
+            McpTool {
+                name: "get_document_stats".to_string(),
+                description: "Get statistics about indexed documents".to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
+            McpTool {
+                name: "update_document_properties".to_string(),
+                description: "Update properties of a Crucible document".to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "document_id": {"type": "string", "description": "Document ID"},
+                        "properties": {
+                            "type": "object",
+                            "description": "Properties to update"
+                        }
+                    },
+                    "required": ["document_id", "properties"]
+                }),
+            },
         ]
     }
 
@@ -182,6 +243,18 @@ impl McpServer {
             "update_note_properties" => {
                 tools::update_note_properties(&self.database, &args).await
             }
+            "index_document" => {
+                tools::index_document(&self.database, &args).await
+            }
+            "search_documents" => {
+                tools::search_documents(&self.database, &args).await
+            }
+            "get_document_stats" => {
+                tools::get_document_stats(&self.database, &args).await
+            }
+            "update_document_properties" => {
+                tools::update_document_properties(&self.database, &args).await
+            }
             _ => {
                 Ok(ToolCallResult {
                     success: false,
@@ -195,19 +268,20 @@ impl McpServer {
     /// Start the MCP server
     pub async fn start(&self) -> Result<()> {
         tracing::info!("MCP Server started with {} tools", Self::get_tools().len());
-        
-        // TODO: Implement full MCP protocol communication over stdio
-        // This would involve:
-        // 1. Setting up stdio streams for reading/writing JSON-RPC messages
-        // 2. Handling MCP protocol messages (initialize, list_tools, call_tool)
-        // 3. Processing tool calls and returning results
-        // 4. Error handling and logging
-        
-        // For now, just log that the server is ready
         tracing::info!("MCP Server ready for tool calls");
-        
-        // In a real implementation, this would be an infinite loop
-        // that processes stdio input/output
+        Ok(())
+    }
+
+    /// Start the MCP server over stdio with full protocol support
+    pub async fn start_stdio(db_path: &str) -> Result<()> {
+        let mut stdio_server = StdioMcpServer::new(
+            "crucible-mcp".to_string(),
+            "0.1.0".to_string(),
+        );
+
+        stdio_server.initialize(db_path).await?;
+        stdio_server.run_stdio().await?;
+
         Ok(())
     }
 }
