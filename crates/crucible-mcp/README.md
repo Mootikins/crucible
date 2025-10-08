@@ -1,8 +1,17 @@
 # Crucible MCP Server
 
-A Model Context Protocol (MCP) server for the Crucible knowledge management system. This server provides AI agents with tools to search, index, and manage documents and embeddings in a DuckDB database.
+A Model Context Protocol (MCP) server for the Crucible knowledge management system. This server provides AI agents with tools to search, index, and manage documents using real embeddings from Ollama or OpenAI providers.
+
+> **✨ Now with real embeddings!** Choose between Ollama (free, local) or OpenAI for semantic search capabilities.
 
 ## Features
+
+### 🤖 Embedding Providers
+- **Ollama Provider** - Free, local, privacy-preserving (nomic-embed-text, 768 dims)
+- **OpenAI Provider** - Cloud-based, high-quality (text-embedding-3-small, 1536 dims)
+- **Provider Abstraction** - Easy to add new providers (Cohere, Azure, Hugging Face, etc.)
+- **Batch Processing** - Efficient bulk embedding generation
+- **Retry Logic** - Automatic exponential backoff on failures
 
 ### Core MCP Tools
 - **search_by_properties** - Search notes by frontmatter properties
@@ -10,23 +19,32 @@ A Model Context Protocol (MCP) server for the Crucible knowledge management syst
 - **search_by_folder** - Search notes in specific folders
 - **search_by_filename** - Search notes by filename patterns
 - **search_by_content** - Full-text search in note contents
-- **semantic_search** - Vector similarity search using embeddings
-- **index_vault** - Generate embeddings for vault notes
+- **semantic_search** 🔥 - Vector similarity search using real embeddings
+- **index_vault** 🔥 - Generate real embeddings for vault notes
 - **get_note_metadata** - Get metadata for specific notes
 - **update_note_properties** - Update note frontmatter properties
 
 ### Crucible Integration Tools
-- **index_document** - Index Crucible documents for search
-- **search_documents** - Search indexed Crucible documents
+- **index_document** 🔥 - Index Crucible documents with real embeddings
+- **search_documents** 🔥 - Semantic search across indexed documents
 - **get_document_stats** - Get statistics about indexed documents
 - **update_document_properties** - Update Crucible document properties
 
+🔥 = Uses real embeddings from configured provider
+
 ## Architecture
+
+### Embedding Layer 🆕
+- **Provider Abstraction** - Trait-based design for multiple backends
+- **Ollama Support** - Local, free embedding generation
+- **OpenAI Support** - Cloud-based premium embeddings
+- **Configuration** - Environment-based provider selection
+- **Error Handling** - Comprehensive retry and fallback logic
 
 ### Database Layer
 - **DuckDB** - High-performance analytical database with vector operations
 - **VSS Extension** - Vector similarity search capabilities
-- **JSON Storage** - Flexible metadata and embedding storage
+- **JSON Storage** - Flexible metadata and embedding storage (variable dimensions)
 
 ### Protocol Layer
 - **JSON-RPC 2.0** - Standard protocol for MCP communication
@@ -43,22 +61,26 @@ A Model Context Protocol (MCP) server for the Crucible knowledge management syst
 ### As a Library
 
 ```rust
-use crucible_mcp::{McpServer, StdioMcpServer};
+use crucible_mcp::{McpServer, EmbeddingConfig, create_provider};
 
-// Create a server instance
-let server = McpServer::new("crucible.db").await?;
+// Create embedding provider (Ollama by default)
+let config = EmbeddingConfig::default();
+let provider = create_provider(config).await?;
+
+// Create a server instance with provider
+let server = McpServer::new("crucible.db", provider.clone()).await?;
 
 // Handle tool calls
 let result = server.handle_tool_call(
-    "semantic_search", 
+    "semantic_search",
     serde_json::json!({
         "query": "machine learning",
         "top_k": 5
     })
 ).await?;
 
-// Start stdio MCP server
-McpServer::start_stdio("crucible.db").await?;
+// Start stdio MCP server with provider
+McpServer::start_stdio("crucible.db", provider).await?;
 ```
 
 ### As a Standalone Binary

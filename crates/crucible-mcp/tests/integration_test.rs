@@ -1,12 +1,15 @@
+mod test_helpers;
+
 use crucible_mcp::McpServer;
 use serde_json::json;
 use tempfile::tempdir;
+use test_helpers::create_test_provider;
 
 #[tokio::test]
 async fn test_full_indexing_and_search_flow() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("integration_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // Step 1: Index the vault
     let index_args = json!({ "force": true });
@@ -87,7 +90,7 @@ async fn test_full_indexing_and_search_flow() {
 async fn test_metadata_update_affects_search() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("integration_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // Step 1: Index the vault
     let index_args = json!({ "force": true });
@@ -158,7 +161,7 @@ async fn test_metadata_update_affects_search() {
 async fn test_multi_step_workflow() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("integration_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // Step 1: Initial indexing
     let index_args = json!({ "force": true });
@@ -272,7 +275,7 @@ async fn test_multi_step_workflow() {
 async fn test_error_handling_workflow() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("integration_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // Test various error conditions in sequence
 
@@ -345,7 +348,7 @@ async fn test_error_handling_workflow() {
 async fn test_performance_with_multiple_operations() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("integration_test.db");
-    let server = McpServer::new(db_path.to_str().unwrap()).await.unwrap();
+    let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // Index a reasonable amount of data
     let index_args = json!({ "force": true });

@@ -1,7 +1,7 @@
 // examples/mcp_client_demo.rs
 //! Demonstration of using the Crucible MCP server programmatically
 
-use crucible_mcp::McpServer;
+use crucible_mcp::{McpServer, EmbeddingConfig, create_provider};
 use serde_json::json;
 use tempfile::tempdir;
 
@@ -13,12 +13,20 @@ async fn main() -> anyhow::Result<()> {
     println!("🚀 Crucible MCP Server Demo");
     println!("============================\n");
 
+    // Create embedding provider (using default Ollama configuration)
+    println!("⚙️  Initializing embedding provider...");
+    let embedding_config = EmbeddingConfig::default();
+    let provider = create_provider(embedding_config).await?;
+    println!("✅ Provider initialized: {}", provider.provider_name());
+    println!("   Model: {}", provider.model_name());
+    println!("   Dimensions: {}\n", provider.dimensions());
+
     // Create a temporary database for this demo
     let temp_dir = tempdir()?;
     let db_path = temp_dir.path().join("demo.db");
 
     println!("📂 Creating database at: {:?}", db_path);
-    let server = McpServer::new(db_path.to_str().unwrap()).await?;
+    let server = McpServer::new(db_path.to_str().unwrap(), provider).await?;
 
     println!("✅ MCP Server initialized\n");
 
