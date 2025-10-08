@@ -1,9 +1,11 @@
 // Tool modules removed - all functionality moved to mod.rs
 
 use crate::database::EmbeddingDatabase;
+use crate::embeddings::EmbeddingProvider;
 use crate::types::{ToolCallArgs, ToolCallResult};
 use anyhow::Result;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Search notes by frontmatter properties
 pub async fn search_by_properties(
@@ -218,6 +220,7 @@ pub async fn search_by_content(
 /// Semantic search using embeddings
 pub async fn semantic_search(
     db: &EmbeddingDatabase,
+    provider: &Arc<dyn EmbeddingProvider>,
     args: &ToolCallArgs,
 ) -> Result<ToolCallResult> {
     let query = match args.query.as_ref() {
@@ -232,11 +235,14 @@ pub async fn semantic_search(
     };
     let top_k = args.top_k.unwrap_or(10);
 
-    // Generate a dummy embedding for the query
-    // In production, this would use an actual embedding model
-    let dummy_embedding = generate_dummy_embedding(query);
+    // Generate embedding for the query using the provider
+    let embedding_result = provider.embed(query).await.map_err(|e| {
+        tracing::error!("Failed to generate embedding for query: {}", e);
+        anyhow::anyhow!("Failed to generate embedding: {}", e)
+    })?;
+    let query_embedding = embedding_result.embedding;
 
-    match db.search_similar(&dummy_embedding, top_k).await {
+    match db.search_similar(&query_embedding, top_k).await {
         Ok(results) => Ok(ToolCallResult {
             success: true,
             data: Some(serde_json::to_value(results)?),
@@ -251,7 +257,11 @@ pub async fn semantic_search(
 }
 
 /// Generate embeddings for all vault notes
-pub async fn index_vault(db: &EmbeddingDatabase, args: &ToolCallArgs) -> Result<ToolCallResult> {
+pub async fn index_vault(
+    db: &EmbeddingDatabase,
+    provider: &Arc<dyn EmbeddingProvider>,
+    args: &ToolCallArgs,
+) -> Result<ToolCallResult> {
     let force = args.force.unwrap_or(false);
 
     // Create some dummy files for testing
@@ -260,6 +270,10 @@ pub async fn index_vault(db: &EmbeddingDatabase, args: &ToolCallArgs) -> Result<
     let mut indexed_count = 0;
     let mut errors = Vec::new();
 
+    // Prepare content for batch embedding
+    let mut files_to_index = Vec::new();
+    let mut file_contents = Vec::new();
+
     for file_path in dummy_files {
         match db.file_exists(file_path).await {
             Ok(exists) => {
@@ -267,32 +281,51 @@ pub async fn index_vault(db: &EmbeddingDatabase, args: &ToolCallArgs) -> Result<
                     continue;
                 }
 
-                // For demo purposes, create dummy content and embedding
-                // In production, this would read actual file content and generate real embeddings
+                // For demo purposes, create dummy content
+                // In production, this would read actual file content
                 let dummy_content = format!("Content for file: {}", file_path);
-                let dummy_embedding = generate_dummy_embedding(&dummy_content);
-
-                // Create metadata
-                let metadata = crate::types::EmbeddingMetadata {
-                    file_path: file_path.to_string(),
-                    title: Some(file_path.to_string()),
-                    tags: vec!["indexed".to_string()],
-                    folder: "vault".to_string(),
-                    properties: HashMap::new(),
-                    created_at: chrono::Utc::now(),
-                    updated_at: chrono::Utc::now(),
-                };
-
-                // Store embedding
-                match db
-                    .store_embedding(file_path, &dummy_content, &dummy_embedding, &metadata)
-                    .await
-                {
-                    Ok(_) => indexed_count += 1,
-                    Err(e) => errors.push(format!("Failed to index {}: {}", file_path, e)),
-                }
+                files_to_index.push(file_path.to_string());
+                file_contents.push(dummy_content);
             }
             Err(e) => errors.push(format!("Failed to check existence of {}: {}", file_path, e)),
+        }
+    }
+
+    // Generate embeddings in batch if there are files to index
+    if !files_to_index.is_empty() {
+        // Clone content strings for the provider (embed_batch takes ownership)
+        let content_strings: Vec<String> = file_contents.clone();
+
+        match provider.embed_batch(content_strings).await {
+            Ok(embedding_results) => {
+                // Store each embedding
+                for (idx, (file_path, content)) in files_to_index.iter().zip(file_contents.iter()).enumerate() {
+                    if let Some(embedding_result) = embedding_results.get(idx) {
+                        // Create metadata
+                        let metadata = crate::types::EmbeddingMetadata {
+                            file_path: file_path.clone(),
+                            title: Some(file_path.clone()),
+                            tags: vec!["indexed".to_string()],
+                            folder: "vault".to_string(),
+                            properties: HashMap::new(),
+                            created_at: chrono::Utc::now(),
+                            updated_at: chrono::Utc::now(),
+                        };
+
+                        // Store embedding
+                        match db
+                            .store_embedding(file_path, content, &embedding_result.embedding, &metadata)
+                            .await
+                        {
+                            Ok(_) => indexed_count += 1,
+                            Err(e) => errors.push(format!("Failed to index {}: {}", file_path, e)),
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                errors.push(format!("Failed to generate embeddings: {}", e));
+            }
         }
     }
 
@@ -423,7 +456,11 @@ pub async fn update_note_properties(
 }
 
 /// Index a Crucible document
-pub async fn index_document(db: &EmbeddingDatabase, args: &ToolCallArgs) -> Result<ToolCallResult> {
+pub async fn index_document(
+    db: &EmbeddingDatabase,
+    provider: &Arc<dyn EmbeddingProvider>,
+    args: &ToolCallArgs,
+) -> Result<ToolCallResult> {
     // Parse document from arguments
     let document_value = match args.properties.as_ref().and_then(|p| p.get("document")) {
         Some(doc) => doc,
@@ -453,7 +490,12 @@ pub async fn index_document(db: &EmbeddingDatabase, args: &ToolCallArgs) -> Resu
 
     let file_path = format!("{}.md", title);
     let full_content = format!("{}: {}", title, content);
-    let embedding = generate_dummy_embedding(&full_content);
+
+    // Generate embedding using the provider
+    let embedding_result = provider.embed(&full_content).await.map_err(|e| {
+        anyhow::anyhow!("Failed to generate embedding: {}", e)
+    })?;
+    let embedding = embedding_result.embedding;
 
     let metadata = crate::types::EmbeddingMetadata {
         file_path: file_path.clone(),
@@ -500,6 +542,7 @@ pub async fn index_document(db: &EmbeddingDatabase, args: &ToolCallArgs) -> Resu
 /// Search Crucible documents
 pub async fn search_documents(
     db: &EmbeddingDatabase,
+    provider: &Arc<dyn EmbeddingProvider>,
     args: &ToolCallArgs,
 ) -> Result<ToolCallResult> {
     let query = match args.query.as_ref() {
@@ -514,7 +557,12 @@ pub async fn search_documents(
     };
 
     let top_k = args.top_k.unwrap_or(10);
-    let query_embedding = generate_dummy_embedding(query);
+
+    // Generate embedding using the provider
+    let embedding_result = provider.embed(query).await.map_err(|e| {
+        anyhow::anyhow!("Failed to generate embedding: {}", e)
+    })?;
+    let query_embedding = embedding_result.embedding;
 
     match db.search_similar(&query_embedding, top_k).await {
         Ok(results) => {
@@ -659,27 +707,4 @@ pub async fn update_document_properties(
             error: Some(format!("Database error: {}", e)),
         }),
     }
-}
-
-/// Generate a dummy embedding for testing purposes
-/// In production, this would call an actual embedding API
-fn generate_dummy_embedding(content: &str) -> Vec<f32> {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = DefaultHasher::new();
-    content.hash(&mut hasher);
-    let hash = hasher.finish();
-
-    // Generate a deterministic "embedding" based on content hash
-    let mut embedding = vec![0.0; 1536];
-    for i in 0..1536 {
-        let seed = hash.wrapping_add(i as u64);
-        let mut hasher = DefaultHasher::new();
-        seed.hash(&mut hasher);
-        let value = hasher.finish() as f32 / u64::MAX as f32;
-        embedding[i] = (value - 0.5) * 2.0; // Normalize to [-1, 1]
-    }
-
-    embedding
 }

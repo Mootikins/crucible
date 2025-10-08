@@ -2,8 +2,87 @@
 //
 // Helper functions and utilities for MCP protocol testing
 
+use async_trait::async_trait;
+use crucible_mcp::embeddings::{EmbeddingProvider, EmbeddingResponse, EmbeddingResult};
 use crucible_mcp::protocol::McpProtocolHandler;
 use serde_json::{json, Value};
+use std::sync::Arc;
+
+/// Mock embedding provider for testing
+///
+/// Returns dummy embeddings with configurable dimensions.
+/// This provider is used in tests where actual embedding generation is not needed.
+pub struct MockEmbeddingProvider {
+    dimensions: usize,
+    model_name: String,
+}
+
+impl MockEmbeddingProvider {
+    pub fn new() -> Self {
+        Self {
+            dimensions: 384, // Standard dimension for many embedding models
+            model_name: "mock-test-model".to_string(),
+        }
+    }
+
+    pub fn with_dimensions(dimensions: usize) -> Self {
+        Self {
+            dimensions,
+            model_name: "mock-test-model".to_string(),
+        }
+    }
+}
+
+#[async_trait]
+impl EmbeddingProvider for MockEmbeddingProvider {
+    async fn embed(&self, text: &str) -> EmbeddingResult<EmbeddingResponse> {
+        // Generate a simple deterministic embedding based on text length
+        // This is not a real embedding, but suitable for testing
+        let mut embedding = vec![0.1; self.dimensions];
+
+        // Add some variation based on text content for determinism in tests
+        let text_hash = text.len() as f32 / 100.0;
+        for (i, val) in embedding.iter_mut().enumerate() {
+            *val += (i as f32 * text_hash).sin() * 0.1;
+        }
+
+        Ok(EmbeddingResponse::new(embedding, self.model_name.clone()))
+    }
+
+    async fn embed_batch(&self, texts: Vec<String>) -> EmbeddingResult<Vec<EmbeddingResponse>> {
+        let mut results = Vec::new();
+        for text in texts {
+            results.push(self.embed(&text).await?);
+        }
+        Ok(results)
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model_name
+    }
+
+    fn dimensions(&self) -> usize {
+        self.dimensions
+    }
+
+    fn provider_name(&self) -> &str {
+        "MockProvider"
+    }
+
+    async fn health_check(&self) -> EmbeddingResult<bool> {
+        Ok(true)
+    }
+}
+
+/// Create a mock embedding provider for testing
+pub fn create_test_provider() -> Arc<dyn EmbeddingProvider> {
+    Arc::new(MockEmbeddingProvider::new())
+}
+
+/// Create a mock embedding provider with custom dimensions
+pub fn create_test_provider_with_dimensions(dimensions: usize) -> Arc<dyn EmbeddingProvider> {
+    Arc::new(MockEmbeddingProvider::with_dimensions(dimensions))
+}
 
 /// Create a standard initialized handler ready for tool calls
 pub async fn create_initialized_handler() -> McpProtocolHandler {
