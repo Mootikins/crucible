@@ -22,8 +22,14 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 
 # JSON-RPC for MCP protocol
+# NOTE: These will be removed in Phase 5 of rmcp migration
 jsonrpc-core = "18.0"
 jsonrpc-derive = "18.0"
+
+# Official MCP SDK (rmcp)
+# Using server and transport-io features for stdio-based MCP server
+rmcp = { version = "0.8.1", features = ["server", "transport-io"] }
+schemars = "1.0"
 
 # Database
 duckdb = { version = "1.1", features = ["bundled", "vtab", "json", "parquet"] }
@@ -46,6 +52,9 @@ bincode = "1.3"
 
 # Regex for pattern matching
 regex = "1.10"
+
+# File globbing for vault indexing
+glob = "0.3"
 
 # HTTP client for Obsidian API integration
 reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
