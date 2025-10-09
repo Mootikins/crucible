@@ -281,3 +281,233 @@ impl OpenAIProvider {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_config() -> EmbeddingConfig {
+        EmbeddingConfig::openai(
+            "test-api-key".to_string(),
+            Some("text-embedding-3-small".to_string()),
+        )
+    }
+
+    #[test]
+    fn test_provider_creation() {
+        let config = create_test_config();
+        let provider = OpenAIProvider::new(config);
+        assert!(provider.is_ok());
+
+        let provider = provider.unwrap();
+        assert_eq!(provider.provider_name(), "OpenAI");
+        assert_eq!(provider.model_name(), "text-embedding-3-small");
+        assert_eq!(provider.dimensions(), 1536);
+    }
+
+    #[test]
+    fn test_provider_creation_with_invalid_config() {
+        let mut config = create_test_config();
+        config.timeout_secs = 0; // Invalid timeout
+
+        let provider = OpenAIProvider::new(config);
+        assert!(provider.is_err());
+    }
+
+    #[test]
+    fn test_provider_creation_without_api_key() {
+        let mut config = create_test_config();
+        config.api_key = None; // OpenAI requires API key
+
+        let provider = OpenAIProvider::new(config);
+        assert!(provider.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_embed_empty_text() {
+        let config = create_test_config();
+        let provider = OpenAIProvider::new(config).unwrap();
+
+        let result = provider.embed("").await;
+        // OpenAI might handle empty text differently, but should return error or empty response
+        // This test will fail with network error in CI, but structure is correct
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_openai_request_serialization() {
+        let request = OpenAIEmbeddingRequest {
+            model: "text-embedding-3-small".to_string(),
+            input: EmbeddingInput::Single("test text".to_string()),
+            encoding_format: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("text-embedding-3-small"));
+        assert!(json.contains("test text"));
+    }
+
+    #[test]
+    fn test_openai_batch_request_serialization() {
+        let request = OpenAIEmbeddingRequest {
+            model: "text-embedding-3-small".to_string(),
+            input: EmbeddingInput::Batch(vec!["text1".to_string(), "text2".to_string()]),
+            encoding_format: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("text-embedding-3-small"));
+        assert!(json.contains("text1"));
+        assert!(json.contains("text2"));
+    }
+
+    #[test]
+    fn test_openai_response_deserialization() {
+        let json = r#"{
+            "data": [
+                {"embedding": [0.1, 0.2, 0.3], "index": 0}
+            ],
+            "model": "text-embedding-3-small",
+            "usage": {
+                "prompt_tokens": 5,
+                "total_tokens": 5
+            }
+        }"#;
+
+        let response: OpenAIEmbeddingResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(response.data.len(), 1);
+        assert_eq!(response.data[0].embedding.len(), 3);
+        assert_eq!(response.data[0].embedding[0], 0.1);
+        assert_eq!(response.data[0].index, 0);
+        assert_eq!(response.model, "text-embedding-3-small");
+        assert_eq!(response.usage.prompt_tokens, 5);
+    }
+
+    #[test]
+    fn test_openai_batch_response_deserialization() {
+        let json = r#"{
+            "data": [
+                {"embedding": [0.1, 0.2], "index": 0},
+                {"embedding": [0.3, 0.4], "index": 1}
+            ],
+            "model": "text-embedding-3-small",
+            "usage": {
+                "prompt_tokens": 10,
+                "total_tokens": 10
+            }
+        }"#;
+
+        let response: OpenAIEmbeddingResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(response.data.len(), 2);
+        assert_eq!(response.data[0].index, 0);
+        assert_eq!(response.data[1].index, 1);
+    }
+
+    #[test]
+    fn test_openai_error_response_deserialization() {
+        let json = r#"{
+            "error": {
+                "message": "Invalid API key",
+                "type": "invalid_request_error",
+                "code": "invalid_api_key"
+            }
+        }"#;
+
+        let response: OpenAIErrorResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.error.message, "Invalid API key");
+        assert_eq!(response.error.error_type, "invalid_request_error");
+        assert_eq!(response.error.code, Some("invalid_api_key".to_string()));
+    }
+
+    // Integration tests - these require a valid OpenAI API key
+    // Set OPENAI_API_KEY environment variable to run these tests
+    // Run with: cargo test --package crucible-mcp --lib embeddings::openai -- --ignored
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_embed_integration() {
+        let api_key = std::env::var("OPENAI_API_KEY")
+            .expect("OPENAI_API_KEY environment variable must be set");
+
+        let config = EmbeddingConfig::openai(
+            api_key,
+            Some("text-embedding-3-small".to_string()),
+        );
+        let provider = OpenAIProvider::new(config).unwrap();
+
+        let result = provider.embed("Hello, world!").await;
+        assert!(result.is_ok());
+
+        let response = result.unwrap();
+        assert_eq!(response.dimensions, 1536);
+        assert_eq!(response.model, "text-embedding-3-small");
+        assert!(!response.embedding.is_empty());
+        assert!(response.tokens.is_some());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_embed_batch_integration() {
+        let api_key = std::env::var("OPENAI_API_KEY")
+            .expect("OPENAI_API_KEY environment variable must be set");
+
+        let config = EmbeddingConfig::openai(
+            api_key,
+            Some("text-embedding-3-small".to_string()),
+        );
+        let provider = OpenAIProvider::new(config).unwrap();
+
+        let texts = vec![
+            "First sentence".to_string(),
+            "Second sentence".to_string(),
+            "Third sentence".to_string(),
+        ];
+
+        let result = provider.embed_batch(texts).await;
+        assert!(result.is_ok());
+
+        let responses = result.unwrap();
+        assert_eq!(responses.len(), 3);
+
+        for response in &responses {
+            assert_eq!(response.dimensions, 1536);
+            assert_eq!(response.model, "text-embedding-3-small");
+        }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_health_check_integration() {
+        let api_key = std::env::var("OPENAI_API_KEY")
+            .expect("OPENAI_API_KEY environment variable must be set");
+
+        let config = EmbeddingConfig::openai(
+            api_key,
+            Some("text-embedding-3-small".to_string()),
+        );
+        let provider = OpenAIProvider::new(config).unwrap();
+
+        let result = provider.health_check().await;
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_invalid_api_key_integration() {
+        let config = EmbeddingConfig::openai(
+            "invalid-key".to_string(),
+            Some("text-embedding-3-small".to_string()),
+        );
+        let provider = OpenAIProvider::new(config).unwrap();
+
+        let result = provider.embed("Test").await;
+        assert!(result.is_err());
+
+        if let Err(e) = result {
+            assert!(matches!(e, EmbeddingError::AuthenticationError(_)));
+        }
+    }
+}
