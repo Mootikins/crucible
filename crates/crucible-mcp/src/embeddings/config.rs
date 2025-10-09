@@ -222,3 +222,180 @@ impl Default for EmbeddingConfig {
         Self::ollama(None, None)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_type_from_str() {
+        assert_eq!(ProviderType::from_str("ollama").unwrap(), ProviderType::Ollama);
+        assert_eq!(ProviderType::from_str("Ollama").unwrap(), ProviderType::Ollama);
+        assert_eq!(ProviderType::from_str("OLLAMA").unwrap(), ProviderType::Ollama);
+
+        assert_eq!(ProviderType::from_str("openai").unwrap(), ProviderType::OpenAI);
+        assert_eq!(ProviderType::from_str("OpenAI").unwrap(), ProviderType::OpenAI);
+        assert_eq!(ProviderType::from_str("OPENAI").unwrap(), ProviderType::OpenAI);
+
+        assert!(ProviderType::from_str("unknown").is_err());
+        assert!(ProviderType::from_str("").is_err());
+    }
+
+    #[test]
+    fn test_provider_defaults() {
+        let ollama = ProviderType::Ollama;
+        assert_eq!(ollama.default_endpoint(), "https://llama.terminal.krohnos.io");
+        assert_eq!(ollama.default_model(), "nomic-embed-text");
+        assert_eq!(ollama.default_dimensions(), 768);
+        assert!(!ollama.requires_api_key());
+
+        let openai = ProviderType::OpenAI;
+        assert_eq!(openai.default_endpoint(), "https://api.openai.com/v1");
+        assert_eq!(openai.default_model(), "text-embedding-3-small");
+        assert_eq!(openai.default_dimensions(), 1536);
+        assert!(openai.requires_api_key());
+    }
+
+    #[test]
+    fn test_config_validation_success() {
+        let config = EmbeddingConfig::ollama(None, None);
+        assert!(config.validate().is_ok());
+
+        let config = EmbeddingConfig::openai("test-key".to_string(), None);
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_config_validation_requires_api_key_for_openai() {
+        let mut config = EmbeddingConfig::openai("test-key".to_string(), None);
+        config.api_key = None;
+
+        let result = config.validate();
+        assert!(result.is_err());
+
+        if let Err(e) = result {
+            assert!(matches!(e, EmbeddingError::ConfigError(_)));
+            assert!(e.to_string().contains("requires an API key"));
+        }
+    }
+
+    #[test]
+    fn test_config_validation_empty_endpoint() {
+        let mut config = EmbeddingConfig::ollama(None, None);
+        config.endpoint = String::new();
+
+        let result = config.validate();
+        assert!(result.is_err());
+
+        if let Err(e) = result {
+            assert!(matches!(e, EmbeddingError::ConfigError(_)));
+            assert!(e.to_string().contains("Endpoint URL"));
+        }
+    }
+
+    #[test]
+    fn test_config_validation_empty_model() {
+        let mut config = EmbeddingConfig::ollama(None, None);
+        config.model = String::new();
+
+        let result = config.validate();
+        assert!(result.is_err());
+
+        if let Err(e) = result {
+            assert!(matches!(e, EmbeddingError::ConfigError(_)));
+            assert!(e.to_string().contains("Model name"));
+        }
+    }
+
+    #[test]
+    fn test_config_validation_zero_timeout() {
+        let mut config = EmbeddingConfig::ollama(None, None);
+        config.timeout_secs = 0;
+
+        let result = config.validate();
+        assert!(result.is_err());
+
+        if let Err(e) = result {
+            assert!(matches!(e, EmbeddingError::ConfigError(_)));
+            assert!(e.to_string().contains("Timeout"));
+        }
+    }
+
+    #[test]
+    fn test_config_validation_zero_batch_size() {
+        let mut config = EmbeddingConfig::ollama(None, None);
+        config.batch_size = 0;
+
+        let result = config.validate();
+        assert!(result.is_err());
+
+        if let Err(e) = result {
+            assert!(matches!(e, EmbeddingError::ConfigError(_)));
+            assert!(e.to_string().contains("Batch size"));
+        }
+    }
+
+    #[test]
+    fn test_expected_dimensions_ollama() {
+        let config = EmbeddingConfig::ollama(None, Some("nomic-embed-text".to_string()));
+        assert_eq!(config.expected_dimensions(), 768);
+
+        let config = EmbeddingConfig::ollama(None, Some("unknown-model".to_string()));
+        assert_eq!(config.expected_dimensions(), 768); // Default for Ollama
+    }
+
+    #[test]
+    fn test_expected_dimensions_openai() {
+        let config = EmbeddingConfig::openai(
+            "test-key".to_string(),
+            Some("text-embedding-3-small".to_string()),
+        );
+        assert_eq!(config.expected_dimensions(), 1536);
+
+        let config = EmbeddingConfig::openai(
+            "test-key".to_string(),
+            Some("text-embedding-3-large".to_string()),
+        );
+        assert_eq!(config.expected_dimensions(), 3072);
+
+        let config = EmbeddingConfig::openai(
+            "test-key".to_string(),
+            Some("text-embedding-ada-002".to_string()),
+        );
+        assert_eq!(config.expected_dimensions(), 1536);
+
+        let config = EmbeddingConfig::openai(
+            "test-key".to_string(),
+            Some("unknown-model".to_string()),
+        );
+        assert_eq!(config.expected_dimensions(), 1536); // Default for OpenAI
+    }
+
+    #[test]
+    fn test_config_default() {
+        let config = EmbeddingConfig::default();
+        assert_eq!(config.provider, ProviderType::Ollama);
+        assert_eq!(config.model, "nomic-embed-text");
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_config_from_env_missing_vars() {
+        // Clear environment variables
+        std::env::remove_var("EMBEDDING_PROVIDER");
+        std::env::remove_var("EMBEDDING_ENDPOINT");
+        std::env::remove_var("EMBEDDING_API_KEY");
+        std::env::remove_var("EMBEDDING_MODEL");
+        std::env::remove_var("EMBEDDING_TIMEOUT_SECS");
+        std::env::remove_var("EMBEDDING_MAX_RETRIES");
+        std::env::remove_var("EMBEDDING_BATCH_SIZE");
+
+        let config = EmbeddingConfig::from_env();
+        assert!(config.is_ok());
+
+        let config = config.unwrap();
+        assert_eq!(config.provider, ProviderType::Ollama); // Default
+        assert_eq!(config.model, "nomic-embed-text"); // Default
+        assert_eq!(config.timeout_secs, 30); // Default
+    }
+}
