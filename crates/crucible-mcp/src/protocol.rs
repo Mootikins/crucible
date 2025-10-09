@@ -110,7 +110,15 @@ impl McpProtocolHandler {
             "initialized" | "notifications/initialized" => {
                 info!("Client confirmed initialization");
                 self.initialized = true;
-                None // MCP spec says initialized notification gets no response
+
+                // Send ready notification to client
+                let ready_notification = JsonRpcNotification {
+                    jsonrpc: "2.0".to_string(),
+                    method: "notifications/ready".to_string(),
+                    params: None,
+                };
+
+                Some(serde_json::to_string(&ready_notification).unwrap())
             }
             "notifications/cancelled" => {
                 debug!("Request cancelled: {:?}", notification.params);
