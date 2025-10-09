@@ -236,10 +236,17 @@ pub async fn semantic_search(
     let top_k = args.top_k.unwrap_or(10);
 
     // Generate embedding for the query using the provider
-    let embedding_result = provider.embed(query).await.map_err(|e| {
-        tracing::error!("Failed to generate embedding for query: {}", e);
-        anyhow::anyhow!("Failed to generate embedding: {}", e)
-    })?;
+    let embedding_result = match provider.embed(query).await {
+        Ok(result) => result,
+        Err(e) => {
+            tracing::error!("Failed to generate embedding for query: {}", e);
+            return Ok(ToolCallResult {
+                success: false,
+                data: None,
+                error: Some(format!("Failed to generate embedding for query: {}", e)),
+            });
+        }
+    };
     let query_embedding = embedding_result.embedding;
 
     match db.search_similar(&query_embedding, top_k).await {
@@ -264,8 +271,17 @@ pub async fn index_vault(
 ) -> Result<ToolCallResult> {
     let force = args.force.unwrap_or(false);
 
-    // Create some dummy files for testing
-    let dummy_files = vec!["file0.md", "file1.md", "file2.md", "file3.md", "file4.md"];
+    // Get vault path from args or use current directory
+    let vault_path = args.path.as_deref().unwrap_or(".");
+    let vault_dir = std::path::Path::new(vault_path);
+
+    if !vault_dir.exists() {
+        return Ok(ToolCallResult {
+            success: false,
+            data: None,
+            error: Some(format!("Vault path does not exist: {}", vault_path)),
+        });
+    }
 
     let mut indexed_count = 0;
     let mut errors = Vec::new();
@@ -274,20 +290,34 @@ pub async fn index_vault(
     let mut files_to_index = Vec::new();
     let mut file_contents = Vec::new();
 
-    for file_path in dummy_files {
-        match db.file_exists(file_path).await {
-            Ok(exists) => {
-                if !force && exists {
-                    continue;
-                }
+    // Read markdown files from vault directory
+    let pattern = args.pattern.as_deref().unwrap_or("**/*.md");
+    let glob_pattern = format!("{}/{}", vault_path, pattern);
 
-                // For demo purposes, create dummy content
-                // In production, this would read actual file content
-                let dummy_content = format!("Content for file: {}", file_path);
-                files_to_index.push(file_path.to_string());
-                file_contents.push(dummy_content);
+    for entry in glob::glob(&glob_pattern).map_err(|e| anyhow::anyhow!("Invalid glob pattern: {}", e))? {
+        match entry {
+            Ok(path) => {
+                let file_path = path.to_string_lossy().to_string();
+
+                match db.file_exists(&file_path).await {
+                    Ok(exists) => {
+                        if !force && exists {
+                            continue;
+                        }
+
+                        // Read actual file content
+                        match tokio::fs::read_to_string(&path).await {
+                            Ok(content) => {
+                                files_to_index.push(file_path);
+                                file_contents.push(content);
+                            }
+                            Err(e) => errors.push(format!("Failed to read {}: {}", file_path, e)),
+                        }
+                    }
+                    Err(e) => errors.push(format!("Failed to check existence of {}: {}", file_path, e)),
+                }
             }
-            Err(e) => errors.push(format!("Failed to check existence of {}: {}", file_path, e)),
+            Err(e) => errors.push(format!("Failed to read file: {}", e)),
         }
     }
 
@@ -492,9 +522,16 @@ pub async fn index_document(
     let full_content = format!("{}: {}", title, content);
 
     // Generate embedding using the provider
-    let embedding_result = provider.embed(&full_content).await.map_err(|e| {
-        anyhow::anyhow!("Failed to generate embedding: {}", e)
-    })?;
+    let embedding_result = match provider.embed(&full_content).await {
+        Ok(result) => result,
+        Err(e) => {
+            return Ok(ToolCallResult {
+                success: false,
+                data: None,
+                error: Some(format!("Failed to generate embedding for document: {}", e)),
+            });
+        }
+    };
     let embedding = embedding_result.embedding;
 
     let metadata = crate::types::EmbeddingMetadata {
@@ -559,9 +596,16 @@ pub async fn search_documents(
     let top_k = args.top_k.unwrap_or(10);
 
     // Generate embedding using the provider
-    let embedding_result = provider.embed(query).await.map_err(|e| {
-        anyhow::anyhow!("Failed to generate embedding: {}", e)
-    })?;
+    let embedding_result = match provider.embed(query).await {
+        Ok(result) => result,
+        Err(e) => {
+            return Ok(ToolCallResult {
+                success: false,
+                data: None,
+                error: Some(format!("Failed to generate embedding for query: {}", e)),
+            });
+        }
+    };
     let query_embedding = embedding_result.embedding;
 
     match db.search_similar(&query_embedding, top_k).await {

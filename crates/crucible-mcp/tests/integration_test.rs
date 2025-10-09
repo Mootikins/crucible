@@ -2,17 +2,25 @@ mod test_helpers;
 
 use crucible_mcp::McpServer;
 use serde_json::json;
+use std::fs;
 use tempfile::tempdir;
-use test_helpers::create_test_provider;
+use test_helpers::{create_test_provider, create_test_vault};
 
 #[tokio::test]
 async fn test_full_indexing_and_search_flow() {
     let temp_dir = tempdir().unwrap();
+    let vault_path = temp_dir.path().join("vault");
+    fs::create_dir(&vault_path).unwrap();
+    create_test_vault(&vault_path);
+
     let db_path = temp_dir.path().join("integration_test.db");
     let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // Step 1: Index the vault
-    let index_args = json!({ "force": true });
+    let index_args = json!({
+        "force": true,
+        "path": vault_path.to_str().unwrap()
+    });
     let index_result = server
         .handle_tool_call("index_vault", index_args)
         .await
@@ -71,9 +79,9 @@ async fn test_full_indexing_and_search_flow() {
     let tag_files = tag_data.as_array().unwrap();
     assert!(tag_files.len() > 0);
 
-    // Step 5: Search by filename pattern
+    // Step 5: Search by filename pattern (use wildcard to match full paths)
     let filename_args = json!({
-        "pattern": "file*.md"
+        "pattern": "*file*.md"
     });
     let filename_result = server
         .handle_tool_call("search_by_filename", filename_args)
@@ -89,11 +97,18 @@ async fn test_full_indexing_and_search_flow() {
 #[tokio::test]
 async fn test_metadata_update_affects_search() {
     let temp_dir = tempdir().unwrap();
+    let vault_path = temp_dir.path().join("vault");
+    fs::create_dir(&vault_path).unwrap();
+    create_test_vault(&vault_path);
+
     let db_path = temp_dir.path().join("integration_test.db");
     let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // Step 1: Index the vault
-    let index_args = json!({ "force": true });
+    let index_args = json!({
+        "force": true,
+        "path": vault_path.to_str().unwrap()
+    });
     server
         .handle_tool_call("index_vault", index_args)
         .await
@@ -101,7 +116,7 @@ async fn test_metadata_update_affects_search() {
 
     // Step 2: Get a file to update
     let files_result = server
-        .handle_tool_call("search_by_filename", json!({"pattern": "file*.md"}))
+        .handle_tool_call("search_by_filename", json!({"pattern": "*file*.md"}))
         .await
         .unwrap();
     let files_data = files_result.data.unwrap();
@@ -160,20 +175,27 @@ async fn test_metadata_update_affects_search() {
 #[tokio::test]
 async fn test_multi_step_workflow() {
     let temp_dir = tempdir().unwrap();
+    let vault_path = temp_dir.path().join("vault");
+    fs::create_dir(&vault_path).unwrap();
+    create_test_vault(&vault_path);
+
     let db_path = temp_dir.path().join("integration_test.db");
     let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // Step 1: Initial indexing
-    let index_args = json!({ "force": true });
+    let index_args = json!({
+        "force": true,
+        "path": vault_path.to_str().unwrap()
+    });
     let index_result = server
         .handle_tool_call("index_vault", index_args)
         .await
         .unwrap();
     assert!(index_result.success);
 
-    // Step 2: Search for files in a specific folder (search for files starting with "file")
+    // Step 2: Search for files in the vault folder
     let folder_args = json!({
-        "path": "file",
+        "path": vault_path.to_str().unwrap(),
         "recursive": true
     });
     let folder_result = server
@@ -274,6 +296,10 @@ async fn test_multi_step_workflow() {
 #[tokio::test]
 async fn test_error_handling_workflow() {
     let temp_dir = tempdir().unwrap();
+    let vault_path = temp_dir.path().join("vault");
+    fs::create_dir(&vault_path).unwrap();
+    create_test_vault(&vault_path);
+
     let db_path = temp_dir.path().join("integration_test.db");
     let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
@@ -327,7 +353,10 @@ async fn test_error_handling_workflow() {
     assert!(unknown_tool_result.error.unwrap().contains("Unknown tool"));
 
     // 5. Valid operations should still work
-    let index_args = json!({ "force": true });
+    let index_args = json!({
+        "force": true,
+        "path": vault_path.to_str().unwrap()
+    });
     let index_result = server
         .handle_tool_call("index_vault", index_args)
         .await
@@ -347,11 +376,18 @@ async fn test_error_handling_workflow() {
 #[tokio::test]
 async fn test_performance_with_multiple_operations() {
     let temp_dir = tempdir().unwrap();
+    let vault_path = temp_dir.path().join("vault");
+    fs::create_dir(&vault_path).unwrap();
+    create_test_vault(&vault_path);
+
     let db_path = temp_dir.path().join("integration_test.db");
     let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // Index a reasonable amount of data
-    let index_args = json!({ "force": true });
+    let index_args = json!({
+        "force": true,
+        "path": vault_path.to_str().unwrap()
+    });
     let index_result = server
         .handle_tool_call("index_vault", index_args)
         .await
