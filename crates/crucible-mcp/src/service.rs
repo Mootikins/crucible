@@ -1,0 +1,290 @@
+// crates/crucible-mcp/src/service.rs
+//
+// rmcp-based MCP Server Service Layer
+//
+// This module provides the official rmcp-based implementation of the Crucible MCP server.
+// It wraps existing tool implementations from tools::mod with rmcp's #[tool] macro.
+
+use rmcp::{ErrorData as McpError, model::*, tool, tool_router, handler::server::{wrapper::Parameters, tool::ToolRouter}};
+use crate::database::EmbeddingDatabase;
+use crate::embeddings::EmbeddingProvider;
+use crate::types::ToolCallArgs;
+use std::sync::Arc;
+
+/// Crucible MCP Service using rmcp SDK
+///
+/// This service exposes all 13 Crucible MCP tools via the rmcp protocol.
+/// It delegates to existing tool implementations in the tools module.
+#[derive(Clone)]
+pub struct CrucibleMcpService {
+    database: Arc<EmbeddingDatabase>,
+    provider: Arc<dyn EmbeddingProvider>,
+    tool_router: ToolRouter<Self>,
+}
+
+#[tool_router]
+impl CrucibleMcpService {
+    /// Create a new Crucible MCP service instance
+    pub fn new(database: EmbeddingDatabase, provider: Arc<dyn EmbeddingProvider>) -> Self {
+        Self {
+            database: Arc::new(database),
+            provider,
+            tool_router: Self::tool_router(),
+        }
+    }
+
+    /// Search notes by frontmatter properties
+    #[tool(description = "Search notes by frontmatter properties")]
+    async fn search_by_properties(
+        &self,
+        Parameters(args): Parameters<ToolCallArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = crate::tools::search_by_properties(&self.database, &args)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        self.convert_result(result)
+    }
+
+    /// Search notes by tags
+    #[tool(description = "Search notes by tags")]
+    async fn search_by_tags(
+        &self,
+        Parameters(args): Parameters<ToolCallArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = crate::tools::search_by_tags(&self.database, &args)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        self.convert_result(result)
+    }
+
+    /// Search notes in a specific folder
+    #[tool(description = "Search notes in a specific folder")]
+    async fn search_by_folder(
+        &self,
+        Parameters(args): Parameters<ToolCallArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = crate::tools::search_by_folder(&self.database, &args)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        self.convert_result(result)
+    }
+
+    /// Search notes by filename pattern
+    #[tool(description = "Search notes by filename pattern")]
+    async fn search_by_filename(
+        &self,
+        Parameters(args): Parameters<ToolCallArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = crate::tools::search_by_filename(&self.database, &args)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        self.convert_result(result)
+    }
+
+    /// Full-text search in note contents
+    #[tool(description = "Full-text search in note contents")]
+    async fn search_by_content(
+        &self,
+        Parameters(args): Parameters<ToolCallArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = crate::tools::search_by_content(&self.database, &args)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        self.convert_result(result)
+    }
+
+    /// Semantic search using embeddings
+    #[tool(description = "Semantic search using embeddings")]
+    async fn semantic_search(
+        &self,
+        Parameters(args): Parameters<ToolCallArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = crate::tools::semantic_search(&self.database, &self.provider, &args)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        self.convert_result(result)
+    }
+
+    /// Generate embeddings for all vault notes
+    #[tool(description = "Generate embeddings for all vault notes")]
+    async fn index_vault(
+        &self,
+        Parameters(args): Parameters<ToolCallArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = crate::tools::index_vault(&self.database, &self.provider, &args)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        self.convert_result(result)
+    }
+
+    /// Get metadata for a specific note
+    #[tool(description = "Get metadata for a specific note")]
+    async fn get_note_metadata(
+        &self,
+        Parameters(args): Parameters<ToolCallArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = crate::tools::get_note_metadata(&self.database, &args)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        self.convert_result(result)
+    }
+
+    /// Update frontmatter properties of a note
+    #[tool(description = "Update frontmatter properties of a note")]
+    async fn update_note_properties(
+        &self,
+        Parameters(args): Parameters<ToolCallArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = crate::tools::update_note_properties(&self.database, &args)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        self.convert_result(result)
+    }
+
+    /// Index a Crucible document for search
+    #[tool(description = "Index a Crucible document for search")]
+    async fn index_document(
+        &self,
+        Parameters(args): Parameters<ToolCallArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = crate::tools::index_document(&self.database, &self.provider, &args)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        self.convert_result(result)
+    }
+
+    /// Search indexed Crucible documents
+    #[tool(description = "Search indexed Crucible documents")]
+    async fn search_documents(
+        &self,
+        Parameters(args): Parameters<ToolCallArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = crate::tools::search_documents(&self.database, &self.provider, &args)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        self.convert_result(result)
+    }
+
+    /// Get statistics about indexed documents
+    #[tool(description = "Get statistics about indexed documents")]
+    async fn get_document_stats(
+        &self,
+        Parameters(args): Parameters<ToolCallArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = crate::tools::get_document_stats(&self.database, &args)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        self.convert_result(result)
+    }
+
+    /// Update properties of a Crucible document
+    #[tool(description = "Update properties of a Crucible document")]
+    async fn update_document_properties(
+        &self,
+        Parameters(args): Parameters<ToolCallArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = crate::tools::update_document_properties(&self.database, &args)
+            .await
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        self.convert_result(result)
+    }
+
+    /// Convert ToolCallResult to rmcp's CallToolResult
+    ///
+    /// CRITICAL: This method handles errors by returning successful tool results
+    /// with isError=true. This is required for Claude Desktop compatibility.
+    ///
+    /// rmcp errors (Err returns) should only be used for protocol-level failures,
+    /// not tool execution failures. Tool failures are returned as successful
+    /// tool responses with error information in the content.
+    fn convert_result(&self, result: crate::types::ToolCallResult) -> Result<CallToolResult, McpError> {
+        if result.success {
+            // Success case: return data as formatted JSON
+            let content = if let Some(data) = result.data {
+                serde_json::to_string_pretty(&data)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?
+            } else {
+                "Success".to_string()
+            };
+            Ok(CallToolResult::success(vec![Content::text(content)]))
+        } else {
+            // Error case: return as tool error (not protocol error)
+            // This is critical for Claude Desktop - errors must be wrapped as tool results
+            let error_message = result.error.unwrap_or_else(|| "Unknown error".to_string());
+
+            // Include any partial data in the error response
+            let error_content = if let Some(data) = result.data {
+                format!("Error: {}\n\nPartial data:\n{}",
+                    error_message,
+                    serde_json::to_string_pretty(&data).unwrap_or_default())
+            } else {
+                error_message
+            };
+
+            Ok(CallToolResult::error(vec![Content::text(error_content)]))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+    use async_trait::async_trait;
+    use crate::embeddings::{EmbeddingResponse, EmbeddingResult};
+
+    // Mock embedding provider for testing
+    struct TestEmbeddingProvider;
+
+    #[async_trait]
+    impl EmbeddingProvider for TestEmbeddingProvider {
+        async fn embed(&self, _text: &str) -> EmbeddingResult<EmbeddingResponse> {
+            Ok(EmbeddingResponse::new(vec![0.1; 384], "test-model".to_string()))
+        }
+
+        async fn embed_batch(&self, texts: Vec<String>) -> EmbeddingResult<Vec<EmbeddingResponse>> {
+            Ok(texts.iter().map(|_| EmbeddingResponse::new(vec![0.1; 384], "test-model".to_string())).collect())
+        }
+
+        fn model_name(&self) -> &str {
+            "test-model"
+        }
+
+        fn dimensions(&self) -> usize {
+            384
+        }
+
+        fn provider_name(&self) -> &str {
+            "TestProvider"
+        }
+
+        async fn health_check(&self) -> EmbeddingResult<bool> {
+            Ok(true)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_service_creation() {
+        let temp_dir = tempdir().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = EmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+
+        let provider = Arc::new(TestEmbeddingProvider);
+
+        let _service = CrucibleMcpService::new(db, provider);
+        // If we get here, service was created successfully
+    }
+}
