@@ -9,11 +9,11 @@ pub mod tools;
 pub mod types;
 
 use anyhow::Result;
-use database::EmbeddingDatabase;
 use serde_json::Value;
 use std::sync::Arc;
 
 // Re-export important types for external use
+pub use database::EmbeddingDatabase;
 pub use embeddings::{EmbeddingConfig, EmbeddingProvider, create_provider};
 pub use integration::*;
 pub use protocol::{McpProtocolHandler, StdioMcpServer};
