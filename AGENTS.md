@@ -104,7 +104,7 @@ specs/                 # Technical specifications organized by tech stack
 - **Rust Core** (`rust-core/`): Document CRDT operations, business logic
 - **Tauri Backend** (`tauri-backend/`): Desktop app commands and IPC
 - **Svelte Frontend** (`svelte-frontend/`): UI components and stores
-- **Database Layer** (`database/`): PGlite schemas and vector operations
+- **Database Layer** (`database/`): DuckDB schemas and vector operations
 - **Plugin System** (`plugin-system/`): Rune runtime and extensibility
 - **MCP Integration** (`mcp-integration/`): AI agent tools and protocols
 - **Code Generation** (`code-generation/`): Agent specifications for automated code generation
