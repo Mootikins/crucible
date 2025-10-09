@@ -19,11 +19,11 @@ Crucible's architecture is designed to support **linked thinking** through:
 - **Tauri**: Desktop application framework providing secure native integration
 - **Svelte 5**: Modern reactive frontend framework with excellent performance
 - **Yrs**: CRDT library for conflict-free collaborative editing
-- **PGlite**: Embedded PostgreSQL with vector extensions for semantic search
+- **DuckDB**: Embedded analytical database with vector extensions for semantic search
 
 ### Data Layer
 - **Yrs CRDTs**: Document structure and real-time synchronization
-- **PGlite + pgvector**: Vector embeddings and semantic search
+- **DuckDB + vss**: Vector embeddings and semantic search
 - **IndexedDB**: Local persistence and offline support
 - **WebRTC**: Peer-to-peer synchronization (future)
 
@@ -73,7 +73,7 @@ Crucible's architecture is designed to support **linked thinking** through:
 ### 4. Database Layer (`packages/desktop/src/lib/db`)
 **Purpose**: Data persistence and retrieval
 **Components**:
-- PGlite database setup
+- DuckDB database setup
 - Vector embeddings storage
 - Schema management
 - Query optimization
@@ -160,14 +160,14 @@ Crucible's architecture is designed to support **linked thinking** through:
 1. **User Input** → Svelte Component
 2. **State Update** → Document Store (Yrs)
 3. **CRDT Sync** → Core Layer
-4. **Persistence** → PGlite Database
+4. **Persistence** → DuckDB Database
 5. **Vectorization** → Embeddings Service
 6. **UI Update** → Reactive Svelte Components
 
 ### Search Operations
 1. **Query Input** → Search Component
 2. **Vector Generation** → Transformers.js
-3. **Similarity Search** → PGlite + pgvector
+3. **Similarity Search** → DuckDB + vss
 4. **Result Ranking** → Search Service
 5. **UI Display** → Search Results Component
 
@@ -189,7 +189,7 @@ Crucible's architecture is designed to support **linked thinking** through:
 
 ### Sprint 2: Persistence & UI (Weeks 5-8)
 **Focus**: Storage layer and polished interface
-- PGlite integration
+- DuckDB integration
 - Document save/load
 - UI polish and animations
 - Breadcrumb navigation
@@ -221,7 +221,7 @@ Crucible's architecture is designed to support **linked thinking** through:
 
 ### Embeddings Schema
 - **Format**: 384-dimensional vectors
-- **Storage**: PGlite with pgvector extension
+- **Storage**: DuckDB with vss extension
 - **Search**: Cosine similarity with configurable thresholds
 
 ### Canvas Schema
