@@ -94,9 +94,9 @@ pub async fn create_initialized_handler() -> McpProtocolHandler {
         "id": 1,
         "method": "initialize",
         "params": {
-            "protocol_version": "2024-11-05",
+            "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "client_info": {"name": "test", "version": "1.0"}
+            "clientInfo": {"name": "test", "version": "1.0"}
         }
     }"#;
 
@@ -201,9 +201,9 @@ pub fn create_initialize_request(id: i64, client_name: &str, protocol_version: &
         id,
         "initialize",
         Some(json!({
-            "protocol_version": protocol_version,
+            "protocolVersion": protocol_version,
             "capabilities": {},
-            "client_info": {
+            "clientInfo": {
                 "name": client_name,
                 "version": "1.0.0"
             }
@@ -246,6 +246,7 @@ impl InitializationScenario {
     pub async fn send_initialized(&mut self) -> Result<Value, String> {
         let notification = create_notification("initialized", None);
 
+        // Server sends back notifications/ready after receiving initialized
         let response_str = self
             .handler
             .handle_message(&notification)
@@ -279,10 +280,10 @@ impl InitializationScenario {
     pub async fn complete_initialization(&mut self) -> Result<(), String> {
         // Step 1: Initialize
         let init_response = self.initialize().await?;
-        assert!(init_response["result"]["protocol_version"].is_string());
-        assert!(init_response["result"]["server_info"].is_object());
+        assert!(init_response["result"]["protocolVersion"].is_string());
+        assert!(init_response["result"]["serverInfo"].is_object());
 
-        // Step 2: Send initialized notification and get ready
+        // Step 2: Send initialized notification and receive ready notification
         let ready_notification = self.send_initialized().await?;
         assert_eq!(ready_notification["method"], "notifications/ready");
 
@@ -417,13 +418,13 @@ mod tests {
 
         // Step 1: Initialize
         let init_response = scenario.initialize().await.unwrap();
-        assert_eq!(init_response["result"]["protocol_version"], "2024-11-05");
+        assert_eq!(init_response["result"]["protocolVersion"], "2024-11-05");
         assert_eq!(
-            init_response["result"]["server_info"]["name"],
+            init_response["result"]["serverInfo"]["name"],
             "test-server"
         );
 
-        // Step 2: Send initialized and get ready
+        // Step 2: Send initialized and receive ready notification
         let ready = scenario.send_initialized().await.unwrap();
         assert_eq!(ready["method"], "notifications/ready");
 
