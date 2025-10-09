@@ -1,5 +1,6 @@
 // crates/crucible-mcp/src/main.rs
-use crucible_mcp::{EmbeddingConfig, McpServer, create_provider};
+use crucible_mcp::{CrucibleMcpService, EmbeddingConfig, EmbeddingDatabase, create_provider};
+use rmcp::{transport::stdio, ServiceExt};
 use std::env;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
@@ -61,12 +62,24 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Embedding provider initialized successfully");
 
-    tracing::info!("Starting MCP server");
+    tracing::info!("Starting MCP server with rmcp");
     tracing::info!("  Vault path: {}", vault_path);
     tracing::info!("  Database: {}", db_path);
 
-    // Start the MCP server over stdio with the embedding provider
-    McpServer::start_stdio(&db_path, provider).await?;
+    // Initialize database
+    let database = EmbeddingDatabase::new(&db_path).await?;
+    tracing::info!("Database initialized successfully");
+
+    // Create the rmcp service
+    let service = CrucibleMcpService::new(database, provider);
+    tracing::info!("CrucibleMcpService created successfully");
+
+    // Start the MCP server over stdio with rmcp
+    tracing::info!("Starting stdio transport...");
+    let server = service.serve(stdio()).await?;
+
+    tracing::info!("MCP server started, waiting for requests...");
+    server.waiting().await?;
 
     Ok(())
 }
