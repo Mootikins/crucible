@@ -2,8 +2,9 @@ mod test_helpers;
 
 use crucible_mcp::{types::ToolCallArgs, McpServer};
 use serde_json::json;
+use std::fs;
 use tempfile::tempdir;
-use test_helpers::create_test_provider;
+use test_helpers::{create_test_provider, create_test_vault};
 
 #[tokio::test]
 async fn test_server_initialization() {
@@ -453,18 +454,26 @@ async fn test_index_vault_incremental() {
 #[tokio::test]
 async fn test_get_note_metadata_success() {
     let temp_dir = tempdir().unwrap();
+    let vault_path = temp_dir.path().join("vault");
+    fs::create_dir(&vault_path).unwrap();
+    create_test_vault(&vault_path);
+
     let db_path = temp_dir.path().join("server_test.db");
     let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // First add some data
-    let index_args = json!({ "force": true });
+    let index_args = json!({
+        "force": true,
+        "path": vault_path.to_str().unwrap()
+    });
     server
         .handle_tool_call("index_vault", index_args)
         .await
         .unwrap();
 
+    let file_path = vault_path.join("file0.md");
     let args = json!({
-        "path": "file0.md"
+        "path": file_path.to_str().unwrap()
     });
 
     let result = server
@@ -515,18 +524,26 @@ async fn test_get_note_metadata_missing_args() {
 #[tokio::test]
 async fn test_update_note_properties_success() {
     let temp_dir = tempdir().unwrap();
+    let vault_path = temp_dir.path().join("vault");
+    fs::create_dir(&vault_path).unwrap();
+    create_test_vault(&vault_path);
+
     let db_path = temp_dir.path().join("server_test.db");
     let server = McpServer::new(db_path.to_str().unwrap(), create_test_provider()).await.unwrap();
 
     // First add some data
-    let index_args = json!({ "force": true });
+    let index_args = json!({
+        "force": true,
+        "path": vault_path.to_str().unwrap()
+    });
     server
         .handle_tool_call("index_vault", index_args)
         .await
         .unwrap();
 
+    let file_path = vault_path.join("file0.md");
     let args = json!({
-        "path": "file0.md",
+        "path": file_path.to_str().unwrap(),
         "properties": {
             "status": "updated",
             "priority": 2

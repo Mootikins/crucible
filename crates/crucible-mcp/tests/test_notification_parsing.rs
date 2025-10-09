@@ -147,16 +147,10 @@ async fn test_initialized_notification_sets_flag() {
     assert!(result.is_ok(), "Initialized notification should be handled");
 
     let response = result.unwrap();
+    // Per MCP spec, initialized notification should NOT receive a response
     assert!(
-        response.is_some(),
-        "Initialized notification should send ready notification"
-    );
-
-    // Verify ready notification is returned
-    let ready_json = response.unwrap();
-    assert!(
-        ready_json.contains("notifications/ready"),
-        "Should return ready notification after initialized"
+        response.is_none(),
+        "Per MCP spec, initialized notification should not send a response"
     );
 
     // Verify the handler is now initialized by calling tools/list
@@ -181,8 +175,8 @@ async fn test_initialized_notification_sets_flag() {
 }
 
 #[tokio::test]
-async fn test_ready_notification_format() {
-    // Verify that ready notification has correct format
+async fn test_initialized_notification_no_response() {
+    // Verify that initialized notification does NOT send a response per MCP spec
     let mut handler = McpProtocolHandler::new("test".into(), "1.0".into());
 
     let notification_message = r#"{
@@ -191,14 +185,9 @@ async fn test_ready_notification_format() {
     }"#;
 
     let result = handler.handle_message(notification_message).await.unwrap();
-    let ready_json_str = result.unwrap();
 
-    // Parse the ready notification
-    let ready_notification: JsonRpcNotification = serde_json::from_str(&ready_json_str).unwrap();
-
-    assert_eq!(ready_notification.jsonrpc, "2.0");
-    assert_eq!(ready_notification.method, "notifications/ready");
-    assert!(ready_notification.params.is_none());
+    // Per MCP spec, initialized notification should not receive a response
+    assert!(result.is_none(), "Initialized notification must not send a response per MCP spec");
 }
 
 #[tokio::test]
@@ -304,15 +293,11 @@ async fn test_complete_initialization_handshake() {
         "Initialized notification should be handled"
     );
 
-    // Step 4: Verify ready notification
-    let ready_response_str = initialized_result.unwrap().unwrap();
-    let ready_notification: Value = serde_json::from_str(&ready_response_str).unwrap();
-
-    assert_eq!(ready_notification["jsonrpc"], "2.0");
-    assert_eq!(ready_notification["method"], "notifications/ready");
+    // Step 4: Per MCP spec, initialized notification should NOT receive a response
+    let initialized_response = initialized_result.unwrap();
     assert!(
-        ready_notification.get("id").is_none(),
-        "Ready notification should not have id"
+        initialized_response.is_none(),
+        "Per MCP spec, initialized notification must not send a response"
     );
 
     // Step 5: Verify tools/list works after initialization
@@ -453,12 +438,10 @@ async fn test_regression_initialized_notification_without_id() {
     );
 
     let response = result.unwrap();
-    assert!(response.is_some(), "Should return ready notification");
-
-    let ready_json = response.unwrap();
+    // Per MCP spec, initialized notification should NOT send a response
     assert!(
-        ready_json.contains("notifications/ready"),
-        "Should return ready notification, not error"
+        response.is_none(),
+        "Per MCP spec, initialized notification must not send a response"
     );
 }
 
