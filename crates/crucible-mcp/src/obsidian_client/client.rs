@@ -341,7 +341,7 @@ impl ObsidianClient {
     ///
     /// # Example
     /// ```no_run
-    /// # use crucible_mcp::obsidian_client::{ObsidianClient, types::EmbeddingSettings};
+    /// # use crucible_mcp::obsidian_client::{ObsidianClient, EmbeddingSettings};
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let client = ObsidianClient::new()?;
     /// let settings = EmbeddingSettings {
