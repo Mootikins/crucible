@@ -4,6 +4,7 @@ pub mod embeddings;
 pub mod integration;
 pub mod obsidian_client;
 pub mod protocol;
+pub mod service;
 pub mod tools;
 pub mod types;
 
@@ -16,6 +17,7 @@ use std::sync::Arc;
 pub use embeddings::{EmbeddingConfig, EmbeddingProvider, create_provider};
 pub use integration::*;
 pub use protocol::{McpProtocolHandler, StdioMcpServer};
+pub use service::CrucibleMcpService;
 pub use types::*;
 
 pub struct McpServer {
