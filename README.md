@@ -2,7 +2,7 @@
 
 > Where ideas transform through linked thinking
 
-A knowledge management system that combines the zooming interface of Workflowy, the extensibility of Obsidian, and AI agent integration to create a platform for organizing and connecting ideas. Crucible promotes **linked thinking** - the seamless connection and evolution of ideas across time and context.
+A knowledge management system that combines hierarchical organization, real-time collaboration, and AI agent integration to create a platform for organizing and connecting ideas. Crucible promotes **linked thinking** - the seamless connection and evolution of ideas across time and context.
 
 ## Features
 
@@ -33,7 +33,7 @@ pnpm dev
 
 - **Core**: Rust + Tauri
 - **Frontend**: Svelte 5 + TypeScript
-- **Database**: PGlite with pgvector
+- **Database**: DuckDB with vss extension
 - **CRDT**: Yrs
 - **Scripting**: Rune
 
