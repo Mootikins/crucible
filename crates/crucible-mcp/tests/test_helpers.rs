@@ -6,7 +6,25 @@ use async_trait::async_trait;
 use crucible_mcp::embeddings::{EmbeddingProvider, EmbeddingResponse, EmbeddingResult};
 use crucible_mcp::protocol::McpProtocolHandler;
 use serde_json::{json, Value};
+use std::fs;
 use std::sync::Arc;
+
+/// Helper function to create test markdown files in a directory
+pub fn create_test_vault(vault_path: &std::path::Path) {
+    // Create some test markdown files
+    let files = vec![
+        ("file0.md", "Content for file: file0.md"),
+        ("file1.md", "Content for file: file1.md"),
+        ("file2.md", "Content for file: file2.md"),
+        ("file3.md", "Content for file: file3.md"),
+        ("file4.md", "Content for file: file4.md"),
+    ];
+
+    for (filename, content) in files {
+        let file_path = vault_path.join(filename);
+        fs::write(file_path, content).unwrap();
+    }
+}
 
 /// Mock embedding provider for testing
 ///
@@ -82,6 +100,58 @@ pub fn create_test_provider() -> Arc<dyn EmbeddingProvider> {
 /// Create a mock embedding provider with custom dimensions
 pub fn create_test_provider_with_dimensions(dimensions: usize) -> Arc<dyn EmbeddingProvider> {
     Arc::new(MockEmbeddingProvider::with_dimensions(dimensions))
+}
+
+/// Mock embedding provider that always fails with a specific error
+///
+/// This provider is used to test error handling when embedding generation fails
+/// due to network errors, API failures, rate limits, etc.
+pub struct FailingEmbeddingProvider {
+    error_message: String,
+}
+
+impl FailingEmbeddingProvider {
+    pub fn new(error_message: String) -> Self {
+        Self { error_message }
+    }
+}
+
+#[async_trait]
+impl EmbeddingProvider for FailingEmbeddingProvider {
+    async fn embed(&self, _text: &str) -> EmbeddingResult<EmbeddingResponse> {
+        Err(crucible_mcp::embeddings::EmbeddingError::ProviderError {
+            provider: "FailingProvider".to_string(),
+            message: self.error_message.clone(),
+        })
+    }
+
+    async fn embed_batch(&self, _texts: Vec<String>) -> EmbeddingResult<Vec<EmbeddingResponse>> {
+        Err(crucible_mcp::embeddings::EmbeddingError::ProviderError {
+            provider: "FailingProvider".to_string(),
+            message: self.error_message.clone(),
+        })
+    }
+
+    fn model_name(&self) -> &str {
+        "failing-test-model"
+    }
+
+    fn dimensions(&self) -> usize {
+        384 // Doesn't matter since it always fails
+    }
+
+    fn provider_name(&self) -> &str {
+        "FailingProvider"
+    }
+
+    async fn health_check(&self) -> EmbeddingResult<bool> {
+        Ok(false)
+    }
+}
+
+/// Create a failing embedding provider for testing error scenarios
+pub fn create_failing_provider(error_message: &str) -> Arc<dyn EmbeddingProvider> {
+    Arc::new(FailingEmbeddingProvider::new(error_message.to_string()))
 }
 
 /// Create a standard initialized handler ready for tool calls
@@ -243,21 +313,22 @@ impl InitializationScenario {
     }
 
     /// Execute the initialized notification step
-    pub async fn send_initialized(&mut self) -> Result<Value, String> {
+    pub async fn send_initialized(&mut self) -> Result<(), String> {
         let notification = create_notification("initialized", None);
 
-        // Server sends back notifications/ready after receiving initialized
-        let response_str = self
+        // Per MCP spec, server does NOT send a response to notifications/initialized
+        let response = self
             .handler
             .handle_message(&notification)
             .await
-            .map_err(|e| format!("Initialized notification failed: {}", e))?
-            .ok_or("Initialized should return ready notification")?;
+            .map_err(|e| format!("Initialized notification failed: {}", e))?;
 
-        let notification: Value = serde_json::from_str(&response_str)
-            .map_err(|e| format!("Failed to parse ready notification: {}", e))?;
+        // Should be None (no response)
+        if response.is_some() {
+            return Err("Server should not respond to notifications/initialized per MCP spec".to_string());
+        }
 
-        Ok(notification)
+        Ok(())
     }
 
     /// Send a tools/list request
@@ -283,9 +354,8 @@ impl InitializationScenario {
         assert!(init_response["result"]["protocolVersion"].is_string());
         assert!(init_response["result"]["serverInfo"].is_object());
 
-        // Step 2: Send initialized notification and receive ready notification
-        let ready_notification = self.send_initialized().await?;
-        assert_eq!(ready_notification["method"], "notifications/ready");
+        // Step 2: Send initialized notification
+        self.send_initialized().await?;
 
         Ok(())
     }
@@ -424,9 +494,8 @@ mod tests {
             "test-server"
         );
 
-        // Step 2: Send initialized and receive ready notification
-        let ready = scenario.send_initialized().await.unwrap();
-        assert_eq!(ready["method"], "notifications/ready");
+        // Step 2: Send initialized notification
+        scenario.send_initialized().await.unwrap();
 
         // Step 3: List tools
         let tools = scenario.list_tools().await.unwrap();
