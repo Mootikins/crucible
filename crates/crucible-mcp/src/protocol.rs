@@ -6,6 +6,12 @@ use serde_json::{json, Value};
 use std::io::{self, BufRead, BufReader, Write};
 use tracing::{debug, error, info, warn};
 
+// ==============================================================================
+// JSON-RPC Protocol Types (Legacy)
+// ==============================================================================
+// TODO: Phase 5 - Remove these types, replaced by rmcp's built-in protocol handling
+// These are legacy JSON-RPC protocol types that will be superseded by rmcp
+
 /// JSON-RPC 2.0 request structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcRequest {
@@ -108,17 +114,12 @@ impl McpProtocolHandler {
         info!("Received notification: method={}", notification.method);
         match notification.method.as_str() {
             "initialized" | "notifications/initialized" => {
-                info!("Client confirmed initialization");
+                info!("Client confirmed initialization - server is now ready");
                 self.initialized = true;
 
-                // Send ready notification to client
-                let ready_notification = JsonRpcNotification {
-                    jsonrpc: "2.0".to_string(),
-                    method: "notifications/ready".to_string(),
-                    params: None,
-                };
-
-                Some(serde_json::to_string(&ready_notification).unwrap())
+                // Per MCP spec, we don't send a response to notifications/initialized
+                // The client already knows we're ready after receiving our initialize response
+                None
             }
             "notifications/cancelled" => {
                 debug!("Request cancelled: {:?}", notification.params);
@@ -324,11 +325,12 @@ impl StdioMcpServer {
 
             match self.handle_line(&line).await {
                 Ok(Some(response)) => {
+                    info!("Sending response: {}", response);
                     writeln!(stdout, "{}", response)?;
                     stdout.flush()?;
                 }
                 Ok(None) => {
-                    // No response needed (notification)
+                    debug!("No response needed (notification handled)");
                 }
                 Err(e) => {
                     error!("Error handling message: {}", e);
@@ -342,7 +344,9 @@ impl StdioMcpServer {
                             data: Some(json!({ "details": e.to_string() })),
                         }),
                     };
-                    writeln!(stdout, "{}", serde_json::to_string(&error_response)?)?;
+                    let error_json = serde_json::to_string(&error_response)?;
+                    error!("Sending error response: {}", error_json);
+                    writeln!(stdout, "{}", error_json)?;
                     stdout.flush()?;
                 }
             }
@@ -352,7 +356,7 @@ impl StdioMcpServer {
     }
 
     /// Handle a single line of input
-    async fn handle_line(&mut self, line: &str) -> Result<Option<String>> {
+    pub async fn handle_line(&mut self, line: &str) -> Result<Option<String>> {
         match self.protocol_handler.handle_message(line).await {
             Ok(response) => {
                 // If it's a tool call and we have a server, handle it properly
