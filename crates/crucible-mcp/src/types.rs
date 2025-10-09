@@ -1,4 +1,23 @@
 // crates/crucible-mcp/src/types.rs
+//
+// Type System Structure:
+// ======================
+//
+// DOMAIN TYPES (Keep - these are crucible-specific business logic types):
+// - FileInfo, SearchResult, SearchResultWithScore
+// - EmbeddingMetadata, EmbeddingData, SearchRequest
+// - ToolCallArgs, ToolCallResult, McpTool
+// - ServerCapabilities, InitializeRequest/Response, etc.
+//
+// PROTOCOL TYPES (Remove in Phase 5 - replaced by rmcp):
+// - JsonRpcError (marked with TODO comments below)
+// - JsonRpcRequest, JsonRpcResponse, JsonRpcNotification (in protocol.rs)
+//
+// All domain types derive Debug, Clone, Serialize, Deserialize for:
+// - JSON serialization (serde_json)
+// - rmcp compatibility (requires Serialize + Deserialize)
+// - Thread safety (all types are Send + Sync by default via std types)
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -61,7 +80,7 @@ pub struct SearchResultWithScore {
 }
 
 /// Tool call arguments
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ToolCallArgs {
     pub properties: Option<HashMap<String, serde_json::Value>>,
     pub tags: Option<Vec<String>>,
@@ -185,6 +204,12 @@ pub struct ResourceContent {
     pub mime_type: Option<String>,
     pub text: Option<String>,
 }
+
+// ==============================================================================
+// JSON-RPC Protocol Types
+// ==============================================================================
+// TODO: Phase 5 - Remove this type, replaced by rmcp's error handling
+// This is a legacy JSON-RPC protocol type that will be superseded by rmcp
 
 /// JSON-RPC Error
 #[derive(Debug, Clone, Serialize, Deserialize)]
