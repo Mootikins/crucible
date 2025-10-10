@@ -297,6 +297,13 @@ pub async fn index_vault(
     for entry in glob::glob(&glob_pattern).map_err(|e| anyhow::anyhow!("Invalid glob pattern: {}", e))? {
         match entry {
             Ok(path) => {
+                // Skip hidden directories (like .obsidian, .crucible, .git, etc.)
+                if path.components().any(|c| {
+                    c.as_os_str().to_string_lossy().starts_with('.')
+                }) {
+                    continue;
+                }
+
                 let file_path = path.to_string_lossy().to_string();
 
                 match db.file_exists(&file_path).await {
@@ -308,8 +315,31 @@ pub async fn index_vault(
                         // Read actual file content
                         match tokio::fs::read_to_string(&path).await {
                             Ok(content) => {
+                                // Limit content length to avoid Ollama batch size issues
+                                const MAX_CONTENT_LENGTH: usize = 8000; // Conservative limit
+                                let original_length = content.len();
+                                let truncated_content = if content.len() > MAX_CONTENT_LENGTH {
+                                    let mut truncated = content.chars().take(MAX_CONTENT_LENGTH).collect::<String>();
+                                    truncated.push_str("...");
+                                    truncated
+                                } else {
+                                    content
+                                };
+
+                                tracing::debug!(
+                                    "Processing file {}: original length={}, processed length={}",
+                                    file_path,
+                                    original_length,
+                                    truncated_content.len()
+                                );
+
+                                // Check if we have any content after processing
+                                if truncated_content.trim().is_empty() {
+                                    tracing::warn!("File {} appears to be empty or only whitespace after processing", file_path);
+                                }
+
                                 files_to_index.push(file_path);
-                                file_contents.push(content);
+                                file_contents.push(truncated_content);
                             }
                             Err(e) => errors.push(format!("Failed to read {}: {}", file_path, e)),
                         }
