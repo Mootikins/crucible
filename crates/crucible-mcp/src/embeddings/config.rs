@@ -91,14 +91,14 @@ impl EmbeddingConfig {
     pub fn from_env() -> EmbeddingResult<Self> {
         let provider_str = env::var("EMBEDDING_PROVIDER")
             .unwrap_or_else(|_| "ollama".to_string());
-        
+
         let provider = ProviderType::from_str(&provider_str)?;
-        
+
         let endpoint = env::var("EMBEDDING_ENDPOINT")
             .unwrap_or_else(|_| provider.default_endpoint().to_string());
-        
+
         let api_key = env::var("EMBEDDING_API_KEY").ok();
-        
+
         let model = env::var("EMBEDDING_MODEL")
             .unwrap_or_else(|_| provider.default_model().to_string());
         
@@ -115,13 +115,13 @@ impl EmbeddingConfig {
         let batch_size = env::var("EMBEDDING_BATCH_SIZE")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(10);
+            .unwrap_or(1);  // Default to 1 to avoid Ollama batch size issues
         
         let config = Self {
             provider,
             endpoint,
             api_key,
-            model,
+            model: model.to_string(),
             timeout_secs,
             max_retries,
             batch_size,
@@ -140,7 +140,7 @@ impl EmbeddingConfig {
             model: model.unwrap_or_else(|| "nomic-embed-text".to_string()),
             timeout_secs: 30,
             max_retries: 3,
-            batch_size: 10,
+            batch_size: 1,  // Process one file at a time to avoid Ollama batch size issues
         }
     }
 
