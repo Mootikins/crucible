@@ -269,85 +269,107 @@ pub async fn index_vault(
     provider: &Arc<dyn EmbeddingProvider>,
     args: &ToolCallArgs,
 ) -> Result<ToolCallResult> {
+    use crate::obsidian_client::ObsidianClient;
+
     let force = args.force.unwrap_or(false);
 
-    // Get vault path from args or use current directory
-    let vault_path = args.path.as_deref().unwrap_or(".");
-    let vault_dir = std::path::Path::new(vault_path);
-
-    if !vault_dir.exists() {
-        return Ok(ToolCallResult {
-            success: false,
-            data: None,
-            error: Some(format!("Vault path does not exist: {}", vault_path)),
-        });
-    }
+    // Create ObsidianClient to fetch data from the Obsidian plugin API
+    let client = match ObsidianClient::new() {
+        Ok(client) => client,
+        Err(e) => {
+            return Ok(ToolCallResult {
+                success: false,
+                data: None,
+                error: Some(format!("Failed to connect to Obsidian plugin: {}. Make sure the Crucible plugin is running.", e)),
+            });
+        }
+    };
 
     let mut indexed_count = 0;
     let mut errors = Vec::new();
 
+    // Get list of all files from Obsidian
+    let files = match client.list_files().await {
+        Ok(files) => files,
+        Err(e) => {
+            return Ok(ToolCallResult {
+                success: false,
+                data: None,
+                error: Some(format!("Failed to list files from Obsidian: {}", e)),
+            });
+        }
+    };
+
+    // Filter to only markdown files if needed
+    let md_files: Vec<_> = files
+        .into_iter()
+        .filter(|f| f.path.ends_with(".md"))
+        .collect();
+
+    tracing::info!("Found {} markdown files to index", md_files.len());
+
     // Prepare content for batch embedding
     let mut files_to_index = Vec::new();
     let mut file_contents = Vec::new();
+    let mut file_metadata = Vec::new();
 
-    // Read markdown files from vault directory
-    let pattern = args.pattern.as_deref().unwrap_or("**/*.md");
-    let glob_pattern = format!("{}/{}", vault_path, pattern);
+    for file_info in md_files {
+        let file_path = &file_info.path;
 
-    for entry in glob::glob(&glob_pattern).map_err(|e| anyhow::anyhow!("Invalid glob pattern: {}", e))? {
-        match entry {
-            Ok(path) => {
-                // Skip hidden directories (like .obsidian, .crucible, .git, etc.)
-                if path.components().any(|c| {
-                    c.as_os_str().to_string_lossy().starts_with('.')
-                }) {
+        // Check if already indexed (unless force flag is set)
+        match db.file_exists(file_path).await {
+            Ok(exists) => {
+                if !force && exists {
                     continue;
                 }
 
-                let file_path = path.to_string_lossy().to_string();
-
-                match db.file_exists(&file_path).await {
-                    Ok(exists) => {
-                        if !force && exists {
-                            continue;
-                        }
-
-                        // Read actual file content
-                        match tokio::fs::read_to_string(&path).await {
-                            Ok(content) => {
-                                // Limit content length to avoid Ollama batch size issues
-                                const MAX_CONTENT_LENGTH: usize = 8000; // Conservative limit
-                                let original_length = content.len();
-                                let truncated_content = if content.len() > MAX_CONTENT_LENGTH {
-                                    let mut truncated = content.chars().take(MAX_CONTENT_LENGTH).collect::<String>();
-                                    truncated.push_str("...");
-                                    truncated
-                                } else {
-                                    content
-                                };
-
-                                tracing::debug!(
-                                    "Processing file {}: original length={}, processed length={}",
-                                    file_path,
-                                    original_length,
-                                    truncated_content.len()
-                                );
-
-                                // Check if we have any content after processing
-                                if truncated_content.trim().is_empty() {
-                                    tracing::warn!("File {} appears to be empty or only whitespace after processing", file_path);
-                                }
-
-                                files_to_index.push(file_path);
-                                file_contents.push(truncated_content);
-                            }
-                            Err(e) => errors.push(format!("Failed to read {}: {}", file_path, e)),
-                        }
+                // Get file content from Obsidian
+                let content = match client.get_file(file_path).await {
+                    Ok(content) => content,
+                    Err(e) => {
+                        errors.push(format!("Failed to get content for {}: {}", file_path, e));
+                        continue;
                     }
-                    Err(e) => errors.push(format!("Failed to check existence of {}: {}", file_path, e)),
+                };
+
+                // Get file metadata (tags, properties, etc.) from Obsidian
+                let obs_metadata = match client.get_metadata(file_path).await {
+                    Ok(metadata) => metadata,
+                    Err(e) => {
+                        errors.push(format!("Failed to get metadata for {}: {}", file_path, e));
+                        continue;
+                    }
+                };
+
+                // Limit content length to avoid Ollama batch size issues
+                const MAX_CONTENT_LENGTH: usize = 8000;
+                let original_length = content.len();
+                let truncated_content = if content.len() > MAX_CONTENT_LENGTH {
+                    let mut truncated = content.chars().take(MAX_CONTENT_LENGTH).collect::<String>();
+                    truncated.push_str("...");
+                    truncated
+                } else {
+                    content
+                };
+
+                tracing::debug!(
+                    "Processing file {}: original length={}, processed length={}, tags={:?}",
+                    file_path,
+                    original_length,
+                    truncated_content.len(),
+                    obs_metadata.tags
+                );
+
+                // Check if we have any content after processing
+                if truncated_content.trim().is_empty() {
+                    tracing::warn!("File {} appears to be empty or only whitespace after processing", file_path);
                 }
+
+                files_to_index.push(file_path.clone());
+                file_contents.push(truncated_content);
+                file_metadata.push(obs_metadata);
             }
-            Err(e) => errors.push(format!("Failed to read file: {}", e)),
+            Err(e) => errors.push(format!("Failed to check existence of {}: {}", file_path, e)),
         }
     }
 
@@ -358,27 +380,32 @@ pub async fn index_vault(
 
         match provider.embed_batch(content_strings).await {
             Ok(embedding_results) => {
-                // Store each embedding
+                // Store each embedding with metadata from Obsidian
                 for (idx, (file_path, content)) in files_to_index.iter().zip(file_contents.iter()).enumerate() {
                     if let Some(embedding_result) = embedding_results.get(idx) {
-                        // Create metadata
-                        let metadata = crate::types::EmbeddingMetadata {
-                            file_path: file_path.clone(),
-                            title: Some(file_path.clone()),
-                            tags: vec!["indexed".to_string()],
-                            folder: "vault".to_string(),
-                            properties: HashMap::new(),
-                            created_at: chrono::Utc::now(),
-                            updated_at: chrono::Utc::now(),
-                        };
+                        if let Some(obs_metadata) = file_metadata.get(idx) {
+                            // Create metadata using data from Obsidian
+                            let metadata = crate::types::EmbeddingMetadata {
+                                file_path: file_path.clone(),
+                                title: obs_metadata.properties.get("title")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string())
+                                    .or_else(|| Some(file_path.clone())),
+                                tags: obs_metadata.tags.clone(),
+                                folder: obs_metadata.folder.clone(),
+                                properties: obs_metadata.properties.clone(),
+                                created_at: chrono::Utc::now(),
+                                updated_at: chrono::Utc::now(),
+                            };
 
-                        // Store embedding
-                        match db
-                            .store_embedding(file_path, content, &embedding_result.embedding, &metadata)
-                            .await
-                        {
-                            Ok(_) => indexed_count += 1,
-                            Err(e) => errors.push(format!("Failed to index {}: {}", file_path, e)),
+                            // Store embedding
+                            match db
+                                .store_embedding(file_path, content, &embedding_result.embedding, &metadata)
+                                .await
+                            {
+                                Ok(_) => indexed_count += 1,
+                                Err(e) => errors.push(format!("Failed to index {}: {}", file_path, e)),
+                            }
                         }
                     }
                 }
