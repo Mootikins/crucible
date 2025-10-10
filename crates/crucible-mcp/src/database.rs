@@ -102,6 +102,28 @@ impl EmbeddingDatabase {
         Ok(())
     }
 
+    /// Update only metadata for an existing file (keeps embedding unchanged)
+    pub async fn update_metadata(
+        &self,
+        file_path: &str,
+        metadata: &EmbeddingMetadata,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let metadata_json = serde_json::to_string(metadata)?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            r#"
+            UPDATE embeddings
+            SET metadata = ?, updated_at = ?
+            WHERE file_path = ?
+            "#,
+            [&metadata_json, &now, file_path],
+        )?;
+
+        Ok(())
+    }
+
     /// Check if a file exists in the database
     pub async fn file_exists(&self, file_path: &str) -> Result<bool> {
         let conn = self.conn.lock().unwrap();
