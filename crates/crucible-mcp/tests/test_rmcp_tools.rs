@@ -262,3 +262,107 @@ async fn test_tools_capability_enabled() {
         "Tools capability should be enabled"
     );
 }
+
+/// Test search_by_tags functionality
+#[tokio::test]
+async fn test_search_by_tags() {
+    use crucible_mcp::types::EmbeddingMetadata;
+    use std::collections::HashMap;
+    use chrono::Utc;
+
+    let temp_dir = tempdir().unwrap();
+    let db_path = temp_dir.path().join("test.db");
+    let database = EmbeddingDatabase::new(db_path.to_str().unwrap())
+        .await
+        .expect("Failed to create test database");
+
+    // Create test metadata with tags
+    let metadata1 = EmbeddingMetadata {
+        file_path: "note1.md".to_string(),
+        title: Some("Note 1".to_string()),
+        tags: vec!["rust".to_string(), "programming".to_string()],
+        folder: "".to_string(),
+        properties: HashMap::new(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    };
+
+    let metadata2 = EmbeddingMetadata {
+        file_path: "note2.md".to_string(),
+        title: Some("Note 2".to_string()),
+        tags: vec!["rust".to_string(), "web".to_string()],
+        folder: "".to_string(),
+        properties: HashMap::new(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    };
+
+    let metadata3 = EmbeddingMetadata {
+        file_path: "note3.md".to_string(),
+        title: Some("Note 3".to_string()),
+        tags: vec!["python".to_string(), "data-science".to_string()],
+        folder: "".to_string(),
+        properties: HashMap::new(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    };
+
+    // Store embeddings with tags
+    let embedding = vec![0.1; 384]; // dummy embedding
+    database
+        .store_embedding("note1.md", "Rust content", &embedding, &metadata1)
+        .await
+        .expect("Failed to store embedding 1");
+    database
+        .store_embedding("note2.md", "More rust content", &embedding, &metadata2)
+        .await
+        .expect("Failed to store embedding 2");
+    database
+        .store_embedding("note3.md", "Python content", &embedding, &metadata3)
+        .await
+        .expect("Failed to store embedding 3");
+
+    // Search by single tag
+    let results = database
+        .search_by_tags(&["rust".to_string()])
+        .await
+        .expect("Failed to search by tags");
+
+    // Should find both notes with "rust" tag
+    assert_eq!(
+        results.len(),
+        2,
+        "Should find 2 notes with 'rust' tag, found {}. Results: {:?}",
+        results.len(),
+        results
+    );
+    assert!(results.contains(&"note1.md".to_string()));
+    assert!(results.contains(&"note2.md".to_string()));
+
+    // Search by multiple tags (OR operation)
+    let results = database
+        .search_by_tags(&["rust".to_string(), "python".to_string()])
+        .await
+        .expect("Failed to search by multiple tags");
+
+    // Should find all three notes
+    assert_eq!(
+        results.len(),
+        3,
+        "Should find 3 notes with 'rust' or 'python' tags, found {}",
+        results.len()
+    );
+
+    // Search by non-existent tag
+    let results = database
+        .search_by_tags(&["javascript".to_string()])
+        .await
+        .expect("Failed to search by non-existent tag");
+
+    assert_eq!(
+        results.len(),
+        0,
+        "Should find 0 notes with 'javascript' tag, found {}",
+        results.len()
+    );
+}
