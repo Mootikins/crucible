@@ -14,15 +14,18 @@ A Model Context Protocol (MCP) server for the Crucible knowledge management syst
 - **Retry Logic** - Automatic exponential backoff on failures
 
 ### Core MCP Tools
-- **search_by_properties** - Search notes by frontmatter properties
-- **search_by_tags** - Search notes by tags
-- **search_by_folder** - Search notes in specific folders
+- **search_by_properties** - Search notes by frontmatter properties via Obsidian API
+- **search_by_tags** 🌐 - Search notes by tags via Obsidian API (real-time results)
+- **search_by_folder** - Search notes in specific folders via Obsidian API
 - **search_by_filename** - Search notes by filename patterns
 - **search_by_content** - Full-text search in note contents
 - **semantic_search** 🔥 - Vector similarity search using real embeddings
-- **index_vault** 🔥 - Generate real embeddings for vault notes
+- **index_vault** 🔥🌐 - Generate real embeddings for vault notes via Obsidian API
 - **get_note_metadata** - Get metadata for specific notes
 - **update_note_properties** - Update note frontmatter properties
+
+🔥 = Uses real embeddings from configured provider
+🌐 = Uses Obsidian plugin HTTP API for live data
 
 ### Crucible Integration Tools
 - **index_document** 🔥 - Index Crucible documents with real embeddings
@@ -30,11 +33,16 @@ A Model Context Protocol (MCP) server for the Crucible knowledge management syst
 - **get_document_stats** - Get statistics about indexed documents
 - **update_document_properties** - Update Crucible document properties
 
-🔥 = Uses real embeddings from configured provider
-
 ## Architecture
 
-### Embedding Layer 🆕
+### Obsidian Integration Layer 🆕
+- **HTTP API Client** - Direct integration with Obsidian plugin REST API
+- **Live Data Access** - Real-time access to vault files, tags, and metadata
+- **No Filesystem Access** - All data fetched via Obsidian HTTP API (port 27123)
+- **Tag Search** - Direct queries to Obsidian for instant tag-based filtering
+- **Metadata Sync** - Automatic sync of frontmatter properties and tags
+
+### Embedding Layer
 - **Provider Abstraction** - Trait-based design for multiple backends
 - **Ollama Support** - Local, free embedding generation
 - **OpenAI Support** - Cloud-based premium embeddings
@@ -47,6 +55,7 @@ A Model Context Protocol (MCP) server for the Crucible knowledge management syst
 - **JSON Storage** - Flexible metadata and embedding storage (variable dimensions)
 
 ### Protocol Layer
+- **rmcp SDK** - Official Rust MCP SDK with tool_router macro
 - **JSON-RPC 2.0** - Standard protocol for MCP communication
 - **stdio Transport** - Communication over standard input/output
 - **Error Handling** - Comprehensive error responses and logging
@@ -154,6 +163,19 @@ CREATE TABLE embeddings (
 ## Configuration
 
 ### Environment Variables
+
+#### Embedding Provider Configuration
+- `EMBEDDING_PROVIDER` - Provider type: "ollama" (default) or "openai"
+- `EMBEDDING_MODEL` - Model name (e.g., "nomic-embed-text-v1.5-q8_0" for Ollama)
+- `EMBEDDING_ENDPOINT` - API endpoint URL (e.g., "https://llama.terminal.krohnos.io")
+- `EMBEDDING_BATCH_SIZE` - Batch size for bulk operations (default: 1)
+- `OPENAI_API_KEY` - API key for OpenAI provider (if using OpenAI)
+
+#### Obsidian Plugin Configuration
+- `OBSIDIAN_API_PORT` - Obsidian plugin HTTP API port (default: 27123)
+- `OBSIDIAN_VAULT_PATH` - Path to Obsidian vault (for display purposes)
+
+#### General Configuration
 - `RUST_LOG` - Set logging level (debug, info, warn, error)
 - `MCP_DB_PATH` - Default database path (default: "crucible.db")
 
@@ -174,7 +196,10 @@ RUST_LOG=crucible_mcp=info ./crucible-mcp-server
 cargo test
 
 # Run specific test module
-cargo test test_server
+cargo test test_rmcp_tools
+
+# Run integration tests (requires Obsidian running)
+cargo test --test test_tag_search -- --ignored
 
 # Run with logging
 RUST_LOG=debug cargo test
@@ -227,25 +252,38 @@ This server implements the MCP (Model Context Protocol) specification:
 - Efficient vector similarity calculations
 - JSON-based flexible metadata storage
 
+## Recent Improvements
+
+### ✅ Completed (October 2025)
+- [x] Real embedding model integration (Ollama + OpenAI providers)
+- [x] Obsidian HTTP API integration for all vault operations
+- [x] Tag search via Obsidian API (real-time results)
+- [x] Vault indexing via Obsidian API (no filesystem access)
+- [x] rmcp SDK integration with tool_router pattern
+- [x] Comprehensive integration tests for tag search
+
+### Documented Plans
+See `/docs/plans/VAULT_INDEXING_API_MIGRATION.md` for detailed optimization roadmap
+
 ## Roadmap
 
 ### Short Term
-- [ ] Real embedding model integration (OpenAI, local models)
+- [ ] Parallel file fetching for large vault indexing (5-10x speedup)
+- [ ] Incremental indexing with modification time detection
 - [ ] Full-text search with FTS5
-- [ ] Incremental indexing with change detection
-- [ ] Connection pooling for concurrent requests
+- [ ] Structured error reporting with partial success details
 
 ### Medium Term
+- [ ] Provider-specific content length optimization
+- [ ] Progress reporting for long operations
 - [ ] Vector quantization for storage efficiency
-- [ ] Multi-tenant support with database sharding
-- [ ] REST API alongside MCP protocol
 - [ ] Prometheus metrics and monitoring
 
 ### Long Term
 - [ ] Distributed search across multiple nodes
 - [ ] Real-time collaborative indexing
 - [ ] Advanced RAG (Retrieval Augmented Generation) features
-- [ ] Integration with external knowledge sources
+- [ ] Multi-provider embedding ensemble search
 
 ## Contributing
 
