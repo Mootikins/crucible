@@ -151,11 +151,21 @@ impl ObsidianClient {
         debug!("Searching by tags: {:?}", tags);
 
         self.retry_request(|| async {
-            let url = format!("{}/api/search/tags", self.base_url);
+            // Build URL with array-style query parameters: tags[]=ai&tags[]=project
+            let mut url = format!("{}/api/search/tags", self.base_url);
+            if !tags.is_empty() {
+                url.push('?');
+                for (i, tag) in tags.iter().enumerate() {
+                    if i > 0 {
+                        url.push('&');
+                    }
+                    url.push_str(&format!("tags[]={}", urlencoding::encode(tag)));
+                }
+            }
+
             let response = self
                 .client
                 .get(&url)
-                .query(&[("tags", tags.join(","))])
                 .send()
                 .await?;
             let search_result: SearchResponse = self.handle_response(response).await?;
