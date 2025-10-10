@@ -8,7 +8,6 @@
 use rmcp::{ErrorData as McpError, model::*, tool, tool_router, tool_handler, handler::server::{wrapper::Parameters, ServerHandler, tool::ToolRouter}};
 use crate::database::EmbeddingDatabase;
 use crate::embeddings::EmbeddingProvider;
-use crate::types::ToolCallArgs;
 use std::sync::Arc;
 
 /// Crucible MCP Service using rmcp SDK
@@ -37,8 +36,18 @@ impl CrucibleMcpService {
     #[tool(description = "Search notes by frontmatter properties")]
     async fn search_by_properties(
         &self,
-        Parameters(args): Parameters<ToolCallArgs>,
+        Parameters(params): Parameters<crate::types::SearchByPropertiesParams>,
     ) -> Result<CallToolResult, McpError> {
+        let args = crate::types::ToolCallArgs {
+            properties: Some(params.properties),
+            tags: None,
+            path: None,
+            recursive: None,
+            pattern: None,
+            query: None,
+            top_k: None,
+            force: None,
+        };
         let result = crate::tools::search_by_properties(&self.database, &args)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -50,8 +59,18 @@ impl CrucibleMcpService {
     #[tool(description = "Search notes by tags")]
     async fn search_by_tags(
         &self,
-        Parameters(args): Parameters<ToolCallArgs>,
+        Parameters(params): Parameters<crate::types::SearchByTagsParams>,
     ) -> Result<CallToolResult, McpError> {
+        let args = crate::types::ToolCallArgs {
+            properties: None,
+            tags: Some(params.tags),
+            path: None,
+            recursive: None,
+            pattern: None,
+            query: None,
+            top_k: None,
+            force: None,
+        };
         let result = crate::tools::search_by_tags(&self.database, &args)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -63,8 +82,18 @@ impl CrucibleMcpService {
     #[tool(description = "Search notes in a specific folder")]
     async fn search_by_folder(
         &self,
-        Parameters(args): Parameters<ToolCallArgs>,
+        Parameters(params): Parameters<crate::types::SearchByFolderParams>,
     ) -> Result<CallToolResult, McpError> {
+        let args = crate::types::ToolCallArgs {
+            properties: None,
+            tags: None,
+            path: Some(params.path),
+            recursive: Some(params.recursive),
+            pattern: None,
+            query: None,
+            top_k: None,
+            force: None,
+        };
         let result = crate::tools::search_by_folder(&self.database, &args)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -76,8 +105,18 @@ impl CrucibleMcpService {
     #[tool(description = "Search notes by filename pattern")]
     async fn search_by_filename(
         &self,
-        Parameters(args): Parameters<ToolCallArgs>,
+        Parameters(params): Parameters<crate::types::SearchByFilenameParams>,
     ) -> Result<CallToolResult, McpError> {
+        let args = crate::types::ToolCallArgs {
+            properties: None,
+            tags: None,
+            path: None,
+            recursive: None,
+            pattern: Some(params.pattern),
+            query: None,
+            top_k: None,
+            force: None,
+        };
         let result = crate::tools::search_by_filename(&self.database, &args)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -89,8 +128,18 @@ impl CrucibleMcpService {
     #[tool(description = "Full-text search in note contents")]
     async fn search_by_content(
         &self,
-        Parameters(args): Parameters<ToolCallArgs>,
+        Parameters(params): Parameters<crate::types::SearchByContentParams>,
     ) -> Result<CallToolResult, McpError> {
+        let args = crate::types::ToolCallArgs {
+            properties: None,
+            tags: None,
+            path: None,
+            recursive: None,
+            pattern: None,
+            query: Some(params.query),
+            top_k: None,
+            force: None,
+        };
         let result = crate::tools::search_by_content(&self.database, &args)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -102,8 +151,18 @@ impl CrucibleMcpService {
     #[tool(description = "Semantic search using embeddings")]
     async fn semantic_search(
         &self,
-        Parameters(args): Parameters<ToolCallArgs>,
+        Parameters(params): Parameters<crate::types::SemanticSearchParams>,
     ) -> Result<CallToolResult, McpError> {
+        let args = crate::types::ToolCallArgs {
+            properties: None,
+            tags: None,
+            path: None,
+            recursive: None,
+            pattern: None,
+            query: Some(params.query),
+            top_k: Some(params.top_k),
+            force: None,
+        };
         let result = crate::tools::semantic_search(&self.database, &self.provider, &args)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -115,8 +174,18 @@ impl CrucibleMcpService {
     #[tool(description = "Generate embeddings for all vault notes")]
     async fn index_vault(
         &self,
-        Parameters(args): Parameters<ToolCallArgs>,
+        Parameters(params): Parameters<crate::types::IndexVaultParams>,
     ) -> Result<CallToolResult, McpError> {
+        let args = crate::types::ToolCallArgs {
+            properties: None,
+            tags: None,
+            path: Some(params.path),
+            recursive: None,
+            pattern: Some(params.pattern),
+            query: None,
+            top_k: None,
+            force: Some(params.force),
+        };
         let result = crate::tools::index_vault(&self.database, &self.provider, &args)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -128,8 +197,18 @@ impl CrucibleMcpService {
     #[tool(description = "Get metadata for a specific note")]
     async fn get_note_metadata(
         &self,
-        Parameters(args): Parameters<ToolCallArgs>,
+        Parameters(params): Parameters<crate::types::GetNoteMetadataParams>,
     ) -> Result<CallToolResult, McpError> {
+        let args = crate::types::ToolCallArgs {
+            properties: None,
+            tags: None,
+            path: Some(params.path),
+            recursive: None,
+            pattern: None,
+            query: None,
+            top_k: None,
+            force: None,
+        };
         let result = crate::tools::get_note_metadata(&self.database, &args)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -141,8 +220,18 @@ impl CrucibleMcpService {
     #[tool(description = "Update frontmatter properties of a note")]
     async fn update_note_properties(
         &self,
-        Parameters(args): Parameters<ToolCallArgs>,
+        Parameters(params): Parameters<crate::types::UpdateNotePropertiesParams>,
     ) -> Result<CallToolResult, McpError> {
+        let args = crate::types::ToolCallArgs {
+            properties: Some(params.properties),
+            tags: None,
+            path: Some(params.path),
+            recursive: None,
+            pattern: None,
+            query: None,
+            top_k: None,
+            force: None,
+        };
         let result = crate::tools::update_note_properties(&self.database, &args)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -154,8 +243,22 @@ impl CrucibleMcpService {
     #[tool(description = "Index a Crucible document for search")]
     async fn index_document(
         &self,
-        Parameters(args): Parameters<ToolCallArgs>,
+        Parameters(params): Parameters<crate::types::IndexDocumentParams>,
     ) -> Result<CallToolResult, McpError> {
+        // For now, pass the document as-is through ToolCallArgs
+        // TODO: Define proper document type and pass directly to tool
+        let properties = serde_json::from_value(params.document)
+            .map_err(|e| McpError::invalid_params(format!("Invalid document format: {}", e), None))?;
+        let args = crate::types::ToolCallArgs {
+            properties: Some(properties),
+            tags: None,
+            path: None,
+            recursive: None,
+            pattern: None,
+            query: None,
+            top_k: None,
+            force: None,
+        };
         let result = crate::tools::index_document(&self.database, &self.provider, &args)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -167,8 +270,18 @@ impl CrucibleMcpService {
     #[tool(description = "Search indexed Crucible documents")]
     async fn search_documents(
         &self,
-        Parameters(args): Parameters<ToolCallArgs>,
+        Parameters(params): Parameters<crate::types::SearchDocumentsParams>,
     ) -> Result<CallToolResult, McpError> {
+        let args = crate::types::ToolCallArgs {
+            properties: None,
+            tags: None,
+            path: None,
+            recursive: None,
+            pattern: None,
+            query: Some(params.query),
+            top_k: Some(params.top_k),
+            force: None,
+        };
         let result = crate::tools::search_documents(&self.database, &self.provider, &args)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -180,8 +293,18 @@ impl CrucibleMcpService {
     #[tool(description = "Get statistics about indexed documents")]
     async fn get_document_stats(
         &self,
-        Parameters(args): Parameters<ToolCallArgs>,
+        Parameters(_params): Parameters<crate::types::GetDocumentStatsParams>,
     ) -> Result<CallToolResult, McpError> {
+        let args = crate::types::ToolCallArgs {
+            properties: None,
+            tags: None,
+            path: None,
+            recursive: None,
+            pattern: None,
+            query: None,
+            top_k: None,
+            force: None,
+        };
         let result = crate::tools::get_document_stats(&self.database, &args)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -193,8 +316,19 @@ impl CrucibleMcpService {
     #[tool(description = "Update properties of a Crucible document")]
     async fn update_document_properties(
         &self,
-        Parameters(args): Parameters<ToolCallArgs>,
+        Parameters(params): Parameters<crate::types::UpdateDocumentPropertiesParams>,
     ) -> Result<CallToolResult, McpError> {
+        // Pass document_id via path and properties via properties
+        let args = crate::types::ToolCallArgs {
+            properties: Some(params.properties),
+            tags: None,
+            path: Some(params.document_id),
+            recursive: None,
+            pattern: None,
+            query: None,
+            top_k: None,
+            force: None,
+        };
         let result = crate::tools::update_document_properties(&self.database, &args)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
