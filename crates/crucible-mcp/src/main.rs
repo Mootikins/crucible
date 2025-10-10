@@ -70,6 +70,32 @@ async fn main() -> anyhow::Result<()> {
     let database = EmbeddingDatabase::new(&db_path).await?;
     tracing::info!("Database initialized successfully");
 
+    // Sync metadata from Obsidian for all existing files in database
+    tracing::info!("Syncing metadata from Obsidian plugin...");
+    match crucible_mcp::tools::sync_metadata_from_obsidian(&database).await {
+        Ok((synced_count, errors)) => {
+            if errors.is_empty() {
+                tracing::info!("Metadata sync successful: {} files updated", synced_count);
+            } else {
+                tracing::warn!(
+                    "Metadata sync completed with errors: {} files updated, {} errors",
+                    synced_count,
+                    errors.len()
+                );
+                for error in errors.iter().take(5) {
+                    tracing::warn!("  - {}", error);
+                }
+                if errors.len() > 5 {
+                    tracing::warn!("  ... and {} more errors", errors.len() - 5);
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to sync metadata from Obsidian: {}", e);
+            tracing::warn!("This may affect search accuracy. Make sure the Obsidian plugin is running.");
+        }
+    }
+
     // Create the rmcp service
     let service = CrucibleMcpService::new(database, provider);
     tracing::info!("CrucibleMcpService created successfully");
