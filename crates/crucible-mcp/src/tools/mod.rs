@@ -7,11 +7,81 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Sync metadata from Obsidian plugin to database for all existing files
+///
+/// This updates tags, properties, and folder information without re-generating embeddings.
+/// Only updates files that already exist in the database.
+pub async fn sync_metadata_from_obsidian(db: &EmbeddingDatabase) -> Result<(usize, Vec<String>)> {
+    use crate::obsidian_client::ObsidianClient;
+
+    let client = match ObsidianClient::new() {
+        Ok(client) => client,
+        Err(e) => {
+            return Err(anyhow::anyhow!(
+                "Failed to connect to Obsidian plugin: {}. Make sure the Crucible plugin is running.",
+                e
+            ));
+        }
+    };
+
+    let mut synced_count = 0;
+    let mut errors = Vec::new();
+
+    // Get list of files that exist in the database
+    let db_files = db.list_files().await?;
+
+    tracing::info!("Syncing metadata for {} files from Obsidian", db_files.len());
+
+    for file_path in db_files {
+        // Get fresh metadata from Obsidian
+        match client.get_metadata(&file_path).await {
+            Ok(obs_metadata) => {
+                // Create updated metadata struct
+                let metadata = crate::types::EmbeddingMetadata {
+                    file_path: file_path.clone(),
+                    title: obs_metadata.properties.get("title")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .or_else(|| Some(file_path.clone())),
+                    tags: obs_metadata.tags.clone(),
+                    folder: obs_metadata.folder.clone(),
+                    properties: obs_metadata.properties.clone(),
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                };
+
+                // Update metadata in database
+                match db.update_metadata(&file_path, &metadata).await {
+                    Ok(_) => {
+                        synced_count += 1;
+                        tracing::debug!("Synced metadata for {}: {:?}", file_path, obs_metadata.tags);
+                    }
+                    Err(e) => {
+                        errors.push(format!("Failed to update metadata for {}: {}", file_path, e));
+                    }
+                }
+            }
+            Err(e) => {
+                errors.push(format!("Failed to get metadata for {}: {}", file_path, e));
+            }
+        }
+    }
+
+    tracing::info!("Metadata sync complete: {} files synced, {} errors", synced_count, errors.len());
+
+    Ok((synced_count, errors))
+}
+
 /// Search notes by frontmatter properties
 pub async fn search_by_properties(
     db: &EmbeddingDatabase,
     args: &ToolCallArgs,
 ) -> Result<ToolCallResult> {
+    // Sync metadata from Obsidian before searching
+    if let Err(e) = sync_metadata_from_obsidian(db).await {
+        tracing::warn!("Failed to sync metadata before search: {}", e);
+    }
+
     let properties = match args.properties.as_ref() {
         Some(props) => props,
         None => {
@@ -39,6 +109,11 @@ pub async fn search_by_properties(
 
 /// Search notes by tags
 pub async fn search_by_tags(db: &EmbeddingDatabase, args: &ToolCallArgs) -> Result<ToolCallResult> {
+    // Sync metadata from Obsidian before searching
+    if let Err(e) = sync_metadata_from_obsidian(db).await {
+        tracing::warn!("Failed to sync metadata before search: {}", e);
+    }
+
     let tags = match args.tags.as_ref() {
         Some(tags) => tags,
         None => {
