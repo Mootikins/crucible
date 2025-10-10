@@ -79,7 +79,7 @@ pub struct SearchResultWithScore {
     pub score: f64,
 }
 
-/// Tool call arguments
+/// Legacy tool call arguments (deprecated - use specific types below)
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ToolCallArgs {
     pub properties: Option<HashMap<String, serde_json::Value>>,
@@ -90,6 +90,120 @@ pub struct ToolCallArgs {
     pub query: Option<String>,
     pub top_k: Option<u32>,
     pub force: Option<bool>,
+}
+
+// Specific parameter types for each tool
+// These provide clear schemas to AI models about required vs optional fields
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SearchByPropertiesParams {
+    /// Property key-value pairs to match
+    pub properties: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SearchByTagsParams {
+    /// Tags to search for
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SearchByFolderParams {
+    /// Folder path to search in
+    pub path: String,
+    /// Search recursively in subfolders (default: true)
+    #[serde(default = "default_recursive")]
+    pub recursive: bool,
+}
+
+fn default_recursive() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SearchByFilenameParams {
+    /// Filename pattern to match
+    pub pattern: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SearchByContentParams {
+    /// Search query text
+    pub query: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SemanticSearchParams {
+    /// Search query text
+    pub query: String,
+    /// Number of results to return (default: 10)
+    #[serde(default = "default_top_k")]
+    pub top_k: u32,
+}
+
+fn default_top_k() -> u32 {
+    10
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct IndexVaultParams {
+    /// Vault path to index (default: current directory)
+    #[serde(default = "default_path")]
+    pub path: String,
+    /// File pattern to match (default: "**/*.md")
+    #[serde(default = "default_pattern")]
+    pub pattern: String,
+    /// Re-index existing files (default: false)
+    #[serde(default)]
+    pub force: bool,
+}
+
+fn default_path() -> String {
+    ".".to_string()
+}
+
+fn default_pattern() -> String {
+    "**/*.md".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct GetNoteMetadataParams {
+    /// Note file path
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct UpdateNotePropertiesParams {
+    /// Note file path
+    pub path: String,
+    /// Properties to update
+    pub properties: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct IndexDocumentParams {
+    /// Document to index
+    pub document: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SearchDocumentsParams {
+    /// Search query text
+    pub query: String,
+    /// Number of results to return (default: 10)
+    #[serde(default = "default_top_k")]
+    pub top_k: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct GetDocumentStatsParams {}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct UpdateDocumentPropertiesParams {
+    /// Document ID
+    pub document_id: String,
+    /// Properties to update
+    pub properties: HashMap<String, serde_json::Value>,
 }
 
 /// MCP Tool definition
