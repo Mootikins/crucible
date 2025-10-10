@@ -45,8 +45,17 @@ impl OllamaProvider {
         config.validate()?;
 
         // Build HTTP client with timeout
-        let client = Client::builder()
-            .timeout(Duration::from_secs(config.timeout_secs))
+        let mut client_builder = Client::builder()
+            .timeout(Duration::from_secs(config.timeout_secs));
+
+        // Accept self-signed certificates for local development servers
+        if config.endpoint.contains("localhost") ||
+           config.endpoint.contains("127.0.0.1") ||
+           config.endpoint.contains(".terminal.") {
+            client_builder = client_builder.danger_accept_invalid_certs(true);
+        }
+
+        let client = client_builder
             .build()
             .map_err(|e| EmbeddingError::ConfigError(format!("Failed to create HTTP client: {}", e)))?;
 
