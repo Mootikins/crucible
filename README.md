@@ -39,8 +39,8 @@ pnpm dev
 
 ## Documentation
 
-- **[Architecture](./ARCHITECTURE.md)** - Complete system architecture and design principles
-- **[Agent System](./AGENTS.md)** - AI agent integration, code generation, and tooling
+- **[Architecture](./docs/ARCHITECTURE.md)** - Complete system architecture and design principles
+- **[AI Agent Guide](./AGENTS.md)** - Instructions for AI agents working on the codebase
 
 ## License
 
