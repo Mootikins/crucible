@@ -1,270 +1,162 @@
-# 🤖 Crucible AI Agents Documentation
+# 🤖 AI Agent Guide for Crucible
 
-> AI agents working on the Crucible codebase through linked thinking
+> Instructions for AI agents (Claude, Codex, etc.) working on the Crucible codebase
 
-This documentation is for AI agents (like Claude, GPT, etc.) that are working on the Crucible project. It provides context, guidelines, and tools to help AI assistants understand and contribute to the codebase effectively through **linked thinking** - the seamless connection and evolution of ideas across time and context.
+This file provides essential information for AI agents to understand and contribute to the Crucible knowledge management system effectively.
 
-## 🧠 Linked Thinking in Agent Workflows
+## 🎯 Project Overview
 
-Crucible promotes **linked thinking** through:
-- **Contextual Connections**: Agents maintain awareness of related concepts and dependencies
-- **Evolutionary Development**: Ideas and code evolve through iterative refinement
-- **Cross-Reference Awareness**: Agents understand how changes affect related components
-- **Temporal Context**: Agents consider the history and future implications of changes
+**Crucible** is a knowledge management system that combines hierarchical organization, real-time collaboration, and AI agent integration. It promotes **linked thinking** - the seamless connection and evolution of ideas across time and context.
 
-## Purpose
+## 🏗️ Architecture
 
-The `.agents` folder contains:
+### Core Components
+- **Rust Core** (`crates/crucible-core/`): Business logic, CRDT operations, document management
+- **Tauri Backend** (`crates/crucible-tauri/`): Desktop app commands, IPC, system integration
+- **Svelte Frontend** (`packages/web/`): UI components, user interactions, real-time updates
+- **MCP Integration** (`crates/crucible-mcp/`): AI agent tools and protocol handling
 
-- **Commands**: Common operations AI agents can perform on the codebase
-- **Hooks**: Event-driven triggers for automated code maintenance
-- **Context**: Shared knowledge about the project structure and conventions
-- **Tools**: Reusable utilities for code analysis and generation
-- **A2A Configuration**: Standardized agent-to-agent configuration management
-- **Workflow Specifications**: GitHub Actions-style workflows for agent operations
-- **Code Generation Templates**: Detailed templates for automated code generation
+### Key Technologies
+- **Rust**: Core performance-critical components
+- **Tauri**: Desktop application framework
+- **Svelte 5**: Modern reactive frontend
+- **Yjs**: CRDT for real-time collaboration
+- **DuckDB**: Embedded database with vector search
+- **Rune**: Plugin scripting language
 
-## Directory Structure
+## 📁 Project Structure
 
 ```
-.agents/
-├── tools/             # AI agent tools and guides
-│   ├── codebase-analysis.md    # Code analysis patterns
-│   └── development-workflows.md # Development workflows
-├── contexts/          # Project context for AI agents
-│   └── project-context.md      # Essential project information
-├── workflows/         # Detailed workflow guides
-│   └── feature-development.md  # Feature development process
-└── config/            # Agent configuration
-    ├── mcp.json       # MCP server config
-    └── agents.json    # Agent definitions
-
-specs/                 # Technical specifications organized by tech stack
-├── rust-core/         # Core Rust business logic specs
-│   └── sprint-1/      # Sprint-based implementation phases
-├── tauri-backend/     # Tauri desktop backend specs
-│   └── sprint-1/
-├── svelte-frontend/   # Svelte UI component specs
-│   └── sprint-1/
-├── database/          # Database and persistence specs
-│   └── sprint-2/
-├── plugin-system/     # Plugin and extensibility specs
-│   └── sprint-3/
-├── mcp-integration/   # MCP and agent integration specs
-│   └── sprint-4/
-├── code-generation/   # Agent code generation specifications
-│   ├── agent-specifications.md    # Detailed agent capabilities and patterns
-│   ├── workflow-specifications.md # GitHub Actions-style workflows
-│   ├── templates/               # Code generation templates
-│   └── validation/              # Quality validation frameworks
-├── visual-node-editor/ # Visual programming interface specs
-│   └── technical-specs.md      # Implementation specifications
-├── data-specs/        # Data schemas and type definitions
-│   ├── document-schema.json
-│   ├── embeddings-schema.json
-│   ├── canvas-schema.json
-│   ├── document-types.ts
-│   └── embeddings-types.ts
-├── sprint-{1,2,3,4}/  # Sprint-based roadmap phases
-├── GAP_ANALYSIS_COMPREHENSIVE.md  # Implementation gap analysis
-└── A2A-SPEC.md        # A2A configuration framework specification (moved to specs/a2a-protocol/)
+crucible/
+├── crates/
+│   ├── crucible-core/           # Core Rust business logic
+│   ├── crucible-tauri/          # Tauri desktop backend
+│   └── crucible-mcp/            # MCP server for AI integration
+├── packages/
+│   └── web/                     # Svelte frontend application
+├── docs/                        # Human documentation
+│   └── ARCHITECTURE.md          # System architecture details
+└── CLAUDE.md                    # This file - AI agent instructions
 ```
 
-## Available Tools
-
-### Codebase Analysis (`tools/codebase-analysis.md`)
-- Search patterns for Rust, TypeScript, and Svelte code
-- Common analysis tasks and workflows
-- File type patterns and conventions
-- Understanding project structure
-
-### Development Workflows (`tools/development-workflows.md`)
-- Code generation workflows
-- Testing strategies
-- Documentation processes
-- Refactoring approaches
-- Debugging techniques
-
-### Project Context (`contexts/project-context.md`)
-- Essential project information
-- Tech stack overview
-- Architecture patterns
-- Development guidelines
-- Common code patterns
-
-### Feature Development (`workflows/feature-development.md`)
-- Step-by-step feature development process
-- Planning and implementation phases
-- Testing and documentation workflows
-- Quality checklists and common pitfalls
-
-## Technical Specifications
-
-### Tech Stack Specifications (`specs/`)
-- **Rust Core** (`rust-core/`): Document CRDT operations, business logic
-- **Tauri Backend** (`tauri-backend/`): Desktop app commands and IPC
-- **Svelte Frontend** (`svelte-frontend/`): UI components and stores
-- **Database Layer** (`database/`): DuckDB schemas and vector operations
-- **Plugin System** (`plugin-system/`): Rune runtime and extensibility
-- **MCP Integration** (`mcp-integration/`): AI agent tools and protocols
-- **Code Generation** (`code-generation/`): Agent specifications for automated code generation
-- **A2A Protocol** (`sprint-4/a2a-protocol-*.md`): Agent-to-agent communication protocols
-
-### Data Specifications (`specs/data-specs/`)
-- **JSON Schemas**: API validation and documentation
-- **Zod Types**: TypeScript runtime validation
-- **Document Schema**: Hierarchical node structure
-- **Embeddings Schema**: Vector search specifications
-- **Canvas Schema**: Spatial positioning and connections
-
-### Sprint Phases (`specs/sprint-{1,2,3,4}/`)
-- **Sprint 1**: Foundation (CRDT + Basic UI)
-- **Sprint 2**: Persistence & UI Polish
-- **Sprint 3**: Canvas & Properties
-- **Sprint 4**: Intelligence Layer
-
-## MCP Integration
-
-### MCP Server Config (`config/mcp.json`)
-```json
-{
-  "name": "crucible-dev-mcp",
-  "version": "0.1.0",
-  "description": "Crucible development MCP server for AI agents",
-  "tools": [
-    {
-      "name": "search_codebase",
-      "description": "Search the codebase for patterns",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "query": {"type": "string"},
-          "file_types": {"type": "array", "items": {"type": "string"}}
-        }
-      }
-    },
-    {
-      "name": "generate_code",
-      "description": "Generate code following project conventions",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "template": {"type": "string"},
-          "context": {"type": "object"}
-        }
-      }
-    }
-  ]
-}
-```
-
-### Agent Definitions (`config/agents.json`)
-```json
-{
-  "agents": [
-    {
-      "name": "code_generator",
-      "description": "Generates code following project patterns",
-      "commands": ["generate", "refactor"],
-      "hooks": ["on-file-create", "on-file-update"],
-      "tools": ["analysis", "docs"]
-    },
-    {
-      "name": "test_automation",
-      "description": "Automates test generation and maintenance",
-      "commands": ["test", "analyze"],
-      "hooks": ["on-commit", "on-file-update"],
-      "tools": ["testing", "analysis"]
-    },
-    {
-      "name": "documentation_bot",
-      "description": "Maintains and updates documentation",
-      "commands": ["docs", "update"],
-      "hooks": ["on-file-create", "on-commit"],
-      "tools": ["docs", "analysis"]
-    }
-  ]
-}
-```
-
-## Usage Examples
-
-### Code Analysis
-- Use `tools/codebase-analysis.md` to understand search patterns
-- Follow `tools/development-workflows.md` for common tasks
-- Reference `contexts/project-context.md` for project conventions
-
-### Feature Development
-- Follow the step-by-step process in `workflows/feature-development.md`
-- Use the quality checklist to ensure completeness
-- Reference development workflows for specific tasks
-
-### Code Generation
-- Use MCP tools like `search_codebase` to understand existing patterns
-- Follow Crucible conventions from project context
-- Generate comprehensive tests and documentation
-- Reference [Agent Code Generation Specs](./specs/code-generation/) for automated code generation
-- Use [A2A Protocol Integration](./specs/a2a-protocol/A2A-SPEC.md) for agent-to-agent communication and configuration management
-- Apply linked thinking principles to maintain contextual awareness across generated code
-- Leverage [Visual Node Editor](./specs/visual-node-editor/) for workflow-based code generation
-- Utilize [Gap Analysis](./specs/GAP_ANALYSIS_COMPREHENSIVE.md) to identify missing specifications
-- Follow GitHub Actions-style workflows for complex multi-step code generation tasks
-
-## Development
-
-### Adding New Tools
-1. Create a new markdown file in `tools/`
-2. Document patterns, workflows, or analysis techniques
-3. Include practical examples and use cases
-4. Reference in `AGENTS.md` and agent configurations
-
-### Adding New Workflows
-1. Create a new markdown file in `workflows/`
-2. Document step-by-step processes
-3. Include checklists and quality gates
-4. Reference from agent configurations
-
-### Updating Agent Configurations
-1. Add new capabilities to `config/mcp.json`
-2. Update agent definitions in `config/agents.json`
-3. Reference new tools and workflows
-4. Test with AI agent interactions
-
-## Guidelines for AI Agents
+## 🔧 Development Guidelines
 
 ### Code Style
-- Follow Rust naming conventions (snake_case for functions/variables)
-- Use TypeScript/JavaScript conventions for frontend code
-- Maintain consistent error handling patterns
-- Add comprehensive documentation
+- **Rust**: Use `snake_case` for functions/variables, `PascalCase` for types
+- **TypeScript/Svelte**: Use `camelCase` for variables, `PascalCase` for components
+- **Error Handling**: Use `Result<T, E>` in Rust, proper error boundaries in Svelte
+- **Documentation**: Add comments for complex logic, maintain clear commit messages
 
-### Project Structure
+### File Organization
 - Keep related functionality in appropriate crates/packages
-- Maintain clear separation between core, UI, and plugin code
-- Follow the established directory structure
-- Use workspace dependencies appropriately
+- Use clear, descriptive file and function names
+- Follow established patterns in existing code
+- Maintain separation between core logic, UI, and external integrations
 
 ### Testing
-- Generate tests for new functionality
-- Maintain test coverage above 80%
-- Include both unit and integration tests
-- Test edge cases and error conditions
+- Write unit tests for core functionality
+- Include integration tests for component interactions
+- Test error conditions and edge cases
+- Use descriptive test names that explain the scenario
 
-### Linked Thinking Principles
-- **Contextual Awareness**: Always consider how changes affect related components
-- **Evolutionary Development**: Build upon existing patterns and conventions
-- **Cross-Reference Maintenance**: Update related documentation and specifications
-- **Temporal Consistency**: Ensure changes align with project history and future plans
+## 🚀 Common Tasks
 
-## Key Resources for Agents
+### Adding New Features
+1. Identify the appropriate location (core, backend, frontend)
+2. Follow existing patterns and conventions
+3. Add comprehensive tests
+4. Update relevant documentation
+5. Consider performance implications
 
-- **[Gap Analysis](./specs/GAP_ANALYSIS_COMPREHENSIVE.md)**: Comprehensive analysis of implementation gaps and context engineering needs
-- **[Agent Specifications](./specs/code-generation/agent-specifications.md)**: Detailed specifications for AI agent code generation with templates and validation
-- **[Workflow Specifications](./specs/code-generation/workflow-specifications.md)**: GitHub Actions-style workflows for agent operations with error handling
-- **[A2A Protocol Specification](./specs/a2a-protocol/A2A-SPEC.md)**: Comprehensive agent-to-agent configuration and communication framework
-- **[Visual Node Editor](./specs/visual-node-editor/technical-specs.md)**: Technical specifications for visual programming interface
-- **[Architecture Documentation](./ARCHITECTURE.md)**: Complete system architecture and component integration guide
+### Fixing Bugs
+1. Reproduce the issue with minimal test case
+2. Identify root cause through debugging
+3. Implement fix with proper error handling
+4. Add tests to prevent regression
+5. Verify fix doesn't break existing functionality
+
+### Code Review
+1. Check for consistency with project patterns
+2. Verify error handling is comprehensive
+3. Ensure tests provide adequate coverage
+4. Confirm documentation is updated if needed
+5. Consider performance and security implications
+
+## 🔍 Code Analysis Patterns
+
+### Search Commands
+- Use `grep -r "pattern" --include="*.rs"` for Rust code
+- Use `grep -r "pattern" --include="*.ts" --include="*.svelte"` for frontend code
+- Search in both `crates/` and `packages/` directories
+
+### Understanding Code Flow
+1. Start from entry points (main.rs, App.svelte)
+2. Follow function calls and data flow
+3. Look for error handling patterns
+4. Check tests for expected behavior examples
+
+## ⚡ Performance Considerations
+
+### Rust Code
+- Use efficient data structures (HashMap, Vec)
+- Minimize allocations in hot paths
+- Leverage Rust's zero-cost abstractions
+- Consider async/await for I/O operations
+
+### Frontend Code
+- Use Svelte's reactivity efficiently
+- Implement virtual scrolling for large lists
+- Optimize bundle size through tree-shaking
+- Cache expensive computations
+
+## 🔐 Security Guidelines
+
+- Validate all user inputs
+- Use parameterized queries for database operations
+- Sanitize data before rendering
+- Follow principle of least privilege for plugin system
+- Keep dependencies updated and review security advisories
+
+## 📋 Quality Checklist
+
+Before submitting changes:
+- [ ] Code follows project style guidelines
+- [ ] Tests pass and provide good coverage
+- [ ] Error handling is comprehensive
+- [ ] Documentation is updated if needed
+- [ ] Performance impact is considered
+- [ ] Security implications are reviewed
+- [ ] No console.log or debug code left in
+- [ ] Commit messages are clear and descriptive
+
+## 🤖 Agent-Specific Instructions
+
+### For Claude Code
+- Use the Task tool for complex multi-step operations
+- Leverage TodoWrite for tracking progress
+- Use appropriate tools (Read, Edit, Bash, Grep) based on operation type
+- Follow conventional commit format when creating commits
+
+### For Codex/GitHub Copilot
+- Focus on specific code generation tasks
+- Follow existing patterns and conventions
+- Generate code that is idiomatic for the target language
+- Include appropriate error handling and documentation
+
+### General Guidelines
+- Always consider the broader context of changes
+- Maintain consistency with existing codebase
+- Ask for clarification if requirements are ambiguous
+- Prioritize correctness over cleverness
+
+## 🔗 Key Resources
+
+- **[Architecture Documentation](./docs/ARCHITECTURE.md)**: Detailed system architecture
+- **[Crucible README](./README.md)**: Project overview and getting started
+- **[Rust Documentation](https://doc.rust-lang.org/)**: Rust language reference
+- **[Svelte Documentation](https://svelte.dev/docs)**: Svelte framework reference
+- **[Tauri Documentation](https://tauri.app/)**: Tauri framework reference
 
 ---
 
-*This agent system is designed to help AI assistants work effectively with the Crucible codebase through linked thinking. Use these tools and conventions to maintain code quality, project consistency, and contextual awareness across all development activities.*
+*This guide helps AI agents work effectively with the Crucible codebase. Follow these guidelines to maintain code quality, consistency, and project integrity.*
