@@ -5,7 +5,7 @@
 // This module provides the official rmcp-based implementation of the Crucible MCP server.
 // It wraps existing tool implementations from tools::mod with rmcp's #[tool] macro.
 
-use rmcp::{ErrorData as McpError, model::*, tool, tool_router, tool_handler, handler::server::{wrapper::Parameters, tool::ToolRouter, ServerHandler}, service::{RequestContext, NotificationContext, RoleServer}};
+use rmcp::{ErrorData as McpError, model::*, tool, tool_router, tool_handler, handler::server::{wrapper::Parameters, ServerHandler, tool::ToolRouter}};
 use crate::database::EmbeddingDatabase;
 use crate::embeddings::EmbeddingProvider;
 use crate::types::ToolCallArgs;
@@ -19,6 +19,7 @@ use std::sync::Arc;
 pub struct CrucibleMcpService {
     database: Arc<EmbeddingDatabase>,
     provider: Arc<dyn EmbeddingProvider>,
+    tool_router: ToolRouter<Self>,
 }
 
 #[tool_router]
@@ -28,6 +29,7 @@ impl CrucibleMcpService {
         Self {
             database: Arc::new(database),
             provider,
+            tool_router: Self::tool_router(),
         }
     }
 
@@ -238,11 +240,12 @@ impl CrucibleMcpService {
 }
 
 // Implement ServerHandler to enable Service<RoleServer> trait for CrucibleMcpService
+#[tool_handler]
 impl ServerHandler for CrucibleMcpService {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             protocol_version: ProtocolVersion::V_2024_11_05,
-            capabilities: ServerCapabilities::default(),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
             server_info: Implementation {
                 name: "crucible-mcp".to_string(),
                 version: "0.1.0".to_string(),
