@@ -33,7 +33,7 @@ impl CrucibleMcpService {
     }
 
     /// Search notes by frontmatter properties
-    #[tool(description = "Search notes by frontmatter properties")]
+    #[tool(description = "[READ] Find notes by YAML properties")]
     async fn search_by_properties(
         &self,
         Parameters(params): Parameters<crate::types::SearchByPropertiesParams>,
@@ -56,7 +56,7 @@ impl CrucibleMcpService {
     }
 
     /// Search notes by tags
-    #[tool(description = "Search notes by tags")]
+    #[tool(description = "[READ] Find notes by tags")]
     async fn search_by_tags(
         &self,
         Parameters(params): Parameters<crate::types::SearchByTagsParams>,
@@ -79,7 +79,7 @@ impl CrucibleMcpService {
     }
 
     /// Search notes in a specific folder
-    #[tool(description = "Search notes in a specific folder")]
+    #[tool(description = "[READ] List notes in folder (recursive)")]
     async fn search_by_folder(
         &self,
         Parameters(params): Parameters<crate::types::SearchByFolderParams>,
@@ -102,7 +102,7 @@ impl CrucibleMcpService {
     }
 
     /// Search notes by filename pattern
-    #[tool(description = "Search notes by filename pattern")]
+    #[tool(description = "[READ] Find notes matching filename")]
     async fn search_by_filename(
         &self,
         Parameters(params): Parameters<crate::types::SearchByFilenameParams>,
@@ -125,7 +125,7 @@ impl CrucibleMcpService {
     }
 
     /// Full-text search in note contents
-    #[tool(description = "Full-text search in note contents")]
+    #[tool(description = "[READ] Full-text search in note contents")]
     async fn search_by_content(
         &self,
         Parameters(params): Parameters<crate::types::SearchByContentParams>,
@@ -148,7 +148,7 @@ impl CrucibleMcpService {
     }
 
     /// Semantic search using embeddings
-    #[tool(description = "Semantic search using embeddings")]
+    #[tool(description = "[READ] Semantic search (needs index_vault first)")]
     async fn semantic_search(
         &self,
         Parameters(params): Parameters<crate::types::SemanticSearchParams>,
@@ -171,7 +171,7 @@ impl CrucibleMcpService {
     }
 
     /// Generate embeddings for all vault notes
-    #[tool(description = "Generate embeddings for all vault notes")]
+    #[tool(description = "[INDEX] Generate embeddings for notes (slow)")]
     async fn index_vault(
         &self,
         Parameters(params): Parameters<crate::types::IndexVaultParams>,
@@ -194,7 +194,7 @@ impl CrucibleMcpService {
     }
 
     /// Get metadata for a specific note
-    #[tool(description = "Get metadata for a specific note")]
+    #[tool(description = "[READ] Get note metadata and frontmatter")]
     async fn get_note_metadata(
         &self,
         Parameters(params): Parameters<crate::types::GetNoteMetadataParams>,
@@ -217,7 +217,7 @@ impl CrucibleMcpService {
     }
 
     /// Update frontmatter properties of a note
-    #[tool(description = "Update frontmatter properties of a note")]
+    #[tool(description = "[WRITE] Update note frontmatter properties")]
     async fn update_note_properties(
         &self,
         Parameters(params): Parameters<crate::types::UpdateNotePropertiesParams>,
@@ -240,7 +240,7 @@ impl CrucibleMcpService {
     }
 
     /// Index a Crucible document for search
-    #[tool(description = "Index a Crucible document for search")]
+    #[tool(description = "[INDEX] Index document for search")]
     async fn index_document(
         &self,
         Parameters(params): Parameters<crate::types::IndexDocumentParams>,
@@ -267,7 +267,7 @@ impl CrucibleMcpService {
     }
 
     /// Search indexed Crucible documents
-    #[tool(description = "Search indexed Crucible documents")]
+    #[tool(description = "[READ] Search indexed documents")]
     async fn search_documents(
         &self,
         Parameters(params): Parameters<crate::types::SearchDocumentsParams>,
@@ -290,7 +290,7 @@ impl CrucibleMcpService {
     }
 
     /// Get statistics about indexed documents
-    #[tool(description = "Get statistics about indexed documents")]
+    #[tool(description = "[READ] Get indexing statistics")]
     async fn get_document_stats(
         &self,
         Parameters(_params): Parameters<crate::types::GetDocumentStatsParams>,
@@ -313,7 +313,7 @@ impl CrucibleMcpService {
     }
 
     /// Update properties of a Crucible document
-    #[tool(description = "Update properties of a Crucible document")]
+    #[tool(description = "[WRITE] Update document properties")]
     async fn update_document_properties(
         &self,
         Parameters(params): Parameters<crate::types::UpdateDocumentPropertiesParams>,

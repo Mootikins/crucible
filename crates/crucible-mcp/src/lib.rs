@@ -37,7 +37,7 @@ impl McpServer {
         vec![
             McpTool {
                 name: "search_by_properties".to_string(),
-                description: "Search notes by frontmatter properties".to_string(),
+                description: "[READ] Find notes by YAML properties".to_string(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -51,7 +51,7 @@ impl McpServer {
             },
             McpTool {
                 name: "search_by_tags".to_string(),
-                description: "Search notes by tags".to_string(),
+                description: "[READ] Find notes by tags".to_string(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -66,7 +66,7 @@ impl McpServer {
             },
             McpTool {
                 name: "search_by_folder".to_string(),
-                description: "Search notes in a specific folder".to_string(),
+                description: "[READ] List notes in folder (recursive)".to_string(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -82,7 +82,7 @@ impl McpServer {
             },
             McpTool {
                 name: "search_by_filename".to_string(),
-                description: "Search notes by filename pattern".to_string(),
+                description: "[READ] Find notes matching filename".to_string(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -96,7 +96,7 @@ impl McpServer {
             },
             McpTool {
                 name: "search_by_content".to_string(),
-                description: "Full-text search in note contents".to_string(),
+                description: "[READ] Full-text search in note contents".to_string(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -107,7 +107,7 @@ impl McpServer {
             },
             McpTool {
                 name: "semantic_search".to_string(),
-                description: "Semantic search using embeddings".to_string(),
+                description: "[READ] Semantic search (needs index_vault first)".to_string(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -123,7 +123,7 @@ impl McpServer {
             },
             McpTool {
                 name: "index_vault".to_string(),
-                description: "Generate embeddings for all vault notes".to_string(),
+                description: "[INDEX] Generate embeddings for notes (slow)".to_string(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -137,7 +137,7 @@ impl McpServer {
             },
             McpTool {
                 name: "get_note_metadata".to_string(),
-                description: "Get metadata for a specific note".to_string(),
+                description: "[READ] Get note metadata and frontmatter".to_string(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -148,7 +148,7 @@ impl McpServer {
             },
             McpTool {
                 name: "update_note_properties".to_string(),
-                description: "Update frontmatter properties of a note".to_string(),
+                description: "[WRITE] Update note frontmatter properties".to_string(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -163,7 +163,7 @@ impl McpServer {
             },
             McpTool {
                 name: "index_document".to_string(),
-                description: "Index a Crucible document for search".to_string(),
+                description: "[INDEX] Index document for search".to_string(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -177,7 +177,7 @@ impl McpServer {
             },
             McpTool {
                 name: "search_documents".to_string(),
-                description: "Search indexed Crucible documents".to_string(),
+                description: "[READ] Search indexed documents".to_string(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -193,7 +193,7 @@ impl McpServer {
             },
             McpTool {
                 name: "get_document_stats".to_string(),
-                description: "Get statistics about indexed documents".to_string(),
+                description: "[READ] Get indexing statistics".to_string(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {}
@@ -201,7 +201,7 @@ impl McpServer {
             },
             McpTool {
                 name: "update_document_properties".to_string(),
-                description: "Update properties of a Crucible document".to_string(),
+                description: "[WRITE] Update document properties".to_string(),
                 input_schema: serde_json::json!({
                     "type": "object",
                     "properties": {
