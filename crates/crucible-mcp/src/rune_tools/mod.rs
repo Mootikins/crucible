@@ -4,7 +4,9 @@
 /// Tools can be dynamically loaded, validated, and executed with hot-reload support.
 
 mod registry;
+mod stdlib;
 mod tool;
 
 pub use registry::ToolRegistry;
+pub use stdlib::build_crucible_module;
 pub use tool::{RuneTool, ToolMetadata};

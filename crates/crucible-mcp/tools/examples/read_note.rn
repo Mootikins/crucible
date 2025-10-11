@@ -1,0 +1,48 @@
+/// Read Note - Example tool using Crucible stdlib
+///
+/// Demonstrates using crucible logging (simplified API)
+
+use crucible::log_info;
+use crucible::log_debug;
+
+/// Get the tool name
+pub fn NAME() {
+    "read_note"
+}
+
+/// Get the tool description
+pub fn DESCRIPTION() {
+    "Read a note from vault (stub - returns placeholder for now)"
+}
+
+/// Get the input schema
+pub fn INPUT_SCHEMA() {
+    #{
+        type: "object",
+        properties: #{
+            path: #{
+                type: "string",
+                description: "Path to the note to read"
+            }
+        },
+        required: ["path"]
+    }
+}
+
+/// Main entry point for the tool
+pub async fn call(args) {
+    log_info(`Reading note: ${args.path}`);
+
+    // TODO: Actually read file when obsidian module is available
+    let content = "(stub content)";
+    let metadata = #{ path: args.path };
+
+    log_debug(`Content length: ${content.len()} chars`);
+
+    #{
+        success: true,
+        path: args.path,
+        content: content,
+        metadata: metadata
+    }
+}

@@ -15,6 +15,26 @@ pub struct ToolRegistry {
 }
 
 impl ToolRegistry {
+    /// Create a new ToolRegistry with Crucible stdlib
+    ///
+    /// This builds a Rune context with the Crucible standard library installed,
+    /// giving tools access to crucible::db, crucible::obsidian, and crucible::log.
+    pub fn new_with_stdlib(
+        tool_dir: PathBuf,
+        db: Arc<crate::database::EmbeddingDatabase>,
+        obsidian: Arc<crate::obsidian_client::ObsidianClient>,
+    ) -> Result<Self> {
+        // Build context with default modules + Crucible stdlib
+        let mut context = rune::Context::with_default_modules()?;
+
+        let crucible_module = super::build_crucible_module(db, obsidian)?;
+        context.install(crucible_module)?;
+
+        Self::new(tool_dir, Arc::new(context))
+    }
+}
+
+impl ToolRegistry {
     /// Create a new ToolRegistry and scan for tools
     ///
     /// This will immediately scan the tool directory and load all .rn files.
