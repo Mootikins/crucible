@@ -4,6 +4,7 @@ pub mod embeddings;
 pub mod integration;
 pub mod obsidian_client;
 pub mod protocol;
+pub mod rune_tools;
 pub mod service;
 pub mod tools;
 pub mod types;

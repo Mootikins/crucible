@@ -1,0 +1,55 @@
+/// Hello World - A simple example Rune MCP tool
+///
+/// This tool demonstrates the basic structure of a Rune-based MCP tool.
+/// It accepts a name parameter and returns a greeting message.
+
+/// Get the tool name
+pub fn NAME() {
+    "hello_world"
+}
+
+/// Get the tool description
+pub fn DESCRIPTION() {
+    "A simple greeting tool that says hello"
+}
+
+/// Get the input schema
+pub fn INPUT_SCHEMA() {
+    #{
+        type: "object",
+        properties: #{
+            name: #{
+                type: "string",
+                description: "The name to greet"
+            }
+        },
+        required: ["name"]
+    }
+}
+
+/// Get the output schema (optional)
+pub fn OUTPUT_SCHEMA() {
+    #{
+        type: "object",
+        properties: #{
+            success: #{ type: "boolean" },
+            message: #{ type: "string" },
+            timestamp: #{ type: "string" }
+        }
+    }
+}
+
+/// Main entry point for the tool
+///
+/// This function is called when the MCP client invokes the tool.
+/// It receives arguments as an object and returns a result object.
+pub async fn call(args) {
+    let name = args.name;
+    let message = `Hello, ${name}! Welcome to Rune MCP tools.`;
+
+    #{
+        success: true,
+        message: message,
+        timestamp: "2025-10-11T00:00:00Z"
+    }
+}
