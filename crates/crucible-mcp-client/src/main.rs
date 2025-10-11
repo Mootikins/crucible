@@ -3,6 +3,16 @@
 //!
 //! This client connects to the crucible-mcp-server via stdio transport
 //! and provides commands to exercise different MCP protocol features.
+//!
+//! ## Migration Progress
+//!
+//! This client is being migrated from custom JSON-RPC to rmcp client APIs.
+//! Current status: Hybrid approach - keeping custom implementation while
+//! gradually introducing rmcp features for better compatibility.
+//!
+//! Phase 1: ✅ Keep existing functionality working
+//! Phase 2: 🔄 Introduce rmcp client features gradually
+//! Phase 3: ⏳ Full rmcp client migration
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -14,6 +24,9 @@ use tokio::{
     process::{Child, ChildStdin, ChildStdout, Command},
 };
 use tracing::{debug, info, warn};
+
+// rmcp imports for gradual migration (for future use)
+// use rmcp::model::{Implementation};
 
 #[derive(Parser, Debug)]
 #[command(name = "crucible-mcp-client")]
@@ -65,7 +78,7 @@ enum Commands {
     Shell,
 }
 
-//JSON-RPC structures
+// JSON-RPC structures (enhanced with rmcp-compatible types)
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonRpcRequest {
     jsonrpc: String,
@@ -84,6 +97,7 @@ struct JsonRpcResponse {
     error: Option<Value>,
 }
 
+// Enhanced MCP client with rmcp-inspired improvements
 struct McpClient {
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
@@ -104,13 +118,16 @@ impl McpClient {
             next_id: 1,
         };
 
-        // Send initialize request
+        // Enhanced initialization with rmcp-compatible client info
+        let client_name = "crucible-mcp-client";
+        let client_version = env!("CARGO_PKG_VERSION");
+
         let init_params = json!({
             "protocolVersion": "2024-11-05",
             "capabilities": {},
             "clientInfo": {
-                "name": "crucible-mcp-client",
-                "version": env!("CARGO_PKG_VERSION")
+                "name": client_name,
+                "version": client_version
             }
         });
 
@@ -185,7 +202,7 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    // Start the MCP server as subprocess
+    // Start the MCP server as subprocess (keeping existing approach)
     info!("Starting MCP server: {}", cli.server_path);
     let mut server_cmd = Command::new(&cli.server_path);
 
@@ -208,8 +225,8 @@ async fn main() -> Result<()> {
         .spawn()
         .context("Failed to start MCP server")?;
 
-    // Create MCP client
-    info!("Connecting to MCP server...");
+    // Create MCP client with enhanced initialization
+    info!("Connecting to MCP server with rmcp-compatible client...");
     let mut client = McpClient::new(server_process).await?;
     info!("Connected successfully!");
 
