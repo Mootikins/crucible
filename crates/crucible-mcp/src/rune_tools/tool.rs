@@ -11,6 +11,7 @@ use std::sync::Arc;
 /// - DESCRIPTION: What the tool does
 /// - INPUT_SCHEMA: JSON Schema for input validation
 /// - call(args): Async function that executes the tool logic
+#[derive(Clone)]
 pub struct RuneTool {
     pub name: String,
     pub description: String,
