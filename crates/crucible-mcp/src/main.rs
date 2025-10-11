@@ -1,9 +1,15 @@
 // crates/crucible-mcp/src/main.rs
-use crucible_mcp::{CrucibleMcpService, EmbeddingConfig, EmbeddingDatabase, create_provider};
+use crucible_mcp::{
+    CrucibleMcpService, EmbeddingConfig, EmbeddingDatabase, create_provider,
+    rune_tools::ToolRegistry,
+    obsidian_client::ObsidianClient,
+};
 use rmcp::{transport::stdio, ServiceExt};
 use std::env;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
+use std::path::PathBuf;
+use std::sync::Arc;
 use tracing_subscriber;
 
 #[tokio::main]
@@ -66,13 +72,13 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("  Vault path: {}", vault_path);
     tracing::info!("  Database: {}", db_path);
 
-    // Initialize database
-    let database = EmbeddingDatabase::new(&db_path).await?;
+    // Initialize database (wrap in Arc early for sharing with Rune tools)
+    let database = std::sync::Arc::new(EmbeddingDatabase::new(&db_path).await?);
     tracing::info!("Database initialized successfully");
 
     // Sync metadata from Obsidian for all existing files in database
     tracing::info!("Syncing metadata from Obsidian plugin...");
-    match crucible_mcp::tools::sync_metadata_from_obsidian(&database).await {
+    match crucible_mcp::tools::sync_metadata_from_obsidian(&*database).await {
         Ok((synced_count, errors)) => {
             if errors.is_empty() {
                 tracing::info!("Metadata sync successful: {} files updated", synced_count);
@@ -96,8 +102,52 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // Create the rmcp service
-    let service = CrucibleMcpService::new(database, provider);
+    // Initialize Rune tools (optional - gracefully degrade if fails)
+    tracing::info!("Initializing Rune tools...");
+    let tool_dir = env::var("RUNE_TOOL_DIR")
+        .unwrap_or_else(|_| {
+            let default_path = format!("{}/tools/examples", vault_path);
+            tracing::info!("RUNE_TOOL_DIR not set, using: {}", default_path);
+            default_path
+        });
+
+    let rune_registry = match ObsidianClient::new() {
+        Ok(obsidian_client) => {
+            let tool_path = PathBuf::from(&tool_dir);
+            match ToolRegistry::new_with_stdlib(
+                tool_path.clone(),
+                Arc::clone(&database),
+                Arc::new(obsidian_client),
+            ) {
+                Ok(registry) => {
+                    tracing::info!("Rune tools loaded successfully:");
+                    for tool_meta in registry.list_tools() {
+                        tracing::info!("  - {}", tool_meta.name);
+                    }
+                    Some(registry)
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load Rune tools: {}", e);
+                    tracing::warn!("Continuing without Rune tools (native tools still available)");
+                    None
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to create Obsidian client for Rune tools: {}", e);
+            tracing::warn!("Continuing without Rune tools (native tools still available)");
+            None
+        }
+    };
+
+    // Create the rmcp service (with or without Rune tools)
+    let service = if let Some(registry) = rune_registry {
+        tracing::info!("Creating service with Rune tools support");
+        CrucibleMcpService::with_rune_tools(Arc::clone(&database), provider, registry)
+    } else {
+        tracing::info!("Creating service without Rune tools (native tools only)");
+        CrucibleMcpService::new(Arc::clone(&database), provider)
+    };
     tracing::info!("CrucibleMcpService created successfully");
 
     // Start the MCP server over stdio with rmcp
