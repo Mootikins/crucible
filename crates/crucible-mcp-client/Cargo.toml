@@ -8,7 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 # MCP protocol
-rmcp = "0.8"
+rmcp = { version = "0.8", features = ["client", "transport-io"] }
 
 # Async runtime
 tokio = { version = "1.47", features = ["full"] }
