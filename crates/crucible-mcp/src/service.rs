@@ -50,28 +50,39 @@ impl CrucibleMcpService {
         }
     }
 
-    /// Get all Rune tools from the registry
-    pub async fn list_rune_tools(&self) -> Vec<crate::rune_tools::ToolMetadata> {
-        if let Some(registry) = &self.rune_registry {
-            let reg = registry.read().await;
-            reg.list_tools()
-        } else {
-            Vec::new()
-        }
-    }
-
-    /// Call a Rune tool by name
-    pub async fn call_rune_tool(&self, name: &str, args: serde_json::Value) -> Result<CallToolResult, McpError> {
+    /// Dynamically call a Rune tool by name
+    ///
+    /// This is a special tool that acts as a dispatcher for dynamically loaded Rune tools.
+    /// Rune tools are discovered at runtime from .rn files and executed via the Rune VM.
+    ///
+    /// Available Rune tools can be queried by calling this tool with tool_name="__list"
+    #[tool(description = "Execute a dynamically loaded Rune tool")]
+    async fn __run_rune_tool(
+        &self,
+        Parameters(params): Parameters<crate::types::RuneToolParams>,
+    ) -> Result<CallToolResult, McpError> {
         let registry = self.rune_registry.as_ref()
             .ok_or_else(|| McpError::internal_error("Rune tools not enabled".to_string(), None))?;
 
+        // Get tool and context without holding lock
         let reg = registry.read().await;
-        let tool = reg.get_tool(name)
-            .ok_or_else(|| McpError::internal_error(format!("Rune tool '{}' not found", name), None))?;
+        let tool = reg.get_tool(&params.tool_name)
+            .ok_or_else(|| McpError::internal_error(format!("Rune tool '{}' not found", params.tool_name), None))?
+            .clone();
+        let context = reg.context.clone();
+        drop(reg); // Explicitly drop lock
 
-        // Execute the Rune tool
-        let result = tool.call(args, &reg.context).await
-            .map_err(|e| McpError::internal_error(format!("Rune tool execution failed: {}", e), None))?;
+        // Execute the Rune tool on a blocking thread since Rune futures are !Send
+        // This is necessary because Rune's VM uses thread-local storage
+        let args = params.args;
+        let result = tokio::task::spawn_blocking(move || {
+            // Create a new tokio runtime for the Rune execution
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(tool.call(args, &context))
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("Task join error: {}", e), None))?
+        .map_err(|e| McpError::internal_error(format!("Rune tool execution failed: {}", e), None))?;
 
         // Convert result to CallToolResult
         let content = serde_json::to_string_pretty(&result)
