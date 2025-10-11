@@ -8,28 +8,76 @@
 use rmcp::{ErrorData as McpError, model::*, tool, tool_router, tool_handler, handler::server::{wrapper::Parameters, ServerHandler, tool::ToolRouter}};
 use crate::database::EmbeddingDatabase;
 use crate::embeddings::EmbeddingProvider;
+use crate::rune_tools::ToolRegistry;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// Crucible MCP Service using rmcp SDK
 ///
-/// This service exposes all 13 Crucible MCP tools via the rmcp protocol.
-/// It delegates to existing tool implementations in the tools module.
+/// This service exposes all 13 native Crucible MCP tools via the rmcp protocol,
+/// plus dynamically loaded Rune-based tools from the tool registry.
 #[derive(Clone)]
 pub struct CrucibleMcpService {
     database: Arc<EmbeddingDatabase>,
     provider: Arc<dyn EmbeddingProvider>,
     tool_router: ToolRouter<Self>,
+    rune_registry: Option<Arc<RwLock<ToolRegistry>>>,
 }
 
 #[tool_router]
 impl CrucibleMcpService {
-    /// Create a new Crucible MCP service instance
-    pub fn new(database: EmbeddingDatabase, provider: Arc<dyn EmbeddingProvider>) -> Self {
+    /// Create a new Crucible MCP service instance without Rune tools
+    pub fn new(database: Arc<EmbeddingDatabase>, provider: Arc<dyn EmbeddingProvider>) -> Self {
         Self {
-            database: Arc::new(database),
+            database,
             provider,
             tool_router: Self::tool_router(),
+            rune_registry: None,
         }
+    }
+
+    /// Create a new Crucible MCP service instance with Rune tool support
+    pub fn with_rune_tools(
+        database: Arc<EmbeddingDatabase>,
+        provider: Arc<dyn EmbeddingProvider>,
+        rune_registry: ToolRegistry,
+    ) -> Self {
+        Self {
+            database,
+            provider,
+            tool_router: Self::tool_router(),
+            rune_registry: Some(Arc::new(RwLock::new(rune_registry))),
+        }
+    }
+
+    /// Get all Rune tools from the registry
+    pub async fn list_rune_tools(&self) -> Vec<crate::rune_tools::ToolMetadata> {
+        if let Some(registry) = &self.rune_registry {
+            let reg = registry.read().await;
+            reg.list_tools()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Call a Rune tool by name
+    pub async fn call_rune_tool(&self, name: &str, args: serde_json::Value) -> Result<CallToolResult, McpError> {
+        let registry = self.rune_registry.as_ref()
+            .ok_or_else(|| McpError::internal_error("Rune tools not enabled".to_string(), None))?;
+
+        let reg = registry.read().await;
+        let tool = reg.get_tool(name)
+            .ok_or_else(|| McpError::internal_error(format!("Rune tool '{}' not found", name), None))?;
+
+        // Execute the Rune tool
+        let result = tool.call(args, &reg.context).await
+            .map_err(|e| McpError::internal_error(format!("Rune tool execution failed: {}", e), None))?;
+
+        // Convert result to CallToolResult
+        let content = serde_json::to_string_pretty(&result)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+
+        Ok(CallToolResult::success(vec![Content::text(content)]))
     }
 
     /// Search notes by frontmatter properties
@@ -435,7 +483,7 @@ mod tests {
     async fn test_service_creation() {
         let temp_dir = tempdir().unwrap();
         let db_path = temp_dir.path().join("test.db");
-        let db = EmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        let db = Arc::new(EmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap());
 
         let provider = Arc::new(TestEmbeddingProvider);
 
