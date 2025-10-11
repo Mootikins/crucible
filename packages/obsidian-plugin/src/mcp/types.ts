@@ -1,10 +1,25 @@
 /**
  * TypeScript type definitions for MCP (Model Context Protocol)
- * Mirrors the Rust types defined in crates/crucible-mcp/src/types.rs
+ *
+ * This file provides type compatibility between our custom types and the
+ * official MCP SDK types. We maintain our existing API for backward compatibility
+ * while leveraging the official SDK implementation.
  */
 
+// Import MCP SDK types for internal use (avoid re-export conflicts)
+import type {
+  ClientCapabilities as McpSdkClientCapabilities,
+  ServerCapabilities as McpSdkServerCapabilities,
+  Tool as McpSdkTool,
+  CallToolRequest as McpSdkCallToolRequest,
+  CallToolResult as McpSdkCallToolResult,
+  TextContent,
+  ImageContent,
+  EmbeddedResource
+} from "@modelcontextprotocol/sdk/types.js";
+
 /**
- * JSON-RPC 2.0 request structure
+ * JSON-RPC 2.0 request structure (legacy - for backward compatibility)
  */
 export interface JsonRpcRequest {
   jsonrpc: string;
@@ -14,7 +29,7 @@ export interface JsonRpcRequest {
 }
 
 /**
- * JSON-RPC 2.0 response structure
+ * JSON-RPC 2.0 response structure (legacy - for backward compatibility)
  */
 export interface JsonRpcResponse {
   jsonrpc: string;
@@ -79,7 +94,7 @@ export interface ServerInfo {
 }
 
 /**
- * MCP initialization request parameters
+ * MCP initialization request parameters (legacy format)
  */
 export interface InitializeRequest {
   protocol_version: string;
@@ -88,7 +103,7 @@ export interface InitializeRequest {
 }
 
 /**
- * MCP initialization response
+ * MCP initialization response (our legacy format)
  */
 export interface InitializeResponse {
   protocol_version: string;
@@ -97,7 +112,7 @@ export interface InitializeResponse {
 }
 
 /**
- * MCP tool definition
+ * MCP tool definition (our legacy format for compatibility)
  */
 export interface McpTool {
   name: string;
@@ -106,14 +121,14 @@ export interface McpTool {
 }
 
 /**
- * List tools response
+ * List tools response (legacy format)
  */
 export interface ListToolsResponse {
   tools: McpTool[];
 }
 
 /**
- * Tool call request parameters
+ * Tool call request parameters (legacy format)
  */
 export interface CallToolRequest {
   name: string;
@@ -121,7 +136,7 @@ export interface CallToolRequest {
 }
 
 /**
- * MCP content types
+ * MCP content types (our legacy format for compatibility)
  */
 export type McpContent =
   | { type: "text"; text: string }
@@ -138,7 +153,7 @@ export interface ResourceContent {
 }
 
 /**
- * Tool call response
+ * Tool call response (our legacy format for compatibility)
  */
 export interface CallToolResponse {
   content: McpContent[];
@@ -189,4 +204,70 @@ export enum JsonRpcErrorCode {
   InvalidParams = -32602,
   InternalError = -32603,
   ServerNotInitialized = -32002,
+}
+
+/**
+ * Utility functions for converting between MCP SDK and legacy formats
+ */
+export class McpTypeConverter {
+  /**
+   * Convert MCP SDK tool to our legacy McpTool format
+   */
+  static fromSdkTool(sdkTool: any): McpTool {
+    return {
+      name: sdkTool.name,
+      description: sdkTool.description,
+      inputSchema: sdkTool.inputSchema,
+    };
+  }
+
+  /**
+   * Convert our legacy McpTool to MCP SDK format
+   */
+  static toSdkTool(legacyTool: McpTool): any {
+    return {
+      name: legacyTool.name,
+      description: legacyTool.description,
+      inputSchema: legacyTool.inputSchema,
+    };
+  }
+
+  /**
+   * Convert MCP SDK CallToolResult to our legacy CallToolResponse format
+   */
+  static fromSdkCallResult(sdkResult: any): CallToolResponse {
+    return {
+      content: sdkResult.content || [],
+      isError: sdkResult.isError || false,
+    };
+  }
+
+  /**
+   * Convert MCP SDK content to our legacy McpContent format
+   */
+  static fromSdkContent(sdkContent: any): McpContent {
+    if (sdkContent.type === "text") {
+      return {
+        type: "text",
+        text: sdkContent.text,
+      };
+    } else if (sdkContent.type === "image") {
+      return {
+        type: "image",
+        data: sdkContent.data,
+        mimeType: sdkContent.mimeType,
+      };
+    } else if (sdkContent.type === "resource") {
+      return {
+        type: "resource",
+        resource: sdkContent.resource,
+      };
+    }
+
+    // Fallback for unknown types
+    return {
+      type: "text",
+      text: JSON.stringify(sdkContent),
+    };
+  }
 }
