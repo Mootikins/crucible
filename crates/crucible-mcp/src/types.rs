@@ -206,6 +206,14 @@ pub struct UpdateDocumentPropertiesParams {
     pub properties: HashMap<String, serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RuneToolParams {
+    /// Name of the Rune tool to execute
+    pub tool_name: String,
+    /// Arguments to pass to the tool
+    pub args: serde_json::Value,
+}
+
 /// MCP Tool definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
