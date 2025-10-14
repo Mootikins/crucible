@@ -5,8 +5,7 @@ echo "🔥 Setting up Crucible development environment..."
 
 # Check requirements
 command -v cargo >/dev/null 2>&1 || { echo "Rust is required. Install from https://rustup.rs"; exit 1; }
-command -v pnpm >/dev/null 2>&1 || { echo "pnpm is required. Install with: npm i -g pnpm"; exit 1; }
-command -v node >/dev/null 2>&1 || { echo "Node.js 20+ is required."; exit 1; }
+command -v bun >/dev/null 2>&1 || { echo "Bun is required. Install from https://bun.sh"; exit 1; }
 
 # Install Rust dependencies
 echo "📦 Installing Rust dependencies..."
@@ -14,15 +13,15 @@ cargo fetch
 
 # Install JS dependencies
 echo "📦 Installing JavaScript dependencies..."
-pnpm install
+bun install
 
 # Setup git hooks
 echo "🔗 Setting up git hooks..."
-pnpm dlx husky install
+bunx husky install || npm i -g husky && husky install
 
 # Build core crates
 echo "🔨 Building core crates..."
 cargo build --workspace
 
-echo "✅ Setup complete! Run 'pnpm dev' to start developing."
+echo "✅ Setup complete! Run 'bun dev' to start developing."
 

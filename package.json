@@ -2,15 +2,30 @@
   "name": "crucible",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "pnpm --filter desktop dev",
-    "build": "pnpm run build:rust && pnpm run build:js",
+    "dev": "bun run dev:rust & bun run dev:desktop",
+    "dev:rust": "cargo tauri dev",
+    "dev:desktop": "bun --cwd packages/desktop dev",
+    "build": "bun run build:rust && bun run build:packages",
     "build:rust": "cargo build --release",
-    "build:js": "pnpm --filter '*' build",
-    "test": "pnpm run test:rust && pnpm run test:js",
+    "build:packages": "bun run build:shared && bun run build:desktop && bun run build:obsidian",
+    "build:shared": "bun --cwd packages/shared build",
+    "build:desktop": "bun --cwd packages/desktop build",
+    "build:obsidian": "bun --cwd packages/obsidian-plugin build",
+    "test": "bun run test:rust && bun run test:packages",
     "test:rust": "cargo test",
-    "test:js": "pnpm --filter '*' test",
-    "lint": "pnpm --filter '*' lint",
+    "test:packages": "bun run test:shared && bun run test:desktop && bun run test:obsidian",
+    "test:shared": "bun --cwd packages/shared test",
+    "test:desktop": "bun --cwd packages/desktop test",
+    "test:obsidian": "bun --cwd packages/obsidian-plugin test",
+    "lint": "bun run lint:packages",
+    "lint:packages": "bun run lint:shared && bun run lint:desktop && bun run lint:obsidian",
+    "lint:shared": "bun --cwd packages/shared lint",
+    "lint:desktop": "bun --cwd packages/desktop lint",
+    "lint:obsidian": "bun --cwd packages/obsidian-plugin lint",
     "setup": "./scripts/setup.sh"
   },
   "devDependencies": {
@@ -18,12 +33,6 @@
     "typescript": "^5.3.0"
   },
   "engines": {
-    "node": ">=20.0.0",
-    "pnpm": ">=8.0.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
+    "bun": ">=1.0.0"
   }
 }
