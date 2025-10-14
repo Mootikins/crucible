@@ -74,13 +74,10 @@ pub async fn sync_metadata_from_obsidian(db: &EmbeddingDatabase) -> Result<(usiz
 
 /// Search notes by frontmatter properties
 pub async fn search_by_properties(
-    db: &EmbeddingDatabase,
+    _db: &EmbeddingDatabase,
     args: &ToolCallArgs,
 ) -> Result<ToolCallResult> {
-    // Sync metadata from Obsidian before searching
-    if let Err(e) = sync_metadata_from_obsidian(db).await {
-        tracing::warn!("Failed to sync metadata before search: {}", e);
-    }
+    use crate::obsidian_client::ObsidianClient;
 
     let properties = match args.properties.as_ref() {
         Some(props) => props,
@@ -93,16 +90,54 @@ pub async fn search_by_properties(
         }
     };
 
-    match db.search_by_properties(properties).await {
-        Ok(files) => Ok(ToolCallResult {
-            success: true,
-            data: Some(serde_json::to_value(files)?),
-            error: None,
-        }),
+    // Convert HashMap<String, serde_json::Value> to HashMap<String, String>
+    let mut string_properties = std::collections::HashMap::new();
+    for (key, value) in properties {
+        let string_value = match value {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Number(n) => n.to_string(),
+            serde_json::Value::Bool(b) => b.to_string(),
+            _ => value.to_string(),
+        };
+        string_properties.insert(key.clone(), string_value);
+    }
+
+    // Create ObsidianClient to search directly via Obsidian API
+    let client = match ObsidianClient::new() {
+        Ok(client) => client,
+        Err(e) => {
+            return Ok(ToolCallResult {
+                success: false,
+                data: None,
+                error: Some(format!("Failed to connect to Obsidian plugin: {}. Make sure the Crucible plugin is running.", e)),
+            });
+        }
+    };
+
+    // Search using ObsidianClient which queries the Obsidian plugin API
+    match client.search_by_properties(&string_properties).await {
+        Ok(files) => {
+            // Convert FileInfo to a simpler format with just paths and basic info
+            let results: Vec<serde_json::Value> = files
+                .iter()
+                .map(|f| serde_json::json!({
+                    "path": f.path,
+                    "name": f.name,
+                    "folder": f.folder,
+                    "size": f.size,
+                }))
+                .collect();
+
+            Ok(ToolCallResult {
+                success: true,
+                data: Some(serde_json::to_value(results)?),
+                error: None,
+            })
+        }
         Err(e) => Ok(ToolCallResult {
             success: false,
             data: None,
-            error: Some(format!("Database error: {}", e)),
+            error: Some(format!("Property search error: {}", e)),
         }),
     }
 }
