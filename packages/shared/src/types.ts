@@ -37,13 +37,7 @@ export interface ViewportState {
   height: number;
 }
 
-export type PropertyValue =
-  | string
-  | number
-  | boolean
-  | PropertyValue[]
-  | Record<string, PropertyValue>
-  | null;
+export type PropertyValue = string | number | boolean | null | any[] | Record<string, any>;
 
 // Database types
 export interface DatabaseDocument {
