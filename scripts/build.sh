@@ -9,7 +9,7 @@ cargo build --release
 
 # Build JavaScript packages
 echo "Building JavaScript packages..."
-pnpm build
+bun run build:packages
 
 echo "✅ Build complete!"
 
