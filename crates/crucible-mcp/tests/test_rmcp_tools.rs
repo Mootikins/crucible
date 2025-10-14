@@ -4,6 +4,7 @@
 
 use crucible_mcp::{CrucibleMcpService, EmbeddingConfig, EmbeddingDatabase, create_provider};
 use rmcp::handler::server::ServerHandler;
+use std::sync::Arc;
 use tempfile::tempdir;
 
 /// Test that the service implements ServerHandler correctly
@@ -11,9 +12,11 @@ use tempfile::tempdir;
 async fn test_server_handler_implementation() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("test.db");
-    let database = EmbeddingDatabase::new(db_path.to_str().unwrap())
-        .await
-        .expect("Failed to create test database");
+    let database = Arc::new(
+        EmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .expect("Failed to create test database")
+    );
 
     let embedding_config = EmbeddingConfig::from_env()
         .expect("Failed to load embedding config");
@@ -222,9 +225,11 @@ async fn test_content_truncation_logic() {
 async fn test_tool_router_initialization() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("test.db");
-    let database = EmbeddingDatabase::new(db_path.to_str().unwrap())
-        .await
-        .expect("Failed to create test database");
+    let database = Arc::new(
+        EmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .expect("Failed to create test database")
+    );
 
     let embedding_config = EmbeddingConfig::from_env()
         .expect("Failed to load embedding config");
@@ -243,9 +248,11 @@ async fn test_tool_router_initialization() {
 async fn test_tools_capability_enabled() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("test.db");
-    let database = EmbeddingDatabase::new(db_path.to_str().unwrap())
-        .await
-        .expect("Failed to create test database");
+    let database = Arc::new(
+        EmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .expect("Failed to create test database")
+    );
 
     let embedding_config = EmbeddingConfig::from_env()
         .expect("Failed to load embedding config");
