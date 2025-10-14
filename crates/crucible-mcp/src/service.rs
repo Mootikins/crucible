@@ -14,7 +14,7 @@ use tokio::sync::RwLock;
 
 /// Crucible MCP Service using rmcp SDK
 ///
-/// This service exposes all 13 native Crucible MCP tools via the rmcp protocol,
+/// This service exposes 10 native Crucible MCP tools via the rmcp protocol,
 /// plus dynamically loaded Rune-based tools from the tool registry.
 #[derive(Clone)]
 pub struct CrucibleMcpService {
@@ -92,7 +92,7 @@ impl CrucibleMcpService {
     }
 
     /// Search notes by frontmatter properties
-    #[tool(description = "[READ] Find notes by YAML properties")]
+    #[tool(description = "[READ] Search vault notes by frontmatter property values (e.g., status:active)")]
     async fn search_by_properties(
         &self,
         Parameters(params): Parameters<crate::types::SearchByPropertiesParams>,
@@ -115,7 +115,7 @@ impl CrucibleMcpService {
     }
 
     /// Search notes by tags
-    #[tool(description = "[READ] Find notes by tags")]
+    #[tool(description = "[READ] Search vault notes by tags (e.g., #project, #ai)")]
     async fn search_by_tags(
         &self,
         Parameters(params): Parameters<crate::types::SearchByTagsParams>,
@@ -137,9 +137,9 @@ impl CrucibleMcpService {
         self.convert_result(result)
     }
 
-    /// Search notes in a specific folder
-    #[tool(description = "[READ] List notes in folder (recursive)")]
-    async fn search_by_folder(
+    /// List notes in a specific folder
+    #[tool(description = "[READ] List vault notes in a specific folder path")]
+    async fn list_notes_in_folder(
         &self,
         Parameters(params): Parameters<crate::types::SearchByFolderParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -161,7 +161,7 @@ impl CrucibleMcpService {
     }
 
     /// Search notes by filename pattern
-    #[tool(description = "[READ] Find notes matching filename")]
+    #[tool(description = "[READ] Find vault notes by filename or pattern (supports wildcards)")]
     async fn search_by_filename(
         &self,
         Parameters(params): Parameters<crate::types::SearchByFilenameParams>,
@@ -184,7 +184,7 @@ impl CrucibleMcpService {
     }
 
     /// Full-text search in note contents
-    #[tool(description = "[READ] Full-text search in note contents")]
+    #[tool(description = "[READ] Search vault notes by text content (keyword search, not semantic)")]
     async fn search_by_content(
         &self,
         Parameters(params): Parameters<crate::types::SearchByContentParams>,
@@ -207,7 +207,7 @@ impl CrucibleMcpService {
     }
 
     /// Semantic search using embeddings
-    #[tool(description = "[READ] Semantic search (needs index_vault first)")]
+    #[tool(description = "[READ] AI-powered semantic search of vault notes by meaning (requires embeddings)")]
     async fn semantic_search(
         &self,
         Parameters(params): Parameters<crate::types::SemanticSearchParams>,
@@ -229,9 +229,9 @@ impl CrucibleMcpService {
         self.convert_result(result)
     }
 
-    /// Generate embeddings for all vault notes
-    #[tool(description = "[INDEX] Generate embeddings for notes (slow)")]
-    async fn index_vault(
+    /// Build search index by generating embeddings
+    #[tool(description = "[INTERNAL] Build search index - generates AI embeddings for semantic search. DO NOT use for adding notes.")]
+    async fn build_search_index(
         &self,
         Parameters(params): Parameters<crate::types::IndexVaultParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -253,7 +253,7 @@ impl CrucibleMcpService {
     }
 
     /// Get metadata for a specific note
-    #[tool(description = "[READ] Get note metadata and frontmatter")]
+    #[tool(description = "[READ] Get metadata for a vault note (tags, properties, folder info)")]
     async fn get_note_metadata(
         &self,
         Parameters(params): Parameters<crate::types::GetNoteMetadataParams>,
@@ -276,7 +276,7 @@ impl CrucibleMcpService {
     }
 
     /// Update frontmatter properties of a note
-    #[tool(description = "[WRITE] Update note frontmatter properties")]
+    #[tool(description = "[WRITE] Update frontmatter properties of an existing vault note")]
     async fn update_note_properties(
         &self,
         Parameters(params): Parameters<crate::types::UpdateNotePropertiesParams>,
@@ -298,59 +298,9 @@ impl CrucibleMcpService {
         self.convert_result(result)
     }
 
-    /// Index a Crucible document for search
-    #[tool(description = "[INDEX] Index document for search")]
-    async fn index_document(
-        &self,
-        Parameters(params): Parameters<crate::types::IndexDocumentParams>,
-    ) -> Result<CallToolResult, McpError> {
-        // For now, pass the document as-is through ToolCallArgs
-        // TODO: Define proper document type and pass directly to tool
-        let properties = serde_json::from_value(params.document)
-            .map_err(|e| McpError::invalid_params(format!("Invalid document format: {}", e), None))?;
-        let args = crate::types::ToolCallArgs {
-            properties: Some(properties),
-            tags: None,
-            path: None,
-            recursive: None,
-            pattern: None,
-            query: None,
-            top_k: None,
-            force: None,
-        };
-        let result = crate::tools::index_document(&self.database, &self.provider, &args)
-            .await
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-        self.convert_result(result)
-    }
-
-    /// Search indexed Crucible documents
-    #[tool(description = "[READ] Search indexed documents")]
-    async fn search_documents(
-        &self,
-        Parameters(params): Parameters<crate::types::SearchDocumentsParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let args = crate::types::ToolCallArgs {
-            properties: None,
-            tags: None,
-            path: None,
-            recursive: None,
-            pattern: None,
-            query: Some(params.query),
-            top_k: Some(params.top_k),
-            force: None,
-        };
-        let result = crate::tools::search_documents(&self.database, &self.provider, &args)
-            .await
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-        self.convert_result(result)
-    }
-
-    /// Get statistics about indexed documents
-    #[tool(description = "[READ] Get indexing statistics")]
-    async fn get_document_stats(
+    /// Get statistics about the vault
+    #[tool(description = "[READ] Get vault statistics (total notes, embeddings, database info)")]
+    async fn get_vault_stats(
         &self,
         Parameters(_params): Parameters<crate::types::GetDocumentStatsParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -365,30 +315,6 @@ impl CrucibleMcpService {
             force: None,
         };
         let result = crate::tools::get_document_stats(&self.database, &args)
-            .await
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
-        self.convert_result(result)
-    }
-
-    /// Update properties of a Crucible document
-    #[tool(description = "[WRITE] Update document properties")]
-    async fn update_document_properties(
-        &self,
-        Parameters(params): Parameters<crate::types::UpdateDocumentPropertiesParams>,
-    ) -> Result<CallToolResult, McpError> {
-        // Pass document_id via path and properties via properties
-        let args = crate::types::ToolCallArgs {
-            properties: Some(params.properties),
-            tags: None,
-            path: Some(params.document_id),
-            recursive: None,
-            pattern: None,
-            query: None,
-            top_k: None,
-            force: None,
-        };
-        let result = crate::tools::update_document_properties(&self.database, &args)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
@@ -446,7 +372,7 @@ impl ServerHandler for CrucibleMcpService {
                 icons: None,
                 website_url: None,
             },
-            instructions: Some("Crucible MCP server providing semantic search and document indexing for Obsidian vaults".to_string()),
+            instructions: Some("Crucible MCP server for Obsidian vault operations. Use search tools to find existing notes. Notes are managed in Obsidian - do not use build_search_index for adding notes. Semantic search requires embeddings (run build_search_index once).".to_string()),
         }
     }
 }
