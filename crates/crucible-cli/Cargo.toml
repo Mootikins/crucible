@@ -66,6 +66,16 @@ futures = "0.3"
 # YAML frontmatter parsing
 gray_matter = "0.2"
 
+# Chat REPL dependencies
+crossterm = "0.27"
+reedline = "0.34"
+
+# UUID generation
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Table formatting
+tabled = "0.15"
+
 [dev-dependencies]
 tempfile = "3.8"
 assert_cmd = "2.0"
