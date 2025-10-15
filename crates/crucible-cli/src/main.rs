@@ -58,6 +58,46 @@ async fn main() -> Result<()> {
         Commands::Commands => commands::rune::list_commands(config).await?,
 
         Commands::Config(cmd) => commands::config::execute(cmd).await?,
+
+        Commands::Chat {
+            agent,
+            model,
+            temperature,
+            max_tokens,
+            no_stream,
+            start_message,
+            history,
+        } => commands::chat::execute(
+            config,
+            agent,
+            model,
+            temperature,
+            max_tokens,
+            !no_stream,
+            start_message,
+            history,
+        ).await?,
+
+        // Commands::EnhancedChat { // Temporarily disabled
+        //     agent,
+        //     model,
+        //     temperature,
+        //     max_tokens,
+        //     performance_tracking,
+        //     start_message,
+        //     history,
+        // } => commands::enhanced_chat_session::execute(
+        //     config,
+        //     agent,
+        //     model,
+        //     temperature,
+        //     max_tokens,
+        //     performance_tracking,
+        //     start_message,
+        //     history,
+        // ).await?,
+
+        // Commands::Agent(cmd) => commands::agent_management::execute(config, cmd).await?, // Temporarily disabled
     }
 
     Ok(())

@@ -129,6 +129,72 @@ pub enum Commands {
     /// Configuration management
     #[command(subcommand)]
     Config(ConfigCommands),
+
+    /// Interactive chat mode with AI agents
+    Chat {
+        /// Agent name to use for conversation
+        #[arg(short, long, default_value = "default")]
+        agent: String,
+
+        /// Model to use for chat (overrides config)
+        #[arg(short = 'm', long)]
+        model: Option<String>,
+
+        /// Temperature for chat responses (0.0-2.0)
+        #[arg(short = 't', long)]
+        temperature: Option<f32>,
+
+        /// Maximum tokens in responses
+        #[arg(long)]
+        max_tokens: Option<u32>,
+
+        /// Disable streaming responses
+        #[arg(long)]
+        no_stream: bool,
+
+        /// Start with a specific message
+        #[arg(short = 's', long)]
+        start_message: Option<String>,
+
+        /// Load conversation history from file
+        #[arg(long)]
+        history: Option<PathBuf>,
+    },
+
+    // /// Enhanced chat mode with intelligent agent management // Temporarily disabled
+    // EnhancedChat {
+    //     /// Agent name to use for conversation
+    //     #[arg(short, long, default_value = "default")]
+    //     agent: String,
+
+    //     /// Model to use for chat (overrides config)
+    //     #[arg(short = 'm', long)]
+    //     model: Option<String>,
+
+    //     /// Temperature for chat responses (0.0-2.0)
+    //     #[arg(short = 't', long)]
+    //     temperature: Option<f32>,
+
+    //     /// Maximum tokens in responses
+    //     #[arg(long)]
+    //     max_tokens: Option<u32>,
+
+    //     /// Enable performance tracking and learning
+    //     #[arg(long)]
+    //     performance_tracking: bool,
+
+    //     /// Start with a specific message
+    //     #[arg(short = 's', long)]
+    //     start_message: Option<String>,
+
+    //     /// Load conversation history from file
+    //     #[arg(long)]
+    //     history: Option<PathBuf>,
+    // },
+
+    // /// Agent management commands // Temporarily disabled
+    // #[command(subcommand)]
+    // Agent(AgentCommands),
 }
 
 #[derive(Subcommand)]
@@ -193,5 +259,72 @@ pub enum NoteCommands {
         /// Output format (plain, json, table)
         #[arg(short = 'f', long, default_value = "table")]
         format: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AgentCommands {
+    /// List all available agents with performance metrics
+    List {
+        /// Output format (plain, json, table)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+
+        /// Show detailed information
+        #[arg(long)]
+        detailed: bool,
+    },
+
+    /// Show agent rankings by performance
+    Rankings {
+        /// Number of top agents to show
+        #[arg(short = 'n', long, default_value = "10")]
+        limit: usize,
+
+        /// Sort by specific metric (success, satisfaction, specialization)
+        #[arg(short = 's', long, default_value = "success")]
+        sort_by: String,
+    },
+
+    /// Show performance insights for an agent
+    Performance {
+        /// Agent name
+        agent_name: String,
+
+        /// Show learning insights
+        #[arg(long)]
+        insights: bool,
+    },
+
+    /// Suggest agents for a task
+    Suggest {
+        /// Task description
+        task: String,
+
+        /// Required capabilities
+        #[arg(short = 'c', long)]
+        capabilities: Vec<String>,
+
+        /// Number of suggestions
+        #[arg(short = 'n', long, default_value = "3")]
+        limit: usize,
+    },
+
+    /// Show collaboration statistics
+    CollabStats {
+        /// Show active sessions
+        #[arg(long)]
+        active: bool,
+
+        /// Show detailed breakdown
+        #[arg(short = 'd', long)]
+        detailed: bool,
+    },
+
+    /// List available workflow templates
+    Workflows {
+        /// Show workflow details
+        #[arg(short = 'd', long)]
+        detailed: bool,
     },
 }
