@@ -1040,7 +1040,11 @@ dependencies = [
  "bitflags 2.9.4",
  "crossterm_winapi",
  "libc",
+ "mio 0.8.11",
  "parking_lot",
+ "serde",
+ "signal-hook",
+ "signal-hook-mio",
  "winapi",
 ]
 
@@ -1075,6 +1079,7 @@ dependencies = [
  "clap",
  "colored 2.2.0",
  "comfy-table",
+ "crossterm 0.27.0",
  "crucible-core",
  "crucible-mcp",
  "dialoguer",
@@ -1088,11 +1093,13 @@ dependencies = [
  "nucleo",
  "nucleo-matcher",
  "predicates",
+ "reedline",
  "reqwest 0.12.23",
  "rune",
  "serde",
  "serde_json",
  "serde_yaml",
+ "tabled",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -1100,6 +1107,7 @@ dependencies = [
  "toml 0.8.2",
  "tracing",
  "tracing-subscriber",
+ "uuid",
  "wiremock",
 ]
 
@@ -1109,10 +1117,16 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "glob",
+ "rand 0.8.5",
+ "regex",
  "serde",
  "serde_json",
+ "serde_yaml",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "tracing",
  "uuid",
  "yrs",
 ]
@@ -1615,6 +1629,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 dependencies = [
  "getrandom 0.2.16",
+]
+
+[[package]]
+name = "fd-lock"
+version = "4.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ce92ff622d6dadf7349484f42c93271a0d49b7cc4d466a936405bacbe10aa78"
+dependencies = [
+ "cfg-if",
+ "rustix 1.1.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2770,6 +2795,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1082f0c48f143442a1ac6122f67e360ceee130b967af4d50996e5154a45df46"
 dependencies = [
  "nom 8.0.0",
+]
+
+[[package]]
+name = "itertools"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
+dependencies = [
+ "either",
 ]
 
 [[package]]
@@ -3968,6 +4002,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "papergrid"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ad43c07024ef767f9160710b3a6773976194758c7919b17e63b863db0bdf7fb"
+dependencies = [
+ "bytecount",
+ "fnv",
+ "unicode-width 0.1.14",
+]
+
+[[package]]
 name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4564,6 +4609,26 @@ dependencies = [
  "getrandom 0.2.16",
  "libredox",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "reedline"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc271368d0d3f395745b40fababc0c9061f3fc2978189a8bc76f889e47255b01"
+dependencies = [
+ "chrono",
+ "crossterm 0.27.0",
+ "fd-lock",
+ "itertools",
+ "nu-ansi-term",
+ "serde",
+ "strip-ansi-escapes",
+ "strum 0.26.3",
+ "strum_macros 0.26.4",
+ "thiserror 1.0.69",
+ "unicode-segmentation",
+ "unicode-width 0.1.14",
 ]
 
 [[package]]
@@ -5376,6 +5441,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "signal-hook"
+version = "0.3.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d881a16cf4426aa584979d30bd82cb33429027e42122b169753d6ef1085ed6e2"
+dependencies = [
+ "libc",
+ "signal-hook-registry",
+]
+
+[[package]]
+name = "signal-hook-mio"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34db1a06d485c9142248b7a054f034b349b212551f3dfd19c94d45a754a217cd"
+dependencies = [
+ "libc",
+ "mio 0.8.11",
+ "signal-hook",
+]
+
+[[package]]
 name = "signal-hook-registry"
 version = "1.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5538,6 +5624,15 @@ dependencies = [
  "phf_shared 0.11.3",
  "proc-macro2",
  "quote",
+]
+
+[[package]]
+name = "strip-ansi-escapes"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a8f8038e7e7969abb3f1b7c2a811225e9296da208539e0f79c5251d6cac0025"
+dependencies = [
+ "vte",
 ]
 
 [[package]]
@@ -5704,6 +5799,30 @@ dependencies = [
  "pkg-config",
  "toml 0.8.2",
  "version-compare",
+]
+
+[[package]]
+name = "tabled"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c998b0c8b921495196a48aabaf1901ff28be0760136e31604f7967b0792050e"
+dependencies = [
+ "papergrid",
+ "tabled_derive",
+ "unicode-width 0.1.14",
+]
+
+[[package]]
+name = "tabled_derive"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c138f99377e5d653a371cdad263615634cfc8467685dfe8e73e2b8e98f44b17"
+dependencies = [
+ "heck 0.4.1",
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -6686,6 +6805,15 @@ checksum = "fb067e4cbd1ff067d1df46c9194b5de0e98efd2810bbc95c5d5e5f25a3231150"
 dependencies = [
  "cc",
  "libc",
+]
+
+[[package]]
+name = "vte"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "231fdcd7ef3037e8330d8e17e61011a2c244126acc0a982f4040ac3f9f0bc077"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]
