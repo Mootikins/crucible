@@ -1,11 +1,19 @@
+pub mod agent;
 pub mod canvas;
 pub mod crdt;
 pub mod document;
 pub mod properties;
+// pub mod task_router; // Temporarily disabled due to compilation issues
 
+pub use agent::{AgentDefinition, AgentLoader, AgentMatch, AgentQuery, AgentRegistry, CapabilityMatcher};
 pub use canvas::{CanvasEdge, CanvasNode};
 pub use document::{DocumentNode, ViewportState};
 pub use properties::{PropertyMap, PropertyValue};
+// pub use task_router::{
+//     TaskRouter, TaskAnalyzer, IntelligentRouter, TaskQueueManager, ExecutionEngine,
+//     ResultAggregator, ErrorHandler, PerformanceMonitor, UserRequest, TaskResult,
+//     TaskAnalysis, RoutingDecision, TaskExecutionResult, SystemStatus
+// };
 
 #[derive(Debug, thiserror::Error)]
 pub enum CrucibleError {
