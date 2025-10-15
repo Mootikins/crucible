@@ -382,6 +382,11 @@ endpoint = "https://api.anthropic.com"
 
     /// Load config from file or return default
     fn from_file_or_default(config_file: Option<PathBuf>) -> Result<Self> {
+        // Check for test mode environment variable to skip loading user config
+        if std::env::var("CRUCIBLE_TEST_MODE").is_ok() {
+            return Ok(Self::default());
+        }
+
         let path = config_file
             .or_else(|| Self::default_config_path().ok())
             .and_then(|p| if p.exists() { Some(p) } else { None });
@@ -485,12 +490,17 @@ mod tests {
         let original_embedding_model = std::env::var("EMBEDDING_MODEL");
         let original_chat_model = std::env::var("CRUCIBLE_CHAT_MODEL");
         let original_temperature = std::env::var("CRUCIBLE_TEMPERATURE");
+        let original_ollama_endpoint = std::env::var("OLLAMA_ENDPOINT");
 
         // Clear environment variables that might interfere
         std::env::remove_var("EMBEDDING_ENDPOINT");
         std::env::remove_var("EMBEDDING_MODEL");
         std::env::remove_var("CRUCIBLE_CHAT_MODEL");
         std::env::remove_var("CRUCIBLE_TEMPERATURE");
+        std::env::remove_var("OLLAMA_ENDPOINT");
+
+        // Enable test mode to skip loading user config
+        std::env::set_var("CRUCIBLE_TEST_MODE", "1");
 
         let config = CliConfig::load(None, None, None, None).unwrap();
 
@@ -505,7 +515,12 @@ mod tests {
         // Should have default model
         assert_eq!(config.vault.embedding_model, "nomic-embed-text");
 
+        // Should have default Ollama endpoint
+        assert_eq!(config.ollama_endpoint(), "https://llama.terminal.krohnos.io");
+
         // Restore original environment variables
+        std::env::remove_var("CRUCIBLE_TEST_MODE");
+
         if let Ok(val) = original_embedding_endpoint {
             std::env::set_var("EMBEDDING_ENDPOINT", val);
         }
@@ -517,6 +532,9 @@ mod tests {
         }
         if let Ok(val) = original_temperature {
             std::env::set_var("CRUCIBLE_TEMPERATURE", val);
+        }
+        if let Ok(val) = original_ollama_endpoint {
+            std::env::set_var("OLLAMA_ENDPOINT", val);
         }
     }
 
@@ -629,6 +647,15 @@ mod tests {
 
     #[test]
     fn test_llm_config_from_file() {
+        // Store original environment variables
+        let original_chat_model = std::env::var("CRUCIBLE_CHAT_MODEL");
+        let original_ollama_endpoint = std::env::var("OLLAMA_ENDPOINT");
+
+        // Clear environment variables that might interfere
+        std::env::remove_var("CRUCIBLE_CHAT_MODEL");
+        std::env::remove_var("OLLAMA_ENDPOINT");
+        std::env::remove_var("CRUCIBLE_TEST_MODE");
+
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
@@ -662,10 +689,26 @@ timeout_secs = 60
         assert_eq!(config.system_prompt(), "Custom prompt");
         assert_eq!(config.ollama_endpoint(), "https://custom-ollama.example.com");
         assert_eq!(config.timeout(), 60);
+
+        // Restore original environment variables
+        if let Ok(val) = original_chat_model {
+            std::env::set_var("CRUCIBLE_CHAT_MODEL", val);
+        }
+        if let Ok(val) = original_ollama_endpoint {
+            std::env::set_var("OLLAMA_ENDPOINT", val);
+        }
     }
 
     #[test]
     fn test_environment_variable_override() {
+        // Store original environment variables
+        let original_chat_model = std::env::var("CRUCIBLE_CHAT_MODEL");
+        let original_temperature = std::env::var("CRUCIBLE_TEMPERATURE");
+        let original_ollama_endpoint = std::env::var("OLLAMA_ENDPOINT");
+
+        // Enable test mode to skip loading user config
+        std::env::set_var("CRUCIBLE_TEST_MODE", "1");
+
         // Set environment variables
         std::env::set_var("CRUCIBLE_CHAT_MODEL", "env-model");
         std::env::set_var("CRUCIBLE_TEMPERATURE", "0.9");
@@ -677,10 +720,21 @@ timeout_secs = 60
         assert_eq!(config.temperature(), 0.9);
         assert_eq!(config.ollama_endpoint(), "https://env-ollama.example.com");
 
-        // Clean up
+        // Restore original environment variables
+        std::env::remove_var("CRUCIBLE_TEST_MODE");
         std::env::remove_var("CRUCIBLE_CHAT_MODEL");
         std::env::remove_var("CRUCIBLE_TEMPERATURE");
         std::env::remove_var("OLLAMA_ENDPOINT");
+
+        if let Ok(val) = original_chat_model {
+            std::env::set_var("CRUCIBLE_CHAT_MODEL", val);
+        }
+        if let Ok(val) = original_temperature {
+            std::env::set_var("CRUCIBLE_TEMPERATURE", val);
+        }
+        if let Ok(val) = original_ollama_endpoint {
+            std::env::set_var("OLLAMA_ENDPOINT", val);
+        }
     }
 
     #[test]
