@@ -5,6 +5,7 @@ members = [
     "crates/crucible-tauri",
     "crates/crucible-mcp",
     "crates/crucible-plugins", "crates/crucible-mcp-client", "crates/crucible-cli",
+    "crates/crucible-sync",
 ]
 
 [workspace.package]
