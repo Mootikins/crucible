@@ -13,19 +13,27 @@ A Model Context Protocol (MCP) server for the Crucible knowledge management syst
 - **Batch Processing** - Efficient bulk embedding generation
 - **Retry Logic** - Automatic exponential backoff on failures
 
-### Core MCP Tools
+### Native MCP Tools
 - **search_by_properties** - Search notes by frontmatter properties via Obsidian API
 - **search_by_tags** 🌐 - Search notes by tags via Obsidian API (real-time results)
-- **search_by_folder** - Search notes in specific folders via Obsidian API
+- **list_notes_in_folder** - Search notes in specific folders via Obsidian API
 - **search_by_filename** - Search notes by filename patterns
 - **search_by_content** - Full-text search in note contents
 - **semantic_search** 🔥 - Vector similarity search using real embeddings
-- **index_vault** 🔥🌐 - Generate real embeddings for vault notes via Obsidian API
+- **build_search_index** 🔥🌐 - Generate real embeddings for vault notes via Obsidian API
 - **get_note_metadata** - Get metadata for specific notes
 - **update_note_properties** - Update note frontmatter properties
+- **get_vault_stats** - Get statistics about indexed documents
 
 🔥 = Uses real embeddings from configured provider
 🌐 = Uses Obsidian plugin HTTP API for live data
+
+### Rune Tools (Dynamic Extensions)
+When `RUNE_TOOL_DIR` is configured:
+- **create_note** 📝 - Create new markdown notes with frontmatter and tags
+- Custom tools can be added as `.rn` scripts without recompiling the server
+
+📝 = Rune-scripted tool (hot-reloadable)
 
 ### Crucible Integration Tools
 - **index_document** 🔥 - Index Crucible documents with real embeddings
@@ -174,6 +182,12 @@ CREATE TABLE embeddings (
 #### Obsidian Plugin Configuration
 - `OBSIDIAN_API_PORT` - Obsidian plugin HTTP API port (default: 27123)
 - `OBSIDIAN_VAULT_PATH` - Path to Obsidian vault (for display purposes)
+
+#### Rune Tools Configuration
+- `RUNE_TOOL_DIR` - Directory containing .rn script tools for dynamic extensibility (optional)
+  - If not set, only native tools will be available
+  - Example: `/home/user/crucible/crates/crucible-mcp/tools`
+  - Enables scripted tools like `create_note` without recompiling
 
 #### General Configuration
 - `RUST_LOG` - Set logging level (debug, info, warn, error)
