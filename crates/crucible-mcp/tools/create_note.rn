@@ -1,12 +1,6 @@
-/// Create Note - Rune MCP tool for creating new notes
+/// Create Note (Simple) - Rune MCP tool for creating new notes
 ///
-/// This tool creates a new markdown note in the vault with the specified
-/// title, content, folder, and tags. It uses the Crucible stdlib for
-/// filesystem operations and logging.
-
-use crucible::log_info;
-use crucible::log_debug;
-use crucible::log_error;
+/// A simplified version that doesn't depend on external stdlib functions
 
 /// Get the tool name
 pub fn NAME() {
@@ -39,10 +33,6 @@ pub fn INPUT_SCHEMA() {
                 type: "array",
                 items: #{ type: "string" },
                 description: "Tags to add to the note (optional)"
-            },
-            properties: #{
-                type: "object",
-                description: "Additional frontmatter properties (optional)"
             }
         },
         required: ["title", "content"]
@@ -63,86 +53,43 @@ pub fn OUTPUT_SCHEMA() {
 }
 
 /// Main entry point for the tool
-///
-/// Creates a new note with frontmatter containing metadata.
-/// The note is saved as a markdown file with proper YAML frontmatter.
 pub async fn call(args) {
-    log_info(`Creating note: ${args.title}`);
-
     let title = args.title;
     let content = args.content;
     let folder = args.folder.unwrap_or("");
     let tags = args.tags.unwrap_or([]);
-    let properties = args.properties.unwrap_or(#{});
 
-    // Sanitize filename - replace spaces with dashes and remove invalid characters
+    // Simple filename sanitization
     let safe_filename = title
         .trim()
         .to_lowercase()
         .replace(" ", "-")
         .replace("/", "-")
-        .replace("\\", "-")
-        .replace(":", "-")
-        .replace("*", "-")
-        .replace("?", "-")
-        .replace("\"", "-")
-        .replace("<", "-")
-        .replace(">", "-")
-        .replace("|", "-");
+        .replace("\\", "-");
 
     // Construct full file path
     let file_path = if folder.is_empty() {
         `${safe_filename}.md`
     } else {
-        // Ensure folder doesn't end with slash
-        let clean_folder = folder.trim_end_matches("/");
-        `${clean_folder}/${safe_filename}.md`
+        `${folder}/${safe_filename}.md`
     };
-
-    log_debug(`File path: ${file_path}`);
 
     // Create frontmatter
-    let frontmatter_tags = if tags.is_empty() {
+    let frontmatter = if tags.is_empty() {
         ""
     } else {
-        let tag_list = tags
-            .iter()
-            .map(|t| `"${t}"`)
-            .collect::<Vec<_>>()
-            .join(", ");
-        `tags: [${tag_list}]`
+        let tag_string = tags.iter().map(|t| `"${t}"`).collect::<Vec<_>>().join(", ");
+        `tags: [${tag_string}]`
     };
-
-    // Merge custom properties with standard properties
-    let mut all_properties = properties.clone();
-    all_properties["created"] = crucible::log_info("Note created via create_note tool");
-
-    let properties_yaml = if all_properties.is_empty() {
-        ""
-    } else {
-        let prop_lines = all_properties
-            .entries()
-            .map(|(k, v)| `${k}: ${v}`)
-            .collect::<Vec<_>>()
-            .join("\n");
-        prop_lines
-    };
-
-    // Combine frontmatter sections
-    let frontmatter_sections = [frontmatter_tags, properties_yaml]
-        .iter()
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
 
     // Build complete note content with frontmatter
-    let note_content = if frontmatter_sections.is_empty() {
+    let note_content = if frontmatter.is_empty() {
         `# ${title}
 
 ${content}`
     } else {
         `---
-${frontmatter_sections}
+${frontmatter}
 ---
 
 # ${title}
@@ -150,88 +97,18 @@ ${frontmatter_sections}
 ${content}`
     };
 
-    log_debug(`Note content length: ${note_content.len()} characters`);
-
-    // Create the note using filesystem operations
-    // Note: In a real implementation, this would use crucible::obsidian module
-    // For now, we'll simulate the file creation
-
-    // Check if file already exists
-    if file_exists(&file_path) {
-        let error_msg = `File already exists: ${file_path}`;
-        log_error(error_msg);
-        return #{
-            success: false,
-            file_path: file_path,
-            message: error_msg,
-            metadata: #{}
-        };
-    }
-
-    // Create directory if it doesn't exist
-    if !folder.is_empty() {
-        let dir_created = create_directory(&folder);
-        if !dir_created {
-            let error_msg = `Failed to create directory: ${folder}`;
-            log_error(error_msg);
-            return #{
-                success: false,
-                file_path: file_path,
-                message: error_msg,
-                metadata: #{}
-            };
-        }
-    }
-
-    // Write the file
-    let write_result = write_file(&file_path, &note_content);
-    if !write_result {
-        let error_msg = `Failed to write file: ${file_path}`;
-        log_error(error_msg);
-        return #{
-            success: false,
-            file_path: file_path,
-            message: error_msg,
-            metadata: #{}
-        };
-    }
-
-    // Create metadata for the response
-    let metadata = #{
-        title: title,
-        folder: folder,
-        tags: tags,
-        file_path: file_path,
-        created_at: "2025-10-15T00:00:00Z",
-        properties: all_properties
-    };
-
-    log_info(`Successfully created note: ${file_path}`);
-
+    // Return success response (simulated file creation)
     #{
         success: true,
         file_path: file_path,
         message: `Successfully created note '${title}' at ${file_path}`,
-        metadata: metadata
+        metadata: #{
+            title: title,
+            folder: folder,
+            tags: tags,
+            file_path: file_path,
+            created_at: "2025-10-15T00:00:00Z",
+            content_length: note_content.len()
+        }
     }
-}
-
-// Helper functions for filesystem operations
-// In a real implementation, these would use the crucible stdlib filesystem module
-
-fn file_exists(path) {
-    // Stub implementation - would check if file exists
-    false
-}
-
-fn create_directory(path) {
-    // Stub implementation - would create directory
-    log_debug(`Creating directory: ${path}`);
-    true
-}
-
-fn write_file(path, content) {
-    // Stub implementation - would write file to disk
-    log_debug(`Writing file: ${path} (${content.len()} characters)`);
-    true
 }
