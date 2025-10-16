@@ -1,0 +1,52 @@
+[package]
+name = "crucible-sync"
+version = "0.1.0"
+edition = "2021"
+description = "CRDT-based synchronization for Crucible knowledge management"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# Core CRDT
+yrs = "0.18"
+yrs-kvstore = "0.1"
+
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Utilities
+uuid = { version = "1.0", features = ["v4", "serde"] }
+tracing = "0.1"
+futures-util = "0.3"
+
+# Transport
+tokio-tungstenite = "0.21"
+
+# Security (Phase 3)
+ed25519-dalek = { version = "2.0", optional = true }
+blake3 = { version = "1.0", optional = true }
+
+# P2P Discovery (Phase 2, optional)
+mdns = { version = "3.0", optional = true }
+
+[dev-dependencies]
+# Testing
+tokio-test = "0.4"
+proptest = "1.0"
+tempfile = "3.0"
+
+[features]
+default = []
+security = ["ed25519-dalek", "blake3"]
+p2p = ["mdns"]
+full = ["security", "p2p"]
+websocket = []
+
