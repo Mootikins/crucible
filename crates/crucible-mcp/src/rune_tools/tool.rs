@@ -150,7 +150,7 @@ pub struct ToolMetadata {
 }
 
 /// Convert a Rune value to serde_json::Value
-fn rune_value_to_json(value: &rune::Value) -> Result<Value> {
+pub fn rune_value_to_json(value: &rune::Value) -> Result<Value> {
     // Try bool
     if let Ok(b) = value.as_bool().into_result() {
         return Ok(Value::Bool(b));

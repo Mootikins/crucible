@@ -5,7 +5,7 @@
 // This module provides the official rmcp-based implementation of the Crucible MCP server.
 // It wraps existing tool implementations from tools::mod with rmcp's #[tool] macro.
 
-use rmcp::{ErrorData as McpError, model::*, tool, tool_router, tool_handler, handler::server::{wrapper::Parameters, ServerHandler, tool::ToolRouter}};
+use rmcp::{ErrorData as McpError, model::*, tool, tool_router, handler::server::{wrapper::Parameters, ServerHandler, tool::ToolRouter}};
 use crate::database::EmbeddingDatabase;
 use crate::embeddings::EmbeddingProvider;
 use crate::rune_tools::ToolRegistry;
@@ -359,7 +359,6 @@ impl CrucibleMcpService {
 }
 
 // Implement ServerHandler to enable Service<RoleServer> trait for CrucibleMcpService
-#[tool_handler]
 impl ServerHandler for CrucibleMcpService {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
@@ -375,6 +374,107 @@ impl ServerHandler for CrucibleMcpService {
             instructions: Some("Crucible MCP server for Obsidian vault operations. Use search tools to find existing notes. Notes are managed in Obsidian - do not use build_search_index for adding notes. Semantic search requires embeddings (run build_search_index once).".to_string()),
         }
     }
+
+    // Manually implement call_tool to use our tool router
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParam,
+        context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        use rmcp::handler::server::tool::ToolCallContext;
+        let tcc = ToolCallContext::new(self, request, context);
+        self.tool_router.call(tcc).await
+    }
+
+    // Custom list_tools implementation to include dynamic Rune tools
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParam>,
+        _context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
+    ) -> Result<ListToolsResult, McpError> {
+        use rmcp::model::Tool;
+        use std::borrow::Cow;
+
+        // DEBUG: Start debugging the list_tools process
+        tracing::info!("🔍 DEBUG: list_tools() called");
+        tracing::info!("🔍 DEBUG: rune_registry present: {}", self.rune_registry.is_some());
+
+        // Get native tools from the router
+        let mut all_tools = self.tool_router.list_all();
+        tracing::info!("🔍 DEBUG: Native tools found: {}", all_tools.len());
+        for (i, tool) in all_tools.iter().enumerate() {
+            tracing::info!("🔍 DEBUG: Native tool {}: {}", i, tool.name);
+        }
+
+        // Add Rune tools if registry is available
+        if let Some(registry) = &self.rune_registry {
+            tracing::info!("🔍 DEBUG: Acquiring registry read lock");
+            let reg = registry.read().await;
+            tracing::info!("🔍 DEBUG: Registry read lock acquired");
+
+            let rune_tools = reg.list_tools();
+            tracing::info!("🔍 DEBUG: Rune tools from registry: {}", rune_tools.len());
+
+            for (i, tool_meta) in rune_tools.iter().enumerate() {
+                tracing::info!("🔍 DEBUG: Rune tool {}: name='{}', desc='{}'", i, tool_meta.name, tool_meta.description);
+                tracing::info!("🔍 DEBUG: Rune tool {} input_schema type: {}", i,
+                    if tool_meta.input_schema.is_object() { "object" } else { "other" });
+
+                // Convert input_schema from Value to Map<String, Value>
+                let input_schema = match &tool_meta.input_schema {
+                    serde_json::Value::Object(map) => {
+                        tracing::info!("🔍 DEBUG: Converting input_schema for tool '{}', {} properties",
+                            tool_meta.name, map.len());
+                        Arc::new(map.clone())
+                    },
+                    _ => {
+                        tracing::warn!("Rune tool '{}' has non-object input_schema, using empty object", tool_meta.name);
+                        Arc::new(serde_json::Map::new())
+                    }
+                };
+
+                // Convert output_schema if present
+                let output_schema = tool_meta.output_schema.as_ref().and_then(|schema| {
+                    match schema {
+                        serde_json::Value::Object(map) => {
+                            tracing::info!("🔍 DEBUG: Converting output_schema for tool '{}'", tool_meta.name);
+                            Some(Arc::new(map.clone()))
+                        },
+                        _ => {
+                            tracing::warn!("Rune tool '{}' has non-object output_schema, ignoring", tool_meta.name);
+                            None
+                        }
+                    }
+                });
+
+                // Convert ToolMetadata to rmcp::model::Tool
+                let rune_tool = Tool {
+                    name: Cow::Owned(tool_meta.name.clone()),
+                    title: None,
+                    description: Some(Cow::Owned(tool_meta.description.clone())),
+                    input_schema,
+                    output_schema,
+                    annotations: None,
+                    icons: None,
+                };
+
+                tracing::info!("🔍 DEBUG: Adding Rune tool '{}' to MCP tool list", tool_meta.name);
+                all_tools.push(rune_tool);
+            }
+
+            tracing::info!("🔍 DEBUG: Releasing registry read lock");
+            drop(reg);
+        } else {
+            tracing::warn!("🔍 DEBUG: No rune_registry available - Rune tools disabled");
+        }
+
+        tracing::info!("🔍 DEBUG: Final tool count: {} (native + rune)", all_tools.len());
+        for (i, tool) in all_tools.iter().enumerate() {
+            tracing::info!("🔍 DEBUG: Final tool {}: {}", i, tool.name);
+        }
+
+        Ok(ListToolsResult::with_all_items(all_tools))
+    }
 }
 
 // The #[tool_router] macro generates the Service<RoleServer> implementation automatically
@@ -385,7 +485,7 @@ mod tests {
     use tempfile::tempdir;
     use async_trait::async_trait;
     use crate::embeddings::{EmbeddingResponse, EmbeddingResult};
-
+  
     // Mock embedding provider for testing
     struct TestEmbeddingProvider;
 
@@ -426,5 +526,81 @@ mod tests {
 
         let _service = CrucibleMcpService::new(db, provider);
         // If we get here, service was created successfully
+    }
+
+    #[tokio::test]
+    async fn test_rune_tools_discovered_and_listed() {
+        use std::fs;
+
+        let temp_dir = tempdir().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = Arc::new(EmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap());
+
+        let provider = Arc::new(TestEmbeddingProvider);
+
+        // Create a test Rune tool
+        let tools_dir = temp_dir.path().join("tools");
+        fs::create_dir_all(&tools_dir).unwrap();
+
+        let test_tool = r#"
+            pub fn NAME() { "test_tool" }
+            pub fn DESCRIPTION() { "A test tool for discovery" }
+            pub fn INPUT_SCHEMA() {
+                #{
+                    type: "object",
+                    properties: #{
+                        message: #{ type: "string" }
+                    },
+                    required: ["message"]
+                }
+            }
+
+            pub async fn call(args) {
+                #{ success: true, message: args.message }
+            }
+        "#;
+
+        fs::write(tools_dir.join("test_tool.rn"), test_tool).unwrap();
+
+        // Create Rune context and registry
+        let context = rune::Context::with_default_modules().unwrap();
+        let registry = crate::rune_tools::ToolRegistry::new(
+            tools_dir,
+            Arc::new(context)
+        ).unwrap();
+
+        // Verify tool was loaded in registry
+        assert_eq!(registry.tool_count(), 1);
+        assert!(registry.has_tool("test_tool"));
+
+        // Create service with Rune tools
+        let service = CrucibleMcpService::with_rune_tools(
+            db.clone(),
+            provider.clone(),
+            registry
+        );
+
+        // Get all tools from router (native tools)
+        let native_tools = service.tool_router.list_all();
+        let native_count = native_tools.len();
+
+        // Verify we have the expected number of native tools (10)
+        // search_by_properties, search_by_tags, list_notes_in_folder, search_by_filename,
+        // search_by_content, semantic_search, build_search_index, get_note_metadata,
+        // update_note_properties, get_vault_stats, __run_rune_tool
+        assert_eq!(native_count, 11, "Expected 11 native tools (10 + __run_rune_tool), got {}", native_count);
+
+        // Now verify that list_tools would include both native and Rune tools
+        // We can't easily call list_tools directly without a RequestContext,
+        // but we can verify the logic by checking the registry
+        if let Some(reg) = &service.rune_registry {
+            let reg = reg.read().await;
+            let rune_tools = reg.list_tools();
+            assert_eq!(rune_tools.len(), 1);
+            assert_eq!(rune_tools[0].name, "test_tool");
+            assert_eq!(rune_tools[0].description, "A test tool for discovery");
+        } else {
+            panic!("Rune registry should be Some");
+        }
     }
 }
