@@ -73,12 +73,7 @@ pub async fn sync_metadata_from_obsidian(db: &EmbeddingDatabase) -> Result<(usiz
 }
 
 /// Search notes by frontmatter properties
-pub async fn search_by_properties(
-    _db: &EmbeddingDatabase,
-    args: &ToolCallArgs,
-) -> Result<ToolCallResult> {
-    use crate::obsidian_client::ObsidianClient;
-
+pub async fn search_by_properties(db: &EmbeddingDatabase, args: &ToolCallArgs) -> Result<ToolCallResult> {
     let properties = match args.properties.as_ref() {
         Some(props) => props,
         None => {
@@ -90,62 +85,75 @@ pub async fn search_by_properties(
         }
     };
 
-    // Convert HashMap<String, serde_json::Value> to HashMap<String, String>
-    let mut string_properties = std::collections::HashMap::new();
-    for (key, value) in properties {
-        let string_value = match value {
-            serde_json::Value::String(s) => s.clone(),
-            serde_json::Value::Number(n) => n.to_string(),
-            serde_json::Value::Bool(b) => b.to_string(),
-            _ => value.to_string(),
-        };
-        string_properties.insert(key.clone(), string_value);
-    }
+    tracing::info!("Searching for files with properties: {:?}", properties);
 
-    // Create ObsidianClient to search directly via Obsidian API
-    let client = match ObsidianClient::new() {
-        Ok(client) => client,
-        Err(e) => {
-            return Ok(ToolCallResult {
-                success: false,
-                data: None,
-                error: Some(format!("Failed to connect to Obsidian plugin: {}. Make sure the Crucible plugin is running.", e)),
-            });
-        }
-    };
+    // Use database for consistent, offline-capable search
+    match db.list_files().await {
+        Ok(all_files) => {
+            let mut matching_files = Vec::new();
 
-    // Search using ObsidianClient which queries the Obsidian plugin API
-    match client.search_by_properties(&string_properties).await {
-        Ok(files) => {
-            // Convert FileInfo to a simpler format with just paths and basic info
-            let results: Vec<serde_json::Value> = files
-                .iter()
-                .map(|f| serde_json::json!({
-                    "path": f.path,
-                    "name": f.name,
-                    "folder": f.folder,
-                    "size": f.size,
-                }))
-                .collect();
+            for file_path in all_files {
+                match db.get_embedding(&file_path).await {
+                    Ok(Some(embedding_data)) => {
+                        // Check if file has ALL the requested properties
+                        let has_all_properties = properties.iter().all(|(required_key, required_value)| {
+                            if let Some(file_value) = embedding_data.metadata.properties.get(required_key) {
+                                // Convert both values to strings for comparison
+                                let file_value_str = match file_value {
+                                    serde_json::Value::String(s) => s.clone(),
+                                    serde_json::Value::Number(n) => n.to_string(),
+                                    serde_json::Value::Bool(b) => b.to_string(),
+                                    _ => file_value.to_string(),
+                                };
+                                let required_value_str = match required_value {
+                                    serde_json::Value::String(s) => s.clone(),
+                                    serde_json::Value::Number(n) => n.to_string(),
+                                    serde_json::Value::Bool(b) => b.to_string(),
+                                    _ => required_value.to_string(),
+                                };
+                                file_value_str.to_lowercase() == required_value_str.to_lowercase()
+                            } else {
+                                false
+                            }
+                        });
+
+                        if has_all_properties {
+                            matching_files.push(serde_json::json!({
+                                "path": file_path,
+                                "name": embedding_data.metadata.title.as_ref().unwrap_or(&file_path),
+                                "folder": embedding_data.metadata.folder,
+                                "size": 0, // We don't store size in metadata
+                                "properties": embedding_data.metadata.properties,
+                            }));
+                        }
+                    }
+                    Ok(None) => {
+                        tracing::debug!("File {} not found in database", file_path);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Error accessing file {}: {}", file_path, e);
+                    }
+                }
+            }
+
+            tracing::info!("Found {} files matching properties {:?}", matching_files.len(), properties);
 
             Ok(ToolCallResult {
                 success: true,
-                data: Some(serde_json::to_value(results)?),
+                data: Some(serde_json::to_value(matching_files)?),
                 error: None,
             })
         }
         Err(e) => Ok(ToolCallResult {
             success: false,
             data: None,
-            error: Some(format!("Property search error: {}", e)),
+            error: Some(format!("Database error: {}", e)),
         }),
     }
 }
 
 /// Search notes by tags
-pub async fn search_by_tags(_db: &EmbeddingDatabase, args: &ToolCallArgs) -> Result<ToolCallResult> {
-    use crate::obsidian_client::ObsidianClient;
-
+pub async fn search_by_tags(db: &EmbeddingDatabase, args: &ToolCallArgs) -> Result<ToolCallResult> {
     let tags = match args.tags.as_ref() {
         Some(tags) => tags,
         None => {
@@ -157,42 +165,54 @@ pub async fn search_by_tags(_db: &EmbeddingDatabase, args: &ToolCallArgs) -> Res
         }
     };
 
-    // Create ObsidianClient to search directly via Obsidian API
-    let client = match ObsidianClient::new() {
-        Ok(client) => client,
-        Err(e) => {
-            return Ok(ToolCallResult {
-                success: false,
-                data: None,
-                error: Some(format!("Failed to connect to Obsidian plugin: {}. Make sure the Crucible plugin is running.", e)),
-            });
-        }
-    };
+    tracing::info!("Searching for files with tags: {:?}", tags);
 
-    // Search using ObsidianClient which queries the Obsidian plugin API
-    match client.search_by_tags(tags).await {
-        Ok(files) => {
-            // Convert FileInfo to a simpler format with just paths and basic info
-            let results: Vec<serde_json::Value> = files
-                .iter()
-                .map(|f| serde_json::json!({
-                    "path": f.path,
-                    "name": f.name,
-                    "folder": f.folder,
-                    "size": f.size,
-                }))
-                .collect();
+    // Use database for consistent, offline-capable search
+    match db.list_files().await {
+        Ok(all_files) => {
+            let mut matching_files = Vec::new();
+
+            for file_path in all_files {
+                match db.get_embedding(&file_path).await {
+                    Ok(Some(embedding_data)) => {
+                        // Check if file has ALL the requested tags
+                        let has_all_tags = tags.iter().all(|required_tag| {
+                            embedding_data.metadata.tags.iter().any(|file_tag| {
+                                file_tag.to_lowercase() == required_tag.to_lowercase()
+                            })
+                        });
+
+                        if has_all_tags {
+                            matching_files.push(serde_json::json!({
+                                "path": file_path,
+                                "name": embedding_data.metadata.title.as_ref().unwrap_or(&file_path),
+                                "folder": embedding_data.metadata.folder,
+                                "size": 0, // We don't store size in metadata
+                                "tags": embedding_data.metadata.tags,
+                            }));
+                        }
+                    }
+                    Ok(None) => {
+                        tracing::debug!("File {} not found in database", file_path);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Error accessing file {}: {}", file_path, e);
+                    }
+                }
+            }
+
+            tracing::info!("Found {} files matching tags {:?}", matching_files.len(), tags);
 
             Ok(ToolCallResult {
                 success: true,
-                data: Some(serde_json::to_value(results)?),
+                data: Some(serde_json::to_value(matching_files)?),
                 error: None,
             })
         }
         Err(e) => Ok(ToolCallResult {
             success: false,
             data: None,
-            error: Some(format!("Tag search error: {}", e)),
+            error: Some(format!("Database error: {}", e)),
         }),
     }
 }
@@ -412,18 +432,13 @@ pub async fn index_vault(
     let client_result = ObsidianClient::new();
 
     let client = match client_result {
-        Ok(client) => client,
+        Ok(client) => {
+            tracing::info!("Successfully connected to Obsidian plugin for indexing");
+            Some(client)
+        }
         Err(e) => {
-            tracing::warn!("Failed to connect to Obsidian plugin: {}. Falling back to filesystem scanning.", e);
-            // Return early if we can't use either method
-            return Ok(ToolCallResult {
-                success: false,
-                data: None,
-                error: Some(sanitize_error_message(
-                    &format!("Failed to connect to Obsidian plugin: {}. Make sure the Crucible plugin is running, or provide a valid vault path.", e),
-                    None
-                )),
-            });
+            tracing::warn!("Failed to connect to Obsidian plugin: {}. Using filesystem scanning only.", e);
+            None
         }
     };
 
@@ -431,44 +446,73 @@ pub async fn index_vault(
     let mut errors = Vec::new();
 
     // Try to get list of all files from Obsidian, with fallback to filesystem scanning
-    let files = match client.list_files().await {
-        Ok(files) => {
-            tracing::info!("Successfully retrieved {} files from Obsidian plugin", files.len());
-            files
-        }
-        Err(e) => {
-            tracing::warn!("Failed to list files from Obsidian: {}. Attempting filesystem fallback.", e);
-
-            // Fallback: try to scan filesystem if a path is provided
-            if let Some(vault_path) = args.path.as_ref() {
-                match scan_filesystem_for_markdown_files(vault_path).await {
-                    Ok(files) => {
-                        tracing::info!("Filesystem fallback found {} markdown files", files.len());
-                        files
-                    }
-                    Err(scan_err) => {
-                        let error_msg = sanitize_error_message(
-                            &format!("Failed to list files from Obsidian: {} and filesystem fallback failed: {}", e, scan_err),
-                            Some(Path::new(vault_path))
-                        );
-                        return Ok(ToolCallResult {
-                            success: false,
-                            data: None,
-                            error: Some(error_msg),
-                        });
-                    }
-                }
-            } else {
-                let error_msg = sanitize_error_message(
-                    &format!("Failed to list files from Obsidian: {}. Provide a valid vault path for filesystem fallback.", e),
-                    None
-                );
-                return Ok(ToolCallResult {
-                    success: false,
-                    data: None,
-                    error: Some(error_msg),
-                });
+    let files = if let Some(client) = &client {
+        match client.list_files().await {
+            Ok(files) => {
+                tracing::info!("Successfully retrieved {} files from Obsidian plugin", files.len());
+                files
             }
+            Err(e) => {
+                tracing::warn!("Failed to list files from Obsidian: {}. Attempting filesystem fallback.", e);
+                // Fallback: try to scan filesystem if a path is provided
+                if let Some(vault_path) = args.path.as_ref() {
+                    match scan_filesystem_for_markdown_files(vault_path).await {
+                        Ok(files) => {
+                            tracing::info!("Filesystem fallback found {} markdown files", files.len());
+                            files
+                        }
+                        Err(scan_err) => {
+                            let error_msg = sanitize_error_message(
+                                &format!("Failed to list files from Obsidian: {} and filesystem fallback failed: {}", e, scan_err),
+                                Some(Path::new(vault_path))
+                            );
+                            return Ok(ToolCallResult {
+                                success: false,
+                                data: None,
+                                error: Some(error_msg),
+                            });
+                        }
+                    }
+                } else {
+                    let error_msg = sanitize_error_message(
+                        &format!("Failed to list files from Obsidian: {}. Provide a valid vault path for filesystem fallback.", e),
+                        None
+                    );
+                    return Ok(ToolCallResult {
+                        success: false,
+                        data: None,
+                        error: Some(error_msg),
+                    });
+                }
+            }
+        }
+    } else {
+        tracing::info!("No Obsidian plugin available, using filesystem scanning directly");
+        // Fallback: try to scan filesystem if a path is provided
+        if let Some(vault_path) = args.path.as_ref() {
+            match scan_filesystem_for_markdown_files(vault_path).await {
+                Ok(files) => {
+                    tracing::info!("Filesystem scanning found {} markdown files", files.len());
+                    files
+                }
+                Err(scan_err) => {
+                    let error_msg = sanitize_error_message(
+                        &format!("Filesystem scanning failed: {}", scan_err),
+                        Some(Path::new(vault_path))
+                    );
+                    return Ok(ToolCallResult {
+                        success: false,
+                        data: None,
+                        error: Some(error_msg),
+                    });
+                }
+            }
+        } else {
+            return Ok(ToolCallResult {
+                success: false,
+                data: None,
+                error: Some("No Obsidian plugin available and no vault path provided for filesystem scanning".to_string()),
+            });
         }
     };
 
@@ -495,56 +539,90 @@ pub async fn index_vault(
                     continue;
                 }
 
-                // Try to get file content from Obsidian, with fallback to filesystem
-                let content = match client.get_file(file_path).await {
-                    Ok(content) => {
-                        tracing::debug!("Got content for {} from Obsidian plugin", safe_path_for_logging(Path::new(file_path), None));
-                        content
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to get content for {} from Obsidian: {}. Trying filesystem fallback.",
-                            safe_path_for_logging(Path::new(file_path), None), e);
+                // Try to get file content from Obsidian if available, otherwise use filesystem
+                let content = if let Some(client) = &client {
+                    match client.get_file(file_path).await {
+                        Ok(content) => {
+                            tracing::debug!("Got content for {} from Obsidian plugin", safe_path_for_logging(Path::new(file_path), None));
+                            content
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to get content for {} from Obsidian: {}. Trying filesystem fallback.",
+                                safe_path_for_logging(Path::new(file_path), None), e);
 
-                        // Fallback: try to read from filesystem
-                        match read_file_content_fallback(file_path).await {
-                            Ok(content) => {
-                                tracing::debug!("Got content for {} from filesystem fallback", safe_path_for_logging(Path::new(file_path), None));
-                                content
+                            // Fallback: try to read from filesystem
+                            match read_file_content_fallback(file_path).await {
+                                Ok(content) => {
+                                    tracing::debug!("Got content for {} from filesystem fallback", safe_path_for_logging(Path::new(file_path), None));
+                                    content
+                                }
+                                Err(read_err) => {
+                                    let sanitized_error = sanitize_error_message(
+                                        &format!("Failed to get content for {}: Obsidian error: {}, Filesystem error: {}",
+                                            safe_path_for_logging(Path::new(file_path), None), e, read_err),
+                                        Some(Path::new(file_path))
+                                    );
+                                    errors.push(sanitized_error);
+                                    continue;
+                                }
                             }
-                            Err(read_err) => {
-                                let sanitized_error = sanitize_error_message(
-                                    &format!("Failed to get content for {}: Obsidian error: {}, Filesystem error: {}",
-                                        safe_path_for_logging(Path::new(file_path), None), e, read_err),
-                                    Some(Path::new(file_path))
-                                );
-                                errors.push(sanitized_error);
-                                continue;
-                            }
+                        }
+                    }
+                } else {
+                    // No Obsidian client, use filesystem directly
+                    match read_file_content_fallback(file_path).await {
+                        Ok(content) => {
+                            tracing::debug!("Got content for {} from filesystem", safe_path_for_logging(Path::new(file_path), None));
+                            content
+                        }
+                        Err(read_err) => {
+                            let sanitized_error = sanitize_error_message(
+                                &format!("Failed to get content for {} from filesystem: {}",
+                                    safe_path_for_logging(Path::new(file_path), None), read_err),
+                                Some(Path::new(file_path))
+                            );
+                            errors.push(sanitized_error);
+                            continue;
                         }
                     }
                 };
 
-                // Try to get file metadata from Obsidian, with fallback to basic filesystem metadata
-                let obs_metadata = match client.get_metadata(file_path).await {
-                    Ok(metadata) => {
-                        tracing::debug!("Got metadata for {} from Obsidian plugin", safe_path_for_logging(Path::new(file_path), None));
-                        metadata
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to get metadata for {} from Obsidian: {}. Using basic filesystem metadata.",
-                            safe_path_for_logging(Path::new(file_path), None), e);
+                // Try to get file metadata from Obsidian if available, otherwise use filesystem
+                let obs_metadata = if let Some(client) = &client {
+                    match client.get_metadata(file_path).await {
+                        Ok(metadata) => {
+                            tracing::debug!("Got metadata for {} from Obsidian plugin", safe_path_for_logging(Path::new(file_path), None));
+                            metadata
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to get metadata for {} from Obsidian: {}. Using basic filesystem metadata.",
+                                safe_path_for_logging(Path::new(file_path), None), e);
 
-                        // Fallback: create basic metadata from filesystem
-                        match create_basic_file_metadata(file_path).await {
-                            Ok(metadata) => {
-                                tracing::debug!("Created basic metadata for {} from filesystem", safe_path_for_logging(Path::new(file_path), None));
-                                metadata
+                            // Fallback: create basic metadata from filesystem
+                            match create_basic_file_metadata(file_path).await {
+                                Ok(metadata) => {
+                                    tracing::debug!("Created basic metadata for {} from filesystem", safe_path_for_logging(Path::new(file_path), None));
+                                    metadata
+                                }
+                                Err(metadata_err) => {
+                                    tracing::warn!("Failed to create basic metadata for {}: {}", safe_path_for_logging(Path::new(file_path), None), metadata_err);
+                                    // Continue with minimal metadata
+                                    create_minimal_file_metadata(file_path)
+                                }
                             }
-                            Err(metadata_err) => {
-                                tracing::warn!("Failed to create basic metadata for {}: {}", safe_path_for_logging(Path::new(file_path), None), metadata_err);
-                                // Continue with minimal metadata
-                                create_minimal_file_metadata(file_path)
-                            }
+                        }
+                    }
+                } else {
+                    // No Obsidian client, use filesystem directly
+                    match create_basic_file_metadata(file_path).await {
+                        Ok(metadata) => {
+                            tracing::debug!("Created basic metadata for {} from filesystem", safe_path_for_logging(Path::new(file_path), None));
+                            metadata
+                        }
+                        Err(metadata_err) => {
+                            tracing::warn!("Failed to create basic metadata for {}: {}", safe_path_for_logging(Path::new(file_path), None), metadata_err);
+                            // Continue with minimal metadata
+                            create_minimal_file_metadata(file_path)
                         }
                     }
                 };
