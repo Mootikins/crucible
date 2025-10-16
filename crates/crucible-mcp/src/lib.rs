@@ -8,6 +8,7 @@ pub mod rune_tools;
 pub mod service;
 pub mod tools;
 pub mod types;
+pub mod utils;
 
 use anyhow::Result;
 use serde_json::Value;

@@ -403,17 +403,26 @@ pub async fn index_vault(
     args: &ToolCallArgs,
 ) -> Result<ToolCallResult> {
     use crate::obsidian_client::ObsidianClient;
+    use crate::utils::path_sanitizer::{sanitize_error_message, safe_path_for_logging};
+    use std::path::Path;
 
     let force = args.force.unwrap_or(false);
 
-    // Create ObsidianClient to fetch data from the Obsidian plugin API
-    let client = match ObsidianClient::new() {
+    // Try to create ObsidianClient to fetch data from the Obsidian plugin API
+    let client_result = ObsidianClient::new();
+
+    let client = match client_result {
         Ok(client) => client,
         Err(e) => {
+            tracing::warn!("Failed to connect to Obsidian plugin: {}. Falling back to filesystem scanning.", e);
+            // Return early if we can't use either method
             return Ok(ToolCallResult {
                 success: false,
                 data: None,
-                error: Some(format!("Failed to connect to Obsidian plugin: {}. Make sure the Crucible plugin is running.", e)),
+                error: Some(sanitize_error_message(
+                    &format!("Failed to connect to Obsidian plugin: {}. Make sure the Crucible plugin is running, or provide a valid vault path.", e),
+                    None
+                )),
             });
         }
     };
@@ -421,15 +430,45 @@ pub async fn index_vault(
     let mut indexed_count = 0;
     let mut errors = Vec::new();
 
-    // Get list of all files from Obsidian
+    // Try to get list of all files from Obsidian, with fallback to filesystem scanning
     let files = match client.list_files().await {
-        Ok(files) => files,
+        Ok(files) => {
+            tracing::info!("Successfully retrieved {} files from Obsidian plugin", files.len());
+            files
+        }
         Err(e) => {
-            return Ok(ToolCallResult {
-                success: false,
-                data: None,
-                error: Some(format!("Failed to list files from Obsidian: {}", e)),
-            });
+            tracing::warn!("Failed to list files from Obsidian: {}. Attempting filesystem fallback.", e);
+
+            // Fallback: try to scan filesystem if a path is provided
+            if let Some(vault_path) = args.path.as_ref() {
+                match scan_filesystem_for_markdown_files(vault_path).await {
+                    Ok(files) => {
+                        tracing::info!("Filesystem fallback found {} markdown files", files.len());
+                        files
+                    }
+                    Err(scan_err) => {
+                        let error_msg = sanitize_error_message(
+                            &format!("Failed to list files from Obsidian: {} and filesystem fallback failed: {}", e, scan_err),
+                            Some(Path::new(vault_path))
+                        );
+                        return Ok(ToolCallResult {
+                            success: false,
+                            data: None,
+                            error: Some(error_msg),
+                        });
+                    }
+                }
+            } else {
+                let error_msg = sanitize_error_message(
+                    &format!("Failed to list files from Obsidian: {}. Provide a valid vault path for filesystem fallback.", e),
+                    None
+                );
+                return Ok(ToolCallResult {
+                    success: false,
+                    data: None,
+                    error: Some(error_msg),
+                });
+            }
         }
     };
 
@@ -456,21 +495,57 @@ pub async fn index_vault(
                     continue;
                 }
 
-                // Get file content from Obsidian
+                // Try to get file content from Obsidian, with fallback to filesystem
                 let content = match client.get_file(file_path).await {
-                    Ok(content) => content,
+                    Ok(content) => {
+                        tracing::debug!("Got content for {} from Obsidian plugin", safe_path_for_logging(Path::new(file_path), None));
+                        content
+                    }
                     Err(e) => {
-                        errors.push(format!("Failed to get content for {}: {}", file_path, e));
-                        continue;
+                        tracing::warn!("Failed to get content for {} from Obsidian: {}. Trying filesystem fallback.",
+                            safe_path_for_logging(Path::new(file_path), None), e);
+
+                        // Fallback: try to read from filesystem
+                        match read_file_content_fallback(file_path).await {
+                            Ok(content) => {
+                                tracing::debug!("Got content for {} from filesystem fallback", safe_path_for_logging(Path::new(file_path), None));
+                                content
+                            }
+                            Err(read_err) => {
+                                let sanitized_error = sanitize_error_message(
+                                    &format!("Failed to get content for {}: Obsidian error: {}, Filesystem error: {}",
+                                        safe_path_for_logging(Path::new(file_path), None), e, read_err),
+                                    Some(Path::new(file_path))
+                                );
+                                errors.push(sanitized_error);
+                                continue;
+                            }
+                        }
                     }
                 };
 
-                // Get file metadata (tags, properties, etc.) from Obsidian
+                // Try to get file metadata from Obsidian, with fallback to basic filesystem metadata
                 let obs_metadata = match client.get_metadata(file_path).await {
-                    Ok(metadata) => metadata,
+                    Ok(metadata) => {
+                        tracing::debug!("Got metadata for {} from Obsidian plugin", safe_path_for_logging(Path::new(file_path), None));
+                        metadata
+                    }
                     Err(e) => {
-                        errors.push(format!("Failed to get metadata for {}: {}", file_path, e));
-                        continue;
+                        tracing::warn!("Failed to get metadata for {} from Obsidian: {}. Using basic filesystem metadata.",
+                            safe_path_for_logging(Path::new(file_path), None), e);
+
+                        // Fallback: create basic metadata from filesystem
+                        match create_basic_file_metadata(file_path).await {
+                            Ok(metadata) => {
+                                tracing::debug!("Created basic metadata for {} from filesystem", safe_path_for_logging(Path::new(file_path), None));
+                                metadata
+                            }
+                            Err(metadata_err) => {
+                                tracing::warn!("Failed to create basic metadata for {}: {}", safe_path_for_logging(Path::new(file_path), None), metadata_err);
+                                // Continue with minimal metadata
+                                create_minimal_file_metadata(file_path)
+                            }
+                        }
                     }
                 };
 
@@ -940,5 +1015,230 @@ pub async fn update_document_properties(
             data: None,
             error: Some(format!("Database error: {}", e)),
         }),
+    }
+}
+
+/// Scan filesystem for markdown files as fallback when Obsidian plugin is unavailable
+async fn scan_filesystem_for_markdown_files(vault_path: &str) -> Result<Vec<crate::obsidian_client::FileInfo>> {
+    use std::fs;
+    use std::path::Path;
+
+    let vault_dir = Path::new(vault_path);
+    if !vault_dir.exists() {
+        return Err(anyhow::anyhow!("Vault path does not exist: {}", vault_path));
+    }
+
+    let mut files = Vec::new();
+
+    // Use glob pattern to find all markdown files
+    let pattern = format!("{}/**/*.md", vault_path);
+
+    for entry in glob::glob(&pattern).map_err(|e| anyhow::anyhow!("Invalid glob pattern: {}", e))? {
+        match entry {
+            Ok(path) => {
+                // Skip hidden directories and files
+                if path.components().any(|c| {
+                    c.as_os_str().to_string_lossy().starts_with('.')
+                }) {
+                    continue;
+                }
+
+                // Get file metadata
+                match fs::metadata(&path) {
+                    Ok(metadata) => {
+                        // Get relative path from vault root
+                        let relative_path = path.strip_prefix(vault_dir)
+                            .unwrap_or(&path)
+                            .to_string_lossy();
+
+                        // Extract folder from path
+                        let folder = path.parent()
+                            .and_then(|p| p.strip_prefix(vault_dir).ok())
+                            .and_then(|p| p.to_str())
+                            .unwrap_or("")
+                            .to_string();
+
+                        // Get file name
+                        let name = path.file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("")
+                            .to_string();
+
+                        let modified_timestamp = metadata.modified()
+                            .ok()
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .and_then(|d| i64::try_from(d.as_secs()).ok())
+                            .unwrap_or(0);
+
+                        let created_timestamp = metadata.created()
+                            .ok()
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .and_then(|d| i64::try_from(d.as_secs()).ok())
+                            .unwrap_or(modified_timestamp);
+
+                        files.push(crate::obsidian_client::FileInfo {
+                            path: relative_path.to_string(),
+                            name,
+                            folder,
+                            extension: "md".to_string(),
+                            size: metadata.len(),
+                            created: created_timestamp,
+                            modified: modified_timestamp,
+                        });
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to get metadata for {}: {}", path.display(), e);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Error during glob iteration: {}", e);
+            }
+        }
+    }
+
+    if files.is_empty() {
+        return Err(anyhow::anyhow!("No markdown files found in vault path: {}", vault_path));
+    }
+
+    Ok(files)
+}
+
+/// Read file content as fallback when Obsidian plugin is unavailable
+async fn read_file_content_fallback(file_path: &str) -> Result<String> {
+    use std::fs;
+
+    // If file_path is already an absolute path, use it directly
+    // Otherwise, assume it's relative to the current directory
+    let full_path = if std::path::Path::new(file_path).is_absolute() {
+        file_path.to_string()
+    } else {
+        // Try to resolve relative to current directory
+        std::env::current_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+            .join(file_path)
+            .to_string_lossy()
+            .to_string()
+    };
+
+    fs::read_to_string(&full_path)
+        .map_err(|e| anyhow::anyhow!("Failed to read file {}: {}", full_path, e))
+}
+
+/// Create basic file metadata from filesystem as fallback when Obsidian plugin is unavailable
+async fn create_basic_file_metadata(file_path: &str) -> Result<crate::obsidian_client::FileMetadata> {
+    use std::fs;
+    use std::path::Path;
+
+    let path = Path::new(file_path);
+
+    // Try to read the file to extract basic frontmatter
+    let content = fs::read_to_string(path)?;
+
+    // Extract basic metadata from content
+    let mut tags = Vec::new();
+    let mut properties = std::collections::HashMap::new();
+    let mut title = None;
+
+    // Simple frontmatter parsing
+    if content.starts_with("---") {
+        let lines: Vec<&str> = content.lines().collect();
+        let mut in_frontmatter = false;
+
+        for line in lines.iter().skip(1) {
+            if *line == "---" {
+                break;
+            }
+
+            if let Some((key, value)) = line.split_once(':') {
+                let key = key.trim();
+                let value = value.trim().trim_matches('"');
+
+                match key {
+                    "tags" => {
+                        // Simple tag parsing (comma-separated or array-like)
+                        if value.contains('[') {
+                            // Array format: [tag1, tag2]
+                            let cleaned = value.trim_matches(|c| c == '[' || c == ']' || c == ' ');
+                            tags.extend(cleaned.split(',').map(|t| t.trim().to_string()));
+                        } else {
+                            // Comma-separated: tag1, tag2
+                            tags.extend(value.split(',').map(|t| t.trim().to_string()));
+                        }
+                    }
+                    "title" => {
+                        title = Some(value.to_string());
+                    }
+                    _ => {
+                        properties.insert(key.to_string(), serde_json::Value::String(value.to_string()));
+                    }
+                }
+            }
+        }
+    }
+
+    // Extract folder from path
+    let folder = path.parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or("")
+        .to_string();
+
+    let file_metadata = fs::metadata(path);
+    let size = file_metadata.as_ref().map(|m| m.len()).unwrap_or(0);
+    let created = file_metadata
+        .as_ref()
+        .ok()
+        .and_then(|m| m.created().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .and_then(|d| i64::try_from(d.as_secs()).ok())
+        .unwrap_or(0);
+    let modified = file_metadata
+        .as_ref()
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .and_then(|d| i64::try_from(d.as_secs()).ok())
+        .unwrap_or(created);
+
+    Ok(crate::obsidian_client::FileMetadata {
+        path: file_path.to_string(),
+        properties,
+        tags,
+        folder,
+        links: Vec::new(), // Would need more complex parsing to extract links
+        backlinks: Vec::new(),
+        stats: crate::obsidian_client::FileStats {
+            size,
+            created,
+            modified,
+            word_count: 0, // Would need more complex parsing to count words
+        },
+    })
+}
+
+/// Create minimal file metadata when all else fails
+fn create_minimal_file_metadata(file_path: &str) -> crate::obsidian_client::FileMetadata {
+    use std::path::Path;
+
+    let path = Path::new(file_path);
+
+    let folder = path.parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or("")
+        .to_string();
+
+    crate::obsidian_client::FileMetadata {
+        path: file_path.to_string(),
+        properties: std::collections::HashMap::new(),
+        tags: Vec::new(),
+        folder,
+        links: Vec::new(),
+        backlinks: Vec::new(),
+        stats: crate::obsidian_client::FileStats {
+            size: 0,
+            created: 0,
+            modified: 0,
+            word_count: 0,
+        },
     }
 }
