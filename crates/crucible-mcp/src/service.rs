@@ -645,4 +645,166 @@ mod tests {
             panic!("Rune registry should be Some");
         }
     }
+
+    #[tokio::test]
+    async fn test_convert_result_success_with_data() {
+        let temp_dir = tempdir().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = Arc::new(EmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap());
+        let provider = Arc::new(TestEmbeddingProvider);
+        let service = CrucibleMcpService::new(db, provider);
+
+        let result = crate::types::ToolCallResult {
+            success: true,
+            data: Some(serde_json::json!({"message": "test data"})),
+            error: None,
+        };
+
+        let converted = service.convert_result(result);
+        assert!(converted.is_ok());
+        let call_result = converted.unwrap();
+        assert!(!call_result.is_error.unwrap_or(false));
+    }
+
+    #[tokio::test]
+    async fn test_convert_result_success_without_data() {
+        let temp_dir = tempdir().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = Arc::new(EmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap());
+        let provider = Arc::new(TestEmbeddingProvider);
+        let service = CrucibleMcpService::new(db, provider);
+
+        let result = crate::types::ToolCallResult {
+            success: true,
+            data: None,
+            error: None,
+        };
+
+        let converted = service.convert_result(result);
+        assert!(converted.is_ok());
+        let call_result = converted.unwrap();
+        assert!(!call_result.is_error.unwrap_or(false));
+    }
+
+    #[tokio::test]
+    async fn test_convert_result_error_with_message() {
+        let temp_dir = tempdir().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = Arc::new(EmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap());
+        let provider = Arc::new(TestEmbeddingProvider);
+        let service = CrucibleMcpService::new(db, provider);
+
+        let result = crate::types::ToolCallResult {
+            success: false,
+            data: None,
+            error: Some("Test error message".to_string()),
+        };
+
+        let converted = service.convert_result(result);
+        assert!(converted.is_ok());
+        let call_result = converted.unwrap();
+        assert!(call_result.is_error.unwrap_or(false));
+    }
+
+    #[tokio::test]
+    async fn test_convert_result_error_with_partial_data() {
+        let temp_dir = tempdir().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = Arc::new(EmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap());
+        let provider = Arc::new(TestEmbeddingProvider);
+        let service = CrucibleMcpService::new(db, provider);
+
+        let result = crate::types::ToolCallResult {
+            success: false,
+            data: Some(serde_json::json!({"partial": "data"})),
+            error: Some("Partial failure".to_string()),
+        };
+
+        let converted = service.convert_result(result);
+        assert!(converted.is_ok());
+        let call_result = converted.unwrap();
+        assert!(call_result.is_error.unwrap_or(false));
+    }
+
+    #[tokio::test]
+    async fn test_convert_result_error_without_message() {
+        let temp_dir = tempdir().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = Arc::new(EmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap());
+        let provider = Arc::new(TestEmbeddingProvider);
+        let service = CrucibleMcpService::new(db, provider);
+
+        let result = crate::types::ToolCallResult {
+            success: false,
+            data: None,
+            error: None, // Error without message
+        };
+
+        let converted = service.convert_result(result);
+        assert!(converted.is_ok());
+        let call_result = converted.unwrap();
+        assert!(call_result.is_error.unwrap_or(false));
+    }
+
+    #[tokio::test]
+    async fn test_get_info() {
+        let temp_dir = tempdir().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = Arc::new(EmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap());
+        let provider = Arc::new(TestEmbeddingProvider);
+        let service = CrucibleMcpService::new(db, provider);
+
+        let info = service.get_info();
+        assert_eq!(info.server_info.name, "crucible-mcp");
+        assert_eq!(info.server_info.version, "0.1.0");
+        assert!(info.instructions.is_some());
+        assert!(info.capabilities.tools.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_service_without_rune_tools() {
+        let temp_dir = tempdir().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = Arc::new(EmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap());
+        let provider = Arc::new(TestEmbeddingProvider);
+
+        let service = CrucibleMcpService::new(db, provider);
+        assert!(service.rune_registry.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_service_with_rune_tools() {
+        use std::fs;
+
+        let temp_dir = tempdir().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = Arc::new(EmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap());
+        let provider = Arc::new(TestEmbeddingProvider);
+
+        let tools_dir = temp_dir.path().join("tools");
+        fs::create_dir_all(&tools_dir).unwrap();
+
+        let context = rune::Context::with_default_modules().unwrap();
+        let async_registry = crate::rune_tools::AsyncToolRegistry::new(
+            tools_dir,
+            Arc::new(context)
+        ).await.unwrap();
+
+        let service = CrucibleMcpService::with_rune_tools(db, provider, Arc::new(async_registry));
+        assert!(service.rune_registry.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_tool_router_lists_all_native_tools() {
+        let temp_dir = tempdir().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let db = Arc::new(EmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap());
+        let provider = Arc::new(TestEmbeddingProvider);
+
+        let service = CrucibleMcpService::new(db, provider);
+        let tools = service.tool_router.list_all();
+
+        // Should have 11 native tools (10 Crucible tools + __run_rune_tool)
+        assert_eq!(tools.len(), 11);
+    }
 }
