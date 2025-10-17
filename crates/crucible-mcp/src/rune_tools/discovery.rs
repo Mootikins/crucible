@@ -6,7 +6,7 @@
 /// - Flexible naming conventions
 /// - Consumer awareness without restrictions
 
-use super::{RuneTool, ToolMetadata, RuneAstAnalyzer, DiscoveredModule, AsyncFunctionInfo};
+use super::{RuneTool, ToolMetadata, RuneAstAnalyzer, SchemaValidator, ValidationConfig};
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -134,7 +134,7 @@ impl ToolDiscovery {
     }
 
     /// Compile a Rune file for analysis
-    fn compile_file(&self, source_code: &str, file_path: &Path) -> Result<Arc<rune::Unit>> {
+    fn compile_file(&self, source_code: &str, _file_path: &Path) -> Result<Arc<rune::Unit>> {
         let source = rune::Source::memory(source_code)?;
 
         let mut sources = rune::Sources::new();
@@ -231,63 +231,73 @@ impl ToolDiscovery {
         Ok(tools)
     }
 
-    /// Discover organized tools in modules using AST analysis
+    /// Discover organized tools in modules using enhanced AST analysis
     fn discover_module_tools(&self, unit: Arc<rune::Unit>, _file_path: &Path) -> Result<Vec<DiscoveredTool>> {
         let mut tools = Vec::new();
 
-        // Use the AST analyzer to discover modules and their functions
-        let analyzer = RuneAstAnalyzer::new();
+        // Use the enhanced AST analyzer to discover modules and their functions
+        let analyzer = RuneAstAnalyzer::new()?;
+        let validator = SchemaValidator::new(ValidationConfig::default());
         let discovered_modules = analyzer.analyze_modules(&unit)?;
+
+        debug!("Found {} modules with {} total functions",
+            discovered_modules.len(),
+            discovered_modules.iter().map(|m| m.functions.len()).sum::<usize>());
 
         for module in discovered_modules {
             for function in module.functions {
+                // Generate enhanced schema using our new type inference system
+                let input_schema = match validator.generate_function_schema(&function) {
+                    Ok(schema) => {
+                        debug!("Generated schema for {}.{}: {} properties",
+                            module.name, function.name,
+                            schema.get("properties").and_then(|p| p.as_object()).map(|o| o.len()).unwrap_or(0));
+                        schema
+                    }
+                    Err(e) => {
+                        warn!("Failed to generate schema for {}.{}: {}", module.name, function.name, e);
+                        serde_json::json!({
+                            "type": "object",
+                            "properties": {},
+                            "required": []
+                        })
+                    }
+                };
+
+                // Extract enhanced description using doc comments and function analysis
+                let description = if !function.doc_comments.is_empty() {
+                    function.doc_comments.join(" ").trim().to_string()
+                } else {
+                    format!("{} function in {} module", function.name, module.name)
+                };
+
+                // Infer consumer information based on module and function names
+                let consumer_info = self.infer_consumer_info(&module.name, &function.name);
+
                 // Convert discovered module function to DiscoveredTool
                 let tool = DiscoveredTool {
                     name: format!("{}.{}", module.name, function.name),
-                    description: analyzer.extract_function_description(
-                        &unit,
-                        &module.path,
-                        &function.name
-                    ).unwrap_or_else(|_| format!("{} function in {} module", function.name, module.name)),
-
-                    input_schema: analyzer.analyze_function_parameters(
-                        &unit,
-                        &module.path,
-                        &function.name
-                    ).unwrap_or_else(|_| serde_json::json!({
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    })),
-
+                    description: description.clone(),
+                    input_schema: input_schema.clone(),
                     entry_point: ToolEntryPoint::Module {
                         module_path: module.path.clone(),
                         function_name: function.name.clone(),
                     },
-
                     metadata: ToolMetadata {
                         name: format!("{}.{}", module.name, function.name),
-                        description: format!("{} function from {} module", function.name, module.name),
-                        input_schema: serde_json::json!({
-                            "type": "object",
-                            "properties": {},
-                            "required": []
-                        }),
-                        output_schema: None,
+                        description: description.clone(),
+                        input_schema: input_schema.clone(),
+                        output_schema: self.infer_output_schema(&function),
                     },
-
-                    consumer_info: analyzer.extract_consumer_info(
-                        &unit,
-                        &module.path,
-                        &function.name
-                    ).unwrap_or_default(),
+                    consumer_info,
                 };
 
+                debug!("Discovered module tool: {}.{}", module.name, function.name);
                 tools.push(tool);
             }
         }
 
-        debug!("Discovered {} module-based tools", tools.len());
+        debug!("Discovered {} module-based tools using enhanced AST analysis", tools.len());
         Ok(tools)
     }
 
@@ -314,6 +324,78 @@ impl ToolDiscovery {
         }
 
         Ok(metadata)
+    }
+
+    /// Infer consumer information based on module and function names
+    fn infer_consumer_info(&self, module_name: &str, function_name: &str) -> ConsumerInfo {
+        let mut consumer_info = ConsumerInfo::default();
+
+        // Analyze module name to determine likely consumers
+        match module_name {
+            "ui" | "ui_helpers" | "display" | "format" => {
+                consumer_info.primary_consumers = vec!["ui".to_string()];
+                consumer_info.ui_hints.insert("widget_type".to_string(), Value::String("utility".to_string()));
+            }
+            "agent" | "ai" | "analysis" | "recommend" => {
+                consumer_info.primary_consumers = vec!["agents".to_string()];
+                consumer_info.agent_hints.insert("capability".to_string(), Value::String("analysis".to_string()));
+            }
+            "file" | "search" | "data" | "storage" => {
+                consumer_info.primary_consumers = vec!["agents".to_string(), "ui".to_string()];
+                consumer_info.secondary_consumers = vec!["system".to_string()];
+            }
+            "advanced" | "utils" | "tools" => {
+                consumer_info.primary_consumers = vec!["agents".to_string(), "ui".to_string()];
+                consumer_info.agent_hints.insert("complexity".to_string(), Value::String("advanced".to_string()));
+            }
+            _ => {
+                consumer_info.primary_consumers = vec!["agents".to_string(), "ui".to_string()];
+            }
+        }
+
+        // Add function-specific hints
+        if function_name.contains("search") || function_name.contains("find") {
+            consumer_info.ui_hints.insert("input_type".to_string(), Value::String("search_query".to_string()));
+        }
+        if function_name.contains("validate") || function_name.contains("check") {
+            consumer_info.agent_hints.insert("validation".to_string(), Value::Bool(true));
+        }
+
+        consumer_info
+    }
+
+    /// Infer output schema based on function return type analysis
+    fn infer_output_schema(&self, function: &super::AsyncFunctionInfo) -> Option<Value> {
+        if let Some(ref return_type) = function.return_type {
+            match return_type.to_lowercase().as_str() {
+                "result" | "response" => Some(serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "success": {"type": "boolean"},
+                        "data": {"type": "object"},
+                        "error": {"type": "string"}
+                    }
+                })),
+                "string" => Some(serde_json::json!({
+                    "type": "string",
+                    "description": format!("String result from {}", function.name)
+                })),
+                "vec" | "array" => Some(serde_json::json!({
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": format!("Array result from {}", function.name)
+                })),
+                _ => Some(serde_json::json!({
+                    "type": "object",
+                    "description": format!("Result from {} function", function.name)
+                }))
+            }
+        } else {
+            Some(serde_json::json!({
+                "type": "object",
+                "description": format!("Result from {} function", function.name)
+            }))
+        }
     }
 }
 
