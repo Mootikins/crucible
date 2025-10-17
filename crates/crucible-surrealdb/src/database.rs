@@ -8,7 +8,7 @@
 //! - Better performance than JSON-based storage
 
 use crate::types::{
-    BatchOperation, BatchOperationType, BatchResult, DatabaseStats, Document, EmbeddingData, EmbeddingMetadata,
+    BatchOperation, BatchOperationType, BatchResult, DatabaseStats, EmbeddingData, EmbeddingMetadata,
     SearchResultWithScore, SearchQuery, SurrealDbConfig,
 };
 use anyhow::Result;
@@ -21,6 +21,9 @@ use std::sync::Mutex;
 pub struct SurrealEmbeddingDatabase {
     // In-memory storage for documents
     storage: Arc<Mutex<HashMap<String, EmbeddingData>>>,
+    // In-memory graph relations: (from_file, to_file, relation_type, properties)
+    relations: Arc<Mutex<Vec<(String, String, String, HashMap<String, serde_json::Value>)>>>,
+    #[allow(dead_code)] // Config will be used for actual SurrealDB implementation
     config: SurrealDbConfig,
 }
 
@@ -38,8 +41,9 @@ impl SurrealEmbeddingDatabase {
     pub async fn with_config(config: SurrealDbConfig) -> Result<Self> {
         // Use in-memory storage (temporary implementation)
         let storage = Arc::new(Mutex::new(HashMap::new()));
+        let relations = Arc::new(Mutex::new(Vec::new()));
 
-        Ok(Self { storage, config })
+        Ok(Self { storage, relations, config })
     }
 
     /// Initialize database schema and indexes
@@ -76,8 +80,15 @@ impl SurrealEmbeddingDatabase {
         file_path: &str,
         metadata: &EmbeddingMetadata,
     ) -> Result<()> {
-        // TODO: Implement SurrealDB metadata update
-        unimplemented!("Metadata update not yet implemented")
+        let mut storage = self.storage.lock().unwrap();
+
+        if let Some(embedding_data) = storage.get_mut(file_path) {
+            embedding_data.metadata = metadata.clone();
+            println!("Updated metadata for: {}", file_path);
+            Ok(())
+        } else {
+            anyhow::bail!("File not found: {}", file_path);
+        }
     }
 
     /// Check if a file exists in the database
@@ -122,8 +133,12 @@ impl SurrealEmbeddingDatabase {
             }
         }
 
-        // Sort by similarity (highest first) and take top_k
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        // Sort by similarity (highest first), then by file path for deterministic results
+        results.sort_by(|a, b| {
+            b.score.partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
+        });
         results.truncate(top_k as usize);
 
         Ok(results)
@@ -181,32 +196,197 @@ impl SurrealEmbeddingDatabase {
 
     /// Advanced search with filters
     pub async fn search(&self, query: &SearchQuery) -> Result<Vec<SearchResultWithScore>> {
-        // TODO: Implement advanced SurrealDB search with filters
-        unimplemented!("Advanced search not yet implemented")
+        let storage = self.storage.lock().unwrap();
+        let mut results = Vec::new();
+
+        for (file_path, embedding_data) in storage.iter() {
+            // Apply filters
+            if let Some(filters) = &query.filters {
+                // Check tags filter
+                if let Some(required_tags) = &filters.tags {
+                    if !required_tags.iter().all(|tag| embedding_data.metadata.tags.contains(tag)) {
+                        continue;
+                    }
+                }
+
+                // Check folder filter
+                if let Some(required_folder) = &filters.folder {
+                    if embedding_data.metadata.folder != *required_folder {
+                        continue;
+                    }
+                }
+
+                // Check properties filter
+                if let Some(required_properties) = &filters.properties {
+                    let mut matches_all = true;
+                    for (key, expected_value) in required_properties {
+                        if let Some(actual_value) = embedding_data.metadata.properties.get(key) {
+                            if actual_value != expected_value {
+                                matches_all = false;
+                                break;
+                            }
+                        } else {
+                            matches_all = false;
+                            break;
+                        }
+                    }
+                    if !matches_all {
+                        continue;
+                    }
+                }
+
+                // Check date range filter
+                if let Some(date_range) = &filters.date_range {
+                    if let Some(start) = &date_range.start {
+                        if embedding_data.metadata.created_at < *start {
+                            continue;
+                        }
+                    }
+                    if let Some(end) = &date_range.end {
+                        if embedding_data.metadata.created_at > *end {
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            // Simple text search in content and title for the query
+            let content_matches = embedding_data.content.to_lowercase().contains(&query.query.to_lowercase());
+            let title_matches = embedding_data.metadata.title
+                .as_ref()
+                .map_or(false, |title| title.to_lowercase().contains(&query.query.to_lowercase()));
+
+            if content_matches || title_matches {
+                // If we have embeddings, calculate similarity with a simple placeholder
+                let score = if embedding_data.embedding.is_empty() {
+                    0.5 // Default score for text-only matches
+                } else {
+                    // For now, use a simple term frequency scoring
+                    let query_lower = query.query.to_lowercase();
+                    let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
+                    let content_lower = embedding_data.content.to_lowercase();
+                    let matches = query_terms.iter()
+                        .map(|term| content_lower.matches(term).count() as f64)
+                        .sum::<f64>();
+                    (matches / query_terms.len() as f64).min(1.0)
+                };
+
+                results.push(SearchResultWithScore {
+                    id: file_path.clone(),
+                    title: embedding_data.metadata.title.clone()
+                        .unwrap_or_else(|| file_path.clone()),
+                    content: embedding_data.content.clone(),
+                    score,
+                });
+            }
+        }
+
+        // Sort by score (highest first), then by file path for deterministic results
+        results.sort_by(|a, b| {
+            b.score.partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+
+        // Apply limit and offset
+        if let Some(offset) = query.offset {
+            results = results.into_iter().skip(offset as usize).collect();
+        }
+        if let Some(limit) = query.limit {
+            results.truncate(limit as usize);
+        }
+
+        Ok(results)
     }
 
     /// Get all files in the database
     pub async fn list_files(&self) -> Result<Vec<String>> {
-        // TODO: Implement SurrealDB file listing
-        unimplemented!("File listing not yet implemented")
+        let storage = self.storage.lock().unwrap();
+        let mut files: Vec<String> = storage.keys().cloned().collect();
+        files.sort(); // Return sorted list for deterministic results
+        Ok(files)
     }
 
     /// Delete a file from the database
     pub async fn delete_file(&self, file_path: &str) -> Result<()> {
-        // TODO: Implement SurrealDB document deletion
-        unimplemented!("File deletion not yet implemented")
+        let mut storage = self.storage.lock().unwrap();
+
+        if storage.remove(file_path).is_some() {
+            println!("Deleted file: {}", file_path);
+            Ok(())
+        } else {
+            anyhow::bail!("File not found: {}", file_path);
+        }
     }
 
     /// Batch operations for multiple documents
     pub async fn batch_operation(&self, operation: &BatchOperation) -> Result<BatchResult> {
-        // TODO: Implement SurrealDB batch operations
-        unimplemented!("Batch operations not yet implemented")
+        let mut successful = 0;
+        let mut failed = 0;
+        let mut errors = Vec::new();
+
+        for document in &operation.documents {
+            let result = match operation.operation_type {
+                BatchOperationType::Create => {
+                    let embedding_data = EmbeddingData::from(document.clone());
+                    self.store_embedding(
+                        &document.file_path,
+                        &document.content,
+                        &document.embedding,
+                        &embedding_data.metadata
+                    ).await
+                }
+                BatchOperationType::Update => {
+                    let embedding_data = EmbeddingData::from(document.clone());
+                    self.update_metadata(&document.file_path, &embedding_data.metadata).await
+                }
+                BatchOperationType::Delete => {
+                    self.delete_file(&document.file_path).await
+                }
+            };
+
+            match result {
+                Ok(_) => successful += 1,
+                Err(e) => {
+                    failed += 1;
+                    errors.push(format!("{}: {}", document.file_path, e));
+                }
+            }
+        }
+
+        Ok(BatchResult {
+            successful,
+            failed,
+            errors,
+        })
     }
 
     /// Get comprehensive database statistics
     pub async fn get_stats(&self) -> Result<DatabaseStats> {
-        // TODO: Implement SurrealDB statistics
-        unimplemented!("Database statistics not yet implemented")
+        let storage = self.storage.lock().unwrap();
+
+        let total_documents = storage.len() as i64;
+        let total_embeddings = storage.values()
+            .filter(|data| !data.embedding.is_empty())
+            .count() as i64;
+
+        // Calculate approximate storage size (rough estimate)
+        let storage_size_bytes = Some(
+            storage.iter()
+                .map(|(path, data)| {
+                    path.len() + data.content.len() +
+                    (data.embedding.len() * std::mem::size_of::<f32>()) +
+                    format!("{:?}", data.metadata).len()
+                })
+                .sum::<usize>() as i64
+        );
+
+        Ok(DatabaseStats {
+            total_documents,
+            total_embeddings,
+            storage_size_bytes,
+            last_updated: chrono::Utc::now(),
+        })
     }
 
     /// Create graph relations between documents
@@ -217,20 +397,45 @@ impl SurrealEmbeddingDatabase {
         relation_type: &str,
         properties: Option<HashMap<String, serde_json::Value>>,
     ) -> Result<()> {
-        // TODO: Implement SurrealDB graph relations
-        unimplemented!("Graph relations not yet implemented")
+        let mut relations = self.relations.lock().unwrap();
+
+        relations.push((
+            from_file.to_string(),
+            to_file.to_string(),
+            relation_type.to_string(),
+            properties.unwrap_or_default(),
+        ));
+
+        println!("Created relation: {} -> {} ({})", from_file, to_file, relation_type);
+        Ok(())
     }
 
     /// Get related documents
     pub async fn get_related(&self, file_path: &str, relation_type: Option<&str>) -> Result<Vec<String>> {
-        // TODO: Implement SurrealDB relation queries
-        unimplemented!("Related documents not yet implemented")
+        let relations = self.relations.lock().unwrap();
+        let mut related_files = Vec::new();
+
+        for (from_file, to_file, rel_type, _properties) in relations.iter() {
+            if from_file == file_path {
+                if let Some(filter_type) = relation_type {
+                    if rel_type == filter_type {
+                        related_files.push(to_file.clone());
+                    }
+                } else {
+                    related_files.push(to_file.clone());
+                }
+            }
+        }
+
+        related_files.sort();
+        Ok(related_files)
     }
 
     /// Close the database connection
     pub async fn close(self) -> Result<()> {
-        // TODO: Implement SurrealDB connection cleanup
-        unimplemented!("Connection cleanup not yet implemented")
+        // In-memory implementation doesn't need explicit cleanup
+        println!("Database connection closed");
+        Ok(())
     }
 }
 
@@ -293,11 +498,9 @@ mod tests {
             ..Default::default()
         };
 
-        // This should fail until we implement it
+        // This should now work with our implementation
         let result = SurrealEmbeddingDatabase::with_config(config).await;
-
-        // TODO: Change this to assert!(result.is_ok()) after implementation
-        assert!(result.is_err(), "Database creation with config should fail until implemented");
+        assert!(result.is_ok(), "Database creation with config should succeed");
     }
 
     #[tokio::test]
@@ -497,13 +700,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = match SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await {
-            Ok(db) => db,
-            Err(_) => {
-                // Expected to fail until implementation
-                return;
-            }
-        };
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        db.initialize().await.unwrap();
 
         let search_query = SearchQuery {
             query: "test query".to_string(),
@@ -512,11 +710,9 @@ mod tests {
             offset: None,
         };
 
-        // This should fail until we implement it
+        // This should now work with our implementation
         let result = db.search(&search_query).await;
-
-        // TODO: Change this to assert!(result.is_ok()) after implementation
-        assert!(result.is_err(), "Advanced search should fail until implemented");
+        assert!(result.is_ok(), "Advanced search should succeed");
     }
 
     #[tokio::test]
@@ -524,19 +720,12 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = match SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await {
-            Ok(db) => db,
-            Err(_) => {
-                // Expected to fail until implementation
-                return;
-            }
-        };
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        db.initialize().await.unwrap();
 
-        // This should fail until we implement it
+        // This should now work with our implementation
         let result = db.list_files().await;
-
-        // TODO: Change this to assert!(result.is_ok()) after implementation
-        assert!(result.is_err(), "List files should fail until implemented");
+        assert!(result.is_ok(), "List files should succeed");
     }
 
     #[tokio::test]
@@ -544,19 +733,13 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = match SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await {
-            Ok(db) => db,
-            Err(_) => {
-                // Expected to fail until implementation
-                return;
-            }
-        };
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        db.initialize().await.unwrap();
 
-        // This should fail until we implement it
+        // This should now work with our implementation
         let result = db.delete_file("test.md").await;
-
-        // TODO: Change this to assert!(result.is_ok()) after implementation
-        assert!(result.is_err(), "Delete file should fail until implemented");
+        // This should fail since the file doesn't exist, but the method should work
+        assert!(result.is_err(), "Deleting nonexistent file should fail");
     }
 
     #[tokio::test]
@@ -564,24 +747,17 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = match SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await {
-            Ok(db) => db,
-            Err(_) => {
-                // Expected to fail until implementation
-                return;
-            }
-        };
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        db.initialize().await.unwrap();
 
         let operation = BatchOperation {
             operation_type: BatchOperationType::Create,
             documents: vec![],
         };
 
-        // This should fail until we implement it
+        // This should now work with our implementation
         let result = db.batch_operation(&operation).await;
-
-        // TODO: Change this to assert!(result.is_ok()) after implementation
-        assert!(result.is_err(), "Batch operations should fail until implemented");
+        assert!(result.is_ok(), "Batch operations should succeed");
     }
 
     #[tokio::test]
@@ -589,19 +765,12 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = match SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await {
-            Ok(db) => db,
-            Err(_) => {
-                // Expected to fail until implementation
-                return;
-            }
-        };
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        db.initialize().await.unwrap();
 
-        // This should fail until we implement it
+        // This should now work with our implementation
         let result = db.get_stats().await;
-
-        // TODO: Change this to assert!(result.is_ok()) after implementation
-        assert!(result.is_err(), "Get stats should fail until implemented");
+        assert!(result.is_ok(), "Get stats should succeed");
     }
 
     #[tokio::test]
@@ -609,21 +778,15 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = match SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await {
-            Ok(db) => db,
-            Err(_) => {
-                // Expected to fail until implementation
-                return;
-            }
-        };
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        db.initialize().await.unwrap();
 
         let metadata = create_test_metadata("test.md");
 
-        // This should fail until we implement it
+        // This should now work with our implementation
         let result = db.update_metadata("test.md", &metadata).await;
-
-        // TODO: Change this to assert!(result.is_ok()) after implementation
-        assert!(result.is_err(), "Update metadata should fail until implemented");
+        // This should fail since the file doesn't exist, but the method should work
+        assert!(result.is_err(), "Updating metadata for nonexistent file should fail");
     }
 
     #[tokio::test]
@@ -645,19 +808,12 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = match SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await {
-            Ok(db) => db,
-            Err(_) => {
-                // Expected to fail until implementation
-                return;
-            }
-        };
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        db.initialize().await.unwrap();
 
-        // This should fail until we implement it
+        // This should now work with our implementation
         let result = db.create_relation("doc1.md", "doc2.md", "links_to", None).await;
-
-        // TODO: Change this to assert!(result.is_ok()) after implementation
-        assert!(result.is_err(), "Create relation should fail until implemented");
+        assert!(result.is_ok(), "Create relation should succeed");
     }
 
     #[tokio::test]
@@ -665,19 +821,12 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = match SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await {
-            Ok(db) => db,
-            Err(_) => {
-                // Expected to fail until implementation
-                return;
-            }
-        };
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        db.initialize().await.unwrap();
 
-        // This should fail until we implement it
+        // This should now work with our implementation
         let result = db.get_related("doc1.md", Some("links_to")).await;
-
-        // TODO: Change this to assert!(result.is_ok()) after implementation
-        assert!(result.is_err(), "Get related should fail until implemented");
+        assert!(result.is_ok(), "Get related should succeed");
     }
 
     #[tokio::test]
