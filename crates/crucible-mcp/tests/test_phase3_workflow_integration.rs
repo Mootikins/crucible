@@ -277,7 +277,8 @@ async fn test_complete_phase3_workflow_discovery_to_execution() -> Result<()> {
     for mcp_tool in &mcp_tools {
         assert!(!mcp_tool.name.is_empty());
         assert!(mcp_tool.description.is_some());
-        assert!(mcp_tool.input_schema.type_.is_object());
+        // input_schema is Arc<Map<String, Value>>, check it's not empty
+        assert!(!mcp_tool.input_schema.is_empty());
         assert!(mcp_tool.annotations.is_some());
 
         let annotations = mcp_tool.annotations.as_ref().unwrap();
@@ -570,7 +571,6 @@ pub async fn call(args) {{
 
     // Validate results
     for (i, result) in results.into_iter().enumerate() {
-        let result = result?;
         assert_eq!(result["tool_id"], (i + 1));
         assert_eq!(result["count"], 100);
         assert!((result["sum"].as_f64().unwrap() - 5050.0).abs() < 0.001);

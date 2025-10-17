@@ -417,4 +417,403 @@ Some content here.
         loader.clear_cache();
         assert_eq!(loader.cache_stats(), 0);
     }
+
+    #[test]
+    fn test_loader_nonexistent_directory() {
+        let mut loader = AgentLoader::new();
+        let result = loader.load_from_directory("/nonexistent/path/that/does/not/exist");
+        assert!(result.is_err(), "Should fail for nonexistent directory");
+    }
+
+    #[test]
+    fn test_loader_default() {
+        let loader = AgentLoader::default();
+        assert_eq!(loader.cache_stats(), 0);
+    }
+
+    #[test]
+    fn test_validation_empty_name() {
+        let temp_dir = TempDir::new().unwrap();
+        let invalid_content = get_sample_agent_frontmatter()
+            .replace("name: \"Test Agent\"", "name: \"\"");
+
+        let file_path = create_test_agent_file(&temp_dir, "empty_name.md", &invalid_content);
+        let mut loader = AgentLoader::new();
+        let result = loader.load_from_file(&file_path);
+        assert!(result.is_err(), "Should fail for empty name");
+    }
+
+    #[test]
+    fn test_validation_empty_description() {
+        let temp_dir = TempDir::new().unwrap();
+        let invalid_content = get_sample_agent_frontmatter()
+            .replace("description: \"A test agent for unit testing\"", "description: \"\"");
+
+        let file_path = create_test_agent_file(&temp_dir, "empty_desc.md", &invalid_content);
+        let mut loader = AgentLoader::new();
+        let result = loader.load_from_file(&file_path);
+        assert!(result.is_err(), "Should fail for empty description");
+    }
+
+    #[test]
+    fn test_validation_empty_system_prompt() {
+        let temp_dir = TempDir::new().unwrap();
+        // Create agent with only frontmatter, no markdown content
+        let invalid_content = r#"---
+name: "Test Agent"
+version: "1.0.0"
+description: "A test agent"
+
+capabilities:
+  - name: "Testing"
+    description: "Test capability"
+    skill_level: "Intermediate"
+    required_tools: []
+
+required_tools: []
+tags: []
+
+personality:
+  tone: "friendly"
+  style: "casual"
+  verbosity: "Moderate"
+  traits: []
+
+skills:
+  - name: "Testing"
+    category: "test"
+    proficiency: 5
+
+status: "Active"
+author: "Test"
+---
+"#;
+
+        let file_path = create_test_agent_file(&temp_dir, "empty_prompt.md", invalid_content);
+        let mut loader = AgentLoader::new();
+        let result = loader.load_from_file(&file_path);
+        assert!(result.is_err(), "Should fail for empty system prompt");
+    }
+
+    #[test]
+    fn test_registry_get_agent_by_id() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = get_sample_agent_frontmatter();
+        let file_path = create_test_agent_file(&temp_dir, "test_agent.md", content);
+
+        let mut registry = AgentRegistry::new(AgentLoader::new());
+        registry.load_agent_from_file(&file_path).unwrap();
+
+        let agent = registry.get_agent("Test Agent").unwrap();
+        let agent_id = agent.id;
+
+        // Test getting agent by ID
+        let found_agent = registry.get_agent_by_id(&agent_id);
+        assert!(found_agent.is_some());
+        assert_eq!(found_agent.unwrap().id, agent_id);
+
+        // Test with non-existent ID
+        let random_id = uuid::Uuid::new_v4();
+        let not_found = registry.get_agent_by_id(&random_id);
+        assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn test_registry_clear() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = get_sample_agent_frontmatter();
+        let file_path = create_test_agent_file(&temp_dir, "test_agent.md", content);
+
+        let mut registry = AgentRegistry::new(AgentLoader::new());
+        registry.load_agent_from_file(&file_path).unwrap();
+        assert_eq!(registry.count(), 1);
+
+        // Clear all agents
+        registry.clear();
+        assert_eq!(registry.count(), 0);
+        assert!(!registry.has_agent("Test Agent"));
+    }
+
+    #[test]
+    fn test_registry_default() {
+        let registry = AgentRegistry::default();
+        assert_eq!(registry.count(), 0);
+    }
+
+    #[test]
+    fn test_matcher_with_custom_weights() {
+        use crate::agent::matcher::{CapabilityMatcher, MatchingWeights};
+
+        let custom_weights = MatchingWeights {
+            capability_match: 50,
+            skill_match: 40,
+            tag_match: 30,
+            tool_match: 25,
+            text_match: 15,
+            skill_level_match: 20,
+        };
+
+        let matcher = CapabilityMatcher::with_weights(custom_weights);
+
+        // Verify matcher was created (implicit test via successful construction)
+        let temp_dir = TempDir::new().unwrap();
+        let content = get_sample_agent_frontmatter();
+        let file_path = create_test_agent_file(&temp_dir, "test_agent.md", content);
+
+        let mut registry = AgentRegistry::new(AgentLoader::new());
+        registry.load_agent_from_file(&file_path).unwrap();
+
+        // Test that custom weights affect scoring
+        let query = AgentQuery {
+            capabilities: vec!["Testing".to_string()],
+            tags: vec![],
+            skills: vec![],
+            required_tools: vec![],
+            min_skill_level: None,
+            status: None,
+            text_search: None,
+        };
+
+        let agents: std::collections::HashMap<String, crate::agent::AgentDefinition> =
+            registry.list_agents().iter().map(|name| {
+                let agent = registry.get_agent(name).unwrap();
+                ((**name).clone(), agent.clone())
+            }).collect();
+
+        let matches = matcher.find_matching_agents(&agents, &query);
+        assert!(!matches.is_empty());
+        // With custom weight of 50 for capability_match, score should be 50
+        assert_eq!(matches[0].score, 50);
+    }
+
+    #[test]
+    fn test_status_filtering() {
+        // Tests line 76-77: status filtering when agent status doesn't match
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create experimental agent
+        let experimental_content = get_sample_agent_frontmatter()
+            .replace("status: \"Active\"", "status: \"Experimental\"");
+        let file_path = create_test_agent_file(&temp_dir, "experimental_agent.md", &experimental_content);
+
+        let mut registry = AgentRegistry::new(AgentLoader::new());
+        registry.load_agent_from_file(&file_path).unwrap();
+
+        // Query for Active agents with text search - should not match Experimental agent
+        let query = AgentQuery {
+            capabilities: vec![],
+            tags: vec![],
+            skills: vec![],
+            required_tools: vec![],
+            min_skill_level: None,
+            status: Some(AgentStatus::Active),
+            text_search: Some("test".to_string()),  // Add text search to generate score
+        };
+
+        let matches = registry.find_agents(&query);
+        assert_eq!(matches.len(), 0, "Should not match when status doesn't match");
+
+        // Query for Experimental agents with text search - should match
+        let query_experimental = AgentQuery {
+            capabilities: vec![],
+            tags: vec![],
+            skills: vec![],
+            required_tools: vec![],
+            min_skill_level: None,
+            status: Some(AgentStatus::Experimental),
+            text_search: Some("test".to_string()),  // Add text search to generate score
+        };
+
+        let matches_experimental = registry.find_agents(&query_experimental);
+        assert_eq!(matches_experimental.len(), 1, "Should match when status is Experimental");
+    }
+
+    #[test]
+    fn test_missing_requirements_tracking() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = get_sample_agent_frontmatter();
+        let file_path = create_test_agent_file(&temp_dir, "test_agent.md", content);
+
+        let mut registry = AgentRegistry::new(AgentLoader::new());
+        registry.load_agent_from_file(&file_path).unwrap();
+
+        // Query for capabilities the agent doesn't have
+        let query = AgentQuery {
+            capabilities: vec!["NonexistentCapability".to_string()],
+            skills: vec!["NonexistentSkill".to_string()],
+            tags: vec![],
+            required_tools: vec!["nonexistent_tool".to_string()],
+            min_skill_level: None,
+            status: None,
+            text_search: None,
+        };
+
+        let matches = registry.find_agents(&query);
+        assert_eq!(matches.len(), 0, "Should not match when missing all requirements");
+    }
+
+    #[test]
+    fn test_text_search_in_capabilities_and_tags() {
+        let temp_dir = TempDir::new().unwrap();
+        let content = get_sample_agent_frontmatter();
+        let file_path = create_test_agent_file(&temp_dir, "test_agent.md", content);
+
+        let mut registry = AgentRegistry::new(AgentLoader::new());
+        registry.load_agent_from_file(&file_path).unwrap();
+
+        // Test search in capability name
+        let query = AgentQuery {
+            capabilities: vec![],
+            tags: vec![],
+            skills: vec![],
+            required_tools: vec![],
+            min_skill_level: None,
+            status: None,
+            text_search: Some("Testing".to_string()),
+        };
+
+        let matches = registry.find_agents(&query);
+        assert_eq!(matches.len(), 1);
+
+        // Test search in tag
+        let query_tag = AgentQuery {
+            capabilities: vec![],
+            tags: vec![],
+            skills: vec![],
+            required_tools: vec![],
+            min_skill_level: None,
+            status: None,
+            text_search: Some("test".to_string()),
+        };
+
+        let matches_tag = registry.find_agents(&query_tag);
+        assert_eq!(matches_tag.len(), 1);
+
+        // Test search with no matches
+        let query_no_match = AgentQuery {
+            capabilities: vec![],
+            tags: vec![],
+            skills: vec![],
+            required_tools: vec![],
+            min_skill_level: None,
+            status: None,
+            text_search: Some("xyznonexistent".to_string()),
+        };
+
+        let matches_none = registry.find_agents(&query_no_match);
+        assert_eq!(matches_none.len(), 0);
+    }
+
+    #[test]
+    fn test_find_compatible_agents() {
+        use crate::agent::matcher::CapabilityMatcher;
+
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create primary agent
+        let primary_content = get_sample_agent_frontmatter();
+        create_test_agent_file(&temp_dir, "primary_agent.md", &primary_content);
+
+        // Create compatible agent with shared tools
+        let compatible_content = get_sample_agent_frontmatter()
+            .replace("name: \"Test Agent\"", "name: \"Compatible Agent\"")
+            .replace("test agent", "compatible agent");
+        create_test_agent_file(&temp_dir, "compatible_agent.md", &compatible_content);
+
+        // Create agent with complementary capabilities
+        let complementary_content = r#"---
+name: "Complementary Agent"
+version: "1.0.0"
+description: "Agent with different capabilities"
+
+capabilities:
+  - name: "Different Capability"
+    description: "A different capability"
+    skill_level: "Advanced"
+    required_tools: []
+
+required_tools:
+  - "search_by_content"
+
+tags:
+  - "different"
+
+personality:
+  tone: "professional"
+  style: "formal"
+  verbosity: "Moderate"
+  traits:
+    - "precise"
+
+skills:
+  - name: "Different Skill"
+    category: "analysis"
+    proficiency: 8
+
+status: "Active"
+author: "Test"
+---
+
+# System Prompt
+Complementary agent for testing.
+"#;
+        create_test_agent_file(&temp_dir, "complementary_agent.md", complementary_content);
+
+        let mut loader = AgentLoader::new();
+        let agents_list = loader.load_from_directory(temp_dir.path().to_str().unwrap()).unwrap();
+
+        let agents: std::collections::HashMap<String, crate::agent::AgentDefinition> =
+            agents_list.into_iter().map(|agent| (agent.name.clone(), agent)).collect();
+
+        let matcher = CapabilityMatcher::new();
+        let compatible = matcher.find_compatible_agents(&agents, "Test Agent");
+
+        assert!(!compatible.is_empty(), "Should find compatible agents");
+
+        // Verify scoring is working
+        for match_result in &compatible {
+            assert!(match_result.score > 0);
+            assert!(!match_result.matched_criteria.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_suggest_agents_for_task() {
+        use crate::agent::matcher::CapabilityMatcher;
+
+        let temp_dir = TempDir::new().unwrap();
+        let content = get_sample_agent_frontmatter();
+        let file_path = create_test_agent_file(&temp_dir, "test_agent.md", content);
+
+        let mut loader = AgentLoader::new();
+        let agent = loader.load_from_file(&file_path).unwrap();
+
+        let mut agents: std::collections::HashMap<String, crate::agent::AgentDefinition> =
+            std::collections::HashMap::new();
+        agents.insert(agent.name.clone(), agent);
+
+        let matcher = CapabilityMatcher::new();
+        let suggestions = matcher.suggest_agents_for_task(
+            &agents,
+            "Need help with testing tasks",
+            &["Testing".to_string()],
+            &["Testing".to_string()],
+        );
+
+        assert_eq!(suggestions.len(), 1);
+        assert_eq!(suggestions[0].agent.name, "Test Agent");
+    }
+
+    #[test]
+    fn test_find_compatible_agents_nonexistent_primary() {
+        use crate::agent::matcher::CapabilityMatcher;
+
+        let agents: std::collections::HashMap<String, crate::agent::AgentDefinition> =
+            std::collections::HashMap::new();
+
+        let matcher = CapabilityMatcher::new();
+        let compatible = matcher.find_compatible_agents(&agents, "Nonexistent Agent");
+
+        assert!(compatible.is_empty(), "Should return empty vec for nonexistent primary");
+    }
 }

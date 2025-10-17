@@ -1,5 +1,5 @@
 use crucible_core::DocumentNode;
-use crucible_mcp::McpServer;
+use crucible_mcp::{McpServer, EmbeddingConfig, create_provider};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -11,7 +11,9 @@ async fn get_mcp_server() -> std::result::Result<&'static McpServer, String> {
     unsafe {
         if MCP_SERVER.is_none() {
             let db_path = "crucible.db";
-            MCP_SERVER = Some(McpServer::new(db_path).await.map_err(|e| e.to_string())?);
+            let config = EmbeddingConfig::default();
+            let provider = create_provider(config).await.map_err(|e| e.to_string())?;
+            MCP_SERVER = Some(McpServer::new(db_path, provider).await.map_err(|e| e.to_string())?);
         }
         Ok(MCP_SERVER.as_ref().unwrap())
     }
