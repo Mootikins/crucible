@@ -1,0 +1,27 @@
+[package]
+name = "crucible-surrealdb"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+description = "SurrealDB backend for the Crucible knowledge management system"
+
+[dependencies]
+crucible-core = { path = "../crucible-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# SurrealDB with RocksDB backend
+surrealdb = { version = "2", features = ["kv-rocksdb"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Vector operations
+ndarray = "0.16"
+
+[dev-dependencies]
+tempfile = "3.8"
+tokio-test = "0.4"
