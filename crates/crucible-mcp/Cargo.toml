@@ -33,6 +33,7 @@ schemars = "1.0"
 
 # Database
 duckdb = { version = "1.1", features = ["bundled", "vtab", "json", "parquet"] }
+crucible-surrealdb = { path = "../crucible-surrealdb" }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 
