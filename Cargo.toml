@@ -6,6 +6,7 @@ members = [
     "crates/crucible-mcp",
     "crates/crucible-plugins", "crates/crucible-mcp-client", "crates/crucible-cli",
     "crates/crucible-sync",
+    "crates/crucible-surrealdb",
 ]
 
 [workspace.package]
