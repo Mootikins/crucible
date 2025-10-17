@@ -1,0 +1,56 @@
+/// Simple file operations for testing
+/// Basic functions with proper Rune syntax
+
+pub mod file {
+    /// Create a file
+    pub async fn create_file(args) {
+        #{
+            success: true,
+            file: args.path,
+            size: args.content.len()
+        }
+    }
+
+    /// Read a file
+    pub async fn read_file(args) {
+        "Sample file content for testing"
+    }
+
+    /// Delete a file
+    pub async fn delete_file(args) {
+        #{
+            success: true,
+            deleted: args.path
+        }
+    }
+
+    /// Copy a file
+    pub async fn copy_file(args) {
+        #{
+            success: true,
+            source: args.from,
+            destination: args.to
+        }
+    }
+
+    /// List files
+    pub async fn list_files(args) {
+        ["file1.txt", "file2.md", "config.json"]
+    }
+}
+
+pub mod search {
+    /// Search for files
+    pub async fn search_files(args) {
+        ["result1.txt", "result2.md", "result3.rs"]
+    }
+
+    /// Search content
+    pub async fn search_content(args) {
+        #{
+            matches: 3,
+            files: ["file1.txt", "file2.txt"],
+            query: args.query
+        }
+    }
+}
