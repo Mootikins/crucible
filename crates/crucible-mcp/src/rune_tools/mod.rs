@@ -12,12 +12,27 @@
 
 mod ast_analyzer;
 mod discovery;
+mod error_handling;
+pub mod handler_generator;
 mod registry;
+pub mod registry_async;
+mod schema_validator;
 mod stdlib;
 mod tool;
 
-pub use ast_analyzer::{RuneAstAnalyzer, DiscoveredModule, AsyncFunctionInfo, ParameterInfo};
+pub use ast_analyzer::{
+    RuneAstAnalyzer, DiscoveredModule, AsyncFunctionInfo, ParameterInfo,
+    TypeInferenceEngine, AnalyzerConfig, RuneType, TypeConstraint, ConstraintType,
+    ValidationRule, SourceLocation
+};
 pub use discovery::{ToolDiscovery, DiscoveredTool, DiscoveredTools, ConsumerInfo};
+pub use error_handling::{
+    RuneErrorHandler, ErrorRecoveryManager, ErrorLogger, CircuitBreaker,
+    RecoveryStrategy, RecoveryAttempt, ErrorStats
+};
+pub use handler_generator::{DynamicRuneToolHandler, ToolHandlerGenerator, EnhancedToolService};
 pub use registry::ToolRegistry;
+pub use registry_async::AsyncToolRegistry;
+pub use schema_validator::{SchemaValidator, ValidationResult, ValidationError, ValidationWarning, ValidationConfig, ValidationContext};
 pub use stdlib::build_crucible_module;
 pub use tool::{RuneTool, ToolMetadata};
