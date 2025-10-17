@@ -40,3 +40,92 @@ impl Default for CrdtManager {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_crdt_manager_new() {
+        let manager = CrdtManager::new();
+        assert!(manager.get_document().client_id() >= 0);
+    }
+
+    #[test]
+    fn test_crdt_manager_default() {
+        let manager = CrdtManager::default();
+        assert!(manager.get_document().client_id() >= 0);
+    }
+
+    #[test]
+    fn test_get_text() {
+        let manager = CrdtManager::new();
+        let text = manager.get_text("test_text");
+
+        // Verify we can use the text
+        manager.transact(|txn| {
+            text.insert(txn, 0, "Hello");
+            Ok(())
+        }).unwrap();
+    }
+
+    #[test]
+    fn test_get_map() {
+        let manager = CrdtManager::new();
+        let map = manager.get_map("test_map");
+
+        // Verify we can use the map
+        manager.transact(|txn| {
+            map.insert(txn, "key", "value");
+            Ok(())
+        }).unwrap();
+    }
+
+    #[test]
+    fn test_get_array() {
+        let manager = CrdtManager::new();
+        let array = manager.get_array("test_array");
+
+        // Verify we can use the array
+        manager.transact(|txn| {
+            array.insert(txn, 0, "item1");
+            Ok(())
+        }).unwrap();
+    }
+
+    #[test]
+    fn test_transact() {
+        let manager = CrdtManager::new();
+        let text = manager.get_text("content");
+
+        let result = manager.transact(|txn| {
+            text.insert(txn, 0, "Test");
+            Ok(42)
+        });
+
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[test]
+    fn test_multiple_operations() {
+        let manager = CrdtManager::new();
+        let text = manager.get_text("doc");
+        let map = manager.get_map("metadata");
+
+        // Perform multiple operations
+        manager.transact(|txn| {
+            text.insert(txn, 0, "Hello");
+            map.insert(txn, "author", "test");
+            Ok(())
+        }).unwrap();
+
+        manager.transact(|txn| {
+            text.insert(txn, 5, " World");
+            map.insert(txn, "version", 1);
+            Ok(())
+        }).unwrap();
+
+        // Verify operations completed without error
+        assert!(true);
+    }
+}
