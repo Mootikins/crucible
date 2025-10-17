@@ -104,7 +104,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test listing tools - this should trigger our debugging logs
     println!("🔍 Calling list_tools() to trigger debugging...");
-    let tool_list_result = service.list_tools(None, rmcp::service::RequestContext::new(()).await?).await?;
+
+    // Create a minimal request context - we'll use a simple tuple for the context
+    // since rmcp::service::RequestContext::default() doesn't exist
+    let tool_list_result = service.list_tools(None, ()).await;
 
     println!("✅ Service returned tool list successfully");
     println!("Total tools: {}", tool_list_result.tools.len());
