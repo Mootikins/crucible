@@ -310,3 +310,293 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
 
     (dot_product / (norm_a * norm_b)) as f64
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn create_test_metadata(path: &str) -> EmbeddingMetadata {
+        let mut properties = HashMap::new();
+        properties.insert("status".to_string(), serde_json::json!("active"));
+        properties.insert("type".to_string(), serde_json::json!("note"));
+
+        EmbeddingMetadata {
+            file_path: path.to_string(),
+            title: Some(path.to_string()),
+            tags: vec!["test".to_string(), "demo".to_string()],
+            folder: "test_folder".to_string(),
+            properties,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_database_new_and_initialize() {
+        let db = EmbeddingDatabase::new(":memory:").await;
+        assert!(db.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_store_and_retrieve_embedding() {
+        let db = EmbeddingDatabase::new(":memory:").await.unwrap();
+        let metadata = create_test_metadata("test.md");
+        let embedding = vec![0.1, 0.2, 0.3, 0.4];
+
+        // Store embedding
+        let result = db.store_embedding("test.md", "test content", &embedding, &metadata).await;
+        assert!(result.is_ok());
+
+        // Retrieve embedding
+        let retrieved = db.get_embedding("test.md").await.unwrap();
+        assert!(retrieved.is_some());
+        let data = retrieved.unwrap();
+        assert_eq!(data.file_path, "test.md");
+        assert_eq!(data.content, "test content");
+        assert_eq!(data.embedding, embedding);
+    }
+
+    #[tokio::test]
+    async fn test_file_exists_true() {
+        let db = EmbeddingDatabase::new(":memory:").await.unwrap();
+        let metadata = create_test_metadata("exists.md");
+        let embedding = vec![0.1; 384];
+
+        db.store_embedding("exists.md", "content", &embedding, &metadata).await.unwrap();
+
+        let exists = db.file_exists("exists.md").await.unwrap();
+        assert!(exists);
+    }
+
+    #[tokio::test]
+    async fn test_file_exists_false() {
+        let db = EmbeddingDatabase::new(":memory:").await.unwrap();
+
+        let exists = db.file_exists("nonexistent.md").await.unwrap();
+        assert!(!exists);
+    }
+
+    #[tokio::test]
+    async fn test_get_embedding_not_found() {
+        let db = EmbeddingDatabase::new(":memory:").await.unwrap();
+
+        let result = db.get_embedding("nonexistent.md").await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_update_metadata() {
+        let db = EmbeddingDatabase::new(":memory:").await.unwrap();
+        let mut metadata = create_test_metadata("test.md");
+        let embedding = vec![0.1; 384];
+
+        // Store initial embedding
+        db.store_embedding("test.md", "content", &embedding, &metadata).await.unwrap();
+
+        // Update metadata
+        metadata.properties.insert("status".to_string(), serde_json::json!("archived"));
+        db.update_metadata("test.md", &metadata).await.unwrap();
+
+        // Verify update
+        let retrieved = db.get_embedding("test.md").await.unwrap().unwrap();
+        assert_eq!(
+            retrieved.metadata.properties.get("status"),
+            Some(&serde_json::json!("archived"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_search_similar() {
+        let db = EmbeddingDatabase::new(":memory:").await.unwrap();
+        let metadata1 = create_test_metadata("doc1.md");
+        let metadata2 = create_test_metadata("doc2.md");
+        let metadata3 = create_test_metadata("doc3.md");
+
+        // Store embeddings with different similarities to query
+        let embedding1 = vec![1.0, 0.0, 0.0, 0.0];
+        let embedding2 = vec![0.9, 0.1, 0.0, 0.0];
+        let embedding3 = vec![0.0, 1.0, 0.0, 0.0];
+
+        db.store_embedding("doc1.md", "content1", &embedding1, &metadata1).await.unwrap();
+        db.store_embedding("doc2.md", "content2", &embedding2, &metadata2).await.unwrap();
+        db.store_embedding("doc3.md", "content3", &embedding3, &metadata3).await.unwrap();
+
+        // Query with embedding similar to embedding1
+        let query = vec![1.0, 0.0, 0.0, 0.0];
+        let results = db.search_similar(&query, 2).await.unwrap();
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].id, "doc1.md"); // Most similar
+        assert!(results[0].score > results[1].score);
+    }
+
+    #[tokio::test]
+    async fn test_search_similar_empty_db() {
+        let db = EmbeddingDatabase::new(":memory:").await.unwrap();
+        let query = vec![1.0, 0.0, 0.0, 0.0];
+
+        let results = db.search_similar(&query, 5).await.unwrap();
+        assert_eq!(results.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_search_by_tags() {
+        let db = EmbeddingDatabase::new(":memory:").await.unwrap();
+        let mut metadata1 = create_test_metadata("doc1.md");
+        metadata1.tags = vec!["rust".to_string(), "programming".to_string()];
+        let mut metadata2 = create_test_metadata("doc2.md");
+        metadata2.tags = vec!["python".to_string(), "programming".to_string()];
+
+        let embedding = vec![0.1; 384];
+        db.store_embedding("doc1.md", "content1", &embedding, &metadata1).await.unwrap();
+        db.store_embedding("doc2.md", "content2", &embedding, &metadata2).await.unwrap();
+
+        let results = db.search_by_tags(&["rust".to_string()]).await.unwrap();
+        assert!(results.contains(&"doc1.md".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_search_by_properties() {
+        let db = EmbeddingDatabase::new(":memory:").await.unwrap();
+        let mut metadata1 = create_test_metadata("doc1.md");
+        metadata1.properties.insert("status".to_string(), serde_json::json!("active"));
+        let mut metadata2 = create_test_metadata("doc2.md");
+        metadata2.properties.insert("status".to_string(), serde_json::json!("archived"));
+
+        let embedding = vec![0.1; 384];
+        db.store_embedding("doc1.md", "content1", &embedding, &metadata1).await.unwrap();
+        db.store_embedding("doc2.md", "content2", &embedding, &metadata2).await.unwrap();
+
+        let mut search_props = HashMap::new();
+        search_props.insert("status".to_string(), serde_json::json!("active"));
+
+        let results = db.search_by_properties(&search_props).await.unwrap();
+        assert!(results.contains(&"doc1.md".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_list_files() {
+        let db = EmbeddingDatabase::new(":memory:").await.unwrap();
+        let metadata = create_test_metadata("test.md");
+        let embedding = vec![0.1; 384];
+
+        db.store_embedding("doc1.md", "content1", &embedding, &metadata).await.unwrap();
+        db.store_embedding("doc2.md", "content2", &embedding, &metadata).await.unwrap();
+        db.store_embedding("doc3.md", "content3", &embedding, &metadata).await.unwrap();
+
+        let files = db.list_files().await.unwrap();
+        assert_eq!(files.len(), 3);
+        assert!(files.contains(&"doc1.md".to_string()));
+        assert!(files.contains(&"doc2.md".to_string()));
+        assert!(files.contains(&"doc3.md".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_delete_file() {
+        let db = EmbeddingDatabase::new(":memory:").await.unwrap();
+        let metadata = create_test_metadata("test.md");
+        let embedding = vec![0.1; 384];
+
+        db.store_embedding("test.md", "content", &embedding, &metadata).await.unwrap();
+        assert!(db.file_exists("test.md").await.unwrap());
+
+        db.delete_file("test.md").await.unwrap();
+        assert!(!db.file_exists("test.md").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_delete_file_not_found() {
+        let db = EmbeddingDatabase::new(":memory:").await.unwrap();
+
+        // Deleting non-existent file should not error
+        let result = db.delete_file("nonexistent.md").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_get_stats() {
+        let db = EmbeddingDatabase::new(":memory:").await.unwrap();
+        let metadata = create_test_metadata("test.md");
+        let embedding = vec![0.1; 384];
+
+        // Initial stats
+        let stats = db.get_stats().await.unwrap();
+        assert_eq!(stats.get("total_files"), Some(&0));
+
+        // Add files
+        db.store_embedding("doc1.md", "content1", &embedding, &metadata).await.unwrap();
+        db.store_embedding("doc2.md", "content2", &embedding, &metadata).await.unwrap();
+
+        let stats = db.get_stats().await.unwrap();
+        assert_eq!(stats.get("total_files"), Some(&2));
+    }
+
+    #[tokio::test]
+    async fn test_store_embedding_upsert() {
+        let db = EmbeddingDatabase::new(":memory:").await.unwrap();
+        let metadata = create_test_metadata("test.md");
+        let embedding1 = vec![0.1; 384];
+        let embedding2 = vec![0.2; 384];
+
+        // Store initial embedding
+        db.store_embedding("test.md", "content1", &embedding1, &metadata).await.unwrap();
+
+        // Store again with different content (should update, not insert)
+        db.store_embedding("test.md", "content2", &embedding2, &metadata).await.unwrap();
+
+        let stats = db.get_stats().await.unwrap();
+        assert_eq!(stats.get("total_files"), Some(&1)); // Should still be 1 file
+
+        let retrieved = db.get_embedding("test.md").await.unwrap().unwrap();
+        assert_eq!(retrieved.content, "content2"); // Updated content
+        assert_eq!(retrieved.embedding, embedding2); // Updated embedding
+    }
+
+    #[test]
+    fn test_cosine_similarity_identical() {
+        let a = vec![1.0, 2.0, 3.0];
+        let b = vec![1.0, 2.0, 3.0];
+        let similarity = cosine_similarity(&a, &b);
+        assert!((similarity - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_orthogonal() {
+        let a = vec![1.0, 0.0, 0.0];
+        let b = vec![0.0, 1.0, 0.0];
+        let similarity = cosine_similarity(&a, &b);
+        assert!((similarity - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_opposite() {
+        let a = vec![1.0, 0.0, 0.0];
+        let b = vec![-1.0, 0.0, 0.0];
+        let similarity = cosine_similarity(&a, &b);
+        assert!((similarity - (-1.0)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_different_lengths() {
+        let a = vec![1.0, 2.0, 3.0];
+        let b = vec![1.0, 2.0];
+        let similarity = cosine_similarity(&a, &b);
+        assert_eq!(similarity, 0.0);
+    }
+
+    #[test]
+    fn test_cosine_similarity_zero_vector() {
+        let a = vec![1.0, 2.0, 3.0];
+        let b = vec![0.0, 0.0, 0.0];
+        let similarity = cosine_similarity(&a, &b);
+        assert_eq!(similarity, 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_close() {
+        let db = EmbeddingDatabase::new(":memory:").await.unwrap();
+        db.close().await;
+        // If we get here without panic, close worked
+    }
+}
