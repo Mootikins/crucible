@@ -14,8 +14,8 @@ tokio = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 
-# SurrealDB with RocksDB backend
-surrealdb = { version = "2", features = ["kv-rocksdb"] }
+# We're using in-memory implementation for now, so no SurrealDB dependency needed
+# surrealdb = { version = "2", features = ["kv-rocksdb"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 
