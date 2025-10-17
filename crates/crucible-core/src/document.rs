@@ -55,3 +55,70 @@ impl Default for ViewportState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_document_node_new() {
+        let doc = DocumentNode::new("Test Title".to_string(), "Test Content".to_string());
+
+        assert_eq!(doc.title, "Test Title");
+        assert_eq!(doc.content, "Test Content");
+        assert!(doc.parent_id.is_none());
+        assert!(doc.children.is_empty());
+        assert!(doc.properties.is_empty());
+        assert_eq!(doc.collapsed, false);
+        assert_eq!(doc.position, 0);
+        assert_eq!(doc.created_at, doc.updated_at);
+    }
+
+    #[test]
+    fn test_document_node_uuid_unique() {
+        let doc1 = DocumentNode::new("Doc 1".to_string(), "Content 1".to_string());
+        let doc2 = DocumentNode::new("Doc 2".to_string(), "Content 2".to_string());
+
+        assert_ne!(doc1.id, doc2.id);
+    }
+
+    #[test]
+    fn test_document_node_serialization() {
+        let doc = DocumentNode::new("Test".to_string(), "Content".to_string());
+        let json = serde_json::to_string(&doc).unwrap();
+
+        let deserialized: DocumentNode = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.id, doc.id);
+        assert_eq!(deserialized.title, doc.title);
+        assert_eq!(deserialized.content, doc.content);
+    }
+
+    #[test]
+    fn test_viewport_state_default() {
+        let viewport = ViewportState::default();
+
+        assert_eq!(viewport.zoom, 1.0);
+        assert_eq!(viewport.x, 0.0);
+        assert_eq!(viewport.y, 0.0);
+        assert_eq!(viewport.width, 800.0);
+        assert_eq!(viewport.height, 600.0);
+    }
+
+    #[test]
+    fn test_viewport_state_serialization() {
+        let viewport = ViewportState {
+            zoom: 2.0,
+            x: 100.0,
+            y: 200.0,
+            width: 1920.0,
+            height: 1080.0,
+        };
+
+        let json = serde_json::to_string(&viewport).unwrap();
+        let deserialized: ViewportState = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.zoom, 2.0);
+        assert_eq!(deserialized.x, 100.0);
+        assert_eq!(deserialized.y, 200.0);
+    }
+}

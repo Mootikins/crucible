@@ -48,3 +48,75 @@ impl CanvasEdge {
 }
 
 use crate::properties::PropertyMap;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_canvas_node_new() {
+        let node = CanvasNode::new(100.0, 200.0, "Test Content".to_string());
+
+        assert_eq!(node.x, 100.0);
+        assert_eq!(node.y, 200.0);
+        assert_eq!(node.width, 200.0);
+        assert_eq!(node.height, 100.0);
+        assert_eq!(node.content, "Test Content");
+        assert!(node.properties.is_empty());
+    }
+
+    #[test]
+    fn test_canvas_node_uuid_unique() {
+        let node1 = CanvasNode::new(0.0, 0.0, "Node 1".to_string());
+        let node2 = CanvasNode::new(0.0, 0.0, "Node 2".to_string());
+
+        assert_ne!(node1.id, node2.id);
+    }
+
+    #[test]
+    fn test_canvas_node_serialization() {
+        let node = CanvasNode::new(50.0, 75.0, "Content".to_string());
+        let json = serde_json::to_string(&node).unwrap();
+
+        let deserialized: CanvasNode = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.id, node.id);
+        assert_eq!(deserialized.x, node.x);
+        assert_eq!(deserialized.y, node.y);
+        assert_eq!(deserialized.content, node.content);
+    }
+
+    #[test]
+    fn test_canvas_edge_new() {
+        let from_id = Uuid::new_v4();
+        let to_id = Uuid::new_v4();
+        let edge = CanvasEdge::new(from_id, to_id);
+
+        assert_eq!(edge.from, from_id);
+        assert_eq!(edge.to, to_id);
+        assert!(edge.label.is_none());
+        assert!(edge.properties.is_empty());
+    }
+
+    #[test]
+    fn test_canvas_edge_uuid_unique() {
+        let from_id = Uuid::new_v4();
+        let to_id = Uuid::new_v4();
+        let edge1 = CanvasEdge::new(from_id, to_id);
+        let edge2 = CanvasEdge::new(from_id, to_id);
+
+        assert_ne!(edge1.id, edge2.id);
+    }
+
+    #[test]
+    fn test_canvas_edge_serialization() {
+        let from_id = Uuid::new_v4();
+        let to_id = Uuid::new_v4();
+        let edge = CanvasEdge::new(from_id, to_id);
+        let json = serde_json::to_string(&edge).unwrap();
+
+        let deserialized: CanvasEdge = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.id, edge.id);
+        assert_eq!(deserialized.from, edge.from);
+        assert_eq!(deserialized.to, edge.to);
+    }
+}
