@@ -8,9 +8,19 @@
 use rmcp::{ErrorData as McpError, model::*, tool, tool_router, handler::server::{wrapper::Parameters, ServerHandler, tool::ToolRouter}};
 use crate::database::EmbeddingDatabase;
 use crate::embeddings::EmbeddingProvider;
-use crate::rune_tools::ToolRegistry;
+use crate::rune_tools::AsyncToolRegistry;
+use crate::errors::{CrucibleError, ErrorSeverity};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+
+/// Convert CrucibleError to McpError with appropriate error handling
+fn crucible_error_to_mcp(error: CrucibleError) -> McpError {
+    match error.severity {
+        ErrorSeverity::Critical => McpError::internal_error(error.details(), None),
+        ErrorSeverity::Error => McpError::internal_error(error.message, None),
+        ErrorSeverity::Warning => McpError::internal_error(error.message, None),
+        ErrorSeverity::Info => McpError::internal_error(error.message, None),
+    }
+}
 
 /// Crucible MCP Service using rmcp SDK
 ///
@@ -21,7 +31,7 @@ pub struct CrucibleMcpService {
     database: Arc<EmbeddingDatabase>,
     provider: Arc<dyn EmbeddingProvider>,
     tool_router: ToolRouter<Self>,
-    rune_registry: Option<Arc<RwLock<ToolRegistry>>>,
+    rune_registry: Option<Arc<AsyncToolRegistry>>,
 }
 
 #[tool_router]
@@ -40,14 +50,40 @@ impl CrucibleMcpService {
     pub fn with_rune_tools(
         database: Arc<EmbeddingDatabase>,
         provider: Arc<dyn EmbeddingProvider>,
-        rune_registry: ToolRegistry,
+        rune_registry: Arc<AsyncToolRegistry>,
     ) -> Self {
         Self {
             database,
             provider,
             tool_router: Self::tool_router(),
-            rune_registry: Some(Arc::new(RwLock::new(rune_registry))),
+            rune_registry: Some(rune_registry),
         }
+    }
+
+    /// Create a new Crucible MCP service instance with async Rune tool loading
+    ///
+    /// This constructor uses enhanced discovery for better tool discovery and schema generation.
+    pub async fn with_enhanced_rune_tools(
+        database: Arc<EmbeddingDatabase>,
+        provider: Arc<dyn EmbeddingProvider>,
+        tool_dir: std::path::PathBuf,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        // Create Obsidian client for stdlib
+        let obsidian_client = crate::obsidian_client::ObsidianClient::new()?;
+
+        // Create AsyncToolRegistry with enhanced discovery
+        let async_registry = AsyncToolRegistry::new_with_stdlib(
+            tool_dir,
+            Arc::clone(&database),
+            Arc::new(obsidian_client),
+        ).await?;
+
+        Ok(Self {
+            database,
+            provider,
+            tool_router: Self::tool_router(),
+            rune_registry: Some(Arc::new(async_registry)),
+        })
     }
 
     /// Dynamically call a Rune tool by name
@@ -64,13 +100,10 @@ impl CrucibleMcpService {
         let registry = self.rune_registry.as_ref()
             .ok_or_else(|| McpError::internal_error("Rune tools not enabled".to_string(), None))?;
 
-        // Get tool and context without holding lock
-        let reg = registry.read().await;
-        let tool = reg.get_tool(&params.tool_name)
-            .ok_or_else(|| McpError::internal_error(format!("Rune tool '{}' not found", params.tool_name), None))?
-            .clone();
-        let context = reg.context.clone();
-        drop(reg); // Explicitly drop lock
+        // Get tool and context from AsyncToolRegistry
+        let tool = registry.get_tool(&params.tool_name).await
+            .ok_or_else(|| McpError::internal_error(format!("Rune tool '{}' not found", params.tool_name), None))?;
+        let context = registry.context().await;
 
         // Execute the Rune tool on a blocking thread since Rune futures are !Send
         // This is necessary because Rune's VM uses thread-local storage
@@ -408,22 +441,22 @@ impl ServerHandler for CrucibleMcpService {
 
         // Add Rune tools if registry is available
         if let Some(registry) = &self.rune_registry {
-            tracing::info!("🔍 DEBUG: Acquiring registry read lock");
-            let reg = registry.read().await;
-            tracing::info!("🔍 DEBUG: Registry read lock acquired");
+            tracing::info!("🔍 Adding Rune tools to MCP tool list");
 
-            let rune_tools = reg.list_tools();
-            tracing::info!("🔍 DEBUG: Rune tools from registry: {}", rune_tools.len());
+            let rune_tools = registry.list_tools().await;
+            tracing::info!("🔍 Discovered {} Rune tools", rune_tools.len());
+
+            // Check if enhanced discovery is being used
+            let enhanced_mode = registry.is_enhanced_mode().await;
+            tracing::info!("🔍 Enhanced discovery mode: {}", enhanced_mode);
 
             for (i, tool_meta) in rune_tools.iter().enumerate() {
-                tracing::info!("🔍 DEBUG: Rune tool {}: name='{}', desc='{}'", i, tool_meta.name, tool_meta.description);
-                tracing::info!("🔍 DEBUG: Rune tool {} input_schema type: {}", i,
-                    if tool_meta.input_schema.is_object() { "object" } else { "other" });
+                tracing::info!("🔍 Rune tool {}: name='{}', desc='{}'", i, tool_meta.name, tool_meta.description);
 
                 // Convert input_schema from Value to Map<String, Value>
                 let input_schema = match &tool_meta.input_schema {
                     serde_json::Value::Object(map) => {
-                        tracing::info!("🔍 DEBUG: Converting input_schema for tool '{}', {} properties",
+                        tracing::info!("🔍 Converting input_schema for tool '{}', {} properties",
                             tool_meta.name, map.len());
                         Arc::new(map.clone())
                     },
@@ -437,7 +470,7 @@ impl ServerHandler for CrucibleMcpService {
                 let output_schema = tool_meta.output_schema.as_ref().and_then(|schema| {
                     match schema {
                         serde_json::Value::Object(map) => {
-                            tracing::info!("🔍 DEBUG: Converting output_schema for tool '{}'", tool_meta.name);
+                            tracing::info!("🔍 Converting output_schema for tool '{}'", tool_meta.name);
                             Some(Arc::new(map.clone()))
                         },
                         _ => {
@@ -447,6 +480,19 @@ impl ServerHandler for CrucibleMcpService {
                     }
                 });
 
+                // Add enhanced annotations for enhanced discovery tools
+                let annotations = if enhanced_mode {
+                    Some(ToolAnnotations {
+                        title: Some(format!("{} (Enhanced Discovery)", tool_meta.name)),
+                        read_only_hint: Some(true), // Most Rune tools are read-only
+                        destructive_hint: Some(false),
+                        idempotent_hint: Some(false),
+                        open_world_hint: Some(true), // Rune tools can interact with external systems
+                    })
+                } else {
+                    None
+                };
+
                 // Convert ToolMetadata to rmcp::model::Tool
                 let rune_tool = Tool {
                     name: Cow::Owned(tool_meta.name.clone()),
@@ -454,18 +500,15 @@ impl ServerHandler for CrucibleMcpService {
                     description: Some(Cow::Owned(tool_meta.description.clone())),
                     input_schema,
                     output_schema,
-                    annotations: None,
+                    annotations,
                     icons: None,
                 };
 
-                tracing::info!("🔍 DEBUG: Adding Rune tool '{}' to MCP tool list", tool_meta.name);
+                tracing::info!("🔍 Adding Rune tool '{}' to MCP tool list", tool_meta.name);
                 all_tools.push(rune_tool);
             }
-
-            tracing::info!("🔍 DEBUG: Releasing registry read lock");
-            drop(reg);
         } else {
-            tracing::warn!("🔍 DEBUG: No rune_registry available - Rune tools disabled");
+            tracing::warn!("🔍 No rune_registry available - Rune tools disabled");
         }
 
         tracing::info!("🔍 DEBUG: Final tool count: {} (native + rune)", all_tools.len());
@@ -562,22 +605,22 @@ mod tests {
 
         fs::write(tools_dir.join("test_tool.rn"), test_tool).unwrap();
 
-        // Create Rune context and registry
+        // Create Rune context and async registry
         let context = rune::Context::with_default_modules().unwrap();
-        let registry = crate::rune_tools::ToolRegistry::new(
+        let async_registry = crate::rune_tools::AsyncToolRegistry::new(
             tools_dir,
             Arc::new(context)
-        ).unwrap();
+        ).await.unwrap();
 
         // Verify tool was loaded in registry
-        assert_eq!(registry.tool_count(), 1);
-        assert!(registry.has_tool("test_tool"));
+        assert_eq!(async_registry.tool_count().await, 1);
+        assert!(async_registry.has_tool("test_tool").await);
 
         // Create service with Rune tools
         let service = CrucibleMcpService::with_rune_tools(
             db.clone(),
             provider.clone(),
-            registry
+            Arc::new(async_registry)
         );
 
         // Get all tools from router (native tools)
@@ -593,9 +636,8 @@ mod tests {
         // Now verify that list_tools would include both native and Rune tools
         // We can't easily call list_tools directly without a RequestContext,
         // but we can verify the logic by checking the registry
-        if let Some(reg) = &service.rune_registry {
-            let reg = reg.read().await;
-            let rune_tools = reg.list_tools();
+        if let Some(async_reg) = &service.rune_registry {
+            let rune_tools = async_reg.list_tools().await;
             assert_eq!(rune_tools.len(), 1);
             assert_eq!(rune_tools[0].name, "test_tool");
             assert_eq!(rune_tools[0].description, "A test tool for discovery");

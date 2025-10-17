@@ -1216,12 +1216,12 @@ async fn create_basic_file_metadata(file_path: &str) -> Result<crate::obsidian_c
     // Extract basic metadata from content
     let mut tags = Vec::new();
     let mut properties = std::collections::HashMap::new();
-    let mut title = None;
+    let _title: Option<String> = None;
 
     // Simple frontmatter parsing
     if content.starts_with("---") {
         let lines: Vec<&str> = content.lines().collect();
-        let mut in_frontmatter = false;
+        let _in_frontmatter = false;
 
         for line in lines.iter().skip(1) {
             if *line == "---" {
@@ -1245,7 +1245,7 @@ async fn create_basic_file_metadata(file_path: &str) -> Result<crate::obsidian_c
                         }
                     }
                     "title" => {
-                        title = Some(value.to_string());
+                        let _title = Some(value.to_string());
                     }
                     _ => {
                         properties.insert(key.to_string(), serde_json::Value::String(value.to_string()));

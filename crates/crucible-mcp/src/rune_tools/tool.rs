@@ -136,6 +136,50 @@ impl RuneTool {
             output_schema: self.output_schema.clone(),
         }
     }
+
+    /// Create a RuneTool from discovered tool information
+    ///
+    /// This is used by the enhanced discovery system to create tools from AST analysis.
+    /// The tool must still be compilable, but metadata is provided by the discovery system.
+    pub fn from_discovered(
+        discovered_tool: &crate::rune_tools::DiscoveredTool,
+        source_code: &str,
+        context: &rune::Context,
+    ) -> Result<Self> {
+        // Compile the source code to get the Unit
+        let source = Source::memory(source_code)?;
+
+        let mut sources = rune::Sources::new();
+        sources.insert(source)?;
+
+        let mut diagnostics = rune::Diagnostics::new();
+        let result = rune::prepare(&mut sources)
+            .with_context(context)
+            .with_diagnostics(&mut diagnostics)
+            .build();
+
+        if !diagnostics.is_empty() {
+            let mut error_msg = String::from("Compilation diagnostics:\n");
+            for diagnostic in diagnostics.diagnostics() {
+                error_msg.push_str(&format!("  {:?}\n", diagnostic));
+            }
+            if result.is_err() {
+                return Err(anyhow::anyhow!("{}", error_msg));
+            }
+            tracing::warn!("{}", error_msg);
+        }
+
+        let unit = Arc::new(result.context("Failed to compile tool")?);
+
+        Ok(Self {
+            name: discovered_tool.name.clone(),
+            description: discovered_tool.description.clone(),
+            input_schema: discovered_tool.input_schema.clone(),
+            output_schema: discovered_tool.metadata.output_schema.clone(),
+            source_code: source_code.to_string(),
+            unit,
+        })
+    }
 }
 
 /// Metadata for a tool (used in MCP tools/list)

@@ -1,6 +1,7 @@
 // crates/crucible-mcp/src/lib.rs
 pub mod database;
 pub mod embeddings;
+pub mod errors;
 pub mod integration;
 pub mod obsidian_client;
 pub mod protocol;
