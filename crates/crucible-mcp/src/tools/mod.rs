@@ -1320,3 +1320,6 @@ fn create_minimal_file_metadata(file_path: &str) -> crate::obsidian_client::File
         },
     }
 }
+
+#[cfg(test)]
+mod tests;
