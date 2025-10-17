@@ -1,7 +1,7 @@
 // crates/crucible-mcp/src/main.rs
 use crucible_mcp::{
     CrucibleMcpService, EmbeddingConfig, EmbeddingDatabase, create_provider,
-    rune_tools::ToolRegistry,
+    rune_tools::AsyncToolRegistry,
     obsidian_client::ObsidianClient,
 };
 use rmcp::{transport::stdio, ServiceExt};
@@ -114,17 +114,17 @@ async fn main() -> anyhow::Result<()> {
     let rune_registry = match ObsidianClient::new() {
         Ok(obsidian_client) => {
             let tool_path = PathBuf::from(&tool_dir);
-            match ToolRegistry::new_with_stdlib(
+            match AsyncToolRegistry::new_with_stdlib(
                 tool_path.clone(),
                 Arc::clone(&database),
                 Arc::new(obsidian_client),
-            ) {
-                Ok(registry) => {
+            ).await {
+                Ok(async_registry) => {
                     tracing::info!("Rune tools loaded successfully:");
-                    for tool_meta in registry.list_tools() {
+                    for tool_meta in async_registry.list_tools().await {
                         tracing::info!("  - {}", tool_meta.name);
                     }
-                    Some(registry)
+                    Some(Arc::new(async_registry))
                 }
                 Err(e) => {
                     tracing::warn!("Failed to load Rune tools: {}", e);
