@@ -3,7 +3,7 @@
 // These tests verify the LLM backend integration, specifically the Ollama backend.
 // Note: These tests require a running Ollama instance to pass completely.
 
-use crucible_cli::agents::backend::{Backend, ChatParams, Message, ModelInfo};
+use crucible_cli::agents::backend::{Backend, ChatParams, Message, Model};
 use crucible_cli::agents::backend::ollama::OllamaBackend;
 
 #[tokio::test]
@@ -132,7 +132,9 @@ async fn test_model_info_parsing() {
                     println!("  Parameter Size: {:?}", details.parameter_size);
                     println!("  Quantization: {:?}", details.quantization_level);
                 }
-                println!("  Size: {} bytes", model.size);
+                if let Some(size) = model.size {
+                    println!("  Size: {} bytes", size);
+                }
                 println!("  Modified: {:?}", model.modified_at);
             }
         }

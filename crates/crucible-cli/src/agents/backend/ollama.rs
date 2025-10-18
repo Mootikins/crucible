@@ -18,6 +18,10 @@ impl OllamaBackend {
             client: reqwest::Client::new(),
         }
     }
+
+    pub fn name(&self) -> &str {
+        "Ollama"
+    }
 }
 
 #[derive(Debug, Serialize)]
