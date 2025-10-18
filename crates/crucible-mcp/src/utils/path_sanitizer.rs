@@ -70,7 +70,7 @@ pub fn sanitize_error_message(error_msg: &str, vault_root: Option<&Path>) -> Str
     let mut sanitized = error_msg.to_string();
 
     // Replace absolute path patterns
-    if let Some(home) = std::env::var("HOME").ok() {
+    if let Ok(home) = std::env::var("HOME") {
         sanitized = sanitized.replace(&home, "~");
     }
 

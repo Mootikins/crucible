@@ -295,7 +295,7 @@ impl SurrealEmbeddingDatabase {
             let content_matches = embedding_data.content.to_lowercase().contains(&query.query.to_lowercase());
             let title_matches = embedding_data.metadata.title
                 .as_ref()
-                .map_or(false, |title| title.to_lowercase().contains(&query.query.to_lowercase()));
+                .is_some_and(|title| title.to_lowercase().contains(&query.query.to_lowercase()));
 
             if content_matches || title_matches {
                 // If we have embeddings, calculate similarity with a simple placeholder

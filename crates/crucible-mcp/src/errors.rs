@@ -572,6 +572,12 @@ pub struct ErrorAggregator {
     pub summary: ErrorSummary,
 }
 
+impl Default for ErrorAggregator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ErrorAggregator {
     pub fn new() -> Self {
         Self {
@@ -619,6 +625,12 @@ pub struct ErrorSummary {
     pub warning_count: usize,
     pub info_count: usize,
     pub by_category: HashMap<String, usize>,
+}
+
+impl Default for ErrorSummary {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ErrorSummary {

@@ -34,7 +34,7 @@ impl AgentLoader {
             let entry = entry?;
             let file_path = entry.path();
 
-            if file_path.is_file() && file_path.extension().map_or(false, |ext| ext == "md") {
+            if file_path.is_file() && file_path.extension().is_some_and(|ext| ext == "md") {
                 match self.load_from_file(file_path.to_str().unwrap()) {
                     Ok(agent) => agents.push(agent),
                     Err(e) => {

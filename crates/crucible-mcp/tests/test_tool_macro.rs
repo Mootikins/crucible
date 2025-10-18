@@ -444,7 +444,7 @@ async fn test_tool_with_no_parameters() {
         parameters: vec![],
     };
 
-    storage.insert("get_stats".to_string(), metadata);
+    storage.insert("get_stats".to_string(), metadata.clone());
 
     let schema = generate_schema(&metadata);
 
@@ -476,7 +476,7 @@ async fn test_all_optional_parameters() {
         ],
     };
 
-    storage.insert("optional_tool".to_string(), metadata);
+    storage.insert("optional_tool".to_string(), metadata.clone());
 
     let schema = generate_schema(&metadata);
 

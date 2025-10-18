@@ -1,13 +1,19 @@
 use anyhow::Result;
-use rune::{Context, Module, Vm};
+use rune::Context;
 
 pub struct RuneRuntime {
     context: Context,
 }
 
+impl Default for RuneRuntime {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RuneRuntime {
     pub fn new() -> Self {
-        let mut context = Context::with_default_modules().unwrap();
+        let context = Context::with_default_modules().unwrap();
         // Add custom modules here
         Self { context }
     }

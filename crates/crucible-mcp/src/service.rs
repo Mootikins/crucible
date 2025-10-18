@@ -658,7 +658,7 @@ impl CrucibleMcpService {
 
         // Convert node IDs
         let node_ids = params.node_ids.map(|ids| {
-            ids.into_iter().map(|id| crucible_core::NodeId(id)).collect()
+            ids.into_iter().map(crucible_core::NodeId).collect()
         });
 
         // Convert analysis operation
@@ -970,7 +970,7 @@ impl CrucibleMcpService {
 
         let execution_time_ms = start_time.elapsed().as_millis() as u64;
         let total_count = Some(paginated_records.len() as u64);
-        let has_more = params.limit.map_or(false, |limit| paginated_records.len() >= limit as usize);
+        let has_more = params.limit.is_some_and(|limit| paginated_records.len() >= limit as usize);
 
         let result = crate::types::CrossModelQueryResult {
             records: paginated_records,
@@ -1195,7 +1195,7 @@ impl CrucibleMcpService {
 
                     let update_clause = crucible_core::UpdateClause {
                         assignments: if let serde_json::Value::Object(updates_map) = updates {
-                            updates_map.into_iter().map(|(k, v)| (k, v)).collect()
+                            updates_map.into_iter().collect()
                         } else {
                             HashMap::new()
                         },

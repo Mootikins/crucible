@@ -85,7 +85,7 @@ impl ToolDiscovery {
         let mut entries = std::fs::read_dir(tool_dir)
             .with_context(|| format!("Failed to read tool directory: {:?}", tool_dir))?;
 
-        while let Some(entry) = entries.next() {
+        for entry in entries {
             let entry = entry.with_context(|| "Failed to read directory entry")?;
             let path = entry.path();
 

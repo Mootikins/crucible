@@ -37,6 +37,12 @@ impl Default for MatchingWeights {
     }
 }
 
+impl Default for CapabilityMatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CapabilityMatcher {
     /// Create a new capability matcher with default weights
     pub fn new() -> Self {
@@ -287,7 +293,7 @@ impl CapabilityMatcher {
         }
 
         compatible.sort_by(|a, b| b.score.cmp(&a.score));
-        Some(compatible).unwrap_or_default()
+        compatible
     }
 
     /// Suggest agents for a specific task based on task requirements

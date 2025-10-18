@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn test_fuzzy_picker_initialization() {
-        let picker = FuzzyPicker::new();
+        let _picker = FuzzyPicker::new();
         // Just verify it doesn't panic
         assert!(true);
     }
