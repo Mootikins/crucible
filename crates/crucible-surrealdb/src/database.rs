@@ -28,6 +28,14 @@ pub struct SurrealEmbeddingDatabase {
 }
 
 impl SurrealEmbeddingDatabase {
+    /// Create a new in-memory database for testing
+    pub fn new_memory() -> Self {
+        let config = SurrealDbConfig::default();
+        let storage = Arc::new(Mutex::new(HashMap::new()));
+        let relations = Arc::new(Mutex::new(Vec::new()));
+        Self { storage, relations, config }
+    }
+
     /// Create a new database connection with default configuration
     pub async fn new(db_path: &str) -> Result<Self> {
         let config = SurrealDbConfig {
@@ -74,6 +82,14 @@ impl SurrealEmbeddingDatabase {
         Ok(())
     }
 
+    /// Store an embedding using EmbeddingData struct (for edge case tests)
+    pub async fn store_embedding_data(&self, data: &EmbeddingData) -> Result<()> {
+        let mut storage = self.storage.lock().unwrap();
+        storage.insert(data.file_path.clone(), data.clone());
+        println!("Stored embedding data for: {}", data.file_path);
+        Ok(())
+    }
+
     /// Update only metadata for an existing file (keeps embedding unchanged)
     pub async fn update_metadata(
         &self,
@@ -88,6 +104,25 @@ impl SurrealEmbeddingDatabase {
             Ok(())
         } else {
             anyhow::bail!("File not found: {}", file_path);
+        }
+    }
+
+    /// Update metadata using HashMap (for edge case tests)
+    pub async fn update_metadata_hashmap(
+        &self,
+        file_path: &str,
+        properties: HashMap<String, serde_json::Value>,
+    ) -> Result<bool> {
+        let mut storage = self.storage.lock().unwrap();
+
+        if let Some(embedding_data) = storage.get_mut(file_path) {
+            // Update properties while preserving other metadata
+            embedding_data.metadata.properties.extend(properties);
+            embedding_data.metadata.updated_at = chrono::Utc::now();
+            println!("Updated metadata properties for: {}", file_path);
+            Ok(true)
+        } else {
+            Ok(false)
         }
     }
 
@@ -106,6 +141,7 @@ impl SurrealEmbeddingDatabase {
     /// Search for similar embeddings using cosine similarity
     pub async fn search_similar(
         &self,
+        _query: &str,
         query_embedding: &[f32],
         top_k: u32,
     ) -> Result<Vec<SearchResultWithScore>> {
@@ -196,6 +232,11 @@ impl SurrealEmbeddingDatabase {
 
     /// Advanced search with filters
     pub async fn search(&self, query: &SearchQuery) -> Result<Vec<SearchResultWithScore>> {
+        self.search_with_filters(query).await
+    }
+
+    /// Search with filters (alias for search method)
+    pub async fn search_with_filters(&self, query: &SearchQuery) -> Result<Vec<SearchResultWithScore>> {
         let storage = self.storage.lock().unwrap();
         let mut results = Vec::new();
 
@@ -308,14 +349,14 @@ impl SurrealEmbeddingDatabase {
     }
 
     /// Delete a file from the database
-    pub async fn delete_file(&self, file_path: &str) -> Result<()> {
+    pub async fn delete_file(&self, file_path: &str) -> Result<bool> {
         let mut storage = self.storage.lock().unwrap();
 
         if storage.remove(file_path).is_some() {
             println!("Deleted file: {}", file_path);
-            Ok(())
+            Ok(true)
         } else {
-            anyhow::bail!("File not found: {}", file_path);
+            Ok(false)
         }
     }
 
@@ -334,14 +375,14 @@ impl SurrealEmbeddingDatabase {
                         &document.content,
                         &document.embedding,
                         &embedding_data.metadata
-                    ).await
+                    ).await.map(|_| ())
                 }
                 BatchOperationType::Update => {
                     let embedding_data = EmbeddingData::from(document.clone());
-                    self.update_metadata(&document.file_path, &embedding_data.metadata).await
+                    self.update_metadata(&document.file_path, &embedding_data.metadata).await.map(|_| ())
                 }
                 BatchOperationType::Delete => {
-                    self.delete_file(&document.file_path).await
+                    self.delete_file(&document.file_path).await.map(|_| ())
                 }
             };
 
@@ -408,6 +449,54 @@ impl SurrealEmbeddingDatabase {
 
         println!("Created relation: {} -> {} ({})", from_file, to_file, relation_type);
         Ok(())
+    }
+
+    /// Add relation (alias for create_relation, for edge case tests)
+    pub async fn add_relation(
+        &self,
+        from_file: &str,
+        to_file: &str,
+        relation_type: &str,
+        properties: HashMap<String, serde_json::Value>,
+    ) -> Result<bool> {
+        // Check if both files exist
+        let storage = self.storage.lock().unwrap();
+        if !storage.contains_key(from_file) || !storage.contains_key(to_file) {
+            return Ok(false);
+        }
+        drop(storage);
+
+        let mut relations = self.relations.lock().unwrap();
+        relations.push((
+            from_file.to_string(),
+            to_file.to_string(),
+            relation_type.to_string(),
+            properties,
+        ));
+
+        println!("Added relation: {} -> {} ({})", from_file, to_file, relation_type);
+        Ok(true)
+    }
+
+    /// Remove relation
+    pub async fn remove_relation(
+        &self,
+        from_file: &str,
+        to_file: &str,
+        relation_type: &str,
+    ) -> Result<bool> {
+        let mut relations = self.relations.lock().unwrap();
+        let initial_len = relations.len();
+
+        relations.retain(|(from, to, rel_type, _)| {
+            !(from == from_file && to == to_file && rel_type == relation_type)
+        });
+
+        let removed = relations.len() < initial_len;
+        if removed {
+            println!("Removed relation: {} -> {} ({})", from_file, to_file, relation_type);
+        }
+        Ok(removed)
     }
 
     /// Get related documents
@@ -600,7 +689,7 @@ mod tests {
 
         // Search for documents similar to embedding1
         let query_embedding = vec![1.0f32, 0.0f32, 0.0f32];
-        let results = db.search_similar(&query_embedding, 3).await.unwrap();
+        let results = db.search_similar("test", &query_embedding, 3).await.unwrap();
 
         // Should find doc1 and doc3 (perfect match), doc2 (no match) should be excluded
         assert_eq!(results.len(), 2);
@@ -737,9 +826,9 @@ mod tests {
         db.initialize().await.unwrap();
 
         // This should now work with our implementation
-        let result = db.delete_file("test.md").await;
-        // This should fail since the file doesn't exist, but the method should work
-        assert!(result.is_err(), "Deleting nonexistent file should fail");
+        let result = db.delete_file("test.md").await.unwrap();
+        // This should return false since the file doesn't exist
+        assert!(!result, "Deleting nonexistent file should return false");
     }
 
     #[tokio::test]

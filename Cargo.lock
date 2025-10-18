@@ -1370,6 +1370,7 @@ name = "crucible-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "glob",
  "rand 0.8.5",
@@ -1454,6 +1455,7 @@ name = "crucible-surrealdb"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "crucible-core",
  "ndarray",
