@@ -26,6 +26,7 @@ rune = "0.14"
 
 # Utilities
 uuid = { version = "1", features = ["v4", "serde"] }
+regex = "1"
 
 [dev-dependencies]
 tokio-test = "0.4"
