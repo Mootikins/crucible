@@ -9,6 +9,7 @@ members = [
     "crates/crucible-surrealdb",
     "crates/crucible-config",
     "crates/crucible-watch",
+    "crates/crucible-a2a",
 ]
 
 [workspace.package]
