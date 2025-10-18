@@ -2,6 +2,8 @@ use anyhow::Result;
 use rune::{ContextError, Module};
 use std::sync::Arc;
 
+use super::tool_macro::tool_attribute_macro;
+
 /// Build the Crucible standard library module for Rune
 ///
 /// Simplified version - just provides basic logging for now.
@@ -24,6 +26,9 @@ pub fn build_crucible_module(
     module.function("log_debug", |msg: String| {
         tracing::debug!("[Rune] {}", msg);
     }).build()?;
+
+    // Register the #[tool] attribute macro for tool metadata extraction
+    module.attribute_macro(["tool"], tool_attribute_macro)?;
 
     Ok(module)
 }
