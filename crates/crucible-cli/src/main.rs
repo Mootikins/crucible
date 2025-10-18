@@ -1,6 +1,5 @@
 use anyhow::Result;
 use clap::Parser;
-use tracing_subscriber;
 
 use crucible_cli::{cli::{Cli, Commands}, commands, config};
 

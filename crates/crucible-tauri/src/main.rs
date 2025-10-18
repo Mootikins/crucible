@@ -4,7 +4,6 @@
 mod commands;
 mod events;
 
-use tauri::Manager;
 
 fn main() {
     tauri::Builder::default()

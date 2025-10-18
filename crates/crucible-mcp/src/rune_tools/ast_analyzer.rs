@@ -281,12 +281,12 @@ impl TypeInferenceEngine {
 
     /// Analyze execution results to refine type inference
     fn analyze_execution_results(&self, _results: &[rune::runtime::Value]) -> HashMap<String, RuneType> {
-        let inferred = HashMap::new();
+        
 
         // This is a simplified approach - in a real implementation,
         // we'd need more sophisticated analysis to map results to input types
 
-        inferred
+        HashMap::new()
     }
 
     /// Convert Rune runtime value to our type system
@@ -984,7 +984,7 @@ impl RuneAstAnalyzer {
         let module_name = function_path.first().unwrap_or(&"unknown");
 
         // Use naming conventions to infer parameter structure
-        let inferred_params = self.infer_parameters_from_naming(*module_name, *function_name);
+        let inferred_params = self.infer_parameters_from_naming(module_name, function_name);
 
         for (name, param_type, description) in inferred_params {
             parameters.push(ParameterInfo {
@@ -1754,27 +1754,27 @@ impl RuneAstAnalyzer {
         let mut issues = Vec::new();
 
         // Check for required fields
-        if !schema.get("type").is_some() {
+        if schema.get("type").is_none() {
             issues.push("Schema missing 'type' field".to_string());
         }
 
-        if !schema.get("properties").is_some() {
+        if schema.get("properties").is_none() {
             issues.push("Schema missing 'properties' field".to_string());
         }
 
         // Check for descriptions
-        if !schema.get("description").is_some() {
+        if schema.get("description").is_none() {
             issues.push("Schema missing 'description' field".to_string());
         }
 
         // Check parameter schemas
         if let Some(properties) = schema.get("properties").and_then(|p| p.as_object()) {
             for (param_name, param_schema) in properties {
-                if !param_schema.get("type").is_some() {
+                if param_schema.get("type").is_none() {
                     issues.push(format!("Parameter '{}' missing 'type' field", param_name));
                 }
 
-                if !param_schema.get("description").is_some() {
+                if param_schema.get("description").is_none() {
                     issues.push(format!("Parameter '{}' missing 'description' field", param_name));
                 }
             }

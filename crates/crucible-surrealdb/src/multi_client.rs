@@ -25,19 +25,19 @@ use crucible_core::{
     // Relational types
     RelationalDB, TableSchema, Record, RecordId, QueryResult, SelectQuery, FilterClause,
     OrderClause, UpdateClause, JoinQuery, AggregateQuery, TransactionId, ColumnDefinition,
-    DataType, ForeignKey, IndexType,
+    DataType, IndexType,
     // Graph types
     GraphDB, NodeId, Node, EdgeId, Edge, NodeProperties, EdgeProperties, Direction,
     TraversalPattern, TraversalResult, Path, GraphAnalysis, AnalyticsResult,
     // Document types
-    DocumentDB, DocumentId, Document, DocumentMetadata, DocumentQuery, DocumentFilter,
+    DocumentDB, DocumentId, Document, DocumentQuery, DocumentFilter,
     DocumentUpdates, SearchResult, AggregationPipeline, AggregationResult, BatchResult,
 };
 
 use crucible_core::database::{
-    JoinType, AggregateType, OrderDirection, EdgeFilter, DocumentSchema, FieldDefinition,
-    DocumentFieldType, SearchOptions, SearchIndexOptions, DocumentSort, GroupOperation,
-    AggregationStage, SubgraphPattern, Subgraph, NodePattern, EdgePattern,
+    OrderDirection, EdgeFilter, DocumentSchema,
+    DocumentFieldType, SearchOptions, SearchIndexOptions, DocumentSort,
+    AggregationStage, SubgraphPattern, Subgraph,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -237,20 +237,20 @@ impl SurrealClient {
             FilterClause::Or(clauses) => clauses.iter().any(|c| self.evaluate_filter(c, record)),
             FilterClause::Not(clause) => !self.evaluate_filter(clause, record),
             FilterClause::Equals { column, value } => {
-                record.data.get(column).map_or(false, |v| v == value)
+                record.data.get(column) == Some(value)
             },
             FilterClause::NotEquals { column, value } => {
-                record.data.get(column).map_or(true, |v| v != value)
+                record.data.get(column) != Some(value)
             },
             FilterClause::GreaterThan { column, value } => {
                 // Simplified comparison for numeric values
                 record.data.get(column).and_then(|v| v.as_f64())
-                    .map(|record_val| value.as_f64().map_or(false, |filter_val| record_val > filter_val))
+                    .map(|record_val| value.as_f64().is_some_and(|filter_val| record_val > filter_val))
                     .unwrap_or(false)
             },
             FilterClause::LessThan { column, value } => {
                 record.data.get(column).and_then(|v| v.as_f64())
-                    .map(|record_val| value.as_f64().map_or(false, |filter_val| record_val < filter_val))
+                    .map(|record_val| value.as_f64().is_some_and(|filter_val| record_val < filter_val))
                     .unwrap_or(false)
             },
             FilterClause::Like { column, pattern } => {
@@ -259,15 +259,15 @@ impl SurrealClient {
                     .unwrap_or(false)
             },
             FilterClause::In { column, values } => {
-                record.data.get(column).map_or(false, |v| values.contains(v))
+                record.data.get(column).is_some_and(|v| values.contains(v))
             },
             FilterClause::IsNull { column } => !record.data.contains_key(column),
             FilterClause::IsNotNull { column } => record.data.contains_key(column),
             FilterClause::Between { column, start, end } => {
                 record.data.get(column).and_then(|v| v.as_f64())
                     .map(|record_val| {
-                        start.as_f64().map_or(false, |start_val| {
-                            end.as_f64().map_or(false, |end_val| {
+                        start.as_f64().is_some_and(|start_val| {
+                            end.as_f64().is_some_and(|end_val| {
                                 record_val >= start_val && record_val <= end_val
                             })
                         })
@@ -291,12 +291,10 @@ impl SurrealClient {
             let inner = &pattern[1..pattern.len()-1];
             return text.contains(inner);
         }
-        if pattern.starts_with('%') {
-            let suffix = &pattern[1..];
+        if let Some(suffix) = pattern.strip_prefix('%') {
             return text.ends_with(suffix);
         }
-        if pattern.ends_with('%') {
-            let prefix = &pattern[..pattern.len()-1];
+        if let Some(prefix) = pattern.strip_suffix('%') {
             return text.starts_with(prefix);
         }
         text == pattern
@@ -869,7 +867,7 @@ impl GraphDB for SurrealClient {
 
         // Simplified traversal - just follow first step pattern
         if let Some(step) = pattern.steps.first() {
-            let neighbors = self.get_neighbors(start, step.direction.clone(), step.edge_filter.clone()).await?;
+            let neighbors = self.get_neighbors(start, step.direction, step.edge_filter.clone()).await?;
 
             for neighbor in neighbors {
                 let path = Path {
@@ -973,7 +971,7 @@ impl GraphDB for SurrealClient {
                 // Check properties
                 if let Some(ref required_properties) = node_pattern.properties {
                     for (key, value) in required_properties {
-                        matches &= node.properties.get(key).map_or(false, |node_value| node_value == value);
+                        matches &= node.properties.get(key) == Some(value);
                     }
                 }
 
@@ -1361,10 +1359,10 @@ impl SurrealClient {
             DocumentFilter::Or(clauses) => clauses.iter().any(|c| self.evaluate_document_filter(c, content)),
             DocumentFilter::Not(clause) => !self.evaluate_document_filter(clause, content),
             DocumentFilter::Equals { field, value } => {
-                self.get_nested_field(content, field).map_or(false, |v| &v == value)
+                self.get_nested_field(content, field).is_some_and(|v| &v == value)
             },
             DocumentFilter::NotEquals { field, value } => {
-                self.get_nested_field(content, field).map_or(true, |v| v != *value)
+                self.get_nested_field(content, field).is_none_or(|v| v != *value)
             },
             DocumentFilter::Contains { field, value } => {
                 if let Some(field_value) = self.get_nested_field(content, field) {
@@ -1377,7 +1375,7 @@ impl SurrealClient {
                 false
             },
             DocumentFilter::In { field, values } => {
-                self.get_nested_field(content, field).map_or(false, |v| values.contains(&v))
+                self.get_nested_field(content, field).is_some_and(|v| values.contains(&v))
             },
             DocumentFilter::Exists { field } => {
                 self.get_nested_field(content, field).is_some()
@@ -1502,11 +1500,8 @@ impl SurrealClient {
         }
 
         if parts.len() == 1 {
-            match value {
-                serde_json::Value::Object(map) => {
-                    map.remove(parts[0]);
-                },
-                _ => {}
+            if let serde_json::Value::Object(map) = value {
+                map.remove(parts[0]);
             }
             return;
         }
@@ -1516,11 +1511,8 @@ impl SurrealClient {
         let field_name = *parts.last().unwrap();
 
         if let Some(parent) = self.get_nested_field_mut(value, parent_path) {
-            match parent {
-                serde_json::Value::Object(map) => {
-                    map.remove(field_name);
-                },
-                _ => {}
+            if let serde_json::Value::Object(map) = parent {
+                map.remove(field_name);
             }
         }
     }
@@ -1534,20 +1526,12 @@ impl SurrealClient {
         }
 
         if parts.len() == 1 {
-            match value {
-                serde_json::Value::Object(map) => {
-                    map.remove(parts[0]);
-                },
-                _ => {}
+            if let serde_json::Value::Object(map) = value {
+                map.remove(parts[0]);
             }
-        } else {
-            if let Some(parent) = self.get_nested_field_mut(value, &parts[..parts.len()-1].join(".")) {
-                match parent {
-                    serde_json::Value::Object(map) => {
-                        map.remove(*parts.last().unwrap());
-                    },
-                    _ => {}
-                }
+        } else if let Some(parent) = self.get_nested_field_mut(value, &parts[..parts.len()-1].join(".")) {
+            if let serde_json::Value::Object(map) = parent {
+                map.remove(*parts.last().unwrap());
             }
         }
     }
@@ -1624,7 +1608,7 @@ impl SurrealClient {
                           collection: &str, document_id: &DocumentId, document: &Document) {
         if let Some(index_data) = search_indexes.get_mut(collection) {
             // Clear existing index entries for this document
-            for (_, doc_ids) in &mut index_data.index {
+            for doc_ids in index_data.index.values_mut() {
                 doc_ids.retain(|id| id != document_id);
             }
 
@@ -1652,7 +1636,7 @@ impl SurrealClient {
         let query_lower = query.to_lowercase();
 
         if let Some(pos) = content_lower.find(&query_lower) {
-            let start = if pos > 20 { pos - 20 } else { 0 };
+            let start = pos.saturating_sub(20);
             let end = std::cmp::min(pos + query.len() + max_length, content.len());
 
             let mut snippet = content[start..end].to_string();

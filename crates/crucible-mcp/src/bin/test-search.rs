@@ -67,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Err(e) => {
             println!("❌ Semantic search failed: {}", e);
-            return Err(e.into());
+            return Err(e);
         }
     }
 

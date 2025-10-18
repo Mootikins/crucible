@@ -10,7 +10,6 @@ use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing_subscriber;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -78,7 +77,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Sync metadata from Obsidian for all existing files in database
     tracing::info!("Syncing metadata from Obsidian plugin...");
-    match crucible_mcp::tools::sync_metadata_from_obsidian(&*database).await {
+    match crucible_mcp::tools::sync_metadata_from_obsidian(&database).await {
         Ok((synced_count, errors)) => {
             if errors.is_empty() {
                 tracing::info!("Metadata sync successful: {} files updated", synced_count);
