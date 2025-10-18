@@ -32,7 +32,7 @@ async fn get_note(config: CliConfig, path: String, format: String) -> Result<()>
 }
 
 async fn create_note(config: CliConfig, path: String, content: Option<String>, edit: bool) -> Result<()> {
-    use std::io::Write;
+    
 
     let full_path = config.vault.path.join(&path);
     

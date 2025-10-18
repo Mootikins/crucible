@@ -36,7 +36,7 @@ pub async fn execute(
             .filter_map(|(idx, score)| {
                 files.get(idx).map(|path| SearchResultWithScore {
                     id: path.clone(),
-                    title: path.split('/').last().unwrap_or(path).to_string(),
+                    title: path.split('/').next_back().unwrap_or(path).to_string(),
                     content: String::new(),
                     score: score as f64,
                 })
@@ -81,7 +81,7 @@ async fn search_files(
             
             results.push(SearchResultWithScore {
                 id: path.clone(),
-                title: path.split('/').last().unwrap_or(path).to_string(),
+                title: path.split('/').next_back().unwrap_or(path).to_string(),
                 content,
                 score: score as f64,
             });

@@ -153,7 +153,7 @@ impl RuneErrorHandler {
     /// Generate error report
     pub fn generate_error_report(&self) -> String {
         let stats = self.get_error_stats();
-        let mut report = format!("=== Rune Tool Error Report ===\n");
+        let mut report = "=== Rune Tool Error Report ===\n".to_string();
         report.push_str(&format!("Total Errors: {}\n", stats.total_errors));
         report.push_str(&format!("Critical Errors: {}\n", stats.critical_errors));
         report.push_str(&format!("Rune Errors: {}\n", stats.rune_errors));
@@ -171,7 +171,7 @@ impl RuneErrorHandler {
                 if let Some(recovery) = &error.recovery {
                     report.push_str(&format!("  Recovery: {}\n", recovery.suggestion));
                 }
-                report.push_str("\n");
+                report.push('\n');
             }
         }
 
@@ -193,6 +193,12 @@ pub struct ErrorStats {
 /// Enhanced error recovery mechanisms
 pub struct ErrorRecoveryManager {
     recovery_strategies: Vec<RecoveryStrategy>,
+}
+
+impl Default for ErrorRecoveryManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ErrorRecoveryManager {
@@ -304,6 +310,12 @@ pub struct RecoveryAttempt {
 pub struct ErrorLogger {
     log_file: Option<PathBuf>,
     max_log_size: u64,
+}
+
+impl Default for ErrorLogger {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ErrorLogger {

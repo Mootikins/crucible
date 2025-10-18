@@ -326,24 +326,22 @@ impl SchemaValidator {
             // Handle schema references (simplified implementation)
             warn!("Schema references not fully implemented: {}", ref_schema);
             ValidationResult::valid()
+        } else if self.config.strict_mode {
+            ValidationResult::invalid(vec![
+                ValidationError::new(
+                    "UNKNOWN_TYPE",
+                    &format!("Unknown schema type: {}", schema_type),
+                    context
+                )
+            ])
         } else {
-            if self.config.strict_mode {
-                ValidationResult::invalid(vec![
-                    ValidationError::new(
-                        "UNKNOWN_TYPE",
-                        &format!("Unknown schema type: {}", schema_type),
-                        context
-                    )
-                ])
-            } else {
-                ValidationResult::valid().with_warnings(vec![
-                    ValidationWarning::new(
-                        "UNKNOWN_TYPE",
-                        &format!("Unknown schema type: {}", schema_type),
-                        &context.field_path
-                    )
-                ])
-            }
+            ValidationResult::valid().with_warnings(vec![
+                ValidationWarning::new(
+                    "UNKNOWN_TYPE",
+                    &format!("Unknown schema type: {}", schema_type),
+                    &context.field_path
+                )
+            ])
         }
     }
 
@@ -660,7 +658,7 @@ impl SchemaValidator {
             RuneType::String => Some(json!("example string")),
             RuneType::Number => Some(json!(42)),
             RuneType::Integer => Some(json!(42)),
-            RuneType::Float => Some(json!(3.14)),
+            RuneType::Float => Some(json!(std::f64::consts::PI)),
             RuneType::Boolean => Some(json!(true)),
             RuneType::Array(_) => Some(json!([])),
             RuneType::Object(_) => Some(json!({})),
@@ -889,13 +887,10 @@ trait ValueExt {
 
 impl ValueExt for Value {
     fn merge(&mut self, other: &Value) {
-        match (self, other) {
-            (Value::Object(ref mut map), Value::Object(other_map)) => {
-                for (key, value) in other_map {
-                    map.insert(key.clone(), value.clone());
-                }
-            },
-            _ => {}
+        if let (Value::Object(ref mut map), Value::Object(other_map)) = (self, other) {
+            for (key, value) in other_map {
+                map.insert(key.clone(), value.clone());
+            }
         }
     }
 }

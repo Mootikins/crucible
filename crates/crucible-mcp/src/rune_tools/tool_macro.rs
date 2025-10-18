@@ -21,7 +21,6 @@
 
 use rune::compile;
 use rune::macros::{MacroContext, TokenStream};
-use rune::parse::Parser;
 
 use super::tool_metadata_storage::{
     ToolMacroMetadata, ToolMetadataStorage,

@@ -40,7 +40,7 @@ pub async fn execute(
 
                 all_results.push(SearchResultWithScore {
                     id: path.clone(),
-                    title: path.split('/').last().unwrap_or(path).to_string(),
+                    title: path.split('/').next_back().unwrap_or(path).to_string(),
                     content,
                     score: score as f64,
                 });
@@ -69,7 +69,7 @@ pub async fn execute(
                     };
                     all_results.push(SearchResultWithScore {
                         id: file.clone(),
-                        title: file.split('/').last().unwrap_or(&file).to_string(),
+                        title: file.split('/').next_back().unwrap_or(&file).to_string(),
                         content: data.content,
                         score: matches as f64 * 100.0,
                     });

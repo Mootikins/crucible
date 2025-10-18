@@ -317,7 +317,7 @@ impl StdioMcpServer {
         let reader = BufReader::new(stdin);
         let mut lines = reader.lines();
 
-        while let Some(line) = lines.next() {
+        for line in lines {
             let line = line?;
             if line.trim().is_empty() {
                 continue;

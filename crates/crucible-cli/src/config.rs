@@ -69,6 +69,7 @@ pub struct LlmConfig {
 
 /// Backend-specific configurations
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct BackendConfigs {
     /// Ollama configuration
     #[serde(default)]
@@ -151,15 +152,6 @@ impl Default for LlmConfig {
     }
 }
 
-impl Default for BackendConfigs {
-    fn default() -> Self {
-        Self {
-            ollama: OllamaConfig::default(),
-            openai: OpenAIConfig::default(),
-            anthropic: AnthropicConfig::default(),
-        }
-    }
-}
 
 impl Default for OllamaConfig {
     fn default() -> Self {
