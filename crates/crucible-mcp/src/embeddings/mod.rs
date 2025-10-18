@@ -10,6 +10,9 @@ pub mod ollama;
 pub mod openai;
 pub mod provider;
 
+#[cfg(test)]
+pub mod mock;
+
 pub use config::{EmbeddingConfig, ProviderType};
 pub use error::{EmbeddingError, EmbeddingResult};
 pub use provider::{EmbeddingProvider, EmbeddingResponse};
@@ -28,6 +31,12 @@ pub async fn create_provider(config: EmbeddingConfig) -> EmbeddingResult<Arc<dyn
             Ok(Arc::new(provider))
         }
     }
+}
+
+/// Create a mock embedding provider for testing
+#[cfg(test)]
+pub fn create_mock_provider(dimensions: usize) -> Arc<dyn EmbeddingProvider> {
+    Arc::new(mock::MockEmbeddingProvider::with_dimensions(dimensions))
 }
 
 #[cfg(test)]
