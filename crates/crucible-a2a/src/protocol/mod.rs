@@ -1,2 +1,9 @@
-// A2A protocol definitions (placeholder for Phase 2+)
-// TODO: Implement A2A message types, routing, sessions
+/// A2A protocol message types and events
+///
+/// Defines typed messages for agent-to-agent communication with compile-time safety.
+
+pub mod messages;
+pub mod events;
+
+pub use messages::{TypedMessage, MessageEnvelope};
+pub use events::SystemEvent;
