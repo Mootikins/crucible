@@ -21,6 +21,23 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// Serde default helper functions
+fn default_direction_both() -> String {
+    "both".to_string()
+}
+
+fn default_direction_outgoing() -> String {
+    "outgoing".to_string()
+}
+
+fn default_damping_factor() -> Option<f64> {
+    Some(0.85)
+}
+
+fn default_iterations() -> Option<u32> {
+    Some(100)
+}
+
 /// File information for local documents
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileInfo {
@@ -326,7 +343,7 @@ pub struct GraphGetNeighborsParams {
     /// Node ID to get neighbors for
     pub node_id: String,
     /// Direction: "outgoing", "incoming", or "both"
-    #[serde(default = "outgoing")]
+    #[serde(default = "default_direction_outgoing")]
     pub direction: String,
     /// Edge filter by labels
     pub edge_labels: Option<Vec<String>>,
@@ -354,7 +371,7 @@ pub struct GraphTraversalPattern {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GraphTraversalStep {
     /// Direction: "outgoing", "incoming", or "both"
-    #[serde(default = "outgoing")]
+    #[serde(default = "default_direction_outgoing")]
     pub direction: String,
     /// Edge labels to filter by
     pub edge_labels: Option<Vec<String>>,
@@ -382,16 +399,16 @@ pub enum GraphAnalyticsOperation {
     #[serde(rename = "degree_centrality")]
     DegreeCentrality {
         /// Direction: "outgoing", "incoming", or "both"
-        #[serde(default = "both")]
+        #[serde(default = "default_direction_both")]
         direction: String,
     },
     #[serde(rename = "page_rank")]
     PageRank {
         /// Damping factor (default: 0.85)
-        #[serde(default = "0.85")]
+        #[serde(default = "default_damping_factor")]
         damping_factor: Option<f64>,
         /// Number of iterations (default: 100)
-        #[serde(default = "100")]
+        #[serde(default = "default_iterations")]
         iterations: Option<u32>,
     },
 }

@@ -11,7 +11,9 @@ use crate::embeddings::EmbeddingProvider;
 use crate::rune_tools::AsyncToolRegistry;
 use crate::errors::{CrucibleError, ErrorSeverity};
 use crucible_surrealdb::SurrealClient;
+use crucible_core::{DocumentDB, RelationalDB, GraphDB};
 use std::sync::Arc;
+use std::collections::HashMap;
 
 /// Convert CrucibleError to McpError with appropriate error handling
 fn crucible_error_to_mcp(error: CrucibleError) -> McpError {
@@ -534,7 +536,7 @@ impl CrucibleMcpService {
         let client = self.surreal_client.as_ref()
             .ok_or_else(|| McpError::internal_error("Multi-model database not enabled".to_string(), None))?;
 
-        let node_id = client.create_node(&params.label, &params.properties)
+        let node_id = client.create_node(&params.label, params.properties.clone())
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
@@ -550,7 +552,10 @@ impl CrucibleMcpService {
         let client = self.surreal_client.as_ref()
             .ok_or_else(|| McpError::internal_error("Multi-model database not enabled".to_string(), None))?;
 
-        let edge_id = client.create_edge(&params.from_node, &params.to_node, &params.label, &params.properties)
+        let from_node = crucible_core::NodeId(params.from_node);
+        let to_node = crucible_core::NodeId(params.to_node);
+
+        let edge_id = client.create_edge(&from_node, &to_node, &params.label, params.properties.clone())
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
@@ -617,8 +622,15 @@ impl CrucibleMcpService {
                         "both" => crucible_core::Direction::Both,
                         _ => crucible_core::Direction::Outgoing,
                     },
-                    edge_labels: step.edge_labels,
-                    edge_properties: step.edge_properties,
+                    edge_filter: if step.edge_labels.is_some() || step.edge_properties.is_some() {
+                        Some(crucible_core::EdgeFilter {
+                            labels: step.edge_labels,
+                            properties: step.edge_properties,
+                        })
+                    } else {
+                        None
+                    },
+                    node_filter: None,
                     min_hops: step.min_hops,
                     max_hops: step.max_hops,
                 }
@@ -668,7 +680,7 @@ impl CrucibleMcpService {
             },
         };
 
-        let result = client.graph_analytics(node_ids.as_deref(), analysis)
+        let result = client.graph_analytics(node_ids, analysis)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
@@ -707,12 +719,14 @@ impl CrucibleMcpService {
                             _ => crucible_core::DocumentFieldType::String,
                         },
                         required: field.required,
+                        index: Some(false), // Default to not indexed
                     }
                 }).collect(),
+                validation: None, // No validation rules by default
             }
         });
 
-        client.create_collection(&params.name, schema.as_ref())
+        client.create_collection(&params.name, schema)
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
@@ -811,6 +825,7 @@ impl CrucibleMcpService {
         let options = crucible_core::SearchOptions {
             fields: params.options.fields.clone(),
             fuzzy: params.options.fuzzy,
+            boost_fields: None, // No field boosting by default
             limit: params.options.limit,
             highlight: params.options.highlight,
         };
@@ -836,7 +851,7 @@ impl CrucibleMcpService {
 
         // Convert aggregation pipeline
         let pipeline = crucible_core::AggregationPipeline {
-            stages: params.pipeline.stages.into_iter().map(|stage| {
+            stages: params.pipeline.into_iter().map(|stage| {
                 match stage {
                     crate::types::DocumentAggregationStage::Match { filter } => {
                         crucible_core::AggregationStage::Match {
@@ -851,7 +866,14 @@ impl CrucibleMcpService {
                             operations: operations.into_iter().map(|op| {
                                 crucible_core::GroupOperation {
                                     field: op.field,
-                                    operation: op.operation,
+                                    operation: match op.operation.as_str() {
+                                        "count" => crucible_core::AggregateType::Count,
+                                        "sum" => crucible_core::AggregateType::Sum,
+                                        "avg" | "average" => crucible_core::AggregateType::Average,
+                                        "min" => crucible_core::AggregateType::Min,
+                                        "max" => crucible_core::AggregateType::Max,
+                                        _ => crucible_core::AggregateType::Count, // Default
+                                    },
                                     alias: op.alias,
                                 }
                             }).collect(),
@@ -1234,11 +1256,17 @@ mod tests {
         let native_tools = service.tool_router.list_all();
         let native_count = native_tools.len();
 
-        // Verify we have the expected number of native tools (10)
-        // search_by_properties, search_by_tags, list_notes_in_folder, search_by_filename,
+        // Verify we have the expected number of native tools
+        // Original 10: search_by_properties, search_by_tags, list_notes_in_folder, search_by_filename,
         // search_by_content, semantic_search, build_search_index, get_note_metadata,
-        // update_note_properties, get_vault_stats, __run_rune_tool
-        assert_eq!(native_count, 11, "Expected 11 native tools (10 + __run_rune_tool), got {}", native_count);
+        // update_note_properties, get_vault_stats
+        // Plus: __run_rune_tool (1)
+        // Plus multi-model database tools (15):
+        //   Relational (5): relational_create_table, relational_insert_records, relational_select, relational_update, relational_delete
+        //   Graph (3): graph_create_node, graph_create_edge, graph_get_neighbors, graph_traverse, graph_analytics
+        //   Document (5): document_create_collection, document_create, document_query, document_search, document_aggregate
+        // Total: 10 + 1 + 15 = 26
+        assert_eq!(native_count, 26, "Expected 26 native tools (10 vault + 1 rune + 15 multi-model), got {}", native_count);
 
         // Now verify that list_tools would include both native and Rune tools
         // We can't easily call list_tools directly without a RequestContext,

@@ -15,12 +15,16 @@ pub use database::{
     // Relational types
     TableSchema, Record, RecordId, QueryResult, SelectQuery, FilterClause, OrderClause, UpdateClause,
     JoinQuery, AggregateQuery, TransactionId, ColumnDefinition, DataType, ForeignKey, IndexType,
+    OrderDirection, AggregateType, ReferentialAction, IndexDefinition, JoinType, JoinClause, AggregateFunction,
     // Graph types
     NodeId, Node, EdgeId, Edge, NodeProperties, EdgeProperties, Direction, TraversalPattern,
-    TraversalResult, Path, GraphAnalysis, AnalyticsResult,
+    TraversalResult, Path, GraphAnalysis, AnalyticsResult, EdgeFilter, Subgraph, SubgraphPattern,
+    NodePattern, EdgePattern, TraversalStep, CommunityAlgorithm,
     // Document types
     DocumentId, Document, DocumentMetadata, DocumentQuery, DocumentFilter, DocumentUpdates,
-    SearchResult, AggregationPipeline, AggregationResult, BatchResult,
+    SearchResult, AggregationPipeline, AggregationResult, BatchResult, DocumentSchema,
+    FieldDefinition, DocumentFieldType, ValidationRules, DocumentSort, SearchOptions,
+    SearchIndexOptions, AggregationStage, GroupOperation,
 };
 pub use document::{DocumentNode, ViewportState};
 pub use properties::{PropertyMap, PropertyValue};
