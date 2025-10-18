@@ -956,9 +956,43 @@ impl GraphDB for SurrealClient {
         })
     }
 
-    async fn query_subgraph(&self, _pattern: SubgraphPattern) -> DbResult<Vec<Subgraph>> {
-        // Simplified subgraph query - return empty for now
-        Ok(Vec::new())
+    async fn query_subgraph(&self, pattern: SubgraphPattern) -> DbResult<Vec<Subgraph>> {
+        let storage = self.storage.read().await;
+        let mut subgraphs = Vec::new();
+
+        // For each node pattern, find matching nodes
+        for node_pattern in &pattern.nodes {
+            for (node_id, node) in &storage.nodes {
+                let mut matches = true;
+
+                // Check labels
+                if let Some(ref required_labels) = node_pattern.labels {
+                    matches &= required_labels.iter().any(|label| node.labels.contains(label));
+                }
+
+                // Check properties
+                if let Some(ref required_properties) = node_pattern.properties {
+                    for (key, value) in required_properties {
+                        matches &= node.properties.get(key).map_or(false, |node_value| node_value == value);
+                    }
+                }
+
+                if matches {
+                    // Create a subgraph with this node
+                    let mut nodes_map = HashMap::new();
+                    nodes_map.insert(node_pattern.variable.clone(), node.clone());
+
+                    let subgraph = Subgraph {
+                        nodes: nodes_map,
+                        edges: HashMap::new(),
+                    };
+
+                    subgraphs.push(subgraph);
+                }
+            }
+        }
+
+        Ok(subgraphs)
     }
 
     async fn create_graph_index(&self, _label: &str, _properties: Vec<String>) -> DbResult<()> {
