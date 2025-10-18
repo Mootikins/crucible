@@ -684,6 +684,151 @@ pub struct ResourceContent {
 }
 
 // ==============================================================================
+// Multi-Model Cross-Database Types
+// ==============================================================================
+
+/// Cross-model query wrapper parameters for MCP tool interface
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CrossModelQueryWrapper {
+    /// The actual cross-model query
+    pub query: CrossModelQueryParams,
+}
+
+/// Cross-model query parameters for querying across relational, graph, and document databases
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CrossModelQueryParams {
+    /// Optional relational query component
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relational: Option<RelationalQuerySpec>,
+
+    /// Optional graph query component
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub graph: Option<GraphQuerySpec>,
+
+    /// Optional document query component
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document: Option<DocumentQuerySpec>,
+
+    /// Fields to include in results (e.g., ["users.name", "posts.title"])
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projection: Option<Vec<String>>,
+
+    /// Maximum number of results to return
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+
+    /// Number of results to skip (pagination)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<u32>,
+}
+
+/// Relational query specification for cross-model queries
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RelationalQuerySpec {
+    pub table: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub columns: Option<Vec<String>>,
+}
+
+/// Graph query specification for cross-model queries
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct GraphQuerySpec {
+    pub start_from: String,  // e.g., "users.id" or explicit node ID
+    pub traversal: String,    // Pattern like "User-(AUTHORED)->Post"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_depth: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
+}
+
+/// Document query specification for cross-model queries
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DocumentQuerySpec {
+    pub collection: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search: Option<String>,  // Full-text search query
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<serde_json::Value>,  // JSON filter
+}
+
+/// Multi-model transaction parameters for executing operations across different database models
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MultiModelTransactionParams {
+    /// List of operations to execute in transaction
+    pub operations: Vec<TransactionOperation>,
+}
+
+/// Single operation within a multi-model transaction
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum TransactionOperation {
+    Relational {
+        operation: RelationalOp,
+        table: String,
+        #[serde(flatten)]
+        data: serde_json::Value,
+    },
+    Graph {
+        operation: GraphOp,
+        #[serde(flatten)]
+        data: serde_json::Value,
+    },
+    Document {
+        operation: DocumentOp,
+        collection: String,
+        #[serde(flatten)]
+        data: serde_json::Value,
+    },
+}
+
+/// Relational database operation types
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum RelationalOp {
+    Insert,
+    Update,
+    Delete,
+}
+
+/// Graph database operation types
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum GraphOp {
+    CreateNode,
+    CreateEdge,
+    UpdateNode,
+    DeleteNode,
+}
+
+/// Document database operation types
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DocumentOp {
+    CreateDocument,
+    UpdateDocument,
+    DeleteDocument,
+}
+
+/// Cross-model query result containing records from different database types
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CrossModelQueryResult {
+    pub records: Vec<serde_json::Value>,
+    pub total_count: Option<u64>,
+    pub execution_time_ms: Option<u64>,
+    pub has_more: bool,
+}
+
+/// Multi-model transaction result
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MultiModelTransactionResult {
+    pub operations_completed: u32,
+    pub success: bool,
+    pub execution_time_ms: Option<u64>,
+}
+
+// ==============================================================================
 // JSON-RPC Protocol Types
 // ==============================================================================
 // TODO: Phase 5 - Remove this type, replaced by rmcp's error handling
