@@ -1328,6 +1328,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "fixedbitset",
+ "regex",
  "rune 0.14.1",
  "serde",
  "serde_json",
