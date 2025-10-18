@@ -1,0 +1,21 @@
+/// Test file to verify #[tool] macro functionality
+
+#[tool(desc: "Create a test note")]
+pub async fn create_test_note(title: string, content: string, limit?: number) {
+    #{
+        success: true,
+        title: title,
+        content: content,
+        limit: limit ?? 10,
+        message: `Created note: ${title}`
+    }
+}
+
+#[tool(desc: "Search for content")]
+pub async fn search_content(query: string, tags?: [string]) {
+    #{
+        results: ["doc1.md", "doc2.md"],
+        query: query,
+        tags: tags ?? []
+    }
+}
