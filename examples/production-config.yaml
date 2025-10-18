@@ -1,0 +1,464 @@
+# Production Configuration for Crucible
+# This configuration is optimized for production deployment with OpenAI and proper security
+# Environment: production
+# Format: YAML
+
+# Active profile for production
+profile: "production"
+
+# =============================================================================
+# PROFILE CONFIGURATIONS
+# =============================================================================
+
+profiles:
+  # Production profile with OpenAI and enterprise-grade settings
+  production:
+    name: "production"
+    description: "Production environment with OpenAI, enhanced security, and performance optimization"
+    environment: "production"
+
+    # Embedding provider configuration using OpenAI
+    embedding_provider:
+      type: "openai"
+      api:
+        # API key should be provided via environment variable for security
+        # Set OPENAI_API_KEY environment variable in production
+        key: null  # Will be read from OPENAI_API_KEY env var
+        base_url: "https://api.openai.com/v1"
+        timeout_seconds: 30
+        retry_attempts: 3
+        headers:
+          # OpenAI requires specific headers
+          User-Agent: "Crucible/1.0.0"
+          Content-Type: "application/json"
+      model:
+        name: "text-embedding-3-small"
+        dimensions: 1536  # Standard dimensions for this model
+        max_tokens: 8192
+      # OpenAI-specific options
+      openai_options:
+        # Use batch processing for cost efficiency
+        batch_size: 100
+        # Enable cost tracking
+        track_usage: true
+        # Rate limiting to avoid API limits
+        requests_per_minute: 3000
+        tokens_per_minute: 1000000
+
+    # Database configuration for production
+    database:
+      type: "postgres"  # PostgreSQL for production
+      # Connection URL should be provided via environment variable
+      # Set DATABASE_URL environment variable in production
+      url: null  # Will be read from DATABASE_URL env var
+      max_connections: 20
+      timeout_seconds: 30
+      # PostgreSQL-specific options
+      ssl_mode: "require"
+      application_name: "crucible_production"
+      connection_timeout: 10
+      idle_timeout: 300
+      max_lifetime: 1800  # 30 minutes
+      # Performance tuning
+      statement_timeout: 30000  # 30 seconds
+      query_timeout: 60000  # 1 minute
+
+    # Server configuration with HTTPS and security
+    server:
+      host: "0.0.0.0"  # Listen on all interfaces
+      port: 443  # HTTPS port
+      https: true
+      # TLS certificates - provide via environment variables
+      cert_file: null  # Will be read from SSL_CERT_PATH env var
+      key_file: null   # Will be read from SSL_KEY_PATH env var
+      max_body_size: 52428800  # 50MB
+      timeout_seconds: 60
+      # Production server options
+      server_options:
+        # Enable HTTP/2 for performance
+        enable_http2: true
+        # Graceful shutdown timeout
+        shutdown_timeout: 30
+        # Worker processes
+        worker_processes: "auto"  # Number of CPU cores
+        # Security headers
+        security_headers:
+          Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+          X-Content-Type-Options: "nosniff"
+          X-Frame-Options: "DENY"
+          X-XSS-Protection: "1; mode=block"
+          Content-Security-Policy: "default-src 'self'"
+        # Rate limiting
+        rate_limiting:
+          enabled: true
+          requests_per_minute: 1000
+          burst_size: 100
+
+    # Logging configuration for production
+    logging:
+      level: "warn"  # Only warnings and errors in production
+      format: "json"  # Structured logging for log aggregation
+      file: true
+      # Log file path - should be configured for your logging system
+      file_path: "/var/log/crucible/production.log"
+      max_file_size: 104857600  # 100MB
+      max_files: 30  # Keep 30 days of logs
+      # Production logging options
+      structured_logging:
+        service_name: "crucible"
+        service_version: "1.0.0"
+        environment: "production"
+        include_trace_id: true
+        include_span_id: true
+      # Log aggregation settings
+      aggregation:
+        send_to_centralized: true
+        endpoint: null  # Configure your log aggregation endpoint
+        batch_size: 100
+        flush_interval_seconds: 10
+
+    # Environment variables for production
+    env_vars:
+      # Security settings
+      RUST_LOG: "warn,crucible=info"
+      RUST_BACKTRACE: "0"  # Don't expose stack traces in production
+      # API keys and secrets (use environment variables, never hardcode)
+      OPENAI_API_KEY: null  # Set in production environment
+      DATABASE_URL: null    # Set in production environment
+      SSL_CERT_PATH: null   # Set in production environment
+      SSL_KEY_PATH: null    # Set in production environment
+      # Production-specific flags
+      CRUCIBLE_PROD_MODE: "true"
+      CRUCIBLE_DEBUG: "false"
+      CRUCIBLE_TELEMETRY_ENABLED: "true"
+      # Database settings
+      DATABASE_MIGRATE_ON_START: "true"
+      DATABASE_CONNECTION_POOL_SIZE: "20"
+      DATABASE_SSL_MODE: "require"
+      # Performance settings
+      CRUCIBLE_CACHE_TTL: "3600"
+      CRUCIBLE_MAX_CONCURRENT_REQUESTS: "100"
+      CRUCIBLE_EMBEDDING_BATCH_SIZE: "100"
+
+    # Production-specific settings
+    settings:
+      # Feature flags
+      features:
+        experimental_features: false
+        debug_endpoints: false
+        performance_monitoring: true
+        analytics_enabled: true
+        audit_logging: true
+      # Security settings
+      security:
+        require_auth: true
+        jwt_secret: null  # Set JWT_SECRET env var
+        session_timeout: 3600  # 1 hour
+        max_login_attempts: 5
+        lockout_duration: 900  # 15 minutes
+        password_policy:
+          min_length: 12
+          require_uppercase: true
+          require_lowercase: true
+          require_numbers: true
+          require_symbols: true
+      # Performance settings
+      performance:
+        cache_enabled: true
+        cache_ttl_seconds: 3600
+        embedding_batch_size: 100
+        max_concurrent_requests: 100
+        connection_pool_size: 20
+        # Rate limiting per user
+        user_rate_limit:
+          requests_per_minute: 60
+          burst_size: 10
+      # Monitoring and observability
+      monitoring:
+        metrics_enabled: true
+        prometheus_endpoint: "/metrics"
+        health_check_endpoint: "/health"
+        readiness_check_endpoint: "/ready"
+        tracing_enabled: true
+        tracing_sampling_rate: 0.1  # 10% sampling
+
+  # Staging profile - similar to production but with relaxed settings
+  staging:
+    name: "staging"
+    description: "Staging environment for pre-production testing"
+    environment: "staging"
+
+    embedding_provider:
+      type: "openai"
+      api:
+        key: null  # Read from OPENAI_API_KEY env var
+        base_url: "https://api.openai.com/v1"
+        timeout_seconds: 30
+        retry_attempts: 2
+      model:
+        name: "text-embedding-3-small"
+        dimensions: 1536
+        max_tokens: 8192
+
+    database:
+      type: "postgres"
+      url: null  # Read from DATABASE_URL env var
+      max_connections: 10
+      timeout_seconds: 30
+      ssl_mode: "prefer"
+
+    server:
+      host: "0.0.0.0"
+      port: 8443  # Different port for staging
+      https: true
+      cert_file: null
+      key_file: null
+      max_body_size: 20971520  # 20MB
+      timeout_seconds: 30
+
+    logging:
+      level: "info"
+      format: "json"
+      file: true
+      file_path: "/var/log/crucible/staging.log"
+      max_file_size: 52428800  # 50MB
+      max_files: 10
+
+    env_vars:
+      RUST_LOG: "info,crucible=debug"
+      OPENAI_API_KEY: null
+      DATABASE_URL: null
+      CRUCIBLE_PROD_MODE: "true"
+      CRUCIBLE_DEBUG: "true"
+
+    settings:
+      features:
+        experimental_features: true
+        debug_endpoints: true
+        performance_monitoring: true
+      security:
+        require_auth: true
+        session_timeout: 7200  # 2 hours
+      performance:
+        cache_enabled: true
+        cache_ttl_seconds: 1800  # 30 minutes
+        max_concurrent_requests: 50
+
+# =============================================================================
+# GLOBAL DEFAULT CONFIGURATIONS
+# =============================================================================
+
+# Default embedding provider (should be overridden by profiles)
+embedding_provider:
+  type: "openai"
+  api:
+    base_url: "https://api.openai.com/v1"
+    timeout_seconds: 30
+    retry_attempts: 3
+  model:
+    name: "text-embedding-3-small"
+    dimensions: 1536
+    max_tokens: 8192
+
+# Default database configuration
+database:
+  type: "postgres"
+  max_connections: 20
+  timeout_seconds: 30
+  ssl_mode: "require"
+
+# Default server configuration
+server:
+  host: "0.0.0.0"
+  port: 443
+  https: true
+  timeout_seconds: 60
+
+# Default logging configuration
+logging:
+  level: "warn"
+  format: "json"
+  file: true
+  max_file_size: 104857600  # 100MB
+  max_files: 30
+
+# =============================================================================
+# CUSTOM APPLICATION SETTINGS
+# =============================================================================
+
+custom_settings:
+  application:
+    name: "Crucible"
+    version: "1.0.0"
+    description: "Production knowledge management system"
+    support_email: "support@example.com"
+    documentation_url: "https://docs.example.com/crucible"
+
+  production:
+    # Backup and recovery
+    backup:
+      enabled: true
+      schedule: "0 2 * * *"  # Daily at 2 AM
+      retention_days: 30
+      s3_bucket: null  # Configure your backup bucket
+    # Disaster recovery
+    disaster_recovery:
+      enabled: true
+      failover_timeout: 300  # 5 minutes
+      health_check_interval: 30
+    # Maintenance
+    maintenance:
+      auto_cleanup: true
+      log_retention_days: 30
+      temp_file_cleanup_hours: 24
+
+  security:
+    # SSL/TLS configuration
+    ssl:
+      min_version: "TLSv1.2"
+      cipher_suites: ["TLS_AES_256_GCM_SHA384", "TLS_CHACHA20_POLY1305_SHA256"]
+      prefer_server_ciphers: true
+    # Authentication
+    authentication:
+      method: "jwt"
+      jwt_expiry: 3600  # 1 hour
+      refresh_token_expiry: 604800  # 7 days
+    # Authorization
+    authorization:
+      rbac_enabled: true
+      default_role: "viewer"
+      admin_role: "administrator"
+    # Data encryption
+    encryption:
+      data_at_rest: true
+      data_in_transit: true
+      key_rotation_days: 90
+
+  performance:
+    # Caching strategy
+    cache:
+      type: "redis"  # Redis for distributed caching
+      redis_url: null  # Set REDIS_URL env var
+      ttl_seconds: 3600
+      max_memory_mb: 1024
+    # Load balancing
+    load_balancing:
+      enabled: true
+      algorithm: "round_robin"
+      health_check_interval: 10
+    # Resource limits
+    resources:
+      max_memory_mb: 2048
+      max_cpu_percent: 80
+      max_disk_usage_percent: 85
+
+  monitoring:
+    # Metrics collection
+    metrics:
+      enabled: true
+      prometheus_port: 9090
+      collection_interval_seconds: 15
+    # Alerting
+    alerting:
+      enabled: true
+      webhook_url: null  # Configure your alert webhook
+      thresholds:
+        error_rate_percent: 5
+        response_time_ms: 5000
+        memory_usage_percent: 85
+        cpu_usage_percent: 80
+        disk_usage_percent: 90
+    # Health checks
+    health_checks:
+      enabled: true
+      endpoint: "/health"
+      checks:
+        - database
+        - external_apis
+        - disk_space
+        - memory_usage
+
+  compliance:
+    # GDPR compliance
+    gdpr:
+      enabled: true
+      data_retention_days: 365
+      right_to_deletion: true
+      consent_management: true
+    # Audit logging
+    audit:
+      enabled: true
+      log_all_actions: true
+      log_retention_days: 2555  # 7 years
+      include_user_data: false
+    # Data residency
+    data_residency:
+      region: null  # Configure your required region
+      cross_border_transfers: false
+
+# =============================================================================
+# SECURITY NOTES
+# =============================================================================
+
+# IMPORTANT SECURITY CONSIDERATIONS:
+#
+# 1. API Keys and Secrets:
+#    - Never hardcode API keys, passwords, or secrets in configuration files
+#    - Use environment variables or secret management systems
+#    - Rotate keys regularly and implement key rotation policies
+#
+# 2. SSL/TLS Certificates:
+#    - Use certificates from trusted Certificate Authorities
+#    - Implement automatic certificate renewal
+#    - Monitor certificate expiration dates
+#
+# 3. Database Security:
+#    - Use strong authentication and authorization
+#    - Implement network segmentation for database access
+#    - Enable database audit logging
+#    - Regular security updates and patches
+#
+# 4. Network Security:
+#    - Implement proper firewall rules
+#    - Use VPN or private networks for internal communication
+#    - Monitor network traffic for anomalies
+#
+# 5. Monitoring and Alerting:
+#    - Set up comprehensive monitoring
+#    - Configure alerts for security events
+#    - Regular security audits and penetration testing
+#
+# 6. Backup and Recovery:
+#    - Implement regular automated backups
+#    - Test backup restoration procedures
+#    - Store backups in secure, geographically distributed locations
+#
+# =============================================================================
+# DEPLOYMENT INSTRUCTIONS
+# =============================================================================
+
+# Required Environment Variables for Production:
+#   OPENAI_API_KEY - Your OpenAI API key
+#   DATABASE_URL - PostgreSQL connection string
+#   SSL_CERT_PATH - Path to SSL certificate file
+#   SSL_KEY_PATH - Path to SSL private key file
+#   JWT_SECRET - Secret for JWT token signing
+#   REDIS_URL - Redis connection URL (if using Redis cache)
+#
+# Optional Environment Variables:
+#   CRUCIBLE_CONFIG_PATH - Path to this configuration file
+#   RUST_LOG - Override logging level
+#   CRUCIBLE_CACHE_TTL - Override cache TTL
+#   CRUCIBLE_MAX_CONCURRENT_REQUESTS - Override concurrent request limit
+#
+# Example deployment command:
+#   docker run -d \
+#     -e OPENAI_API_KEY=$OPENAI_API_KEY \
+#     -e DATABASE_URL=$DATABASE_URL \
+#     -e SSL_CERT_PATH=/etc/ssl/certs/crucible.crt \
+#     -e SSL_KEY_PATH=/etc/ssl/private/crucible.key \
+#     -e JWT_SECRET=$JWT_SECRET \
+#     -v /path/to/config:/app/config \
+#     -v /path/to/ssl:/etc/ssl \
+#     -p 443:443 \
+#     crucible:latest

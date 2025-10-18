@@ -1970,12 +1970,14 @@ mod tests {
         // search_by_content, semantic_search, build_search_index, get_note_metadata,
         // update_note_properties, get_vault_stats
         // Plus: __run_rune_tool (1)
-        // Plus multi-model database tools (15):
-        //   Relational (5): relational_create_table, relational_insert_records, relational_select, relational_update, relational_delete
-        //   Graph (3): graph_create_node, graph_create_edge, graph_get_neighbors, graph_traverse, graph_analytics
+        // Plus multi-model database tools (17):
+        //   Relational (5): relational_create_table, relational_insert, relational_select, relational_update, relational_delete
+        //   Graph (6): graph_create_node, graph_create_edge, graph_get_neighbors, graph_traverse, graph_analytics
         //   Document (5): document_create_collection, document_create, document_query, document_search, document_aggregate
-        // Total: 10 + 1 + 15 = 26
-        assert_eq!(native_count, 26, "Expected 26 native tools (10 vault + 1 rune + 15 multi-model), got {}", native_count);
+        //   Cross-model (1): cross_model_query
+        //   Transaction (1): transaction_execute
+        // Total: 10 + 1 + 17 = 28
+        assert_eq!(native_count, 28, "Expected 28 native tools (10 vault + 1 rune + 17 multi-model), got {}", native_count);
 
         // Now verify that list_tools would include both native and Rune tools
         // We can't easily call list_tools directly without a RequestContext,
@@ -2148,7 +2150,7 @@ mod tests {
         let service = CrucibleMcpService::new(db, provider);
         let tools = service.tool_router.list_all();
 
-        // Should have 11 native tools (10 Crucible tools + __run_rune_tool)
-        assert_eq!(tools.len(), 11);
+        // Should have 28 native tools (10 vault tools + 1 rune tool + 17 database tools)
+        assert_eq!(tools.len(), 28);
     }
 }

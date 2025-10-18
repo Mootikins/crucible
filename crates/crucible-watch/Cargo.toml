@@ -1,0 +1,47 @@
+[package]
+name = "crucible-watch"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+# Core dependencies
+tokio = { workspace = true, features = ["full"] }
+async-trait = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["v4", "serde"] }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# File system watching
+notify = "7.0"
+notify-debouncer-full = "0.5"
+
+# Configuration
+crucible-config = { workspace = true }
+
+# Time and scheduling
+chrono = { workspace = true, features = ["serde"] }
+
+# Async utilities
+futures = "0.3"
+tokio-stream = "0.1"
+flume = "0.11"
+
+# Pattern matching
+globset = "0.4"
+regex = { workspace = true }
+
+# CPU information
+num_cpus = "1.16"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "watcher_bench"
+harness = false

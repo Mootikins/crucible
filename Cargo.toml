@@ -7,6 +7,8 @@ members = [
     "crates/crucible-plugins", "crates/crucible-mcp-client", "crates/crucible-cli",
     "crates/crucible-sync",
     "crates/crucible-surrealdb",
+    "crates/crucible-config",
+    "crates/crucible-watch",
 ]
 
 [workspace.package]
@@ -34,4 +36,5 @@ tempfile = "3.14"
 rand = "0.8"
 tracing = "0.1"
 async-trait = "0.1"
+crucible-config = { path = "crates/crucible-config" }
 
