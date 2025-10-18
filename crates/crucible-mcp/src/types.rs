@@ -214,6 +214,345 @@ pub struct RuneToolParams {
     pub args: serde_json::Value,
 }
 
+// ==============================================================================
+// Multi-Model Database Parameter Types
+// ==============================================================================
+
+// Relational Database Parameters
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RelationalCreateTableParams {
+    /// Table name to create
+    pub table: String,
+    /// Column definitions for the table
+    pub columns: Vec<RelationalColumnDefinition>,
+    /// Primary key column name
+    pub primary_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RelationalColumnDefinition {
+    /// Column name
+    pub name: String,
+    /// Column data type
+    pub data_type: String,
+    /// Whether column can be null
+    #[serde(default)]
+    pub nullable: bool,
+    /// Default value for the column
+    pub default_value: Option<serde_json::Value>,
+    /// Whether column values must be unique
+    #[serde(default)]
+    pub unique: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RelationalInsertParams {
+    /// Table name to insert into
+    pub table: String,
+    /// Record data to insert
+    pub records: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RelationalSelectParams {
+    /// Table name to query
+    pub table: String,
+    /// Column names to select (empty for all)
+    #[serde(default)]
+    pub columns: Vec<String>,
+    /// Filter conditions
+    pub filter: Option<serde_json::Value>,
+    /// Sort order
+    #[serde(default)]
+    pub order_by: Vec<RelationalOrderClause>,
+    /// Maximum number of records to return
+    pub limit: Option<u32>,
+    /// Number of records to skip
+    pub offset: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RelationalOrderClause {
+    /// Column to sort by
+    pub column: String,
+    /// Sort direction
+    #[serde(default = "asc")]
+    pub direction: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RelationalUpdateParams {
+    /// Table name to update
+    pub table: String,
+    /// Filter conditions for records to update
+    pub filter: serde_json::Value,
+    /// New values to set
+    pub updates: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct RelationalDeleteParams {
+    /// Table name to delete from
+    pub table: String,
+    /// Filter conditions for records to delete
+    pub filter: serde_json::Value,
+}
+
+// Graph Database Parameters
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct GraphCreateNodeParams {
+    /// Node label
+    pub label: String,
+    /// Node properties
+    pub properties: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct GraphCreateEdgeParams {
+    /// Source node ID
+    pub from_node: String,
+    /// Target node ID
+    pub to_node: String,
+    /// Edge label
+    pub label: String,
+    /// Edge properties
+    pub properties: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct GraphGetNeighborsParams {
+    /// Node ID to get neighbors for
+    pub node_id: String,
+    /// Direction: "outgoing", "incoming", or "both"
+    #[serde(default = "outgoing")]
+    pub direction: String,
+    /// Edge filter by labels
+    pub edge_labels: Option<Vec<String>>,
+    /// Edge filter by properties
+    pub edge_properties: Option<HashMap<String, serde_json::Value>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct GraphTraversalParams {
+    /// Starting node ID
+    pub start_node: String,
+    /// Traversal pattern
+    pub pattern: GraphTraversalPattern,
+    /// Maximum traversal depth
+    #[serde(default)]
+    pub max_depth: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct GraphTraversalPattern {
+    /// Traversal steps
+    pub steps: Vec<GraphTraversalStep>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct GraphTraversalStep {
+    /// Direction: "outgoing", "incoming", or "both"
+    #[serde(default = "outgoing")]
+    pub direction: String,
+    /// Edge labels to filter by
+    pub edge_labels: Option<Vec<String>>,
+    /// Edge properties to filter by
+    pub edge_properties: Option<HashMap<String, serde_json::Value>>,
+    /// Minimum hops
+    #[serde(default)]
+    pub min_hops: Option<u32>,
+    /// Maximum hops
+    #[serde(default)]
+    pub max_hops: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct GraphAnalyticsParams {
+    /// Nodes to analyze (empty for all nodes)
+    pub node_ids: Option<Vec<String>>,
+    /// Analytics operation to perform
+    pub analysis: GraphAnalyticsOperation,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "type")]
+pub enum GraphAnalyticsOperation {
+    #[serde(rename = "degree_centrality")]
+    DegreeCentrality {
+        /// Direction: "outgoing", "incoming", or "both"
+        #[serde(default = "both")]
+        direction: String,
+    },
+    #[serde(rename = "page_rank")]
+    PageRank {
+        /// Damping factor (default: 0.85)
+        #[serde(default = "0.85")]
+        damping_factor: Option<f64>,
+        /// Number of iterations (default: 100)
+        #[serde(default = "100")]
+        iterations: Option<u32>,
+    },
+}
+
+// Document Database Parameters
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DocumentCreateCollectionParams {
+    /// Collection name
+    pub name: String,
+    /// Optional collection schema
+    pub schema: Option<DocumentCollectionSchema>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DocumentCollectionSchema {
+    /// Field definitions
+    pub fields: Vec<DocumentFieldDefinition>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DocumentFieldDefinition {
+    /// Field name
+    pub name: String,
+    /// Field type
+    pub field_type: String,
+    /// Whether field is required
+    #[serde(default)]
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DocumentCreateParams {
+    /// Collection name
+    pub collection: String,
+    /// Document content (JSON)
+    pub content: serde_json::Value,
+    /// Document metadata
+    pub metadata: Option<DocumentMetadata>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DocumentMetadata {
+    /// Document tags
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Content type
+    pub content_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DocumentQueryParams {
+    /// Collection name
+    pub collection: String,
+    /// Filter conditions
+    pub filter: Option<serde_json::Value>,
+    /// Fields to return
+    #[serde(default)]
+    pub projection: Vec<String>,
+    /// Sort order
+    #[serde(default)]
+    pub sort: Vec<DocumentSortClause>,
+    /// Maximum number of documents
+    pub limit: Option<u32>,
+    /// Number of documents to skip
+    pub skip: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DocumentSortClause {
+    /// Field to sort by
+    pub field: String,
+    /// Sort direction: "asc" or "desc"
+    #[serde(default = "asc")]
+    pub direction: String,
+}
+
+fn asc() -> String {
+    "asc".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DocumentSearchParams {
+    /// Collection name
+    pub collection: String,
+    /// Search query text
+    pub query: String,
+    /// Search options
+    #[serde(default)]
+    pub options: DocumentSearchOptions,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema, Default)]
+pub struct DocumentSearchOptions {
+    /// Fields to search in
+    pub fields: Option<Vec<String>>,
+    /// Enable fuzzy matching
+    #[serde(default)]
+    pub fuzzy: Option<bool>,
+    /// Maximum number of results
+    pub limit: Option<u32>,
+    /// Highlight matching text
+    #[serde(default)]
+    pub highlight: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DocumentAggregateParams {
+    /// Collection name
+    pub collection: String,
+    /// Aggregation pipeline stages
+    pub pipeline: Vec<DocumentAggregationStage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "type")]
+pub enum DocumentAggregationStage {
+    #[serde(rename = "match")]
+    Match {
+        /// Filter conditions
+        filter: serde_json::Value,
+    },
+    #[serde(rename = "group")]
+    Group {
+        /// Group by field
+        id: serde_json::Value,
+        /// Aggregation operations
+        operations: Vec<DocumentGroupOperation>,
+    },
+    #[serde(rename = "sort")]
+    Sort {
+        /// Sort order
+        sort: Vec<DocumentSortClause>,
+    },
+    #[serde(rename = "limit")]
+    Limit {
+        /// Limit results
+        limit: u32,
+    },
+    #[serde(rename = "skip")]
+    Skip {
+        /// Skip results
+        skip: u32,
+    },
+    #[serde(rename = "project")]
+    Project {
+        /// Fields to project
+        projection: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct DocumentGroupOperation {
+    /// Field to operate on
+    pub field: String,
+    /// Operation type
+    pub operation: String,
+    /// Result field alias
+    pub alias: Option<String>,
+}
+
 /// MCP Tool definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
