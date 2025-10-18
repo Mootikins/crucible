@@ -3,7 +3,7 @@
 mod tools_tests {
     use super::super::*;
     use crate::database::EmbeddingDatabase;
-    use crate::embeddings::{create_provider, EmbeddingConfig};
+    use crate::embeddings::{create_provider, create_mock_provider, EmbeddingConfig};
     use crate::types::{ToolCallArgs, EmbeddingMetadata};
     use serde_json::json;
     use std::collections::HashMap;
@@ -15,8 +15,8 @@ mod tools_tests {
     }
 
     async fn setup_test_provider() -> Arc<dyn crate::embeddings::EmbeddingProvider> {
-        let config = EmbeddingConfig::default();
-        create_provider(config).await.unwrap()
+        // Use the mock provider for testing to avoid external HTTP calls
+        create_mock_provider(768)
     }
 
     fn create_test_metadata(path: &str) -> EmbeddingMetadata {

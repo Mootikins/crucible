@@ -1,0 +1,456 @@
+//! Event batching for grouping related events together.
+
+use crate::{events::FileEvent, error::Result};
+use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
+use tracing::{debug, trace};
+
+/// Batcher for grouping related events together for efficient processing.
+pub struct EventBatcher {
+    /// Maximum batch size
+    max_batch_size: usize,
+    /// Maximum time to wait before emitting a batch
+    max_batch_delay: Duration,
+    /// Current batch being built
+    current_batch: HashMap<BatchKey, BatchGroup>,
+    /// Last batch emission time
+    last_emission: Instant,
+    /// Batch strategy
+    strategy: BatchStrategy,
+}
+
+/// Strategy for batching events.
+#[derive(Debug, Clone)]
+pub enum BatchStrategy {
+    /// Batch by directory
+    ByDirectory,
+    /// Batch by file type
+    ByFileType,
+    /// Batch by time window
+    ByTimeWindow,
+    /// Batch by event kind
+    ByEventKind,
+    /// Custom batching logic
+    Custom(Box<dyn Fn(&FileEvent) -> String + Send + Sync>),
+}
+
+/// Key for grouping events into batches.
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct BatchKey {
+    /// Group identifier
+    group_id: String,
+    /// Batch type
+    batch_type: BatchType,
+}
+
+/// Type of batch.
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+enum BatchType {
+    Directory,
+    FileType,
+    TimeWindow,
+    EventKind,
+    Custom,
+}
+
+/// Group of related events waiting to be batched.
+#[derive(Debug, Clone)]
+struct BatchGroup {
+    /// Events in this group
+    events: Vec<FileEvent>,
+    /// Time when this group was created
+    created_at: Instant,
+    /// Last time an event was added to this group
+    last_updated: Instant,
+}
+
+impl EventBatcher {
+    /// Create a new event batcher.
+    pub fn new(max_batch_size: usize, max_batch_delay: Duration) -> Self {
+        Self {
+            max_batch_size,
+            max_batch_delay,
+            current_batch: HashMap::new(),
+            last_emission: Instant::now(),
+            strategy: BatchStrategy::ByDirectory,
+        }
+    }
+
+    /// Set the batching strategy.
+    pub fn with_strategy(mut self, strategy: BatchStrategy) -> Self {
+        self.strategy = strategy;
+        self
+    }
+
+    /// Add an event to the batcher.
+    pub fn add_event(&mut self, event: FileEvent) -> Vec<Vec<FileEvent>> {
+        trace!("Adding event to batcher: {:?}", event.kind);
+
+        let batch_key = self.create_batch_key(&event);
+        let now = Instant::now();
+
+        // Add to existing batch or create new one
+        let batch_group = self.current_batch.entry(batch_key.clone()).or_insert_with(|| {
+            BatchGroup {
+                events: Vec::new(),
+                created_at: now,
+                last_updated: now,
+            }
+        });
+
+        batch_group.events.push(event.clone());
+        batch_group.last_updated = now;
+
+        // Check if any batches are ready to be emitted
+        let mut ready_batches = Vec::new();
+
+        // Check if the current batch group is at capacity
+        if batch_group.events.len() >= self.max_batch_size {
+            if let Some(group) = self.current_batch.remove(&batch_key) {
+                ready_batches.push(group.events);
+                debug!("Emitting batch due to size limit: {} events", group.events.len());
+            }
+        }
+
+        // Check for delayed batches
+        self.emit_delayed_batches(&mut ready_batches);
+
+        ready_batches
+    }
+
+    /// Force emit all pending batches.
+    pub fn flush(&mut self) -> Vec<Vec<FileEvent>> {
+        debug!("Flushing {} pending batches", self.current_batch.len());
+
+        let mut batches = Vec::new();
+
+        for (_, group) in self.current_batch.drain() {
+            batches.push(group.events);
+        }
+
+        self.last_emission = Instant::now();
+        batches
+    }
+
+    /// Create a batch key for an event based on the current strategy.
+    fn create_batch_key(&self, event: &FileEvent) -> BatchKey {
+        match &self.strategy {
+            BatchStrategy::ByDirectory => {
+                let directory = event.parent()
+                    .unwrap_or_else(|| std::path::PathBuf::from("/"))
+                    .to_string_lossy()
+                    .to_string();
+
+                BatchKey {
+                    group_id: directory,
+                    batch_type: BatchType::Directory,
+                }
+            }
+            BatchStrategy::ByFileType => {
+                let file_type = event.extension()
+                    .unwrap_or_else(|| "unknown".to_string());
+
+                BatchKey {
+                    group_id: file_type,
+                    batch_type: BatchType::FileType,
+                }
+            }
+            BatchStrategy::ByTimeWindow => {
+                let window = self.get_time_window(event.timestamp);
+                BatchKey {
+                    group_id: window,
+                    batch_type: BatchType::TimeWindow,
+                }
+            }
+            BatchStrategy::ByEventKind => {
+                let kind = match event.kind {
+                    crate::events::FileEventKind::Created => "created".to_string(),
+                    crate::events::FileEventKind::Modified => "modified".to_string(),
+                    crate::events::FileEventKind::Deleted => "deleted".to_string(),
+                    crate::events::FileEventKind::Moved { .. } => "moved".to_string(),
+                    crate::events::FileEventKind::Batch(_) => "batch".to_string(),
+                    crate::events::FileEventKind::Unknown(_) => "unknown".to_string(),
+                };
+
+                BatchKey {
+                    group_id: kind,
+                    batch_type: BatchType::EventKind,
+                }
+            }
+            BatchStrategy::Custom(key_fn) => {
+                let key = key_fn(event);
+                BatchKey {
+                    group_id: key,
+                    batch_type: BatchType::Custom,
+                }
+            }
+        }
+    }
+
+    /// Get time window for timestamp-based batching.
+    fn get_time_window(&self, timestamp: chrono::DateTime<chrono::Utc>) -> String {
+        // Create 5-second windows
+        let window_seconds = (timestamp.timestamp() / 5) * 5;
+        format!("window_{}", window_seconds)
+    }
+
+    /// Emit batches that have been waiting too long.
+    fn emit_delayed_batches(&mut self, ready_batches: &mut Vec<Vec<FileEvent>>) {
+        let now = Instant::now();
+        let mut to_remove = Vec::new();
+
+        for (key, group) in &self.current_batch {
+            if now.duration_since(group.last_updated) >= self.max_batch_delay {
+                to_remove.push(key.clone());
+            }
+        }
+
+        for key in to_remove {
+            if let Some(group) = self.current_batch.remove(&key) {
+                ready_batches.push(group.events);
+                debug!("Emitting batch due to delay: {} events", group.events.len());
+            }
+        }
+    }
+
+    /// Get batcher statistics.
+    pub fn get_stats(&self) -> BatcherStats {
+        BatcherStats {
+            current_batches: self.current_batch.len(),
+            total_queued_events: self.current_batch.values()
+                .map(|g| g.events.len())
+                .sum(),
+            max_batch_size: self.max_batch_size,
+            max_batch_delay_ms: self.max_batch_delay.as_millis(),
+            strategy: format!("{:?}", self.strategy),
+        }
+    }
+}
+
+/// Statistics for the event batcher.
+#[derive(Debug, Clone)]
+pub struct BatcherStats {
+    /// Number of current batches
+    pub current_batches: usize,
+    /// Total number of events currently queued
+    pub total_queued_events: usize,
+    /// Maximum batch size
+    pub max_batch_size: usize,
+    /// Maximum batch delay in milliseconds
+    pub max_batch_delay_ms: u128,
+    /// Current batching strategy
+    pub strategy: String,
+}
+
+/// Batch analyzer for understanding batch composition.
+pub struct BatchAnalyzer;
+
+impl BatchAnalyzer {
+    /// Analyze a batch of events and return statistics.
+    pub fn analyze_batch(events: &[FileEvent]) -> BatchAnalysis {
+        let mut analysis = BatchAnalysis::default();
+
+        for event in events {
+            analysis.total_events += 1;
+
+            // Count by event kind
+            match event.kind {
+                crate::events::FileEventKind::Created => analysis.created += 1,
+                crate::events::FileEventKind::Modified => analysis.modified += 1,
+                crate::events::FileEventKind::Deleted => analysis.deleted += 1,
+                crate::events::FileEventKind::Moved { .. } => analysis.moved += 1,
+                crate::events::FileEventKind::Batch(_) => analysis.batches += 1,
+                crate::events::FileEventKind::Unknown(_) => analysis.unknown += 1,
+            }
+
+            // Count by file type
+            if let Some(ext) = event.extension() {
+                *analysis.file_types.entry(ext).or_insert(0) += 1;
+            }
+
+            // Count by directory
+            if let Some(parent) = event.parent() {
+                *analysis.directories.entry(parent).or_insert(0) += 1;
+            }
+
+            // Count files vs directories
+            if event.is_dir {
+                analysis.directories_count += 1;
+            } else {
+                analysis.files_count += 1;
+            }
+
+            // Estimate total size
+            analysis.total_size += crate::utils::EventUtils::estimate_event_size(event);
+        }
+
+        analysis
+    }
+
+    /// Get recommendations for batch processing.
+    pub fn get_recommendations(analysis: &BatchAnalysis) -> Vec<String> {
+        let mut recommendations = Vec::new();
+
+        if analysis.total_events > 100 {
+            recommendations.push(
+                "Large batch detected (>100 events). Consider breaking into smaller batches.".to_string()
+            );
+        }
+
+        if analysis.created + analysis.modified > analysis.deleted * 3 {
+            recommendations.push(
+                "Many create/modify events relative to deletes. Consider optimization for write-heavy workloads.".to_string()
+            );
+        }
+
+        if analysis.files_count > analysis.directories_count * 10 {
+            recommendations.push(
+                "File-heavy batch detected. Consider file-specific optimizations.".to_string()
+            );
+        }
+
+        let max_file_type_count = analysis.file_types.values().max().unwrap_or(&0);
+        if *max_file_type_count > analysis.total_events / 2 {
+            recommendations.push(
+                "Dominant file type detected. Consider file type-specific handlers.".to_string()
+            );
+        }
+
+        if recommendations.is_empty() {
+            recommendations.push("Batch composition looks balanced.".to_string());
+        }
+
+        recommendations
+    }
+}
+
+/// Analysis of a batch of events.
+#[derive(Debug, Clone, Default)]
+pub struct BatchAnalysis {
+    /// Total events in batch
+    pub total_events: usize,
+    /// Number of created events
+    pub created: usize,
+    /// Number of modified events
+    pub modified: usize,
+    /// Number of deleted events
+    pub deleted: usize,
+    /// Number of moved events
+    pub moved: usize,
+    /// Number of batch events
+    pub batches: usize,
+    /// Number of unknown events
+    pub unknown: usize,
+    /// Number of files
+    pub files_count: usize,
+    /// Number of directories
+    pub directories_count: usize,
+    /// Estimated total size in bytes
+    pub total_size: usize,
+    /// Count by file type
+    pub file_types: HashMap<String, usize>,
+    /// Count by directory
+    pub directories: HashMap<std::path::PathBuf, usize>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::events::{FileEvent, FileEventKind};
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_directory_batching() {
+        let mut batcher = EventBatcher::new(5, Duration::from_millis(100))
+            .with_strategy(BatchStrategy::ByDirectory);
+
+        let event1 = FileEvent::new(FileEventKind::Created, PathBuf::from("dir1/test1.txt"));
+        let event2 = FileEvent::new(FileEventKind::Modified, PathBuf::from("dir1/test2.txt"));
+        let event3 = FileEvent::new(FileEventKind::Created, PathBuf::from("dir2/test3.txt"));
+
+        let batches1 = batcher.add_event(event1);
+        assert!(batches1.is_empty());
+
+        let batches2 = batcher.add_event(event2);
+        assert!(batches2.is_empty());
+
+        let batches3 = batcher.add_event(event3);
+        assert!(batches3.is_empty());
+
+        let flushed = batcher.flush();
+        assert_eq!(flushed.len(), 2); // Two batches for two directories
+        assert_eq!(flushed[0].len(), 2); // dir1 has 2 events
+        assert_eq!(flushed[1].len(), 1); // dir2 has 1 event
+    }
+
+    #[test]
+    fn test_file_type_batching() {
+        let mut batcher = EventBatcher::new(10, Duration::from_millis(100))
+            .with_strategy(BatchStrategy::ByFileType);
+
+        let txt_event = FileEvent::new(FileEventKind::Created, PathBuf::from("test.txt"));
+        let md_event = FileEvent::new(FileEventKind::Created, PathBuf::from("test.md"));
+        let another_txt = FileEvent::new(FileEventKind::Modified, PathBuf::from("test2.txt"));
+
+        let batches1 = batcher.add_event(txt_event);
+        assert!(batches1.is_empty());
+
+        let batches2 = batcher.add_event(md_event);
+        assert!(batches2.is_empty());
+
+        let batches3 = batcher.add_event(another_txt);
+        assert!(batches3.is_empty());
+
+        let flushed = batcher.flush();
+        assert_eq!(flushed.len(), 2); // Two batches for two file types
+    }
+
+    #[test]
+    fn test_size_based_emission() {
+        let mut batcher = EventBatcher::new(2, Duration::from_millis(1000));
+
+        let event1 = FileEvent::new(FileEventKind::Created, PathBuf::from("test1.txt"));
+        let event2 = FileEvent::new(FileEventKind::Created, PathBuf::from("test2.txt"));
+        let event3 = FileEvent::new(FileEventKind::Created, PathBuf::from("test3.txt"));
+
+        let batches1 = batcher.add_event(event1);
+        assert!(batches1.is_empty());
+
+        let batches2 = batcher.add_event(event2);
+        assert_eq!(batches2.len(), 1); // Should emit batch of size 2
+        assert_eq!(batches2[0].len(), 2);
+
+        let batches3 = batcher.add_event(event3);
+        assert!(batches3.is_empty()); // Third event starts a new batch
+    }
+
+    #[test]
+    fn test_batch_analysis() {
+        let events = vec![
+            FileEvent::new(FileEventKind::Created, PathBuf::from("test1.txt")),
+            FileEvent::new(FileEventKind::Modified, PathBuf::from("test2.md")),
+            FileEvent::new(FileEventKind::Deleted, PathBuf::from("test3.txt")),
+        ];
+
+        let analysis = BatchAnalyzer::analyze_batch(&events);
+        assert_eq!(analysis.total_events, 3);
+        assert_eq!(analysis.created, 1);
+        assert_eq!(analysis.modified, 1);
+        assert_eq!(analysis.deleted, 1);
+        assert_eq!(analysis.files_count, 3);
+        assert_eq!(analysis.file_types.get("txt"), Some(&2));
+        assert_eq!(analysis.file_types.get("md"), Some(&1));
+    }
+
+    #[test]
+    fn test_batcher_stats() {
+        let batcher = EventBatcher::new(10, Duration::from_millis(500))
+            .with_strategy(BatchStrategy::ByDirectory);
+
+        let stats = batcher.get_stats();
+        assert_eq!(stats.current_batches, 0);
+        assert_eq!(stats.max_batch_size, 10);
+        assert_eq!(stats.max_batch_delay_ms, 500);
+        assert!(stats.strategy.contains("Directory"));
+    }
+}

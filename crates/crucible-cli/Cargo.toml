@@ -48,8 +48,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Rune scripting
 rune = "0.13"
 
-# File watching
-notify = "8.0"
 
 # Path manipulation
 glob = "0.3"

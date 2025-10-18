@@ -1,0 +1,277 @@
+# Testing Configuration for Crucible
+# This configuration is optimized for CI/CD with mocks and minimal dependencies
+# Environment: test
+# Format: TOML
+
+# Active profile for testing
+profile = "testing"
+
+# =============================================================================
+# PROFILE CONFIGURATIONS
+# =============================================================================
+
+[profiles.testing]
+name = "testing"
+description = "CI/CD testing environment with mocked services and minimal dependencies"
+environment = "test"
+
+# -------------------------------------------------------------------------
+# Embedding Provider Configuration (Mock for CI/CD)
+# -------------------------------------------------------------------------
+[profiles.testing.embedding_provider]
+type = "custom"
+
+[profiles.testing.embedding_provider.api]
+base_url = "http://localhost:11435"  # Mock server URL
+timeout_seconds = 5
+retry_attempts = 1
+# No API key for mock provider
+
+[profiles.testing.embedding_provider.model]
+name = "mock-embedding-model"
+dimensions = 768  # Fixed dimensions for consistent testing
+max_tokens = 1000
+
+# Mock-specific embedding options
+[profiles.testing.embedding_provider.mock_options]
+return_fixed_embeddings = true
+embedding_size = 768
+response_delay_ms = 10
+simulated_error_rate = 0.01  # 1% error rate for testing resilience
+
+# -------------------------------------------------------------------------
+# Database Configuration (In-memory for fast tests)
+# -------------------------------------------------------------------------
+[profiles.testing.database]
+type = "sqlite"
+url = ":memory:"  # In-memory database for fast test execution
+max_connections = 1
+timeout_seconds = 5
+
+# SQLite testing options
+[profiles.testing.database.options]
+journal_mode = "MEMORY"
+synchronous = "OFF"
+cache_size = 1000
+temp_store = "MEMORY"
+
+# -------------------------------------------------------------------------
+# Server Configuration (Test-specific port and settings)
+# -------------------------------------------------------------------------
+[profiles.testing.server]
+host = "127.0.0.1"
+port = 8081  # Different port to avoid conflicts
+https = false
+max_body_size = 1048576  # 1MB (smaller for testing)
+timeout_seconds = 10
+
+# Test server options
+[profiles.testing.server.test_options]
+auto_start = true
+graceful_shutdown_timeout = 5
+health_check_endpoint = "/health"
+metrics_endpoint = "/metrics"
+
+# -------------------------------------------------------------------------
+# Logging Configuration (Minimal for CI/CD)
+# -------------------------------------------------------------------------
+[profiles.testing.logging]
+level = "error"  # Only errors in CI/CD to reduce noise
+format = "text"
+file = false  # Console logging for CI/CD
+max_file_size = 1048576  # 1MB
+max_files = 1
+
+# -------------------------------------------------------------------------
+# Environment Variables for Testing
+# -------------------------------------------------------------------------
+[profiles.testing.env_vars]
+RUST_LOG = "error"
+CRUCIBLE_TEST_MODE = "true"
+MOCK_EXTERNAL_APIS = "true"
+CRUCIBLE_CI_MODE = "true"
+DATABASE_MIGRATE_ON_START = "true"
+DATABASE_CLEANUP_AFTER_TEST = "true"
+
+# -------------------------------------------------------------------------
+# Test-specific Settings
+# -------------------------------------------------------------------------
+[profiles.testing.settings.testing]
+mock_apis = true
+disable_auth = true
+fast_failures = true
+parallel_test_execution = true
+test_timeout_seconds = 30
+
+[profiles.testing.settings.mock_services]
+embeddings = true
+external_apis = true
+file_system = false  # Use real file system for most tests
+notifications = true
+
+[profiles.testing.settings.performance]
+low_memory_mode = true
+cache_disabled = true
+batch_processing = false
+max_concurrent_operations = 5
+
+# -------------------------------------------------------------------------
+# Integration Test Profile
+# -------------------------------------------------------------------------
+[profiles.integration]
+name = "integration"
+description = "Integration testing with real services but controlled environment"
+environment = "test"
+
+[profiles.integration.embedding_provider]
+type = "ollama"  # Use real Ollama but with specific test settings
+
+[profiles.integration.embedding_provider.api]
+base_url = "http://localhost:11434"
+timeout_seconds = 30
+retry_attempts = 1
+
+[profiles.integration.embedding_provider.model]
+name = "nomic-embed-text"
+max_tokens = 1000
+
+[profiles.integration.database]
+type = "sqlite"
+url = "sqlite:./test_integration.db"
+max_connections = 5
+timeout_seconds = 10
+
+[profiles.integration.server]
+host = "127.0.0.1"
+port = 8082
+https = false
+timeout_seconds = 15
+
+[profiles.integration.logging]
+level = "info"  # More verbose for integration tests
+format = "text"
+file = true
+file_path = "./test_integration.log"
+max_file_size = 10485760  # 10MB
+max_files = 3
+
+[profiles.integration.env_vars]
+RUST_LOG = "info,crucible=debug"
+CRUCIBLE_TEST_MODE = "true"
+DATABASE_MIGRATE_ON_START = "true"
+DATABASE_CLEANUP_AFTER_TEST = "false"  # Keep database for inspection
+
+# =============================================================================
+# GLOBAL DEFAULT CONFIGURATIONS
+# =============================================================================
+
+# Default embedding provider (fallback)
+[embedding_provider]
+type = "custom"
+
+[embedding_provider.api]
+base_url = "http://localhost:11435"
+timeout_seconds = 5
+retry_attempts = 1
+
+[embedding_provider.model]
+name = "mock-embedding-model"
+dimensions = 768
+max_tokens = 1000
+
+# Default database configuration
+[database]
+type = "sqlite"
+url = ":memory:"
+max_connections = 1
+timeout_seconds = 5
+
+# Default server configuration
+[server]
+host = "127.0.0.1"
+port = 8080
+https = false
+timeout_seconds = 10
+
+# Default logging configuration
+[logging]
+level = "error"
+format = "text"
+file = false
+
+# =============================================================================
+# CUSTOM APPLICATION SETTINGS
+# =============================================================================
+
+[custom_settings.application]
+name = "Crucible"
+version = "1.0.0"
+description = "Testing configuration for knowledge management system"
+
+[custom_settings.testing]
+ci_mode = true
+headless_mode = true
+auto_cleanup = true
+parallel_execution = true
+max_test_duration = 300  # 5 minutes max
+
+[custom_settings.performance]
+embedding_batch_size = 5  # Smaller batches for testing
+max_concurrent_requests = 10
+cache_ttl_seconds = 60  # Short cache TTL for tests
+memory_limit_mb = 512  # Limit memory usage in CI
+
+[custom_settings.security]
+# Security settings for testing (relaxed)
+require_auth = false
+allowed_origins = ["*"]
+rate_limiting_enabled = false
+ssl_verification_enabled = false
+
+[custom_settings.mocking]
+enable_mock_embeddings = true
+enable_mock_external_apis = true
+enable_mock_notifications = true
+fixed_responses = true  # Deterministic responses for consistent tests
+
+# =============================================================================
+# CI/CD SPECIFIC CONFIGURATIONS
+# =============================================================================
+
+[ci_cd]
+# GitHub Actions specific settings
+[ci_cd.github_actions]
+artifact_retention_days = 7
+test_reports_path = "./test-results"
+coverage_reports_path = "./coverage"
+parallel_jobs = 4
+
+# Docker testing settings
+[ci_cd.docker]
+base_image = "rust:1.75-slim"
+memory_limit = "2g"
+timeout_minutes = 10
+cache_volume = "/target-cache"
+
+# Test matrix configurations
+[ci_cd.test_matrix]
+include = [
+    { os = "ubuntu-latest", rust_version = "stable" },
+    { os = "ubuntu-latest", rust_version = "beta" },
+    { os = "ubuntu-latest", rust_version = "nightly" },
+]
+
+# =============================================================================
+# USAGE EXAMPLES
+# =============================================================================
+
+# Run tests with this configuration:
+# CRUCIBLE_CONFIG_PATH=./testing-config.toml cargo test
+
+# Run specific test profile:
+# CRUCIBLE_PROFILE=integration cargo test integration_tests
+
+# Run in CI/CD pipeline:
+# - Set CRUCIBLE_CI_MODE=true
+# - Set CRUCIBLE_CONFIG_PATH=./testing-config.toml
+# - Mock services will be used automatically

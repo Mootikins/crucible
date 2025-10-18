@@ -33,7 +33,7 @@ When `RUNE_TOOL_DIR` is configured:
 - **create_note** 📝 - Create new markdown notes with frontmatter and tags
 - Custom tools can be added as `.rn` scripts without recompiling the server
 
-📝 = Rune-scripted tool (hot-reloadable)
+📝 = Rune-scripted tool (dynamically loaded)
 
 ### Crucible Integration Tools
 - **index_document** 🔥 - Index Crucible documents with real embeddings
