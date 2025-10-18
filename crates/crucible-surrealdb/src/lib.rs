@@ -29,8 +29,10 @@
 //! ```
 
 pub mod database;
+pub mod multi_client;
 pub mod types;
 
 pub use database::SurrealEmbeddingDatabase;
+pub use multi_client::SurrealClient;
 pub use types::*;
 
