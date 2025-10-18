@@ -7,6 +7,8 @@
 /// - Consumer awareness without restrictions
 
 use super::{RuneTool, ToolMetadata, RuneAstAnalyzer, SchemaValidator, ValidationConfig};
+use super::tool_metadata_storage::ToolMetadataStorage;
+use super::schema_generator::generate_schema;
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -186,27 +188,53 @@ impl ToolDiscovery {
             }
         };
 
-        // Try to extract DESCRIPTION
-        let description = match vm.call(["DESCRIPTION"], ()) {
-            Ok(value) => {
-                let desc: String = rune::from_value(value)
-                    .with_context(|| "Failed to convert DESCRIPTION to String")?;
-                desc
+        // Try to extract DESCRIPTION, preferring macro metadata when available
+        let description = if let Some(macro_metadata) = ToolMetadataStorage::global().get(&tool_name) {
+            // Use macro description if available
+            if !macro_metadata.description.is_empty() {
+                macro_metadata.description
+            } else {
+                // Fallback to VM extraction
+                match vm.call(["DESCRIPTION"], ()) {
+                    Ok(value) => {
+                        let desc: String = rune::from_value(value)
+                            .with_context(|| "Failed to convert DESCRIPTION to String")?;
+                        desc
+                    }
+                    Err(_) => format!("Tool from {:?}", file_path),
+                }
             }
-            Err(_) => format!("Tool from {:?}", file_path),
+        } else {
+            // No macro metadata, use existing VM method
+            match vm.call(["DESCRIPTION"], ()) {
+                Ok(value) => {
+                    let desc: String = rune::from_value(value)
+                        .with_context(|| "Failed to convert DESCRIPTION to String")?;
+                    desc
+                }
+                Err(_) => format!("Tool from {:?}", file_path),
+            }
         };
 
-        // Try to extract INPUT_SCHEMA
-        let input_schema = match vm.call(["INPUT_SCHEMA"], ()) {
-            Ok(value) => {
-                super::tool::rune_value_to_json(&value)
-                    .with_context(|| "Failed to convert INPUT_SCHEMA to JSON")?
-            }
-            Err(_) => {
-                serde_json::json!({
-                    "type": "object",
-                    "properties": {}
-                })
+        // Check macro storage first for metadata (preferred method)
+        let input_schema = if let Some(macro_metadata) = ToolMetadataStorage::global().get(&tool_name) {
+            // Use macro metadata (preferred)
+            debug!("Using macro metadata for tool: {}", tool_name);
+            generate_schema(&macro_metadata)
+        } else {
+            // Fallback to existing VM extraction method
+            debug!("No macro metadata found for {}, using VM extraction", tool_name);
+            match vm.call(["INPUT_SCHEMA"], ()) {
+                Ok(value) => {
+                    super::tool::rune_value_to_json(&value)
+                        .with_context(|| "Failed to convert INPUT_SCHEMA to JSON")?
+                }
+                Err(_) => {
+                    serde_json::json!({
+                        "type": "object",
+                        "properties": {}
+                    })
+                }
             }
         };
 
@@ -483,5 +511,99 @@ mod tests {
         let consumer_info = ConsumerInfo::default();
         assert!(consumer_info.primary_consumers.contains(&"agents".to_string()));
         assert!(consumer_info.primary_consumers.contains(&"ui".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_macro_tool_discovery_integration() {
+        let temp_dir = TempDir::new().unwrap();
+        let tool_dir = temp_dir.path().to_path_buf();
+
+        // Create a simple test tool file (without #[tool] annotations for now)
+        // This tests backward compatibility with existing tools
+        let tool_source = r#"
+            pub async fn create_note(args) {
+                // Mock implementation
+                #{ success: true, note_id: "123" }
+            }
+
+            pub async fn search_notes(args) {
+                // Mock implementation
+                #{ success: true, results: ["note1", "note2"] }
+            }
+        "#;
+
+        let tool_path = tool_dir.join("compatibility_test.rn");
+        fs::write(&tool_path, tool_source).unwrap();
+
+        // Use a basic context to test existing functionality
+        let context = Arc::new(rune::Context::with_default_modules().unwrap());
+        let discovery = ToolDiscovery::new(context);
+        let discoveries = discovery.discover_in_directory(&tool_dir).await.unwrap();
+
+        assert_eq!(discoveries.len(), 1);
+        let discovered = &discoveries[0];
+
+        // Should discover tools using existing VM method (backward compatibility)
+        assert!(!discovered.tools.is_empty());
+
+        // Verify basic discovery works (backward compatibility)
+        let tool_names: Vec<_> = discovered.tools.iter().map(|t| &t.name).collect();
+        assert!(tool_names.contains(&&"compatibility_test".to_string()));
+    }
+
+    #[test]
+    fn test_macro_metadata_storage_integration() {
+        // Import the types we need for the test
+        use crate::rune_tools::{ToolMetadataStorage, ToolMacroMetadata, ParameterMetadata, TypeSpec};
+        use crate::rune_tools::schema_generator::generate_schema;
+
+        // Clear any existing metadata
+        ToolMetadataStorage::global().clear();
+
+        // Simulate what the #[tool] macro would store
+        let metadata = ToolMacroMetadata {
+            name: "test_macro_tool".to_string(),
+            description: "A test tool with macro annotation".to_string(),
+            parameters: vec![
+                ParameterMetadata {
+                    name: "required_param".to_string(),
+                    type_spec: TypeSpec::String,
+                    is_optional: false,
+                },
+                ParameterMetadata {
+                    name: "optional_param".to_string(),
+                    type_spec: TypeSpec::Number,
+                    is_optional: true,
+                },
+            ],
+        };
+
+        // Store metadata as the macro would
+        ToolMetadataStorage::global()
+            .insert("test_macro_tool".to_string(), metadata);
+
+        // Verify metadata can be retrieved
+        let retrieved = ToolMetadataStorage::global()
+            .get("test_macro_tool");
+        assert!(retrieved.is_some());
+
+        let retrieved = retrieved.unwrap();
+        assert_eq!(retrieved.name, "test_macro_tool");
+        assert_eq!(retrieved.description, "A test tool with macro annotation");
+        assert_eq!(retrieved.parameters.len(), 2);
+        assert_eq!(retrieved.parameters[0].name, "required_param");
+        assert_eq!(retrieved.parameters[1].name, "optional_param");
+        assert!(!retrieved.parameters[0].is_optional);
+        assert!(retrieved.parameters[1].is_optional);
+
+        // Test schema generation from macro metadata
+        let schema = generate_schema(&retrieved);
+        assert_eq!(schema["type"], "object");
+        assert!(schema["properties"].as_object().unwrap().contains_key("required_param"));
+        assert!(schema["properties"].as_object().unwrap().contains_key("optional_param"));
+
+        let required = schema["required"].as_array().unwrap();
+        assert_eq!(required.len(), 1);
+        assert_eq!(required[0], "required_param");
     }
 }
