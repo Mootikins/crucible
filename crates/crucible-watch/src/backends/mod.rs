@@ -11,7 +11,7 @@ pub use editor_backend::*;
 pub use factory::*;
 
 use crate::traits::{FileWatcher, BackendCapabilities, WatchHandle};
-use crate::config::WatchBackend;
+use crate::WatchBackend;
 use crate::error::{Error, Result};
 use async_trait::async_trait;
 use std::path::PathBuf;
@@ -33,9 +33,16 @@ pub trait WatcherFactory: Send + Sync {
 }
 
 /// Registry for managing watcher factories.
-#[derive(Debug)]
 pub struct BackendRegistry {
     factories: std::collections::HashMap<WatchBackend, Box<dyn WatcherFactory>>,
+}
+
+impl std::fmt::Debug for BackendRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BackendRegistry")
+            .field("factories", &format!("{} registered backends", self.factories.len()))
+            .finish()
+    }
 }
 
 impl BackendRegistry {

@@ -30,12 +30,13 @@ pub struct FileEvent {
 impl FileEvent {
     /// Create a new file event.
     pub fn new(kind: FileEventKind, path: PathBuf) -> Self {
+        let is_dir = path.is_dir();
         Self {
             id: Uuid::new_v4(),
             kind,
             path,
             timestamp: Utc::now(),
-            is_dir: path.is_dir(),
+            is_dir,
             metadata: None,
         }
     }
@@ -146,7 +147,7 @@ impl EventMetadata {
 }
 
 /// Event filtering criteria.
-#[derive(Debug, Clone, Default)]
+#[derive(Default)]
 pub struct EventFilter {
     /// Include only these file extensions.
     pub extensions: Vec<String>,
@@ -168,6 +169,34 @@ pub struct EventFilter {
 
     /// Custom filter function.
     pub custom_filter: Option<Box<dyn Fn(&FileEvent) -> bool + Send + Sync>>,
+}
+
+impl std::fmt::Debug for EventFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EventFilter")
+            .field("extensions", &self.extensions)
+            .field("exclude_extensions", &self.exclude_extensions)
+            .field("include_dirs", &self.include_dirs)
+            .field("exclude_dirs", &self.exclude_dirs)
+            .field("min_size", &self.min_size)
+            .field("max_size", &self.max_size)
+            .field("custom_filter", &self.custom_filter.as_ref().map(|_| "<function>"))
+            .finish()
+    }
+}
+
+impl Clone for EventFilter {
+    fn clone(&self) -> Self {
+        Self {
+            extensions: self.extensions.clone(),
+            exclude_extensions: self.exclude_extensions.clone(),
+            include_dirs: self.include_dirs.clone(),
+            exclude_dirs: self.exclude_dirs.clone(),
+            min_size: self.min_size,
+            max_size: self.max_size,
+            custom_filter: None, // Cannot clone closures
+        }
+    }
 }
 
 impl EventFilter {

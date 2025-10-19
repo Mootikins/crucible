@@ -1,6 +1,6 @@
 //! Configuration schema for the file watching system.
 
-use crate::{backends::WatchBackend, traits::WatchMode};
+use crate::{WatchBackend, traits::WatchMode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;

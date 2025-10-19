@@ -7,7 +7,7 @@ use crate::{
     config::WatchManagerConfig,
     error::{Error, Result},
     events::{FileEvent, FileEventKind, EventFilter},
-    utils::{Debouncer, EventQueue, PerformanceMonitor},
+    utils::{Debouncer, EventQueue, PerformanceMonitor, PerformanceStats, QueueStats},
 };
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -77,9 +77,11 @@ impl WatchManager {
 
     /// Start the watch manager.
     pub async fn start(&mut self) -> Result<()> {
-        let mut is_running = self.is_running.write().await;
-        if *is_running {
-            return Err(Error::AlreadyRunning);
+        {
+            let is_running = self.is_running.read().await;
+            if *is_running {
+                return Err(Error::AlreadyRunning);
+            }
         }
 
         info!("Starting watch manager");
@@ -92,7 +94,11 @@ impl WatchManager {
         // Start event processing task
         self.start_event_processor().await?;
 
-        *is_running = true;
+        {
+            let mut is_running = self.is_running.write().await;
+            *is_running = true;
+        }
+
         info!("Watch manager started successfully");
 
         Ok(())
@@ -138,23 +144,34 @@ impl WatchManager {
             return Err(Error::NotRunning);
         }
 
+        // Get the event sender to pass to the watcher
+        let event_sender = self.event_sender.as_ref()
+            .ok_or_else(|| Error::Internal("Event sender not available".to_string()))?
+            .clone();
+
         // Select appropriate backend
         let requirements = WatcherRequirements::high_performance(); // Could be configurable
-        let watcher = self.backend_registry.create_optimal_watcher(&requirements).await?;
+        let mut watcher_arc = self.backend_registry.create_optimal_watcher(&requirements).await?;
 
-        // Add the watch
-        let handle = {
-            let mut watcher_mut = Arc::try_unwrap(watcher)
-                .map_err(|_| Error::Internal("Cannot unwrap watcher".to_string()))?;
-            watcher_mut.watch(path.clone(), config.clone()).await?
-        };
+        // Try to get mutable access to the watcher to call watch()
+        // This works if this is the only Arc reference (which it should be since we just created it)
+        if let Some(watcher) = Arc::get_mut(&mut watcher_arc) {
+            // Set the event sender so the watcher can send events to our processing pipeline
+            watcher.set_event_sender(event_sender.clone());
 
-        // Store the watcher
-        let mut watchers = self.watchers.write().await;
-        watchers.insert(config.id.clone(), watcher);
+            // Call watch to actually start monitoring the path
+            let handle = watcher.watch(path.clone(), config.clone()).await?;
 
-        info!("Added watch: {} -> {}", config.id, path.display());
-        Ok(handle)
+            // Store the watcher
+            let mut watchers = self.watchers.write().await;
+            watchers.insert(config.id.clone(), watcher_arc);
+
+            info!("Added watch: {} -> {}", config.id, path.display());
+            Ok(handle)
+        } else {
+            // If we can't get mutable access, return an error
+            Err(Error::Internal("Cannot get mutable access to watcher".to_string()))
+        }
     }
 
     /// Remove a watch.
@@ -346,34 +363,6 @@ impl WatchManager {
     }
 }
 
-/// Performance statistics for the watch manager.
-#[derive(Debug, Clone)]
-pub struct PerformanceStats {
-    /// Total events processed
-    pub total_events_processed: u64,
-    /// Average processing time per event
-    pub avg_processing_time_ms: f64,
-    /// Current queue size
-    pub current_queue_size: usize,
-    /// Maximum queue size observed
-    pub max_queue_size: usize,
-    /// Events dropped due to queue overflow
-    pub events_dropped: u64,
-    /// Handler statistics
-    pub handler_stats: HashMap<String, HandlerStats>,
-}
-
-/// Statistics for individual handlers.
-#[derive(Debug, Clone)]
-pub struct HandlerStats {
-    /// Total events handled
-    pub total_events: u64,
-    /// Average handling time
-    pub avg_handling_time_ms: f64,
-    /// Number of errors
-    pub error_count: u64,
-}
-
 /// Status information for the watch manager.
 #[derive(Debug, Clone)]
 pub struct ManagerStatus {
@@ -385,19 +374,6 @@ pub struct ManagerStatus {
     pub registered_handlers: usize,
     /// Queue statistics
     pub queue_stats: QueueStats,
-}
-
-/// Statistics for the event queue.
-#[derive(Debug, Clone)]
-pub struct QueueStats {
-    /// Current queue size
-    pub current_size: usize,
-    /// Maximum capacity
-    pub capacity: usize,
-    /// Number of events processed
-    pub processed: u64,
-    /// Number of events dropped
-    pub dropped: u64,
 }
 
 #[cfg(test)]

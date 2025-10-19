@@ -20,7 +20,6 @@ pub struct EventBatcher {
 }
 
 /// Strategy for batching events.
-#[derive(Debug, Clone)]
 pub enum BatchStrategy {
     /// Batch by directory
     ByDirectory,
@@ -32,6 +31,30 @@ pub enum BatchStrategy {
     ByEventKind,
     /// Custom batching logic
     Custom(Box<dyn Fn(&FileEvent) -> String + Send + Sync>),
+}
+
+impl std::fmt::Debug for BatchStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ByDirectory => write!(f, "ByDirectory"),
+            Self::ByFileType => write!(f, "ByFileType"),
+            Self::ByTimeWindow => write!(f, "ByTimeWindow"),
+            Self::ByEventKind => write!(f, "ByEventKind"),
+            Self::Custom(_) => write!(f, "Custom(<function>)"),
+        }
+    }
+}
+
+impl Clone for BatchStrategy {
+    fn clone(&self) -> Self {
+        match self {
+            Self::ByDirectory => Self::ByDirectory,
+            Self::ByFileType => Self::ByFileType,
+            Self::ByTimeWindow => Self::ByTimeWindow,
+            Self::ByEventKind => Self::ByEventKind,
+            Self::Custom(_) => Self::ByDirectory, // Fallback to ByDirectory for unclonable closures
+        }
+    }
 }
 
 /// Key for grouping events into batches.
@@ -106,9 +129,10 @@ impl EventBatcher {
 
         // Check if the current batch group is at capacity
         if batch_group.events.len() >= self.max_batch_size {
-            if let Some(group) = self.current_batch.remove(&batch_key) {
-                ready_batches.push(group.events);
-                debug!("Emitting batch due to size limit: {} events", group.events.len());
+            if let Some(mut group) = self.current_batch.remove(&batch_key) {
+                let events = std::mem::take(&mut group.events);
+                debug!("Emitting batch due to size limit: {} events", events.len());
+                ready_batches.push(events);
             }
         }
 
@@ -206,9 +230,10 @@ impl EventBatcher {
         }
 
         for key in to_remove {
-            if let Some(group) = self.current_batch.remove(&key) {
-                ready_batches.push(group.events);
-                debug!("Emitting batch due to delay: {} events", group.events.len());
+            if let Some(mut group) = self.current_batch.remove(&key) {
+                let events = std::mem::take(&mut group.events);
+                debug!("Emitting batch due to delay: {} events", events.len());
+                ready_batches.push(events);
             }
         }
     }
