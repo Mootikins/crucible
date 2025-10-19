@@ -1,0 +1,381 @@
+-- ============================================================================
+-- Crucible Knowledge Vault - SurrealDB Schema
+-- ============================================================================
+-- Version: 1.0.0
+-- Created: 2025-10-19
+-- Purpose: Define tables, relations, and indexes for knowledge vault indexing
+--
+-- Usage:
+--   surreal import --conn http://localhost:8000 --user root --pass root \
+--     --ns crucible --db vault schema.surql
+-- ============================================================================
+
+-- Namespace and Database
+-- Note: Set via connection, not in schema file
+
+-- ============================================================================
+-- ANALYZERS (for full-text search)
+-- ============================================================================
+
+DEFINE ANALYZER content_analyzer
+    TOKENIZERS blank, class
+    FILTERS lowercase, snowball(english);
+
+DEFINE ANALYZER title_analyzer
+    TOKENIZERS blank, class
+    FILTERS lowercase;
+
+-- ============================================================================
+-- TABLE: notes
+-- ============================================================================
+-- Primary table for all markdown documents in the vault
+
+DEFINE TABLE notes SCHEMAFULL;
+
+-- Core identifiers
+DEFINE FIELD path ON TABLE notes
+    TYPE string
+    ASSERT $value != NONE;
+
+DEFINE FIELD title ON TABLE notes
+    TYPE option<string>;
+
+DEFINE FIELD content ON TABLE notes
+    TYPE string;
+
+-- Timestamps
+DEFINE FIELD created_at ON TABLE notes
+    TYPE datetime
+    DEFAULT time::now();
+
+DEFINE FIELD modified_at ON TABLE notes
+    TYPE datetime
+    DEFAULT time::now();
+
+-- Full-text search fields (copies for indexing)
+DEFINE FIELD content_text ON TABLE notes
+    TYPE string
+    FLEXIBLE;
+
+DEFINE FIELD title_text ON TABLE notes
+    TYPE option<string>
+    FLEXIBLE;
+
+-- Tags (array for fast filtering)
+DEFINE FIELD tags ON TABLE notes
+    TYPE array<string>
+    DEFAULT [];
+
+-- Semantic search
+DEFINE FIELD embedding ON TABLE notes
+    TYPE option<array<float>>;
+
+DEFINE FIELD embedding_model ON TABLE notes
+    TYPE option<string>;
+
+DEFINE FIELD embedding_updated_at ON TABLE notes
+    TYPE option<datetime>;
+
+-- Flexible metadata (frontmatter properties)
+DEFINE FIELD metadata ON TABLE notes
+    TYPE object
+    DEFAULT {};
+
+-- Computed fields
+DEFINE FIELD status ON TABLE notes
+    VALUE $this.metadata.status OR "none";
+
+DEFINE FIELD folder ON TABLE notes
+    VALUE string::split($this.path, "/")[0];
+
+DEFINE FIELD file_name ON TABLE notes
+    VALUE array::last(string::split($this.path, "/"));
+
+-- Constraints and indexes
+DEFINE INDEX unique_path ON TABLE notes
+    COLUMNS path
+    UNIQUE;
+
+DEFINE INDEX tags_idx ON TABLE notes
+    COLUMNS tags;
+
+DEFINE INDEX folder_idx ON TABLE notes
+    COLUMNS folder;
+
+DEFINE INDEX modified_at_idx ON TABLE notes
+    COLUMNS modified_at;
+
+-- Full-text search indexes
+DEFINE INDEX content_search ON TABLE notes
+    COLUMNS content_text
+    SEARCH ANALYZER content_analyzer BM25 HIGHLIGHTS;
+
+DEFINE INDEX title_search ON TABLE notes
+    COLUMNS title_text
+    SEARCH ANALYZER title_analyzer BM25;
+
+-- Vector search index (384 dimensions for all-MiniLM-L6-v2, adjust as needed)
+DEFINE INDEX embedding_idx ON TABLE notes
+    COLUMNS embedding
+    MTREE DIMENSION 384 DISTANCE COSINE;
+
+-- ============================================================================
+-- TABLE: tags
+-- ============================================================================
+-- Metadata and hierarchy for tags
+
+DEFINE TABLE tags SCHEMAFULL;
+
+-- Core fields
+DEFINE FIELD name ON TABLE tags
+    TYPE string
+    ASSERT $value != NONE;
+
+DEFINE FIELD description ON TABLE tags
+    TYPE option<string>;
+
+DEFINE FIELD color ON TABLE tags
+    TYPE option<string>;
+
+-- Statistics
+DEFINE FIELD usage_count ON TABLE tags
+    TYPE int
+    DEFAULT 0;
+
+DEFINE FIELD last_used ON TABLE tags
+    TYPE option<datetime>;
+
+-- Hierarchy (for nested tags like #project/crucible)
+DEFINE FIELD parent_tag ON TABLE tags
+    TYPE option<record<tags>>;
+
+-- Metadata
+DEFINE FIELD created_at ON TABLE tags
+    TYPE datetime
+    DEFAULT time::now();
+
+-- Constraints
+DEFINE INDEX unique_tag_name ON TABLE tags
+    COLUMNS name
+    UNIQUE;
+
+-- ============================================================================
+-- RELATION: wikilink
+-- ============================================================================
+-- Represents [[Document Title]] links between notes
+
+DEFINE TABLE wikilink SCHEMAFULL
+    TYPE RELATION
+    FROM notes TO notes;
+
+-- Edge metadata
+DEFINE FIELD link_text ON TABLE wikilink
+    TYPE string;
+
+DEFINE FIELD context ON TABLE wikilink
+    TYPE option<string>;
+
+DEFINE FIELD position ON TABLE wikilink
+    TYPE int;
+
+DEFINE FIELD created_at ON TABLE wikilink
+    TYPE datetime
+    DEFAULT time::now();
+
+-- For weighted graph algorithms
+DEFINE FIELD weight ON TABLE wikilink
+    TYPE float
+    DEFAULT 1.0;
+
+-- Index for filtering
+DEFINE INDEX link_text_idx ON TABLE wikilink
+    COLUMNS link_text;
+
+-- ============================================================================
+-- RELATION: tagged_with
+-- ============================================================================
+-- Links notes to tags (alternative to array field for rich queries)
+
+DEFINE TABLE tagged_with SCHEMAFULL
+    TYPE RELATION
+    FROM notes TO tags;
+
+-- Edge metadata
+DEFINE FIELD added_at ON TABLE tagged_with
+    TYPE datetime
+    DEFAULT time::now();
+
+DEFINE FIELD added_by ON TABLE tagged_with
+    TYPE option<string>;  -- "user" or "auto"
+
+-- ============================================================================
+-- RELATION: relates_to
+-- ============================================================================
+-- Semantic similarity and other computed relationships
+
+DEFINE TABLE relates_to SCHEMAFULL
+    TYPE RELATION
+    FROM notes TO notes;
+
+-- Relationship type
+DEFINE FIELD relation_type ON TABLE relates_to
+    TYPE string;
+
+-- Similarity score (for semantic search)
+DEFINE FIELD score ON TABLE relates_to
+    TYPE float
+    DEFAULT 0.0;
+
+-- Metadata
+DEFINE FIELD computed_at ON TABLE relates_to
+    TYPE datetime
+    DEFAULT time::now();
+
+DEFINE FIELD metadata ON TABLE relates_to
+    TYPE option<object>;
+
+-- Index for filtering by type
+DEFINE INDEX relation_type_idx ON TABLE relates_to
+    COLUMNS relation_type;
+
+DEFINE INDEX score_idx ON TABLE relates_to
+    COLUMNS score;
+
+-- ============================================================================
+-- TABLE: metadata (system metadata)
+-- ============================================================================
+-- Stores schema version and system configuration
+
+DEFINE TABLE metadata SCHEMAFULL;
+
+DEFINE FIELD schema_version ON TABLE metadata
+    TYPE int
+    DEFAULT 1;
+
+DEFINE FIELD updated_at ON TABLE metadata
+    TYPE datetime
+    DEFAULT time::now();
+
+-- Initialize system metadata
+CREATE metadata:system SET
+    schema_version = 1,
+    updated_at = time::now();
+
+-- ============================================================================
+-- OPTIONAL: metadata_index table
+-- ============================================================================
+-- Uncomment if you need fast queries on specific frontmatter properties
+-- for large vaults (>10K documents)
+
+/*
+DEFINE TABLE metadata_index SCHEMAFULL;
+
+-- Reference to source note
+DEFINE FIELD note ON TABLE metadata_index
+    TYPE record<notes>
+    ASSERT $value != NONE;
+
+-- Property key-value
+DEFINE FIELD key ON TABLE metadata_index
+    TYPE string
+    ASSERT $value != NONE;
+
+DEFINE FIELD value ON TABLE metadata_index
+    TYPE string;
+
+DEFINE FIELD value_type ON TABLE metadata_index
+    TYPE string;  -- "string", "number", "boolean", "date"
+
+-- Typed values (for performance)
+DEFINE FIELD value_number ON TABLE metadata_index
+    TYPE option<float>;
+
+DEFINE FIELD value_date ON TABLE metadata_index
+    TYPE option<datetime>;
+
+DEFINE FIELD value_bool ON TABLE metadata_index
+    TYPE option<bool>;
+
+-- Indexes
+DEFINE INDEX key_value ON TABLE metadata_index
+    COLUMNS key, value;
+
+DEFINE INDEX note_key ON TABLE metadata_index
+    COLUMNS note, key;
+*/
+
+-- ============================================================================
+-- HELPER FUNCTIONS (optional convenience functions)
+-- ============================================================================
+
+-- Function to calculate cosine similarity between embeddings
+DEFINE FUNCTION fn::cosine_similarity($a: array<float>, $b: array<float>) {
+    RETURN vector::distance::cosine($a, $b);
+};
+
+-- Function to normalize tag names (lowercase, remove #)
+DEFINE FUNCTION fn::normalize_tag($tag: string) {
+    RETURN string::lowercase(string::trim(string::replace($tag, "#", "")));
+};
+
+-- Function to extract folder from path
+DEFINE FUNCTION fn::get_folder($path: string) {
+    LET $parts = string::split($path, "/");
+    RETURN IF array::len($parts) > 1 THEN $parts[0] ELSE "";
+};
+
+-- Function to get file extension
+DEFINE FUNCTION fn::get_extension($path: string) {
+    LET $parts = string::split($path, ".");
+    RETURN IF array::len($parts) > 1 THEN array::last($parts) ELSE "";
+};
+
+-- ============================================================================
+-- EVENTS (optional triggers for auto-updates)
+-- ============================================================================
+
+-- Update modified_at timestamp on content changes
+DEFINE EVENT update_modified_at ON TABLE notes WHEN $before.content != $after.content THEN (
+    UPDATE $after.id SET modified_at = time::now()
+);
+
+-- Sync content to content_text for full-text search
+DEFINE EVENT sync_content_text ON TABLE notes WHEN $before.content != $after.content THEN (
+    UPDATE $after.id SET content_text = $after.content
+);
+
+-- Sync title to title_text for full-text search
+DEFINE EVENT sync_title_text ON TABLE notes WHEN $before.title != $after.title THEN (
+    UPDATE $after.id SET title_text = $after.title
+);
+
+-- ============================================================================
+-- PERMISSIONS (optional access control)
+-- ============================================================================
+
+-- For now, allow all access (adjust based on your security model)
+-- Uncomment and customize if you need user-based permissions
+
+/*
+DEFINE SCOPE user SESSION 24h;
+
+-- Notes permissions
+DEFINE PERMISSION read ON TABLE notes FOR select WHERE true;
+DEFINE PERMISSION create ON TABLE notes FOR create WHERE true;
+DEFINE PERMISSION update ON TABLE notes FOR update WHERE true;
+DEFINE PERMISSION delete ON TABLE notes FOR delete WHERE true;
+
+-- Tags permissions
+DEFINE PERMISSION read ON TABLE tags FOR select WHERE true;
+DEFINE PERMISSION create ON TABLE tags FOR create WHERE true;
+DEFINE PERMISSION update ON TABLE tags FOR update WHERE true;
+
+-- Relations permissions
+DEFINE PERMISSION read ON TABLE wikilink FOR select WHERE true;
+DEFINE PERMISSION create ON TABLE wikilink FOR create WHERE true;
+DEFINE PERMISSION delete ON TABLE wikilink FOR delete WHERE true;
+*/
+
+-- ============================================================================
+-- END OF SCHEMA
+-- ============================================================================

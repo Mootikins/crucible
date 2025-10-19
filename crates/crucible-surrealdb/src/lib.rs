@@ -30,9 +30,12 @@
 
 pub mod database;
 pub mod multi_client;
+pub mod query;
+pub mod schema_types;
 pub mod types;
 
 pub use database::SurrealEmbeddingDatabase;
 pub use multi_client::SurrealClient;
+pub use schema_types::*;
 pub use types::*;
 
