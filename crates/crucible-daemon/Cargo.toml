@@ -1,0 +1,88 @@
+[package]
+name = "crucible-daemon"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Terminal daemon for Crucible knowledge management"
+
+[lib]
+name = "crucible_daemon"
+path = "src/lib.rs"
+
+[[bin]]
+name = "crucible-daemon"
+path = "src/main.rs"
+
+[dependencies]
+# Workspace dependencies
+crucible-core = { path = "../crucible-core" }
+crucible-watch = { path = "../crucible-watch" }
+crucible-config = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true, features = ["full"] }
+async-trait = { workspace = true }
+futures = "0.3"
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+
+# Database
+crucible-surrealdb = { path = "../crucible-surrealdb" }
+
+# REPL dependencies
+reedline = "0.34"
+crossterm = "0.29"
+
+# Syntax highlighting and text styling
+nu-ansi-term = "0.50"
+
+# Table formatting
+comfy-table = "7.2"
+tabled = "0.15"
+
+# CSV export
+csv = "1.3"
+
+# Output coloring
+colored = "2.1"
+
+# Progress indicators
+indicatif = "0.17"
+
+# TUI framework
+ratatui = "0.29"
+
+# Signal handling
+tokio-util = { version = "0.7", features = ["rt"] }
+
+# Configuration
+dirs = "5.0"
+
+# Regex for parsing
+regex = { workspace = true }
+
+# Time
+chrono = { workspace = true, features = ["serde"] }
+
+# Rune scripting
+rune = "0.13"
+
+# Channels
+flume = "0.11"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio-test = "0.4"
