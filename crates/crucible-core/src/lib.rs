@@ -4,6 +4,8 @@ pub mod crdt;
 pub mod database;
 pub mod document;
 pub mod properties;
+pub mod parser;
+pub mod sink;
 // pub mod task_router; // Temporarily disabled due to compilation issues
 
 pub use agent::{AgentDefinition, AgentLoader, AgentMatch, AgentQuery, AgentRegistry, CapabilityMatcher};
@@ -28,6 +30,15 @@ pub use database::{
 };
 pub use document::{DocumentNode, ViewportState};
 pub use properties::{PropertyMap, PropertyValue};
+pub use parser::{
+    ParsedDocument, Frontmatter, FrontmatterFormat, Wikilink, Tag,
+    DocumentContent, Heading, CodeBlock, MarkdownParser, ParserCapabilities,
+    ParserError, ParserResult,
+};
+pub use sink::{
+    OutputSink, SinkHealth, SinkError, SinkResult,
+    CircuitBreaker, CircuitState, CircuitBreakerConfig,
+};
 // pub use task_router::{
 //     TaskRouter, TaskAnalyzer, IntelligentRouter, TaskQueueManager, ExecutionEngine,
 //     ResultAggregator, ErrorHandler, PerformanceMonitor, UserRequest, TaskResult,
