@@ -11,6 +11,10 @@ pub trait FileWatcher: Send + Sync {
     /// Get the backend type identifier.
     fn backend_type(&self) -> &'static str;
 
+    /// Set the event sender for this watcher.
+    /// This must be called before adding any watches.
+    fn set_event_sender(&mut self, sender: mpsc::UnboundedSender<FileEvent>);
+
     /// Start watching the specified path with the given configuration.
     async fn watch(&mut self, path: PathBuf, config: WatchConfig) -> Result<WatchHandle>;
 

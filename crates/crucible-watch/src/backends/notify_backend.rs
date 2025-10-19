@@ -6,8 +6,8 @@ use crate::{
     events::{FileEvent, FileEventKind, EventMetadata},
 };
 use async_trait::async_trait;
-use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher as NotifyWatcher};
-use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, FileIdMap};
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, DebouncedEvent, NoCache};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,7 +17,7 @@ use tracing::{debug, error, info, warn};
 /// Notify-based file watcher with debouncing support.
 pub struct NotifyWatcher {
     /// Debounced file system watcher
-    debouncer: Option<Debouncer<RecommendedWatcher, FileIdMap>>,
+    debouncer: Option<Debouncer<RecommendedWatcher, notify_debouncer_full::NoCache>>,
     /// Event sender
     event_sender: Option<mpsc::UnboundedSender<FileEvent>>,
     /// Active watches
@@ -70,7 +70,7 @@ impl NotifyWatcher {
             },
         ).map_err(|e| Error::Watch(format!("Failed to create notify watcher: {}", e)))?;
 
-        debouncer.cache().add_root("/");
+        // NoCache doesn't have add_root, so we skip it
 
         self.debouncer = Some(debouncer);
         self.event_sender = Some(event_sender);
@@ -80,14 +80,14 @@ impl NotifyWatcher {
     }
 
     /// Convert notify event to our file event format.
-    fn convert_notify_event(event: notify::Event) -> Result<FileEvent> {
-        let kind = match event.kind {
+    fn convert_notify_event(event: DebouncedEvent) -> Result<FileEvent> {
+        let kind = match event.event.kind {
             EventKind::Create(_) => FileEventKind::Created,
             EventKind::Modify(_) => FileEventKind::Modified,
             EventKind::Remove(_) => FileEventKind::Deleted,
             EventKind::Other => {
                 // Check if this is a move event
-                if let (Some(from), Some(to)) = (event.paths.get(0), event.paths.get(1)) {
+                if let (Some(from), Some(to)) = (event.event.paths.get(0), event.event.paths.get(1)) {
                     FileEventKind::Moved {
                         from: from.clone(),
                         to: to.clone(),
@@ -96,14 +96,14 @@ impl NotifyWatcher {
                     FileEventKind::Unknown("Other".to_string())
                 }
             }
-            _ => FileEventKind::Unknown(format!("{:?}", event.kind)),
+            _ => FileEventKind::Unknown(format!("{:?}", event.event.kind)),
         };
 
         // For batch events, create a single event for each path
-        if event.paths.len() > 1 && !matches!(event.kind, EventKind::Other) {
+        if event.event.paths.len() > 1 && !matches!(event.event.kind, EventKind::Other) {
             // Create a batch event
             let mut batch_events = Vec::new();
-            for path in &event.paths {
+            for path in &event.event.paths {
                 let metadata = EventMetadata::new(
                     "notify".to_string(),
                     "default".to_string(),
@@ -117,7 +117,7 @@ impl NotifyWatcher {
             return Ok(FileEvent::new(FileEventKind::Batch(batch_events), PathBuf::new()));
         }
 
-        let path = event.paths.into_iter().next()
+        let path = event.event.paths.into_iter().next()
             .ok_or_else(|| Error::Watch("Event has no path".to_string()))?;
 
         let metadata = EventMetadata::new(
@@ -143,12 +143,17 @@ impl FileWatcher for NotifyWatcher {
         "notify"
     }
 
+    fn set_event_sender(&mut self, sender: mpsc::UnboundedSender<FileEvent>) {
+        self.event_sender = Some(sender);
+    }
+
     async fn watch(&mut self, path: PathBuf, config: WatchConfig) -> Result<WatchHandle> {
         debug!("Adding watch for: {}", path.display());
 
         // Initialize if not already done
-        if self.event_sender.is_none() {
-            let (sender, _) = mpsc::unbounded_channel();
+        if self.debouncer.is_none() {
+            let sender = self.event_sender.clone()
+                .ok_or_else(|| Error::Internal("Event sender not set before calling watch".to_string()))?;
             self.initialize(sender).await?;
         }
 
@@ -163,7 +168,7 @@ impl FileWatcher for NotifyWatcher {
                 RecursiveMode::NonRecursive
             };
 
-            debouncer.watcher()
+            debouncer
                 .watch(&path, mode)
                 .map_err(|e| Error::Watch(format!("Failed to watch path: {}", e)))?;
         }
@@ -178,12 +183,11 @@ impl FileWatcher for NotifyWatcher {
         debug!("Removing watch for: {}", handle.path.display());
 
         // Find and remove watch by path
-        let watch_id = None;
         for (id, watch_handle) in &self.watches {
             if watch_handle.path == handle.path {
                 // This is the watch to remove
                 if let Some(ref mut debouncer) = self.debouncer {
-                    debouncer.watcher()
+                    debouncer
                         .unwatch(&watch_handle.path)
                         .map_err(|e| Error::Watch(format!("Failed to unwatch path: {}", e)))?;
                 }
@@ -242,8 +246,8 @@ impl super::WatcherFactory for NotifyFactory {
         Ok(Box::new(NotifyWatcher::new()))
     }
 
-    fn backend_type(&self) -> crate::config::WatchBackend {
-        crate::config::WatchBackend::Notify
+    fn backend_type(&self) -> crate::WatchBackend {
+        crate::WatchBackend::Notify
     }
 
     fn is_available(&self) -> bool {

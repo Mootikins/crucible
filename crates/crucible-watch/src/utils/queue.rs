@@ -2,7 +2,7 @@
 
 use crate::{events::FileEvent, error::Result};
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use tracing::{debug, warn};
 
 /// Bounded event queue with backpressure handling.

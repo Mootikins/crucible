@@ -17,7 +17,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 # File system watching
-notify = "7.0"
+notify = "8.2"
 notify-debouncer-full = "0.5"
 
 # Configuration
@@ -41,7 +41,3 @@ num_cpus = "1.16"
 [dev-dependencies]
 tempfile = { workspace = true }
 criterion = { version = "0.5", features = ["html_reports"] }
-
-[[bench]]
-name = "watcher_bench"
-harness = false
