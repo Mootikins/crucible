@@ -21,6 +21,8 @@ pub mod completer;
 pub mod history;
 pub mod error;
 
+use crate::tools::ToolRegistry;
+
 use command::Command;
 use input::Input;
 use formatter::{OutputFormatter, TableFormatter, JsonFormatter, CsvFormatter, QueryResult};
@@ -38,11 +40,8 @@ pub struct Repl {
     /// TODO: Replace with actual Surreal<Db> when SurrealDB is integrated
     db: DummyDb,
 
-    /// Tool registry for `:run` commands
-    tools: Arc<ToolRegistry>,
-
-    /// Rune runtime for script execution
-    rune_runtime: Arc<RuneRuntime>,
+    /// Tool registry for `:run` commands (includes Rune execution)
+    tools: ToolRegistry,
 
     /// Configuration
     config: ReplConfig,
@@ -77,18 +76,31 @@ impl Repl {
         // Setup editor with custom highlighter and completer
         let highlighter = SurrealQLHighlighter::new();
 
-        // Placeholder database and tools (to be replaced with real implementations)
+        // Placeholder database (to be replaced with real SurrealDB)
         let db = DummyDb::new();
-        let tools = Arc::new(ToolRegistry::new());
-        let completer = ReplCompleter::new(db.clone(), tools.clone());
+
+        // Initialize tool registry and discover tools
+        let tool_dir = config.tool_dir.clone();
+        let mut tools = ToolRegistry::new(tool_dir)?;
+
+        // Discover and load all available tools
+        info!("Discovering tools...");
+        match tools.discover_tools().await {
+            Ok(discovered) => {
+                info!("Discovered {} tools", discovered.len());
+            }
+            Err(e) => {
+                warn!("Failed to discover tools: {}", e);
+            }
+        }
+
+        let tools_arc = Arc::new(tools.clone());
+        let completer = ReplCompleter::new(db.clone(), tools_arc);
 
         let editor = Reedline::create()
             .with_highlighter(Box::new(highlighter))
             .with_completer(Box::new(completer))
             .with_history(history.clone_backend());
-
-        // Initialize Rune runtime
-        let rune_runtime = Arc::new(RuneRuntime::new()?);
 
         // Default formatter
         let formatter: Box<dyn OutputFormatter> = Box::new(TableFormatter::new());
@@ -97,7 +109,6 @@ impl Repl {
             editor,
             db,
             tools,
-            rune_runtime,
             config,
             formatter,
             history,
@@ -188,7 +199,13 @@ impl Repl {
                 self.run_tool(&tool_name, args).await
             }
             Command::RunRune { script_path, args } => {
-                self.run_rune_script(&script_path, args).await
+                // :rune can run arbitrary .rn files, not just registered tools
+                // Extract filename without extension as tool name
+                let tool_name = std::path::Path::new(&script_path)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&script_path);
+                self.run_tool(tool_name, args).await
             }
             Command::ShowStats => {
                 self.show_stats();
@@ -300,25 +317,49 @@ impl Repl {
 
     /// List available tools
     fn list_tools(&self) {
-        println!("\n📦 Available Tools:\n");
-        for (name, description) in self.tools.list_tools_with_descriptions() {
-            println!("  {:<20} - {}", name, description);
+        use colored::Colorize;
+
+        let tools = self.tools.list_tools();
+
+        if tools.is_empty() {
+            println!("\n{} No tools found. Add .rn files to {}\n",
+                     "ℹ".blue(),
+                     self.config.tool_dir.display());
+            return;
         }
+
+        println!("\n{} Available Tools ({}):\n", "📦".green(), tools.len());
+        for name in tools {
+            println!("  {:<20}", name.cyan());
+        }
+        println!("\n{} :run <tool> [args...]", "Tip:".yellow());
         println!();
     }
 
     /// Run a tool by name
-    async fn run_tool(&self, tool_name: &str, args: Vec<String>) -> Result<(), ReplError> {
-        info!("Running tool: {} with args: {:?}", tool_name, args);
-        self.tools.execute(tool_name, args).await
-            .map_err(|e| ReplError::Tool(e.to_string()))
-    }
+    async fn run_tool(&mut self, tool_name: &str, args: Vec<String>) -> Result<(), ReplError> {
+        use colored::Colorize;
 
-    /// Run a Rune script
-    async fn run_rune_script(&self, script_path: &str, args: Vec<String>) -> Result<(), ReplError> {
-        info!("Running Rune script: {} with args: {:?}", script_path, args);
-        self.rune_runtime.execute(script_path, args).await
-            .map_err(|e| ReplError::Rune(e.to_string()))
+        info!("Running tool: {} with args: {:?}", tool_name, args);
+
+        // Execute the tool
+        let result = self.tools.execute_tool(tool_name, &args).await
+            .map_err(|e| ReplError::Tool(e.to_string()))?;
+
+        // Display result based on status
+        match result.status {
+            crate::tools::ToolStatus::Success => {
+                println!("\n{}", result.output);
+                Ok(())
+            }
+            crate::tools::ToolStatus::Error(ref error_msg) => {
+                eprintln!("\n{} {}", "❌ Tool Error:".red(), error_msg);
+                if !result.output.is_empty() {
+                    eprintln!("\nPartial output:\n{}", result.output);
+                }
+                Err(ReplError::Tool(error_msg.clone()))
+            }
+        }
     }
 
     /// Show REPL and database statistics
@@ -328,7 +369,7 @@ impl Repl {
         println!("  Queries executed:  {}", self.stats.query_count);
         println!("  Avg query time:    {:?}", self.stats.avg_query_time());
         println!("  History size:      {}", self.history.len());
-        println!("  Tools loaded:      {}", self.tools.count());
+        println!("  Tools loaded:      {}", self.tools.list_tools().len());
         println!();
     }
 
@@ -422,6 +463,7 @@ pub struct ReplConfig {
     pub vault_path: std::path::PathBuf,
     pub db_path: std::path::PathBuf,
     pub history_file: std::path::PathBuf,
+    pub tool_dir: std::path::PathBuf,
     pub default_format: String,
     pub query_timeout_secs: u64,
     pub max_column_width: usize,
@@ -437,6 +479,7 @@ impl Default for ReplConfig {
             vault_path: dirs::home_dir().unwrap().join("Documents/vault"),
             db_path: config_dir.join("db"),
             history_file: config_dir.join("history"),
+            tool_dir: config_dir.join("tools"),
             default_format: "table".to_string(),
             query_timeout_secs: 300,
             max_column_width: 50,
@@ -462,7 +505,7 @@ impl ReplStats {
     }
 }
 
-// Placeholder types (to be replaced with real implementations)
+// Placeholder database (to be replaced with real SurrealDB)
 
 #[derive(Clone)]
 struct DummyDb;
@@ -483,45 +526,6 @@ impl DummyDb {
             affected_rows: Some(0),
             status: formatter::QueryStatus::Success,
         })
-    }
-}
-
-struct ToolRegistry;
-
-impl ToolRegistry {
-    fn new() -> Self {
-        Self
-    }
-
-    fn list_tools_with_descriptions(&self) -> Vec<(&str, &str)> {
-        vec![
-            ("search_by_tags", "Search notes by tags"),
-            ("search_by_content", "Full-text content search"),
-            ("metadata", "Extract note metadata"),
-            ("semantic_search", "Vector similarity search"),
-        ]
-    }
-
-    fn count(&self) -> usize {
-        4
-    }
-
-    async fn execute(&self, _name: &str, _args: Vec<String>) -> Result<()> {
-        println!("Tool execution placeholder");
-        Ok(())
-    }
-}
-
-struct RuneRuntime;
-
-impl RuneRuntime {
-    fn new() -> Result<Self> {
-        Ok(Self)
-    }
-
-    async fn execute(&self, _script_path: &str, _args: Vec<String>) -> Result<()> {
-        println!("Rune execution placeholder");
-        Ok(())
     }
 }
 
