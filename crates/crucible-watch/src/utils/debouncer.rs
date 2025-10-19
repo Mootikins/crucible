@@ -142,13 +142,15 @@ impl Debouncer {
             batch_events.push(pending.event);
         }
 
+        let batch_len = batch_events.len();
+
         // Create a batch event
         let batch_event = FileEvent::new(
             crate::events::FileEventKind::Batch(batch_events),
             std::path::PathBuf::new(),
         );
 
-        debug!("Emitting batch event with {} sub-events", batch_events.len());
+        debug!("Emitting batch event with {} sub-events", batch_len);
         Some(batch_event)
     }
 

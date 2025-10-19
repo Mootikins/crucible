@@ -75,7 +75,7 @@ pub use config::*;
 pub use handlers::*;
 
 /// Available file watching backends.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
 pub enum WatchBackend {
     /// High-performance backend using OS-specific file system notifications
     Notify,
@@ -88,9 +88,12 @@ pub enum WatchBackend {
 /// Re-export common types for convenience
 pub mod prelude {
     pub use crate::{
-        FileWatcher, FileEvent, FileEventKind, WatchConfig, WatchManager,
+        FileWatcher, FileEvent, FileEventKind, WatchManager,
         WatchBackend, EventHandler, Error, Result,
     };
+    // Re-export both WatchConfig types with clear names
+    pub use crate::traits::WatchConfig as TraitWatchConfig;
+    pub use crate::config::WatchConfig as ConfigWatchConfig;
 }
 
 #[cfg(test)]

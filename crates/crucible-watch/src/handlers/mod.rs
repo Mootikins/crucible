@@ -1,11 +1,12 @@
 //! Event handlers for integrating with existing Crucible systems.
 
-mod indexing;
+// TODO: Re-enable when crucible_mcp is available
+// mod indexing;
 mod rune_reload;
 mod obsidian_sync;
 mod composite;
 
-pub use indexing::*;
+// pub use indexing::*;
 pub use rune_reload::*;
 pub use obsidian_sync::*;
 pub use composite::*;
@@ -15,9 +16,16 @@ use async_trait::async_trait;
 use std::sync::Arc;
 
 /// Registry for managing event handlers.
-#[derive(Debug)]
 pub struct HandlerRegistry {
     handlers: Vec<Arc<dyn EventHandler>>,
+}
+
+impl std::fmt::Debug for HandlerRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HandlerRegistry")
+            .field("handlers", &format!("{} registered handlers", self.handlers.len()))
+            .finish()
+    }
 }
 
 impl HandlerRegistry {
@@ -77,10 +85,11 @@ pub fn create_default_handlers() -> Result<HandlerRegistry> {
     let mut registry = HandlerRegistry::new();
 
     // Register default handlers
-    #[cfg(feature = "indexing")]
-    {
-        registry.register(Arc::new(IndexingHandler::new()?));
-    }
+    // TODO: Re-enable when crucible_mcp is available
+    // #[cfg(feature = "indexing")]
+    // {
+    //     registry.register(Arc::new(IndexingHandler::new()?));
+    // }
 
     #[cfg(feature = "rune")]
     {

@@ -132,7 +132,7 @@ impl EventUtils {
 
     /// Group events by directory.
     pub fn group_by_directory(events: &[FileEvent]) -> std::collections::HashMap<std::path::PathBuf, Vec<&FileEvent>> {
-        let mut groups = std::collections::HashMap::new();
+        let mut groups: std::collections::HashMap<std::path::PathBuf, Vec<&FileEvent>> = std::collections::HashMap::new();
 
         for event in events {
             let parent = event.parent().unwrap_or_else(|| std::path::PathBuf::from("/"));

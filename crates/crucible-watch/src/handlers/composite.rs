@@ -17,7 +17,6 @@ pub struct CompositeHandler {
 }
 
 /// Strategy for coordinating multiple handlers.
-#[derive(Debug, Clone)]
 pub enum CoordinationStrategy {
     /// Run all handlers sequentially
     Sequential,
@@ -27,6 +26,28 @@ pub enum CoordinationStrategy {
     PriorityGroups,
     /// Custom coordination logic
     Custom(Box<dyn Fn(&FileEvent, &[Arc<dyn EventHandler>]) -> Vec<usize> + Send + Sync>),
+}
+
+impl std::fmt::Debug for CoordinationStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Sequential => write!(f, "Sequential"),
+            Self::Concurrent => write!(f, "Concurrent"),
+            Self::PriorityGroups => write!(f, "PriorityGroups"),
+            Self::Custom(_) => write!(f, "Custom(<function>)"),
+        }
+    }
+}
+
+impl Clone for CoordinationStrategy {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Sequential => Self::Sequential,
+            Self::Concurrent => Self::Concurrent,
+            Self::PriorityGroups => Self::PriorityGroups,
+            Self::Custom(_) => Self::Sequential, // Fallback to Sequential for unclonable closures
+        }
+    }
 }
 
 /// State of an individual handler.
@@ -317,8 +338,15 @@ impl EventHandler for CompositeHandler {
 
     fn can_handle(&self, event: &FileEvent) -> bool {
         // Check if any managed handler can handle the event
-        let handlers = self.handlers.read().await;
-        let states = self.handler_states.read().await;
+        // Note: This is a synchronous method, so we cannot await RwLock.
+        // We'll use try_read to avoid blocking. If we can't acquire the lock,
+        // we'll conservatively return true to allow the event to be processed.
+        let Ok(handlers) = self.handlers.try_read() else {
+            return true;
+        };
+        let Ok(states) = self.handler_states.try_read() else {
+            return true;
+        };
 
         handlers.iter().any(|handler| {
             if let Some(state) = states.get(handler.name()) {
