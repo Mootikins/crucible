@@ -1,0 +1,36 @@
+/// List all notes from the database
+///
+/// This example demonstrates the db::query_simple() function
+/// for executing parameterless SurrealQL queries.
+///
+/// Usage:
+///   :run db_list_notes
+///
+/// Once SurrealDB integration is complete, this will execute:
+///   SELECT title, path, tags FROM notes LIMIT 10
+
+pub fn main() {
+    // Execute a simple query without parameters
+    let results = db::query_simple("SELECT title, path, tags FROM notes LIMIT 10");
+
+    // Format and return results
+    if results.is_empty() {
+        "No notes found in database (placeholder implementation)"
+    } else {
+        let count = results.len();
+        `Found ${count} notes:\n${format_list(results)}`
+    }
+}
+
+/// Format a list of items with numbering
+fn format_list(items) {
+    let mut output = "";
+    let mut i = 1;
+
+    for item in items {
+        output = `${output}\n  ${i}. ${item}`;
+        i = i + 1;
+    }
+
+    output
+}

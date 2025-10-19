@@ -1,0 +1,37 @@
+/// Search notes by tag using database query
+///
+/// This example demonstrates how to use the db::query() function
+/// to execute SurrealQL queries from within a Rune tool.
+///
+/// Usage:
+///   :run db_search_tags project
+///
+/// Once the SurrealDB integration is complete, this will execute:
+///   SELECT title, path FROM notes WHERE tags CONTAINS 'project'
+
+pub fn main(tag) {
+    // Query database for notes with the specified tag
+    let query = "SELECT title, path FROM notes WHERE tags CONTAINS ?";
+    let results = db::query(query, [tag]);
+
+    // Format results for display
+    if results.is_empty() {
+        `No notes found with tag: ${tag}`
+    } else {
+        let count = results.len();
+        `Found ${count} notes with tag '${tag}':\n${format_results(results)}`
+    }
+}
+
+/// Format query results as a readable list
+fn format_results(results) {
+    let mut output = "";
+    let mut index = 0;
+
+    for result in results {
+        index = index + 1;
+        output = `${output}\n  ${index}. ${result}`;
+    }
+
+    output
+}
