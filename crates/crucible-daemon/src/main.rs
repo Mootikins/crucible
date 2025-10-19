@@ -10,9 +10,7 @@ use anyhow::Result;
 use tokio::sync::watch;
 use tracing::{info, error};
 
-mod repl;
-
-use repl::{Repl, ReplConfig};
+use crucible_daemon::repl::{Repl, ReplConfig};
 
 #[tokio::main]
 async fn main() -> Result<()> {
