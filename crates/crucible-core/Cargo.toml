@@ -10,6 +10,7 @@ yrs = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
+toml = "0.8"
 uuid = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
@@ -20,6 +21,8 @@ tokio = { workspace = true, features = ["sync"] }
 rand = { workspace = true }
 tracing = { workspace = true }
 async-trait = { workspace = true }
+pulldown-cmark = "0.11"
+md5 = "0.7"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
