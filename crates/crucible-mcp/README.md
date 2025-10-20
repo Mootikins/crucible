@@ -309,4 +309,6 @@ See `/docs/plans/VAULT_INDEXING_API_MIGRATION.md` for detailed optimization road
 
 ## License
 
-MIT OR Apache-2.0
+Copyright (c) 2024 Crucible. All Rights Reserved.
+
+This software is proprietary and may not be used, reproduced, or distributed without permission from Crucible.
