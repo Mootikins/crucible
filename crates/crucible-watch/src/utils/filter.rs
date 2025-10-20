@@ -2,9 +2,7 @@
 
 use crate::{events::FileEvent, events::EventFilter};
 use chrono::Timelike;
-use std::collections::HashSet;
 use std::time::Instant;
-use tracing::{debug, trace};
 
 /// Advanced event filter with multiple filtering strategies.
 pub struct AdvancedEventFilter {
@@ -225,7 +223,7 @@ impl FrequencyFilter {
 }
 
 impl EventFilterLogic for FrequencyFilter {
-    fn should_allow(&self, event: &FileEvent) -> bool {
+    fn should_allow(&self, _event: &FileEvent) -> bool {
         // Note: This would need to be made mutable for real usage
         // For now, just return true as a placeholder
         true

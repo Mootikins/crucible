@@ -4,10 +4,19 @@
 //! from multiple providers (Ollama, OpenAI, etc.) with built-in resilience
 //! patterns including retry logic, circuit breakers, and timeout management.
 
+/// Configuration structures for embedding providers.
 pub mod config;
+
+/// Error types for embedding operations.
 pub mod error;
+
+/// Ollama provider implementation.
 pub mod ollama;
+
+/// OpenAI provider implementation.
 pub mod openai;
+
+/// Provider trait and common functionality.
 pub mod provider;
 
 // Make mock available for both internal tests and external integration tests

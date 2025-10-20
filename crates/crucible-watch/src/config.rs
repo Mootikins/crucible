@@ -1,6 +1,6 @@
 //! Configuration schema for the file watching system.
 
-use crate::{WatchBackend, traits::WatchMode};
+use crate::WatchBackend;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -457,7 +457,7 @@ impl ConfigValidator {
         }
 
         // Validate watch profiles
-        for (name, profile) in &config.watch_profiles {
+        for (_name, profile) in &config.watch_profiles {
             Self::validate_watch_profile(profile)?;
         }
 
@@ -565,7 +565,7 @@ mod tests {
         assert!(ConfigValidator::validate_config(&config).is_ok());
 
         // Add a profile with empty paths
-        let mut profile = WatchProfile {
+        let profile = WatchProfile {
             name: "test".to_string(),
             description: None,
             paths: Vec::new(),

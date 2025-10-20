@@ -9,11 +9,17 @@ use thiserror::Error;
 pub enum ProviderError {
     /// Unsupported provider type.
     #[error("Unsupported provider type: {provider_type}")]
-    UnsupportedType { provider_type: String },
+    UnsupportedType {
+        /// The unsupported provider type that was requested
+        provider_type: String
+    },
 
     /// Missing required configuration field.
     #[error("Missing required field: {field}")]
-    MissingField { field: String },
+    MissingField {
+        /// The name of the missing configuration field
+        field: String
+    },
 
     /// Invalid API key format.
     #[error("Invalid API key format")]
@@ -21,7 +27,10 @@ pub enum ProviderError {
 
     /// Invalid model name.
     #[error("Invalid model name: {model}")]
-    InvalidModel { model: String },
+    InvalidModel {
+        /// The invalid model name that was provided
+        model: String
+    },
 }
 
 /// Configuration for embedding providers.

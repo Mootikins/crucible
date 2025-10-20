@@ -5,10 +5,11 @@ use crate::{
     error::{Error, Result},
     events::{FileEvent, FileEventKind, EventMetadata},
 };
+
+// Import the WatcherFactory trait
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -92,6 +93,7 @@ pub struct EditorWatcher {
     capabilities: BackendCapabilities,
 }
 
+#[allow(dead_code)]
 impl EditorWatcher {
     /// Create a new editor watcher.
     pub fn new() -> Self {
@@ -126,7 +128,7 @@ impl EditorWatcher {
     /// Start the background monitoring task.
     async fn start_monitoring_task(&mut self) -> Result<()> {
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
-        let event_sender = self.event_sender.clone()
+        let _event_sender = self.event_sender.clone()
             .ok_or_else(|| Error::Internal("Event sender not initialized".to_string()))?;
 
         let task = tokio::spawn(async move {
@@ -218,7 +220,7 @@ impl EditorWatcher {
     /// Monitor a specific watch for changes.
     async fn monitor_watch(&mut self, watch_id: &str) -> Result<()> {
         // Clone what we need to avoid borrow conflicts
-        let (detect_inode_changes, editor_type) = {
+        let (detect_inode_changes, _editor_type) = {
             let watch_state = self.watches.get(watch_id)
                 .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
             (
@@ -388,7 +390,7 @@ impl EditorWatcher {
     }
 
     /// Check for editor-specific changes for a specific watch.
-    async fn check_editor_changes_for_watch(&mut self, watch_id: &str) -> Result<()> {
+    async fn check_editor_changes_for_watch(&mut self, _watch_id: &str) -> Result<()> {
         // For now, just return Ok - editor-specific checks need more complex refactoring
         // TODO: Implement proper editor-specific change detection without borrow conflicts
         Ok(())
@@ -514,7 +516,7 @@ impl FileWatcher for EditorWatcher {
         let path_str = handle.path.to_string_lossy().to_string();
         let mut removed = false;
 
-        self.watches.retain(|id, state| {
+        self.watches.retain(|_id, state| {
             if state.config.id == path_str {
                 removed = true;
                 false

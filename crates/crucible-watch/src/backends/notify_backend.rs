@@ -5,11 +5,12 @@ use crate::{
     error::{Error, Result},
     events::{FileEvent, FileEventKind, EventMetadata},
 };
+
+// Import the WatcherFactory trait
 use async_trait::async_trait;
-use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, DebouncedEvent, NoCache};
+use notify::{EventKind, RecommendedWatcher, RecursiveMode};
+use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, DebouncedEvent};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
@@ -42,7 +43,7 @@ impl NotifyWatcher {
         let sender = event_sender.clone();
 
         // Create debounced watcher
-        let mut debouncer = new_debouncer(
+        let debouncer = new_debouncer(
             Duration::from_millis(100), // Default debounce time
             None, // No file ID map for now
             move |result: DebounceEventResult| {
@@ -129,7 +130,7 @@ impl NotifyWatcher {
     }
 
     /// Update debounce configuration.
-    pub fn update_debounce_config(&mut self, debounce_config: &crate::traits::DebounceConfig) -> Result<()> {
+    pub fn update_debounce_config(&mut self, _debounce_config: &crate::traits::DebounceConfig) -> Result<()> {
         // Note: notify-debouncer-full doesn't support runtime reconfiguration
         // This would require recreating the debouncer
         warn!("Runtime debounce reconfiguration not supported by notify backend");
@@ -183,7 +184,7 @@ impl FileWatcher for NotifyWatcher {
         debug!("Removing watch for: {}", handle.path.display());
 
         // Find and remove watch by path
-        for (id, watch_handle) in &self.watches {
+        for (_id, watch_handle) in &self.watches {
             if watch_handle.path == handle.path {
                 // This is the watch to remove
                 if let Some(ref mut debouncer) = self.debouncer {
@@ -305,6 +306,7 @@ mod tests {
     #[tokio::test]
     async fn test_event_conversion() {
         use notify::EventKind;
+        use std::time::SystemTime;
 
         // Test creation event
         let notify_event = Event {
@@ -313,7 +315,13 @@ mod tests {
             attrs: Default::default(),
         };
 
-        let file_event = NotifyWatcher::convert_notify_event(notify_event).unwrap();
+        // Wrap the Event in a DebouncedEvent
+        let debounced_event = DebouncedEvent {
+            event: notify_event,
+            time: std::time::Instant::now(),
+        };
+
+        let file_event = NotifyWatcher::convert_notify_event(debounced_event).unwrap();
         assert!(matches!(file_event.kind, FileEventKind::Created));
         assert_eq!(file_event.path, PathBuf::from("test.txt"));
     }

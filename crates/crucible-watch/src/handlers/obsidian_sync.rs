@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 /// Handler for synchronizing with Obsidian and handling API changes.
 pub struct ObsidianSyncHandler {
@@ -234,6 +234,7 @@ impl ObsidianSyncHandler {
         Ok(())
     }
 
+    #[allow(dead_code)]
     async fn trigger_obsidian_reindex(&self, config: &ObsidianVaultConfig) -> Result<()> {
         if !self.sync_config.trigger_reindex {
             return Ok(());
