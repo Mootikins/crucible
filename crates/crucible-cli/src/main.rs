@@ -77,6 +77,13 @@ async fn main() -> Result<()> {
             history,
         ).await?,
 
+        Commands::Repl {
+            db_path,
+            tool_dir,
+            verbose: _,
+            format,
+        } => commands::repl::execute(config, db_path, tool_dir, format).await?,
+
         // Commands::EnhancedChat { // Temporarily disabled
         //     agent,
         //     model,
