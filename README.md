@@ -29,6 +29,32 @@ cd crucible
 pnpm dev
 ```
 
+### CLI Usage
+
+The CLI provides powerful command-line tools for knowledge management:
+
+```bash
+# Build and install CLI
+cargo build -p crucible-cli
+
+# Start interactive REPL (default behavior)
+cargo run -p crucible-cli
+
+# Show vault statistics
+cargo run -p crucible-cli -- stats
+
+# Interactive search
+cargo run -p crucible-cli -- search "your query"
+
+# Semantic search
+cargo run -p crucible-cli -- semantic "conceptual query"
+
+# Chat with AI agents
+cargo run -p crucible-cli -- chat --agent researcher
+```
+
+**Default Behavior**: Running `crucible-cli` without arguments starts the interactive REPL with SurrealQL support, making it easy to explore your knowledge base immediately.
+
 ## Tech Stack
 
 - **Core**: Rust + Tauri
