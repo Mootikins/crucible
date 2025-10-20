@@ -1,6 +1,5 @@
 // crates/crucible-mcp/src/lib.rs
 pub mod database;
-pub mod embeddings;
 pub mod errors;
 pub mod integration;
 pub mod obsidian_client;
@@ -16,8 +15,8 @@ use serde_json::Value;
 use std::sync::Arc;
 
 // Re-export important types for external use
+pub use crucible_llm::embeddings::{self, EmbeddingConfig, EmbeddingProvider};
 pub use database::EmbeddingDatabase;
-pub use embeddings::{EmbeddingConfig, EmbeddingProvider, create_provider};
 pub use integration::*;
 pub use protocol::{McpProtocolHandler, StdioMcpServer};
 pub use service::CrucibleMcpService;

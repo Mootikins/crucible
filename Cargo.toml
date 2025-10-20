@@ -11,6 +11,7 @@ members = [
     "crates/crucible-watch",
     "crates/crucible-a2a",
     "crates/crucible-daemon",
+    "crates/crucible-llm",
 ]
 
 [workspace.package]

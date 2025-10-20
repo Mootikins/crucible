@@ -13,8 +13,7 @@
 //!   EMBEDDING_ENDPOINT - Endpoint URL (default: https://llama.krohnos.io)
 
 use anyhow::{Context, Result};
-use crucible_mcp::embeddings::{EmbeddingConfig, EmbeddingProvider};
-use crucible_mcp::embeddings::ollama::OllamaProvider;
+use crucible_llm::embeddings::{EmbeddingConfig, EmbeddingProvider, OllamaProvider};
 use std::path::PathBuf;
 use std::time::Duration;
 
