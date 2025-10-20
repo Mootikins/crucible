@@ -25,8 +25,7 @@
 /home/moot/crucible/docs/
 ├── TUI_ARCHITECTURE.md           # Full design document
 ├── TUI_IMPLEMENTATION_SUMMARY.md # Implementation guide
-├── TUI_DELIVERABLES.md           # This summary
-└── POC_ARCHITECTURE.md           # Overall PoC context
+└── TUI_QUICK_REFERENCE.md        # This quick reference
 ```
 
 ## Key Data Structures

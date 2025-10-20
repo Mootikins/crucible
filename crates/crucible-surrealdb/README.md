@@ -191,9 +191,7 @@ let nodes = db.graph_traversal_query(&query).await?;
 ## Documentation
 
 - **[Schema Design](../../docs/SURREALDB_SCHEMA.md)** - Architecture and design rationale
-- **[Implementation Guide](../../docs/SURREALDB_IMPLEMENTATION.md)** - Step-by-step implementation
 - **[Example Queries](examples/queries.surql)** - 90+ query patterns
-- **[Summary](../../docs/SURREALDB_SUMMARY.md)** - Executive summary
 
 ## Schema Files
 
@@ -289,7 +287,7 @@ database:
 
 ## Contributing
 
-See [SURREALDB_IMPLEMENTATION.md](../../docs/SURREALDB_IMPLEMENTATION.md) for implementation details and contribution guidelines.
+See [Schema Design](../../docs/SURREALDB_SCHEMA.md) for architecture details and contribution guidelines.
 
 ## License
 

@@ -278,7 +278,6 @@ Edit `completer.rs`:
 ## Related Documentation
 
 - [REPL Architecture](/home/moot/crucible/docs/REPL_ARCHITECTURE.md) - Detailed design document
-- [POC Architecture](/home/moot/crucible/docs/POC_ARCHITECTURE.md) - Overall daemon architecture
 - [Project README](/home/moot/crucible/README.md) - Crucible project overview
 
 ## License

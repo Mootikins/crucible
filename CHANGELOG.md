@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Documentation Cleanup**: Comprehensive cleanup and consolidation of project documentation
+  - Archived 10 legacy documentation files from initial POC phase to `/home/moot/Documents/crucible-testing/Archive/2024-10-20-cleanup/`
+  - Archived files include:
+    - `A2A Management - Planning.md`
+    - `FILES.md` (configuration examples documentation)
+    - `PIPELINE_IMPLEMENTATION_SUMMARY.md`
+    - `plan-doc-spec-evaluator.md`
+    - `POC_ARCHITECTURE.md`
+    - `README.md` (archive documentation)
+    - `REPL_SUMMARY.md`
+    - `SURREALDB_IMPLEMENTATION.md`
+    - `SURREALDB_SUMMARY.md`
+    - `TUI_DELIVERABLES.md`
+  - All content preserved for reference - no documentation was deleted
+  - Improved documentation organization and reduced clutter in main repository
+  - Focused active documentation on current project state and architecture
+
 ### Added
 - **CLI Interactive REPL**: Complete port of daemon REPL functionality to CLI crate
   - Interactive REPL with SurrealQL query execution
