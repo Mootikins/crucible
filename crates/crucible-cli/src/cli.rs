@@ -161,6 +161,25 @@ pub enum Commands {
         history: Option<PathBuf>,
     },
 
+    /// Interactive REPL mode with SurrealQL queries and tool execution
+    Repl {
+        /// Database path to use (overrides config)
+        #[arg(long)]
+        db_path: Option<String>,
+
+        /// Tool directory path for Rune scripts
+        #[arg(long)]
+        tool_dir: Option<String>,
+
+        /// Enable verbose output
+        #[arg(short, long)]
+        verbose: bool,
+
+        /// Set output format (table, json, csv)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+    },
+
     // /// Enhanced chat mode with intelligent agent management // Temporarily disabled
     // EnhancedChat {
     //     /// Agent name to use for conversation
