@@ -3,18 +3,25 @@
  *
  * This file demonstrates how to use the McpClient to communicate
  * with the Rust MCP server.
+ *
+ * NOTE: MCP functionality has been deprecated and removed.
+ * This file is kept for reference only and will no longer work.
  */
 
 import { McpClient } from "./client";
 import type { McpTool, CallToolResponse } from "./types";
 
 /**
- * Example 1: Basic client usage
+ * Example 1: Basic client usage (DEPRECATED)
  */
 async function basicExample() {
+  // This example no longer works as MCP functionality has been removed
+  console.error("MCP functionality has been deprecated and removed");
+  return;
+
   // Create the client
   const client = new McpClient({
-    serverPath: "/path/to/crucible-mcp", // Update with actual path
+    serverPath: "/path/to/crucible-mcp", // This no longer exists
     serverArgs: ["--db-path", "/path/to/vault.db"],
     clientName: "example-client",
     clientVersion: "1.0.0",

@@ -38,6 +38,24 @@ impl EmbeddingProvider for TestEmbeddingProvider {
     async fn health_check(&self) -> EmbeddingResult<bool> {
         Ok(true)
     }
+
+    async fn list_models(&self) -> EmbeddingResult<Vec<crucible_mcp::embeddings::provider::ModelInfo>> {
+        Ok(vec![crucible_mcp::embeddings::provider::ModelInfo {
+            name: "test-model".to_string(),
+            display_name: Some("Test Model".to_string()),
+            family: None,
+            dimensions: Some(384),
+            size_bytes: None,
+            parameter_size: None,
+            quantization: None,
+            format: None,
+            modified_at: None,
+            digest: None,
+            max_tokens: None,
+            recommended: true,
+            metadata: None,
+        }])
+    }
 }
 
 /// Create a test file with multiple tools for handler generation

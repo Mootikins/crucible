@@ -1,5 +1,8 @@
 /**
  * MCP Client tests
+ *
+ * DEPRECATED: MCP functionality has been removed from the codebase.
+ * These tests are kept for reference only and will no longer pass.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";

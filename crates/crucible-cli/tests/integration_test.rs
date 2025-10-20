@@ -27,7 +27,7 @@ fn test_stats_command_with_empty_vault() {
     
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
     cmd.arg("--vault-path").arg(vault.vault_path_str())
-        .arg("--database").arg(vault.db_path_str())
+        .arg("--db-path").arg(vault.db_path_str())
         .arg("stats")
         .assert()
         .success();
@@ -39,7 +39,7 @@ fn test_note_list_empty() {
     
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
     cmd.arg("--vault-path").arg(vault.vault_path_str())
-        .arg("--database").arg(vault.db_path_str())
+        .arg("--db-path").arg(vault.db_path_str())
         .arg("note")
         .arg("list")
         .assert()
@@ -53,7 +53,7 @@ fn test_note_create() {
     
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
     cmd.arg("--vault-path").arg(vault.vault_path_str())
-        .arg("--database").arg(vault.db_path_str())
+        .arg("--db-path").arg(vault.db_path_str())
         .arg("note")
         .arg("create")
         .arg(note_path)
@@ -93,7 +93,7 @@ fn test_missing_vault_path() {
     // Use a nonexistent vault path
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
     cmd.arg("--vault-path").arg("/nonexistent/path")
-        .arg("--database").arg(vault.db_path_str())
+        .arg("--db-path").arg(vault.db_path_str())
         .arg("stats")
         .assert()
         .success(); // Should succeed but show empty stats

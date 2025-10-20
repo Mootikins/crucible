@@ -4,7 +4,7 @@ use crate::{events::FileEvent, traits::EventHandler, error::{Error, Result}};
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 /// Composite handler that coordinates multiple event handlers.
 pub struct CompositeHandler {

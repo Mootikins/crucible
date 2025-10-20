@@ -8,7 +8,9 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use crucible_mcp::embeddings::{EmbeddingProvider, create_provider, EmbeddingConfig};
+//! // DEPRECATED: MCP functionality has been removed
+//! // This example is for historical reference only
+//! use crucible_llm::embeddings::{EmbeddingProvider, create_provider, EmbeddingConfig};
 //! use std::sync::Arc;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -454,7 +456,7 @@ impl EmbeddingResponse {
     /// # Example
     ///
     /// ```rust
-    /// use crucible_mcp::embeddings::EmbeddingResponse;
+    /// use crucible_llm::embeddings::EmbeddingResponse;
     ///
     /// let embedding = vec![0.1, 0.2, 0.3, 0.4];
     /// let response = EmbeddingResponse::new(embedding, "test-model".to_string());
@@ -496,7 +498,7 @@ impl EmbeddingResponse {
     /// # Example
     ///
     /// ```rust
-    /// use crucible_mcp::embeddings::EmbeddingResponse;
+    /// use crucible_llm::embeddings::EmbeddingResponse;
     ///
     /// let response = EmbeddingResponse::new(vec![0.1; 768], "nomic-embed-text".to_string());
     /// assert!(response.validate_dimensions(768).is_ok());
@@ -565,7 +567,7 @@ impl EmbeddingResponse {
 ///
 /// ```rust,no_run
 /// use async_trait::async_trait;
-/// use crucible_mcp::embeddings::{EmbeddingProvider, EmbeddingResponse, EmbeddingResult};
+/// use crucible_llm::embeddings::{EmbeddingProvider, EmbeddingResponse, EmbeddingResult};
 ///
 /// struct MyProvider {
 ///     model: String,
@@ -625,7 +627,7 @@ pub trait EmbeddingProvider: Send + Sync {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use crucible_mcp::embeddings::{EmbeddingProvider, create_provider, EmbeddingConfig};
+    /// # use crucible_llm::embeddings::{EmbeddingProvider, create_provider, EmbeddingConfig};
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = EmbeddingConfig::default();
     /// let provider = create_provider(config).await?;
@@ -661,7 +663,7 @@ pub trait EmbeddingProvider: Send + Sync {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use crucible_mcp::embeddings::{EmbeddingProvider, create_provider, EmbeddingConfig};
+    /// # use crucible_llm::embeddings::{EmbeddingProvider, create_provider, EmbeddingConfig};
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = EmbeddingConfig::default();
     /// let provider = create_provider(config).await?;
@@ -688,7 +690,7 @@ pub trait EmbeddingProvider: Send + Sync {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use crucible_mcp::embeddings::{EmbeddingProvider, create_provider, EmbeddingConfig};
+    /// # use crucible_llm::embeddings::{EmbeddingProvider, create_provider, EmbeddingConfig};
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = EmbeddingConfig::default();
     /// let provider = create_provider(config).await?;
@@ -708,7 +710,7 @@ pub trait EmbeddingProvider: Send + Sync {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use crucible_mcp::embeddings::{EmbeddingProvider, create_provider, EmbeddingConfig};
+    /// # use crucible_llm::embeddings::{EmbeddingProvider, create_provider, EmbeddingConfig};
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = EmbeddingConfig::default();
     /// let provider = create_provider(config).await?;
@@ -728,7 +730,7 @@ pub trait EmbeddingProvider: Send + Sync {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use crucible_mcp::embeddings::{EmbeddingProvider, create_provider, EmbeddingConfig};
+    /// # use crucible_llm::embeddings::{EmbeddingProvider, create_provider, EmbeddingConfig};
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = EmbeddingConfig::default();
     /// let provider = create_provider(config).await?;
@@ -749,7 +751,7 @@ pub trait EmbeddingProvider: Send + Sync {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use crucible_mcp::embeddings::{EmbeddingProvider, create_provider, EmbeddingConfig};
+    /// # use crucible_llm::embeddings::{EmbeddingProvider, create_provider, EmbeddingConfig};
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = EmbeddingConfig::default();
     /// let provider = create_provider(config).await?;
@@ -803,7 +805,7 @@ pub trait EmbeddingProvider: Send + Sync {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use crucible_mcp::embeddings::{EmbeddingProvider, create_provider, EmbeddingConfig};
+    /// # use crucible_llm::embeddings::{EmbeddingProvider, create_provider, EmbeddingConfig};
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = EmbeddingConfig::default();
     /// let provider = create_provider(config).await?;

@@ -61,7 +61,8 @@
 
   "_usage": [
     "Save this file as crucible-config.json",
-    "Run: CRUCIBLE_CONFIG_PATH=./crucible-config.json crucible-mcp-server",
-    "Or: crucible-mcp-server --config ./crucible-config.json"
+    "DEPRECATED: crucible-mcp-server no longer exists",
+    "Migration: Use the new crucible-services architecture instead",
+    "See documentation for migration instructions"
   ]
 }

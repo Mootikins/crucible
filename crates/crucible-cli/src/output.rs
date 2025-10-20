@@ -1,8 +1,8 @@
 use anyhow::Result;
 use colored::Colorize;
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Cell, Color, Table};
-use crucible_mcp::types::SearchResultWithScore;
 use serde_json;
+use crate::interactive::SearchResultWithScore;
 
 /// Format search results
 pub fn format_search_results(

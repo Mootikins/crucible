@@ -1,8 +1,8 @@
 use anyhow::Result;
-use crucible_mcp::database::EmbeddingDatabase;
-use crucible_mcp::embeddings::create_provider;
+use crucible_core::database::{Database, SearchOptions};
 use crate::config::CliConfig;
 use crate::output;
+use crate::interactive::SearchResultWithScore;
 use indicatif::{ProgressBar, ProgressStyle};
 
 pub async fn execute(
@@ -18,32 +18,44 @@ pub async fn execute(
             .template("{spinner:.green} {msg}")
             .unwrap(),
     );
-    
-    pb.set_message("Generating query embedding...");
+
+    pb.set_message("Searching vault...");
     pb.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    // Create embedding provider
-    let provider = create_provider(config.to_embedding_config()?).await?;
-    
-    // Generate embedding for query
-    let response = provider.embed(&query).await?;
-    pb.set_message(format!("Searching {} documents...", "vault"));
-    
-    // Search database
-    let db = EmbeddingDatabase::new(&config.database_path_str()?).await?;
-    let results = db.search_similar(&response.embedding, top_k).await?;
-    
+    // Search database using core Database interface
+    let db = Database::new(&config.database_path_str()?).await?;
+
+    let search_options = SearchOptions {
+        limit: Some(top_k),
+        offset: Some(0),
+        filters: None,
+    };
+
+    let search_results = db.search(&query, search_options).await?;
     pb.finish_and_clear();
-    
-    if results.is_empty() {
-        println!("No results found. Make sure your vault is indexed with embeddings.");
+
+    if search_results.is_empty() {
+        println!("No results found. Make sure your vault is indexed.");
         println!("Run: crucible index");
         return Ok(());
     }
-    
+
+    // Convert to compatibility format
+    let results: Vec<SearchResultWithScore> = search_results
+        .into_iter()
+        .map(|result| SearchResultWithScore {
+            id: result.document_id.0,
+            title: result.document_id.0.split('/').next_back()
+                .unwrap_or(&result.document_id.0)
+                .to_string(),
+            content: result.snippet.unwrap_or_default(),
+            score: result.score,
+        })
+        .collect();
+
     // Output results
     let output = output::format_search_results(&results, &format, show_scores, true)?;
     println!("{}", output);
-    
+
     Ok(())
 }
