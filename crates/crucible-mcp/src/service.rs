@@ -1895,6 +1895,10 @@ mod tests {
         async fn health_check(&self) -> EmbeddingResult<bool> {
             Ok(true)
         }
+
+        async fn list_models(&self) -> EmbeddingResult<Vec<crate::embeddings::provider::ModelInfo>> {
+            Ok(vec![crate::embeddings::provider::ModelInfo::new("test-model")])
+        }
     }
 
     #[tokio::test]

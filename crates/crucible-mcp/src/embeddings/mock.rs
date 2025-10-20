@@ -118,6 +118,36 @@ impl EmbeddingProvider for MockEmbeddingProvider {
     fn provider_name(&self) -> &str {
         "mock"
     }
+
+    async fn list_models(&self) -> EmbeddingResult<Vec<crate::embeddings::provider::ModelInfo>> {
+        use crate::embeddings::provider::{ModelFamily, ModelInfo, ParameterSize};
+
+        // Return a hardcoded list of test models
+        Ok(vec![
+            ModelInfo::builder()
+                .name("mock-test-model")
+                .display_name("Mock Test Model")
+                .dimensions(768)
+                .family(ModelFamily::Bert)
+                .parameter_size(ParameterSize::new(137, true)) // 137M
+                .recommended(true)
+                .build(),
+            ModelInfo::builder()
+                .name("mock-small-model")
+                .display_name("Mock Small Model")
+                .dimensions(384)
+                .family(ModelFamily::Bert)
+                .parameter_size(ParameterSize::new(50, true)) // 50M
+                .build(),
+            ModelInfo::builder()
+                .name("mock-large-model")
+                .display_name("Mock Large Model")
+                .dimensions(1536)
+                .family(ModelFamily::Gpt)
+                .parameter_size(ParameterSize::new(1, false)) // 1B
+                .build(),
+        ])
+    }
 }
 
 #[cfg(test)]

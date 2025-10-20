@@ -29,9 +29,388 @@
 //! ```
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::error::EmbeddingResult;
+
+/// Model family or architecture type
+///
+/// Categorizes models by their underlying architecture. This is useful for
+/// understanding compatibility, expected performance characteristics, and
+/// appropriate use cases.
+///
+/// # Design Note
+///
+/// This enum is non-exhaustive to allow adding new architectures without
+/// breaking changes. Unknown architectures are captured in the `Other` variant.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum ModelFamily {
+    /// BERT-based models (Bidirectional Encoder Representations from Transformers)
+    ///
+    /// Examples: nomic-embed-text, sentence-transformers
+    Bert,
+
+    /// GPT-based models (Generative Pre-trained Transformer)
+    ///
+    /// Examples: text-embedding-ada-002, text-embedding-3-small
+    Gpt,
+
+    /// LLaMA-based models
+    ///
+    /// Examples: llama2-embedding
+    Llama,
+
+    /// T5-based models (Text-to-Text Transfer Transformer)
+    T5,
+
+    /// CLIP-based models (Contrastive Language-Image Pre-training)
+    ///
+    /// Multimodal models for text and image embeddings
+    Clip,
+
+    /// MPNet-based models
+    Mpnet,
+
+    /// RoBERTa-based models
+    Roberta,
+
+    /// Other or unknown architecture
+    ///
+    /// Contains the architecture name as reported by the provider
+    Other(String),
+}
+
+impl ModelFamily {
+    /// Parse a model family from a string
+    ///
+    /// Case-insensitive matching against known families.
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "bert" => Self::Bert,
+            "gpt" => Self::Gpt,
+            "llama" => Self::Llama,
+            "t5" => Self::T5,
+            "clip" => Self::Clip,
+            "mpnet" => Self::Mpnet,
+            "roberta" => Self::Roberta,
+            other => Self::Other(other.to_string()),
+        }
+    }
+
+    /// Get the canonical string representation of this family
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Bert => "bert",
+            Self::Gpt => "gpt",
+            Self::Llama => "llama",
+            Self::T5 => "t5",
+            Self::Clip => "clip",
+            Self::Mpnet => "mpnet",
+            Self::Roberta => "roberta",
+            Self::Other(s) => s.as_str(),
+        }
+    }
+}
+
+/// Parameter size representation
+///
+/// Represents the number of trainable parameters in a model using standard
+/// suffixes (M for million, B for billion). This is stored as a structured
+/// type rather than a raw string to enable sorting and comparison.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ParameterSize {
+    /// The numeric value (e.g., 137 for "137M")
+    value: u32,
+
+    /// The unit (Million or Billion)
+    unit: ParameterUnit,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+enum ParameterUnit {
+    Million,  // M
+    Billion,  // B
+}
+
+impl ParameterSize {
+    /// Create a new parameter size
+    pub fn new(value: u32, millions: bool) -> Self {
+        Self {
+            value,
+            unit: if millions { ParameterUnit::Million } else { ParameterUnit::Billion },
+        }
+    }
+
+    /// Parse a parameter size from a string like "137M" or "7B"
+    pub fn from_str(s: &str) -> Option<Self> {
+        let s = s.trim().to_uppercase();
+
+        if let Some(value_str) = s.strip_suffix('M') {
+            let value = value_str.parse::<f32>().ok()?;
+            Some(Self::new((value).round() as u32, true))
+        } else if let Some(value_str) = s.strip_suffix('B') {
+            let value = value_str.parse::<f32>().ok()?;
+            Some(Self::new((value).round() as u32, false))
+        } else {
+            None
+        }
+    }
+
+    /// Get the approximate parameter count as an integer
+    pub fn approximate_count(&self) -> u64 {
+        match self.unit {
+            ParameterUnit::Million => self.value as u64 * 1_000_000,
+            ParameterUnit::Billion => self.value as u64 * 1_000_000_000,
+        }
+    }
+}
+
+impl std::fmt::Display for ParameterSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.unit {
+            ParameterUnit::Million => write!(f, "{}M", self.value),
+            ParameterUnit::Billion => write!(f, "{}B", self.value),
+        }
+    }
+}
+
+impl PartialOrd for ParameterSize {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ParameterSize {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.approximate_count().cmp(&other.approximate_count())
+    }
+}
+
+/// Information about an available embedding model
+///
+/// This struct represents metadata about embedding models available from a provider.
+/// It supports optional fields to accommodate different provider APIs (Ollama, OpenAI, etc.)
+/// and is serializable for caching and configuration purposes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ModelInfo {
+    /// Model identifier (e.g., "nomic-embed-text:latest", "text-embedding-3-small")
+    pub name: String,
+
+    /// Human-readable display name (optional)
+    pub display_name: Option<String>,
+
+    /// Model family or architecture (e.g., "bert", "gpt", "llama")
+    pub family: Option<ModelFamily>,
+
+    /// Embedding dimensionality
+    pub dimensions: Option<usize>,
+
+    /// Model size in bytes (on disk or in memory)
+    pub size_bytes: Option<u64>,
+
+    /// Parameter count (e.g., "137M", "7B")
+    pub parameter_size: Option<ParameterSize>,
+
+    /// Quantization level (e.g., "Q4_0", "Q8_0", "fp16")
+    pub quantization: Option<String>,
+
+    /// Model format (e.g., "gguf", "safetensors", "pytorch")
+    pub format: Option<String>,
+
+    /// When the model was last modified or pulled
+    pub modified_at: Option<DateTime<Utc>>,
+
+    /// Content digest or hash (e.g., "sha256:c1f958f8c3e8...")
+    pub digest: Option<String>,
+
+    /// Maximum context length (tokens)
+    pub max_tokens: Option<usize>,
+
+    /// Whether this model is recommended or featured by the provider
+    pub recommended: bool,
+
+    /// Additional provider-specific metadata
+    pub metadata: Option<serde_json::Value>,
+}
+
+impl ModelInfo {
+    /// Create a new ModelInfo with just a name (minimal constructor)
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            display_name: None,
+            family: None,
+            dimensions: None,
+            size_bytes: None,
+            parameter_size: None,
+            quantization: None,
+            format: None,
+            modified_at: None,
+            digest: None,
+            max_tokens: None,
+            recommended: false,
+            metadata: None,
+        }
+    }
+
+    /// Create a builder for constructing ModelInfo instances
+    pub fn builder() -> ModelInfoBuilder {
+        ModelInfoBuilder::default()
+    }
+
+    /// Get the display name, falling back to name if not set
+    pub fn display_name(&self) -> &str {
+        self.display_name.as_deref().unwrap_or(&self.name)
+    }
+
+    /// Check if this model is compatible with a required dimension count
+    pub fn is_compatible_dimensions(&self, required_dims: usize) -> bool {
+        self.dimensions.map_or(true, |dims| dims == required_dims)
+    }
+
+    /// Format the model size as a human-readable string
+    pub fn formatted_size(&self) -> Option<String> {
+        self.size_bytes.map(|bytes| {
+            const KB: u64 = 1024;
+            const MB: u64 = KB * 1024;
+            const GB: u64 = MB * 1024;
+
+            if bytes >= GB {
+                format!("{:.1} GB", bytes as f64 / GB as f64)
+            } else if bytes >= MB {
+                format!("{} MB", bytes / MB)
+            } else if bytes >= KB {
+                format!("{} KB", bytes / KB)
+            } else {
+                format!("{} B", bytes)
+            }
+        })
+    }
+}
+
+/// Builder for ModelInfo instances
+#[derive(Default)]
+pub struct ModelInfoBuilder {
+    name: Option<String>,
+    display_name: Option<String>,
+    family: Option<ModelFamily>,
+    dimensions: Option<usize>,
+    size_bytes: Option<u64>,
+    parameter_size: Option<ParameterSize>,
+    quantization: Option<String>,
+    format: Option<String>,
+    modified_at: Option<DateTime<Utc>>,
+    digest: Option<String>,
+    max_tokens: Option<usize>,
+    recommended: bool,
+    metadata: Option<serde_json::Value>,
+}
+
+impl ModelInfoBuilder {
+    /// Set the model name (required)
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Set the display name
+    pub fn display_name(mut self, display_name: impl Into<String>) -> Self {
+        self.display_name = Some(display_name.into());
+        self
+    }
+
+    /// Set the model family
+    pub fn family(mut self, family: ModelFamily) -> Self {
+        self.family = Some(family);
+        self
+    }
+
+    /// Set the embedding dimensions
+    pub fn dimensions(mut self, dimensions: usize) -> Self {
+        self.dimensions = Some(dimensions);
+        self
+    }
+
+    /// Set the model size in bytes
+    pub fn size_bytes(mut self, size_bytes: u64) -> Self {
+        self.size_bytes = Some(size_bytes);
+        self
+    }
+
+    /// Set the parameter size
+    pub fn parameter_size(mut self, parameter_size: ParameterSize) -> Self {
+        self.parameter_size = Some(parameter_size);
+        self
+    }
+
+    /// Set the quantization level
+    pub fn quantization(mut self, quantization: impl Into<String>) -> Self {
+        self.quantization = Some(quantization.into());
+        self
+    }
+
+    /// Set the model format
+    pub fn format(mut self, format: impl Into<String>) -> Self {
+        self.format = Some(format.into());
+        self
+    }
+
+    /// Set the modification timestamp
+    pub fn modified_at(mut self, modified_at: DateTime<Utc>) -> Self {
+        self.modified_at = Some(modified_at);
+        self
+    }
+
+    /// Set the digest/hash
+    pub fn digest(mut self, digest: impl Into<String>) -> Self {
+        self.digest = Some(digest.into());
+        self
+    }
+
+    /// Set the maximum token count
+    pub fn max_tokens(mut self, max_tokens: usize) -> Self {
+        self.max_tokens = Some(max_tokens);
+        self
+    }
+
+    /// Mark as recommended
+    pub fn recommended(mut self, recommended: bool) -> Self {
+        self.recommended = recommended;
+        self
+    }
+
+    /// Set additional metadata
+    pub fn metadata(mut self, metadata: serde_json::Value) -> Self {
+        self.metadata = Some(metadata);
+        self
+    }
+
+    /// Build the ModelInfo instance
+    ///
+    /// # Panics
+    ///
+    /// Panics if `name` was not set
+    pub fn build(self) -> ModelInfo {
+        ModelInfo {
+            name: self.name.expect("name is required"),
+            display_name: self.display_name,
+            family: self.family,
+            dimensions: self.dimensions,
+            size_bytes: self.size_bytes,
+            parameter_size: self.parameter_size,
+            quantization: self.quantization,
+            format: self.format,
+            modified_at: self.modified_at,
+            digest: self.digest,
+            max_tokens: self.max_tokens,
+            recommended: self.recommended,
+            metadata: self.metadata,
+        }
+    }
+}
 
 /// Response from an embedding API containing the generated vector
 ///
@@ -388,6 +767,65 @@ pub trait EmbeddingProvider: Send + Sync {
             Err(_) => Ok(false),
         }
     }
+
+    /// List available models from this provider
+    ///
+    /// Queries the provider's API to discover what embedding models are available.
+    /// This is useful for:
+    /// - Model selection UI
+    /// - Validation of configured model names
+    /// - Discovering model capabilities (dimensions, size, etc.)
+    /// - Cache warming or pre-configuration
+    ///
+    /// # Returns
+    ///
+    /// A vector of `ModelInfo` structs describing available models
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The provider API is unavailable
+    /// - Authentication fails
+    /// - The response cannot be parsed
+    /// - A timeout occurs
+    /// - Model discovery is not supported by this provider
+    ///
+    /// # Provider Implementation Notes
+    ///
+    /// Providers should return as much metadata as available from their API:
+    /// - **Required fields**: `name` (always required)
+    /// - **Highly recommended**: `dimensions` (critical for embeddings)
+    /// - **Optional but useful**: All other fields
+    ///
+    /// If a provider doesn't support model discovery, it should return
+    /// `EmbeddingError::ModelDiscoveryNotSupported`.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use crucible_mcp::embeddings::{EmbeddingProvider, create_provider, EmbeddingConfig};
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let config = EmbeddingConfig::default();
+    /// let provider = create_provider(config).await?;
+    ///
+    /// // List all available models
+    /// let models = provider.list_models().await?;
+    ///
+    /// for model in models {
+    ///     println!("Model: {} ({} dims)",
+    ///         model.display_name(),
+    ///         model.dimensions.map_or("unknown".to_string(), |d| d.to_string())
+    ///     );
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Performance Considerations
+    ///
+    /// This method may make network requests and should be called infrequently.
+    /// Consider caching the results if you need to access model information repeatedly.
+    async fn list_models(&self) -> EmbeddingResult<Vec<ModelInfo>>;
 }
 
 #[cfg(test)]
