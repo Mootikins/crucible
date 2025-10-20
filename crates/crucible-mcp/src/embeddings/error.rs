@@ -48,6 +48,18 @@ pub enum EmbeddingError {
     #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
 
+    /// Model discovery not supported by this provider
+    #[error("Model discovery not supported by provider: {0}")]
+    ModelDiscoveryNotSupported(String),
+
+    /// Model not found
+    #[error("Model not found: {0}")]
+    ModelNotFound(String),
+
+    /// Invalid model metadata
+    #[error("Invalid model metadata: {0}")]
+    InvalidModelMetadata(String),
+
     /// Generic error
     #[error("Embedding error: {0}")]
     Other(String),
@@ -74,6 +86,9 @@ impl EmbeddingError {
             EmbeddingError::InvalidResponse(_) => false,
             EmbeddingError::ProviderError { .. } => false,
             EmbeddingError::SerializationError(_) => false,
+            EmbeddingError::ModelDiscoveryNotSupported(_) => false,
+            EmbeddingError::ModelNotFound(_) => false,
+            EmbeddingError::InvalidModelMetadata(_) => false,
             EmbeddingError::Other(_) => false,
         }
     }

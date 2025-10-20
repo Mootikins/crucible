@@ -234,6 +234,14 @@ impl EmbeddingProvider for OpenAIProvider {
     fn dimensions(&self) -> usize {
         self.config.expected_dimensions()
     }
+
+    async fn list_models(&self) -> EmbeddingResult<Vec<super::provider::ModelInfo>> {
+        // For now, return a stub implementation
+        // OpenAI doesn't focus on Ollama, so we return a minimal error
+        Err(EmbeddingError::ModelDiscoveryNotSupported(
+            "OpenAI".to_string()
+        ))
+    }
 }
 
 impl OpenAIProvider {
