@@ -85,7 +85,7 @@ flume = "0.11"
 
 [dev-dependencies]
 crucible-mcp = { path = "../crucible-mcp" }
-crucible-llm = { path = "../crucible-llm" }
+crucible-llm = { path = "../crucible-llm", features = ["test-utils"] }
 tempfile = { workspace = true }
 tokio-test = "0.4"
 reqwest = { version = "0.12", features = ["json"] }
