@@ -3,13 +3,13 @@ use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "crucible")]
-#[command(about = "Crucible CLI - Knowledge management with semantic search")]
+#[command(about = "Crucible CLI - Interactive knowledge management with semantic search")]
 #[command(version)]
-#[command(arg_required_else_help = true)]
+#[command(arg_required_else_help = false)]
 pub struct Cli {
-    /// Subcommand to execute
+    /// Subcommand to execute (defaults to REPL if not provided)
     #[command(subcommand)]
-    pub command: Commands,
+    pub command: Option<Commands>,
 
     /// Enable verbose logging
     #[arg(short, long, global = true)]
@@ -30,6 +30,18 @@ pub struct Cli {
     /// Embedding model name (overrides config file)
     #[arg(long, global = true)]
     pub embedding_model: Option<String>,
+
+    /// Database path to use (overrides config)
+    #[arg(long, global = true)]
+    pub db_path: Option<String>,
+
+    /// Tool directory path for Rune scripts
+    #[arg(long, global = true)]
+    pub tool_dir: Option<String>,
+
+    /// Set output format (table, json, csv)
+    #[arg(short = 'f', long, global = true, default_value = "table")]
+    pub format: String,
 }
 
 #[derive(Subcommand)]
@@ -161,25 +173,7 @@ pub enum Commands {
         history: Option<PathBuf>,
     },
 
-    /// Interactive REPL mode with SurrealQL queries and tool execution
-    Repl {
-        /// Database path to use (overrides config)
-        #[arg(long)]
-        db_path: Option<String>,
-
-        /// Tool directory path for Rune scripts
-        #[arg(long)]
-        tool_dir: Option<String>,
-
-        /// Enable verbose output
-        #[arg(short, long)]
-        verbose: bool,
-
-        /// Set output format (table, json, csv)
-        #[arg(short = 'f', long, default_value = "table")]
-        format: String,
-    },
-
+  
     // /// Enhanced chat mode with intelligent agent management // Temporarily disabled
     // EnhancedChat {
     //     /// Agent name to use for conversation
