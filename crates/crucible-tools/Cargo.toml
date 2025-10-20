@@ -1,0 +1,57 @@
+[package]
+name = "crucible-tools"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+description = "Static system tools for Crucible knowledge management"
+
+[dependencies]
+# Core crates
+crucible-core = { workspace = true }
+crucible-config = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Pattern matching
+regex = { workspace = true }
+glob = { workspace = true }
+
+# Lazy static for static initializations
+lazy_static = { workspace = true }
+
+# Database and embeddings
+duckdb = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+
+# HTTP client for external integrations
+reqwest = { workspace = true }
+urlencoding = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.8"
+tracing-subscriber = "0.3"
+tokio-util = "0.7"
+
+[features]
+default = ["embeddings"]
+embeddings = []
+database = []
+search = []
+vault = []
