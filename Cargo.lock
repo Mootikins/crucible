@@ -1841,6 +1841,8 @@ dependencies = [
  "crossterm 0.29.0",
  "crucible-config",
  "crucible-core",
+ "crucible-llm",
+ "crucible-mcp",
  "crucible-surrealdb",
  "crucible-watch",
  "csv",
@@ -1852,6 +1854,7 @@ dependencies = [
  "ratatui",
  "reedline",
  "regex",
+ "reqwest",
  "rune 0.13.4",
  "serde",
  "serde_json",
@@ -1867,6 +1870,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "crucible-llm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "mockito",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-test",
+ "tracing",
+]
+
+[[package]]
 name = "crucible-mcp"
 version = "0.1.0"
 dependencies = [
@@ -1876,6 +1897,7 @@ dependencies = [
  "chrono",
  "crucible-config",
  "crucible-core",
+ "crucible-llm",
  "crucible-surrealdb",
  "duckdb",
  "futures",
