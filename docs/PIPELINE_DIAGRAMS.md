@@ -506,5 +506,3 @@ Total time: ~150ms from save to indexed
 
 **Related Documents**:
 - [Architecture Design](./docs/ASYNC_PIPELINE_ARCHITECTURE.md)
-- [Implementation Summary](./docs/PIPELINE_IMPLEMENTATION_SUMMARY.md)
-- [PoC Architecture](./docs/POC_ARCHITECTURE.md)
