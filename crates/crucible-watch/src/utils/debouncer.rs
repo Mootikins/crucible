@@ -1,7 +1,7 @@
 //! Event debouncing for reducing event spam.
 
-use crate::{events::FileEvent, error::Result};
-use std::collections::{HashMap, VecDeque};
+use crate::events::FileEvent;
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tracing::{debug, trace};
 
@@ -70,7 +70,7 @@ impl Debouncer {
             crate::utils::EventUtils::deduplication_key(&event)
         } else {
             // Use unique key if deduplication is disabled
-            format!("{}:{}", event.path.display(), event.timestamp.timestamp_nanos())
+            format!("{}:{}", event.path.display(), event.timestamp.timestamp_nanos_opt().unwrap_or(0))
         };
 
         let now = Instant::now();
@@ -173,7 +173,7 @@ impl Debouncer {
 
     /// Force emit all pending events immediately.
     pub async fn flush(&mut self) -> Vec<FileEvent> {
-        let now = Instant::now();
+        let _now = Instant::now();
         let mut events = Vec::new();
 
         // Collect all pending events

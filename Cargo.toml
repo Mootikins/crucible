@@ -3,8 +3,9 @@ resolver = "2"
 members = [
     "crates/crucible-core",
     "crates/crucible-tauri",
-    "crates/crucible-mcp",
-    "crates/crucible-plugins", "crates/crucible-mcp-client", "crates/crucible-cli",
+    "crates/crucible-plugins",
+    "crates/crucible-mcp-client",
+    "crates/crucible-cli",
     "crates/crucible-sync",
     "crates/crucible-surrealdb",
     "crates/crucible-config",
@@ -12,6 +13,10 @@ members = [
     "crates/crucible-a2a",
     "crates/crucible-daemon",
     "crates/crucible-llm",
+    "crates/crucible-services",
+    "crates/crucible-rune-macros",
+    "crates/crucible-rune",
+    "crates/crucible-tools",
 ]
 
 [workspace.package]
@@ -40,5 +45,81 @@ rand = "0.8"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 async-trait = "0.1"
+futures = "0.3"
+
+# Database dependencies
+duckdb = { version = "1.1", features = ["bundled", "vtab", "json", "parquet"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+urlencoding = "2.1"
+
+# Vector operations
+ndarray = "0.16"
+
+# Binary serialization
+bincode = "2.0"
+
+# JSON Schema validation
+jsonschema = "0.33"
+schemars = "1.0"
+
+# Rune scripting language
+rune-modules = "0.13"
+
+# Configuration management
+config = "0.15"
+
+# Performance utilities
+dashmap = "6.1"
+parking_lot = "0.12"
+lazy_static = "1.4"
+
+# File system watching
+notify = "8.2"
+notify-debouncer-full = "0.5"
+
+# Additional utilities
+globset = "0.4"
+num_cpus = "1.16"
+flume = "0.11"
+pulldown-cmark = "0.11"
+md5 = "0.7"
+toml = "0.8"
+futures-util = "0.3"
+tokio-stream = "0.1"
+
+# Metrics and monitoring
+metrics = "0.24"
+metrics-exporter-prometheus = "0.15"
+
+# Web framework for health checks
+axum = "0.8"
+tower = "0.5"
+
+# Testing utilities
+criterion = { version = "0.5", features = ["html_reports"] }
+trybuild = "1.0"
+tokio-test = "0.4"
+mockito = "1.0"
+tracing-test = "0.2"
+
+# Database
+surrealdb = { version = "2", features = ["kv-mem"] }
+comfy-table = "7.2"
+
+# Procedural macro dependencies
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "2.0", features = ["full"] }
+
+# Internal workspace crates
+crucible-core = { path = "crates/crucible-core" }
 crucible-config = { path = "crates/crucible-config" }
+crucible-services = { path = "crates/crucible-services" }
+crucible-rune = { path = "crates/crucible-rune" }
+crucible-rune-macros = { path = "crates/crucible-rune-macros" }
+crucible-tools = { path = "crates/crucible-tools" }
+crucible-llm = { path = "crates/crucible-llm" }
+crucible-surrealdb = { path = "crates/crucible-surrealdb" }
 

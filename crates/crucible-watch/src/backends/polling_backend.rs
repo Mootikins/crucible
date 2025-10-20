@@ -5,10 +5,11 @@ use crate::{
     error::{Error, Result},
     events::{FileEvent, FileEventKind, EventMetadata},
 };
+
+// Import the WatcherFactory trait
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -52,6 +53,7 @@ pub struct PollingWatcher {
     capabilities: BackendCapabilities,
 }
 
+#[allow(dead_code)]
 impl PollingWatcher {
     /// Create a new polling watcher.
     pub fn new() -> Self {
@@ -81,11 +83,11 @@ impl PollingWatcher {
     /// Start the background polling task.
     async fn start_polling_task(&mut self) -> Result<()> {
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
-        let event_sender = self.event_sender.clone()
+        let _event_sender = self.event_sender.clone()
             .ok_or_else(|| Error::Internal("Event sender not initialized".to_string()))?;
 
         let poll_interval = self.poll_interval;
-        let mut watches_snapshot: HashMap<String, WatchState> = HashMap::new();
+        let _watches_snapshot: HashMap<String, WatchState> = HashMap::new();
 
         let task = tokio::spawn(async move {
             let mut ticker = tokio::time::interval(poll_interval);
@@ -222,7 +224,7 @@ impl PollingWatcher {
 
         let modified_time = metadata.modified().ok();
         let size = Some(metadata.len());
-        let file_path = path.to_string_lossy().to_string();
+        let _file_path = path.to_string_lossy().to_string();
 
         let current_state = FileState {
             modified_time,
@@ -339,7 +341,7 @@ impl FileWatcher for PollingWatcher {
         }
 
         let watch_id = config.id.clone();
-        let path_str = path.to_string_lossy().to_string();
+        let _path_str = path.to_string_lossy().to_string();
         let watch_handle = WatchHandle::new(path.clone());
 
         // Create initial watch state
@@ -371,7 +373,7 @@ impl FileWatcher for PollingWatcher {
         let path_str = handle.path.to_string_lossy().to_string();
         let mut removed = false;
 
-        self.watches.retain(|id, state| {
+        self.watches.retain(|_id, state| {
             if state.config.id == path_str {
                 removed = true;
                 false

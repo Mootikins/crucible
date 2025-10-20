@@ -9,8 +9,6 @@ mod filter;
 pub use debouncer::*;
 pub use queue::*;
 pub use monitor::*;
-pub use batcher::*;
-pub use filter::*;
 
 use crate::events::FileEvent;
 use std::hash::{Hash, Hasher};
@@ -19,6 +17,7 @@ use std::collections::hash_map::DefaultHasher;
 /// Utility functions for file event processing.
 pub struct EventUtils;
 
+#[allow(dead_code)]
 impl EventUtils {
     /// Calculate a hash for a file event.
     pub fn event_hash(event: &FileEvent) -> u64 {
@@ -244,7 +243,7 @@ mod tests {
 
     #[test]
     fn test_duplicate_detection() {
-        let event1 = FileEvent::new(FileEventKind::Created, PathBuf::from("test.txt"));
+        let mut event1 = FileEvent::new(FileEventKind::Created, PathBuf::from("test.txt"));
         let mut event2 = FileEvent::new(FileEventKind::Created, PathBuf::from("test.txt"));
 
         // Set timestamps close together

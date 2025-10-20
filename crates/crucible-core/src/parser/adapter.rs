@@ -3,7 +3,7 @@
 //! This module provides functionality to transform ParsedDocument instances
 //! into SurrealDB-compatible data structures for indexing.
 
-use crate::parser::types::{ParsedDocument, Wikilink, Tag};
+use crate::parser::types::ParsedDocument;
 use serde_json::{Value, Map};
 use anyhow::Result;
 
