@@ -439,6 +439,24 @@ impl EmbeddingProvider for MockEmbeddingProvider {
     async fn health_check(&self) -> EmbeddingResult<bool> {
         Ok(true)
     }
+
+    async fn list_models(&self) -> EmbeddingResult<Vec<crucible_mcp::embeddings::provider::ModelInfo>> {
+        Ok(vec![crucible_mcp::embeddings::provider::ModelInfo {
+            name: "mock-model".to_string(),
+            display_name: Some("Mock Model".to_string()),
+            family: None,
+            dimensions: Some(self.dimensions),
+            size_bytes: None,
+            parameter_size: None,
+            quantization: None,
+            format: None,
+            modified_at: None,
+            digest: None,
+            max_tokens: None,
+            recommended: true,
+            metadata: None,
+        }])
+    }
 }
 
 // =============================================================================

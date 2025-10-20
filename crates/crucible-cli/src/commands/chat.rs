@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use crucible_mcp::{McpServer, create_provider};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{self, Write};
@@ -240,8 +239,6 @@ pub struct ChatSession {
     agent: Agent,
     /// Conversation history
     history: ConversationHistory,
-    /// MCP server for tool access
-    mcp_server: Option<McpServer>,
     /// Agent registry
     agent_registry: AgentRegistry,
     /// LLM backend for generating responses
@@ -283,17 +280,10 @@ impl ChatSession {
 
         let history = ConversationHistory::new(agent.name.clone(), model_name);
 
-        // Initialize MCP server if tools are enabled
-        let mcp_server = if agent.can_use_tools {
-            let embedding_config = config.to_embedding_config()?;
-            let provider = create_provider(embedding_config).await?;
-            let db_path = config.database_path_str()?;
-            let server = McpServer::new(&db_path, provider).await?;
-            server.start().await?;
-            Some(server)
-        } else {
-            None
-        };
+        // MCP functionality has been removed - tools are disabled for now
+        if agent.can_use_tools {
+            warn!("Tool functionality has been disabled - MCP integration removed");
+        }
 
         // Initialize LLM backend (Ollama for now)
         let backend = Some(Arc::new(OllamaBackend::new(config.ollama_endpoint())) as Arc<dyn Backend>);
@@ -302,7 +292,6 @@ impl ChatSession {
             config,
             agent,
             history,
-            mcp_server,
             agent_registry,
             backend,
         })
@@ -385,15 +374,8 @@ impl ChatSession {
                     }
                 },
                 "tools" => {
-                    if self.agent.can_use_tools {
-                        let tools = McpServer::get_tools();
-                        println!("🔧 Available MCP tools:");
-                        for tool in tools {
-                            println!("  - {}: {}", tool.name, tool.description);
-                        }
-                    } else {
-                        println!("🚫 Tools are disabled for current agent '{}'.", self.agent.name);
-                    }
+                    println!("🚫 Tool functionality has been disabled - MCP integration removed");
+                    println!("   Tool support will be available in a future release using crucible-services");
                 },
                 "history" => {
                     self.show_history_summary();
@@ -555,7 +537,7 @@ impl ChatSession {
         println!("  agents           - List available agents");
         println!("  models           - List available models");
         println!("  save             - Save conversation history");
-        println!("  tools            - List available MCP tools");
+        println!("  tools            - Show tool status (currently disabled)");
         println!("  :agent <name>    - Switch to a different agent");
         println!("  :model <name>    - Switch to a different model");
         println!("  history          - Show conversation summary");
@@ -563,7 +545,7 @@ impl ChatSession {
         println!("💡 Tips:");
         println!("  - Use Tab completion for commands (in future versions)");
         println!("  - Conversation history is automatically saved");
-        println!("  - MCP tools allow searching and editing your vault");
+        println!("  - Tool functionality will return in a future release");
         println!("  - Different agents have different system prompts and capabilities");
     }
 

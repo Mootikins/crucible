@@ -75,6 +75,24 @@ impl EmbeddingProvider for MockEmbeddingProvider {
         Ok(results)
     }
 
+    async fn list_models(&self) -> EmbeddingResult<Vec<crucible_mcp::embeddings::provider::ModelInfo>> {
+        Ok(vec![crucible_mcp::embeddings::provider::ModelInfo {
+            name: "mock-test-model".to_string(),
+            display_name: Some("Mock Test Model".to_string()),
+            family: None,
+            dimensions: Some(self.dimensions),
+            size_bytes: None,
+            parameter_size: None,
+            quantization: None,
+            format: None,
+            modified_at: None,
+            digest: None,
+            max_tokens: None,
+            recommended: true,
+            metadata: None,
+        }])
+    }
+
     fn model_name(&self) -> &str {
         &self.model_name
     }
@@ -126,6 +144,13 @@ impl EmbeddingProvider for FailingEmbeddingProvider {
     }
 
     async fn embed_batch(&self, _texts: Vec<String>) -> EmbeddingResult<Vec<EmbeddingResponse>> {
+        Err(crucible_mcp::embeddings::EmbeddingError::ProviderError {
+            provider: "FailingProvider".to_string(),
+            message: self.error_message.clone(),
+        })
+    }
+
+    async fn list_models(&self) -> EmbeddingResult<Vec<crucible_mcp::embeddings::provider::ModelInfo>> {
         Err(crucible_mcp::embeddings::EmbeddingError::ProviderError {
             provider: "FailingProvider".to_string(),
             message: self.error_message.clone(),

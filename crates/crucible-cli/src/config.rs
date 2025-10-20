@@ -1,7 +1,28 @@
 use anyhow::{Context, Result};
-use crucible_mcp::embeddings::{EmbeddingConfig, ProviderType};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::collections::HashMap;
+
+/// Compatibility embedding configuration for service layer
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbeddingConfig {
+    pub provider: ProviderType,
+    pub endpoint: String,
+    pub api_key: Option<String>,
+    pub model: String,
+    pub timeout_secs: u64,
+    pub max_retries: u32,
+    pub batch_size: u32,
+}
+
+/// Embedding provider types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ProviderType {
+    OpenAI,
+    Ollama,
+    Anthropic,
+    Custom(String),
+}
 
 /// CLI configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

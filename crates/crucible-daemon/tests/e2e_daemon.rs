@@ -8,29 +8,27 @@
 //! - File watcher (crucible-watch) detects filesystem events
 //! - Parser (crucible-core/parser) extracts structured data
 //! - Database (crucible-surrealdb) stores and queries notes
-//! - REPL (crucible-daemon/repl) executes commands and queries
-//! - TUI (crucible-daemon/tui) displays results
+//! - Tool execution and query processing
 //!
 //! ## Architecture
 //!
 //! ```text
-//! File System → Watcher → Parser → Database → REPL → TUI
-//!      ↓          ↓         ↓         ↓         ↓      ↓
-//!   .md files  Events  Metadata   Storage  Queries Output
+//! File System → Watcher → Parser → Database → Queries/Tools
+//!      ↓          ↓         ↓         ↓         ↓
+//!   .md files  Events  Metadata   Storage  Results
 //! ```
 //!
 //! ## Test Organization
 //!
 //! Tests are grouped by workflow:
 //! - Complete Workflow Tests: Full file → query lifecycle
-//! - REPL Integration Tests: Command execution with real DB
+//! - Database Integration Tests: Query execution with real DB
 //! - Multi-Component Tests: Concurrent operations, error recovery
 //!
 //! Run with: `cargo test -p crucible-daemon --test e2e_daemon`
 
 use anyhow::Result;
 use crucible_core::parser::{MarkdownParser, PulldownParser, SurrealDBAdapter};
-use crucible_daemon::repl::input::Input;
 use crucible_surrealdb::{EmbeddingMetadata, SurrealEmbeddingDatabase};
 use crucible_watch::{
     prelude::TraitWatchConfig as WatchConfig, EventHandler, FileEvent, FileEventKind,
@@ -241,11 +239,7 @@ impl DaemonHandle {
         Ok(data.map(|d| d.metadata))
     }
 
-    /// Parse a command string (simulating REPL input)
-    fn parse_command(&self, input: &str) -> Result<Input> {
-        Input::parse(input).map_err(|e| anyhow::anyhow!("{:?}", e))
-    }
-
+  
     /// Graceful shutdown
     async fn shutdown(self) -> Result<()> {
         let _ = self.shutdown_tx.send(()).await;
@@ -609,11 +603,11 @@ async fn test_e2e_live_reindexing() -> Result<()> {
 }
 
 // ============================================================================
-// REPL Integration Tests (3 tests)
+// Database Integration Tests (3 tests)
 // ============================================================================
 
 #[tokio::test]
-async fn test_e2e_repl_query_execution() -> Result<()> {
+async fn test_e2e_database_query_execution() -> Result<()> {
     // Test Flow:
     // 1. Create daemon with indexed notes
     // 2. Index several test notes with known data
@@ -652,7 +646,7 @@ async fn test_e2e_repl_query_execution() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_e2e_repl_command_with_db() -> Result<()> {
+async fn test_e2e_database_stats() -> Result<()> {
     // Test Flow:
     // 1. Create daemon instance
     // 2. Index several notes (e.g., 5 notes with various tags)
@@ -693,7 +687,7 @@ async fn test_e2e_repl_command_with_db() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_e2e_repl_tool_execution() -> Result<()> {
+async fn test_e2e_database_tag_search() -> Result<()> {
     // Test Flow:
     // 1. Create daemon instance with indexed notes
     // 2. Index notes with specific tags for testing

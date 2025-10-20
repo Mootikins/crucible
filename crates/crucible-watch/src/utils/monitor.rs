@@ -3,7 +3,6 @@
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use tracing::{debug, warn};
 
 /// Performance monitor for tracking file watching metrics.
 pub struct PerformanceMonitor {

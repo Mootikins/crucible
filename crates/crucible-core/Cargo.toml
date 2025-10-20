@@ -6,23 +6,64 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
+# Core existing dependencies
 yrs = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
-toml = "0.8"
+toml = { workspace = true }
 uuid = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true }
 regex = { workspace = true }
 glob = { workspace = true }
-tokio = { workspace = true, features = ["sync"] }
 rand = { workspace = true }
 tracing = { workspace = true }
 async-trait = { workspace = true }
-pulldown-cmark = "0.11"
-md5 = "0.7"
+pulldown-cmark = { workspace = true }
+md5 = { workspace = true }
+
+# Enhanced async runtime
+tokio = { workspace = true, features = ["full", "tracing"] }
+
+# Service layer dependencies (temporarily removed to break cyclic dependency)
+# crucible-services = { path = "../crucible-services" }
+# crucible-tools = { path = "../crucible-tools" }
+crucible-config = { workspace = true }
+
+# Configuration management
+config = { workspace = true }
+schemars = { workspace = true, features = ["derive"] }
+notify = { workspace = true }
+
+# Service orchestration and registry
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+
+# Futures and utilities
+futures = { workspace = true }
+futures-util = { workspace = true }
+
+# Event handling
+tokio-stream = { workspace = true }
+
+# Metrics and monitoring
+metrics = { workspace = true, optional = true }
+metrics-exporter-prometheus = { workspace = true, optional = true }
+
+# Health checks
+axum = { workspace = true, optional = true }
+tower = { workspace = true, optional = true }
+
+[features]
+default = ["core"]
+core = []
+orchestration = []
+metrics = ["dep:metrics", "dep:metrics-exporter-prometheus"]
+health-checks = ["dep:axum", "dep:tower"]
+hot-reload = []
+full = ["orchestration", "metrics", "health-checks", "hot-reload"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

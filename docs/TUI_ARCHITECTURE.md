@@ -80,7 +80,7 @@ File Change → Parser → DB Update → Log Event → State Mutation → UI Upd
 
 **Rationale**:
 - Predictable state updates (all mutations in one place)
-- Easy to add new event sources (MCP, HTTP, etc.)
+- Easy to add new event sources (services, HTTP, etc.)
 - Testable: Event → Expected State Change
 - No circular dependencies between components
 
@@ -161,7 +161,7 @@ struct RenderState {
 │  │  Command Parser                                    │  │
 │  │  - Built-in commands (:help, :stats, :quit)       │  │
 │  │  - SurrealQL queries (via surrealdb client)       │  │
-│  │  - Tool execution (:run <tool> <args>)            │  │
+│  │  - Tool execution via service layer               │  │
 │  └────────────────────┬───────────────────────────────┘  │
 │                       ↓                                  │
 │         Result Sender (oneshot::Sender<ReplResult>)      │

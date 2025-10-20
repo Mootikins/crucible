@@ -7,7 +7,6 @@ edition.workspace = true
 
 [dependencies]
 crucible-core = { path = "../crucible-core" }
-crucible-mcp = { path = "../crucible-mcp" }
 crucible-plugins = { path = "../crucible-plugins" }
 tauri = { workspace = true }
 serde = { workspace = true }

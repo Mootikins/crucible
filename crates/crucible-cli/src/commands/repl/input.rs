@@ -2,7 +2,7 @@
 //
 // Determines whether input is a command or query and routes appropriately
 
-use super::command::{Command, CommandParseError};
+use super::command::Command;
 use super::error::ReplError;
 
 /// Parsed input type

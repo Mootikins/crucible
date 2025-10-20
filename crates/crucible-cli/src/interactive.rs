@@ -1,7 +1,27 @@
 use anyhow::Result;
-use crucible_mcp::types::SearchResultWithScore;
+use crucible_core::database::{SearchResult, DocumentId};
 use nucleo_matcher::{pattern::{Pattern, CaseMatching}, Matcher, Config};
 use std::io::{self, Write};
+
+/// Compatibility wrapper for search results with display information
+#[derive(Debug, Clone)]
+pub struct SearchResultWithScore {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    pub score: f64,
+}
+
+impl From<SearchResult> for SearchResultWithScore {
+    fn from(result: SearchResult) -> Self {
+        Self {
+            id: result.document_id.0,
+            title: result.document_id.0.clone(), // Use document ID as title for now
+            content: result.snippet.unwrap_or_default(),
+            score: result.score,
+        }
+    }
+}
 
 /// Interactive fuzzy picker using nucleo
 pub struct FuzzyPicker {
