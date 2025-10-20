@@ -16,6 +16,7 @@ path = "examples/mcp_client_demo.rs"
 [dependencies]
 crucible-core = { path = "../crucible-core" }
 crucible-config = { workspace = true }
+crucible-llm = { path = "../crucible-llm" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

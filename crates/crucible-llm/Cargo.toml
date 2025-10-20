@@ -1,0 +1,39 @@
+[package]
+name = "crucible-llm"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "LLM and AI integration for Crucible - embeddings, chat, completions"
+
+[lib]
+name = "crucible_llm"
+path = "src/lib.rs"
+
+[dependencies]
+# Async
+tokio = { workspace = true, features = ["time"] }
+async-trait = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+# HTTP client for API requests
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+
+# Time handling
+chrono = { workspace = true, features = ["serde"] }
+
+# Logging
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+mockito = "1.0"
+tempfile = { workspace = true }
