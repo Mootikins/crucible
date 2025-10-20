@@ -22,11 +22,19 @@ pub enum EmbeddingError {
 
     /// Rate limit exceeded
     #[error("Rate limit exceeded, retry after {retry_after_secs}s")]
-    RateLimitExceeded { retry_after_secs: u64 },
+    RateLimitExceeded {
+        /// Number of seconds to wait before retrying
+        retry_after_secs: u64
+    },
 
     /// Provider-specific error
     #[error("Provider error: {provider}: {message}")]
-    ProviderError { provider: String, message: String },
+    ProviderError {
+        /// The name of the provider that returned the error
+        provider: String,
+        /// The error message from the provider
+        message: String
+    },
 
     /// Configuration error
     #[error("Configuration error: {0}")]

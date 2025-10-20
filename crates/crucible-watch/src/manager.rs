@@ -6,10 +6,9 @@ use crate::{
     handlers::{HandlerRegistry, create_default_handlers},
     config::WatchManagerConfig,
     error::{Error, Result},
-    events::{FileEvent, FileEventKind, EventFilter},
+    events::FileEvent,
     utils::{Debouncer, EventQueue, PerformanceMonitor, PerformanceStats, QueueStats},
 };
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -48,7 +47,7 @@ pub struct WatchManager {
 impl WatchManager {
     /// Create a new watch manager.
     pub async fn new(config: WatchManagerConfig) -> Result<Self> {
-        let mut manager = Self {
+        let manager = Self {
             config: config.clone(),
             backend_registry: ExtendedBackendRegistry::new(),
             watchers: Arc::new(RwLock::new(HashMap::new())),
@@ -125,7 +124,7 @@ impl WatchManager {
 
         // Stop all watchers
         let mut watchers = self.watchers.write().await;
-        for (id, watcher) in watchers.drain() {
+        for (id, _watcher) in watchers.drain() {
             debug!("Stopping watcher: {}", id);
             // Note: Watchers should implement proper cleanup
         }
@@ -181,7 +180,7 @@ impl WatchManager {
         let mut watchers = self.watchers.write().await;
         let mut removed = false;
 
-        watchers.retain(|id, watcher| {
+        watchers.retain(|_id, watcher| {
             // Check if this watcher handles the path
             // This is a simplified check - in practice, you'd track handles better
             let handles = watcher.active_watches();
@@ -243,7 +242,7 @@ impl WatchManager {
 
     /// Start the event processing task.
     async fn start_event_processor(&mut self) -> Result<()> {
-        let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
+        let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
         self.shutdown_tx = Some(shutdown_tx);
 
         let event_receiver = self.event_receiver.take()
@@ -416,7 +415,7 @@ mod tests {
         let manager = WatchManager::new(config).await.unwrap();
 
         let stats = manager.get_performance_stats().await;
-        assert_eq!(stats.total_events_processed, 0);
+        assert_eq!(stats.total_events, 0);
 
         let status = manager.get_status().await;
         assert_eq!(status.active_watches, 0);

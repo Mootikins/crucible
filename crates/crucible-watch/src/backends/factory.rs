@@ -1,6 +1,6 @@
 //! Factory implementations for creating file watcher backends.
 
-use super::{BackendRegistry, WatcherFactory};
+use super::BackendRegistry;
 use crate::{WatchBackend, error::{Error, Result}};
 use std::sync::Arc;
 

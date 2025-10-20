@@ -10,11 +10,19 @@ use thiserror::Error;
 pub enum ConfigError {
     /// Configuration value is missing.
     #[error("Missing configuration value: {field}")]
-    MissingValue { field: String },
+    MissingValue {
+        /// The name of the missing configuration field
+        field: String
+    },
 
     /// Configuration value is invalid.
     #[error("Invalid configuration value: {field} = {value}")]
-    InvalidValue { field: String, value: String },
+    InvalidValue {
+        /// The name of the invalid configuration field
+        field: String,
+        /// The invalid value that was provided
+        value: String
+    },
 
     /// IO error during configuration loading.
     #[error("IO error: {0}")]

@@ -512,7 +512,7 @@ impl RelationalDB for SurrealClient {
 
         let mut updated_records = Vec::new();
 
-        for (record_id, record) in &mut table_data.records {
+        for (_record_id, record) in &mut table_data.records {
             if self.evaluate_filter(&filter, record) {
                 // Apply updates
                 for (field, value) in &updates.assignments {
@@ -546,7 +546,7 @@ impl RelationalDB for SurrealClient {
 
         let mut deleted_records = Vec::new();
 
-        table_data.records.retain(|record_id, record| {
+        table_data.records.retain(|_record_id, record| {
             let should_keep = !self.evaluate_filter(&filter, record);
             if !should_keep {
                 deleted_records.push(record.clone());
@@ -863,7 +863,7 @@ impl GraphDB for SurrealClient {
 
     async fn traverse(&self, start: &NodeId, pattern: TraversalPattern, max_depth: Option<u32>) -> DbResult<TraversalResult> {
         let mut paths = Vec::new();
-        let max_depth = max_depth.unwrap_or(5);
+        let _max_depth = max_depth.unwrap_or(5);
 
         // Simplified traversal - just follow first step pattern
         if let Some(step) = pattern.steps.first() {
@@ -960,7 +960,7 @@ impl GraphDB for SurrealClient {
 
         // For each node pattern, find matching nodes
         for node_pattern in &pattern.nodes {
-            for (node_id, node) in &storage.nodes {
+            for (_node_id, node) in &storage.nodes {
                 let mut matches = true;
 
                 // Check labels
