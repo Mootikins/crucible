@@ -24,6 +24,38 @@ struct OllamaEmbeddingResponse {
     embedding: Vec<f32>,
 }
 
+/// Response structure from Ollama /api/tags endpoint
+#[derive(Debug, Deserialize)]
+struct OllamaTagsResponse {
+    models: Vec<OllamaModelInfo>,
+}
+
+/// Model information from Ollama /api/tags
+#[derive(Debug, Deserialize)]
+struct OllamaModelInfo {
+    name: String,
+    #[serde(default)]
+    model: Option<String>,
+    modified_at: Option<String>,
+    size: Option<u64>,
+    digest: Option<String>,
+    #[serde(default)]
+    details: Option<OllamaModelDetails>,
+}
+
+/// Detailed model information from Ollama
+#[derive(Debug, Deserialize)]
+struct OllamaModelDetails {
+    #[serde(default)]
+    parent_model: Option<String>,
+    format: Option<String>,
+    family: Option<String>,
+    #[serde(default)]
+    families: Option<Vec<String>>,
+    parameter_size: Option<String>,
+    quantization_level: Option<String>,
+}
+
 /// Ollama embedding provider
 ///
 /// Connects to Ollama API (local or remote) to generate embeddings.
@@ -232,6 +264,73 @@ impl EmbeddingProvider for OllamaProvider {
             }
         }
     }
+
+    async fn list_models(&self) -> EmbeddingResult<Vec<super::provider::ModelInfo>> {
+        use super::provider::{ModelFamily, ModelInfo, ParameterSize};
+        use chrono::DateTime;
+
+        // Query Ollama's /api/tags endpoint
+        let url = format!("{}/api/tags", self.endpoint);
+
+        let response = self.client
+            .get(&url)
+            .timeout(Duration::from_secs(self.timeout_secs))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(EmbeddingError::ProviderError {
+                provider: "Ollama".to_string(),
+                message: format!("Failed to list models: {}", response.status()),
+            });
+        }
+
+        let tags_response: OllamaTagsResponse = response.json().await?;
+
+        // Convert Ollama model info to our ModelInfo format
+        let models = tags_response.models.into_iter().map(|model| {
+            let mut builder = ModelInfo::builder().name(model.name);
+
+            if let Some(size) = model.size {
+                builder = builder.size_bytes(size);
+            }
+
+            if let Some(digest) = model.digest {
+                builder = builder.digest(digest);
+            }
+
+            if let Some(modified_at_str) = model.modified_at {
+                // Try to parse the timestamp
+                if let Ok(dt) = DateTime::parse_from_rfc3339(&modified_at_str) {
+                    builder = builder.modified_at(dt.with_timezone(&chrono::Utc));
+                }
+            }
+
+            if let Some(details) = model.details {
+                if let Some(family_str) = details.family {
+                    builder = builder.family(ModelFamily::from_str(&family_str));
+                }
+
+                if let Some(param_size_str) = details.parameter_size {
+                    if let Some(param_size) = ParameterSize::from_str(&param_size_str) {
+                        builder = builder.parameter_size(param_size);
+                    }
+                }
+
+                if let Some(quant) = details.quantization_level {
+                    builder = builder.quantization(quant);
+                }
+
+                if let Some(format) = details.format {
+                    builder = builder.format(format);
+                }
+            }
+
+            builder.build()
+        }).collect();
+
+        Ok(models)
+    }
 }
 
 #[cfg(test)]
@@ -240,8 +339,8 @@ mod tests {
 
     fn create_test_config() -> EmbeddingConfig {
         EmbeddingConfig::ollama(
-            Some("https://llama.terminal.krohnos.io".to_string()),
-            Some("nomic-embed-text".to_string()),
+            Some("https://llama.krohnos.io".to_string()),
+            Some("nomic-embed-text-v1.5-q8_0".to_string()),
         )
     }
 
@@ -253,7 +352,7 @@ mod tests {
 
         let provider = provider.unwrap();
         assert_eq!(provider.provider_name(), "Ollama");
-        assert_eq!(provider.model_name(), "nomic-embed-text");
+        assert_eq!(provider.model_name(), "nomic-embed-text-v1.5-q8_0");
         assert_eq!(provider.dimensions(), 768);
     }
 
@@ -316,7 +415,7 @@ mod tests {
 
         let response = result.unwrap();
         assert_eq!(response.dimensions, 768);
-        assert_eq!(response.model, "nomic-embed-text");
+        assert_eq!(response.model, "nomic-embed-text-v1.5-q8_0");
         assert!(!response.embedding.is_empty());
     }
 
@@ -340,7 +439,7 @@ mod tests {
 
         for response in &responses {
             assert_eq!(response.dimensions, 768);
-            assert_eq!(response.model, "nomic-embed-text");
+            assert_eq!(response.model, "nomic-embed-text-v1.5-q8_0");
         }
     }
 
@@ -353,5 +452,168 @@ mod tests {
         let result = provider.health_check().await;
         assert!(result.is_ok());
         assert!(result.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_list_models_response_deserialization() {
+        use crate::embeddings::provider::{ModelInfo, ModelFamily, ParameterSize};
+
+        // Test Ollama /api/tags response parsing
+        let json = r#"{
+            "models": [
+                {
+                    "name": "nomic-embed-text:latest",
+                    "model": "nomic-embed-text:latest",
+                    "modified_at": "2023-11-04T14:56:49.277302595-07:00",
+                    "size": 274301056,
+                    "digest": "sha256:c1f958f8c3e8",
+                    "details": {
+                        "parent_model": "",
+                        "format": "gguf",
+                        "family": "bert",
+                        "families": ["bert"],
+                        "parameter_size": "137M",
+                        "quantization_level": "Q4_0"
+                    }
+                },
+                {
+                    "name": "mxbai-embed-large:latest",
+                    "model": "mxbai-embed-large:latest",
+                    "modified_at": "2024-01-15T10:30:00Z",
+                    "size": 669000000,
+                    "digest": "sha256:abc123def456",
+                    "details": {
+                        "format": "gguf",
+                        "family": "bert",
+                        "parameter_size": "334M",
+                        "quantization_level": "Q8_0"
+                    }
+                }
+            ]
+        }"#;
+
+        // This test verifies we can parse the Ollama API response
+        // The actual deserialization will be implemented in OllamaTagsResponse
+        let response: serde_json::Value = serde_json::from_str(json).unwrap();
+        assert!(response["models"].is_array());
+        assert_eq!(response["models"].as_array().unwrap().len(), 2);
+
+        // Verify we can build ModelInfo from this data
+        let first_model = &response["models"][0];
+        let model_info = ModelInfo::builder()
+            .name(first_model["name"].as_str().unwrap())
+            .size_bytes(first_model["size"].as_u64().unwrap())
+            .digest(first_model["digest"].as_str().unwrap())
+            .family(ModelFamily::from_str(
+                first_model["details"]["family"].as_str().unwrap()
+            ))
+            .parameter_size(
+                ParameterSize::from_str(
+                    first_model["details"]["parameter_size"].as_str().unwrap()
+                ).unwrap()
+            )
+            .quantization(first_model["details"]["quantization_level"].as_str().unwrap())
+            .format(first_model["details"]["format"].as_str().unwrap())
+            .build();
+
+        assert_eq!(model_info.name, "nomic-embed-text:latest");
+        assert_eq!(model_info.size_bytes, Some(274301056));
+        assert_eq!(model_info.family, Some(ModelFamily::Bert));
+        assert!(model_info.parameter_size.is_some());
+        assert_eq!(model_info.parameter_size.unwrap().to_string(), "137M");
+        assert_eq!(model_info.quantization, Some("Q4_0".to_string()));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_list_models_integration() {
+        let config = create_test_config();
+        let provider = OllamaProvider::new(config).unwrap();
+
+        let result = provider.list_models().await;
+        assert!(result.is_ok(), "Failed to list models: {:?}", result.err());
+
+        let models = result.unwrap();
+        assert!(!models.is_empty(), "Expected at least one model");
+
+        // Verify structure of returned models
+        for model in &models {
+            assert!(!model.name.is_empty(), "Model name should not be empty");
+            // Ollama should provide size information
+            assert!(model.size_bytes.is_some(), "Model should have size info");
+        }
+
+        // Check if we got nomic-embed-text (common model)
+        let has_nomic = models.iter().any(|m| m.name.contains("nomic-embed-text"));
+        println!("Available models: {:?}", models.iter().map(|m| &m.name).collect::<Vec<_>>());
+
+        // Don't assert on specific models since endpoint might have different models
+        // Just verify we got valid data
+        assert!(!models.is_empty());
+    }
+
+    #[test]
+    fn test_parameter_size_parsing() {
+        use crate::embeddings::provider::ParameterSize;
+
+        let size_m = ParameterSize::from_str("137M").unwrap();
+        assert_eq!(size_m.to_string(), "137M");
+        assert_eq!(size_m.approximate_count(), 137_000_000);
+
+        let size_b = ParameterSize::from_str("7B").unwrap();
+        assert_eq!(size_b.to_string(), "7B");
+        assert_eq!(size_b.approximate_count(), 7_000_000_000);
+
+        let size_decimal = ParameterSize::from_str("1.5B").unwrap();
+        assert_eq!(size_decimal.to_string(), "2B"); // Rounds to 2
+        assert_eq!(size_decimal.approximate_count(), 2_000_000_000);
+    }
+
+    #[test]
+    fn test_model_family_parsing() {
+        use crate::embeddings::provider::ModelFamily;
+
+        assert_eq!(ModelFamily::from_str("bert"), ModelFamily::Bert);
+        assert_eq!(ModelFamily::from_str("BERT"), ModelFamily::Bert);
+        assert_eq!(ModelFamily::from_str("gpt"), ModelFamily::Gpt);
+        assert!(matches!(ModelFamily::from_str("custom"), ModelFamily::Other(_)));
+
+        assert_eq!(ModelFamily::Bert.as_str(), "bert");
+    }
+
+    #[test]
+    fn test_model_info_builder() {
+        use crate::embeddings::provider::{ModelInfo, ModelFamily, ParameterSize};
+
+        let model = ModelInfo::builder()
+            .name("test-model")
+            .dimensions(768)
+            .family(ModelFamily::Bert)
+            .recommended(true)
+            .build();
+
+        assert_eq!(model.name, "test-model");
+        assert_eq!(model.dimensions, Some(768));
+        assert_eq!(model.family, Some(ModelFamily::Bert));
+        assert!(model.recommended);
+        assert_eq!(model.display_name(), "test-model");
+    }
+
+    #[test]
+    fn test_model_info_compatibility() {
+        use crate::embeddings::provider::ModelInfo;
+
+        let model = ModelInfo::builder()
+            .name("test")
+            .dimensions(768)
+            .build();
+
+        assert!(model.is_compatible_dimensions(768));
+        assert!(!model.is_compatible_dimensions(1536));
+
+        // Model without dimensions is compatible with any requirement
+        let model_no_dims = ModelInfo::new("test2");
+        assert!(model_no_dims.is_compatible_dimensions(768));
+        assert!(model_no_dims.is_compatible_dimensions(1536));
     }
 }
