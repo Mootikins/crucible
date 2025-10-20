@@ -1,40 +1,35 @@
 # Crucible Daemon
 
-Terminal-first daemon for the Crucible knowledge management system.
+Data layer coordination daemon for the Crucible knowledge management system.
 
 ## Overview
 
-The Crucible daemon is a **REPL-based interface** for interacting with your knowledge vault through SurrealQL queries and built-in tools. It runs continuously, watching your vault for changes, indexing content, and providing real-time query capabilities.
+The Crucible daemon is a **data layer coordinator** that provides filesystem watching, parsing, database synchronization, and event publishing services for the Crucible knowledge management system. It acts as the bridge between the filesystem and the core controller, ensuring data consistency and providing real-time updates.
 
 ## Features
 
-- **SurrealQL REPL**: Direct database queries with syntax highlighting and autocomplete
-- **Built-in Commands**: Tool execution, statistics, configuration management
-- **Async Query Execution**: Non-blocking queries with cancellation support (Ctrl+C)
-- **Multiple Output Formats**: Table (human), JSON (machines), CSV (export)
-- **Command History**: Persistent history with fuzzy search (Ctrl+R)
-- **Syntax Highlighting**: SurrealQL keyword and function highlighting
-- **Autocomplete**: Commands, tool names, table names, keywords
-- **Rich Error Messages**: Contextual errors with helpful suggestions
+- **Filesystem Watching**: Real-time monitoring of file changes with configurable backends
+- **File Parsing**: Automatic metadata extraction and content analysis
+- **Database Synchronization**: Efficient syncing of file changes to the database
+- **Event Publishing**: Real-time event streams for filesystem and database changes
+- **Service Integration**: Clean integration with crucible-services framework
+- **Configuration Management**: Flexible configuration from files, environment, or runtime
+- **Performance Optimized**: Efficient debouncing, batch operations, and resource management
+- **Health Monitoring**: Built-in health checks and metrics collection
 
 ## Architecture
-
-See [`/home/moot/crucible/docs/REPL_ARCHITECTURE.md`](/home/moot/crucible/docs/REPL_ARCHITECTURE.md) for detailed design decisions and implementation rationale.
 
 ### Key Components
 
 ```
 src/
-├── main.rs              # Entry point, daemon initialization
-└── repl/
-    ├── mod.rs           # Repl struct, main loop, state management
-    ├── command.rs       # Command enum and parsing
-    ├── input.rs         # Input routing (command vs query)
-    ├── formatter.rs     # Output formatters (table, JSON, CSV)
-    ├── error.rs         # Error types and display
-    ├── history.rs       # Command history management
-    ├── highlighter.rs   # Syntax highlighting
-    └── completer.rs     # Autocomplete
+├── main.rs              # Entry point and daemon lifecycle management
+├── lib.rs               # Public library interface
+├── coordinator.rs       # Main data coordination logic
+├── config.rs            # Configuration management and validation
+├── events.rs            # Event system and publishers
+├── services.rs          # Service layer implementations
+├── handlers.rs          # Event processing handlers
 ```
 
 ## Usage
@@ -42,130 +37,109 @@ src/
 ### Starting the Daemon
 
 ```bash
+# With default configuration
 cargo run --bin crucible-daemon
+
+# With custom configuration file
+cargo run --bin crucible-daemon -- config/daemon.yaml
 ```
 
-### REPL Commands
+The daemon will start and begin monitoring configured filesystem paths, syncing changes to the database, and publishing events. Use Ctrl+C to stop the daemon gracefully.
 
-#### Tools
+### Using as a Library
 
+The daemon can also be used as a library in other components:
+
+```rust
+use crucible_daemon::{DataCoordinator, DaemonConfig};
+
+// Create configuration
+let config = DaemonConfig::default();
+
+// Create and start coordinator
+let mut coordinator = DataCoordinator::new(config).await?;
+coordinator.initialize().await?;
+coordinator.start().await?;
+
+// The coordinator is now running and monitoring filesystem changes
 ```
-:tools                      # List available tools
-:run <tool> [args...]       # Execute a tool
-:rune <script> [args...]    # Run a Rune script
-```
-
-Examples:
-```
-:run search_by_tags project ai
-:run semantic_search "agent orchestration"
-:rune custom_query.rn
-```
-
-#### Information
-
-```
-:stats                      # Show vault statistics
-:config                     # Display configuration
-:history [limit]            # Show command history
-```
-
-#### Configuration
-
-```
-:log <level>                # Set log level (trace|debug|info|warn|error)
-:format <fmt>               # Set output format (table|json|csv)
-```
-
-#### Utility
-
-```
-:help [command]             # Show help
-:clear                      # Clear screen
-:quit                       # Exit daemon
-```
-
-### SurrealQL Queries
-
-Any input not starting with `:` is treated as a SurrealQL query:
-
-```sql
--- Basic queries
-SELECT * FROM notes;
-SELECT title, tags FROM notes WHERE tags CONTAINS '#project';
-
--- Graph traversal
-SELECT ->links->note.title FROM notes WHERE path = 'foo.md';
-
--- Aggregation
-SELECT COUNT() AS total FROM notes GROUP BY tags;
-
--- Complex queries
-SELECT
-    path,
-    title,
-    array::len(tags) AS tag_count
-FROM notes
-WHERE tags CONTAINS '#project'
-ORDER BY modified DESC
-LIMIT 10;
-```
-
-### Keyboard Shortcuts
-
-- **Ctrl+C**: Cancel running query (or show quit message if idle)
-- **Ctrl+D**: Exit REPL
-- **Ctrl+R**: Search command history
-- **Tab**: Autocomplete commands, tool names, table names
 
 ## Configuration
 
-Configuration file: `~/.crucible/config.yaml`
+The daemon supports multiple configuration sources:
+
+### Configuration File
 
 ```yaml
-repl:
-  history_file: "~/.crucible/history"
-  history_max_entries: 10000
-  prompt: "> "
-  edit_mode: "emacs"  # or "vi"
-  syntax_highlighting: true
-  autocomplete_enabled: true
-  query_timeout_seconds: 300
-  default_format: "table"
-  max_column_width: 50
+# daemon.yaml
+filesystem:
+  watch_paths:
+    - path: "./data"
+      recursive: true
+      mode: "All"
+  backend: "Notify"
+  debounce:
+    delay_ms: 100
+    max_batch_size: 100
+
+database:
+  connection:
+    database_type: "SurrealDB"
+    connection_string: "memory"
+  sync_strategies:
+    - name: "auto_sync"
+      source: "Filesystem"
+      target: "DatabaseTable(files)"
+      mode: "Incremental"
+
+events:
+  publisher: "InMemory"
+  buffer:
+    size: 1000
+    flush_interval_ms: 1000
+
+performance:
+  workers:
+    num_workers: 4
+    max_queue_size: 10000
+  cache:
+    cache_type: "Lru"
+    max_size: 10000
+    ttl_seconds: 3600
+
+health:
+  checks:
+    - name: "database_health"
+      check_type: "Database"
+      interval_seconds: 60
+      timeout_seconds: 30
 ```
 
 ## Design Decisions
 
-### Why Reedline over Rustyline?
+### Data Layer Focus
 
-- Modern async-first design
-- Better Tokio integration
-- Rich editing features (Vi/Emacs modes)
-- Maintained by Nushell team
-- Extensible architecture
+The daemon is specifically focused on data layer coordination rather than business logic:
+- Clean separation from application logic
+- Efficient filesystem and database operations
+- Event-driven architecture for real-time updates
+- Service-oriented design using crucible-services
 
-### Why Simple Parsing over Parser Combinators?
+### Event-Driven Architecture
 
-- Commands have simple structure (`:cmd arg1 arg2`)
-- Regex sufficient for prefix detection
-- Full control over error messages
-- Zero additional dependencies
-- Easy for contributors to understand
+The daemon uses an event-driven architecture that provides:
+- Real-time notifications of data changes
+- Decoupled components through event streaming
+- Extensible event handling system
+- Reliable event delivery with retry mechanisms
 
-### Why Async Query Execution?
+### Service Integration
 
-- Prevents blocking on long-running queries
-- User can cancel queries with Ctrl+C
-- Progress indicators during execution
-- Future: multiple concurrent queries
-
-### Why Buffer Results (PoC)?
-
-- Table formatting requires column widths (needs full data)
-- Simpler error handling
-- Most queries return <100 rows
-- Can add streaming when needed (YAGNI)
+Built on the crucible-services framework for:
+- Standardized service interfaces
+- Service discovery and routing
+- Built-in health monitoring
+- Load balancing and fault tolerance
 
 ## Testing
 
@@ -174,111 +148,63 @@ Run tests:
 cargo test --package crucible-daemon
 ```
 
-Run specific test module:
+Run integration tests:
 ```bash
-cargo test --package crucible-daemon repl::command::tests
+cargo test --package crucible-daemon --test integration_test
 ```
 
 ## Development
 
-### Adding a New Command
+### Adding a New Event Handler
 
-1. Add variant to `Command` enum in `command.rs`
-2. Add parsing logic in `Command::parse()`
-3. Add help text in `Command::help_for_command()`
-4. Add execution logic in `Repl::execute_command()`
-5. Add tests
+1. Implement the `EventHandler` trait in the handlers module
+2. Register the handler in the coordinator initialization
+3. Test with the event testing framework
 
-Example:
+### Adding a New Service
+
+1. Implement the required service traits
+2. Register the service in the service manager
+3. Add health checks and monitoring
+
+### Configuration Updates
+
+Configuration can be updated at runtime:
 ```rust
-// 1. Add variant
-pub enum Command {
-    // ... existing variants
-    MyNewCommand { arg: String },
-}
-
-// 2. Parse it
-match cmd {
-    "mynew" => {
-        let arg = args.get(0).ok_or(...)?;
-        Ok(Command::MyNewCommand { arg: arg.to_string() })
-    }
-}
-
-// 3. Help text
-":mynew" => Some("...help text..."),
-
-// 4. Execute
-Command::MyNewCommand { arg } => {
-    self.do_my_new_thing(arg).await
-}
-
-// 5. Test
-#[test]
-fn test_mynew_command() { ... }
+let new_config = DaemonConfig::from_env()?;
+coordinator.update_config(new_config).await?;
 ```
 
-### Adding a New Output Format
+## Performance Optimizations
 
-1. Create struct implementing `OutputFormatter` trait
-2. Add variant to `OutputFormat` enum
-3. Update `Repl::set_output_format()`
-4. Add tests
+The daemon includes several performance optimizations:
 
-### Extending Syntax Highlighting
+- **Event Debouncing**: Reduces filesystem noise with configurable debouncing
+- **Batch Operations**: Groups database operations for efficiency
+- **Connection Pooling**: Reuses database connections
+- **Async Processing**: Non-blocking I/O throughout
+- **Resource Limits**: Configurable limits on memory and CPU usage
 
-Edit `highlighter.rs`:
-- Add keywords to `build_keyword_set()`
-- Add functions to `build_function_set()`
-- Modify `highlight_token()` for custom highlighting
+## Monitoring and Health
 
-### Extending Autocomplete
-
-Edit `completer.rs`:
-- Add completion logic to `Completer::complete()`
-- Create helper methods for specific contexts
-- Add tests for new completion scenarios
-
-## Performance
-
-### Expected Latency
-
-| Operation | Latency | Notes |
-|-----------|---------|-------|
-| Command parsing | <1ms | Regex + split, minimal allocation |
-| Query execution | 1-500ms | Depends on complexity |
-| Result formatting (100 rows) | 5-10ms | Table layout calculation |
-| History search | <10ms | Linear scan, max 10k entries |
-| Autocomplete | <20ms | Cached database schema |
-| Syntax highlighting | <1ms | Incremental, per keystroke |
-
-### Memory Footprint
-
-- Base REPL: ~2MB
-- Query result buffer: ~100KB per 1000 rows
-- Tool registry: ~500KB
-- Total: <10MB typical usage
+Built-in monitoring includes:
+- Service health checks
+- Performance metrics collection
+- Event publishing for monitoring systems
+- Configurable alerting and notifications
 
 ## Future Enhancements
 
-### Phase 2 (Post-PoC)
-- Multiple query tabs (background execution)
-- Query result pagination
-- Query plan visualization (EXPLAIN)
-- Macro system (`:macro add <name> <query>`)
-- Pipe to external tools (`:json | jq`)
-
-### Phase 3 (Advanced)
-- Remote REPL (connect from different terminal)
-- Query history search (fuzzy)
-- Result set diff (compare two queries)
-- Export to file (`:export results.csv`)
-- Watch mode (re-run on file changes)
+- Enhanced file content analysis and indexing
+- Advanced synchronization strategies
+- Cloud storage integration
+- Multi-database support
+- Advanced filtering and routing rules
 
 ## Related Documentation
 
-- [REPL Architecture](/home/moot/crucible/docs/REPL_ARCHITECTURE.md) - Detailed design document
 - [Project README](/home/moot/crucible/README.md) - Crucible project overview
+- [CLI Documentation](/home/moot/crucible/crates/crucible-cli/README.md) - CLI interface
 
 ## License
 

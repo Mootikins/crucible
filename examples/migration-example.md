@@ -1,5 +1,11 @@
 # Migration Guide: From Environment Variables to Crucible Configuration System
 
+**⚠️ DEPRECATED**: MCP functionality has been removed from Crucible. This guide is kept for historical reference only.
+
+**IMPORTANT**: The crucible-mcp-server and related MCP functionality no longer exist. Please migrate to the new crucible-services architecture.
+
+---
+
 This guide demonstrates how to migrate from the current environment variable-based configuration to the new crucible-config system.
 
 ## Table of Contents

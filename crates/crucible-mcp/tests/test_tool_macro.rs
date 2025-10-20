@@ -17,9 +17,13 @@ async fn setup_test_registry() -> (TempDir, ToolRegistry) {
     let temp_dir = TempDir::new().unwrap();
     let tool_dir = temp_dir.path().to_path_buf();
 
+    // Create temporary database and obsidian client
+    let db_path = temp_dir.path().join("test.db");
+    let db = Arc::new(crate::database::EmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap());
+    let obsidian = Arc::new(crate::obsidian_client::ObsidianClient::new("/tmp"));
+
     // Build registry with stdlib
-    let context = Arc::new(rune::Context::with_default_modules().unwrap());
-    let registry = ToolRegistry::new_with_stdlib(tool_dir.clone(), context);
+    let registry = ToolRegistry::new_with_stdlib(tool_dir.clone(), db, obsidian).unwrap();
 
     (temp_dir, registry)
 }
@@ -167,10 +171,10 @@ async fn test_discovery_prefers_macro_metadata() {
         }
     "#;
 
-    write_test_tool_file(registry.tool_dir(), tool_source);
+    write_test_tool_file(&registry.tool_dir, tool_source);
 
     // Discover tools - should use macro metadata
-    let discovered = registry.discover_tools().await.unwrap();
+    let discovered = registry.discovery.discover_in_directory(&registry.tool_dir).await.unwrap();
     assert_eq!(discovered.len(), 1);
 
     let tool = &discovered[0];
@@ -198,10 +202,10 @@ async fn test_fallback_to_ast_inference() {
         }
     "#;
 
-    write_test_tool_file(registry.tool_dir(), tool_source);
+    write_test_tool_file(&registry.tool_dir, tool_source);
 
     // Discover tools - should fall back to AST inference
-    let discovered = registry.discover_tools().await.unwrap();
+    let discovered = registry.discovery.discover_in_directory(&registry.tool_dir).await.unwrap();
     assert_eq!(discovered.len(), 1);
 
     let tool = &discovered[0];
@@ -392,10 +396,10 @@ async fn test_end_to_end_integration() {
         }
     "#;
 
-    write_test_tool_file(registry.tool_dir(), tool_source);
+    write_test_tool_file(&registry.tool_dir, tool_source);
 
     // Step 1: Compile and discover tools
-    let discovered = registry.discover_tools().await.unwrap();
+    let discovered = registry.discovery.discover_in_directory(&registry.tool_dir).await.unwrap();
     assert_eq!(discovered.len(), 2);
 
     // Step 2: Verify metadata extraction
@@ -423,10 +427,11 @@ async fn test_end_to_end_integration() {
     }));
 
     // Step 5: Verify tool execution (mock execution)
-    let tool_result = registry.execute_tool("create_note", json!({
+    let tool = registry.get_tool("create_note").unwrap();
+    let tool_result = tool.call(json!({
         "title": "test_note",
         "content": "test content"
-    })).await;
+    }), &registry.context).await;
 
     assert!(tool_result.is_ok());
     let result = tool_result.unwrap();

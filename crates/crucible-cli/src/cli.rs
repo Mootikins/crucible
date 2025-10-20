@@ -16,7 +16,7 @@ pub struct Cli {
     pub verbose: bool,
 
     /// Config file path (defaults to ~/.config/crucible/config.toml)
-    #[arg(short, long, global = true)]
+    #[arg(short = 'C', long, global = true)]
     pub config: Option<PathBuf>,
 
     /// Vault path (overrides config file)
@@ -114,7 +114,7 @@ pub enum Commands {
         path: Option<String>,
 
         /// Force re-indexing of all files
-        #[arg(short, long)]
+        #[arg(short = 'F', long)]
         force: bool,
 
         /// File pattern to match (e.g., "**/*.md")
@@ -219,7 +219,7 @@ pub enum ConfigCommands {
         path: Option<PathBuf>,
 
         /// Overwrite existing config file
-        #[arg(short, long)]
+        #[arg(short = 'F', long)]
         force: bool,
     },
 

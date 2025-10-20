@@ -1,11 +1,16 @@
 //! Crucible Daemon Library
 //!
-//! Terminal daemon for Crucible knowledge management system.
+//! Data layer coordination daemon for Crucible knowledge management system.
+//! Provides filesystem watching, parsing, database synchronization, and event publishing.
 
-pub mod repl;
-pub mod rune;
-pub mod tools;
-pub mod tui;
+pub mod coordinator;
+pub mod events;
+pub mod config;
+pub mod services;
+pub mod handlers;
 
-// Re-export main types for convenience
-pub use repl::Repl;
+// Re-export main types
+pub use coordinator::DataCoordinator;
+pub use events::*;
+pub use config::DaemonConfig;
+pub use services::*;

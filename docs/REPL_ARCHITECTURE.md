@@ -167,11 +167,14 @@ pub struct Repl {
     /// SurrealDB connection for query execution
     db: Surreal<Db>,
 
-    /// Tool registry (built-in + Rune scripts)
-    tools: ToolRegistry,
+    /// Service layer for tool registry and search
+    services: crucible_services::ServiceRegistry,
 
-    /// Rune runtime for script execution
-    rune_runtime: RuneRuntime,
+    /// Tool registry (built-in + dynamic Rune tools)
+    tools: crucible_tools::ToolRegistry,
+
+    /// Rune runtime for script execution with hot-reload
+    rune_runtime: crucible_rune::RuneRuntime,
 
     /// Configuration from ~/.crucible/config.yaml
     config: DaemonConfig,
@@ -213,9 +216,10 @@ impl Repl {
 
 **Key State**:
 - `editor`: Manages input, history, completion
-- `db`: Direct SurrealDB access (no abstraction)
-- `tools`: Registry of callable tools (search, metadata, etc.)
-- `rune_runtime`: Executes `.rn` scripts
+- `db`: SurrealDB connection for query execution
+- `services`: Service layer providing search, indexing, and tool management
+- `tools`: Registry combining built-in and dynamic Rune tools
+- `rune_runtime`: Rune runtime with hot-reload for script execution
 - `history`: Persists to `~/.crucible/history`
 
 ### 2. Command Enum
@@ -722,18 +726,22 @@ impl Highlighter for SurrealQLHighlighter {
 use reedline::{Completer, Suggestion, Span};
 
 pub struct ReplCompleter {
-    /// SurrealDB connection for schema introspection
-    db: Surreal<Db>,
+    /// Service layer for tool name discovery and search
+    services: Arc<crucible_services::ServiceRegistry>,
 
     /// Tool registry for tool name completion
-    tools: Arc<ToolRegistry>,
+    tools: Arc<crucible_tools::ToolRegistry>,
 
     /// Built-in commands
     commands: Vec<String>,
 }
 
 impl ReplCompleter {
-    pub fn new(db: Surreal<Db>, tools: Arc<ToolRegistry>) -> Self {
+    pub fn new(
+        db: Surreal<Db>,
+        services: Arc<crucible_services::ServiceRegistry>,
+        tools: Arc<crucible_tools::ToolRegistry>
+    ) -> Self {
         let commands = vec![
             ":tools".to_string(),
             ":run".to_string(),
@@ -759,9 +767,10 @@ impl ReplCompleter {
         Ok(response)
     }
 
-    /// Complete tool names for `:run` command
+    /// Complete tool names for `:run` command from both static and dynamic tools
     fn complete_tool_name(&self, partial: &str) -> Vec<Suggestion> {
-        self.tools
+        // Get tools from static registry
+        let static_tools = self.tools
             .list_tools()
             .iter()
             .filter(|name| name.starts_with(partial))
@@ -771,8 +780,24 @@ impl ReplCompleter {
                 extra: None,
                 span: Span::new(0, partial.len()),
                 append_whitespace: true,
-            })
-            .collect()
+            });
+
+        // Get tools from service layer (dynamic Rune tools)
+        let dynamic_tools = self.services
+            .list_available_tools()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|tool| tool.name.starts_with(partial))
+            .map(|tool| Suggestion {
+                value: tool.name,
+                description: Some(tool.description),
+                extra: None,
+                span: Span::new(0, partial.len()),
+                append_whitespace: true,
+            });
+
+        static_tools.chain(dynamic_tools).collect()
     }
 }
 
@@ -985,19 +1010,24 @@ crates/crucible-daemon/
 │   │   ├── completer.rs     # Autocomplete implementation
 │   │   ├── history.rs       # Command history management
 │   │   └── error.rs         # Error types and display
+│   ├── services/
+│   │   ├── mod.rs           # Service layer integration
+│   │   ├── registry.rs      # ServiceRegistry
+│   │   └── search.rs        # Search service integration
 │   ├── tools/
-│   │   ├── mod.rs           # Tool registry
+│   │   ├── mod.rs           # Tool registry (static tools)
 │   │   ├── search.rs        # Built-in search tools
 │   │   ├── metadata.rs      # Metadata extraction tools
-│   │   └── registry.rs      # ToolRegistry struct
+│   │   └── registry.rs      # crucible_tools::ToolRegistry
 │   ├── rune/
-│   │   ├── mod.rs           # Rune runtime integration
-│   │   └── loader.rs        # Script loading and execution
+│   │   ├── mod.rs           # crucible_rune integration
+│   │   └── loader.rs        # Script loading and hot-reload
 │   └── tui/
 │       ├── mod.rs           # TUI main loop
 │       ├── logs.rs          # Log buffer and rendering
 │       └── layout.rs        # Layout management
-└── Cargo.toml
+├── Cargo.toml
+└── README.md
 ```
 
 ## Performance Characteristics

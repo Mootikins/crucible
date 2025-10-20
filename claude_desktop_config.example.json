@@ -1,30 +1,14 @@
 {
+  "_comment": "DEPRECATED: MCP functionality has been removed from Crucible",
+  "_note": "The crucible-mcp-server no longer exists. Please use the new service architecture instead.",
+  "_migration_guide": "See the documentation for how to migrate to the new crucible-services architecture.",
+
   "mcpServers": {
+    "_comment": "The crucible MCP server has been deprecated and removed",
     "crucible": {
-      "command": "C:\\Users\\Matthew\\Documents\\crucible\\target\\release\\crucible-mcp-server.exe",
-      "args": [],
-      "env": {
-        "RUST_LOG": "info",
-        "OBSIDIAN_VAULT_PATH": "C:/Users/Matthew/Documents/test-vault",
-
-        "_comment_provider": "Embedding Provider: 'ollama' (default) or 'openai'",
-        "EMBEDDING_PROVIDER": "ollama",
-
-        "_comment_ollama": "Ollama Configuration (free, local, no API key needed)",
-        "EMBEDDING_ENDPOINT": "https://llama.terminal.krohnos.io",
-        "EMBEDDING_MODEL": "nomic-embed-text",
-
-        "_comment_openai": "OpenAI Configuration (requires API key - uncomment to use)",
-        "_EMBEDDING_PROVIDER": "openai",
-        "_EMBEDDING_ENDPOINT": "https://api.openai.com/v1",
-        "_EMBEDDING_API_KEY": "sk-your-api-key-here",
-        "_EMBEDDING_MODEL": "text-embedding-3-small",
-
-        "_comment_optional": "Optional: Customize timeouts and batch processing",
-        "EMBEDDING_TIMEOUT_SECS": "30",
-        "EMBEDDING_MAX_RETRIES": "3",
-        "EMBEDDING_BATCH_SIZE": "10"
-      }
+      "_comment": "This configuration no longer works - MCP functionality has been removed",
+      "_status": "DEPRECATED - Use crucible-services instead",
+      "_migration_url": "https://github.com/your-org/crucible/docs/migration-guide.md"
     }
   }
 }

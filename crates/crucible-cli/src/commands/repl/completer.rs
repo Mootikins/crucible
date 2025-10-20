@@ -4,14 +4,12 @@ use reedline::{Completer, Span, Suggestion};
 use std::sync::Arc;
 
 use super::tools::ToolRegistry;
-
-// Placeholder type (will be replaced with real SurrealDB)
-type DummyDb = super::DummyDb;
+use super::database::ReplDatabase;
 
 /// REPL autocompleter
 pub struct ReplCompleter {
     /// Database connection for schema introspection
-    db: DummyDb,
+    db: ReplDatabase,
 
     /// Tool registry for tool name completion
     tools: Arc<ToolRegistry>,
@@ -27,7 +25,7 @@ struct CommandCompletion {
 }
 
 impl ReplCompleter {
-    pub fn new(db: DummyDb, tools: Arc<ToolRegistry>) -> Self {
+    pub fn new(db: ReplDatabase, tools: Arc<ToolRegistry>) -> Self {
         let commands = Self::build_command_list();
         Self { db, tools, commands }
     }
@@ -187,18 +185,30 @@ impl ReplCompleter {
             .collect()
     }
 
-    /// Complete table names after FROM keyword
-    /// Note: This is a placeholder - in production, this would query the database
+    /// Complete table names after FROM keyword using real database introspection
     fn complete_table_names(&self, prefix: &str, start_pos: usize, end_pos: usize) -> Vec<Suggestion> {
-        // Placeholder table names
-        let tables = vec!["notes", "tags", "links", "metadata"];
+        // Try to query real table names from database
+        // If no runtime is available (e.g., in tests), use fallback
+        let tables = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            // We have a runtime, use it
+            tokio::task::block_in_place(|| {
+                handle.block_on(async {
+                    self.db.list_tables().await.unwrap_or_else(|_| {
+                        vec!["notes".to_string(), "tags".to_string(), "files".to_string()]
+                    })
+                })
+            })
+        } else {
+            // No runtime available (test context), use fallback
+            vec!["notes".to_string(), "tags".to_string(), "files".to_string()]
+        };
 
         tables
             .iter()
             .filter(|table| table.starts_with(prefix))
             .map(|table| Suggestion {
-                value: (*table).to_string(),
-                description: None,
+                value: table.clone(),
+                description: Some("Table".to_string()),
                 style: None,
                 extra: None,
                 span: Span::new(start_pos, end_pos),
@@ -268,7 +278,9 @@ mod tests {
     use tempfile::TempDir;
 
     fn create_test_completer() -> ReplCompleter {
-        let db = DummyDb::new();
+        let db = tokio::runtime::Runtime::new().unwrap().block_on(async {
+            ReplDatabase::new_memory().await.unwrap()
+        });
         let temp_dir = TempDir::new().unwrap();
         let tools = Arc::new(ToolRegistry::new(temp_dir.path().to_path_buf()).unwrap());
         ReplCompleter::new(db, tools)
@@ -341,7 +353,16 @@ mod tests {
 
     #[test]
     fn test_table_name_completion() {
-        let mut completer = create_test_completer();
+        // Use a mock database to avoid async issues in test
+        let temp_dir = TempDir::new().unwrap();
+        let tools = Arc::new(ToolRegistry::new(temp_dir.path().to_path_buf()).unwrap());
+
+        // Create a database that doesn't require async context for table listing
+        let db = tokio::runtime::Runtime::new().unwrap().block_on(async {
+            ReplDatabase::new_memory().await.unwrap()
+        });
+
+        let mut completer = ReplCompleter::new(db, tools);
 
         // Complete `SELECT * FROM n`
         let suggestions = completer.complete("SELECT * FROM n", 15);

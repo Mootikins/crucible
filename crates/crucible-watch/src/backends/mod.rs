@@ -10,11 +10,10 @@ pub use polling_backend::*;
 pub use editor_backend::*;
 pub use factory::*;
 
-use crate::traits::{FileWatcher, BackendCapabilities, WatchHandle};
+use crate::traits::{FileWatcher, BackendCapabilities};
 use crate::WatchBackend;
 use crate::error::{Error, Result};
 use async_trait::async_trait;
-use std::path::PathBuf;
 
 /// Factory trait for creating file watcher backends.
 #[async_trait]

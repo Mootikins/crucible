@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn test_queue_stats() {
-        let mut queue = EventQueue::new(10);
+        let queue = EventQueue::new(10);
         let stats = queue.get_stats();
 
         assert_eq!(stats.current_size, 0);

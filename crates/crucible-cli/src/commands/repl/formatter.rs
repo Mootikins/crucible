@@ -138,7 +138,7 @@ impl Default for TableFormatter {
 #[async_trait]
 impl OutputFormatter for TableFormatter {
     async fn format(&self, result: QueryResult) -> Result<String> {
-        use comfy_table::{Table, Cell, Row, presets::UTF8_FULL};
+        use comfy_table::{Table, Cell, presets::UTF8_FULL};
         use colored::Colorize;
 
         if result.is_empty() {

@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use crucible_mcp::{McpServer, create_provider};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{self, Write};

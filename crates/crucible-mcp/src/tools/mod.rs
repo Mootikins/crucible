@@ -1,4 +1,7 @@
-// Tool modules removed - all functionality moved to mod.rs
+// Tool functionality migrated to crucible-tools
+//
+// This module now serves as a compatibility layer that bridges
+// the MCP interface to the new crucible-tools implementation.
 
 use crate::database::EmbeddingDatabase;
 use crate::embeddings::EmbeddingProvider;
@@ -6,6 +9,12 @@ use crate::types::{ToolCallArgs, ToolCallResult};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+// Import the new tools from crucible-tools
+use crucible_tools::{
+    SystemToolService, ExecutionContextBuilder, ToolService,
+    ToolServiceFactory, init
+};
 
 /// Sync metadata from Obsidian plugin to database for all existing files
 ///
@@ -73,148 +82,65 @@ pub async fn sync_metadata_from_obsidian(db: &EmbeddingDatabase) -> Result<(usiz
 }
 
 /// Search notes by frontmatter properties
-pub async fn search_by_properties(db: &EmbeddingDatabase, args: &ToolCallArgs) -> Result<ToolCallResult> {
-    let properties = match args.properties.as_ref() {
-        Some(props) => props,
-        None => {
-            return Ok(ToolCallResult {
-                success: false,
-                data: None,
-                error: Some("Missing properties".to_string()),
-            });
-        }
+pub async fn search_by_properties(_db: &EmbeddingDatabase, args: &ToolCallArgs) -> Result<ToolCallResult> {
+    // Initialize crucible-tools if not already done
+    let _registry = init();
+
+    // Create tool service
+    let service = SystemToolService::new();
+
+    // Create execution context
+    let context = ExecutionContextBuilder::new().build();
+
+    // Convert legacy args to new format
+    let params = if let Some(properties) = &args.properties {
+        serde_json::json!({
+            "properties": properties
+        })
+    } else {
+        serde_json::json!({})
     };
 
-    tracing::info!("Searching for files with properties: {:?}", properties);
+    // Execute the new tool
+    let result = service.execute_tool("search_by_properties", params, context).await?;
 
-    // Use database for consistent, offline-capable search
-    match db.list_files().await {
-        Ok(all_files) => {
-            let mut matching_files = Vec::new();
-
-            for file_path in all_files {
-                match db.get_embedding(&file_path).await {
-                    Ok(Some(embedding_data)) => {
-                        // Check if file has ALL the requested properties
-                        let has_all_properties = properties.iter().all(|(required_key, required_value)| {
-                            if let Some(file_value) = embedding_data.metadata.properties.get(required_key) {
-                                // Convert both values to strings for comparison
-                                let file_value_str = match file_value {
-                                    serde_json::Value::String(s) => s.clone(),
-                                    serde_json::Value::Number(n) => n.to_string(),
-                                    serde_json::Value::Bool(b) => b.to_string(),
-                                    _ => file_value.to_string(),
-                                };
-                                let required_value_str = match required_value {
-                                    serde_json::Value::String(s) => s.clone(),
-                                    serde_json::Value::Number(n) => n.to_string(),
-                                    serde_json::Value::Bool(b) => b.to_string(),
-                                    _ => required_value.to_string(),
-                                };
-                                file_value_str.to_lowercase() == required_value_str.to_lowercase()
-                            } else {
-                                false
-                            }
-                        });
-
-                        if has_all_properties {
-                            matching_files.push(serde_json::json!({
-                                "path": file_path,
-                                "name": embedding_data.metadata.title.as_ref().unwrap_or(&file_path),
-                                "folder": embedding_data.metadata.folder,
-                                "size": 0, // We don't store size in metadata
-                                "properties": embedding_data.metadata.properties,
-                            }));
-                        }
-                    }
-                    Ok(None) => {
-                        tracing::debug!("File {} not found in database", file_path);
-                    }
-                    Err(e) => {
-                        tracing::warn!("Error accessing file {}: {}", file_path, e);
-                    }
-                }
-            }
-
-            tracing::info!("Found {} files matching properties {:?}", matching_files.len(), properties);
-
-            Ok(ToolCallResult {
-                success: true,
-                data: Some(serde_json::to_value(matching_files)?),
-                error: None,
-            })
-        }
-        Err(e) => Ok(ToolCallResult {
-            success: false,
-            data: None,
-            error: Some(format!("Database error: {}", e)),
-        }),
-    }
+    // Convert ToolExecutionResult back to ToolCallResult
+    Ok(ToolCallResult {
+        success: result.success,
+        data: result.data,
+        error: result.error,
+    })
 }
 
 /// Search notes by tags
-pub async fn search_by_tags(db: &EmbeddingDatabase, args: &ToolCallArgs) -> Result<ToolCallResult> {
-    let tags = match args.tags.as_ref() {
-        Some(tags) => tags,
-        None => {
-            return Ok(ToolCallResult {
-                success: false,
-                data: None,
-                error: Some("Missing tags parameter".to_string()),
-            });
-        }
+pub async fn search_by_tags(_db: &EmbeddingDatabase, args: &ToolCallArgs) -> Result<ToolCallResult> {
+    // Initialize crucible-tools if not already done
+    let _registry = init();
+
+    // Create tool service
+    let service = SystemToolService::new();
+
+    // Create execution context
+    let context = ExecutionContextBuilder::new().build();
+
+    // Convert legacy args to new format
+    let params = if let Some(tags) = &args.tags {
+        serde_json::json!({
+            "tags": tags
+        })
+    } else {
+        serde_json::json!({})
     };
 
-    tracing::info!("Searching for files with tags: {:?}", tags);
+    // Execute the new tool
+    let result = service.execute_tool("search_by_tags", params, context).await?;
 
-    // Use database for consistent, offline-capable search
-    match db.list_files().await {
-        Ok(all_files) => {
-            let mut matching_files = Vec::new();
-
-            for file_path in all_files {
-                match db.get_embedding(&file_path).await {
-                    Ok(Some(embedding_data)) => {
-                        // Check if file has ALL the requested tags
-                        let has_all_tags = tags.iter().all(|required_tag| {
-                            embedding_data.metadata.tags.iter().any(|file_tag| {
-                                file_tag.to_lowercase() == required_tag.to_lowercase()
-                            })
-                        });
-
-                        if has_all_tags {
-                            matching_files.push(serde_json::json!({
-                                "path": file_path,
-                                "name": embedding_data.metadata.title.as_ref().unwrap_or(&file_path),
-                                "folder": embedding_data.metadata.folder,
-                                "size": 0, // We don't store size in metadata
-                                "tags": embedding_data.metadata.tags,
-                            }));
-                        }
-                    }
-                    Ok(None) => {
-                        tracing::debug!("File {} not found in database", file_path);
-                    }
-                    Err(e) => {
-                        tracing::warn!("Error accessing file {}: {}", file_path, e);
-                    }
-                }
-            }
-
-            tracing::info!("Found {} files matching tags {:?}", matching_files.len(), tags);
-
-            Ok(ToolCallResult {
-                success: true,
-                data: Some(serde_json::to_value(matching_files)?),
-                error: None,
-            })
-        }
-        Err(e) => Ok(ToolCallResult {
-            success: false,
-            data: None,
-            error: Some(format!("Database error: {}", e)),
-        }),
-    }
+    // Convert ToolExecutionResult back to ToolCallResult
+    Ok(ToolCallResult {
+        success: result.success,
+        data: result.data,
+        error: result.error,
+    })
 }
 
 /// Search notes in a specific folder
@@ -372,48 +298,34 @@ pub async fn search_by_content(
 
 /// Semantic search using embeddings
 pub async fn semantic_search(
-    db: &EmbeddingDatabase,
-    provider: &Arc<dyn EmbeddingProvider>,
+    _db: &EmbeddingDatabase,
+    _provider: &Arc<dyn EmbeddingProvider>,
     args: &ToolCallArgs,
 ) -> Result<ToolCallResult> {
-    let query = match args.query.as_ref() {
-        Some(query) => query,
-        None => {
-            return Ok(ToolCallResult {
-                success: false,
-                data: None,
-                error: Some("Missing query".to_string()),
-            });
-        }
-    };
-    let top_k = args.top_k.unwrap_or(10);
+    // Initialize crucible-tools if not already done
+    let _registry = init();
 
-    // Generate embedding for the query using the provider
-    let embedding_result = match provider.embed(query).await {
-        Ok(result) => result,
-        Err(e) => {
-            tracing::error!("Failed to generate embedding for query: {}", e);
-            return Ok(ToolCallResult {
-                success: false,
-                data: None,
-                error: Some(format!("Failed to generate embedding for query: {}", e)),
-            });
-        }
-    };
-    let query_embedding = embedding_result.embedding;
+    // Create tool service
+    let service = SystemToolService::new();
 
-    match db.search_similar(&query_embedding, top_k).await {
-        Ok(results) => Ok(ToolCallResult {
-            success: true,
-            data: Some(serde_json::to_value(results)?),
-            error: None,
-        }),
-        Err(e) => Ok(ToolCallResult {
-            success: false,
-            data: None,
-            error: Some(format!("Semantic search error: {}", e)),
-        }),
-    }
+    // Create execution context
+    let context = ExecutionContextBuilder::new().build();
+
+    // Convert legacy args to new format
+    let params = serde_json::json!({
+        "query": args.query,
+        "top_k": args.top_k.unwrap_or(10)
+    });
+
+    // Execute the new tool
+    let result = service.execute_tool("semantic_search", params, context).await?;
+
+    // Convert ToolExecutionResult back to ToolCallResult
+    Ok(ToolCallResult {
+        success: result.success,
+        data: result.data,
+        error: result.error,
+    })
 }
 
 /// Generate embeddings for all vault notes

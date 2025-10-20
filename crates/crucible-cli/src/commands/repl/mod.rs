@@ -21,26 +21,27 @@ pub mod completer;
 pub mod history;
 pub mod error;
 pub mod tools;
+pub mod database;
 
 use tools::ToolRegistry;
 use crate::config::CliConfig;
 
 use command::Command;
 use input::Input;
-use formatter::{OutputFormatter, TableFormatter, JsonFormatter, CsvFormatter, QueryResult};
+use formatter::{OutputFormatter, TableFormatter, JsonFormatter, CsvFormatter};
 use highlighter::SurrealQLHighlighter;
 use completer::ReplCompleter;
 use history::CommandHistory;
 use error::ReplError;
+use database::ReplDatabase;
 
 /// REPL state and configuration
 pub struct Repl {
     /// Line editor with history and completion
     editor: Reedline,
 
-    /// Database connection (placeholder - will be SurrealDB)
-    /// TODO: Replace with actual SurrealDB connection when integrated
-    db: DummyDb,
+    /// Database connection using SurrealDB
+    db: ReplDatabase,
 
     /// Tool registry for `:run` commands (includes Rune execution)
     tools: ToolRegistry,
@@ -83,8 +84,18 @@ impl Repl {
         // Setup editor with custom highlighter and completer
         let highlighter = SurrealQLHighlighter::new();
 
-        // Placeholder database (to be replaced with real SurrealDB)
-        let db = DummyDb::new();
+        // Create real database connection
+        let db_path = config.db_path.to_string_lossy().to_string();
+        let db = match ReplDatabase::new(&db_path).await {
+            Ok(db) => {
+                info!("Connected to database at: {}", db_path);
+                db
+            }
+            Err(e) => {
+                warn!("Failed to connect to database at {}: {}, falling back to in-memory", db_path, e);
+                ReplDatabase::new_memory().await?
+            }
+        };
 
         // Initialize tool registry and discover tools
         let tool_dir = config.tool_dir.clone();
@@ -226,7 +237,7 @@ impl Repl {
                 Ok(())
             }
             Command::ShowConfig => {
-                self.show_config();
+                self.show_config().await;
                 Ok(())
             }
             Command::SetLogLevel(level) => {
@@ -388,7 +399,7 @@ impl Repl {
     }
 
     /// Show current configuration
-    fn show_config(&self) {
+    async fn show_config(&self) {
         println!("\n⚙️  Configuration:\n");
         println!("  Vault path:       {}", self.config.vault_path.display());
         println!("  Database path:    {}", self.config.db_path.display());
@@ -396,6 +407,19 @@ impl Repl {
         println!("  Output format:    {}", self.config.default_format);
         println!("  Query timeout:    {}s", self.config.query_timeout_secs);
         println!("  Max column width: {}", self.config.max_column_width);
+
+        // Show database statistics
+        match self.db.get_stats().await {
+            Ok(stats) => {
+                println!("  Database stats:");
+                for (key, value) in stats {
+                    println!("    {}: {}", key, value);
+                }
+            }
+            Err(e) => {
+                println!("  Database stats:   Error retrieving stats: {}", e);
+            }
+        }
         println!();
     }
 
@@ -464,10 +488,10 @@ impl Repl {
 
         println!("\n{}", "╔═══════════════════════════════════════════════════╗".cyan());
         println!("{}", "║        Crucible CLI REPL v0.1.0                   ║".cyan());
-        println!("{}", "║   Queryable Knowledge Layer for Terminal Users    ║".cyan());
+        println!("{}", "║   Real SurrealDB-Backed Knowledge Management     ║".cyan());
         println!("{}", "╚═══════════════════════════════════════════════════╝".cyan());
         println!("\nType {} for available commands or {} to exit.", ":help".green(), ":quit".red());
-        println!("You can also execute SurrealQL queries directly.\n");
+        println!("Connected to real SurrealDB - execute actual queries!\n");
     }
 }
 
@@ -522,30 +546,6 @@ impl ReplStats {
         } else {
             self.total_query_time / self.query_count as u32
         }
-    }
-}
-
-// Placeholder database (to be replaced with real SurrealDB)
-
-#[derive(Clone)]
-struct DummyDb;
-
-impl DummyDb {
-    fn new() -> Self {
-        Self
-    }
-
-    async fn query(&self, query: &str) -> Result<QueryResult, String> {
-        // Placeholder implementation
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-        // Simulate query result
-        Ok(QueryResult {
-            rows: vec![],
-            duration: std::time::Duration::from_millis(100),
-            affected_rows: Some(0),
-            status: formatter::QueryStatus::Success,
-        })
     }
 }
 

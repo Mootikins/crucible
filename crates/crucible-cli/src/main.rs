@@ -9,7 +9,7 @@ async fn main() -> Result<()> {
 
     // Initialize logging
     let log_level = if cli.verbose { "debug" } else { "info" };
-    let env_filter = format!("crucible_cli={},crucible_mcp={}", log_level, log_level);
+    let env_filter = format!("crucible_cli={},crucible_services={}", log_level, log_level);
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new(env_filter))
         .init();

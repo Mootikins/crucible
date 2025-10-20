@@ -1,7 +1,7 @@
 //! Event batching for grouping related events together.
 
-use crate::{events::FileEvent, error::Result};
-use std::collections::{HashMap, HashSet};
+use crate::events::FileEvent;
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tracing::{debug, trace};
 

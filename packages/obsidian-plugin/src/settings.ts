@@ -129,18 +129,14 @@ export class SettingsTab extends PluginSettingTab {
           })
       );
 
-    if (this.plugin.settings.mcp.enabled) {
+    // MCP functionality has been removed - server settings disabled
       new Setting(containerEl)
-        .setName("MCP Server Path")
-        .setDesc("Path to the crucible-mcp executable")
+        .setName("MCP Server Status")
+        .setDesc("MCP functionality has been deprecated and removed")
         .addText((text) =>
           text
-            .setPlaceholder("/path/to/crucible-mcp")
-            .setValue(this.plugin.settings.mcp.serverPath)
-            .onChange(async (value) => {
-              this.plugin.settings.mcp.serverPath = value;
-              await this.plugin.saveSettings();
-            })
+            .setValue("Disabled - MCP integration removed")
+            .setDisabled(true)
         );
 
       new Setting(containerEl)

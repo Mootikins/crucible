@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
 use crate::config::CliConfig;
-use crucible_mcp::rune_tools::ToolRegistry;
+use crucible_rune::{RuneService, RuneServiceConfig};
+use crucible_services::traits::tool::ToolService;
 use std::path::PathBuf;
 use glob::glob;
+use std::sync::Arc;
 
 pub async fn execute(config: CliConfig, script: String, args: Option<String>) -> Result<()> {
     let script_path = PathBuf::from(&script);
@@ -38,28 +40,36 @@ async fn execute_script(_config: CliConfig, script_path: PathBuf, args: Option<S
         serde_json::json!({})
     };
 
-    // Create Rune context
-    let context = rune::Context::with_default_modules()?;
-    let context_arc = std::sync::Arc::new(context);
+    // Create Rune service
+    let rune_config = RuneServiceConfig::default();
+    let rune_service = RuneService::new(rune_config).await?;
     let tool_dir = script_path.parent().unwrap_or(std::path::Path::new(".")).to_path_buf();
 
-    // Create registry and load script
-    let mut registry = ToolRegistry::new(tool_dir, context_arc.clone())?;
-    let tool_name = registry.load_tool(&script_path)
-        .context("Failed to load Rune script")?;
+    // Discover tools from the directory
+    rune_service.discover_tools_from_directory(&tool_dir).await
+        .context("Failed to discover Rune tools")?;
 
-    let tool = registry.get_tool(&tool_name)
-        .context("Tool not found after loading")?;
+    // Get the tool name from the script filename
+    let tool_name = script_path.file_stem()
+        .and_then(|s| s.to_str())
+        .context("Invalid script filename")?;
 
-    println!("Tool: {}", tool.metadata().name);
-    println!("Description: {}\n", tool.metadata().description);
+    // Execute the tool using the service
+    use crucible_services::traits::tool::ToolExecutionRequest;
+    let execution_request = ToolExecutionRequest {
+        tool_name: tool_name.to_string(),
+        parameters: args_obj,
+        context: Default::default(), // TODO: Add proper context
+        timeout_ms: Some(30000),
+    };
 
-    // Execute the script
-    let result = tool.call(args_obj, &context_arc).await
+    let result = rune_service.execute_tool(execution_request).await
         .context("Failed to execute script")?;
 
+    println!("Tool: {}", tool_name);
+    println!("Description: {}\n", "Rune script execution");
     println!("Result:");
-    println!("{}", serde_json::to_string_pretty(&result)?);
+    println!("{}", serde_json::to_string_pretty(&result.result)?);
 
     Ok(())
 }
@@ -71,11 +81,10 @@ pub async fn list_commands(_config: CliConfig) -> Result<()> {
     let locations = vec![
         format!("{}/.config/crucible/commands/*.rn", dirs::home_dir().unwrap().display()),
         ".crucible/commands/*.rn".to_string(),
-        "crates/crucible-mcp/tools/examples/*.rn".to_string(),
+        "crates/crucible-rune/examples/*.rn".to_string(),
     ];
 
     let mut found_any = false;
-    let context = std::sync::Arc::new(rune::Context::with_default_modules()?);
 
     for location in locations {
         if let Ok(entries) = glob(&location) {
@@ -89,17 +98,8 @@ pub async fn list_commands(_config: CliConfig) -> Result<()> {
                 for script in scripts {
                     let name = script.file_stem().unwrap().to_string_lossy();
                     println!("  • {}", name);
-
-                    // Try to load metadata
-                    let tool_dir = script.parent().unwrap_or(std::path::Path::new(".")).to_path_buf();
-                    if let Ok(mut registry) = ToolRegistry::new(tool_dir, context.clone()) {
-                        if let Ok(tool_name) = registry.load_tool(&script) {
-                            if let Some(tool) = registry.get_tool(&tool_name) {
-                                let meta = tool.metadata();
-                                println!("    {}", meta.description);
-                            }
-                        }
-                    }
+                    // For now, just show the script name
+                    // TODO: Load metadata using RuneService when available
                     println!();
                 }
             }
@@ -111,8 +111,8 @@ pub async fn list_commands(_config: CliConfig) -> Result<()> {
         println!("\nCreate scripts in:");
         println!("  • ~/.config/crucible/commands/");
         println!("  • .crucible/commands/");
-        println!("\nExample scripts are in:");
-        println!("  • crates/crucible-mcp/tools/examples/");
+        println!("\nExample scripts may be in:");
+        println!("  • crates/crucible-rune/examples/");
     }
 
     Ok(())

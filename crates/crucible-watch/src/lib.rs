@@ -68,7 +68,10 @@ mod utils;
 
 pub use error::*;
 pub use events::*;
-pub use traits::*;
+pub use traits::{
+    FileWatcher, EventHandler, WatchHandle, BackendCapabilities,
+    DebounceConfig, WatchMode
+};
 pub use backends::*;
 pub use manager::*;
 pub use config::*;
