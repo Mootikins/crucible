@@ -22,43 +22,43 @@ async fn main() -> Result<()> {
         cli.embedding_model,
     )?;
 
-    // Execute command
+    // Execute command (default to REPL if no command provided)
     match cli.command {
-        Commands::Search {
+        Some(Commands::Search {
             query,
             limit,
             format,
             show_content,
-        } => commands::search::execute(config, query, limit, format, show_content).await?,
+        }) => commands::search::execute(config, query, limit, format, show_content).await?,
 
-        Commands::Fuzzy {
+        Some(Commands::Fuzzy {
             query,
             content,
             tags,
             paths,
             limit,
-        } => commands::fuzzy::execute(config, query.unwrap_or_default(), content, tags, paths, limit).await?,
+        }) => commands::fuzzy::execute(config, query.unwrap_or_default(), content, tags, paths, limit).await?,
 
-        Commands::Semantic {
+        Some(Commands::Semantic {
             query,
             top_k,
             format,
             show_scores,
-        } => commands::semantic::execute(config, query, top_k, format, show_scores).await?,
+        }) => commands::semantic::execute(config, query, top_k, format, show_scores).await?,
 
-        Commands::Note(cmd) => commands::note::execute(config, cmd).await?,
+        Some(Commands::Note(cmd)) => commands::note::execute(config, cmd).await?,
 
-        Commands::Index { path, force, glob } => commands::index::execute(config, path, force, glob).await?,
+        Some(Commands::Index { path, force, glob }) => commands::index::execute(config, path, force, glob).await?,
 
-        Commands::Stats => commands::stats::execute(config).await?,
+        Some(Commands::Stats) => commands::stats::execute(config).await?,
 
-        Commands::Run { script, args } => commands::rune::execute(config, script, args).await?,
+        Some(Commands::Run { script, args }) => commands::rune::execute(config, script, args).await?,
 
-        Commands::Commands => commands::rune::list_commands(config).await?,
+        Some(Commands::Commands) => commands::rune::list_commands(config).await?,
 
-        Commands::Config(cmd) => commands::config::execute(cmd).await?,
+        Some(Commands::Config(cmd)) => commands::config::execute(cmd).await?,
 
-        Commands::Chat {
+        Some(Commands::Chat {
             agent,
             model,
             temperature,
@@ -66,7 +66,7 @@ async fn main() -> Result<()> {
             no_stream,
             start_message,
             history,
-        } => commands::chat::execute(
+        }) => commands::chat::execute(
             config,
             agent,
             model,
@@ -76,13 +76,6 @@ async fn main() -> Result<()> {
             start_message,
             history,
         ).await?,
-
-        Commands::Repl {
-            db_path,
-            tool_dir,
-            verbose: _,
-            format,
-        } => commands::repl::execute(config, db_path, tool_dir, format).await?,
 
         // Commands::EnhancedChat { // Temporarily disabled
         //     agent,
@@ -104,6 +97,11 @@ async fn main() -> Result<()> {
         // ).await?,
 
         // Commands::Agent(cmd) => commands::agent_management::execute(config, cmd).await?, // Temporarily disabled
+
+        None => {
+            // Default to REPL when no command is provided
+            commands::repl::execute(config, cli.db_path, cli.tool_dir, cli.format).await?
+        }
     }
 
     Ok(())
