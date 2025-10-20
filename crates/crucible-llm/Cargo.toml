@@ -11,6 +11,10 @@ description = "LLM and AI integration for Crucible - embeddings, chat, completio
 name = "crucible_llm"
 path = "src/lib.rs"
 
+[features]
+# Enable test utilities (MockEmbeddingProvider) for integration tests in other crates
+test-utils = []
+
 [dependencies]
 # Async
 tokio = { workspace = true, features = ["time"] }
