@@ -8,7 +8,6 @@ pub mod path_sanitizer;
 use std::path::{Path, PathBuf};
 use tracing::{debug, warn};
 use std::hash::{Hash, Hasher};
-use std::io::Read;
 
 /// Sanitize a tool name to ensure it's valid
 pub fn sanitize_tool_name(name: &str) -> String {

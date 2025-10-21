@@ -9,12 +9,11 @@
 //! - JSON Schema generation for function parameters
 //! - Enhanced error handling and validation
 
-use super::{AnalyzerConfig, ValidationRule};
+use crate::types::AnalyzerConfig;
 use anyhow::Result;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{debug, trace, warn};
 
 /// Information about a discovered module with enhanced metadata
 #[derive(Debug, Clone)]
