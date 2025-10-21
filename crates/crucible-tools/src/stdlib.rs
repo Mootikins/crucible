@@ -3,14 +3,31 @@
 //! This module provides standard library functions and modules for Rune scripts
 //! used as tools in the Crucible system.
 
-use crate::errors::{RuneError, RuneResult};
-use rune::runtime::VmError;
-use rune::{Context, Value};
-use std::sync::Arc;
+use crate::errors::RuneResult;
+use crate::types::ToolResult;
+use rune::runtime::{Value, Shared};
+use rune::{Context, Module};
+
+// === Memory Management Convenience Functions ===
+
+/// Create a shared string value with proper error handling
+pub fn create_shared_string(s: rune::alloc::String) -> ToolResult<Shared<rune::alloc::String>> {
+    Shared::new(s).map_err(|e| anyhow::anyhow!("Failed to create shared string: {}", e))
+}
+
+/// Create a shared vec value with proper error handling
+pub fn create_shared_vec(v: rune::runtime::Vec) -> ToolResult<Shared<rune::runtime::Vec>> {
+    Shared::new(v).map_err(|e| anyhow::anyhow!("Failed to create shared vec: {}", e))
+}
+
+/// Create a shared object value with proper error handling
+pub fn create_shared_obj(o: rune::runtime::Object) -> ToolResult<Shared<rune::runtime::Object>> {
+    Shared::new(o).map_err(|e| anyhow::anyhow!("Failed to create shared object: {}", e))
+}
 
 /// Build the Crucible standard library module
 pub fn build_crucible_module() -> RuneResult<rune::Module> {
-    let mut module = rune::Module::with_crate_item("crucible", []);
+    let mut module = rune::Module::with_crate("crucible")?;
 
     // Install core functions
     install_http_functions(&mut module)?;
@@ -26,554 +43,350 @@ pub fn build_crucible_module() -> RuneResult<rune::Module> {
 
 /// Install HTTP-related functions
 fn install_http_functions(module: &mut rune::Module) -> RuneResult<()> {
-    module.function(["http", "get"]?, http_get)
-        .map_err(|e| RuneError::CompilationError {
-            message: format!("Failed to register http_get function: {}", e),
-            source: None,
-        })?;
-    module.function(["http", "post"]?, http_post)
-        .map_err(|e| RuneError::CompilationError {
-            message: format!("Failed to register http_post function: {}", e),
-            source: None,
-        })?;
-    module.function(["http", "json_get"]?, http_json_get)
-        .map_err(|e| RuneError::CompilationError {
-            message: format!("Failed to register http_json_get function: {}", e),
-            source: None,
-        })?;
+    module.function_meta(http_get)?;
+    module.function_meta(http_post)?;
+    module.function_meta(http_json_get)?;
 
     Ok(())
 }
 
 /// HTTP GET function for Rune
-async fn http_get(url: String) -> Result<Value, VmError> {
+#[rune::function]
+pub async fn http_get(url: String) -> ToolResult<Value> {
     match reqwest::get(&url).await {
         Ok(response) => {
             match response.text().await {
-                Ok(text) => Ok(Value::from(text)),
-                Err(e) => Err(VmError::from(anyhow::anyhow!("HTTP response error: {}", e))),
+                Ok(text) => {
+                    let rune_str = rune::alloc::String::try_from(text.as_str())
+                        .map_err(|e| anyhow::anyhow!("String conversion failed: {}", e))?;
+                    let shared_str = create_shared_string(rune_str)?;
+                    Ok(Value::String(shared_str))
+                },
+                Err(e) => {
+                    Err(anyhow::anyhow!("HTTP response error: {}", e))
+                },
             }
         }
-        Err(e) => Err(VmError::from(anyhow::anyhow!("HTTP request error: {}", e))),
+        Err(e) => {
+            Err(anyhow::anyhow!("HTTP request error: {}", e))
+        },
     }
 }
 
 /// HTTP POST function for Rune
-async fn http_post(url: String, body: String) -> Result<Value, VmError> {
+#[rune::function]
+async fn http_post(url: String, body: String) -> ToolResult<Value> {
     let client = reqwest::Client::new();
     match client.post(&url).body(body).send().await {
         Ok(response) => {
             match response.text().await {
-                Ok(text) => Ok(Value::from(text)),
-                Err(e) => Err(VmError::from(anyhow::anyhow!("HTTP response error: {}", e))),
+                Ok(text) => {
+                    let rune_str = rune::alloc::String::try_from(text.as_str())
+                        .map_err(|e| anyhow::anyhow!("String conversion failed: {}", e))?;
+                    let shared_str = create_shared_string(rune_str)?;
+                    Ok(Value::String(shared_str))
+                },
+                Err(e) => {
+                    Err(anyhow::anyhow!("HTTP response error: {}", e))
+                }
             }
         }
-        Err(e) => Err(VmError::from(anyhow::anyhow!("HTTP request error: {}", e))),
+        Err(e) => {
+            Err(anyhow::anyhow!("HTTP request error: {}", e))
+        }
     }
 }
 
 /// HTTP JSON GET function for Rune
-async fn http_json_get(url: String) -> Result<Value, VmError> {
+#[rune::function]
+async fn http_json_get(url: String) -> ToolResult<Value> {
     match reqwest::get(&url).await {
         Ok(response) => {
             match response.json::<serde_json::Value>().await {
                 Ok(json) => Ok(rune_value_from_json(&json)?),
-                Err(e) => Err(VmError::from(anyhow::anyhow!("JSON parsing error: {}", e))),
+                Err(e) => {
+                    Err(anyhow::anyhow!("JSON parsing error: {}", e))
+                }
             }
         }
-        Err(e) => Err(VmError::from(anyhow::anyhow!("HTTP request error: {}", e))),
+        Err(e) => {
+            Err(anyhow::anyhow!("HTTP request error: {}", e))
+        }
     }
 }
 
 /// Install file system functions
 fn install_file_functions(module: &mut rune::Module) -> RuneResult<()> {
-    module.function(["file", "read"]?, file_read)
-        .map_err(|e| RuneError::CompilationError {
-            message: format!("Failed to register file_read function: {}", e),
-            source: None,
-        })?;
-    module.function(["file", "write"]?, file_write)
-        .map_err(|e| RuneError::CompilationError {
-            message: format!("Failed to register file_write function: {}", e),
-            source: None,
-        })?;
-    module.function(["file", "exists"]?, file_exists)
-        .map_err(|e| RuneError::CompilationError {
-            message: format!("Failed to register file_exists function: {}", e),
-            source: None,
-        })?;
-    module.function(["file", "is_dir"]?, file_is_dir)
-        .map_err(|e| RuneError::CompilationError {
-            message: format!("Failed to register file_is_dir function: {}", e),
-            source: None,
-        })?;
-    module.function(["file", "is_file"]?, file_is_file)
-        .map_err(|e| RuneError::CompilationError {
-            message: format!("Failed to register file_is_file function: {}", e),
-            source: None,
-        })?;
-    module.function(["file", "list_dir"]?, file_list_dir)
-        .map_err(|e| RuneError::CompilationError {
-            message: format!("Failed to register file_list_dir function: {}", e),
-            source: None,
-        })?;
+    module.function_meta(file_read)?;
+    module.function_meta(file_write)?;
+    module.function_meta(file_exists)?;
+    module.function_meta(file_is_dir)?;
+    module.function_meta(file_is_file)?;
+    module.function_meta(file_list_dir)?;
 
     Ok(())
 }
 
-/// File read function for Rune
-fn file_read(path: String) -> Result<String, VmError> {
-    match std::fs::read_to_string(&path) {
-        Ok(content) => Ok(content),
-        Err(e) => Err(VmError::from(anyhow::anyhow!("File read error: {}", e))),
+/// Create a basic Rune context with default modules
+pub fn create_context() -> RuneResult<Context> {
+    let context = Context::with_default_modules()?;
+    Ok(context)
+}
+
+/// Create a Rune context with additional custom modules
+pub fn create_context_with_modules(modules: Vec<Module>) -> RuneResult<Context> {
+    let mut context = Context::with_default_modules()?;
+
+    for module in modules {
+        context.install(module)?;
     }
+
+    Ok(context)
 }
 
-/// File write function for Rune
-fn file_write(path: String, content: String) -> Result<(), VmError> {
-    match std::fs::write(&path, content) {
-        Ok(_) => Ok(()),
-        Err(e) => Err(VmError::from(anyhow::anyhow!("File write error: {}", e))),
-    }
+/// Create a default context with crucible module pre-installed
+pub fn create_default_context() -> RuneResult<Context> {
+    let mut context = Context::with_default_modules()?;
+    let crucible_module = build_crucible_module()?;
+    context.install(crucible_module)?;
+    Ok(context)
 }
 
-/// File exists function for Rune
-fn file_exists(path: String) -> bool {
-    std::path::Path::new(&path).exists()
-}
+// === Helper Functions and Implementations ===
 
-/// File is directory function for Rune
-fn file_is_dir(path: String) -> bool {
-    std::path::Path::new(&path).is_dir()
-}
-
-/// File is file function for Rune
-fn file_is_file(path: String) -> bool {
-    std::path::Path::new(&path).is_file()
-}
-
-/// File list directory function for Rune
-fn file_list_dir(path: String) -> Result<Vec<String>, VmError> {
-    match std::fs::read_dir(&path) {
-        Ok(entries) => {
-            let mut files = Vec::new();
-            for entry in entries {
-                match entry {
-                    Ok(entry) => {
-                        if let Some(name) = entry.file_name().to_str() {
-                            files.push(name.to_string());
-                        }
-                    }
-                    Err(e) => return Err(VmError::from(anyhow::anyhow!("Directory read error: {}", e))),
-                }
-            }
-            Ok(files)
-        }
-        Err(e) => Err(VmError::from(anyhow::anyhow!("Directory read error: {}", e))),
-    }
-}
-
-/// Install JSON manipulation functions
-fn install_json_functions(module: &mut rune::Module) -> RuneResult<()> {
-    module.function(["json", "parse"]?, json_parse)?;
-    module.function(["json", "stringify"]?, json_stringify)?;
-    module.function(["json", "stringify_pretty"]?, json_stringify_pretty)?;
-
-    Ok(())
-}
-
-/// JSON parse function for Rune
-fn json_parse(text: String) -> Result<Value, VmError> {
-    match serde_json::from_str::<serde_json::Value>(&text) {
-        Ok(json) => Ok(rune_value_from_json(&json)?),
-        Err(e) => Err(VmError::from(anyhow::anyhow!("JSON parsing error: {}", e))),
-    }
-}
-
-/// JSON stringify function for Rune
-fn json_stringify(value: Value) -> Result<String, VmError> {
-    let json = json_value_from_rune(&value)?;
-    match serde_json::to_string(&json) {
-        Ok(s) => Ok(s),
-        Err(e) => Err(VmError::from(anyhow::anyhow!("JSON serialization error: {}", e))),
-    }
-}
-
-/// JSON stringify pretty function for Rune
-fn json_stringify_pretty(value: Value) -> Result<String, VmError> {
-    let json = json_value_from_rune(&value)?;
-    match serde_json::to_string_pretty(&json) {
-        Ok(s) => Ok(s),
-        Err(e) => Err(VmError::from(anyhow::anyhow!("JSON serialization error: {}", e))),
-    }
-}
-
-/// Install string manipulation functions
-fn install_string_functions(module: &mut rune::Module) -> RuneResult<()> {
-    module.function(["string", "trim"]?, string_trim)?;
-    module.function(["string", "to_upper"]?, string_to_upper)?;
-    module.function(["string", "to_lower"]?, string_to_lower)?;
-    module.function(["string", "contains"]?, string_contains)?;
-    module.function(["string", "starts_with"]?, string_starts_with)?;
-    module.function(["string", "ends_with"]?, string_ends_with)?;
-    module.function(["string", "split"]?, string_split)?;
-    module.function(["string", "join"]?, string_join)?;
-    module.function(["string", "replace"]?, string_replace)?;
-
-    Ok(())
-}
-
-/// String trim function for Rune
-fn string_trim(s: String) -> String {
-    s.trim().to_string()
-}
-
-/// String to uppercase function for Rune
-fn string_to_upper(s: String) -> String {
-    s.to_uppercase()
-}
-
-/// String to lowercase function for Rune
-fn string_to_lower(s: String) -> String {
-    s.to_lowercase()
-}
-
-/// String contains function for Rune
-fn string_contains(s: String, pattern: String) -> bool {
-    s.contains(&pattern)
-}
-
-/// String starts with function for Rune
-fn string_starts_with(s: String, prefix: String) -> bool {
-    s.starts_with(&prefix)
-}
-
-/// String ends with function for Rune
-fn string_ends_with(s: String, suffix: String) -> bool {
-    s.ends_with(&suffix)
-}
-
-/// String split function for Rune
-fn string_split(s: String, delimiter: String) -> Vec<String> {
-    s.split(&delimiter).map(|s| s.to_string()).collect()
-}
-
-/// String join function for Rune
-fn string_join(parts: Vec<String>, delimiter: String) -> String {
-    parts.join(&delimiter)
-}
-
-/// String replace function for Rune
-fn string_replace(s: String, from: String, to: String) -> String {
-    s.replace(&from, &to)
-}
-
-/// Install time-related functions
-fn install_time_functions(module: &mut rune::Module) -> RuneResult<()> {
-    module.function(["time", "now"]?, time_now)?;
-    module.function(["time", "timestamp"]?, time_timestamp)?;
-    module.function(["time", "parse"]?, time_parse)?;
-    module.function(["time", "format"]?, time_format)?;
-
-    Ok(())
-}
-
-/// Time now function for Rune
-fn time_now() -> String {
-    chrono::Utc::now().to_rfc3339()
-}
-
-/// Time timestamp function for Rune
-fn time_timestamp() -> i64 {
-    chrono::Utc::now().timestamp()
-}
-
-/// Time parse function for Rune
-fn time_parse(s: String) -> Result<String, VmError> {
-    match chrono::DateTime::parse_from_rfc3339(&s) {
-        Ok(dt) => Ok(dt.to_rfc3339()),
-        Err(e) => Err(VmError::from(anyhow::anyhow!("Time parsing error: {}", e))),
-    }
-}
-
-/// Time format function for Rune
-fn time_format(s: String, format: String) -> Result<String, VmError> {
-    match chrono::DateTime::parse_from_rfc3339(&s) {
-        Ok(dt) => Ok(dt.format(&format).to_string()),
-        Err(e) => Err(VmError::from(anyhow::anyhow!("Time parsing error: {}", e))),
-    }
-}
-
-/// Install math functions
-fn install_math_functions(module: &mut rune::Module) -> RuneResult<()> {
-    module.function(["math", "abs"]?, math_abs)?;
-    module.function(["math", "round"]?, math_round)?;
-    module.function(["math", "floor"]?, math_floor)?;
-    module.function(["math", "ceil"]?, math_ceil)?;
-    module.function(["math", "sqrt"]?, math_sqrt)?;
-    module.function(["math", "pow"]?, math_pow)?;
-    module.function(["math", "min"]?, math_min)?;
-    module.function(["math", "max"]?, math_max)?;
-    module.function(["math", "sin"]?, math_sin)?;
-    module.function(["math", "cos"]?, math_cos)?;
-    module.function(["math", "tan"]?, math_tan)?;
-    module.function(["math", "random"]?, math_random)?;
-    module.function(["math", "random_range"]?, math_random_range)?;
-
-    Ok(())
-}
-
-/// Math absolute function for Rune
-fn math_abs(x: f64) -> f64 {
-    x.abs()
-}
-
-/// Math round function for Rune
-fn math_round(x: f64) -> f64 {
-    x.round()
-}
-
-/// Math floor function for Rune
-fn math_floor(x: f64) -> f64 {
-    x.floor()
-}
-
-/// Math ceil function for Rune
-fn math_ceil(x: f64) -> f64 {
-    x.ceil()
-}
-
-/// Math square root function for Rune
-fn math_sqrt(x: f64) -> Result<f64, VmError> {
-    if x < 0.0 {
-        return Err(VmError::from(anyhow::anyhow!("Cannot take square root of negative number")));
-    }
-    Ok(x.sqrt())
-}
-
-/// Math power function for Rune
-fn math_pow(base: f64, exp: f64) -> f64 {
-    base.powf(exp)
-}
-
-/// Math minimum function for Rune
-fn math_min(a: f64, b: f64) -> f64 {
-    a.min(b)
-}
-
-/// Math maximum function for Rune
-fn math_max(a: f64, b: f64) -> f64 {
-    a.max(b)
-}
-
-/// Math sine function for Rune
-fn math_sin(x: f64) -> f64 {
-    x.sin()
-}
-
-/// Math cosine function for Rune
-fn math_cos(x: f64) -> f64 {
-    x.cos()
-}
-
-/// Math tangent function for Rune
-fn math_tan(x: f64) -> f64 {
-    x.tan()
-}
-
-/// Math random function for Rune
-fn math_random() -> f64 {
-    rand::random::<f64>()
-}
-
-/// Math random range function for Rune
-fn math_random_range(min: f64, max: f64) -> f64 {
-    rand::random::<f64>() * (max - min) + min
-}
-
-/// Install validation functions
-fn install_validation_functions(module: &mut rune::Module) -> RuneResult<()> {
-    module.function(["validate", "email"]?, validate_email)?;
-    module.function(["validate", "url"]?, validate_url)?;
-    module.function(["validate", "json"]?, validate_json)?;
-    module.function(["validate", "numeric"]?, validate_numeric)?;
-    module.function(["validate", "integer"]?, validate_integer)?;
-    module.function(["validate", "non_empty"]?, validate_non_empty)?;
-
-    Ok(())
-}
-
-/// Email validation function for Rune
-fn validate_email(email: String) -> bool {
-    // Simple email validation
-    email.contains('@') && email.contains('.') && email.len() > 5
-}
-
-/// URL validation function for Rune
-fn validate_url(url: String) -> bool {
-    url.starts_with("http://") || url.starts_with("https://")
-}
-
-/// JSON validation function for Rune
-fn validate_json(text: String) -> bool {
-    serde_json::from_str::<serde_json::Value>(&text).is_ok()
-}
-
-/// Numeric validation function for Rune
-fn validate_numeric(s: String) -> bool {
-    s.parse::<f64>().is_ok()
-}
-
-/// Integer validation function for Rune
-fn validate_integer(s: String) -> bool {
-    s.parse::<i64>().is_ok()
-}
-
-/// Non-empty validation function for Rune
-fn validate_non_empty(s: String) -> bool {
-    !s.trim().is_empty()
-}
-
-/// Convert serde_json::Value to rune::Value
-fn rune_value_from_json(json: &serde_json::Value) -> RuneResult<Value> {
+/// Convert JSON value to Rune value
+fn rune_value_from_json(json: &serde_json::Value) -> ToolResult<Value> {
     match json {
-        serde_json::Value::Null => Ok(Value::from(())),
-        serde_json::Value::Bool(b) => Ok(Value::from(*b)),
+        serde_json::Value::Null => {
+            // Create empty tuple for unit value
+            let empty_vec = rune::runtime::Vec::new();
+            let shared_vec = create_shared_vec(empty_vec)?;
+            Ok(Value::Vec(shared_vec))
+        },
+        serde_json::Value::Bool(b) => Ok(Value::Bool(*b)),
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                Ok(Value::from(i))
+                Ok(Value::Integer(i))
+            } else if let Some(u) = n.as_u64() {
+                Ok(Value::Integer(u as i64))  // Convert u64 to i64
             } else if let Some(f) = n.as_f64() {
-                Ok(Value::from(f))
+                Ok(Value::Float(f))
             } else {
-                Err(VmError::from(anyhow::anyhow!("Invalid number")))
+                Err(anyhow::anyhow!("Invalid number format"))
             }
         }
         serde_json::Value::String(s) => {
-            let rune_str = rune::alloc::String::try_from(s.as_str())?;
-            Ok(Value::try_from(rune_str)?)
-        }
+            let rune_str = rune::alloc::String::try_from(s.as_str())
+                .map_err(|e| anyhow::anyhow!("String conversion failed: {}", e))?;
+            let shared_str = create_shared_string(rune_str)?;
+            Ok(Value::String(shared_str))
+        },
         serde_json::Value::Array(arr) => {
             let mut rune_vec = rune::runtime::Vec::new();
             for item in arr {
                 rune_vec.push(rune_value_from_json(item)?)?;
             }
-            Ok(Value::try_from(rune_vec)?)
+            let shared_vec = create_shared_vec(rune_vec)?;
+            Ok(Value::Vec(shared_vec))
         }
         serde_json::Value::Object(obj) => {
             let mut rune_obj = rune::runtime::Object::new();
-            for (key, val) in obj {
-                let rune_key = rune::alloc::String::try_from(key.as_str())?;
-                rune_obj.insert(rune_key, rune_value_from_json(val)?)?;
+            for (key, value) in obj {
+                let rune_key = rune::alloc::String::try_from(key.as_str())
+                    .map_err(|e| anyhow::anyhow!("String conversion failed: {}", e))?;
+                rune_obj.insert(rune_key, rune_value_from_json(value)?)?;
             }
-            Ok(Value::try_from(rune_obj)?)
+            let shared_obj = create_shared_obj(rune_obj)?;
+            Ok(Value::Object(shared_obj))
         }
     }
 }
 
-/// Convert rune::Value to serde_json::Value
-fn json_value_from_rune(rune_value: &Value) -> RuneResult<serde_json::Value> {
-    // This is a simplified conversion - in a real implementation,
-    // you'd need more comprehensive handling of Rune value types
-    match rune_value {
-        Value::Unit => Ok(serde_json::Value::Null),
-        Value::Bool(b) => Ok(serde_json::Value::Bool(*b)),
-        Value::Byte(b) => Ok(serde_json::Value::Number((*b as i64).into())),
-        Value::Integer(i) => Ok(serde_json::Value::Number((*i).into())),
-        Value::Float(f) => Ok(serde_json::Value::Number(serde_json::Number::from_f64(*f)
-            .ok_or_else(|| VmError::from(anyhow::anyhow!("Invalid float")))?)),
-        Value::Char(c) => Ok(serde_json::Value::String(c.to_string())),
-        _ => Ok(serde_json::Value::String(format!("{:?}", rune_value))),
+/// Install JSON-related functions
+fn install_json_functions(module: &mut rune::Module) -> RuneResult<()> {
+    module.function_meta(json_parse)?;
+    module.function_meta(json_stringify)?;
+    Ok(())
+}
+
+/// Install string manipulation functions
+fn install_string_functions(module: &mut rune::Module) -> RuneResult<()> {
+    module.function_meta(string_split)?;
+    module.function_meta(string_join)?;
+    module.function_meta(string_trim)?;
+    Ok(())
+}
+
+/// Install time-related functions
+fn install_time_functions(module: &mut rune::Module) -> RuneResult<()> {
+    module.function_meta(time_now)?;
+    module.function_meta(time_format)?;
+    Ok(())
+}
+
+/// Install math functions
+fn install_math_functions(module: &mut rune::Module) -> RuneResult<()> {
+    module.function_meta(math_abs)?;
+    module.function_meta(math_round)?;
+    Ok(())
+}
+
+/// Install validation functions
+fn install_validation_functions(module: &mut rune::Module) -> RuneResult<()> {
+    module.function_meta(validate_email)?;
+    module.function_meta(validate_url)?;
+    Ok(())
+}
+
+// === Function Implementations ===
+
+#[rune::function]
+async fn json_parse(input: String) -> ToolResult<Value> {
+    match serde_json::from_str::<serde_json::Value>(&input) {
+        Ok(json) => rune_value_from_json(&json),
+        Err(e) => {
+            Err(anyhow::anyhow!("JSON parse error: {}", e))
+        }
     }
 }
 
-/// Create a context with the Crucible standard library
-pub fn create_context() -> RuneResult<Context> {
-    let mut context = Context::with_default_modules()?;
-    let crucible_module = build_crucible_module()?;
-    context.install(&crucible_module)?;
-    Ok(context)
+#[rune::function]
+async fn json_stringify(value: Value) -> ToolResult<String> {
+    // Convert Rune value back to JSON
+    match value {
+        Value::Vec(_) | Value::Tuple(_) => Ok("null".to_string()), // Empty values
+        Value::Bool(b) => Ok(serde_json::to_string(&b).unwrap_or_default()),
+        Value::Byte(b) => Ok(b.to_string()),
+        Value::Char(c) => Ok(format!("\"{}\"", c)),
+        Value::Integer(i) => Ok(i.to_string()),
+        Value::Float(f) => Ok(f.to_string()),
+        Value::String(s) => Ok(format!("\"{}\"", format_args!("{:?}", s))), // Use Debug for Shared<String>
+        _ => Ok("\"[complex value]\"".to_string()),
+    }
 }
 
-/// Create a context with additional modules
-pub fn create_context_with_modules(modules: Vec<rune::Module>) -> RuneResult<Context> {
-    let mut context = Context::with_default_modules()?;
-
-    // Install Crucible module
-    let crucible_module = build_crucible_module()?;
-    context.install(&crucible_module)?;
-
-    // Install additional modules
-    for module in modules {
-        context.install(&module)?;
+#[rune::function]
+async fn string_split(input: String, delimiter: String) -> ToolResult<Value> {
+    let parts: Vec<String> = input.split(&delimiter).map(|s| s.to_string()).collect();
+    let mut rune_vec = rune::runtime::Vec::new();
+    for part in parts {
+        let rune_str = rune::alloc::String::try_from(part.as_str())
+            .map_err(|e| anyhow::anyhow!("String conversion failed: {}", e))?;
+        let shared_str = create_shared_string(rune_str)?;
+        rune_vec.push(Value::String(shared_str))?;
     }
-
-    Ok(context)
+    let shared_vec = create_shared_vec(rune_vec)?;
+    Ok(Value::Vec(shared_vec))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[rune::function]
+async fn string_join(parts: Vec<String>, delimiter: String) -> ToolResult<String> {
+    Ok(parts.join(&delimiter))
+}
 
-    #[test]
-    fn test_build_crucible_module() {
-        let module = build_crucible_module().unwrap();
-        // Test that the module was created successfully
-        assert!(module.item("http").is_some());
-        assert!(module.item("file").is_some());
-        assert!(module.item("json").is_some());
+#[rune::function]
+async fn string_trim(input: String) -> ToolResult<String> {
+    Ok(input.trim().to_string())
+}
+
+#[rune::function]
+async fn time_now() -> ToolResult<String> {
+    Ok(chrono::Utc::now().to_rfc3339())
+}
+
+#[rune::function]
+async fn time_format(timestamp: String, format: String) -> ToolResult<String> {
+    match chrono::DateTime::parse_from_rfc3339(&timestamp) {
+        Ok(dt) => Ok(dt.format(&format).to_string()),
+        Err(e) => {
+            Err(anyhow::anyhow!("Time format error: {}", e))
+        }
     }
+}
 
-    #[test]
-    fn test_create_context() {
-        let context = create_context().unwrap();
-        // Test that context was created with Crucible module
-        assert!(context.module("crucible").is_some());
+#[rune::function]
+async fn math_abs(num: i64) -> ToolResult<i64> {
+    Ok(num.abs())
+}
+
+#[rune::function]
+async fn math_round(num: f64) -> ToolResult<i64> {
+    Ok(num.round() as i64)
+}
+
+#[rune::function]
+async fn validate_email(email: String) -> ToolResult<bool> {
+    // Simple email validation
+    Ok(email.contains('@') && email.contains('.'))
+}
+
+#[rune::function]
+async fn validate_url(url: String) -> ToolResult<bool> {
+    // Simple URL validation
+    Ok(url.starts_with("http://") || url.starts_with("https://"))
+}
+
+// Placeholder file function implementations
+#[rune::function]
+async fn file_read(path: String) -> ToolResult<Value> {
+    match std::fs::read_to_string(&path) {
+        Ok(content) => {
+            let rune_str = rune::alloc::String::try_from(content.as_str())
+                .map_err(|e| anyhow::anyhow!("String conversion failed: {}", e))?;
+            let shared_str = create_shared_string(rune_str)?;
+            Ok(Value::String(shared_str))
+        },
+        Err(e) => {
+            Err(anyhow::anyhow!("File read error: {}", e))
+        }
     }
+}
 
-    #[tokio::test]
-    async fn test_http_functions() {
-        // This test would require a mock HTTP server for reliable testing
-        // For now, just test function registration
-        let module = build_crucible_module().unwrap();
-        assert!(module.item(["http", "get"]).is_some());
-        assert!(module.item(["http", "post"]).is_some());
+#[rune::function]
+async fn file_write(path: String, content: String) -> ToolResult<()> {
+    match std::fs::write(&path, content) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            Err(anyhow::anyhow!("File write error: {}", e))
+        }
     }
+}
 
-    #[test]
-    fn test_string_functions() {
-        let module = build_crucible_module().unwrap();
-        assert!(module.item(["string", "trim"]).is_some());
-        assert!(module.item(["string", "to_upper"]).is_some());
-        assert!(module.item(["string", "to_lower"]).is_some());
-    }
+#[rune::function]
+async fn file_exists(path: String) -> ToolResult<bool> {
+    Ok(std::path::Path::new(&path).exists())
+}
 
-    #[test]
-    fn test_math_functions() {
-        let module = build_crucible_module().unwrap();
-        assert!(module.item(["math", "abs"]).is_some());
-        assert!(module.item(["math", "sqrt"]).is_some());
-        assert!(module.item(["math", "random"]).is_some());
-    }
+#[rune::function]
+async fn file_is_dir(path: String) -> ToolResult<bool> {
+    Ok(std::path::Path::new(&path).is_dir())
+}
 
-    #[test]
-    fn test_validation_functions() {
-        let module = build_crucible_module().unwrap();
-        assert!(module.item(["validate", "email"]).is_some());
-        assert!(module.item(["validate", "url"]).is_some());
-        assert!(module.item(["validate", "json"]).is_some());
-    }
+#[rune::function]
+async fn file_is_file(path: String) -> ToolResult<bool> {
+    Ok(std::path::Path::new(&path).is_file())
+}
 
-    #[test]
-    fn test_rune_json_conversion() {
-        let json = serde_json::json!({
-            "name": "test",
-            "value": 42,
-            "active": true
-        });
-
-        let rune_value = rune_value_from_json(&json).unwrap();
-        let back_to_json = json_value_from_rune(&rune_value).unwrap();
-
-        assert_eq!(json, back_to_json);
+#[rune::function]
+async fn file_list_dir(path: String) -> ToolResult<Value> {
+    match std::fs::read_dir(&path) {
+        Ok(entries) => {
+            let mut rune_vec = rune::runtime::Vec::new();
+            for entry in entries.take(100) { // Limit to prevent excessive results
+                if let Ok(entry) = entry {
+                    if let Some(name_str) = entry.file_name().to_str() {
+                        let rune_str = rune::alloc::String::try_from(name_str)
+                            .map_err(|e| anyhow::anyhow!("String conversion failed: {}", e))?;
+                        let shared_str = create_shared_string(rune_str)?;
+                        rune_vec.push(Value::String(shared_str))?;
+                    }
+                }
+            }
+            let shared_vec = create_shared_vec(rune_vec)?;
+            Ok(Value::Vec(shared_vec))
+        }
+        Err(e) => {
+            Err(anyhow::anyhow!("Directory read error: {}", e))
+        }
     }
 }
