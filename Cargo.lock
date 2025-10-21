@@ -1884,10 +1884,17 @@ name = "crucible-services"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "chrono",
+ "dashmap 6.1.0",
+ "futures",
+ "md5",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "thiserror 2.0.17",
+ "tokio",
+ "tracing",
  "uuid",
 ]
 
