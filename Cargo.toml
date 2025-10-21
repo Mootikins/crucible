@@ -4,7 +4,6 @@ members = [
     "crates/crucible-core",
     "crates/crucible-tauri",
     "crates/crucible-plugins",
-    "crates/crucible-mcp-client",
     "crates/crucible-cli",
     "crates/crucible-sync",
     "crates/crucible-surrealdb",
@@ -15,7 +14,6 @@ members = [
     "crates/crucible-llm",
     "crates/crucible-services",
     "crates/crucible-rune-macros",
-    "crates/crucible-rune",
     "crates/crucible-tools",
 ]
 
