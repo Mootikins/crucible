@@ -5,7 +5,6 @@
 //! with context and chaining throughout the crate.
 
 use thiserror::Error;
-use std::sync::Arc;
 
 /// Main error type for the Rune system
 #[derive(Error, Debug, Clone)]
@@ -650,9 +649,9 @@ impl From<anyhow::Error> for RuneError {
         if let Some(rune_err) = err.downcast_ref::<RuneError>() {
             rune_err.clone()
         } else if let Some(io_err) = err.downcast_ref::<std::io::Error>() {
-            Self::from(*io_err)
+            Self::from(io_err)
         } else if let Some(json_err) = err.downcast_ref::<serde_json::Error>() {
-            Self::from(*json_err)
+            Self::from(json_err)
         } else {
             Self::GenericError {
                 message: err.to_string(),
@@ -678,6 +677,16 @@ impl From<rune::runtime::VmError> for RuneError {
         Self::RuntimeError {
             message: err.to_string(),
             source: Some(err),
+        }
+    }
+}
+
+/// Convert from rune::ContextError
+impl From<rune::ContextError> for RuneError {
+    fn from(err: rune::ContextError) -> Self {
+        Self::ContextError {
+            message: format!("Rune context error: {}", err),
+            context_type: Some("module_construction".to_string()),
         }
     }
 }
