@@ -2,7 +2,7 @@ use std::fmt;
 use thiserror::Error;
 
 /// Service-level error types for the Crucible service abstraction layer
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum ServiceError {
     /// Tool service related errors
     #[error("Tool service error: {message}")]

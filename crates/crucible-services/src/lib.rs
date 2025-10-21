@@ -1,245 +1,210 @@
-//! # Crucible Services
+//! # Crucible Services - Simplified
 //!
-//! This crate provides a comprehensive service abstraction layer for the Crucible knowledge management system.
-//! It enables clean separation of concerns and provides a unified interface for different types of services.
-//!
-//! ## Features
-//!
-//! - **Service Traits**: Abstract interfaces for Tool, Database, LLM, and Configuration services
-//! - **Request Routing**: Intelligent service discovery and load balancing
-//! - **Circuit Breaker**: Fault tolerance with automatic failover
-//! - **Middleware**: Request/response processing pipeline
-//! - **Service Discovery**: Dynamic service registration and discovery
-//! - **Error Handling**: Comprehensive error types and context
-//! - **Metrics**: Built-in performance monitoring and statistics
-//!
-//! ## Architecture
-//!
-//! The service layer is organized around several key components:
-//!
-//! - **Service Traits**: Define interfaces for different service types
-//! - **Service Router**: Handles request routing and load balancing
-//! - **Service Registry**: Manages service registration and discovery
-//! - **Middleware Pipeline**: Processes requests and responses
-//! - **Circuit Breakers**: Provides fault tolerance
-//!
-//! ## Quick Start
-//!
-//! ```rust
-//! use crucible_services::*;
-//! use std::sync::Arc;
-//!
-//! // Create a service registry
-//! let registry = ServiceDiscoveryFactory::create_registry();
-//!
-//! // Create a load balancer
-//! let load_balancer = LoadBalancerFactory::create(LoadBalancingStrategy::RoundRobin);
-//!
-//! // Create a service router
-//! let mut router = DefaultServiceRouter::new(registry, load_balancer);
-//!
-//! // Add middleware
-//! router.add_middleware(Arc::new(LoggingMiddleware::new(LoggingConfig::default())));
-//! router.add_middleware(Arc::new(AuthenticationMiddleware::new(Arc::new(MockAuthService))));
-//!
-//! // Register services
-//! // ... (service implementation details)
-//!
-//! // Route requests
-//! let request = ServiceRequest {
-//!     request_id: uuid::Uuid::new_v4(),
-//!     service_type: ServiceType::Tool,
-//!     service_instance: None,
-//!     method: "execute".to_string(),
-//!     payload: serde_json::json!({"tool": "test"}),
-//!     metadata: RequestMetadata::default(),
-//!     timeout_ms: Some(5000),
-//! };
-//!
-//! let response = router.route_request(request).await?;
-//! # Ok::<(), Box<dyn std::error::Error>>(())
-//! ```
+//! This crate provides minimal service abstractions for the Crucible knowledge management system.
+//! It focuses on essential traits and types without over-engineering.
 
-use async_trait::async_trait;
 
-// Export core modules
-pub mod errors;
-pub mod traits;
-pub mod types;
-pub mod router;
+/// Version information
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Basic service error and result types
+pub mod errors {
+    use thiserror::Error;
+
+    /// Service error type
+    #[derive(Error, Debug)]
+    pub enum ServiceError {
+        #[error("Service not found: {0}")]
+        ServiceNotFound(String),
+
+        #[error("Tool not found: {0}")]
+        ToolNotFound(String),
+
+        #[error("Execution error: {0}")]
+        ExecutionError(String),
+
+        #[error("Configuration error: {0}")]
+        ConfigurationError(String),
+
+        #[error("Validation error: {0}")]
+        ValidationError(String),
+
+        #[error("IO error: {0}")]
+        IoError(#[from] std::io::Error),
+
+        #[error("Serialization error: {0}")]
+        SerializationError(#[from] serde_json::Error),
+
+        #[error("Other error: {0}")]
+        Other(String),
+    }
+
+    impl ServiceError {
+        pub fn execution_error(msg: impl Into<String>) -> Self {
+            Self::ExecutionError(msg.into())
+        }
+
+        pub fn config_error(msg: impl Into<String>) -> Self {
+            Self::ConfigurationError(msg.into())
+        }
+
+        pub fn validation_error(msg: impl Into<String>) -> Self {
+            Self::ValidationError(msg.into())
+        }
+    }
+
+    /// Service result type
+    pub type ServiceResult<T> = Result<T, ServiceError>;
+}
+
+/// Essential service traits
+pub mod traits {
+    use super::{errors::ServiceResult, types::tool::*};
+    use async_trait::async_trait;
+
+    /// Basic tool service trait - simplified version
+    #[async_trait]
+    pub trait ToolService: Send + Sync {
+        /// List all available tools
+        async fn list_tools(&self) -> ServiceResult<Vec<ToolDefinition>>;
+
+        /// Get tool definition by name
+        async fn get_tool(&self, name: &str) -> ServiceResult<Option<ToolDefinition>>;
+
+        /// Execute a tool
+        async fn execute_tool(&self, request: ToolExecutionRequest) -> ServiceResult<ToolExecutionResult>;
+
+        /// Validate a tool without executing it
+        async fn validate_tool(&self, name: &str) -> ServiceResult<ValidationResult>;
+
+        /// Get service health and status
+        async fn service_health(&self) -> ServiceResult<super::types::ServiceHealth>;
+
+        /// Get performance metrics
+        async fn get_metrics(&self) -> ServiceResult<super::types::ServiceMetrics>;
+    }
+}
+
+/// Essential types
+pub mod types {
+    use serde::{Deserialize, Serialize};
+    use std::collections::HashMap;
+
+    /// Basic service health information
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ServiceHealth {
+        pub status: ServiceStatus,
+        pub message: Option<String>,
+        pub last_check: chrono::DateTime<chrono::Utc>,
+        pub details: HashMap<String, String>,
+    }
+
+    /// Service status
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    pub enum ServiceStatus {
+        Healthy,
+        Degraded,
+        Unhealthy,
+    }
+
+    /// Basic service metrics
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ServiceMetrics {
+        pub total_requests: u64,
+        pub successful_requests: u64,
+        pub failed_requests: u64,
+        pub average_response_time: std::time::Duration,
+        pub uptime: std::time::Duration,
+        pub memory_usage: u64,
+        pub cpu_usage: f64,
+    }
+
+    /// Tool-specific types - minimal version of what's actually needed
+    pub mod tool {
+        use super::*;
+        use serde::{Deserialize, Serialize};
+
+        /// Tool definition - simplified
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct ToolDefinition {
+            pub name: String,
+            pub description: String,
+            pub input_schema: serde_json::Value,
+            pub category: Option<String>,
+            pub version: Option<String>,
+            pub author: Option<String>,
+            pub tags: Vec<String>,
+            pub enabled: bool,
+            pub parameters: Vec<ToolParameter>,
+        }
+
+        /// Tool parameter definition
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct ToolParameter {
+            pub name: String,
+            pub param_type: String,
+            pub description: Option<String>,
+            pub required: bool,
+            pub default_value: Option<serde_json::Value>,
+        }
+
+        /// Tool execution request
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct ToolExecutionRequest {
+            pub tool_name: String,
+            pub parameters: serde_json::Value,
+            pub context: ToolExecutionContext,
+            pub timeout_ms: Option<u64>,
+        }
+
+        /// Tool execution context
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct ToolExecutionContext {
+            pub user_id: Option<String>,
+            pub session_id: Option<String>,
+            pub working_directory: Option<String>,
+            pub environment: HashMap<String, String>,
+            pub context: HashMap<String, String>,
+        }
+
+        /// Tool execution result
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct ToolExecutionResult {
+            pub success: bool,
+            pub result: Option<serde_json::Value>,
+            pub error: Option<String>,
+            pub execution_time: std::time::Duration,
+            pub tool_name: String,
+            pub context: ToolExecutionContext,
+        }
+
+        /// Tool validation result
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        pub struct ValidationResult {
+            pub valid: bool,
+            pub errors: Vec<String>,
+            pub warnings: Vec<String>,
+            pub tool_name: String,
+        }
+
+        impl Default for ToolExecutionContext {
+            fn default() -> Self {
+                Self {
+                    user_id: None,
+                    session_id: None,
+                    working_directory: None,
+                    environment: HashMap::new(),
+                    context: HashMap::new(),
+                }
+            }
+        }
+    }
+}
 
 // Re-export main components for easier access
 pub use errors::*;
 pub use traits::*;
 pub use types::*;
-pub use router::*;
-
-// Re-export factory functions
-pub use router::load_balancer::LoadBalancerFactory;
-pub use router::discovery::ServiceDiscoveryFactory;
-pub use router::circuit_breaker::CircuitBreakerFactory;
-pub use router::middleware::*;
-
-/// Version information
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-/// Default configurations
-pub mod defaults {
-    use super::*;
-
-    /// Default request timeout in milliseconds
-    pub const DEFAULT_TIMEOUT_MS: u64 = 30000;
-
-    /// Default cache TTL in seconds
-    pub const DEFAULT_CACHE_TTL_SECONDS: u64 = 300;
-
-    /// Default health check interval in seconds
-    pub const DEFAULT_HEALTH_CHECK_INTERVAL_SECONDS: u64 = 60;
-
-    /// Default circuit breaker failure threshold
-    pub const DEFAULT_CIRCUIT_BREAKER_FAILURE_THRESHOLD: u32 = 5;
-
-    /// Default circuit breaker timeout in seconds
-    pub const DEFAULT_CIRCUIT_BREAKER_TIMEOUT_SECONDS: u64 = 60;
-
-    /// Default rate limit requests per minute
-    pub const DEFAULT_RATE_LIMIT_RPM: u32 = 100;
-}
-
-/// Service builder for convenient service setup
-pub struct ServiceBuilder {
-    registry: Option<Arc<dyn ServiceRegistry>>,
-    load_balancer: Option<Arc<dyn LoadBalancer>>,
-    timeout_ms: u64,
-    middlewares: Vec<Arc<dyn ServiceMiddleware>>,
-}
-
-impl ServiceBuilder {
-    /// Create a new service builder
-    pub fn new() -> Self {
-        Self {
-            registry: None,
-            load_balancer: None,
-            timeout_ms: defaults::DEFAULT_TIMEOUT_MS,
-            middlewares: Vec::new(),
-        }
-    }
-
-    /// Set the service registry
-    pub fn with_registry(mut self, registry: Arc<dyn ServiceRegistry>) -> Self {
-        self.registry = Some(registry);
-        self
-    }
-
-    /// Set the load balancer
-    pub fn with_load_balancer(mut self, load_balancer: Arc<dyn LoadBalancer>) -> Self {
-        self.load_balancer = Some(load_balancer);
-        self
-    }
-
-    /// Set the request timeout
-    pub fn with_timeout(mut self, timeout_ms: u64) -> Self {
-        self.timeout_ms = timeout_ms;
-        self
-    }
-
-    /// Add middleware
-    pub fn with_middleware(mut self, middleware: Arc<dyn ServiceMiddleware>) -> Self {
-        self.middlewares.push(middleware);
-        self
-    }
-
-    /// Add authentication middleware
-    pub fn with_auth(self, auth_service: Arc<dyn AuthService>) -> Self {
-        self.with_middleware(Arc::new(AuthenticationMiddleware::new(auth_service)))
-    }
-
-    /// Add logging middleware
-    pub fn with_logging(self, config: LoggingConfig) -> Self {
-        self.with_middleware(Arc::new(LoggingMiddleware::new(config)))
-    }
-
-    /// Add rate limiting middleware
-    pub fn with_rate_limiting(self, rate_limiter: Arc<dyn ServiceRateLimiter>) -> Self {
-        self.with_middleware(Arc::new(RateLimitMiddleware::new(rate_limiter)))
-    }
-
-    /// Add metrics middleware
-    pub fn with_metrics(self, metrics_collector: Arc<dyn MetricsCollector>) -> Self {
-        self.with_middleware(Arc::new(MetricsMiddleware::new(metrics_collector)))
-    }
-
-    /// Build the service router
-    pub fn build(self) -> Result<Arc<dyn ServiceRouter>, crate::errors::ServiceError> {
-        let registry = self.registry
-            .ok_or_else(|| crate::errors::ServiceError::configuration_error("Service registry is required"))?;
-
-        let load_balancer = self.load_balancer
-            .ok_or_else(|| crate::errors::ServiceError::configuration_error("Load balancer is required"))?;
-
-        let mut router = DefaultServiceRouter::new(registry, load_balancer)
-            .with_default_timeout(self.timeout_ms);
-
-        // Add all middleware
-        for middleware in self.middlewares {
-            router.add_middleware(middleware);
-        }
-
-        Ok(Arc::new(router))
-    }
-}
-
-impl Default for ServiceBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Convenience functions for common setups
-pub mod presets {
-    use super::*;
-
-    /// Create a basic service router with logging
-    pub fn basic() -> Result<Arc<dyn ServiceRouter>, ServiceError> {
-        ServiceBuilder::new()
-            .with_registry(ServiceDiscoveryFactory::create_registry())
-            .with_load_balancer(LoadBalancerFactory::create(LoadBalancingStrategy::RoundRobin))
-            .with_logging(LoggingConfig::default())
-            .build()
-    }
-
-    /// Create a production-ready service router with all middleware
-    pub fn production(
-        auth_service: Arc<dyn AuthService>,
-        rate_limiter: Arc<dyn ServiceRateLimiter>,
-        metrics_collector: Arc<dyn MetricsCollector>,
-    ) -> Result<Arc<dyn ServiceRouter>, ServiceError> {
-        ServiceBuilder::new()
-            .with_registry(ServiceDiscoveryFactory::create_registry())
-            .with_load_balancer(LoadBalancerFactory::create(LoadBalancingStrategy::WeightedRoundRobin))
-            .with_auth(auth_service)
-            .with_logging(LoggingConfig::default())
-            .with_rate_limiting(rate_limiter)
-            .with_metrics(metrics_collector)
-            .with_timeout(30000)
-            .build()
-    }
-
-    /// Create a development service router with minimal middleware
-    pub fn development() -> Result<Arc<dyn ServiceRouter>, ServiceError> {
-        ServiceBuilder::new()
-            .with_registry(ServiceDiscoveryFactory::create_registry())
-            .with_load_balancer(LoadBalancerFactory::create(LoadBalancingStrategy::Random))
-            .with_logging(LoggingConfig {
-                log_requests: true,
-                log_responses: true,
-                log_errors: true,
-                log_payloads: true, // More verbose in development
-            })
-            .with_timeout(60000) // Longer timeout for development
-            .build()
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -251,111 +216,15 @@ mod tests {
     }
 
     #[test]
-    fn test_service_builder() {
-        let registry = ServiceDiscoveryFactory::create_registry();
-        let load_balancer = LoadBalancerFactory::create(LoadBalancingStrategy::RoundRobin);
-
-        let builder = ServiceBuilder::new()
-            .with_registry(registry.clone())
-            .with_load_balancer(load_balancer.clone())
-            .with_timeout(5000);
-
-        assert!(builder.build().is_ok());
+    fn test_service_error_creation() {
+        let error = ServiceError::execution_error("test error");
+        assert!(matches!(error, ServiceError::ExecutionError(_)));
     }
 
     #[test]
-    fn test_presets() {
-        // Test basic preset
-        assert!(presets::basic().is_ok());
-
-        // Test development preset
-        assert!(presets::development().is_ok());
-
-        // Test production preset (requires mocked dependencies)
-        let auth_service = Arc::new(MockAuthService);
-        let rate_limiter = Arc::new(crate::router::middleware::MockRateLimiter);
-        let metrics_collector = Arc::new(crate::router::middleware::MockMetricsCollector);
-
-        assert!(presets::production(auth_service, rate_limiter, metrics_collector).is_ok());
-    }
-}
-
-/// Mock rate limiter for testing
-pub struct MockRateLimiter;
-
-#[async_trait]
-impl ServiceRateLimiter for MockRateLimiter {
-    async fn is_allowed(&self, _key: &str, _limit: u32, _window_seconds: u32) -> ServiceResult<bool> {
-        Ok(true)
-    }
-
-    async fn get_usage(&self, _key: &str, _window_seconds: u32) -> ServiceResult<RateLimitUsage> {
-        Ok(RateLimitUsage {
-            current_count: 0,
-            limit: 100,
-            remaining: 100,
-            reset_time_seconds: 60,
-        })
-    }
-
-    async fn reset(&self, _key: &str) -> ServiceResult<()> {
-        Ok(())
-    }
-}
-
-/// Mock metrics collector for testing
-pub struct MockMetricsCollector;
-
-#[async_trait]
-impl MetricsCollector for MockMetricsCollector {
-    async fn record_request_duration(&self, _service_id: &str, _duration_ms: u64) {
-        // Mock implementation
-    }
-
-    async fn record_error(&self, _service_type: &str, _error: &str) {
-        // Mock implementation
-    }
-
-    async fn get_service_metrics(&self, _service_id: &str) -> Option<router::middleware::ServicePerformanceMetrics> {
-        None
-    }
-}
-
-/// Mock implementations for testing
-#[cfg(test)]
-pub mod mocks {
-    use super::*;
-    use std::collections::HashMap;
-    use std::sync::Arc;
-
-    // Mock implementations are included in their respective modules
-    // This namespace can be used to organize additional test utilities
-}
-
-#[cfg(all(test, feature = "integration_tests"))]
-pub mod integration_tests {
-    //! Integration tests for the service layer
-    //!
-    //! These tests require external dependencies and can be run with:
-    //! ```bash
-    //! cargo test --features integration_tests
-    //! ```
-
-    use super::*;
-
-    #[tokio::test]
-    async fn test_end_to_end_service_routing() {
-        // This would test the complete service routing flow
-        // with actual service implementations
-    }
-
-    #[tokio::test]
-    async fn test_service_discovery_integration() {
-        // Test service discovery with real backends
-    }
-
-    #[tokio::test]
-    async fn test_load_balancing_strategies() {
-        // Compare different load balancing strategies
+    fn test_tool_execution_context() {
+        let context = tool::ToolExecutionContext::default();
+        assert!(context.user_id.is_none());
+        assert!(context.environment.is_empty());
     }
 }
