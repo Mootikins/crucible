@@ -3,6 +3,7 @@
 //! Provides basic service abstractions for data layer operations without over-engineering.
 
 use anyhow::Result;
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -54,9 +55,39 @@ impl ServiceManager {
         let services = self.services.read().await;
         services.keys().cloned().collect()
     }
+
+    /// Shutdown the service manager
+    pub async fn shutdown(&self) -> Result<()> {
+        info!("Shutting down service manager");
+
+        // Clear all services
+        let mut services = self.services.write().await;
+        services.clear();
+
+        info!("Service manager shutdown complete");
+        Ok(())
+    }
+
+    /// Get health status for all services
+    pub async fn get_all_health(&self) -> Result<HashMap<String, crucible_services::types::ServiceHealth>> {
+        let services = self.services.read().await;
+        let mut health_map = HashMap::new();
+
+        for service_name in services.keys() {
+            health_map.insert(service_name.clone(), crucible_services::types::ServiceHealth {
+                status: crucible_services::types::ServiceStatus::Healthy,
+                message: Some("Service is running".to_string()),
+                last_check: chrono::Utc::now(),
+                details: HashMap::new(),
+            });
+        }
+
+        Ok(health_map)
+    }
 }
 
 /// Basic file service interface
+#[async_trait]
 pub trait FileService: Send + Sync {
     async fn read_file(&self, path: &str) -> Result<String>;
     async fn write_file(&self, path: &str, content: &str) -> Result<()>;
@@ -65,18 +96,21 @@ pub trait FileService: Send + Sync {
 }
 
 /// Basic database service interface
+#[async_trait]
 pub trait DatabaseService: Send + Sync {
     async fn execute_query(&self, query: &str) -> Result<serde_json::Value>;
     async fn health_check(&self) -> Result<bool>;
 }
 
 /// Basic event service interface
+#[async_trait]
 pub trait EventService: Send + Sync {
     async fn publish_event(&self, event: &str) -> Result<()>;
     async fn subscribe(&self, pattern: &str) -> Result<String>;
 }
 
 /// Basic sync service interface
+#[async_trait]
 pub trait SyncService: Send + Sync {
     async fn sync(&self) -> Result<()>;
     async fn get_status(&self) -> Result<SyncStatus>;
@@ -101,7 +135,7 @@ impl SimpleFileService {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl FileService for SimpleFileService {
     async fn read_file(&self, path: &str) -> Result<String> {
         let full_path = self.base_path.join(path);
@@ -145,7 +179,7 @@ impl SimpleDatabaseService {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl DatabaseService for SimpleDatabaseService {
     async fn execute_query(&self, _query: &str) -> Result<serde_json::Value> {
         // Simple placeholder implementation
@@ -161,17 +195,21 @@ impl DatabaseService for SimpleDatabaseService {
 /// Simple event service implementation
 pub struct SimpleEventService {
     subscribers: Arc<RwLock<HashMap<String, Vec<String>>>>,
+    event_sender: Option<flume::Sender<String>>,
 }
 
 impl SimpleEventService {
     pub fn new() -> Self {
         Self {
             subscribers: Arc::new(RwLock::new(HashMap::new())),
+            event_sender: None,
         }
     }
+
+    // Removed new_with_sender - not needed for simplified implementation
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl EventService for SimpleEventService {
     async fn publish_event(&self, event: &str) -> Result<()> {
         info!("Publishing event: {}", event);
@@ -207,7 +245,7 @@ impl SimpleSyncService {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl SyncService for SimpleSyncService {
     async fn sync(&self) -> Result<()> {
         info!("Starting sync process");
