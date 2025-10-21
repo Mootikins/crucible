@@ -5,6 +5,7 @@
 
 use crate::system_tools::{schemas, Tool};
 use crate::types::*;
+use crucible_services::types::tool::{ToolDefinition, ToolExecutionContext, ToolExecutionResult, ContextRef};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -58,7 +59,7 @@ impl Tool for SearchByPropertiesTool {
                     }
                 }))),
                 deprecated: false,
-                version: "1.0.0".to_string(),
+                version: Some("1.0.0".to_string()),
             };
         }
         &DEFINITION
@@ -74,9 +75,11 @@ impl Tool for SearchByPropertiesTool {
             None => {
                 return Ok(ToolExecutionResult {
                     success: false,
-                    data: None,
+                    result: None,
                     error: Some("Missing properties".to_string()),
-                    execution_time_ms: None,
+                    execution_time: std::time::Duration::from_millis(0),
+                    tool_name: "search_by_properties".to_string(),
+                    context_ref: Some(ContextRef::new()),
                 });
             }
         };
@@ -99,9 +102,11 @@ impl Tool for SearchByPropertiesTool {
 
         Ok(ToolExecutionResult {
             success: true,
-            data: Some(json!(matching_files)),
+            result: Some(json!(matching_files)),
             error: None,
-            execution_time_ms: None,
+            execution_time: std::time::Duration::from_millis(0),
+            tool_name: "search_by_properties".to_string(),
+            context_ref: Some(ContextRef::new()),
         })
     }
 }
@@ -153,7 +158,7 @@ impl Tool for SearchByTagsTool {
                     }
                 }))),
                 deprecated: false,
-                version: "1.0.0".to_string(),
+                version: Some("1.0.0".to_string()),
             };
         }
         &DEFINITION
@@ -169,9 +174,11 @@ impl Tool for SearchByTagsTool {
             None => {
                 return Ok(ToolExecutionResult {
                     success: false,
-                    data: None,
+                    result: None,
                     error: Some("Missing tags parameter".to_string()),
-                    execution_time_ms: None,
+                    execution_time: std::time::Duration::from_millis(0),
+                    tool_name: "search_by_tags".to_string(),
+                    context_ref: Some(ContextRef::new()),
                 });
             }
         };
@@ -190,9 +197,11 @@ impl Tool for SearchByTagsTool {
 
         Ok(ToolExecutionResult {
             success: true,
-            data: Some(json!(matching_files)),
+            result: Some(json!(matching_files)),
             error: None,
-            execution_time_ms: None,
+            execution_time: std::time::Duration::from_millis(0),
+            tool_name: "search_by_tags".to_string(),
+            context_ref: Some(ContextRef::new()),
         })
     }
 }
@@ -240,7 +249,7 @@ impl Tool for SearchByFolderTool {
                     "items": {"type": "string"}
                 }))),
                 deprecated: false,
-                version: "1.0.0".to_string(),
+                version: Some("1.0.0".to_string()),
             };
         }
         &DEFINITION
@@ -256,9 +265,11 @@ impl Tool for SearchByFolderTool {
             None => {
                 return Ok(ToolExecutionResult {
                     success: false,
-                    data: None,
+                    result: None,
                     error: Some("Missing path".to_string()),
-                    execution_time_ms: None,
+                    execution_time: std::time::Duration::from_millis(0),
+                    tool_name: "search_by_folder".to_string(),
+                    context_ref: Some(ContextRef::new()),
                 });
             }
         };
@@ -277,15 +288,19 @@ impl Tool for SearchByFolderTool {
         match self.scan_folder(&search_path, recursive).await {
             Ok(files) => Ok(ToolExecutionResult {
                 success: true,
-                data: Some(json!(files)),
+                result: Some(json!(files)),
                 error: None,
-                execution_time_ms: None,
+                execution_time: std::time::Duration::from_millis(0),
+                tool_name: "search_by_folder".to_string(),
+                context_ref: Some(ContextRef::new()),
             }),
             Err(e) => Ok(ToolExecutionResult {
                 success: false,
-                data: None,
+                result: None,
                 error: Some(format!("Folder search failed: {}", e)),
-                execution_time_ms: None,
+                execution_time: std::time::Duration::from_millis(0),
+                tool_name: "search_by_folder".to_string(),
+                context_ref: Some(ContextRef::new()),
             }),
         }
     }
@@ -384,7 +399,7 @@ impl Tool for IndexVaultTool {
                     }
                 }))),
                 deprecated: false,
-                version: "1.0.0".to_string(),
+                version: Some("1.0.0".to_string()),
             };
         }
         &DEFINITION
@@ -415,12 +430,14 @@ impl Tool for IndexVaultTool {
 
         Ok(ToolExecutionResult {
             success: true,
-            data: Some(json!({
+            result: Some(json!({
                 "indexed": indexed_count,
                 "errors": errors
             })),
             error: None,
-            execution_time_ms: None,
+            execution_time: std::time::Duration::from_millis(0),
+            tool_name: "index_vault".to_string(),
+            context_ref: Some(ContextRef::new()),
         })
     }
 }
@@ -471,7 +488,7 @@ impl Tool for GetNoteMetadataTool {
                     }
                 }))),
                 deprecated: false,
-                version: "1.0.0".to_string(),
+                version: Some("1.0.0".to_string()),
             };
         }
         &DEFINITION
@@ -487,9 +504,11 @@ impl Tool for GetNoteMetadataTool {
             None => {
                 return Ok(ToolExecutionResult {
                     success: false,
-                    data: None,
+                    result: None,
                     error: Some("Missing path".to_string()),
-                    execution_time_ms: None,
+                    execution_time: std::time::Duration::from_millis(0),
+                    tool_name: "get_note_metadata".to_string(),
+                    context_ref: Some(ContextRef::new()),
                 });
             }
         };
@@ -512,9 +531,11 @@ impl Tool for GetNoteMetadataTool {
 
         Ok(ToolExecutionResult {
             success: true,
-            data: Some(metadata),
+            result: Some(metadata),
             error: None,
-            execution_time_ms: None,
+            execution_time: std::time::Duration::from_millis(0),
+            tool_name: "get_note_metadata".to_string(),
+            context_ref: Some(ContextRef::new()),
         })
     }
 }
@@ -549,11 +570,12 @@ mod tests {
     async fn test_search_by_properties_tool() {
         let tool = SearchByPropertiesTool::new();
         let context = ToolExecutionContext {
-            workspace_path: None,
-            vault_path: None,
             user_id: None,
             session_id: None,
-            timestamp: chrono::Utc::now(),
+            working_directory: None,
+            environment: std::collections::HashMap::new(),
+            context: std::collections::HashMap::new(),
+            vault_path: None,
         };
 
         let params = json!({
@@ -570,11 +592,12 @@ mod tests {
     async fn test_search_by_tags_tool() {
         let tool = SearchByTagsTool::new();
         let context = ToolExecutionContext {
-            workspace_path: None,
-            vault_path: None,
             user_id: None,
             session_id: None,
-            timestamp: chrono::Utc::now(),
+            working_directory: None,
+            environment: std::collections::HashMap::new(),
+            context: std::collections::HashMap::new(),
+            vault_path: None,
         };
 
         let params = json!({

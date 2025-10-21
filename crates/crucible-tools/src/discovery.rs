@@ -8,7 +8,7 @@
 //! - Hot-reload support
 //! - AST-based analysis
 
-use super::{RuneTool, ToolMetadata, RuneAstAnalyzer, ValidationResult};
+use crate::{tool::RuneTool, tool::ToolMetadata, analyzer::RuneAstAnalyzer, types::ValidationResult};
 use anyhow::{Context, Result};
 use chrono::Utc;
 use std::hash::{Hash, Hasher};
@@ -17,7 +17,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, info, warn};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -314,7 +314,7 @@ impl ToolDiscovery {
                 }
             } else if path.is_dir() && self.config.follow_symlinks || !path.is_symlink() {
                 // Recursively discover in subdirectories
-                match self.discover_from_directory(&path).await {
+                match Box::pin(self.discover_from_directory(&path)).await {
                     Ok(mut discoveries) => {
                         all_discoveries.append(&mut discoveries);
                     }
@@ -341,7 +341,7 @@ impl ToolDiscovery {
                 // Check if file has been modified
                 if let Ok(metadata) = tokio::fs::metadata(file_path).await {
                     if let Ok(modified) = metadata.modified() {
-                        let modified_time = chrono::DateTime::from(modified);
+                        let modified_time: chrono::DateTime<chrono::Utc> = chrono::DateTime::from(modified);
                         if modified_time <= cached.metadata.modified_time {
                             debug!("Using cached discovery for {:?}", file_path);
                             return Ok(cached.clone());
