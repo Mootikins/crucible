@@ -3,14 +3,13 @@
 //! This provides a clean interface for working with Rune tools
 //! without the over-engineered service-oriented architecture.
 
-use crate::errors::{RuneError, RuneResult};
 use crate::discovery;
 use crate::loader;
 use crate::rune_registry;
-use crate::types::{RuneServiceConfig, ValidationResult, SystemInfo};
+use crate::context_factory::ContextFactory;
+use crate::types::{RuneServiceConfig, SystemInfo};
+use crucible_services::types::tool::{ToolDefinition, ToolExecutionRequest, ToolExecutionResult, ContextRef};
 use crucible_services::ToolService;
-use crucible_services::types::tool::{ToolDefinition, ToolExecutionRequest, ToolExecutionResult};
-use crucible_services::types::tool::ToolExecutionContext;
 use anyhow::Result;
 use std::path::Path;
 use std::sync::Arc;
@@ -28,6 +27,8 @@ pub struct RuneService {
     loader: Arc<loader::ToolLoader>,
     /// Tool discovery
     discovery: Arc<discovery::ToolDiscovery>,
+    /// Context factory for creating fresh contexts
+    context_factory: Arc<ContextFactory>,
 }
 
 impl RuneService {
@@ -39,12 +40,14 @@ impl RuneService {
         let registry = Arc::new(RwLock::new(rune_registry::RuneToolRegistry::new()?));
         let loader = Arc::new(loader::ToolLoader::new(&config)?);
         let discovery = Arc::new(discovery::ToolDiscovery::new(&config.discovery)?);
+        let context_factory = Arc::new(ContextFactory::new()?);
 
         let service = Self {
             config,
             registry,
             loader,
             discovery,
+            context_factory,
         };
 
         // Discover tools from configured directories
@@ -105,9 +108,9 @@ impl RuneService {
                 description: tool.description.clone(),
                 input_schema: tool.input_schema.clone(),
                 category: Some("rune".to_string()),
-                version: Some(tool.version.clone().unwrap_or_default()),
+                version: tool.version.clone(),
                 author: None,
-                tags: tool.tags.clone().unwrap_or_default(),
+                tags: tool.tags.clone(),
                 enabled: tool.enabled,
                 parameters: vec![], // Could be populated from the input schema
             })
@@ -137,74 +140,86 @@ impl ToolService for RuneService {
         debug!("Executing tool: {}", request.tool_name);
 
         let registry = self.registry.read().await;
-        let tool = registry.get_tool(&request.tool_name)
+        let tool = registry.get_tool(&request.tool_name).await
             .ok_or_else(|| crucible_services::ServiceError::ToolNotFound(request.tool_name.clone()))?;
 
-        // Execute the tool using the Rune runtime
-        let result = tool.execute(request.parameters, &request.context.context)
+        // Create a fresh context for each execution
+        let fresh_context = self.context_factory.create_fresh_context(&request.tool_name)
+            .await
+            .map_err(|e| crucible_services::ServiceError::ExecutionError(format!("Failed to create context: {}", e)))?;
+
+        // Execute the tool using the fresh context
+        let result = tool.call(request.parameters, &fresh_context)
             .await
             .map_err(|e| crucible_services::ServiceError::ExecutionError(e.to_string()))?;
 
-        debug!("Tool execution completed successfully");
+        debug!("Tool execution completed successfully with fresh context");
         Ok(ToolExecutionResult {
             success: true,
             result: Some(result),
             error: None,
             execution_time: std::time::Duration::from_millis(0), // TODO: track actual execution time
             tool_name: request.tool_name,
-            context: request.context,
+            context_ref: Some(ContextRef::new()),
         })
     }
 
     /// List all available tools
     async fn list_tools(&self) -> crucible_services::ServiceResult<Vec<ToolDefinition>> {
-        self.list_tools().await
-            .map_err(|e| crucible_services::ServiceError::ExecutionError(e.to_string()))
+        let tools = self.registry.read().await.list_tools().await
+            .map_err(|e| crucible_services::ServiceError::ExecutionError(e.to_string()))?;
+
+        let tool_definitions = tools.into_iter().map(|tool| tool.to_tool_definition()).collect();
+        Ok(tool_definitions)
     }
 
     /// Get tool definition by name
     async fn get_tool(&self, name: &str) -> crucible_services::ServiceResult<Option<ToolDefinition>> {
         let registry = self.registry.read().await;
-        let tool = registry.get_tool(name);
+        let tool = registry.get_tool(name).await
+            .map_err(|e| crucible_services::ServiceError::ExecutionError(e.to_string()))?;
 
         Ok(tool.map(|tool| ToolDefinition {
             name: tool.name.clone(),
             description: tool.description.clone(),
             input_schema: tool.input_schema.clone(),
             category: Some("rune".to_string()),
-            version: Some(tool.version.clone().unwrap_or_default()),
+            version: tool.version.clone(),
             author: None,
-            tags: tool.tags.clone().unwrap_or_default(),
+            tags: tool.tags.clone(),
             enabled: tool.enabled,
             parameters: vec![],
         }))
     }
 
     /// Validate a tool without executing it
-    async fn validate_tool(&self, name: &str) -> crucible_services::ServiceResult<ValidationResult> {
+    async fn validate_tool(&self, name: &str) -> crucible_services::ServiceResult<crucible_services::types::tool::ValidationResult> {
         let registry = self.registry.read().await;
-        let tool = registry.get_tool(name);
+        let tool = registry.get_tool(name).await
+            .map_err(|e| crucible_services::ServiceError::ExecutionError(e.to_string()))?;
 
         match tool {
-            Some(tool) => Ok(ValidationResult {
+            Some(tool) => Ok(crucible_services::types::tool::ValidationResult {
                 valid: true,
                 errors: vec![],
                 warnings: vec![],
                 tool_name: name.to_string(),
+                metadata: None,
             }),
-            None => Ok(ValidationResult {
+            None => Ok(crucible_services::types::tool::ValidationResult {
                 valid: false,
                 errors: vec![format!("Tool '{}' not found", name)],
                 warnings: vec![],
                 tool_name: name.to_string(),
+                metadata: None,
             }),
         }
     }
 
     /// Get service health and status
     async fn service_health(&self) -> crucible_services::ServiceResult<crucible_services::types::ServiceHealth> {
-        let registry = self.registry.read().await;
-        let tool_count = registry.list_tools().len();
+        let tools = self.registry.read().await.list_tools().await.unwrap_or_default();
+        let tool_count = tools.len();
 
         Ok(crucible_services::types::ServiceHealth {
             status: crucible_services::types::ServiceStatus::Healthy,

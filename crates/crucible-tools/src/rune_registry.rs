@@ -3,14 +3,13 @@
 //! This module provides a registry for discovering, loading, and managing
 //! Rune tools with support for hot-reloading, caching, and service integration.
 
-use crate::errors::{RuneError, ContextualError, ErrorContext};
+use crate::errors::{ContextualError, ErrorContext, RuneError};
 use crate::tool::RuneTool;
 use crate::types::{LoadingStatus, ToolLoadingResult};
-use crucible_services::ToolService;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{RwLock, Mutex};
-use tracing::{debug, info, warn, error};
+use tracing::{info, warn, error};
 
 /// Tool registry for managing Rune tools
 pub struct RuneToolRegistry {
@@ -163,7 +162,7 @@ impl RuneToolRegistry {
 
     /// Unregister a tool
     pub async fn unregister_tool(&self, tool_name: &str) -> Result<bool, ContextualError> {
-        let context = ErrorContext::new()
+        let _context = ErrorContext::new()
             .with_operation("unregister_tool")
             .with_tool_name(tool_name);
 
@@ -184,6 +183,16 @@ impl RuneToolRegistry {
     pub async fn get_tool(&self, tool_name: &str) -> Result<Option<Arc<RuneTool>>, ContextualError> {
         let tools = self.tools.read().await;
         Ok(tools.get(tool_name).cloned())
+    }
+
+    /// Get the Rune context
+    ///
+    /// **DEPRECATED**: This method is deprecated and will be removed in a future version.
+    /// Use ContextFactory::create_fresh_context() instead for creating fresh contexts per execution.
+    #[deprecated(note = "Use ContextFactory::create_fresh_context() instead for better isolation")]
+    pub fn get_context(&self) -> Arc<rune::Context> {
+        warn!("get_context() is deprecated. Use ContextFactory::create_fresh_context() instead.");
+        self.context.clone()
     }
 
     /// List all registered tools

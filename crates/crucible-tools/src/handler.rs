@@ -5,22 +5,23 @@
 
 use crate::errors::{RuneError, ContextualError, ErrorContext};
 use crate::tool::RuneTool;
+use crate::context_factory::ContextFactory;
 use crate::types::ExecutionConfig;
 use anyhow::Result;
-use crucible_services::ToolService;
-use crucible_services::types::tool::{ToolDefinition, ToolExecutionRequest, ToolExecutionResult, ValidationResult};
+use crucible_services::types::tool::{ToolExecutionRequest, ToolExecutionResult};
 use crucible_services::types::tool::ToolExecutionContext;
 use uuid::Uuid;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 
 /// Dynamic tool handler for Rune tools
 pub struct DynamicRuneToolHandler {
     /// The Rune tool
     tool: Arc<RuneTool>,
-    /// Rune context for execution
-    context: Arc<rune::Context>,
+    /// Context factory for creating fresh contexts
+    context_factory: Arc<ContextFactory>,
     /// Execution configuration
     config: ExecutionConfig,
     /// Execution statistics
@@ -48,21 +49,21 @@ impl DynamicRuneToolHandler {
     /// Create a new dynamic tool handler
     pub fn new(
         tool: Arc<RuneTool>,
-        context: Arc<rune::Context>,
+        context_factory: Arc<ContextFactory>,
         config: ExecutionConfig,
     ) -> Self {
         Self {
             tool,
-            context,
+            context_factory,
             config,
             stats: Arc::new(RwLock::new(HandlerStats::default())),
         }
     }
 
     /// Execute the tool with the given request
-    pub async fn execute(&self, request: &ToolExecutionRequest) -> Result<ToolExecutionResult, ContextualError> {
+    pub async fn execute(&self, request: &ToolExecutionRequest) -> Result<(ToolExecutionResult, crucible_services::types::tool::ContextRef), ContextualError> {
         let start_time = std::time::Instant::now();
-        let execution_id = request.execution_id.clone();
+        let execution_id = uuid::Uuid::new_v4().to_string();
 
         let context = ErrorContext::new()
             .with_operation("execute_tool")
@@ -94,8 +95,8 @@ impl DynamicRuneToolHandler {
         }
 
         // Execute with timeout
-        let execution_future = self.execute_tool(&request.parameters);
-        let result = if let Some(timeout_ms) = self.config.timeout_ms {
+        let execution_future = self.execute_tool(&request.parameters, &request.context);
+        let result = if let Some(timeout_ms) = self.config.default_timeout_ms {
             match tokio::time::timeout(
                 std::time::Duration::from_millis(timeout_ms),
                 execution_future,
@@ -121,27 +122,22 @@ impl DynamicRuneToolHandler {
         };
 
         match result {
-            Ok(output) => {
-                let execution_time_ms = start_time.elapsed().as_millis() as u64;
+            Ok((output, context_ref)) => {
+                let execution_duration = start_time.elapsed();
+
                 let execution_result = ToolExecutionResult {
-                    execution_id: request.execution_id.clone(),
-                    tool_name: self.tool.name.clone(),
                     success: true,
-                    output,
+                    result: Some(output),
                     error: None,
-                    execution_time_ms,
-                    metadata: {
-                        let mut meta = std::collections::HashMap::new();
-                        meta.insert("tool_id".to_string(), serde_json::Value::String(self.tool.id.clone()));
-                        meta.insert("tool_version".to_string(), serde_json::Value::String(self.tool.version.clone()));
-                        meta
-                    },
+                    execution_time: execution_duration,
+                    tool_name: self.tool.name.clone(),
+                    context_ref: Some(context_ref.clone()),
                 };
 
                 self.record_execution_stats(start_time, true, None).await;
-                info!("Tool '{}' executed successfully in {}ms", self.tool.name, execution_time_ms);
+                info!("Tool '{}' executed successfully in {}ms", self.tool.name, execution_duration.as_millis());
 
-                Ok(execution_result)
+                Ok((execution_result, context_ref))
             }
             Err(e) => {
                 let execution_time_ms = start_time.elapsed().as_millis() as u64;
@@ -153,7 +149,7 @@ impl DynamicRuneToolHandler {
                 Err(ContextualError::new(
                     RuneError::ExecutionError {
                         tool_name: self.tool.name.clone(),
-                        execution_id: Some(request.execution_id.clone()),
+                        execution_id: Some(execution_id.clone()),
                         source: e,
                     },
                     context,
@@ -163,26 +159,37 @@ impl DynamicRuneToolHandler {
     }
 
     /// Execute the actual tool logic
-    async fn execute_tool(&self, parameters: &serde_json::Value) -> Result<serde_json::Value> {
+    async fn execute_tool(&self, parameters: &serde_json::Value, request_context: &serde_json::Value) -> Result<(serde_json::Value, crucible_services::types::tool::ContextRef)> {
         // Create execution context
         let execution_context = ToolExecutionContext {
-            execution_id: Uuid::new_v4().to_string(),
-            tool_name: self.tool.name.clone(),
-            user_id: parameters
-                .get("user_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("anonymous")
-                .to_string(),
-            session_id: parameters
-                .get("session_id")
+            user_id: None,
+            session_id: None,
+            working_directory: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).to_string_lossy().to_string(),
+            environment: std::env::vars().collect(),
+            context: request_context.as_object()
+                .map(|o| o.iter().map(|(k, v)| (k.clone(), v.to_string())).collect())
+                .unwrap_or_default(),
+            vault_path: parameters
+                .get("vault_path")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
-            timestamp: chrono::Utc::now(),
-            metadata: std::collections::HashMap::new(),
         };
 
-        // Call the tool
-        self.tool.call(parameters.clone(), &self.context).await
+        // Create a fresh context for each execution
+        let fresh_context = self.context_factory.create_fresh_context(&self.tool.name)
+            .await
+            .map_err(|e| ContextualError::new(
+                RuneError::ExecutionError {
+                    tool_name: self.tool.name.clone(),
+                    execution_id: None,
+                    source: anyhow::anyhow!("Failed to create fresh context: {}", e),
+                },
+                ErrorContext::new().with_operation("create_fresh_context").with_tool_name(&self.tool.name),
+            ))?;
+
+        // Call the tool with the fresh context
+        let (result, context_ref) = self.tool.call_with_context(parameters.clone(), &fresh_context, &execution_context).await?;
+        Ok((result, context_ref))
     }
 
     /// Validate input parameters
@@ -308,31 +315,31 @@ impl ToolHandlerGenerator {
     pub fn generate_handler(
         &self,
         tool: Arc<RuneTool>,
-        context: Arc<rune::Context>,
+        context_factory: Arc<ContextFactory>,
     ) -> DynamicRuneToolHandler {
-        DynamicRuneToolHandler::new(tool, context, self.default_config.clone())
+        DynamicRuneToolHandler::new(tool, context_factory, self.default_config.clone())
     }
 
     /// Generate a handler with custom configuration
     pub fn generate_handler_with_config(
         &self,
         tool: Arc<RuneTool>,
-        context: Arc<rune::Context>,
+        context_factory: Arc<ContextFactory>,
         config: ExecutionConfig,
     ) -> DynamicRuneToolHandler {
-        DynamicRuneToolHandler::new(tool, context, config)
+        DynamicRuneToolHandler::new(tool, context_factory, config)
     }
 
     /// Generate handlers for multiple tools
     pub fn generate_handlers(
         &self,
         tools: Vec<Arc<RuneTool>>,
-        context: Arc<rune::Context>,
+        context_factory: Arc<ContextFactory>,
     ) -> std::collections::HashMap<String, DynamicRuneToolHandler> {
         let mut handlers = std::collections::HashMap::new();
 
         for tool in tools {
-            let handler = self.generate_handler(tool.clone(), context.clone());
+            let handler = self.generate_handler(tool.clone(), context_factory.clone());
             handlers.insert(tool.name.clone(), handler);
         }
 
@@ -343,14 +350,14 @@ impl ToolHandlerGenerator {
     pub fn generate_handlers_with_configs(
         &self,
         tools: Vec<Arc<RuneTool>>,
-        context: Arc<rune::Context>,
+        context_factory: Arc<ContextFactory>,
         config_fn: impl Fn(&RuneTool) -> ExecutionConfig,
     ) -> std::collections::HashMap<String, DynamicRuneToolHandler> {
         let mut handlers = std::collections::HashMap::new();
 
         for tool in tools {
             let config = config_fn(&tool);
-            let handler = self.generate_handler_with_config(tool.clone(), context.clone(), config);
+            let handler = self.generate_handler_with_config(tool.clone(), context_factory.clone(), config);
             handlers.insert(tool.name.clone(), handler);
         }
 
@@ -420,7 +427,7 @@ impl BatchToolHandler {
     pub async fn execute_batch(
         &self,
         requests: Vec<ToolExecutionRequest>,
-    ) -> Vec<Result<ToolExecutionResult, ContextualError>> {
+    ) -> Vec<Result<(ToolExecutionResult, crucible_services::types::tool::ContextRef), ContextualError>> {
         let semaphore = Arc::new(tokio::sync::Semaphore::new(self.batch_config.max_concurrent));
         let mut tasks = Vec::new();
 
@@ -511,12 +518,12 @@ impl BatchToolHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::create_safe_context;
+    use crate::context_factory::ContextFactory;
     use std::fs;
 
     #[tokio::test]
     async fn test_handler_generation() -> Result<(), Box<dyn std::error::Error>> {
-        let context = create_safe_context()?;
+        let context_factory = Arc::new(ContextFactory::new()?);
 
         // Create a test tool
         let tool_source = r#"
@@ -530,42 +537,44 @@ mod tests {
             }
         "#;
 
-        let mut tool = RuneTool::from_source(tool_source, &context, None)?;
+        // Use a temporary context to create the tool
+        let temp_context = context_factory.create_fresh_context("test_tool").await?;
+        let mut tool = RuneTool::from_source(tool_source, &temp_context, None)?;
         let tool = Arc::new(tool);
 
         // Generate handler
         let generator = ToolHandlerGenerator::new();
-        let handler = generator.generate_handler(tool.clone(), context);
+        let handler = generator.generate_handler(tool.clone(), context_factory);
 
         // Check handler info
         assert_eq!(handler.get_tool_info().name, "test_tool");
 
         // Test execution
         let request = ToolExecutionRequest {
-            execution_id: "test-123".to_string(),
             tool_name: "test_tool".to_string(),
             parameters: serde_json::json!({"name": "World"}),
             context: ToolExecutionContext {
-                execution_id: "test-123".to_string(),
-                tool_name: "test_tool".to_string(),
-                user_id: "test".to_string(),
+                user_id: Some("test".to_string()),
                 session_id: None,
-                timestamp: chrono::Utc::now(),
-                metadata: std::collections::HashMap::new(),
+                working_directory: None,
+                environment: std::collections::HashMap::new(),
+                context: std::collections::HashMap::new(),
+                vault_path: None,
             },
+            timeout_ms: None,
         };
 
-        let result = handler.execute(&request).await?;
+        let (result, _context_ref) = handler.execute(&request).await?;
         assert!(result.success);
-        assert_eq!(result.output["success"], true);
-        assert_eq!(result.output["message"], "Hello World");
+        assert_eq!(result.result.unwrap()["success"], true);
+        assert_eq!(result.result.unwrap()["message"], "Hello World");
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_handler_stats() -> Result<(), Box<dyn std::error::Error>> {
-        let context = create_safe_context()?;
+        let context_factory = Arc::new(ContextFactory::new()?);
 
         let tool_source = r#"
             pub fn NAME() { "stats_tool" }
@@ -576,9 +585,11 @@ mod tests {
             }
         "#;
 
-        let tool = Arc::new(RuneTool::from_source(tool_source, &context, None)?);
+        // Use a temporary context to create the tool
+        let temp_context = context_factory.create_fresh_context("stats_tool").await?;
+        let tool = Arc::new(RuneTool::from_source(tool_source, &temp_context, None)?);
         let generator = ToolHandlerGenerator::new();
-        let handler = generator.generate_handler(tool, context);
+        let handler = generator.generate_handler(tool, context_factory);
 
         // Check initial stats
         let stats = handler.get_stats().await;
@@ -586,17 +597,17 @@ mod tests {
 
         // Execute tool
         let request = ToolExecutionRequest {
-            execution_id: "stats-test".to_string(),
             tool_name: "stats_tool".to_string(),
             parameters: serde_json::json!({}),
             context: ToolExecutionContext {
-                execution_id: "stats-test".to_string(),
-                tool_name: "stats_tool".to_string(),
-                user_id: "test".to_string(),
+                user_id: Some("test".to_string()),
                 session_id: None,
-                timestamp: chrono::Utc::now(),
-                metadata: std::collections::HashMap::new(),
+                working_directory: None,
+                environment: std::collections::HashMap::new(),
+                context: std::collections::HashMap::new(),
+                vault_path: None,
             },
+            timeout_ms: None,
         };
 
         let _ = handler.execute(&request).await?;
@@ -612,7 +623,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_handler() -> Result<(), Box<dyn std::error::Error>> {
-        let context = create_safe_context()?;
+        let context_factory = Arc::new(ContextFactory::new()?);
 
         // Create multiple tools
         let tool1_source = r#"
@@ -629,12 +640,15 @@ mod tests {
             pub async fn call(args) { #{ tool: 2, success: true } }
         "#;
 
-        let tool1 = Arc::new(RuneTool::from_source(tool1_source, &context, None)?);
-        let tool2 = Arc::new(RuneTool::from_source(tool2_source, &context, None)?);
+        // Use temporary contexts to create the tools
+        let temp_context1 = context_factory.create_fresh_context("tool1").await?;
+        let temp_context2 = context_factory.create_fresh_context("tool2").await?;
+        let tool1 = Arc::new(RuneTool::from_source(tool1_source, &temp_context1, None)?);
+        let tool2 = Arc::new(RuneTool::from_source(tool2_source, &temp_context2, None)?);
 
         // Generate handlers
         let generator = ToolHandlerGenerator::new();
-        let handlers = generator.generate_handlers(vec![tool1, tool2], context);
+        let handlers = generator.generate_handlers(vec![tool1, tool2], context_factory);
 
         // Create batch handler
         let batch_handler = BatchToolHandler::new(handlers);
@@ -642,30 +656,30 @@ mod tests {
         // Execute batch
         let requests = vec![
             ToolExecutionRequest {
-                execution_id: "batch-1".to_string(),
                 tool_name: "tool1".to_string(),
                 parameters: serde_json::json!({}),
                 context: ToolExecutionContext {
-                    execution_id: "batch-1".to_string(),
-                    tool_name: "tool1".to_string(),
-                    user_id: "test".to_string(),
+                    user_id: Some("test".to_string()),
                     session_id: None,
-                    timestamp: chrono::Utc::now(),
-                    metadata: std::collections::HashMap::new(),
+                    working_directory: None,
+                    environment: std::collections::HashMap::new(),
+                    context: std::collections::HashMap::new(),
+                    vault_path: None,
                 },
+                timeout_ms: None,
             },
             ToolExecutionRequest {
-                execution_id: "batch-2".to_string(),
                 tool_name: "tool2".to_string(),
                 parameters: serde_json::json!({}),
                 context: ToolExecutionContext {
-                    execution_id: "batch-2".to_string(),
-                    tool_name: "tool2".to_string(),
-                    user_id: "test".to_string(),
+                    user_id: Some("test".to_string()),
                     session_id: None,
-                    timestamp: chrono::Utc::now(),
-                    metadata: std::collections::HashMap::new(),
+                    working_directory: None,
+                    environment: std::collections::HashMap::new(),
+                    context: std::collections::HashMap::new(),
+                    vault_path: None,
                 },
+                timeout_ms: None,
             },
         ];
 
@@ -674,7 +688,7 @@ mod tests {
 
         for result in results {
             assert!(result.is_ok());
-            let execution_result = result.unwrap();
+            let (execution_result, _context_ref) = result.unwrap();
             assert!(execution_result.success);
         }
 
