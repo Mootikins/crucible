@@ -4,11 +4,11 @@
 //! with custom modules, security policies, and execution environments.
 
 use crate::errors::{RuneError, RuneResult};
-use crate::stdlib::{build_crucible_module, create_context, create_context_with_modules};
+use crate::stdlib::build_crucible_module;
 use rune::Context;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Configuration for Rune context
 #[derive(Debug, Clone)]

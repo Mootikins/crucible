@@ -90,11 +90,13 @@ pub mod vault_tools;
 // Rune modules
 pub mod analyzer;
 pub mod context;
+pub mod context_factory;
 pub mod database;
 pub mod discovery;
 pub mod errors;
 pub mod handler;
 pub mod loader;
+pub mod registry;
 pub mod stdlib;
 pub mod tool;
 pub mod rune_registry;
@@ -106,6 +108,7 @@ pub mod embeddings;
 pub use system_tools::Tool;
 pub use system_tools::ToolManager;
 pub use rune_service::RuneService;
+pub use context_factory::ContextFactory;
 pub use types::{RuneServiceConfig, ValidationResult, SystemInfo};
 
 /// Crate version
