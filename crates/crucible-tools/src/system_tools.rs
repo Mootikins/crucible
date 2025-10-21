@@ -5,11 +5,14 @@
 //! and system utilities.
 
 use crate::types::*;
+use crate::registry::ToolRegistry;
+use crucible_services::types::tool::{ToolDefinition, ToolExecutionContext, ToolExecutionResult, ContextRef};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 /// Trait for tool implementations
@@ -36,7 +39,7 @@ pub trait Tool: Send + Sync {
     }
 
     /// Get the tool category
-    fn category(&self) -> ToolCategory {
+    fn category(&self) -> Option<String> {
         self.definition().category.clone()
     }
 }
@@ -78,18 +81,20 @@ impl Tool for BaseTool {
             Ok(()) => {
                 match (self.executor)(params, context) {
                     Ok(mut result) => {
-                        result.execution_time_ms = Some(start_time.elapsed().as_millis() as u64);
+                        result.execution_time = start_time.elapsed();
                         info!("Tool {} executed successfully in {}ms",
-                              self.definition.name, result.execution_time_ms.unwrap_or(0));
+                              self.definition.name, result.execution_time.as_millis());
                         Ok(result)
                     }
                     Err(e) => {
                         error!("Tool {} execution failed: {}", self.definition.name, e);
                         Ok(ToolExecutionResult {
                             success: false,
-                            data: None,
+                            result: None,
                             error: Some(e.to_string()),
-                            execution_time_ms: Some(start_time.elapsed().as_millis() as u64),
+                            execution_time: start_time.elapsed(),
+                            tool_name: self.definition.name.clone(),
+                            context_ref: Some(ContextRef::new()),
                         })
                     }
                 }
@@ -98,9 +103,11 @@ impl Tool for BaseTool {
                 warn!("Tool {} parameter validation failed: {}", self.definition.name, e);
                 Ok(ToolExecutionResult {
                     success: false,
-                    data: None,
+                    result: None,
                     error: Some(format!("Parameter validation failed: {}", e)),
-                    execution_time_ms: Some(start_time.elapsed().as_millis() as u64),
+                    execution_time: start_time.elapsed(),
+                    tool_name: self.definition.name.clone(),
+                    context_ref: Some(ContextRef::new()),
                 })
             }
         };
@@ -140,17 +147,17 @@ impl ToolManager {
     ) -> Result<ToolExecutionResult> {
         match self.tools.get(tool_name) {
             Some(tool) => {
-                if tool.definition().deprecated {
-                    warn!("Executing deprecated tool: {}", tool_name);
-                }
+                // Note: deprecated field removed from simplified ToolDefinition
                 tool.execute(params, &context).await
             }
             None => Ok(ToolExecutionResult {
                 success: false,
-                data: None,
+                result: None,
                 error: Some(format!("Tool not found: {}", tool_name)),
-                execution_time_ms: None,
-            }),
+                execution_time: std::time::Duration::from_millis(0),
+                tool_name: tool_name.to_string(),
+                context_ref: Some(ContextRef::new()),
+            })
         }
     }
 
@@ -266,11 +273,13 @@ mod tests {
         let tool = ToolDefinition {
             name: "test_tool".to_string(),
             description: "Test tool".to_string(),
-            category: ToolCategory::System,
             input_schema: json!({}),
-            output_schema: json!({}),
-            deprecated: false,
-            version: "1.0.0".to_string(),
+            category: Some("System".to_string()),
+            version: Some("1.0.0".to_string()),
+            author: None,
+            tags: vec![],
+            enabled: true,
+            parameters: vec![],
         };
 
         registry.register_tool(tool);
@@ -288,7 +297,6 @@ mod tests {
             ToolDefinition {
                 name: "echo_tool".to_string(),
                 description: "Echo tool for testing".to_string(),
-                category: ToolCategory::System,
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -296,37 +304,29 @@ mod tests {
                     },
                     "required": ["message"]
                 }),
-                output_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "success": {"type": "boolean"},
-                        "data": {"type": "object"}
-                    },
-                    "required": ["success"]
-                }),
-                deprecated: false,
-                version: "1.0.0".to_string(),
+                category: Some("System".to_string()),
+                version: Some("1.0.0".to_string()),
+                author: None,
+                tags: vec![],
+                enabled: true,
+                parameters: vec![],
             },
             |params, _context| {
                 let message = params["message"].as_str().unwrap_or("no message");
                 Ok(ToolExecutionResult {
                     success: true,
-                    data: Some(json!({"echo": message})),
+                    result: Some(json!({"echo": message})),
                     error: None,
-                    execution_time_ms: None,
+                    execution_time: std::time::Duration::from_millis(0),
+                    tool_name: "echo_tool".to_string(),
+                    context_ref: Some(ContextRef::new()),
                 })
             },
         );
 
         manager.register_tool(tool);
 
-        let context = ToolExecutionContext {
-            workspace_path: None,
-            vault_path: None,
-            user_id: None,
-            session_id: None,
-            timestamp: chrono::Utc::now(),
-        };
+        let context = ToolExecutionContext::default();
 
         let result = manager.execute_tool(
             "echo_tool",
@@ -335,7 +335,7 @@ mod tests {
         ).await.unwrap();
 
         assert!(result.success);
-        assert_eq!(result.data.unwrap()["echo"], "hello world");
+        assert_eq!(result.result.unwrap()["echo"], "hello world");
     }
 
     #[test]
@@ -344,18 +344,22 @@ mod tests {
             ToolDefinition {
                 name: "test_tool".to_string(),
                 description: "Test tool".to_string(),
-                category: ToolCategory::System,
                 input_schema: json!({}),
-                output_schema: json!({}),
-                deprecated: false,
-                version: "1.0.0".to_string(),
+                category: Some("System".to_string()),
+                version: Some("1.0.0".to_string()),
+                author: None,
+                tags: vec![],
+                enabled: true,
+                parameters: vec![],
             },
             |_params, _context| {
                 Ok(ToolExecutionResult {
                     success: true,
-                    data: None,
+                    result: None,
                     error: None,
-                    execution_time_ms: None,
+                    execution_time: std::time::Duration::from_millis(0),
+                    tool_name: "test_tool".to_string(),
+                    context_ref: Some(ContextRef::new()),
                 })
             },
         );

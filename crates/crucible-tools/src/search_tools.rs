@@ -5,9 +5,11 @@
 
 use crate::system_tools::{schemas, Tool};
 use crate::types::*;
+use crucible_services::types::tool::{ToolDefinition, ToolExecutionContext, ToolExecutionResult};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
+use std::time::Duration;
 use tracing::info;
 
 /// Search documents with semantic similarity
@@ -32,7 +34,7 @@ impl Tool for SearchDocumentsTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "search_documents".to_string(),
                 description: "Search documents using semantic similarity".to_string(),
-                category: ToolCategory::Search,
+                category: Some("Search".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -68,28 +70,7 @@ impl Tool for SearchDocumentsTool {
                     },
                     "required": ["query"]
                 }),
-                output_schema: schemas::success_response(Some(json!({
-                    "type": "object",
-                    "properties": {
-                        "documents": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "file_path": {"type": "string"},
-                                    "title": {"type": "string"},
-                                    "content": {"type": "string"},
-                                    "score": {"type": "number"},
-                                    "metadata": {"type": "object"}
-                                }
-                            }
-                        },
-                        "query": {"type": "string"},
-                        "total_results": {"type": "number"}
-                    }
-                }))),
-                deprecated: false,
-                version: "1.0.0".to_string(),
+                version: Some("1.0.0".to_string()),
             };
         }
         &DEFINITION
@@ -105,9 +86,11 @@ impl Tool for SearchDocumentsTool {
             None => {
                 return Ok(ToolExecutionResult {
                     success: false,
-                    data: None,
+                    result: None,
                     error: Some("Missing query".to_string()),
-                    execution_time_ms: None,
+                    execution_time: Duration::from_millis(0),
+                    tool_name: "search_documents".to_string(),
+                    context: _context.clone(),
                 });
             }
         };
@@ -149,13 +132,15 @@ impl Tool for SearchDocumentsTool {
 
         Ok(ToolExecutionResult {
             success: true,
-            data: Some(json!({
+            result: Some(json!({
                 "documents": documents,
                 "query": query,
                 "total_results": documents.len()
             })),
             error: None,
-            execution_time_ms: None,
+            execution_time: Duration::from_millis(150),
+            tool_name: "search_documents".to_string(),
+            context: _context.clone(),
         })
     }
 }
@@ -182,7 +167,7 @@ impl Tool for RebuildIndexTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "rebuild_index".to_string(),
                 description: "Rebuild search indexes for all documents".to_string(),
-                category: ToolCategory::Search,
+                category: Some("Search".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -202,19 +187,7 @@ impl Tool for RebuildIndexTool {
                         }
                     }
                 }),
-                output_schema: schemas::success_response(Some(json!({
-                    "type": "object",
-                    "properties": {
-                        "rebuilt_indexes": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        },
-                        "documents_processed": {"type": "number"},
-                        "execution_time_ms": {"type": "number"}
-                    }
-                }))),
-                deprecated: false,
-                version: "1.0.0".to_string(),
+                version: Some("1.0.0".to_string()),
             };
         }
         &DEFINITION
@@ -245,13 +218,15 @@ impl Tool for RebuildIndexTool {
 
         Ok(ToolExecutionResult {
             success: true,
-            data: Some(json!({
+            result: Some(json!({
                 "rebuilt_indexes": rebuilt_indexes,
                 "documents_processed": documents_processed,
                 "execution_time_ms": 5432
             })),
             error: None,
-            execution_time_ms: Some(5432),
+            execution_time: Duration::from_millis(5432),
+            tool_name: "rebuild_index".to_string(),
+            context: _context.clone(),
         })
     }
 }
@@ -278,31 +253,9 @@ impl Tool for GetIndexStatsTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "get_index_stats".to_string(),
                 description: "Get statistics about search indexes".to_string(),
-                category: ToolCategory::Search,
+                category: Some("Search".to_string()),
                 input_schema: json!({"type": "object"}),
-                output_schema: schemas::success_response(Some(json!({
-                    "type": "object",
-                    "properties": {
-                        "indexes": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "name": {"type": "string"},
-                                    "type": {"type": "string"},
-                                    "size_bytes": {"type": "number"},
-                                    "documents": {"type": "number"},
-                                    "last_updated": {"type": "string"},
-                                    "status": {"type": "string"}
-                                }
-                            }
-                        },
-                        "total_documents": {"type": "number"},
-                        "total_size_bytes": {"type": "number"}
-                    }
-                }))),
-                deprecated: false,
-                version: "1.0.0".to_string(),
+                version: Some("1.0.0".to_string()),
             };
         }
         &DEFINITION
@@ -351,13 +304,15 @@ impl Tool for GetIndexStatsTool {
 
         Ok(ToolExecutionResult {
             success: true,
-            data: Some(json!({
+            result: Some(json!({
                 "indexes": indexes,
                 "total_documents": total_documents,
                 "total_size_bytes": total_size_bytes
             })),
             error: None,
-            execution_time_ms: None,
+            execution_time: Duration::from_millis(50),
+            tool_name: "get_index_stats".to_string(),
+            context: _context.clone(),
         })
     }
 }
@@ -384,7 +339,7 @@ impl Tool for OptimizeIndexTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "optimize_index".to_string(),
                 description: "Optimize search indexes for better performance".to_string(),
-                category: ToolCategory::Search,
+                category: Some("Search".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -402,23 +357,7 @@ impl Tool for OptimizeIndexTool {
                         }
                     }
                 }),
-                output_schema: schemas::success_response(Some(json!({
-                    "type": "object",
-                    "properties": {
-                        "optimized_indexes": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        },
-                        "rebuilt_indexes": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        },
-                        "space_saved_bytes": {"type": "number"},
-                        "performance_improvement": {"type": "string"}
-                    }
-                }))),
-                deprecated: false,
-                version: "1.0.0".to_string(),
+                version: Some("1.0.0".to_string()),
             };
         }
         &DEFINITION
@@ -453,14 +392,16 @@ impl Tool for OptimizeIndexTool {
 
         Ok(ToolExecutionResult {
             success: true,
-            data: Some(json!({
+            result: Some(json!({
                 "optimized_indexes": optimized_indexes,
                 "rebuilt_indexes": rebuilt_indexes,
                 "space_saved_bytes": space_saved_bytes,
                 "performance_improvement": performance_improvement
             })),
             error: None,
-            execution_time_ms: None,
+            execution_time: Duration::from_millis(2500),
+            tool_name: "optimize_index".to_string(),
+            context: _context.clone(),
         })
     }
 }
@@ -487,7 +428,7 @@ impl Tool for AdvancedSearchTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "advanced_search".to_string(),
                 description: "Advanced search with multiple criteria and ranking".to_string(),
-                category: ToolCategory::Search,
+                category: Some("Search".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -535,29 +476,7 @@ impl Tool for AdvancedSearchTool {
                     },
                     "required": ["query"]
                 }),
-                output_schema: schemas::success_response(Some(json!({
-                    "type": "object",
-                    "properties": {
-                        "results": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "file_path": {"type": "string"},
-                                    "title": {"type": "string"},
-                                    "content_snippet": {"type": "string"},
-                                    "score": {"type": "number"},
-                                    "match_details": {"type": "object"},
-                                    "metadata": {"type": "object"}
-                                }
-                            }
-                        },
-                        "total_found": {"type": "number"},
-                        "search_time_ms": {"type": "number"}
-                    }
-                }))),
-                deprecated: false,
-                version: "1.0.0".to_string(),
+                version: Some("1.0.0".to_string()),
             };
         }
         &DEFINITION
@@ -618,13 +537,15 @@ impl Tool for AdvancedSearchTool {
 
         Ok(ToolExecutionResult {
             success: true,
-            data: Some(json!({
+            result: Some(json!({
                 "results": results,
                 "total_found": results.len(),
                 "search_time_ms": 156
             })),
             error: None,
-            execution_time_ms: Some(156),
+            execution_time: Duration::from_millis(156),
+            tool_name: "advanced_search".to_string(),
+            context: _context.clone(),
         })
     }
 }
@@ -658,13 +579,7 @@ mod tests {
     #[tokio::test]
     async fn test_search_documents_tool() {
         let tool = SearchDocumentsTool::new();
-        let context = ToolExecutionContext {
-            workspace_path: None,
-            vault_path: None,
-            user_id: None,
-            session_id: None,
-            timestamp: chrono::Utc::now(),
-        };
+        let context = ToolExecutionContext::default();
 
         let params = json!({
             "query": "machine learning transformers",
@@ -677,19 +592,13 @@ mod tests {
 
         let result = tool.execute(params, &context).await.unwrap();
         assert!(result.success);
-        assert!(result.data.is_some());
+        assert!(result.result.is_some());
     }
 
     #[tokio::test]
     async fn test_advanced_search_tool() {
         let tool = AdvancedSearchTool::new();
-        let context = ToolExecutionContext {
-            workspace_path: None,
-            vault_path: None,
-            user_id: None,
-            session_id: None,
-            timestamp: chrono::Utc::now(),
-        };
+        let context = ToolExecutionContext::default();
 
         let params = json!({
             "query": {
