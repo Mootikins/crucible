@@ -32,7 +32,7 @@ serde_json = "1.0"
 serde_yaml = "0.9"
 uuid = { version = "1.11", features = ["v4", "serde"] }
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0.17"
 rune = "0.13"
 tauri = { version = "2.0", features = [] }
 regex = "1.12"
@@ -115,7 +115,6 @@ syn = { version = "2.0", features = ["full"] }
 crucible-core = { path = "crates/crucible-core" }
 crucible-config = { path = "crates/crucible-config" }
 crucible-services = { path = "crates/crucible-services" }
-crucible-rune = { path = "crates/crucible-rune" }
 crucible-rune-macros = { path = "crates/crucible-rune-macros" }
 crucible-tools = { path = "crates/crucible-tools" }
 crucible-llm = { path = "crates/crucible-llm" }
