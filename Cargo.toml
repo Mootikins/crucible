@@ -111,6 +111,9 @@ proc-macro2 = "1.0"
 quote = "1.0"
 syn = { version = "2.0", features = ["full"] }
 
+# Additional utilities for event system
+base64 = "0.22"
+
 # Internal workspace crates
 crucible-core = { path = "crates/crucible-core" }
 crucible-config = { path = "crates/crucible-config" }
