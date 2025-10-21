@@ -1,78 +1,54 @@
-//! Embedding provider abstraction for semantic search and vector operations
+//! Embedding provider integration for crucible-tools
 //!
-//! This module provides a unified interface for generating text embeddings
-//! from multiple providers (Ollama, OpenAI, etc.) with built-in resilience
-//! patterns including retry logic, circuit breakers, and timeout management.
+//! This module provides integration with crucible-llm embedding providers.
+//! It serves as a bridge between crucible-tools and the crucible-llm crate,
+//! handling configuration conversion and provider creation.
 
-pub mod config;
-pub mod error;
-pub mod ollama;
-pub mod openai;
-pub mod provider;
-
-#[cfg(test)]
-pub mod mock;
-
-pub use config::{EmbeddingConfig, ProviderType};
-pub use error::{EmbeddingError, EmbeddingResult};
-pub use provider::{EmbeddingProvider, EmbeddingResponse};
+pub use crucible_llm::{
+    EmbeddingConfig, EmbeddingError, EmbeddingProvider, EmbeddingResponse, EmbeddingResult,
+    OllamaProvider, OpenAIProvider,
+};
+pub use crucible_llm::embeddings::ProviderType;
 
 use std::sync::Arc;
 
 /// Create an embedding provider from configuration
 pub async fn create_provider(config: EmbeddingConfig) -> EmbeddingResult<Arc<dyn EmbeddingProvider>> {
-    match config.provider {
-        ProviderType::Ollama => {
-            let provider = ollama::OllamaProvider::new(config)?;
-            Ok(Arc::new(provider))
-        }
-        ProviderType::OpenAI => {
-            let provider = openai::OpenAIProvider::new(config)?;
-            Ok(Arc::new(provider))
-        }
-    }
+    crucible_llm::embeddings::create_provider(config).await
 }
 
 /// Create a mock embedding provider for testing
 #[cfg(test)]
 pub fn create_mock_provider(dimensions: usize) -> Arc<dyn EmbeddingProvider> {
-    Arc::new(mock::MockEmbeddingProvider::with_dimensions(dimensions))
+    crucible_llm::embeddings::create_mock_provider(dimensions)
 }
 
 /// Default embedding model configurations
 pub mod default_models {
-    use super::{EmbeddingConfig, ProviderType};
+    use super::EmbeddingConfig;
 
     /// Default Ollama configuration
     pub fn ollama_default() -> EmbeddingConfig {
-        EmbeddingConfig {
-            provider: ProviderType::Ollama,
-            endpoint: "http://localhost:11434".to_string(),
-            api_key: None,
-            model: "nomic-embed-text".to_string(),
-            timeout_secs: 30,
-            max_retries: 3,
-            batch_size: 10,
-        }
+        EmbeddingConfig::ollama(
+            Some("http://localhost:11434".to_string()),
+            Some("nomic-embed-text".to_string()),
+        )
     }
 
     /// Default OpenAI configuration
     pub fn openai_default() -> EmbeddingConfig {
-        EmbeddingConfig {
-            provider: ProviderType::OpenAI,
-            endpoint: "https://api.openai.com/v1".to_string(),
-            api_key: None, // Should be set from environment
-            model: "text-embedding-ada-002".to_string(),
-            timeout_secs: 30,
-            max_retries: 3,
-            batch_size: 10,
-        }
+        // This will need API key from environment
+        EmbeddingConfig::from_env().unwrap_or_else(|_| {
+            EmbeddingConfig::openai(
+                "dummy-key".to_string(), // Should be set from environment
+                Some("text-embedding-3-small".to_string()),
+            )
+        })
     }
 }
 
 /// Utility functions for working with embeddings
 pub mod utils {
-    use super::*;
     use ndarray::Array1;
 
     /// Calculate cosine similarity between two embeddings
