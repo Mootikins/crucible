@@ -85,6 +85,66 @@ pub mod traits {
     }
 }
 
+/// Database service traits (minimal compatibility layer)
+pub mod database {
+    use super::errors::ServiceResult;
+    use serde::{Deserialize, Serialize};
+
+    /// Database connection status
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    pub enum ConnectionStatus {
+        Connected,
+        Disconnected,
+        Connecting,
+        Error(String),
+    }
+
+    /// Database information
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct DatabaseInfo {
+        pub name: String,
+        pub status: ConnectionStatus,
+        pub size_bytes: Option<u64>,
+        pub table_count: Option<u32>,
+        pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+    }
+
+    /// Schema change information
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct SchemaChange {
+        pub table_name: String,
+        pub change_type: ChangeType,
+        pub sql: String,
+    }
+
+    /// Schema change type
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    pub enum ChangeType {
+        Create,
+        Drop,
+        Alter,
+    }
+
+    /// Transaction status
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    pub enum TransactionStatus {
+        Active,
+        Committed,
+        RolledBack,
+    }
+
+    /// Minimal database service trait
+    pub trait DatabaseService: Send + Sync {
+        fn connection_status(&self) -> impl std::future::Future<Output = ServiceResult<ConnectionStatus>> + Send;
+        fn create_database(&self, name: &str) -> impl std::future::Future<Output = ServiceResult<DatabaseInfo>> + Send;
+        fn list_databases(&self) -> impl std::future::Future<Output = ServiceResult<Vec<DatabaseInfo>>> + Send;
+        fn get_database(&self, name: &str) -> impl std::future::Future<Output = ServiceResult<Option<DatabaseInfo>>> + Send;
+        fn drop_database(&self, name: &str) -> impl std::future::Future<Output = ServiceResult<bool>> + Send;
+        fn apply_schema_changes(&self, database: &str, changes: Vec<SchemaChange>) -> impl std::future::Future<Output = ServiceResult<bool>> + Send;
+        fn create_transaction(&self, database: &str) -> impl std::future::Future<Output = ServiceResult<TransactionStatus>> + Send;
+    }
+}
+
 /// Essential types
 pub mod types {
     use serde::{Deserialize, Serialize};
@@ -165,6 +225,53 @@ pub mod types {
             pub working_directory: Option<String>,
             pub environment: HashMap<String, String>,
             pub context: HashMap<String, String>,
+            pub vault_path: Option<String>,
+        }
+
+        /// Reference to a tool execution context - breaks circular dependency
+        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+        pub struct ContextRef {
+            /// Unique identifier for the execution context
+            pub id: String,
+            /// When the context was created
+            pub created_at: chrono::DateTime<chrono::Utc>,
+            /// Optional context metadata for debugging
+            pub metadata: HashMap<String, String>,
+        }
+
+        impl ContextRef {
+            /// Create a new context reference
+            pub fn new() -> Self {
+                Self {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    created_at: chrono::Utc::now(),
+                    metadata: HashMap::new(),
+                }
+            }
+
+            /// Create a context reference with custom metadata
+            pub fn with_metadata(metadata: HashMap<String, String>) -> Self {
+                Self {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    created_at: chrono::Utc::now(),
+                    metadata,
+                }
+            }
+
+            /// Create a context reference with a specific ID (for testing/migration)
+            pub fn with_id(id: String) -> Self {
+                Self {
+                    id,
+                    created_at: chrono::Utc::now(),
+                    metadata: HashMap::new(),
+                }
+            }
+        }
+
+        impl Default for ContextRef {
+            fn default() -> Self {
+                Self::new()
+            }
         }
 
         /// Tool execution result
@@ -175,7 +282,7 @@ pub mod types {
             pub error: Option<String>,
             pub execution_time: std::time::Duration,
             pub tool_name: String,
-            pub context: ToolExecutionContext,
+            pub context_ref: Option<ContextRef>,
         }
 
         /// Tool validation result
@@ -185,6 +292,7 @@ pub mod types {
             pub errors: Vec<String>,
             pub warnings: Vec<String>,
             pub tool_name: String,
+            pub metadata: Option<ToolDefinition>,
         }
 
         impl Default for ToolExecutionContext {
@@ -195,6 +303,7 @@ pub mod types {
                     working_directory: None,
                     environment: HashMap::new(),
                     context: HashMap::new(),
+                    vault_path: None,
                 }
             }
         }
