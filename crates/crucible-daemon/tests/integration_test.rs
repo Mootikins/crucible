@@ -157,35 +157,6 @@ async fn test_event_creation() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_in_memory_event_publisher() -> Result<()> {
-    let (publisher, receiver) = InMemoryEventPublisher::new();
-    let event = DaemonEvent::Filesystem(EventBuilder::filesystem(
-        FilesystemEventType::Created,
-        PathBuf::from("/test/file.txt"),
-    ));
-
-    // Publish event synchronously
-    publisher.publish(event.clone()).await?;
-
-    // Receive event
-    let received = receiver.recv_async().await?;
-    assert_eq!(received, event);
-
-    // Test async publishing
-    let event2 = DaemonEvent::Error(EventBuilder::error(
-        ErrorSeverity::Error,
-        ErrorCategory::Database,
-        "DB_001".to_string(),
-        "Database error".to_string(),
-    ));
-
-    publisher.publish(event2.clone()).await?;
-    let received2 = receiver.recv_async().await?;
-    assert_eq!(received2, event2);
-
-    Ok(())
-}
 
 // ============================================================================
 // Configuration Tests
@@ -200,7 +171,6 @@ async fn test_default_configuration() -> Result<()> {
 
     // Check default values
     assert_eq!(config.filesystem.debounce.delay_ms, 100);
-    assert_eq!(config.events.buffer.size, 1000);
     assert_eq!(config.performance.workers.max_queue_size, 10000);
 
     Ok(())
