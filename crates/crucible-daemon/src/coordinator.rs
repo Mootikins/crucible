@@ -8,7 +8,6 @@ use crate::events::{DaemonEvent, EventPublisher, InMemoryEventPublisher};
 use crate::handlers::{HandlerManager, FilesystemEventHandler, DatabaseEventHandler, SyncEventHandler, ErrorEventHandler, HealthEventHandler};
 use crate::services::{ServiceManager, FileService, DataLayerDatabaseService, EventService, SyncService};
 use anyhow::Result;
-use crucible_services::presets;
 use crucible_watch::{WatchManager, WatchConfig, FileEvent, FileEventKind};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -45,9 +44,8 @@ impl DataCoordinator {
         // Initialize event publisher
         let event_publisher = Self::create_event_publisher(&config.read().await.events).await?;
 
-        // Initialize service manager
-        let router = presets::development()?;
-        let service_manager = Arc::new(ServiceManager::new(router).await?);
+        // Initialize service manager - simplified without enterprise router
+        let service_manager = Arc::new(ServiceManager::new().await?);
 
         // Initialize handler manager
         let handler_manager = Arc::new(HandlerManager::new());
