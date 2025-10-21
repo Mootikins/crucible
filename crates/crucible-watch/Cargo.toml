@@ -39,11 +39,11 @@ regex = { workspace = true }
 num_cpus = { workspace = true }
 
 # Optional dependencies for specific handlers
-crucible-rune = { workspace = true, optional = true }
+crucible-tools = { workspace = true, optional = true }
 
 [features]
 default = []
-rune = ["dep:crucible-rune"]
+rune = ["dep:crucible-tools"]
 obsidian = []
 
 [dev-dependencies]

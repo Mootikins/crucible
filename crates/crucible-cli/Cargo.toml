@@ -9,7 +9,6 @@ rust-version.workspace = true
 [dependencies]
 crucible-core = { path = "../crucible-core" }
 crucible-services = { path = "../crucible-services" }
-crucible-rune = { path = "../crucible-rune" }
 crucible-tools = { path = "../crucible-tools" }
 crucible-surrealdb = { path = "../crucible-surrealdb" }
 
