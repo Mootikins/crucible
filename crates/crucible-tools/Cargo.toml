@@ -4,12 +4,13 @@ version.workspace = true
 authors.workspace = true
 license.workspace = true
 edition.workspace = true
-description = "Static system tools for Crucible knowledge management"
+description = "System and Rune tools for Crucible knowledge management with dynamic scripting capabilities"
 
 [dependencies]
 # Core crates
 crucible-core = { workspace = true }
 crucible-config = { workspace = true }
+crucible-services = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
@@ -42,6 +43,30 @@ uuid = { workspace = true }
 # HTTP client for external integrations
 reqwest = { workspace = true }
 urlencoding = { workspace = true }
+
+# Rune scripting language
+rune = { workspace = true }
+rune-modules = { workspace = true }
+
+# File operations
+pathdiff = "0.2"
+url = "2.5"
+
+# Validation
+validator = { version = "0.18", features = ["derive"] }
+
+# Hashing
+md5 = "0.7"
+
+# Random number generation
+rand = "0.8"
+
+# Rune macros
+crucible-rune-macros = { workspace = true }
+
+# Additional dependencies for Rune
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
