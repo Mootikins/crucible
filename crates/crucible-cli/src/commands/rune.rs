@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use crate::config::CliConfig;
-use crucible_rune::{RuneService, RuneServiceConfig};
+use crucible_tools::{RuneService, RuneServiceConfig};
 use crucible_services::traits::tool::ToolService;
 use std::path::PathBuf;
 use glob::glob;
