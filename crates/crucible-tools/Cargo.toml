@@ -11,6 +11,7 @@ description = "System and Rune tools for Crucible knowledge management with dyna
 crucible-core = { workspace = true }
 crucible-config = { workspace = true }
 crucible-services = { workspace = true }
+crucible-llm = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
@@ -36,9 +37,11 @@ glob = { workspace = true }
 lazy_static = { workspace = true }
 
 # Database and embeddings
-duckdb = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
+
+# SurrealDB for database operations
+crucible-surrealdb = { workspace = true }
 
 # HTTP client for external integrations
 reqwest = { workspace = true }
@@ -67,6 +70,9 @@ crucible-rune-macros = { workspace = true }
 # Additional dependencies for Rune
 parking_lot = { workspace = true }
 dashmap = { workspace = true }
+
+# Vector operations for embeddings
+ndarray = "0.15"
 
 [dev-dependencies]
 tokio-test = "0.4"
