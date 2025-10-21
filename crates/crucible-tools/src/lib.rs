@@ -1,12 +1,13 @@
-//! Crucible Tools - Static system tools for knowledge management
+//! Crucible Tools - System and Rune tools for knowledge management
 //!
-//! This crate provides static, system-level tools that offer core functionality
-//! for the Crucible knowledge management system. It includes tools for:
+//! This crate provides system-level and dynamic Rune scripting tools that offer
+//! core functionality for the Crucible knowledge management system. It includes tools for:
 //!
 //! - **Vault operations**: Search, indexing, and metadata management
 //! - **Database operations**: CRUD, semantic search, and maintenance
 //! - **Search capabilities**: Advanced search with multiple criteria
-//! - **Service integration**: Clean integration with the service layer
+//! - **Rune scripting**: Dynamic tool execution with the Rune scripting language
+//! - **Tool discovery**: Automatic discovery and loading of Rune tools
 //!
 //! # Architecture
 //!
@@ -16,85 +17,96 @@
 //! - [`vault_tools`]: Vault-specific operations and file management
 //! - [`database_tools`]: Database interactions and semantic operations
 //! - [`search_tools`]: Advanced search and indexing capabilities
-//! - [`service`]: Service layer integration and tool execution
 //! - [`registry`]: Static tool registration and discovery
 //! - [`types`]: Tool-specific types and parameter structures
+//! - [`analyzer`]: Rune AST analysis and tool metadata extraction
+//! - [`context`]: Rune execution context and security management
+//! - [`discovery`]: Automatic discovery and loading of Rune tools
+//! - [`handler`]: Rune tool execution handlers
+//! - [`loader`]: Dynamic loading and compilation of Rune scripts
+//! - [`tool`]: Rune tool implementations and execution engine
+//! - [`rune_registry`]: Rune tool registration and management
+//! - [`stdlib`]: Standard library functions for Rune tools
+//! - [`embeddings`]: Embedding generation and vector operations
+//! - [`utils`]: Utility functions for tool operations
+//! - [`rune_service`]: Simple Rune service interface
 //!
 //! # Quick Start
 //!
+//! ## Using Rune Tools
+//!
 //! ```rust
-//! use crucible_tools::{ToolServiceFactory, ExecutionContextBuilder};
+//! use crucible_tools::{RuneService, RuneServiceConfig};
 //!
-//! // Create a tool service
-//! let service = ToolServiceFactory::create_default();
+//! #[tokio::main]
+//! async fn main() -> anyhow::Result<()> {
+//!     let config = RuneServiceConfig::default();
+//!     let service = RuneService::new(config).await?;
 //!
-//! // Create execution context
-//! let context = ExecutionContextBuilder::new()
-//!     .vault_path("/path/to/vault")
-//!     .user_id("user123")
-//!     .build();
+//!     // Discover tools from a directory
+//!     service.discover_tools_from_directory("./tools").await?;
 //!
-//! // Execute a tool
-//! let result = service.execute_tool(
-//!     "search_by_properties",
-//!     serde_json::json!({
-//!         "properties": {
-//!             "status": "active"
-//!         }
-//!     }),
-//!     context
-//! ).await?;
-//! # Ok::<(), anyhow::Error>(())
+//!     // List available tools
+//!     let tools = service.list_tools().await?;
+//!     println!("Found {} tools", tools.len());
+//!
+//!     Ok(())
+//! }
+//! ```
+//!
+//! ## Using System Tools
+//!
+//! ```rust
+//! use crucible_tools::{init, create_tool_manager};
+//!
+//! // Initialize the tool registry
+//! let registry = init();
+//!
+//! // Create a tool manager
+//! let manager = create_tool_manager();
+//! let tools = manager.list_tools();
+//! println!("Available tools: {}", tools.len());
 //! ```
 //!
 //! # Features
 //!
-//! - **Static Registration**: Tools are registered at startup for fast discovery
-//! - **Service Integration**: Clean integration with the broader service architecture
+//! - **Rune Scripting**: Dynamic tool execution with the Rune scripting language
+//! - **Tool Discovery**: Automatic discovery and loading of Rune tools
+//! - **Static Tools**: Built-in system tools for common operations
+//! - **Tool Macros**: `#[tool]` attribute macro for easy tool definition
 //! - **Type Safety**: Strong typing with clear parameter schemas
 //! - **Error Handling**: Comprehensive error handling and logging
-//! - **Extensible**: Easy to add new tools and customize behavior
-//!
-//! # Configuration
-//!
-//! The crate supports flexible configuration through [`ToolServiceConfig`]:
-//!
-//! ```rust
-//! use crucible_tools::{ToolServiceFactory, ToolServiceConfig};
-//! use std::collections::HashMap;
-//!
-//! let mut config = ToolServiceConfig::default();
-//! // Enable only specific categories
-//! config.enabled_categories.clear();
-//! config.enabled_categories.insert(ToolCategory::Search, true);
-//!
-//! let service = ToolServiceFactory::create_with_config(config);
-//! ```
 
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 #![deny(clippy::pedantic)]
 
 pub mod database_tools;
-pub mod registry;
 pub mod search_tools;
-pub mod service;
 pub mod system_tools;
 pub mod types;
 pub mod vault_tools;
 
+// Rune modules
+pub mod analyzer;
+pub mod context;
+pub mod database;
+pub mod discovery;
+pub mod errors;
+pub mod handler;
+pub mod loader;
+pub mod stdlib;
+pub mod tool;
+pub mod rune_registry;
+pub mod rune_service;
+pub mod utils;
+pub mod embeddings;
+
 // Re-export commonly used types and functions
-pub use service::{
-    ConfigurableToolService, ExecutionContextBuilder, SystemToolService, ToolService,
-    ToolServiceConfig, ToolServiceFactory,
-};
 pub use system_tools::Tool;
 pub use system_tools::ToolManager;
-pub use types::ToolDefinition;
-pub use types::ToolExecutionContext;
-pub use types::ToolExecutionResult;
-pub use types::ToolCategory;
-pub use registry::{initialize_registry, get_registry, create_tool_manager_from_registry, discovery};
+pub use rune_service::RuneService;
+pub use types::{RuneServiceConfig, ValidationResult, SystemInfo};
 
 /// Crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -128,51 +140,6 @@ pub fn init() -> std::sync::Arc<registry::ToolRegistry> {
     registry
 }
 
-/// Initialize with custom configuration
-///
-/// This function allows you to initialize the library with custom
-/// tool registration hooks or additional tools.
-///
-/// # Example
-///
-/// ```rust
-/// use crucible_tools::{init_with_config, system_tools::ToolManager};
-///
-/// // Register custom tools
-/// let mut manager = ToolManager::new();
-/// // ... register custom tools ...
-///
-/// // Initialize with custom tools
-/// let registry = init_with_config(|registry| {
-///     // Custom registration logic here
-/// });
-/// ```
-pub fn init_with_config<F>(config_fn: F) -> std::sync::Arc<registry::ToolRegistry>
-where
-    F: FnOnce(&mut registry::ToolRegistry),
-{
-    tracing::info!("Initializing crucible-tools v{} with custom configuration", VERSION);
-    let mut registry = registry::ToolRegistry::new();
-
-    // Register built-in tools
-    registry::register_built_in_tools(&mut registry);
-
-    // Apply custom configuration
-    config_fn(&mut registry);
-
-    let registry = std::sync::Arc::new(registry);
-
-    // Store in global registry
-    // Note: This would need to be adapted for the OnceLock pattern
-    tracing::info!(
-        "Initialized {} tools across {} categories with custom configuration",
-        registry.tools.len(),
-        registry.categories.len()
-    );
-
-    registry
-}
-
 /// Create a pre-configured tool manager
 ///
 /// This is a convenience function that creates a tool manager
@@ -200,13 +167,14 @@ pub fn library_info() -> LibraryInfo {
     LibraryInfo {
         version: VERSION.to_string(),
         name: "crucible-tools".to_string(),
-        description: "Static system tools for Crucible knowledge management".to_string(),
+        description: "System and Rune tools for Crucible knowledge management".to_string(),
         features: vec![
             "vault_operations".to_string(),
             "database_operations".to_string(),
             "search_capabilities".to_string(),
-            "service_integration".to_string(),
-            "static_registration".to_string(),
+            "rune_scripting".to_string(),
+            "tool_discovery".to_string(),
+            "tool_macros".to_string(),
         ],
     }
 }
