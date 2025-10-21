@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize, Serializer};
 use tokio::sync::{broadcast, mpsc, oneshot, RwLock};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::config::{ConfigChange, ConfigManager};
 use crate::orchestrator_simple::{SimpleServiceOrchestrator, ServiceEvent};
