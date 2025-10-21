@@ -7,7 +7,35 @@ use crucible_services::types::tool::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use uuid::Uuid;
+
+/// Tool dependency definition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolDependency {
+    pub name: String,
+    pub version: Option<String>,
+    pub optional: bool,
+}
+
+/// Tool categories for organization
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ToolCategory {
+    /// System utilities and tools
+    System,
+    /// Database operations
+    Database,
+    /// File operations
+    File,
+    /// Network operations
+    Network,
+    /// General tools
+    General,
+    /// Vault operations
+    Vault,
+    /// Search operations
+    Search,
+    /// Analytical tools
+    Analytics,
+}
 
 /// System information for the Rune system
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -663,6 +691,9 @@ pub struct PerformanceMetrics {
     /// CPU usage percentage
     pub cpu_usage_percent: f64,
 }
+
+/// Result type for tool operations using anyhow for better error handling
+pub type ToolResult<T> = anyhow::Result<T>;
 
 impl Default for PerformanceMetrics {
     fn default() -> Self {

@@ -14,6 +14,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use uuid::Uuid;
 
+// Import ToolDependency from types module
+use crate::types::ToolDependency;
+
 /// Represents a single Rune-based tool
 ///
 /// A RuneTool encapsulates a compiled Rune script that implements the tool interface.
@@ -129,10 +132,17 @@ impl RuneTool {
         // Extract optional metadata
         let tool_metadata = metadata.unwrap_or_else(|| {
             // Try to extract additional metadata from the tool
-            Self::extract_metadata_from_unit(&unit, context).unwrap_or_default()
+            Self::extract_metadata_from_unit(unit.clone(), context).unwrap_or_default()
         });
 
         let now = Utc::now();
+
+        let category = tool_metadata.category.clone().unwrap_or_else(|| "general".to_string());
+        let tags = tool_metadata.tags.clone().unwrap_or_default();
+        let version = tool_metadata.version.clone().unwrap_or_else(|| "1.0.0".to_string());
+        let author = tool_metadata.author.clone();
+        let dependencies = tool_metadata.dependencies.clone().unwrap_or_default();
+        let permissions = tool_metadata.permissions.clone().unwrap_or_default();
 
         Ok(Self {
             id: Uuid::new_v4().to_string(),
@@ -140,18 +150,18 @@ impl RuneTool {
             description,
             input_schema,
             output_schema,
-            category: tool_metadata.category.unwrap_or_else(|| "general".to_string()),
-            tags: tool_metadata.tags.unwrap_or_default(),
+            category,
+            tags,
             source_code: source_code.to_string(),
             file_path: None,
             unit,
             metadata: tool_metadata,
             created_at: now,
             modified_at: now,
-            version: tool_metadata.version.unwrap_or_else(|| "1.0.0".to_string()),
-            author: tool_metadata.author,
-            dependencies: tool_metadata.dependencies.unwrap_or_default(),
-            permissions: tool_metadata.permissions.unwrap_or_default(),
+            version,
+            author,
+            dependencies,
+            permissions,
             enabled: true,
         })
     }
@@ -218,36 +228,42 @@ impl RuneTool {
         args: Value,
         context: &rune::Context,
         execution_context: &ToolExecutionContext,
-    ) -> Result<ToolExecutionResult> {
+    ) -> Result<(ToolExecutionResult, crucible_services::types::tool::ContextRef)> {
         let start_time = std::time::Instant::now();
+
+        // Create context reference for this execution
+        let mut metadata = std::collections::HashMap::new();
+        metadata.insert("tool_name".to_string(), self.name.clone());
+        if let Some(user_id) = &execution_context.user_id {
+            metadata.insert("user_id".to_string(), user_id.clone());
+        }
+        if let Some(session_id) = &execution_context.session_id {
+            metadata.insert("session_id".to_string(), session_id.clone());
+        }
+
+        let context_ref = crucible_services::types::tool::ContextRef::with_metadata(metadata);
+        let execution_duration = start_time.elapsed();
 
         let result = match self.call(args, context).await {
             Ok(output) => ToolExecutionResult {
-                execution_id: execution_context.execution_id.clone(),
-                tool_name: self.name.clone(),
                 success: true,
-                output,
+                result: Some(output),
                 error: None,
-                execution_time_ms: start_time.elapsed().as_millis() as u64,
-                metadata: {
-                    let mut meta = HashMap::new();
-                    meta.insert("tool_id".to_string(), Value::String(self.id.clone()));
-                    meta.insert("tool_version".to_string(), Value::String(self.version.clone()));
-                    meta
-                },
+                execution_time: execution_duration,
+                tool_name: self.name.clone(),
+                context_ref: Some(context_ref.clone()),
             },
             Err(e) => ToolExecutionResult {
-                execution_id: execution_context.execution_id.clone(),
-                tool_name: self.name.clone(),
                 success: false,
-                output: Value::Null,
+                result: None,
                 error: Some(e.to_string()),
-                execution_time_ms: start_time.elapsed().as_millis() as u64,
-                metadata: HashMap::new(),
+                execution_time: execution_duration,
+                tool_name: self.name.clone(),
+                context_ref: Some(context_ref.clone()),
             },
         };
 
-        Ok(result)
+        Ok((result, context_ref))
     }
 
     /// Validate input arguments against the tool's schema
@@ -274,37 +290,13 @@ impl RuneTool {
         ToolDefinition {
             name: self.name.clone(),
             description: self.description.clone(),
-            parameters: self.input_schema.clone(),
-            returns: self.output_schema.clone(),
+            input_schema: self.input_schema.clone(),
             category: Some(self.category.clone()),
+            version: Some(self.version.clone()),
+            author: self.author.clone(),
             tags: self.tags.clone(),
-            metadata: {
-                let mut meta = HashMap::new();
-                meta.insert("source_type".to_string(), "rune".to_string());
-                meta.insert("created_at".to_string(), self.created_at.to_rfc3339());
-                meta.insert("modified_at".to_string(), self.modified_at.to_rfc3339());
-                meta.insert("version".to_string(), self.version.clone());
-                meta.insert("enabled".to_string(), self.enabled.to_string());
-                if let Some(author) = &self.author {
-                    meta.insert("author".to_string(), author.clone());
-                }
-                if let Some(file_path) = &self.file_path {
-                    meta.insert("file_path".to_string(), file_path.to_string_lossy().to_string());
-                }
-                // Convert dependencies to JSON string
-                if !self.dependencies.is_empty() {
-                    if let Ok(deps_json) = serde_json::to_string(&self.dependencies) {
-                        meta.insert("dependencies".to_string(), deps_json);
-                    }
-                }
-                // Convert permissions to JSON string
-                if !self.permissions.is_empty() {
-                    if let Ok(perms_json) = serde_json::to_string(&self.permissions) {
-                        meta.insert("permissions".to_string(), perms_json);
-                    }
-                }
-                meta
-            },
+            enabled: self.enabled,
+            parameters: vec![], // Parameters are defined in input_schema
         }
     }
 
@@ -324,7 +316,7 @@ impl RuneTool {
         if let Some(file_path) = &self.file_path {
             if let Ok(metadata) = std::fs::metadata(file_path) {
                 if let Ok(modified) = metadata.modified() {
-                    let file_modified = DateTime::from(modified);
+                    let file_modified: chrono::DateTime<chrono::Utc> = DateTime::from(modified);
                     return Ok(file_modified > self.modified_at);
                 }
             }
@@ -333,7 +325,7 @@ impl RuneTool {
     }
 
     /// Extract additional metadata from the compiled unit
-    fn extract_metadata_from_unit(unit: &Unit, context: &rune::Context) -> Result<ToolMetadata> {
+    fn extract_metadata_from_unit(unit: Arc<Unit>, context: &rune::Context) -> Result<ToolMetadata> {
         let runtime = Arc::new(context.runtime()?);
         let mut metadata = ToolMetadata::default();
 

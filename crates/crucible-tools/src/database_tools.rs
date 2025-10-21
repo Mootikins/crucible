@@ -5,9 +5,12 @@
 
 use crate::system_tools::{schemas, Tool};
 use crate::types::*;
+use crucible_services::types::tool::{ToolDefinition, ToolExecutionContext, ToolExecutionResult};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::time::Duration;
 use tracing::info;
 
 /// Semantic search using embeddings
@@ -34,7 +37,7 @@ impl Tool for SemanticSearchTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "semantic_search".to_string(),
                 description: "Perform semantic search using embeddings".to_string(),
-                category: ToolCategory::Search,
+                category: Some("Search".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -52,20 +55,11 @@ impl Tool for SemanticSearchTool {
                     },
                     "required": ["query"]
                 }),
-                output_schema: schemas::success_response(Some(json!({
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "file_path": {"type": "string"},
-                            "title": {"type": "string"},
-                            "content": {"type": "string"},
-                            "score": {"type": "number"}
-                        }
-                    }
-                }))),
-                deprecated: false,
-                version: "1.0.0".to_string(),
+                version: Some("1.0.0".to_string()),
+                author: None,
+                tags: vec![],
+                enabled: true,
+                parameters: vec![],
             };
         }
         &DEFINITION
@@ -81,9 +75,11 @@ impl Tool for SemanticSearchTool {
             None => {
                 return Ok(ToolExecutionResult {
                     success: false,
-                    data: None,
+                    result: None,
                     error: Some("Missing query".to_string()),
-                    execution_time_ms: None,
+                    execution_time: Duration::from_millis(0),
+                    tool_name: "semantic_search".to_string(),
+                    context: _context.clone(),
                 });
             }
         };
@@ -117,9 +113,11 @@ impl Tool for SemanticSearchTool {
 
         Ok(ToolExecutionResult {
             success: true,
-            data: Some(json!(mock_results)),
+            result: Some(json!(mock_results)),
             error: None,
-            execution_time_ms: None,
+            execution_time: Duration::from_millis(200),
+            tool_name: "semantic_search".to_string(),
+            context: _context.clone(),
         })
     }
 }
@@ -146,7 +144,7 @@ impl Tool for SearchByContentTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "search_by_content".to_string(),
                 description: "Full-text search in note contents".to_string(),
-                category: ToolCategory::Search,
+                category: Some("Search".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -157,19 +155,11 @@ impl Tool for SearchByContentTool {
                     },
                     "required": ["query"]
                 }),
-                output_schema: schemas::success_response(Some(json!({
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "file_path": {"type": "string"},
-                            "content": {"type": "string"},
-                            "metadata": {"type": "object"}
-                        }
-                    }
-                }))),
-                deprecated: false,
-                version: "1.0.0".to_string(),
+                version: Some("1.0.0".to_string()),
+                author: None,
+                tags: vec![],
+                enabled: true,
+                parameters: vec![],
             };
         }
         &DEFINITION
@@ -185,9 +175,11 @@ impl Tool for SearchByContentTool {
             None => {
                 return Ok(ToolExecutionResult {
                     success: false,
-                    data: None,
+                    result: None,
                     error: Some("Missing query".to_string()),
-                    execution_time_ms: None,
+                    execution_time: Duration::from_millis(0),
+                    tool_name: "semantic_search".to_string(),
+                    context: _context.clone(),
                 });
             }
         };
@@ -211,9 +203,11 @@ impl Tool for SearchByContentTool {
 
         Ok(ToolExecutionResult {
             success: true,
-            data: Some(json!(mock_results)),
+            result: Some(json!(mock_results)),
             error: None,
-            execution_time_ms: None,
+            execution_time: Duration::from_millis(200),
+            tool_name: "semantic_search".to_string(),
+            context: _context.clone(),
         })
     }
 }
@@ -240,7 +234,7 @@ impl Tool for SearchByFilenameTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "search_by_filename".to_string(),
                 description: "Search notes by filename pattern".to_string(),
-                category: ToolCategory::Search,
+                category: Some("Search".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -251,12 +245,11 @@ impl Tool for SearchByFilenameTool {
                     },
                     "required": ["pattern"]
                 }),
-                output_schema: schemas::success_response(Some(json!({
-                    "type": "array",
-                    "items": {"type": "string"}
-                }))),
-                deprecated: false,
-                version: "1.0.0".to_string(),
+                version: Some("1.0.0".to_string()),
+                author: None,
+                tags: vec![],
+                enabled: true,
+                parameters: vec![],
             };
         }
         &DEFINITION
@@ -272,9 +265,11 @@ impl Tool for SearchByFilenameTool {
             None => {
                 return Ok(ToolExecutionResult {
                     success: false,
-                    data: None,
+                    result: None,
                     error: Some("Missing pattern".to_string()),
-                    execution_time_ms: None,
+                    execution_time: Duration::from_millis(0),
+                    tool_name: "search_by_filename".to_string(),
+                    context: _context.clone(),
                 });
             }
         };
@@ -289,9 +284,11 @@ impl Tool for SearchByFilenameTool {
 
         Ok(ToolExecutionResult {
             success: true,
-            data: Some(json!(matching_files)),
+            result: Some(json!(matching_files)),
             error: None,
-            execution_time_ms: None,
+            execution_time: Duration::from_millis(100),
+            tool_name: "search_by_filename".to_string(),
+            context: _context.clone(),
         })
     }
 }
@@ -318,7 +315,7 @@ impl Tool for UpdateNotePropertiesTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "update_note_properties".to_string(),
                 description: "Update frontmatter properties of a note".to_string(),
-                category: ToolCategory::Database,
+                category: Some("Database".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -334,14 +331,11 @@ impl Tool for UpdateNotePropertiesTool {
                     },
                     "required": ["path", "properties"]
                 }),
-                output_schema: schemas::success_response(Some(json!({
-                    "type": "object",
-                    "properties": {
-                        "success": {"type": "boolean"}
-                    }
-                }))),
-                deprecated: false,
-                version: "1.0.0".to_string(),
+                version: Some("1.0.0".to_string()),
+                author: None,
+                tags: vec![],
+                enabled: true,
+                parameters: vec![],
             };
         }
         &DEFINITION
@@ -357,9 +351,11 @@ impl Tool for UpdateNotePropertiesTool {
             None => {
                 return Ok(ToolExecutionResult {
                     success: false,
-                    data: None,
+                    result: None,
                     error: Some("Missing path".to_string()),
-                    execution_time_ms: None,
+                    execution_time: Duration::from_millis(0),
+                    tool_name: "update_note_properties".to_string(),
+                    context: _context.clone(),
                 });
             }
         };
@@ -369,9 +365,11 @@ impl Tool for UpdateNotePropertiesTool {
             None => {
                 return Ok(ToolExecutionResult {
                     success: false,
-                    data: None,
+                    result: None,
                     error: Some("Missing properties".to_string()),
-                    execution_time_ms: None,
+                    execution_time: Duration::from_millis(0),
+                    tool_name: "update_note_properties".to_string(),
+                    context: _context.clone(),
                 });
             }
         };
@@ -385,9 +383,11 @@ impl Tool for UpdateNotePropertiesTool {
 
         Ok(ToolExecutionResult {
             success: true,
-            data: Some(json!({"success": true})),
+            result: Some(json!({"success": true})),
             error: None,
-            execution_time_ms: None,
+            execution_time: Duration::from_millis(150),
+            tool_name: "update_note_properties".to_string(),
+            context: _context.clone(),
         })
     }
 }
@@ -414,7 +414,7 @@ impl Tool for IndexDocumentTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "index_document".to_string(),
                 description: "Index a specific document for search".to_string(),
-                category: ToolCategory::Database,
+                category: Some("Database".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -430,15 +430,11 @@ impl Tool for IndexDocumentTool {
                     },
                     "required": ["document"]
                 }),
-                output_schema: schemas::success_response(Some(json!({
-                    "type": "object",
-                    "properties": {
-                        "indexed": {"type": "boolean"},
-                        "document_id": {"type": "string"}
-                    }
-                }))),
-                deprecated: false,
-                version: "1.0.0".to_string(),
+                version: Some("1.0.0".to_string()),
+                author: None,
+                tags: vec![],
+                enabled: true,
+                parameters: vec![],
             };
         }
         &DEFINITION
@@ -454,9 +450,11 @@ impl Tool for IndexDocumentTool {
             None => {
                 return Ok(ToolExecutionResult {
                     success: false,
-                    data: None,
+                    result: None,
                     error: Some("Missing document".to_string()),
-                    execution_time_ms: None,
+                    execution_time: Duration::from_millis(0),
+                    tool_name: "index_document".to_string(),
+                    context: _context.clone(),
                 });
             }
         };
@@ -475,12 +473,14 @@ impl Tool for IndexDocumentTool {
 
         Ok(ToolExecutionResult {
             success: true,
-            data: Some(json!({
+            result: Some(json!({
                 "indexed": true,
                 "document_id": document_id
             })),
             error: None,
-            execution_time_ms: None,
+            execution_time: Duration::from_millis(300),
+            tool_name: "index_document".to_string(),
+            context: _context.clone(),
         })
     }
 }
@@ -507,19 +507,13 @@ impl Tool for GetDocumentStatsTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "get_document_stats".to_string(),
                 description: "Get document statistics from the database".to_string(),
-                category: ToolCategory::Database,
+                category: Some("Database".to_string()),
                 input_schema: json!({"type": "object"}),
-                output_schema: schemas::success_response(Some(json!({
-                    "type": "object",
-                    "properties": {
-                        "total_documents": {"type": "number"},
-                        "database_type": {"type": "string"},
-                        "embedding_dimension": {"type": "number"},
-                        "index_type": {"type": "string"}
-                    }
-                }))),
-                deprecated: false,
-                version: "1.0.0".to_string(),
+                version: Some("1.0.0".to_string()),
+                author: None,
+                tags: vec![],
+                enabled: true,
+                parameters: vec![],
             };
         }
         &DEFINITION
@@ -542,9 +536,11 @@ impl Tool for GetDocumentStatsTool {
 
         Ok(ToolExecutionResult {
             success: true,
-            data: Some(stats),
+            result: Some(stats),
             error: None,
-            execution_time_ms: None,
+            execution_time: Duration::from_millis(75),
+            tool_name: "get_document_stats".to_string(),
+            context: _context.clone(),
         })
     }
 }
@@ -571,7 +567,7 @@ impl Tool for SyncMetadataTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "sync_metadata".to_string(),
                 description: "Sync metadata from external source to database".to_string(),
-                category: ToolCategory::Database,
+                category: Some("Database".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -582,18 +578,11 @@ impl Tool for SyncMetadataTool {
                         }
                     }
                 }),
-                output_schema: schemas::success_response(Some(json!({
-                    "type": "object",
-                    "properties": {
-                        "synced_count": {"type": "number"},
-                        "errors": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        }
-                    }
-                }))),
-                deprecated: false,
-                version: "1.0.0".to_string(),
+                version: Some("1.0.0".to_string()),
+                author: None,
+                tags: vec![],
+                enabled: true,
+                parameters: vec![],
             };
         }
         &DEFINITION
@@ -617,12 +606,14 @@ impl Tool for SyncMetadataTool {
 
         Ok(ToolExecutionResult {
             success: true,
-            data: Some(json!({
+            result: Some(json!({
                 "synced_count": synced_count,
                 "errors": errors
             })),
             error: None,
-            execution_time_ms: None,
+            execution_time: Duration::from_millis(1200),
+            tool_name: "sync_metadata".to_string(),
+            context: _context.clone(),
         })
     }
 }
@@ -661,11 +652,11 @@ mod tests {
     async fn test_semantic_search_tool() {
         let tool = SemanticSearchTool::new();
         let context = ToolExecutionContext {
-            workspace_path: None,
-            vault_path: None,
             user_id: None,
             session_id: None,
-            timestamp: chrono::Utc::now(),
+            working_directory: None,
+            environment: HashMap::new(),
+            context: HashMap::new(),
         };
 
         let params = json!({
@@ -681,11 +672,11 @@ mod tests {
     async fn test_update_note_properties_tool() {
         let tool = UpdateNotePropertiesTool::new();
         let context = ToolExecutionContext {
-            workspace_path: None,
-            vault_path: None,
             user_id: None,
             session_id: None,
-            timestamp: chrono::Utc::now(),
+            working_directory: None,
+            environment: HashMap::new(),
+            context: HashMap::new(),
         };
 
         let params = json!({
