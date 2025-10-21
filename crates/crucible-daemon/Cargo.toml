@@ -43,6 +43,12 @@ tracing-appender = "0.2"
 # Database
 crucible-surrealdb = { path = "../crucible-surrealdb" }
 
+# UUID generation
+uuid = { workspace = true, features = ["v4", "serde"] }
+
+# Time handling
+chrono = { workspace = true, features = ["serde"] }
+
 # Event system
 flume = "0.11"
 
@@ -55,8 +61,6 @@ dirs = "5.0"
 # Regex for parsing
 regex = { workspace = true }
 
-# Time
-chrono = { workspace = true, features = ["serde"] }
 
 # Channels (already included above)
 
