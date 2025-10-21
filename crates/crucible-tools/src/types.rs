@@ -1,270 +1,682 @@
-//! Tool-specific types and parameter structures
+//! Shared types for the Crucible Rune system
 //!
-//! This module contains the type definitions for all system tools,
-//! providing clear schemas for AI models about required vs optional fields.
+//! This module contains common types used across the Rune system.
 
+use chrono::{DateTime, Utc};
+use crucible_services::types::tool::*;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
+use uuid::Uuid;
 
-// Serde default helper functions
-fn default_direction_both() -> String {
-    "both".to_string()
-}
-
-fn default_direction_outgoing() -> String {
-    "outgoing".to_string()
-}
-
-fn default_damping_factor() -> Option<f64> {
-    Some(0.85)
-}
-
-fn default_iterations() -> Option<u32> {
-    Some(100)
-}
-
-/// Legacy tool call arguments (deprecated - use specific types below)
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct ToolCallArgs {
-    pub properties: Option<HashMap<String, serde_json::Value>>,
-    pub tags: Option<Vec<String>>,
-    pub path: Option<String>,
-    pub recursive: Option<bool>,
-    pub pattern: Option<String>,
-    pub query: Option<String>,
-    pub top_k: Option<u32>,
-    pub force: Option<bool>,
-}
-
-// Specific parameter types for each tool
-// These provide clear schemas to AI models about required vs optional fields
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct SearchByPropertiesParams {
-    /// Property key-value pairs to match
-    pub properties: HashMap<String, serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct SearchByTagsParams {
-    /// Tags to search for
-    pub tags: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct SearchByFolderParams {
-    /// Folder path to search in
-    pub path: String,
-    /// Search recursively in subfolders (default: true)
-    #[serde(default = "default_recursive")]
-    pub recursive: bool,
-}
-
-fn default_recursive() -> bool {
-    true
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct SearchByFilenameParams {
-    /// Filename pattern to match
-    pub pattern: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct SearchByContentParams {
-    /// Search query text
-    pub query: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct SemanticSearchParams {
-    /// Search query text
-    pub query: String,
-    /// Number of results to return (default: 10)
-    #[serde(default = "default_top_k")]
-    pub top_k: u32,
-}
-
-fn default_top_k() -> u32 {
-    10
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct IndexVaultParams {
-    /// Vault path to index (default: current directory)
-    #[serde(default = "default_path")]
-    pub path: String,
-    /// File pattern to match (default: "**/*.md")
-    #[serde(default = "default_pattern")]
-    pub pattern: String,
-    /// Re-index existing files (default: false)
-    #[serde(default)]
-    pub force: bool,
-}
-
-fn default_path() -> String {
-    ".".to_string()
-}
-
-fn default_pattern() -> String {
-    "**/*.md".to_string()
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct GetNoteMetadataParams {
-    /// Note file path
-    pub path: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct UpdateNotePropertiesParams {
-    /// Note file path
-    pub path: String,
-    /// Properties to update
-    pub properties: HashMap<String, serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct IndexDocumentParams {
-    /// Document to index
-    pub document: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct SearchDocumentsParams {
-    /// Search query text
-    pub query: String,
-    /// Number of results to return (default: 10)
-    #[serde(default = "default_top_k")]
-    pub top_k: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct GetDocumentStatsParams {}
-
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct UpdateDocumentPropertiesParams {
-    /// Document ID
-    pub document_id: String,
-    /// Properties to update
-    pub properties: HashMap<String, serde_json::Value>,
-}
-
-/// Tool execution result
+/// System information for the Rune system
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolExecutionResult {
-    pub success: bool,
-    pub data: Option<serde_json::Value>,
-    pub error: Option<String>,
-    pub execution_time_ms: Option<u64>,
-}
-
-/// Tool definition and metadata
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolDefinition {
-    pub name: String,
-    pub description: String,
-    pub category: ToolCategory,
-    pub input_schema: serde_json::Value,
-    pub output_schema: serde_json::Value,
-    pub deprecated: bool,
+pub struct SystemInfo {
+    /// Library version
     pub version: String,
+    /// Rune version
+    pub rune_version: &'static str,
+    /// Supported file extensions
+    pub supported_extensions: Vec<String>,
+    /// Default tool directories
+    pub default_directories: Vec<String>,
 }
 
-/// Tool categories for organization
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "snake_case")]
-pub enum ToolCategory {
-    /// File system operations
-    FileSystem,
-    /// Database operations
-    Database,
-    /// Search and indexing
-    Search,
-    /// Vault management
-    Vault,
-    /// Semantic operations
-    Semantic,
-    /// System utilities
-    System,
-    /// External integrations
-    Integration,
-}
-
-impl std::fmt::Display for ToolCategory {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ToolCategory::FileSystem => write!(f, "file_system"),
-            ToolCategory::Database => write!(f, "database"),
-            ToolCategory::Search => write!(f, "search"),
-            ToolCategory::Vault => write!(f, "vault"),
-            ToolCategory::Semantic => write!(f, "semantic"),
-            ToolCategory::System => write!(f, "system"),
-            ToolCategory::Integration => write!(f, "integration"),
-        }
-    }
-}
-
-/// Tool execution context
-#[derive(Debug, Clone)]
-pub struct ToolExecutionContext {
-    pub workspace_path: Option<String>,
-    pub vault_path: Option<String>,
-    pub user_id: Option<String>,
-    pub session_id: Option<String>,
-    pub timestamp: chrono::DateTime<chrono::Utc>,
-}
-
-/// Tool registry metadata
+/// Service configuration for RuneService
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolRegistry {
-    pub tools: HashMap<String, ToolDefinition>,
-    pub categories: HashMap<ToolCategory, Vec<String>>,
+pub struct RuneServiceConfig {
+    /// Service name
+    pub service_name: String,
+    /// Service version
     pub version: String,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// Tool discovery configuration
+    pub discovery: DiscoveryServiceConfig,
+    /// Hot reload configuration
+    pub hot_reload: HotReloadConfig,
+    /// Execution configuration
+    pub execution: ExecutionConfig,
+    /// Cache configuration
+    pub cache: CacheConfig,
+    /// Security configuration
+    pub security: SecurityConfig,
 }
 
-impl ToolRegistry {
-    pub fn new() -> Self {
-        Self {
-            tools: HashMap::new(),
-            categories: HashMap::new(),
-            version: "1.0.0".to_string(),
-            updated_at: chrono::Utc::now(),
-        }
-    }
-
-    pub fn register_tool(&mut self, tool: ToolDefinition) {
-        let category = tool.category.clone();
-        let tool_name = tool.name.clone();
-
-        self.tools.insert(tool_name.clone(), tool);
-
-        self.categories.entry(category).or_insert_with(Vec::new).push(tool_name);
-        self.updated_at = chrono::Utc::now();
-    }
-
-    pub fn get_tool(&self, name: &str) -> Option<&ToolDefinition> {
-        self.tools.get(name)
-    }
-
-    pub fn list_tools(&self) -> Vec<&ToolDefinition> {
-        self.tools.values().collect()
-    }
-
-    pub fn list_tools_by_category(&self, category: &ToolCategory) -> Vec<&ToolDefinition> {
-        if let Some(tool_names) = self.categories.get(category) {
-            tool_names.iter()
-                .filter_map(|name| self.tools.get(name))
-                .collect()
-        } else {
-            Vec::new()
-        }
-    }
-}
-
-impl Default for ToolRegistry {
+impl Default for RuneServiceConfig {
     fn default() -> Self {
-        Self::new()
+        Self {
+            service_name: "crucible-rune".to_string(),
+            version: "1.0.0".to_string(),
+            discovery: DiscoveryServiceConfig::default(),
+            hot_reload: HotReloadConfig::default(),
+            execution: ExecutionConfig::default(),
+            cache: CacheConfig::default(),
+            security: SecurityConfig::default(),
+        }
+    }
+}
+
+/// Discovery service configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveryServiceConfig {
+    /// Directories to scan for tools
+    pub tool_directories: Vec<String>,
+    /// Discovery patterns
+    pub patterns: DiscoveryPatterns,
+    /// Whether to enable recursive discovery
+    pub recursive: bool,
+    /// Discovery interval in seconds
+    pub discovery_interval_seconds: u64,
+    /// Maximum file size to process
+    pub max_file_size_bytes: usize,
+}
+
+impl Default for DiscoveryServiceConfig {
+    fn default() -> Self {
+        Self {
+            tool_directories: vec![
+                "./tools".to_string(),
+                "./rune-tools".to_string(),
+                "./scripts".to_string(),
+            ],
+            patterns: DiscoveryPatterns::default(),
+            recursive: true,
+            discovery_interval_seconds: 30,
+            max_file_size_bytes: 10 * 1024 * 1024, // 10MB
+        }
+    }
+}
+
+/// Hot reload configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HotReloadConfig {
+    /// Whether hot reload is enabled
+    pub enabled: bool,
+    /// Debounce interval in milliseconds
+    pub debounce_ms: u64,
+    /// File patterns to watch
+    pub watch_patterns: Vec<String>,
+    /// Patterns to ignore
+    pub ignore_patterns: Vec<String>,
+}
+
+impl Default for HotReloadConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            debounce_ms: 500,
+            watch_patterns: vec!["*.rn".to_string(), "*.rune".to_string()],
+            ignore_patterns: vec![
+                "*.tmp".to_string(),
+                "*.bak".to_string(),
+                ".*".to_string(),
+            ],
+        }
+    }
+}
+
+/// Execution configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionConfig {
+    /// Default timeout in milliseconds
+    pub default_timeout_ms: u64,
+    /// Maximum timeout in milliseconds
+    pub max_timeout_ms: u64,
+    /// Maximum memory usage per execution in bytes
+    pub max_memory_bytes: u64,
+    /// Whether to capture stdout/stderr
+    pub capture_output: bool,
+    /// Default environment variables
+    pub default_environment: HashMap<String, String>,
+    /// Sandbox configuration
+    pub sandbox: SandboxConfig,
+}
+
+impl Default for ExecutionConfig {
+    fn default() -> Self {
+        Self {
+            default_timeout_ms: 30000, // 30 seconds
+            max_timeout_ms: 300000,    // 5 minutes
+            max_memory_bytes: 100 * 1024 * 1024, // 100MB
+            capture_output: true,
+            default_environment: HashMap::new(),
+            sandbox: SandboxConfig::default(),
+        }
+    }
+}
+
+/// Cache configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheConfig {
+    /// Maximum number of cached tools
+    pub max_cached_tools: usize,
+    /// Cache TTL in seconds
+    pub cache_ttl_seconds: u64,
+    /// Whether to enable compilation cache
+    pub enable_compilation_cache: bool,
+    /// Maximum size of compilation cache in bytes
+    pub max_compilation_cache_bytes: u64,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            max_cached_tools: 1000,
+            cache_ttl_seconds: 3600, // 1 hour
+            enable_compilation_cache: true,
+            max_compilation_cache_bytes: 100 * 1024 * 1024, // 100MB
+        }
+    }
+}
+
+/// Security configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityConfig {
+    /// Whether to enable sandbox
+    pub enable_sandbox: bool,
+    /// Allowed modules
+    pub allowed_modules: Vec<String>,
+    /// Blocked modules
+    pub blocked_modules: Vec<String>,
+    /// Maximum recursion depth
+    pub max_recursion_depth: usize,
+    /// Network access policy
+    pub network_policy: NetworkPolicy,
+}
+
+impl Default for SecurityConfig {
+    fn default() -> Self {
+        Self {
+            enable_sandbox: false,
+            allowed_modules: vec![
+                "math".to_string(),
+                "json".to_string(),
+                "io".to_string(),
+                "http".to_string(),
+            ],
+            blocked_modules: vec![
+                "fs".to_string(),
+                "net".to_string(),
+                "process".to_string(),
+            ],
+            max_recursion_depth: 100,
+            network_policy: NetworkPolicy::default(),
+        }
+    }
+}
+
+/// Sandbox configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxConfig {
+    /// Whether sandbox is enabled
+    pub enabled: bool,
+    /// Working directory restriction
+    pub working_directory_restricted: bool,
+    /// Allowed working directories
+    pub allowed_working_directories: Vec<String>,
+    /// Resource limits
+    pub resource_limits: ResourceLimits,
+}
+
+impl Default for SandboxConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            working_directory_restricted: false,
+            allowed_working_directories: vec![],
+            resource_limits: ResourceLimits::default(),
+        }
+    }
+}
+
+/// Resource limits for sandbox
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceLimits {
+    /// Maximum CPU time in seconds
+    pub max_cpu_time_seconds: u64,
+    /// Maximum memory in bytes
+    pub max_memory_bytes: u64,
+    /// Maximum file size in bytes
+    pub max_file_size_bytes: u64,
+    /// Maximum number of file descriptors
+    pub max_file_descriptors: u32,
+}
+
+impl Default for ResourceLimits {
+    fn default() -> Self {
+        Self {
+            max_cpu_time_seconds: 30,
+            max_memory_bytes: 100 * 1024 * 1024, // 100MB
+            max_file_size_bytes: 10 * 1024 * 1024, // 10MB
+            max_file_descriptors: 10,
+        }
+    }
+}
+
+/// Network access policy
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkPolicy {
+    /// Whether network access is allowed
+    pub allow_network: bool,
+    /// Allowed domains
+    pub allowed_domains: Vec<String>,
+    /// Blocked domains
+    pub blocked_domains: Vec<String>,
+    /// Allowed ports
+    pub allowed_ports: Vec<u16>,
+}
+
+impl Default for NetworkPolicy {
+    fn default() -> Self {
+        Self {
+            allow_network: false,
+            allowed_domains: vec![],
+            blocked_domains: vec![],
+            allowed_ports: vec![],
+        }
+    }
+}
+
+/// Discovery patterns configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveryPatterns {
+    /// Enable direct tools
+    pub direct_tools: bool,
+    /// Enable module tools
+    pub module_tools: bool,
+    /// Enable semantic naming
+    pub semantic_naming: bool,
+    /// Enable topic-module-function pattern
+    pub topic_module_function: bool,
+    /// Custom patterns
+    pub custom_patterns: HashMap<String, CustomPattern>,
+}
+
+impl Default for DiscoveryPatterns {
+    fn default() -> Self {
+        Self {
+            direct_tools: true,
+            module_tools: true,
+            semantic_naming: false,
+            topic_module_function: false,
+            custom_patterns: HashMap::new(),
+        }
+    }
+}
+
+/// Custom discovery pattern
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomPattern {
+    /// Pattern name
+    pub name: String,
+    /// Regex pattern
+    pub regex: String,
+    /// Extraction groups
+    pub groups: Vec<String>,
+    /// Name template
+    pub name_template: String,
+}
+
+/// Tool loading result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolLoadingResult {
+    /// Loading status
+    pub status: LoadingStatus,
+    /// Tool information
+    pub tool: Option<ToolDefinition>,
+    /// Loading duration in milliseconds
+    pub duration_ms: u64,
+    /// Error message (if any)
+    pub error: Option<String>,
+    /// Warnings
+    pub warnings: Vec<String>,
+}
+
+/// Loading status
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LoadingStatus {
+    /// Tool loaded successfully
+    Success,
+    /// Tool loaded with warnings
+    Warning,
+    /// Tool loading failed
+    Error,
+    /// Tool was skipped
+    Skipped,
+}
+
+/// Validation result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidationResult {
+    /// Whether validation passed
+    pub valid: bool,
+    /// Validation errors
+    pub errors: Vec<String>,
+    /// Validation warnings
+    pub warnings: Vec<String>,
+    /// Validation metadata
+    pub metadata: HashMap<String, serde_json::Value>,
+}
+
+/// Hot reload event
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HotReloadEvent {
+    /// Event ID
+    pub id: String,
+    /// Event type
+    pub event_type: HotReloadEventType,
+    /// File path
+    pub file_path: String,
+    /// Event timestamp
+    pub timestamp: DateTime<Utc>,
+    /// Event data
+    pub data: HashMap<String, serde_json::Value>,
+}
+
+/// Hot reload event types
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HotReloadEventType {
+    /// File was created
+    Created,
+    /// File was modified
+    Modified,
+    /// File was deleted
+    Deleted,
+    /// File was renamed
+    Renamed { from: String, to: String },
+    /// Error occurred
+    Error,
+}
+
+/// Async function information from AST analysis
+#[derive(Debug, Clone)]
+pub struct AsyncFunctionInfo {
+    /// Function name
+    pub name: String,
+    /// Whether function is async
+    pub is_async: bool,
+    /// Whether function is public
+    pub is_public: bool,
+    /// Function parameters
+    pub parameters: Vec<ParameterInfo>,
+    /// Return type
+    pub return_type: Option<String>,
+    /// Module path
+    pub module_path: Vec<String>,
+    /// Full path including function name
+    pub full_path: Vec<String>,
+    /// Function description
+    pub description: Option<String>,
+    /// Function doc comments
+    pub doc_comments: Vec<String>,
+    /// Source location
+    pub location: SourceLocation,
+    /// Function attributes
+    pub attributes: Vec<String>,
+    /// Function metadata
+    pub metadata: HashMap<String, Value>,
+}
+
+/// Parameter information
+#[derive(Debug, Clone)]
+pub struct ParameterInfo {
+    /// Parameter name
+    pub name: String,
+    /// Parameter type
+    pub type_name: String,
+    /// Whether parameter is optional
+    pub is_optional: bool,
+    /// Default value (if any)
+    pub default_value: Option<String>,
+    /// Parameter description
+    pub description: Option<String>,
+}
+
+/// Source location
+#[derive(Debug, Clone)]
+pub struct SourceLocation {
+    /// Line number (1-based)
+    pub line: usize,
+    /// Column number (1-based)
+    pub column: usize,
+    /// Byte offset
+    pub offset: usize,
+}
+
+/// Discovered module information
+#[derive(Debug, Clone)]
+pub struct DiscoveredModule {
+    /// Module name
+    pub name: String,
+    /// Module path
+    pub path: Vec<String>,
+    /// Functions in this module
+    pub functions: Vec<AsyncFunctionInfo>,
+    /// Module documentation
+    pub documentation: Option<String>,
+    /// Source location
+    pub location: SourceLocation,
+}
+
+/// Type constraint information
+#[derive(Debug, Clone)]
+pub struct TypeConstraint {
+    /// Constraint type
+    pub constraint_type: ConstraintType,
+    /// Constraint value
+    pub value: String,
+    /// Constraint description
+    pub description: Option<String>,
+}
+
+/// Constraint types
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConstraintType {
+    /// Type equality
+    Equals,
+    /// Subtype relationship
+    Subtype,
+    /// Implements trait
+    Implements,
+    /// Custom constraint
+    Custom(String),
+}
+
+/// Rune type information
+#[derive(Debug, Clone)]
+pub struct RuneType {
+    /// Type name
+    pub name: String,
+    /// Type kind
+    pub kind: TypeKind,
+    /// Type parameters
+    pub parameters: Vec<RuneType>,
+    /// Type constraints
+    pub constraints: Vec<TypeConstraint>,
+}
+
+/// Type kinds
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeKind {
+    /// Primitive type
+    Primitive,
+    /// Struct type
+    Struct,
+    /// Enum type
+    Enum,
+    /// Function type
+    Function,
+    /// Tuple type
+    Tuple,
+    /// Array type
+    Array,
+    /// Map type
+    Map,
+    /// Optional type
+    Optional,
+    /// Custom type
+    Custom(String),
+}
+
+/// Validation rule
+#[derive(Debug, Clone)]
+pub struct ValidationRule {
+    /// Rule name
+    pub name: String,
+    /// Rule description
+    pub description: String,
+    /// Rule function (would be a function pointer in real implementation)
+    pub validator: String, // Placeholder for actual validator
+    /// Rule severity
+    pub severity: ValidationSeverity,
+}
+
+/// Validation severity
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValidationSeverity {
+    /// Error - must be fixed
+    Error,
+    /// Warning - should be fixed
+    Warning,
+    /// Info - informational only
+    Info,
+}
+
+/// Analyzer configuration
+#[derive(Debug, Clone)]
+pub struct AnalyzerConfig {
+    /// Whether to enable type inference
+    pub enable_type_inference: bool,
+    /// Whether to enable validation
+    pub enable_validation: bool,
+    /// Maximum analysis depth
+    pub max_depth: usize,
+    /// Custom validation rules
+    pub validation_rules: Vec<ValidationRule>,
+}
+
+
+/// Error recovery strategy
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecoveryStrategy {
+    /// Retry the operation
+    Retry,
+    /// Skip the problematic item
+    Skip,
+    /// Use fallback value
+    Fallback,
+    /// Abort the operation
+    Abort,
+}
+
+/// Recovery attempt information
+#[derive(Debug, Clone)]
+pub struct RecoveryAttempt {
+    /// Attempt number
+    pub attempt_number: u32,
+    /// Strategy used
+    pub strategy: RecoveryStrategy,
+    /// Timestamp of attempt
+    pub timestamp: DateTime<Utc>,
+    /// Whether attempt was successful
+    pub success: bool,
+    /// Error message (if failed)
+    pub error: Option<String>,
+}
+
+/// Error statistics
+#[derive(Debug, Clone)]
+pub struct ErrorStats {
+    /// Total errors
+    pub total_errors: u64,
+    /// Errors by type
+    pub errors_by_type: HashMap<String, u64>,
+    /// Recovery attempts
+    pub recovery_attempts: u64,
+    /// Successful recoveries
+    pub successful_recoveries: u64,
+    /// Last error timestamp
+    pub last_error: Option<DateTime<Utc>>,
+}
+
+/// Service health information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceHealth {
+    /// Overall health status
+    pub status: ServiceHealthStatus,
+    /// Last health check
+    pub last_check: DateTime<Utc>,
+    /// Health checks performed
+    pub checks: HashMap<String, HealthCheckResult>,
+    /// Overall health score (0-100)
+    pub health_score: u8,
+}
+
+/// Service health status
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ServiceHealthStatus {
+    /// Service is healthy
+    Healthy,
+    /// Service is degraded but functional
+    Degraded,
+    /// Service is unhealthy
+    Unhealthy,
+    /// Service health is unknown
+    Unknown,
+}
+
+/// Health check result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthCheckResult {
+    /// Check name
+    pub name: String,
+    /// Whether check passed
+    pub passed: bool,
+    /// Check duration in milliseconds
+    pub duration_ms: u64,
+    /// Check message
+    pub message: String,
+    /// Additional details
+    pub details: HashMap<String, serde_json::Value>,
+}
+
+/// Performance metrics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerformanceMetrics {
+    /// Total executions
+    pub total_executions: u64,
+    /// Successful executions
+    pub successful_executions: u64,
+    /// Failed executions
+    pub failed_executions: u64,
+    /// Average execution time in milliseconds
+    pub avg_execution_time_ms: f64,
+    /// Minimum execution time in milliseconds
+    pub min_execution_time_ms: u64,
+    /// Maximum execution time in milliseconds
+    pub max_execution_time_ms: u64,
+    /// 95th percentile execution time
+    pub p95_execution_time_ms: u64,
+    /// Throughput (executions per second)
+    pub throughput_rps: f64,
+    /// Memory usage in bytes
+    pub memory_usage_bytes: u64,
+    /// CPU usage percentage
+    pub cpu_usage_percent: f64,
+}
+
+impl Default for PerformanceMetrics {
+    fn default() -> Self {
+        Self {
+            total_executions: 0,
+            successful_executions: 0,
+            failed_executions: 0,
+            avg_execution_time_ms: 0.0,
+            min_execution_time_ms: u64::MAX,
+            max_execution_time_ms: 0,
+            p95_execution_time_ms: 0,
+            throughput_rps: 0.0,
+            memory_usage_bytes: 0,
+            cpu_usage_percent: 0.0,
+        }
     }
 }
