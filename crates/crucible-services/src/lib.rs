@@ -7,6 +7,15 @@
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+// Event system for daemon coordination
+// pub mod events;
+
+/// Comprehensive service trait definitions
+pub mod service_traits;
+
+/// Service type definitions
+pub mod service_types;
+
 /// Basic service error and result types
 pub mod errors {
     use thiserror::Error;
@@ -57,7 +66,12 @@ pub mod errors {
     pub type ServiceResult<T> = Result<T, ServiceError>;
 }
 
-/// Essential service traits
+// Commented out to focus on event system compilation
+// pub mod service_traits;
+// pub mod service_types;
+// pub mod examples;
+
+/// Essential service traits (maintaining compatibility)
 pub mod traits {
     use super::{errors::ServiceResult, types::tool::*};
     use async_trait::async_trait;
@@ -314,6 +328,11 @@ pub mod types {
 pub use errors::*;
 pub use traits::*;
 pub use types::*;
+pub use service_traits::*;
+pub use service_types::*;
+
+// Events module disabled for now
+// pub use events::*;
 
 #[cfg(test)]
 mod tests {

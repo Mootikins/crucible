@@ -10,6 +10,7 @@ description = "Minimal service abstractions for Crucible"
 # Core dependencies
 async-trait = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
@@ -20,3 +21,21 @@ chrono = { workspace = true, features = ["serde"] }
 
 # UUID generation
 uuid = { workspace = true, features = ["v4", "serde"] }
+
+# Concurrent data structures
+dashmap = { workspace = true }
+
+# Async utilities
+futures = { workspace = true }
+
+# Random numbers for load balancing
+rand = { workspace = true }
+
+# Base64 encoding for binary payloads
+base64 = { workspace = true }
+
+# MD5 hashing for payload integrity
+md5 = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
