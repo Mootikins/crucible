@@ -6,7 +6,7 @@
 use crate::context::ContextManager;
 use crate::discovery::{ToolDiscovery, DiscoveryConfig};
 use crate::errors::{RuneError, ContextualError, ErrorContext};
-use crate::registry::RuneToolRegistry;
+use crate::rune_registry::RuneToolRegistry;
 use crate::tool::RuneTool;
 use crate::types::{LoadingStatus, ToolLoadingResult};
 use std::collections::HashMap;
@@ -456,14 +456,14 @@ impl ToolLoader {
     }
 
     /// Add an event handler
-    pub fn add_event_handler(&self, handler: Box<dyn LoaderEventHandler>) {
-        let mut handlers = self.event_handlers.lock().unwrap();
+    pub async fn add_event_handler(&self, handler: Box<dyn LoaderEventHandler>) {
+        let mut handlers = self.event_handlers.lock().await;
         handlers.push(handler);
     }
 
     /// Remove all event handlers
-    pub fn clear_event_handlers(&self) {
-        let mut handlers = self.event_handlers.lock().unwrap();
+    pub async fn clear_event_handlers(&self) {
+        let mut handlers = self.event_handlers.lock().await;
         handlers.clear();
     }
 
@@ -511,7 +511,7 @@ impl ToolLoader {
 
     /// Notify event handlers of tool loaded
     async fn notify_tool_loaded(&self, tool_name: &str, file_path: &PathBuf) {
-        let handlers = self.event_handlers.lock().unwrap();
+        let handlers = self.event_handlers.lock().await;
         for handler in handlers.iter() {
             handler.on_tool_loaded(tool_name, file_path);
         }
@@ -519,7 +519,7 @@ impl ToolLoader {
 
     /// Notify event handlers of tool load failed
     async fn notify_tool_load_failed(&self, tool_name: &str, file_path: &PathBuf, error: &str) {
-        let handlers = self.event_handlers.lock().unwrap();
+        let handlers = self.event_handlers.lock().await;
         for handler in handlers.iter() {
             handler.on_tool_load_failed(tool_name, file_path, error);
         }
@@ -527,7 +527,7 @@ impl ToolLoader {
 
     /// Notify event handlers of tool reloaded
     async fn notify_tool_reloaded(&self, tool_name: &str, file_path: &PathBuf) {
-        let handlers = self.event_handlers.lock().unwrap();
+        let handlers = self.event_handlers.lock().await;
         for handler in handlers.iter() {
             handler.on_tool_reloaded(tool_name, file_path);
         }
