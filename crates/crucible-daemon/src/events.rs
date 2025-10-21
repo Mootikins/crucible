@@ -289,68 +289,6 @@ pub enum HealthStatus {
     Unknown,
 }
 
-/// Event publisher trait for sending daemon events
-pub trait EventPublisher: Send + Sync {
-    /// Publish a daemon event
-    async fn publish(&self, event: DaemonEvent) -> Result<(), EventPublishError>;
-}
-
-/// Error publishing events
-#[derive(Debug, thiserror::Error)]
-pub enum EventPublishError {
-    #[error("Failed to serialize event: {0}")]
-    Serialization(#[from] serde_json::Error),
-
-    #[error("Failed to publish event: {0}")]
-    Publish(String),
-
-    #[error("Event channel is closed")]
-    ChannelClosed,
-
-    #[error("Event publisher not available")]
-    NotAvailable,
-}
-
-/// In-memory event publisher for testing and development
-#[derive(Debug, Clone)]
-pub struct InMemoryEventPublisher {
-    sender: flume::Sender<DaemonEvent>,
-}
-
-impl InMemoryEventPublisher {
-    /// Create a new in-memory event publisher
-    pub fn new() -> (Self, flume::Receiver<DaemonEvent>) {
-        let (sender, receiver) = flume::unbounded();
-        (Self { sender }, receiver)
-    }
-
-    /// Create with bounded channel
-    pub fn bounded(capacity: usize) -> (Self, flume::Receiver<DaemonEvent>) {
-        let (sender, receiver) = flume::bounded(capacity);
-        (Self { sender }, receiver)
-    }
-}
-
-#[async_trait::async_trait]
-impl EventPublisher for InMemoryEventPublisher {
-    async fn publish(&self, event: DaemonEvent) -> Result<(), EventPublishError> {
-        self.sender
-            .send_async(event)
-            .await
-            .map_err(|_| EventPublishError::ChannelClosed)
-    }
-}
-
-/// No-op event publisher for when events are disabled
-#[derive(Debug, Clone)]
-pub struct NoOpEventPublisher;
-
-#[async_trait::async_trait]
-impl EventPublisher for NoOpEventPublisher {
-    async fn publish(&self, _event: DaemonEvent) -> Result<(), EventPublishError> {
-        Ok(())
-    }
-}
 
 /// Event builder for creating events with default values
 pub struct EventBuilder;
@@ -481,34 +419,5 @@ mod tests {
 
         assert_eq!(event.event_type, DatabaseEventType::RecordInserted);
         assert_eq!(event.database, "test_db");
-    }
-
-    #[test]
-    fn test_in_memory_event_publisher() {
-        let (publisher, receiver) = InMemoryEventPublisher::new();
-        let event = DaemonEvent::Health(EventBuilder::health(
-            "test_service".to_string(),
-            HealthStatus::Healthy,
-        ));
-
-        // Test synchronous send
-        publisher.sender.send(event.clone()).unwrap();
-        let received = receiver.recv().unwrap();
-        assert_eq!(received, event);
-    }
-
-    #[tokio::test]
-    async fn test_async_event_publisher() {
-        let (publisher, receiver) = InMemoryEventPublisher::new();
-        let event = DaemonEvent::Error(EventBuilder::error(
-            ErrorSeverity::Warning,
-            ErrorCategory::Filesystem,
-            "TEST_001".to_string(),
-            "Test error message".to_string(),
-        ));
-
-        publisher.publish(event.clone()).await.unwrap();
-        let received = receiver.recv_async().await.unwrap();
-        assert_eq!(received, event);
     }
 }

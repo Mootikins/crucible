@@ -71,12 +71,15 @@ async fn main() -> Result<()> {
         {
             use tokio::signal::unix::{signal, SignalKind};
             let mut sigterm = signal(SignalKind::terminate()).unwrap();
-            if let Err(e) = sigterm.recv().await {
-                error!("Failed to listen for SIGTERM: {}", e);
-            } else {
-                info!("Received SIGTERM, initiating graceful shutdown");
-                if let Err(e) = coordinator_clone.stop().await {
-                    error!("Error during shutdown: {}", e);
+            match sigterm.recv().await {
+                Some(_) => {
+                    info!("Received SIGTERM, initiating graceful shutdown");
+                    if let Err(e) = coordinator_clone.stop().await {
+                        error!("Error during shutdown: {}", e);
+                    }
+                }
+                None => {
+                    warn!("SIGTERM signal stream ended unexpectedly");
                 }
             }
         }
