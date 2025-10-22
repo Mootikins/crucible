@@ -4,7 +4,7 @@
 //! Crucible architecture. Each service trait follows async/await patterns with comprehensive
 //! error handling, lifecycle management, and event integration.
 
-use super::{errors::ServiceResult, types::*, service_types::*, database::*, tool::*};
+use super::{errors::ServiceResult, types::*, service_types::*, database::*};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
