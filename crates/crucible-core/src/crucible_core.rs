@@ -15,22 +15,17 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
-// Re-export event system components
-pub use crucible_services::events::{
-    core::{DaemonEvent, EventPayload, EventSource, EventPriority, EventType},
-    routing::{DefaultEventRouter, EventRouter, RoutingConfig, ServiceRegistration},
-    errors::{EventError, EventResult},
+// Note: Event system has been simplified during Phase 5 cleanup
+// Basic types are available directly from crucible_services
+
+// Re-export core service types
+pub use crucible_services::{
+    ServiceHealth, ServiceStatus, ServiceMetrics, ScriptEngineConfig,
 };
 
-// Re-export service traits
+// Re-export key traits from simplified architecture
 pub use crucible_services::service_traits::{
-    ServiceLifecycle, HealthCheck, Configurable, Observable, EventDriven, ResourceManager,
-    McpGateway, InferenceEngine, ScriptEngine, DataStore, ServiceRegistry,
-};
-
-// Re-export service types
-pub use crucible_services::types::{
-    ServiceHealth, ServiceStatus, ServiceMetrics,
+    ServiceLifecycle, HealthCheck, ScriptEngine, ToolService, ServiceRegistry,
 };
 
 /// ============================================================================
@@ -475,7 +470,7 @@ impl CrucibleCore {
                 status: ServiceStatus::Healthy,
                 message: Some("Service is running".to_string()),
                 last_check: Utc::now(),
-                details: HashMap::new(),
+                // details field removed in simplified architecture
             };
 
             health_results.insert(service_id.clone(), health);
@@ -580,7 +575,7 @@ impl CoreHealthData {
                 status: ServiceStatus::Healthy,
                 message: Some("System initializing".to_string()),
                 last_check: Utc::now(),
-                details: HashMap::new(),
+                // details field removed in simplified architecture
             },
             service_health: HashMap::new(),
             last_check: Utc::now(),

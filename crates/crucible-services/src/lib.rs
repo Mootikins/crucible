@@ -18,6 +18,9 @@ pub mod service_traits;
 /// Essential service type definitions
 pub mod service_types;
 
+/// Re-export commonly used types
+pub use service_types::ScriptEngineConfig;
+
 /// Basic service error and result types
 pub mod errors {
     use thiserror::Error;
