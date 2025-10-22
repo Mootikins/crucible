@@ -1,20 +1,21 @@
 //! # Plugin Manager Test Suite
 //!
-//! Comprehensive unit and integration tests for the PluginManager system.
-//! This test suite ensures the reliability, security, and performance of the
-//! plugin management functionality.
+//! Comprehensive test suite for the PluginManager system organized into:
+//! - Unit tests: Individual component testing
+//! - Integration tests: Component interaction testing
+//! - Performance tests: Performance and scalability validation
+//! - Security tests: Security validation and penetration testing
+//! - E2E tests: End-to-end system validation
 
+// Common test utilities and fixtures
 pub mod common;
-pub mod manager_tests;
-pub mod registry_tests;
-pub mod instance_tests;
-pub mod resource_manager_tests;
-pub mod security_manager_tests;
-pub mod health_monitor_tests;
-pub mod config_tests;
-pub mod integration_tests;
-pub mod performance_tests;
-pub mod security_tests;
+
+// Test modules organized by type
+pub mod unit;
+pub mod integration;
+pub mod performance;
+pub mod security;
+pub mod e2e;
 
 // Re-export common test utilities
 pub use common::*;

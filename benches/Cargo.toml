@@ -1,0 +1,64 @@
+[package]
+name = "crucible-benchmarks"
+version = "0.1.0"
+authors = ["Matthew Krohn <matthew.d.krohn@gmail.com>"]
+edition = "2021"
+publish = false
+
+[dependencies]
+# Core dependencies
+crucible-core = { path = "../crates/crucible-core" }
+crucible-daemon = { path = "../crates/crucible-daemon" }
+crucible-services = { path = "../crates/crucible-services" }
+crucible-config = { path = "../crates/crucible-config" }
+
+# Benchmarking
+criterion = { workspace = true, features = ["html_reports"] }
+
+# Async runtime
+tokio = { workspace = true, features = ["full"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+chrono = { workspace = true }
+anyhow = "1.0"
+
+# Async traits
+async-trait = { workspace = true }
+
+# Futures
+futures = { workspace = true }
+
+# Mock data generation
+rand = { workspace = true }
+
+# Base64 encoding for payload data
+base64 = { workspace = true }
+
+[[bench]]
+name = "basic_performance"
+harness = false
+
+[[bench]]
+name = "daemon_performance"
+harness = false
+
+[[bench]]
+name = "load_testing"
+harness = false
+
+[[bench]]
+name = "memory_profiling"
+harness = false
+
+[[bench]]
+name = "comparison_analysis"
+harness = false
+
+[[bench]]
+name = "scalability_testing"
+harness = false

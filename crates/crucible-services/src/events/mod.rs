@@ -8,9 +8,13 @@ pub mod core;
 pub mod routing;
 pub mod service_events;
 pub mod errors;
+pub mod integration;
+#[cfg(test)]
+pub mod mock;
 
 // Re-export main components
 pub use core::*;
 pub use routing::*;
 pub use service_events::*;
 pub use errors::*;
+pub use integration::*;
