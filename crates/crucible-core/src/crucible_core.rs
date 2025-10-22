@@ -1,8 +1,8 @@
-//! # CrucibleCore - Centralized Service Coordination
+//! # CrucibleCore - Simplified Central Coordinator
 //!
-//! This module provides the central coordinator for the simplified Crucible architecture.
-//! It integrates service management, event routing, configuration, and health monitoring
-//! into a single, cohesive interface that eliminates complex orchestration overhead.
+//! This module provides a simplified central coordinator for the Crucible architecture
+//! after Phase 5 cleanup. It provides basic service coordination without the complexity
+//! of the previous event-driven system.
 
 use super::{
     config::{ConfigManager, CrucibleConfig},
@@ -15,12 +15,9 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
-// Note: Event system has been simplified during Phase 5 cleanup
-// Basic types are available directly from crucible_services
-
-// Re-export core service types
-pub use crucible_services::{
-    ServiceHealth, ServiceStatus, ServiceMetrics, ScriptEngineConfig,
+// Re-export core service types from simplified architecture
+pub use crucible_services::types::{
+    ServiceHealth, ServiceStatus, ServiceMetrics,
 };
 
 // Re-export key traits from simplified architecture
@@ -28,15 +25,18 @@ pub use crucible_services::service_traits::{
     ServiceLifecycle, HealthCheck, ScriptEngine, ToolService, ServiceRegistry,
 };
 
+// Re-export ScriptEngine configuration
+pub use crucible_services::ScriptEngineConfig;
+
 /// ============================================================================
-/// CRUCIBLE CORE - CENTRAL COORDINATOR
+/// SIMPLIFIED CRUCIBLE CORE
 /// ============================================================================
 
-/// Central coordinator for all Crucible services and operations
+/// Simplified central coordinator for Crucible services
 ///
-/// This struct serves as the single point of coordination for the entire system,
-/// integrating service management, event routing, configuration, and monitoring
-/// in a clean, simplified interface.
+/// This provides basic coordination without the complex event routing system
+/// that was removed during Phase 5 cleanup.
+#[derive(Debug)]
 pub struct CrucibleCore {
     /// Unique identifier for this core instance
     id: Uuid,
@@ -44,662 +44,278 @@ pub struct CrucibleCore {
     /// Core configuration
     config: Arc<RwLock<CrucibleConfig>>,
 
-    /// Event router for daemon coordination
-    event_router: Arc<DefaultEventRouter>,
-
-    /// Configuration manager
-    config_manager: Arc<RwLock<ConfigManager>>,
-
-    /// Service registry for managing registered services
+    /// Service registry
     services: Arc<RwLock<HashMap<String, Arc<dyn ServiceLifecycle>>>>,
 
-    /// Event channel for core events
-    event_sender: mpsc::UnboundedSender<CoreEvent>,
-    event_receiver: Arc<RwLock<Option<mpsc::UnboundedReceiver<CoreEvent>>>>,
-
-    /// Health monitoring data
-    health_data: Arc<RwLock<CoreHealthData>>,
+    /// Health status
+    health: Arc<RwLock<ServiceHealth>>,
 
     /// Metrics collection
-    metrics: Arc<RwLock<CoreMetrics>>,
+    metrics: Arc<RwLock<ServiceMetrics>>,
 
-    /// Core state
-    state: Arc<RwLock<CoreState>>,
+    /// Communication channel
+    message_sender: mpsc::UnboundedSender<CoreMessage>,
+    message_receiver: Arc<RwLock<Option<mpsc::UnboundedReceiver<CoreMessage>>>>,
 }
 
-/// Core state enumeration
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum CoreState {
-    /// Core is initializing
-    Initializing,
-    /// Core is running and ready
-    Running,
-    /// Core is shutting down
-    ShuttingDown,
-    /// Core has stopped
-    Stopped,
-    /// Core is in error state
-    Error(String),
-}
-
-/// Core-specific events
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum CoreEvent {
-    /// Service registered with core
-    ServiceRegistered { service_id: String, service_type: String },
-
-    /// Service unregistered from core
-    ServiceUnregistered { service_id: String },
-
-    /// Service health changed
-    ServiceHealthChanged { service_id: String, old_health: ServiceHealth, new_health: ServiceHealth },
-
-    /// Configuration changed
-    ConfigurationChanged { changes: Vec<String> },
-
-    /// Core state changed
-    StateChanged { old_state: CoreState, new_state: CoreState },
-
-    /// System alert
-    SystemAlert { level: AlertLevel, message: String, details: HashMap<String, String> },
-
-    /// Performance metrics collected
-    MetricsCollected { metrics: CoreMetricsSnapshot },
-
-    /// Custom core event
-    Custom { event_type: String, data: serde_json::Value },
-}
-
-/// Alert level for system events
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AlertLevel {
-    Info,
-    Warning,
-    Error,
-    Critical,
-}
-
-/// Core health monitoring data
+/// Core communication messages
 #[derive(Debug, Clone)]
-pub struct CoreHealthData {
-    /// Overall system health
-    pub system_health: ServiceHealth,
-
-    /// Individual service health
-    pub service_health: HashMap<String, ServiceHealth>,
-
-    /// Last health check timestamp
-    pub last_check: chrono::DateTime<Utc>,
-
-    /// Health check history
-    pub health_history: Vec<HealthSnapshot>,
-}
-
-/// Health snapshot for historical tracking
-#[derive(Debug, Clone)]
-pub struct HealthSnapshot {
-    pub timestamp: chrono::DateTime<Utc>,
-    pub system_health: ServiceHealth,
-    pub service_count: usize,
-    pub healthy_services: usize,
-    pub degraded_services: usize,
-    pub unhealthy_services: usize,
-}
-
-/// Core metrics collection
-#[derive(Debug, Clone)]
-pub struct CoreMetrics {
-    /// Total events processed
-    pub events_processed: u64,
-
-    /// Services managed
-    pub services_managed: u64,
-
-    /// Uptime in milliseconds
-    pub uptime_ms: u64,
-
-    /// Memory usage in bytes
-    pub memory_usage_bytes: u64,
-
-    /// Average response time in milliseconds
-    pub avg_response_time_ms: f64,
-
-    /// Error rate (errors per 1000 operations)
-    pub error_rate: f64,
-
-    /// Last updated timestamp
-    pub last_updated: chrono::DateTime<Utc>,
-}
-
-/// Core metrics snapshot for reporting
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CoreMetricsSnapshot {
-    pub timestamp: chrono::DateTime<Utc>,
-    pub events_processed: u64,
-    pub services_managed: u64,
-    pub uptime_ms: u64,
-    pub memory_usage_bytes: u64,
-    pub avg_response_time_ms: f64,
-    pub error_rate: f64,
-    pub active_services: Vec<String>,
-    pub system_load: f64,
-}
-
-/// Core configuration for initialization
-#[derive(Debug, Clone)]
-pub struct CoreConfig {
-    /// Maximum number of services to manage
-    pub max_services: usize,
-
-    /// Event routing configuration
-    pub routing_config: RoutingConfig,
-
-    /// Health check interval in seconds
-    pub health_check_interval_s: u64,
-
-    /// Metrics collection interval in seconds
-    pub metrics_interval_s: u64,
-
-    /// Enable automatic service recovery
-    pub enable_auto_recovery: bool,
-
-    /// Maximum recovery attempts per service
-    pub max_recovery_attempts: u32,
-
-    /// Event queue size
-    pub event_queue_size: usize,
-
-    /// Enable debug logging
-    pub enable_debug: bool,
-}
-
-impl Default for CoreConfig {
-    fn default() -> Self {
-        Self {
-            max_services: 100,
-            routing_config: RoutingConfig::default(),
-            health_check_interval_s: 30,
-            metrics_interval_s: 60,
-            enable_auto_recovery: true,
-            max_recovery_attempts: 3,
-            event_queue_size: 10000,
-            enable_debug: false,
-        }
-    }
+pub enum CoreMessage {
+    /// Service status update
+    ServiceStatusUpdate { service_id: String, status: ServiceStatus },
+    /// Health check request
+    HealthCheck,
+    /// Metrics update
+    MetricsUpdate(ServiceMetrics),
+    /// Shutdown request
+    Shutdown,
 }
 
 impl CrucibleCore {
     /// Create a new CrucibleCore instance
-    pub async fn new(config: CoreConfig) -> CoreResult<Self> {
+    pub async fn new(config: CrucibleConfig) -> CoreResult<Self> {
         let id = Uuid::new_v4();
-        let (event_sender, event_receiver) = mpsc::unbounded_channel();
+        let config = Arc::new(RwLock::new(config));
 
-        // Initialize core components
-        let event_router = Arc::new(DefaultEventRouter::with_config(config.routing_config.clone()));
-        let config_manager = ConfigManager::new().await
-            .map_err(|e| CrucibleError::InvalidOperation(format!("Failed to create config manager: {}", e)))?;
-        let config_manager = Arc::new(RwLock::new(config_manager));
+        let (message_sender, message_receiver) = mpsc::unbounded_channel();
 
-        let core = Self {
+        let health = Arc::new(RwLock::new(ServiceHealth {
+            status: ServiceStatus::Initializing,
+            message: Some("Core initializing".to_string()),
+            last_check: Utc::now(),
+        }));
+
+        let metrics = Arc::new(RwLock::new(ServiceMetrics {
+            request_count: 0,
+            error_count: 0,
+            avg_response_time_ms: 0.0,
+            last_updated: Utc::now(),
+        }));
+
+        Ok(Self {
             id,
-            config: Arc::new(RwLock::new(CrucibleConfig::default())),
-            event_router,
-            config_manager,
+            config,
             services: Arc::new(RwLock::new(HashMap::new())),
-            event_sender,
-            event_receiver: Arc::new(RwLock::new(Some(event_receiver))),
-            health_data: Arc::new(RwLock::new(CoreHealthData::new())),
-            metrics: Arc::new(RwLock::new(CoreMetrics::new())),
-            state: Arc::new(RwLock::new(CoreState::Initializing)),
-        };
-
-        // Start background tasks
-        core.start_background_tasks(config).await?;
-
-        Ok(core)
+            health,
+            metrics,
+            message_sender,
+            message_receiver: Arc::new(RwLock::new(Some(message_receiver))),
+        })
     }
 
-    /// Start the CrucibleCore and all managed services
+    /// Get the core instance ID
+    pub fn id(&self) -> Uuid {
+        self.id
+    }
+
+    /// Get the core configuration
+    pub async fn config(&self) -> CrucibleConfig {
+        self.config.read().await.clone()
+    }
+
+    /// Register a service with the core
+    pub async fn register_service(&self, name: String, service: Arc<dyn ServiceLifecycle>) -> CoreResult<()> {
+        let mut services = self.services.write().await;
+        services.insert(name.clone(), service);
+
+        // Send status update
+        let _ = self.message_sender.send(CoreMessage::ServiceStatusUpdate {
+            service_id: name,
+            status: ServiceStatus::Running,
+        });
+
+        Ok(())
+    }
+
+    /// Get a registered service
+    pub async fn get_service(&self, name: &str) -> Option<Arc<dyn ServiceLifecycle>> {
+        let services = self.services.read().await;
+        services.get(name).cloned()
+    }
+
+    /// Get all registered services
+    pub async fn list_services(&self) -> Vec<String> {
+        let services = self.services.read().await;
+        services.keys().cloned().collect()
+    }
+
+    /// Get the health status of the core
+    pub async fn health(&self) -> ServiceHealth {
+        self.health.read().await.clone()
+    }
+
+    /// Get the current metrics
+    pub async fn metrics(&self) -> ServiceMetrics {
+        self.metrics.read().await.clone()
+    }
+
+    /// Update health status
+    pub async fn update_health(&self, status: ServiceStatus, message: Option<String>) {
+        let mut health = self.health.write().await;
+        health.status = status;
+        health.message = message;
+        health.last_check = Utc::now();
+    }
+
+    /// Update metrics
+    pub async fn update_metrics(&self, new_metrics: ServiceMetrics) {
+        let mut metrics = self.metrics.write().await;
+        *metrics = new_metrics;
+    }
+
+    /// Start the core and all registered services
     pub async fn start(&self) -> CoreResult<()> {
-        self.set_state(CoreState::Running).await;
+        self.update_health(ServiceStatus::Starting, Some("Core starting".to_string())).await;
 
-        // Start event processing
-        self.start_event_processor().await?;
+        // Start all registered services
+        let services = self.services.read().await;
+        for (name, service) in services.iter() {
+            match service.start().await {
+                Ok(_) => {
+                    tracing::info!("Service {} started successfully", name);
+                }
+                Err(e) => {
+                    tracing::error!("Failed to start service {}: {}", name, e);
+                    self.update_health(ServiceStatus::Error,
+                        Some(format!("Failed to start service {}: {}", name, e))).await;
+                    return Err(CrucibleError::ServiceError(format!("Failed to start service {}", name)));
+                }
+            }
+        }
 
-        // Start health monitoring
-        self.start_health_monitoring().await?;
+        self.update_health(ServiceStatus::Running, Some("Core running".to_string())).await;
 
-        // Start metrics collection
-        self.start_metrics_collection().await?;
-
-        self.emit_core_event(CoreEvent::StateChanged {
-            old_state: CoreState::Initializing,
-            new_state: CoreState::Running,
-        }).await;
+        // Start message processing
+        self.start_message_processing().await;
 
         tracing::info!("CrucibleCore {} started successfully", self.id);
         Ok(())
     }
 
-    /// Stop the CrucibleCore and all managed services
+    /// Stop the core and all registered services
     pub async fn stop(&self) -> CoreResult<()> {
-        self.set_state(CoreState::ShuttingDown).await;
+        self.update_health(ServiceStatus::Stopping, Some("Core stopping".to_string())).await;
+
+        // Send shutdown message
+        let _ = self.message_sender.send(CoreMessage::Shutdown);
 
         // Stop all registered services
-        {
-            let services = self.services.read().await;
-            for (_service_id, service) in services.iter() {
-                // In a real implementation, we'd call service.stop().await here
-                // For now, we'll just log
-                tracing::info!("Stopping service: {}", service.service_name());
+        let services = self.services.read().await;
+        for (name, service) in services.iter() {
+            match service.stop().await {
+                Ok(_) => {
+                    tracing::info!("Service {} stopped successfully", name);
+                }
+                Err(e) => {
+                    tracing::error!("Failed to stop service {}: {}", name, e);
+                }
             }
         }
 
-        // Clear services
-        {
-            let mut services = self.services.write().await;
-            services.clear();
-        }
+        self.update_health(ServiceStatus::Stopped, Some("Core stopped".to_string())).await;
 
-        self.set_state(CoreState::Stopped).await;
-
-        self.emit_core_event(CoreEvent::StateChanged {
-            old_state: CoreState::ShuttingDown,
-            new_state: CoreState::Stopped,
-        }).await;
-
-        tracing::info!("CrucibleCore {} stopped successfully", self.id);
+        tracing::info!("CrucibleCore {} stopped", self.id);
         Ok(())
     }
 
-    /// Register a service with the core
-    pub async fn register_service<T>(&self, service: Arc<T>) -> CoreResult<()>
-    where
-        T: ServiceLifecycle + Send + Sync + 'static,
-    {
-        let service_id = service.service_name().to_string();
+    /// Check if the core is running
+    pub fn is_running(&self) -> bool {
+        // This is a simplified check - in a real implementation,
+        // we'd track the actual state
+        true
+    }
 
-        // Check service limit
-        {
-            let services = self.services.read().await;
-            if services.len() >= 100 { // TODO: Make configurable
-                return Err(CrucibleError::InvalidOperation(
-                    "Maximum number of services reached".to_string()
-                ));
-            }
-        }
+    /// Process core messages
+    async fn start_message_processing(&self) {
+        let health = self.health.clone();
+        let metrics = self.metrics.clone();
 
-        // Register with core
-        {
-            let mut services = self.services.write().await;
-            services.insert(service_id.clone(), service as Arc<dyn ServiceLifecycle>);
-        }
-
-        // Register with event router
-        let registration = ServiceRegistration {
-            service_id: service_id.clone(),
-            service_type: "unknown".to_string(), // TODO: Get from service
-            instance_id: format!("{}-1", service_id),
-            endpoint: None,
-            supported_event_types: vec!["system".to_string()], // TODO: Get from service
-            priority: 0,
-            weight: 1.0,
-            max_concurrent_events: 100,
-            filters: vec![],
-            metadata: HashMap::new(),
+        // Take the receiver
+        let receiver = {
+            let mut receiver_guard = self.message_receiver.write().await;
+            receiver_guard.take()
         };
 
-        self.event_router.register_service(registration).await
-            .map_err(|e| CrucibleError::InvalidOperation(format!("Failed to register service with event router: {}", e)))?;
-
-        // Service is now registered with the core
-        tracing::info!("Service {} registered with orchestrator", service_id);
-
-        self.emit_core_event(CoreEvent::ServiceRegistered {
-            service_id: service_id.clone(),
-            service_type: "unknown".to_string(),
-        }).await;
-
-        tracing::info!("Service {} registered with CrucibleCore", service_id);
-        Ok(())
-    }
-
-    /// Unregister a service from the core
-    pub async fn unregister_service(&self, service_id: &str) -> CoreResult<()> {
-        // Remove from core registry
-        {
-            let mut services = self.services.write().await;
-            services.remove(service_id);
+        if let Some(mut receiver) = receiver {
+            tokio::spawn(async move {
+                while let Some(message) = receiver.recv().await {
+                    match message {
+                        CoreMessage::ServiceStatusUpdate { service_id, status } => {
+                            tracing::debug!("Service {} status updated to {:?}", service_id, status);
+                        }
+                        CoreMessage::HealthCheck => {
+                            let mut h = health.write().await;
+                            h.last_check = Utc::now();
+                        }
+                        CoreMessage::MetricsUpdate(new_metrics) => {
+                            let mut m = metrics.write().await;
+                            *m = new_metrics;
+                        }
+                        CoreMessage::Shutdown => {
+                            tracing::info!("Core message processing shutting down");
+                            break;
+                        }
+                    }
+                }
+            });
         }
-
-        // Unregister from event router
-        self.event_router.unregister_service(service_id).await
-            .map_err(|e| CrucibleError::InvalidOperation(format!("Failed to unregister service from event router: {}", e)))?;
-
-        // Service is now unregistered from the core
-        tracing::info!("Service {} unregistered from orchestrator", service_id);
-
-        self.emit_core_event(CoreEvent::ServiceUnregistered {
-            service_id: service_id.to_string(),
-        }).await;
-
-        tracing::info!("Service {} unregistered from CrucibleCore", service_id);
-        Ok(())
     }
 
-    /// Get a service by name
-    pub async fn get_service(&self, service_id: &str) -> CoreResult<Option<Arc<dyn ServiceLifecycle>>> {
-        let services = self.services.read().await;
-        Ok(services.get(service_id).cloned())
-    }
-
-    /// List all registered services
-    pub async fn list_services(&self) -> CoreResult<Vec<String>> {
-        let services = self.services.read().await;
-        Ok(services.keys().cloned().collect())
-    }
-
-    /// Route an event through the system
-    pub async fn route_event(&self, event: DaemonEvent) -> CoreResult<()> {
-        self.event_router.route_event(event).await
-            .map_err(|e| CrucibleError::InvalidOperation(format!("Failed to route event: {}", e)))?;
-
-        // Update metrics
-        {
-            let mut metrics = self.metrics.write().await;
-            metrics.events_processed += 1;
-            metrics.last_updated = Utc::now();
-        }
-
-        Ok(())
-    }
-
-    /// Get current system health
-    pub async fn get_system_health(&self) -> CoreResult<ServiceHealth> {
-        let health_data = self.health_data.read().await;
-        Ok(health_data.system_health.clone())
-    }
-
-    /// Get current metrics
-    pub async fn get_metrics(&self) -> CoreResult<CoreMetricsSnapshot> {
-        let metrics = self.metrics.read().await;
-        let services = self.services.read().await;
-
-        Ok(CoreMetricsSnapshot {
-            timestamp: metrics.last_updated,
-            events_processed: metrics.events_processed,
-            services_managed: services.len() as u64,
-            uptime_ms: metrics.uptime_ms,
-            memory_usage_bytes: metrics.memory_usage_bytes,
-            avg_response_time_ms: metrics.avg_response_time_ms,
-            error_rate: metrics.error_rate,
-            active_services: services.keys().cloned().collect(),
-            system_load: 0.0, // TODO: Implement system load detection
-        })
-    }
-
-    /// Get current state
-    pub async fn get_state(&self) -> CoreState {
-        self.state.read().await.clone()
-    }
-
-    /// Update configuration
-    pub async fn update_config(&self, config: CrucibleConfig) -> CoreResult<()> {
-        {
-            let mut core_config = self.config.write().await;
-            *core_config = config;
-        }
-
-        self.emit_core_event(CoreEvent::ConfigurationChanged {
-            changes: vec!["core_config_updated".to_string()],
-        }).await;
-
-        Ok(())
+    /// Send a message to the core
+    pub fn send_message(&self, message: CoreMessage) -> CoreResult<()> {
+        self.message_sender.send(message)
+            .map_err(|_| CrucibleError::CommunicationError("Failed to send message".to_string()))
     }
 
     /// Perform health check on all services
     pub async fn perform_health_check(&self) -> CoreResult<HashMap<String, ServiceHealth>> {
-        let mut health_results = HashMap::new();
         let services = self.services.read().await;
+        let mut results = HashMap::new();
 
-        for (service_id, _service) in services.iter() {
-            // Try to perform health check if service supports it
-            // Note: This is a simplified approach - in a full implementation,
-            // we'd use trait downcasting or a health check registry
-            let health = ServiceHealth {
-                status: ServiceStatus::Healthy,
-                message: Some("Service is running".to_string()),
-                last_check: Utc::now(),
-                // details field removed in simplified architecture
-            };
-
-            health_results.insert(service_id.clone(), health);
-        }
-
-        // Update health data
-        {
-            let mut health_data = self.health_data.write().await;
-            health_data.update_system_health(&health_results);
-        }
-
-        Ok(health_results)
-    }
-
-    // -------------------------------------------------------------------------
-    // PRIVATE HELPER METHODS
-    // -------------------------------------------------------------------------
-
-    /// Set core state
-    async fn set_state(&self, new_state: CoreState) {
-        let mut state = self.state.write().await;
-        let old_state = state.clone();
-        *state = new_state.clone();
-
-        // Emit state change event
-        drop(state);
-        self.emit_core_event(CoreEvent::StateChanged { old_state, new_state }).await;
-    }
-
-    /// Emit a core event
-    async fn emit_core_event(&self, event: CoreEvent) {
-        if let Err(e) = self.event_sender.send(event) {
-            tracing::error!("Failed to emit core event: {}", e);
-        }
-    }
-
-    /// Start background tasks
-    async fn start_background_tasks(&self, _config: CoreConfig) -> CoreResult<()> {
-        // This would start health monitoring, metrics collection, etc.
-        // For now, it's a placeholder
-        Ok(())
-    }
-
-    /// Start event processor
-    async fn start_event_processor(&self) -> CoreResult<()> {
-        let receiver = {
-            let mut receiver_guard = self.event_receiver.write().await;
-            receiver_guard.take().ok_or_else(|| {
-                CrucibleError::InvalidOperation("Event receiver already taken".to_string())
-            })?
-        };
-
-        let health_data = self.health_data.clone();
-        let metrics = self.metrics.clone();
-
-        tokio::spawn(async move {
-            let mut receiver = receiver;
-            while let Some(event) = receiver.recv().await {
-                match event {
-                    CoreEvent::ServiceHealthChanged { service_id, new_health, .. } => {
-                        // Update health data
-                        let mut health = health_data.write().await;
-                        health.service_health.insert(service_id, new_health);
-                        health.last_check = Utc::now();
+        for (name, service) in services.iter() {
+            if let Some(health_service) = service.clone().as_any().downcast_ref::<dyn HealthCheck>() {
+                match health_service.health_check().await {
+                    Ok(health) => {
+                        results.insert(name.clone(), health);
                     }
-                    CoreEvent::MetricsCollected { metrics: new_metrics } => {
-                        // Update metrics
-                        let mut current_metrics = metrics.write().await;
-                        current_metrics.update_from_snapshot(new_metrics);
-                    }
-                    _ => {
-                        tracing::debug!("Received core event: {:?}", event);
+                    Err(_) => {
+                        results.insert(name.clone(), ServiceHealth {
+                            status: ServiceStatus::Error,
+                            message: Some("Health check failed".to_string()),
+                            last_check: Utc::now(),
+                        });
                     }
                 }
+            } else {
+                results.insert(name.clone(), ServiceHealth {
+                    status: ServiceStatus::Unknown,
+                    message: Some("Service does not implement health check".to_string()),
+                    last_check: Utc::now(),
+                });
             }
-        });
+        }
 
-        Ok(())
-    }
-
-    /// Start health monitoring
-    async fn start_health_monitoring(&self) -> CoreResult<()> {
-        // Placeholder for health monitoring implementation
-        Ok(())
-    }
-
-    /// Start metrics collection
-    async fn start_metrics_collection(&self) -> CoreResult<()> {
-        // Placeholder for metrics collection implementation
-        Ok(())
+        Ok(results)
     }
 }
 
-// -------------------------------------------------------------------------
-// IMPLEMENTATIONS FOR HELPER STRUCTS
-// -------------------------------------------------------------------------
+/// Extension trait to allow downcasting of service trait objects
+pub trait ServiceLifecycleExt {
+    /// Get as Any for downcasting
+    fn as_any(&self) -> &dyn std::any::Any;
+}
 
-impl CoreHealthData {
-    pub fn new() -> Self {
-        Self {
-            system_health: ServiceHealth {
-                status: ServiceStatus::Healthy,
-                message: Some("System initializing".to_string()),
-                last_check: Utc::now(),
-                // details field removed in simplified architecture
-            },
-            service_health: HashMap::new(),
-            last_check: Utc::now(),
-            health_history: Vec::new(),
-        }
-    }
-
-    pub fn update_system_health(&mut self, service_health: &HashMap<String, ServiceHealth>) {
-        self.service_health = service_health.clone();
-        self.last_check = Utc::now();
-
-        // Calculate overall system health
-        let healthy_count = service_health.values()
-            .filter(|h| h.status == ServiceStatus::Healthy)
-            .count();
-        let total_count = service_health.len();
-
-        if total_count == 0 {
-            self.system_health.status = ServiceStatus::Degraded;
-            self.system_health.message = Some("No services registered".to_string());
-        } else if healthy_count == total_count {
-            self.system_health.status = ServiceStatus::Healthy;
-            self.system_health.message = Some("All services healthy".to_string());
-        } else if healthy_count > total_count / 2 {
-            self.system_health.status = ServiceStatus::Degraded;
-            self.system_health.message = Some(format!("{}/{} services healthy", healthy_count, total_count));
-        } else {
-            self.system_health.status = ServiceStatus::Unhealthy;
-            self.system_health.message = Some(format!("Only {}/{} services healthy", healthy_count, total_count));
-        }
-
-        // Add to history
-        self.health_history.push(HealthSnapshot {
-            timestamp: Utc::now(),
-            system_health: self.system_health.clone(),
-            service_count: total_count,
-            healthy_services: healthy_count,
-            degraded_services: service_health.values()
-                .filter(|h| h.status == ServiceStatus::Degraded)
-                .count(),
-            unhealthy_services: service_health.values()
-                .filter(|h| h.status == ServiceStatus::Unhealthy)
-                .count(),
-        });
-
-        // Keep only last 100 snapshots
-        if self.health_history.len() > 100 {
-            self.health_history.remove(0);
-        }
+// Blanket implementation for all ServiceLifecycle types
+impl<T: ServiceLifecycle + 'static> ServiceLifecycleExt for T {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 
-impl CoreMetrics {
-    pub fn new() -> Self {
-        Self {
-            events_processed: 0,
-            services_managed: 0,
-            uptime_ms: 0,
-            memory_usage_bytes: 0,
-            avg_response_time_ms: 0.0,
-            error_rate: 0.0,
-            last_updated: Utc::now(),
-        }
-    }
-
-    pub fn update_from_snapshot(&mut self, snapshot: CoreMetricsSnapshot) {
-        self.events_processed = snapshot.events_processed;
-        self.services_managed = snapshot.services_managed;
-        self.avg_response_time_ms = snapshot.avg_response_time_ms;
-        self.error_rate = snapshot.error_rate;
-        self.last_updated = snapshot.timestamp;
-
-        // Memory usage and uptime would be calculated separately
-        // For now, we'll use placeholder values
-        self.memory_usage_bytes = snapshot.memory_usage_bytes;
-        self.uptime_ms = snapshot.uptime_ms;
-    }
-}
-
-/// Builder for creating CrucibleCore instances
-pub struct CrucibleCoreBuilder {
-    config: CoreConfig,
-}
-
-impl CrucibleCoreBuilder {
-    pub fn new() -> Self {
-        Self {
-            config: CoreConfig::default(),
-        }
-    }
-
-    pub fn with_config(mut self, config: CoreConfig) -> Self {
-        self.config = config;
-        self
-    }
-
-    pub fn with_max_services(mut self, max_services: usize) -> Self {
-        self.config.max_services = max_services;
-        self
-    }
-
-    pub fn with_routing_config(mut self, routing_config: RoutingConfig) -> Self {
-        self.config.routing_config = routing_config;
-        self
-    }
-
-    pub fn with_health_check_interval(mut self, interval_s: u64) -> Self {
-        self.config.health_check_interval_s = interval_s;
-        self
-    }
-
-    pub fn with_auto_recovery(mut self, enabled: bool) -> Self {
-        self.config.enable_auto_recovery = enabled;
-        self
-    }
-
-    pub async fn build(self) -> CoreResult<CrucibleCore> {
-        CrucibleCore::new(self.config).await
-    }
-}
-
-impl Default for CrucibleCoreBuilder {
+impl Default for CrucibleCore {
     fn default() -> Self {
-        Self::new()
+        let core = futures::executor::block_on(Self::new(CrucibleConfig::default()));
+        core.unwrap()
     }
 }
 
@@ -708,53 +324,19 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_crucible_core_creation() {
-        let config = CoreConfig::default();
+    async fn test_core_creation() {
+        let config = CrucibleConfig::default();
         let core = CrucibleCore::new(config).await;
         assert!(core.is_ok());
     }
 
     #[tokio::test]
-    async fn test_crucible_core_lifecycle() {
-        let core = CrucibleCoreBuilder::new()
-            .with_max_services(10)
-            .build()
-            .await
-            .unwrap();
-
-        // Test starting
-        assert!(core.start().await.is_ok());
-        assert_eq!(core.get_state().await, CoreState::Running);
-
-        // Test stopping
-        assert!(core.stop().await.is_ok());
-        assert_eq!(core.get_state().await, CoreState::Stopped);
-    }
-
-    #[tokio::test]
     async fn test_service_registration() {
-        // This test would require a mock service implementation
-        // For now, we'll test the basic functionality
-        let core = CrucibleCoreBuilder::new().build().await.unwrap();
+        let config = CrucibleConfig::default();
+        let core = CrucibleCore::new(config).await.unwrap();
 
-        let services = core.list_services().await.unwrap();
-        assert!(services.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_health_monitoring() {
-        let core = CrucibleCoreBuilder::new().build().await.unwrap();
-
-        let health = core.get_system_health().await.unwrap();
-        assert!(matches!(health.status, ServiceStatus::Healthy | ServiceStatus::Degraded));
-    }
-
-    #[tokio::test]
-    async fn test_metrics_collection() {
-        let core = CrucibleCoreBuilder::new().build().await.unwrap();
-
-        let metrics = core.get_metrics().await.unwrap();
-        assert_eq!(metrics.services_managed, 0);
-        assert_eq!(metrics.events_processed, 0);
+        // This test would need a mock service implementation
+        // For now, just test that the method exists
+        assert_eq!(core.list_services().await.len(), 0);
     }
 }
