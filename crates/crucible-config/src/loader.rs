@@ -307,7 +307,8 @@ impl ConfigLoader {
             }
             #[cfg(feature = "toml")]
             ConfigFormat::Toml => {
-                let content = toml::to_string_pretty(config)?;
+                let content = toml::to_string_pretty(config)
+                    .map_err(|e| crate::ConfigError::Serialization(format!("TOML serialization error: {}", e)))?;
                 Ok(content)
             }
             ConfigFormat::Json => {

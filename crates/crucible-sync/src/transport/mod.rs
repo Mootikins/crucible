@@ -6,8 +6,7 @@
 pub mod traits;
 pub mod memory;
 
-#[cfg(feature = "websocket")]
-pub mod websocket;
+// pub mod websocket; // Disabled until implementation is complete
 
 // Re-export transport traits and basic implementations
 pub use traits::Transport;
