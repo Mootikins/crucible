@@ -5,7 +5,7 @@
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use crucible_services::types::tool::*;
+use crate::types::*;
 use rune::{Source, Unit, Vm};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

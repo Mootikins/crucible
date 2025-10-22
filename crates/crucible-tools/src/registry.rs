@@ -4,7 +4,7 @@
 //! that integrates with the broader crucible-services architecture.
 
 use crate::types::{ToolCategory, ToolDependency};
-use crucible_services::types::tool::{ToolDefinition, ToolExecutionContext, ToolExecutionResult, ContextRef};
+use crate::types::{ToolDefinition, ToolExecutionContext, ToolExecutionResult, ContextRef};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;

@@ -6,7 +6,7 @@
 
 use crate::types::*;
 use crate::registry::ToolRegistry;
-use crucible_services::types::tool::{ToolDefinition, ToolExecutionContext, ToolExecutionResult, ContextRef};
+use crate::types::{ToolDefinition, ToolExecutionContext, ToolExecutionResult, ContextRef};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -155,8 +155,12 @@ impl ToolManager {
                 result: None,
                 error: Some(format!("Tool not found: {}", tool_name)),
                 execution_time: std::time::Duration::from_millis(0),
+                duration: std::time::Duration::from_millis(0),
+                completed_at: chrono::Utc::now(),
                 tool_name: tool_name.to_string(),
+                context: None,
                 context_ref: Some(ContextRef::new()),
+                metadata: std::collections::HashMap::new(),
             })
         }
     }

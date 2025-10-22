@@ -105,12 +105,20 @@ pub mod utils;
 pub mod embeddings;
 pub mod validation;
 
+// Phase 5.1 Migration modules
+pub mod migration_bridge;
+pub mod migration_manager;
+
 // Re-export commonly used types and functions
 pub use system_tools::Tool;
 pub use system_tools::ToolManager;
 pub use rune_service::RuneService;
 pub use context_factory::ContextFactory;
-pub use types::{RuneServiceConfig, ValidationResult, SystemInfo};
+pub use types::{RuneServiceConfig, ValidationResult, SystemInfo, ToolDefinition, ToolExecutionRequest, ToolExecutionResult, ToolExecutionContext, ContextRef, ServiceError, ServiceResult, ServiceHealth, ServiceMetrics, ServiceStatus, ToolService};
+
+// Re-export migration types
+pub use migration_bridge::{ToolMigrationBridge, MigrationConfig, MigratedTool, MigrationStats, MigrationValidation};
+pub use migration_manager::{Phase51MigrationManager, MigrationManagerConfig, MigrationState, MigrationPhase, MigrationReport, MigrationError, MigrationErrorType, MigrationMode, ValidationMode};
 
 /// Crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

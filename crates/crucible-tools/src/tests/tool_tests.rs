@@ -4,8 +4,8 @@
 //! that were implemented in Phase 4.1 to ensure compatibility with the new
 //! crucible-services architecture.
 
-use crucible_tools::tool::*;
-use crucible_tools::types::{ToolDependency, ToolCategory};
+use crate::tool::*;
+use crate::types::{ToolDependency, ToolCategory};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use crucible_services::types::tool::*;
