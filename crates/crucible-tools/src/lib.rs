@@ -197,4 +197,4 @@ pub struct LibraryInfo {
 
 // Include comprehensive tests
 #[cfg(test)]
-mod tests;
+pub mod tests;
