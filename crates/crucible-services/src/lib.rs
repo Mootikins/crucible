@@ -68,7 +68,7 @@ pub mod errors {
 
 /// Essential service traits (maintaining compatibility)
 pub mod traits {
-    use super::{errors::ServiceResult, types::tool::*};
+    use super::{errors::ServiceResult, types::*};
     use async_trait::async_trait;
 
     /// Basic tool service trait - simplified version
@@ -188,136 +188,7 @@ pub mod types {
         pub cpu_usage: f64,
     }
 
-    /// Tool-specific types - minimal version of what's actually needed
-    pub mod tool {
-        use super::*;
-        use serde::{Deserialize, Serialize};
-
-        /// Tool definition - simplified
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct ToolDefinition {
-            pub name: String,
-            pub description: String,
-            pub input_schema: serde_json::Value,
-            pub category: Option<String>,
-            pub version: Option<String>,
-            pub author: Option<String>,
-            pub tags: Vec<String>,
-            pub enabled: bool,
-            pub parameters: Vec<ToolParameter>,
-        }
-
-        /// Tool parameter definition
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct ToolParameter {
-            pub name: String,
-            pub param_type: String,
-            pub description: Option<String>,
-            pub required: bool,
-            pub default_value: Option<serde_json::Value>,
-        }
-
-        /// Tool execution request
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct ToolExecutionRequest {
-            pub tool_name: String,
-            pub parameters: serde_json::Value,
-            pub context: ToolExecutionContext,
-            pub timeout_ms: Option<u64>,
-        }
-
-        /// Tool execution context
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct ToolExecutionContext {
-            pub user_id: Option<String>,
-            pub session_id: Option<String>,
-            pub working_directory: Option<String>,
-            pub environment: HashMap<String, String>,
-            pub context: HashMap<String, String>,
-            pub vault_path: Option<String>,
-        }
-
-        /// Reference to a tool execution context - breaks circular dependency
-        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-        pub struct ContextRef {
-            /// Unique identifier for the execution context
-            pub id: String,
-            /// When the context was created
-            pub created_at: chrono::DateTime<chrono::Utc>,
-            /// Optional context metadata for debugging
-            pub metadata: HashMap<String, String>,
-        }
-
-        impl ContextRef {
-            /// Create a new context reference
-            pub fn new() -> Self {
-                Self {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    created_at: chrono::Utc::now(),
-                    metadata: HashMap::new(),
-                }
-            }
-
-            /// Create a context reference with custom metadata
-            pub fn with_metadata(metadata: HashMap<String, String>) -> Self {
-                Self {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    created_at: chrono::Utc::now(),
-                    metadata,
-                }
-            }
-
-            /// Create a context reference with a specific ID (for testing/migration)
-            pub fn with_id(id: String) -> Self {
-                Self {
-                    id,
-                    created_at: chrono::Utc::now(),
-                    metadata: HashMap::new(),
-                }
-            }
-        }
-
-        impl Default for ContextRef {
-            fn default() -> Self {
-                Self::new()
-            }
-        }
-
-        /// Tool execution result
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct ToolExecutionResult {
-            pub success: bool,
-            pub result: Option<serde_json::Value>,
-            pub error: Option<String>,
-            pub execution_time: std::time::Duration,
-            pub tool_name: String,
-            pub context_ref: Option<ContextRef>,
-        }
-
-        /// Tool validation result
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        pub struct ValidationResult {
-            pub valid: bool,
-            pub errors: Vec<String>,
-            pub warnings: Vec<String>,
-            pub tool_name: String,
-            pub metadata: Option<ToolDefinition>,
-        }
-
-        impl Default for ToolExecutionContext {
-            fn default() -> Self {
-                Self {
-                    user_id: None,
-                    session_id: None,
-                    working_directory: None,
-                    environment: HashMap::new(),
-                    context: HashMap::new(),
-                    vault_path: None,
-                }
-            }
-        }
     }
-}
 
 /// MCP Gateway service implementation
 // pub mod mcp_gateway;
