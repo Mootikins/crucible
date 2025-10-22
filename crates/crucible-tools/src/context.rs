@@ -513,6 +513,7 @@ pub fn create_production_context() -> RuneResult<Arc<rune::Context>> {
 }
 
 /// Context manager for reusing contexts
+#[derive(Debug, Clone)]
 pub struct ContextManager {
     contexts: HashMap<String, Arc<rune::Context>>,
     default_config: ContextConfig,

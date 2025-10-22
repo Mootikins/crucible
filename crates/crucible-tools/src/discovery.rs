@@ -229,6 +229,7 @@ pub struct SourceLocation {
 }
 
 /// Enhanced tool discovery engine
+#[derive(Debug, Clone)]
 pub struct ToolDiscovery {
     /// Rune context for compilation
     context: Arc<rune::Context>,
