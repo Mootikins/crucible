@@ -1,6 +1,6 @@
 //! Mock embedding provider for testing
 
-use crate::embeddings::{EmbeddingError, EmbeddingProvider, EmbeddingResponse, EmbeddingResult};
+use crate::embeddings::{EmbeddingProvider, EmbeddingResponse, EmbeddingResult};
 use async_trait::async_trait;
 use std::collections::HashMap;
 

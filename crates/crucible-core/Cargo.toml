@@ -17,7 +17,6 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true }
 regex = { workspace = true }
-glob = { workspace = true }
 rand = { workspace = true }
 tracing = { workspace = true }
 async-trait = { workspace = true }
@@ -37,33 +36,12 @@ config = { workspace = true }
 schemars = { workspace = true, features = ["derive"] }
 notify = { workspace = true }
 
-# Service orchestration and registry
-dashmap = { workspace = true }
-parking_lot = { workspace = true }
-
-# Futures and utilities
-futures = { workspace = true }
-futures-util = { workspace = true }
-
-# Event handling
-tokio-stream = { workspace = true }
-
-# Metrics and monitoring
-metrics = { workspace = true, optional = true }
-metrics-exporter-prometheus = { workspace = true, optional = true }
-
-# Health checks
-axum = { workspace = true, optional = true }
-tower = { workspace = true, optional = true }
-
 [features]
 default = ["core"]
 core = []
 orchestration = []
-metrics = ["dep:metrics", "dep:metrics-exporter-prometheus"]
-health-checks = ["dep:axum", "dep:tower"]
 hot-reload = []
-full = ["orchestration", "metrics", "health-checks", "hot-reload"]
+full = ["orchestration", "hot-reload"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
