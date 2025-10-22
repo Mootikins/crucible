@@ -29,11 +29,9 @@ pub mod transport;
 pub use document::Document;
 pub use sync::SyncInstance;
 
-#[cfg(feature = "security")]
-pub mod security;
+// pub mod security; // Disabled until implementation is complete
 
-#[cfg(feature = "p2p")]
-pub mod discovery;
+// pub mod discovery; // Disabled until implementation is complete
 
 
 /// Core synchronization error types
