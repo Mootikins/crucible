@@ -58,6 +58,10 @@ async fn main() -> Result<()> {
 
         Some(Commands::Config(cmd)) => commands::config::execute(cmd).await?,
 
+        Some(Commands::Service(cmd)) => commands::service::execute(config, cmd).await?,
+
+        Some(Commands::Migration(cmd)) => commands::migration::execute(config, cmd).await?,
+
         Some(Commands::Chat {
             agent,
             model,

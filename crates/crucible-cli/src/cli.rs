@@ -142,6 +142,14 @@ pub enum Commands {
     #[command(subcommand)]
     Config(ConfigCommands),
 
+    /// Service management and monitoring
+    #[command(subcommand)]
+    Service(ServiceCommands),
+
+    /// Migration management for tool migration
+    #[command(subcommand)]
+    Migration(MigrationCommands),
+
     /// Interactive chat mode with AI agents
     Chat {
         /// Agent name to use for conversation
@@ -339,5 +347,209 @@ pub enum AgentCommands {
         /// Show workflow details
         #[arg(short = 'd', long)]
         detailed: bool,
+    },
+}
+
+/// Service management commands
+#[derive(Subcommand)]
+pub enum ServiceCommands {
+    /// Show service health status
+    Health {
+        /// Service name (optional - shows all services if not specified)
+        service: Option<String>,
+
+        /// Output format (table, json)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+
+        /// Show detailed health information
+        #[arg(short = 'd', long)]
+        detailed: bool,
+    },
+
+    /// Show service metrics
+    Metrics {
+        /// Service name (optional - shows all services if not specified)
+        service: Option<String>,
+
+        /// Output format (table, json)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+
+        /// Show real-time metrics
+        #[arg(short = 'r', long)]
+        real_time: bool,
+    },
+
+    /// Start a service
+    Start {
+        /// Service name
+        service: String,
+
+        /// Wait for service to be ready
+        #[arg(short, long)]
+        wait: bool,
+    },
+
+    /// Stop a service
+    Stop {
+        /// Service name
+        service: String,
+
+        /// Force stop (graceful shutdown if false)
+        #[arg(short, long)]
+        force: bool,
+    },
+
+    /// Restart a service
+    Restart {
+        /// Service name
+        service: String,
+
+        /// Wait for service to be ready
+        #[arg(short, long)]
+        wait: bool,
+    },
+
+    /// List all services
+    List {
+        /// Output format (table, json)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+
+        /// Show service status
+        #[arg(short, 's', long)]
+        status: bool,
+
+        /// Show detailed information
+        #[arg(short, 'd', long)]
+        detailed: bool,
+    },
+
+    /// Show service logs
+    Logs {
+        /// Service name
+        service: Option<String>,
+
+        /// Number of lines to show
+        #[arg(short = 'n', long, default_value = "100")]
+        lines: usize,
+
+        /// Follow log output
+        #[arg(short = 'f', long)]
+        follow: bool,
+
+        /// Show only errors
+        #[arg(long)]
+        errors: bool,
+    },
+}
+
+/// Migration management commands
+#[derive(Subcommand)]
+pub enum MigrationCommands {
+    /// Start migration of Rune tools to ScriptEngine service
+    Migrate {
+        /// Tool name to migrate (migrates all if not specified)
+        tool: Option<String>,
+
+        /// Force migration even if tool already exists
+        #[arg(short, long)]
+        force: bool,
+
+        /// Security level for migrated tools
+        #[arg(long, default_value = "safe")]
+        security_level: String,
+
+        /// Dry run - show what would be migrated without doing it
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Show migration status and statistics
+    Status {
+        /// Output format (table, json)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+
+        /// Show detailed migration information
+        #[arg(short, 'd', long)]
+        detailed: bool,
+
+        /// Validate migration integrity
+        #[arg(long)]
+        validate: bool,
+    },
+
+    /// Rollback migrated tools
+    Rollback {
+        /// Tool name to rollback (rollbacks all if not specified)
+        tool: Option<String>,
+
+        /// Confirm rollback without prompt
+        #[arg(short, long)]
+        confirm: bool,
+
+        /// Keep backup of migrated tools
+        #[arg(long)]
+        backup: bool,
+    },
+
+    /// List migrated tools
+    List {
+        /// Output format (table, json)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+
+        /// Show only active tools
+        #[arg(long)]
+        active: bool,
+
+        /// Show only inactive tools
+        #[arg(long)]
+        inactive: bool,
+
+        /// Show migration metadata
+        #[arg(short = 'm', long)]
+        metadata: bool,
+    },
+
+    /// Validate migration integrity
+    Validate {
+        /// Tool name to validate (validates all if not specified)
+        tool: Option<String>,
+
+        /// Fix issues automatically if possible
+        #[arg(long)]
+        auto_fix: bool,
+
+        /// Output format (table, json)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+    },
+
+    /// Reload a migrated tool from its original source
+    Reload {
+        /// Tool name to reload
+        tool: String,
+
+        /// Force reload even if source unchanged
+        #[arg(short, long)]
+        force: bool,
+    },
+
+    /// Clean up migration artifacts
+    Cleanup {
+        /// Remove inactive migrations
+        #[arg(long)]
+        inactive: bool,
+
+        /// Remove failed migrations
+        #[arg(long)]
+        failed: bool,
+
+        /// Confirm cleanup without prompt
+        #[arg(short, long)]
+        confirm: bool,
     },
 }
