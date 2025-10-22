@@ -5,5 +5,8 @@
 pub mod tool;
 pub mod service;
 
+#[cfg(test)]
+mod tests;
+
 pub use tool::*;
 pub use service::*;
