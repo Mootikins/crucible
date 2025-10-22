@@ -34,7 +34,6 @@ impl Tool for SearchByPropertiesTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "search_by_properties".to_string(),
                 description: "Search notes by frontmatter properties".to_string(),
-                category: ToolCategory::Vault,
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -46,20 +45,12 @@ impl Tool for SearchByPropertiesTool {
                     },
                     "required": ["properties"]
                 }),
-                output_schema: schemas::success_response(Some(json!({
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "path": {"type": "string"},
-                            "name": {"type": "string"},
-                            "folder": {"type": "string"},
-                            "properties": {"type": "object"}
-                        }
-                    }
-                }))),
-                deprecated: false,
+                category: Some("Vault".to_string()),
                 version: Some("1.0.0".to_string()),
+                author: Some("Crucible Team".to_string()),
+                tags: vec!["search".to_string(), "vault".to_string(), "metadata".to_string()],
+                enabled: true,
+                parameters: vec![],
             };
         }
         &DEFINITION
@@ -133,7 +124,6 @@ impl Tool for SearchByTagsTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "search_by_tags".to_string(),
                 description: "Search notes by tags".to_string(),
-                category: ToolCategory::Vault,
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -145,20 +135,12 @@ impl Tool for SearchByTagsTool {
                     },
                     "required": ["tags"]
                 }),
-                output_schema: schemas::success_response(Some(json!({
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "path": {"type": "string"},
-                            "name": {"type": "string"},
-                            "folder": {"type": "string"},
-                            "tags": {"type": "array", "items": {"type": "string"}}
-                        }
-                    }
-                }))),
-                deprecated: false,
+                category: Some("Vault".to_string()),
                 version: Some("1.0.0".to_string()),
+                author: Some("Crucible Team".to_string()),
+                tags: vec!["search".to_string(), "vault".to_string(), "tags".to_string()],
+                enabled: true,
+                parameters: vec![],
             };
         }
         &DEFINITION
@@ -228,7 +210,6 @@ impl Tool for SearchByFolderTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "search_by_folder".to_string(),
                 description: "Search notes in a specific folder".to_string(),
-                category: ToolCategory::Vault,
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -244,12 +225,12 @@ impl Tool for SearchByFolderTool {
                     },
                     "required": ["path"]
                 }),
-                output_schema: schemas::success_response(Some(json!({
-                    "type": "array",
-                    "items": {"type": "string"}
-                }))),
-                deprecated: false,
+                category: Some("Vault".to_string()),
                 version: Some("1.0.0".to_string()),
+                author: Some("Crucible Team".to_string()),
+                tags: vec!["search".to_string(), "vault".to_string(), "folder".to_string()],
+                enabled: true,
+                parameters: vec![],
             };
         }
         &DEFINITION
@@ -372,7 +353,6 @@ impl Tool for IndexVaultTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "index_vault".to_string(),
                 description: "Index all vault files for search and retrieval".to_string(),
-                category: ToolCategory::Vault,
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -388,18 +368,12 @@ impl Tool for IndexVaultTool {
                         }
                     }
                 }),
-                output_schema: schemas::success_response(Some(json!({
-                    "type": "object",
-                    "properties": {
-                        "indexed": {"type": "number"},
-                        "errors": {
-                            "type": "array",
-                            "items": {"type": "string"}
-                        }
-                    }
-                }))),
-                deprecated: false,
+                category: Some("Vault".to_string()),
                 version: Some("1.0.0".to_string()),
+                author: Some("Crucible Team".to_string()),
+                tags: vec!["index".to_string(), "vault".to_string(), "search".to_string()],
+                enabled: true,
+                parameters: vec![],
             };
         }
         &DEFINITION
@@ -464,7 +438,6 @@ impl Tool for GetNoteMetadataTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "get_note_metadata".to_string(),
                 description: "Get metadata for a specific note".to_string(),
-                category: ToolCategory::Vault,
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -475,20 +448,12 @@ impl Tool for GetNoteMetadataTool {
                     },
                     "required": ["path"]
                 }),
-                output_schema: schemas::success_response(Some(json!({
-                    "type": "object",
-                    "properties": {
-                        "file_path": {"type": "string"},
-                        "title": {"type": "string"},
-                        "tags": {"type": "array", "items": {"type": "string"}},
-                        "folder": {"type": "string"},
-                        "properties": {"type": "object"},
-                        "created_at": {"type": "string"},
-                        "updated_at": {"type": "string"}
-                    }
-                }))),
-                deprecated: false,
+                category: Some("Vault".to_string()),
                 version: Some("1.0.0".to_string()),
+                author: Some("Crucible Team".to_string()),
+                tags: vec!["metadata".to_string(), "vault".to_string(), "note".to_string()],
+                enabled: true,
+                parameters: vec![],
             };
         }
         &DEFINITION

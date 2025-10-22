@@ -34,7 +34,6 @@ impl Tool for SearchDocumentsTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "search_documents".to_string(),
                 description: "Search documents using semantic similarity".to_string(),
-                category: Some("Search".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -70,7 +69,12 @@ impl Tool for SearchDocumentsTool {
                     },
                     "required": ["query"]
                 }),
+                category: Some("Search".to_string()),
                 version: Some("1.0.0".to_string()),
+                author: Some("Crucible Team".to_string()),
+                tags: vec!["search".to_string(), "semantic".to_string(), "documents".to_string()],
+                enabled: true,
+                parameters: vec![],
             };
         }
         &DEFINITION
@@ -167,7 +171,6 @@ impl Tool for RebuildIndexTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "rebuild_index".to_string(),
                 description: "Rebuild search indexes for all documents".to_string(),
-                category: Some("Search".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -187,7 +190,12 @@ impl Tool for RebuildIndexTool {
                         }
                     }
                 }),
+                category: Some("Search".to_string()),
                 version: Some("1.0.0".to_string()),
+                author: Some("Crucible Team".to_string()),
+                tags: vec!["search".to_string(), "index".to_string(), "maintenance".to_string()],
+                enabled: true,
+                parameters: vec![],
             };
         }
         &DEFINITION
@@ -253,9 +261,13 @@ impl Tool for GetIndexStatsTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "get_index_stats".to_string(),
                 description: "Get statistics about search indexes".to_string(),
-                category: Some("Search".to_string()),
                 input_schema: json!({"type": "object"}),
+                category: Some("Search".to_string()),
                 version: Some("1.0.0".to_string()),
+                author: Some("Crucible Team".to_string()),
+                tags: vec!["search".to_string(), "index".to_string(), "statistics".to_string()],
+                enabled: true,
+                parameters: vec![],
             };
         }
         &DEFINITION
@@ -339,7 +351,6 @@ impl Tool for OptimizeIndexTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "optimize_index".to_string(),
                 description: "Optimize search indexes for better performance".to_string(),
-                category: Some("Search".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -357,7 +368,12 @@ impl Tool for OptimizeIndexTool {
                         }
                     }
                 }),
+                category: Some("Search".to_string()),
                 version: Some("1.0.0".to_string()),
+                author: Some("Crucible Team".to_string()),
+                tags: vec!["search".to_string(), "index".to_string(), "optimization".to_string()],
+                enabled: true,
+                parameters: vec![],
             };
         }
         &DEFINITION
@@ -428,7 +444,6 @@ impl Tool for AdvancedSearchTool {
             static ref DEFINITION: ToolDefinition = ToolDefinition {
                 name: "advanced_search".to_string(),
                 description: "Advanced search with multiple criteria and ranking".to_string(),
-                category: Some("Search".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
@@ -476,7 +491,12 @@ impl Tool for AdvancedSearchTool {
                     },
                     "required": ["query"]
                 }),
+                category: Some("Search".to_string()),
                 version: Some("1.0.0".to_string()),
+                author: Some("Crucible Team".to_string()),
+                tags: vec!["search".to_string(), "advanced".to_string(), "ranking".to_string()],
+                enabled: true,
+                parameters: vec![],
             };
         }
         &DEFINITION
