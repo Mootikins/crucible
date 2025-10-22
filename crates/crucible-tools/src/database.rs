@@ -47,6 +47,7 @@ impl Default for DatabaseConfig {
 }
 
 /// Database connection manager
+#[derive(Debug, Clone)]
 pub struct DatabaseManager {
     /// SurrealDB client
     client: Arc<SurrealClient>,

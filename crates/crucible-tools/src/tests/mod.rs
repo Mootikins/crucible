@@ -9,12 +9,14 @@ pub mod basic_tests;
 pub mod tool_tests;
 pub mod registry_tests;
 pub mod integration_tests;
+pub mod trait_implementations_test;
 
 // Re-export common test utilities
 pub use basic_tests::*;
 pub use tool_tests::*;
 pub use registry_tests::*;
 pub use integration_tests::*;
+pub use trait_implementations_test::*;
 
 /// Test configuration for Phase 4.1 fixes
 pub struct TestConfig {

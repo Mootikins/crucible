@@ -12,7 +12,7 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 /// Factory for creating fresh individual contexts per tool execution
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ContextFactory {
     /// Base modules that can be reused across contexts
     base_modules: HashMap<String, Arc<rune::Module>>,

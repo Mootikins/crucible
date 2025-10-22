@@ -103,6 +103,7 @@ pub mod rune_registry;
 pub mod rune_service;
 pub mod utils;
 pub mod embeddings;
+pub mod validation;
 
 // Re-export commonly used types and functions
 pub use system_tools::Tool;

@@ -95,6 +95,7 @@ pub enum ConstraintType {
 }
 
 /// Type inference engine
+#[derive(Debug, Clone)]
 pub struct TypeInferenceEngine {
     config: AnalyzerConfig,
 }
@@ -314,6 +315,7 @@ impl TypeInferenceEngine {
 }
 
 /// Comprehensive AST analyzer for Rune modules
+#[derive(Debug, Clone)]
 pub struct RuneAstAnalyzer {
     config: AnalyzerConfig,
     context: Arc<rune::Context>,
