@@ -3,6 +3,7 @@ pub mod canvas;
 pub mod config;
 pub mod controller;
 pub mod crdt;
+pub mod crucible_core;
 pub mod database;
 pub mod document;
 pub mod orchestrator_simple;
@@ -22,6 +23,10 @@ pub use config::{
 pub use controller::{
     MasterController, ControllerState, ControllerStatus, ControllerMetrics,
     HealthStatus, ControllerEvent, ControllerBuilder,
+};
+pub use crucible_core::{
+    CrucibleCore, CoreConfig, CoreState, CoreEvent, AlertLevel, CoreHealthData,
+    CoreMetrics, CoreMetricsSnapshot, CrucibleCoreBuilder,
 };
 pub use database::{
     RelationalDB, GraphDB, DocumentDB,

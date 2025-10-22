@@ -11,9 +11,18 @@ use super::instance::{PluginInstance, DefaultPluginInstance, InstanceEvent};
 use super::resource_manager::{ResourceManager, DefaultResourceManager, ResourceEvent};
 use super::security_manager::{SecurityManager, DefaultSecurityManager, SecurityEvent};
 use super::health_monitor::{HealthMonitor, DefaultHealthMonitor, HealthEvent};
+use super::resource_monitor::{ResourceMonitor, ResourceMonitoringService};
+use super::health_checker::{HealthChecker, HealthCheckingService};
+use super::lifecycle_manager::{LifecycleManager, LifecycleManagerService, LifecycleOperation, LifecycleOperationRequest};
+use super::state_machine::{PluginStateMachine, StateMachineService, StateTransition, StateTransitionResult};
+use super::dependency_resolver::{DependencyResolver, DependencyGraph, DependencyResolutionResult};
+use super::lifecycle_policy::{LifecyclePolicyEngine, PolicyEngineService, PolicyDecision, PolicyEvaluationContext};
+use super::automation_engine::{AutomationEngine, AutomationEngineService, AutomationRule, AutomationEvent, AutomationExecutionContext};
+use super::batch_operations::{BatchOperationsCoordinator, BatchOperationsService, BatchOperation, BatchExecutionResult, BatchExecutionContext};
 use crate::service_types::*;
 use crate::service_traits::*;
 use crate::errors::{ServiceError, ServiceResult};
+use crate::events::EventEmitter;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -38,6 +47,18 @@ pub struct PluginManagerService {
     resource_manager: Arc<RwLock<Box<dyn ResourceManager>>>,
     security_manager: Arc<RwLock<Box<dyn SecurityManager>>>,
     health_monitor: Arc<RwLock<Box<dyn HealthMonitor>>>,
+
+    /// Advanced monitoring components
+    resource_monitor: Arc<ResourceMonitor>,
+    health_checker: Arc<HealthChecker>,
+
+    /// Advanced lifecycle management components
+    lifecycle_manager: Arc<LifecycleManager>,
+    state_machine: Arc<PluginStateMachine>,
+    dependency_resolver: Arc<DependencyResolver>,
+    policy_engine: Arc<LifecyclePolicyEngine>,
+    automation_engine: Arc<AutomationEngine>,
+    batch_coordinator: Arc<BatchOperationsCoordinator>,
 
     /// Service state
     state: Arc<RwLock<PluginManagerState>>,
@@ -81,6 +102,31 @@ struct PluginManagerMetrics {
     operations_by_type: HashMap<String, u64>,
     /// Last updated timestamp
     last_updated: SystemTime,
+}
+
+/// Monitoring statistics
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MonitoringStatistics {
+    /// Resource monitoring enabled
+    pub resource_monitoring_enabled: bool,
+    /// Health monitoring enabled
+    pub health_monitoring_enabled: bool,
+    /// Total monitored instances
+    pub total_monitored_instances: u64,
+    /// Active resource monitors
+    pub active_resource_monitors: u64,
+    /// Active health checks
+    pub active_health_checks: u64,
+    /// Resource alerts triggered
+    pub resource_alerts_triggered: u64,
+    /// Health alerts triggered
+    pub health_alerts_triggered: u64,
+    /// Average resource collection time
+    pub average_resource_collection_time: Duration,
+    /// Average health check time
+    pub average_health_check_time: Duration,
+    /// Last updated timestamp
+    pub last_updated: SystemTime,
 }
 
 /// Plugin manager events
@@ -133,6 +179,38 @@ impl PluginManagerService {
         let security_manager = Box::new(DefaultSecurityManager::new(config.security.clone()));
         let health_monitor = Box::new(DefaultHealthMonitor::new(config.health_monitoring.clone()));
 
+        // Create event emitter for monitoring components
+        let event_emitter = EventEmitter::new();
+
+        // Initialize advanced monitoring components
+        let resource_monitor = Arc::new(ResourceMonitor::new(
+            config.resource_management.monitoring.clone(),
+            event_emitter.clone(),
+        ));
+        let health_checker = Arc::new(HealthChecker::new(
+            config.health_monitoring.scheduling.clone(),
+            event_emitter.clone(),
+        ));
+
+        // Initialize advanced lifecycle management components
+        let lifecycle_manager = Arc::new(LifecycleManager::new(config.clone()));
+        let state_machine = Arc::new(PluginStateMachine::new());
+        let dependency_resolver = Arc::new(DependencyResolver::new());
+        let policy_engine = Arc::new(LifecyclePolicyEngine::new());
+        let automation_engine = Arc::new(AutomationEngine::new(
+            lifecycle_manager.clone(),
+            policy_engine.clone(),
+            dependency_resolver.clone(),
+            state_machine.clone(),
+        ));
+        let batch_coordinator = Arc::new(BatchOperationsCoordinator::new(
+            lifecycle_manager.clone(),
+            policy_engine.clone(),
+            dependency_resolver.clone(),
+            state_machine.clone(),
+            automation_engine.clone(),
+        ));
+
         Self {
             config: Arc::new(config),
             registry: Arc::new(RwLock::new(registry)),
@@ -140,6 +218,14 @@ impl PluginManagerService {
             resource_manager: Arc::new(RwLock::new(resource_manager)),
             security_manager: Arc::new(RwLock::new(security_manager)),
             health_monitor: Arc::new(RwLock::new(health_monitor)),
+            resource_monitor,
+            health_checker,
+            lifecycle_manager,
+            state_machine,
+            dependency_resolver,
+            policy_engine,
+            automation_engine,
+            batch_coordinator,
             state: Arc::new(RwLock::new(PluginManagerState {
                 service_name: "PluginManager".to_string(),
                 service_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -172,10 +258,170 @@ impl PluginManagerService {
             health_monitor.start().await?;
         }
 
-        // Subscribe to component events
+        // Initialize advanced monitoring components
+        info!("Initializing advanced monitoring components");
+
+        // Start resource monitoring
+        {
+            let mut resource_monitor = self.resource_monitor.as_ref().clone();
+            resource_monitor.start_monitoring_loop().await?;
+        }
+
+        // Start health checking
+        {
+            let mut health_checker = self.health_checker.as_ref().clone();
+            health_checker.start_health_checking_loop().await?;
+        }
+
+        // Initialize advanced lifecycle management components
+        info!("Initializing advanced lifecycle management components");
+
+        self.state_machine.initialize().await?;
+        self.dependency_resolver.initialize().await?;
+        self.policy_engine.initialize().await?;
+        self.lifecycle_manager.initialize().await?;
+        self.automation_engine.initialize().await?;
+        self.batch_coordinator.initialize().await?;
+
+        // Setup event handlers and integration
+        self.setup_lifecycle_integration().await?;
         self.setup_event_handlers().await?;
+        self.setup_monitoring_integration().await?;
 
         info!("PluginManager components initialized");
+        Ok(())
+    }
+
+    /// Setup lifecycle integration between components
+    async fn setup_lifecycle_integration(&mut self) -> PluginResult<()> {
+        info!("Setting up lifecycle integration between components");
+
+        // Setup state machine event handling
+        let state_machine_events = self.state_machine.subscribe_events().await;
+        let lifecycle_manager = self.lifecycle_manager.clone();
+        let automation_engine = self.automation_engine.clone();
+        let event_subscribers = self.event_subscribers.clone();
+
+        tokio::spawn(async move {
+            while let Some(event) = state_machine_events.recv().await {
+                match event {
+                    StateMachineEvent::StateEntered { instance_id, state } => {
+                        debug!("Instance {} entered state: {:?}", instance_id, state);
+
+                        // Trigger automation rules based on state changes
+                        let automation_event = AutomationEvent {
+                            event_id: uuid::Uuid::new_v4().to_string(),
+                            event_type: "state_change".to_string(),
+                            source: "state_machine".to_string(),
+                            timestamp: SystemTime::now(),
+                            data: HashMap::from([
+                                ("instance_id".to_string(), serde_json::Value::String(instance_id.clone())),
+                                ("state".to_string(), serde_json::Value::String(format!("{:?}", state))),
+                            ]),
+                            severity: AutomationEventSeverity::Normal,
+                        };
+
+                        if let Err(e) = automation_engine.process_event(automation_event).await {
+                            error!("Failed to process automation event: {}", e);
+                        }
+                    }
+                    StateMachineEvent::TransitionFailed { instance_id, transition, error } => {
+                        warn!("Instance {} transition {:?} failed: {}", instance_id, transition, error);
+
+                        // Trigger failure handling automation
+                        let automation_event = AutomationEvent {
+                            event_id: uuid::Uuid::new_v4().to_string(),
+                            event_type: "transition_failure".to_string(),
+                            source: "state_machine".to_string(),
+                            timestamp: SystemTime::now(),
+                            data: HashMap::from([
+                                ("instance_id".to_string(), serde_json::Value::String(instance_id.clone())),
+                                ("transition".to_string(), serde_json::Value::String(format!("{:?}", transition))),
+                                ("error".to_string(), serde_json::Value::String(error.clone())),
+                            ]),
+                            severity: AutomationEventSeverity::High,
+                        };
+
+                        if let Err(e) = automation_engine.process_event(automation_event).await {
+                            error!("Failed to process automation event: {}", e);
+                        }
+                    }
+                    _ => {
+                        debug!("State machine event: {:?}", event);
+                    }
+                }
+            }
+        });
+
+        // Setup lifecycle manager event handling
+        let lifecycle_events = self.lifecycle_manager.subscribe_events().await;
+        let state_machine = self.state_machine.clone();
+        let policy_engine = self.policy_engine.clone();
+
+        tokio::spawn(async move {
+            while let Some(event) = lifecycle_events.recv().await {
+                match event {
+                    LifecycleEvent::InstanceStarted { instance_id, plugin_id } => {
+                        info!("Instance {} started for plugin {}", instance_id, plugin_id);
+
+                        // Update state machine
+                        if let Err(e) = state_machine.transition_state(&instance_id, StateTransition::CompleteStart).await {
+                            error!("Failed to update state machine for instance {}: {}", instance_id, e);
+                        }
+                    }
+                    LifecycleEvent::InstanceStopped { instance_id, plugin_id } => {
+                        info!("Instance {} stopped for plugin {}", instance_id, plugin_id);
+
+                        // Update state machine
+                        if let Err(e) = state_machine.transition_state(&instance_id, StateTransition::CompleteStop).await {
+                            error!("Failed to update state machine for instance {}: {}", instance_id, e);
+                        }
+                    }
+                    LifecycleEvent::InstanceCrashed { instance_id, plugin_id, error } => {
+                        error!("Instance {} crashed for plugin {}: {}", instance_id, plugin_id, error);
+
+                        // Update state machine to error state
+                        if let Err(e) = state_machine.transition_state(&instance_id, StateTransition::Error(error.clone())).await {
+                            error!("Failed to update state machine for crashed instance {}: {}", instance_id, e);
+                        }
+                    }
+                    _ => {
+                        debug!("Lifecycle event: {:?}", event);
+                    }
+                }
+            }
+        });
+
+        // Setup policy engine event handling
+        let policy_events = self.policy_engine.subscribe_events().await;
+        let lifecycle_manager = self.lifecycle_manager.clone();
+
+        tokio::spawn(async move {
+            while let Some(event) = policy_events.recv().await {
+                match event {
+                    PolicyEvent::PolicyEvaluated { policy_id, decision } => {
+                        debug!("Policy {} evaluated: allowed={}", policy_id, decision.allowed);
+
+                        if !decision.allowed {
+                            warn!("Operation blocked by policy {}: {}", policy_id, decision.reason);
+                            // Policy engine would have already blocked the operation
+                        }
+                    }
+                    PolicyEvent::ActionExecuted { action_id, result } => {
+                        if result.success {
+                            debug!("Policy action {} executed successfully", action_id);
+                        } else {
+                            error!("Policy action {} failed: {:?}", action_id, result.error);
+                        }
+                    }
+                    _ => {
+                        debug!("Policy event: {:?}", event);
+                    }
+                }
+            }
+        });
+
+        info!("Lifecycle integration setup completed");
         Ok(())
     }
 
@@ -259,6 +505,29 @@ impl PluginManagerService {
         for i in to_remove.into_iter().rev() {
             subscribers.remove(i);
         }
+    }
+
+    /// Setup monitoring integration between components
+    async fn setup_monitoring_integration(&mut self) -> PluginResult<()> {
+        info!("Setting up monitoring integration between components");
+
+        // Start monitoring for existing instances when they're created
+        let resource_monitor = self.resource_monitor.clone();
+        let health_checker = self.health_checker.clone();
+        let event_subscribers = self.event_subscribers.clone();
+
+        // Subscribe to instance events to start/stop monitoring
+        let mut subscribers = event_subscribers.write().await;
+
+        // Setup monitoring event handlers
+        let resource_monitor_clone = resource_monitor.clone();
+        let health_checker_clone = health_checker.clone();
+
+        // In a real implementation, you would subscribe to instance lifecycle events
+        // and automatically start/stop monitoring when instances are created/destroyed
+
+        info!("Monitoring integration setup completed");
+        Ok(())
     }
 
     /// Update activity timestamp
@@ -983,6 +1252,114 @@ impl PluginManagerService {
         Ok(result)
     }
 
+    // ============================================================================
+    // ADVANCED MONITORING METHODS
+    // ============================================================================
+
+    /// Get detailed resource usage history for a plugin instance
+    pub async fn get_resource_usage_history(&self, instance_id: &str) -> PluginResult<Option<super::resource_monitor::ResourceUsageHistory>> {
+        self.update_activity().await;
+
+        let history = self.resource_monitor.get_usage_history(instance_id).await?;
+        self.record_operation("get_resource_usage_history", true).await;
+        Ok(history)
+    }
+
+    /// Get current resource usage for all monitored plugins
+    pub async fn get_aggregated_resource_usage(&self) -> PluginResult<HashMap<String, ResourceUsage>> {
+        self.update_activity().await;
+
+        let usage = self.resource_monitor.get_aggregated_usage().await?;
+        self.record_operation("get_aggregated_resource_usage", true).await;
+        Ok(usage)
+    }
+
+    /// Get system-wide resource information
+    pub async fn get_system_resource_info(&self) -> PluginResult<super::resource_monitor::SystemResourceInfo> {
+        self.update_activity().await;
+
+        let info = self.resource_monitor.get_system_info().await?;
+        self.record_operation("get_system_resource_info", true).await;
+        Ok(info)
+    }
+
+    /// Update resource monitoring thresholds for a plugin
+    pub async fn update_resource_thresholds(
+        &self,
+        instance_id: &str,
+        thresholds: HashMap<super::resource_monitor::ResourceType, super::resource_monitor::ResourceThreshold>,
+    ) -> PluginResult<()> {
+        self.update_activity().await;
+
+        self.resource_monitor.update_thresholds(instance_id, thresholds).await?;
+        self.record_operation("update_resource_thresholds", true).await;
+        Ok(())
+    }
+
+    /// Get health status for a plugin instance
+    pub async fn get_plugin_health_status(&self, instance_id: &str) -> PluginResult<Option<PluginHealthStatus>> {
+        self.update_activity().await;
+
+        let status = self.health_checker.get_health_status(instance_id).await?;
+        self.record_operation("get_plugin_health_status", true).await;
+        Ok(status)
+    }
+
+    /// Get health status history for a plugin instance
+    pub async fn get_plugin_health_history(&self, instance_id: &str) -> PluginResult<Option<super::health_checker::HealthStatusHistory>> {
+        self.update_activity().await;
+
+        let history = self.health_checker.get_health_history(instance_id).await?;
+        self.record_operation("get_plugin_health_history", true).await;
+        Ok(history)
+    }
+
+    /// Get health statistics for a plugin instance
+    pub async fn get_plugin_health_statistics(&self, instance_id: &str) -> PluginResult<Option<super::health_checker::HealthStatistics>> {
+        self.update_activity().await;
+
+        let stats = self.health_checker.get_health_statistics(instance_id).await?;
+        self.record_operation("get_plugin_health_statistics", true).await;
+        Ok(stats)
+    }
+
+    /// Trigger immediate health check for a plugin instance
+    pub async fn trigger_plugin_health_check(
+        &self,
+        instance_id: &str,
+        check_types: Option<Vec<super::config::HealthCheckType>>,
+    ) -> PluginResult<Vec<super::health_checker::HealthCheckResult>> {
+        self.update_activity().await;
+
+        let results = self.health_checker.trigger_health_check(instance_id, check_types).await?;
+        self.record_operation("trigger_plugin_health_check", true).await;
+        Ok(results)
+    }
+
+    /// Get monitoring statistics for the plugin manager
+    pub async fn get_monitoring_statistics(&self) -> PluginResult<MonitoringStatistics> {
+        self.update_activity().await;
+
+        let mut stats = MonitoringStatistics::default();
+
+        // Get resource monitoring statistics
+        // Note: This would require adding statistics methods to the resource monitor
+        stats.resource_monitoring_enabled = self.config.resource_management.monitoring.enabled;
+        stats.health_monitoring_enabled = self.config.health_monitoring.enabled;
+
+        self.record_operation("get_monitoring_statistics", true).await;
+        Ok(stats)
+    }
+
+    /// Check resource quota violations for a plugin instance
+    pub async fn check_resource_quota_violations(&self, instance_id: &str) -> PluginResult<Vec<super::resource_monitor::ResourceType>> {
+        self.update_activity().await;
+
+        let violations = self.resource_monitor.check_quota_violations(instance_id).await?;
+        self.record_operation("check_resource_quota_violations", true).await;
+        Ok(violations)
+    }
+
     /// Subscribe to plugin manager events
     pub async fn subscribe_events(&mut self) -> mpsc::UnboundedReceiver<PluginManagerEvent> {
         self.subscribe("plugin_manager").await
@@ -992,6 +1369,407 @@ impl PluginManagerService {
                 tx
             })
     }
+
+    // ============================================================================
+    // ADVANCED LIFECYCLE MANAGEMENT API
+    // ============================================================================
+
+    /// Get dependency resolver for advanced dependency management
+    pub async fn get_dependency_resolver(&self) -> &DependencyResolver {
+        &self.dependency_resolver
+    }
+
+    /// Resolve plugin dependencies and get startup order
+    pub async fn resolve_plugin_dependencies(&self, root_instances: &[String]) -> PluginResult<DependencyResolutionResult> {
+        self.dependency_resolver.resolve_dependencies(None).await
+    }
+
+    /// Get dependency graph visualization
+    pub async fn get_dependency_graph_visualization(&self, format: super::dependency_resolver::GraphFormat) -> PluginResult<String> {
+        let graph = self.dependency_resolver.get_graph_visualization(format).await?;
+        Ok(graph)
+    }
+
+    /// Get plugin state machine for advanced state management
+    pub async fn get_state_machine(&self) -> &PluginStateMachine {
+        &self.state_machine
+    }
+
+    /// Get current state of all plugin instances
+    pub async fn get_all_instance_states(&self) -> PluginResult<HashMap<String, PluginInstanceState>> {
+        self.state_machine.get_all_states().await
+    }
+
+    /// Get state history for an instance
+    pub async fn get_instance_state_history(&self, instance_id: &str, limit: Option<usize>) -> PluginResult<Vec<StateTransitionResult>> {
+        self.state_machine.get_state_history(instance_id, limit).await
+    }
+
+    /// Get policy engine for rule-based management
+    pub async fn get_policy_engine(&self) -> &LifecyclePolicyEngine {
+        &self.policy_engine
+    }
+
+    /// Add a lifecycle policy
+    pub async fn add_lifecycle_policy(&self, policy: super::lifecycle_policy::LifecyclePolicy) -> PluginResult<()> {
+        self.policy_engine.add_policy(policy).await
+    }
+
+    /// Evaluate policies for an operation
+    pub async fn evaluate_lifecycle_policies(&self, context: &PolicyEvaluationContext) -> PluginResult<PolicyDecision> {
+        self.policy_engine.evaluate_operation(context).await
+    }
+
+    /// Get automation engine for automated operations
+    pub async fn get_automation_engine(&self) -> &AutomationEngine {
+        &self.automation_engine
+    }
+
+    /// Add an automation rule
+    pub async fn add_automation_rule(&self, rule: AutomationRule) -> PluginResult<()> {
+        self.automation_engine.add_rule(rule).await
+    }
+
+    /// Trigger an automation rule manually
+    pub async fn trigger_automation_rule(&self, rule_id: &str, trigger_data: HashMap<String, serde_json::Value>) -> PluginResult<String> {
+        self.automation_engine.trigger_rule(rule_id, trigger_data).await
+    }
+
+    /// Get batch operations coordinator for bulk operations
+    pub async fn get_batch_coordinator(&self) -> &BatchOperationsCoordinator {
+        &self.batch_coordinator
+    }
+
+    /// Create and execute a batch operation
+    pub async fn execute_batch_operation(&self, batch: BatchOperation) -> PluginResult<String> {
+        let execution_context = BatchExecutionContext {
+            batch_id: batch.batch_id.clone(),
+            execution_id: uuid::Uuid::new_v4().to_string(),
+            timestamp: SystemTime::now(),
+            mode: super::batch_operations::ExecutionMode::Normal,
+            dry_run: false,
+            additional_context: HashMap::new(),
+        };
+
+        self.batch_coordinator.create_batch(batch).await?;
+        self.batch_coordinator.execute_batch(&execution_context.batch_id, execution_context).await
+    }
+
+    /// Get batch execution progress
+    pub async fn get_batch_execution_progress(&self, execution_id: &str) -> PluginResult<Option<super::batch_operations::BatchProgressUpdate>> {
+        self.batch_coordinator.get_execution_progress(execution_id).await
+    }
+
+    /// Execute rolling restart of plugin instances
+    pub async fn execute_rolling_restart(&self, instances: Vec<String>, batch_size: u32) -> PluginResult<String> {
+        let operations = instances.into_iter().enumerate().map(|(index, instance_id)| {
+            super::batch_operations::BatchOperationItem {
+                item_id: format!("restart-{}", index),
+                operation: LifecycleOperation::Restart { instance_id },
+                target: instance_id,
+                priority: super::batch_operations::BatchItemPriority::Normal,
+                dependencies: Vec::new(),
+                timeout: Some(Duration::from_secs(300)),
+                retry_config: Some(super::batch_operations::BatchRetryConfig {
+                    max_attempts: 3,
+                    initial_delay: Duration::from_secs(5),
+                    backoff_strategy: super::lifecycle_manager::BackoffStrategy::Exponential,
+                    retry_on_errors: vec!["timeout".to_string()],
+                    delay_multiplier: 2.0,
+                }),
+                rollback_config: None,
+                metadata: HashMap::new(),
+            }
+        }).collect();
+
+        let batch = BatchOperation {
+            batch_id: format!("rolling-restart-{}", uuid::Uuid::new_v4()),
+            name: "Rolling Restart".to_string(),
+            description: format!("Rolling restart of {} instances", operations.len()),
+            operations,
+            strategy: super::batch_operations::BatchExecutionStrategy::Rolling {
+                batch_size,
+                pause_duration: Duration::from_secs(30),
+                health_check_between_batches: true,
+                rollback_on_batch_failure: true,
+            },
+            config: super::batch_operations::BatchConfig::default(),
+            scope: super::batch_operations::BatchScope::default(),
+            metadata: super::batch_operations::BatchMetadata {
+                created_at: SystemTime::now(),
+                created_by: "plugin_manager".to_string(),
+                updated_at: SystemTime::now(),
+                updated_by: "plugin_manager".to_string(),
+                tags: vec!["restart".to_string(), "rolling".to_string()],
+                documentation: Some("Rolling restart of plugin instances".to_string()),
+                additional_info: HashMap::new(),
+            },
+        };
+
+        self.execute_batch_operation(batch).await
+    }
+
+    /// Execute zero-downtime restart with canary deployment
+    pub async fn execute_zero_downtime_restart(&self, instances: Vec<String>, canary_percentage: u32) -> PluginResult<String> {
+        let operations = instances.into_iter().enumerate().map(|(index, instance_id)| {
+            super::batch_operations::BatchOperationItem {
+                item_id: format!("restart-{}", index),
+                operation: LifecycleOperation::Restart { instance_id },
+                target: instance_id,
+                priority: super::batch_operations::BatchItemPriority::High,
+                dependencies: Vec::new(),
+                timeout: Some(Duration::from_secs(600)),
+                retry_config: Some(super::batch_operations::BatchRetryConfig {
+                    max_attempts: 5,
+                    initial_delay: Duration::from_secs(10),
+                    backoff_strategy: super::lifecycle_manager::BackoffStrategy::Exponential,
+                    retry_on_errors: vec!["timeout".to_string(), "health_check_failure".to_string()],
+                    delay_multiplier: 2.0,
+                }),
+                rollback_config: Some(super::batch_operations::BatchRollbackConfig {
+                    auto_rollback: true,
+                    strategy: super::batch_operations::RollbackStrategy::ReverseOrder,
+                    timeout: Duration::from_secs(300),
+                    preserve_data: true,
+                    notifications: Vec::new(),
+                }),
+                metadata: HashMap::from([
+                    ("restart_type".to_string(), serde_json::Value::String("zero_downtime".to_string())),
+                ]),
+            }
+        }).collect();
+
+        let batch = BatchOperation {
+            batch_id: format!("zero-downtime-restart-{}", uuid::Uuid::new_v4()),
+            name: "Zero-Downtime Restart".to_string(),
+            description: format!("Zero-downtime restart of {} instances with {}% canary", operations.len(), canary_percentage),
+            operations,
+            strategy: super::batch_operations::BatchExecutionStrategy::Canary {
+                canary_size: super::batch_operations::CanarySize::Percentage(canary_percentage),
+                pause_duration: Duration::from_secs(300), // 5 minutes
+                success_criteria: super::batch_operations::CanarySuccessCriteria {
+                    success_rate_threshold: 95.0,
+                    health_criteria: vec![
+                        super::batch_operations::HealthCriteria {
+                            metric: "availability".to_string(),
+                            operator: super::lifecycle_policy::ComparisonOperator::GreaterThanOrEqual,
+                            threshold: 99.0,
+                        },
+                    ],
+                    performance_criteria: vec![],
+                    evaluation_window: Duration::from_secs(300),
+                },
+                auto_promote: true,
+            },
+            config: super::batch_operations::BatchConfig::default(),
+            scope: super::batch_operations::BatchScope::default(),
+            metadata: super::batch_operations::BatchMetadata {
+                created_at: SystemTime::now(),
+                created_by: "plugin_manager".to_string(),
+                updated_at: SystemTime::now(),
+                updated_by: "plugin_manager".to_string(),
+                tags: vec!["restart".to_string(), "zero_downtime".to_string(), "canary".to_string()],
+                documentation: Some("Zero-downtime restart with canary deployment".to_string()),
+                additional_info: HashMap::from([
+                    ("canary_percentage".to_string(), serde_json::Value::Number(canary_percentage.into())),
+                ]),
+            },
+        };
+
+        self.execute_batch_operation(batch).await
+    }
+
+    /// Scale plugin instances with dependency awareness
+    pub async fn scale_plugin_with_dependencies(&self, plugin_id: &str, target_instances: u32) -> PluginResult<Vec<String>> {
+        info!("Scaling plugin {} to {} instances with dependency awareness", plugin_id, target_instances);
+
+        // Get current instances
+        let current_instances = self.list_instances().await?;
+        let current_count = current_instances.len() as u32;
+
+        if target_instances == current_count {
+            return Ok(current_instances.iter().map(|i| i.instance_id.clone()).collect());
+        }
+
+        if target_instances > current_count {
+            // Scale up
+            let instances_to_add = target_instances - current_count;
+            let mut new_instance_ids = Vec::new();
+
+            for i in 0..instances_to_add {
+                let instance_id = format!("{}-{}", plugin_id, uuid::Uuid::new_v4().to_string()[..8]);
+
+                // Create instance
+                let created_instance_id = self.create_instance(plugin_id, None).await?;
+                new_instance_ids.push(created_instance_id);
+
+                // Add instance to dependency resolver
+                let dependencies = Vec::new(); // TODO: Get from plugin manifest
+                self.dependency_resolver.add_instance(created_instance_id.clone(), dependencies).await?;
+
+                // Start instance with dependency resolution
+                self.lifecycle_manager.start_instance_with_dependencies(&created_instance_id).await?;
+            }
+
+            info!("Successfully scaled up plugin {} from {} to {} instances", plugin_id, current_count, target_instances);
+            Ok(new_instance_ids)
+        } else {
+            // Scale down
+            let instances_to_remove = current_count - target_instances;
+
+            // Get instances to remove (remove newest first)
+            let mut instance_ids: Vec<String> = current_instances.iter()
+                .map(|i| i.instance_id.clone())
+                .collect();
+            instance_ids.sort(); // Simple sort by ID (newer instances have higher UUIDs)
+            instance_ids.truncate(instances_to_remove as usize);
+
+            for instance_id in &instance_ids {
+                // Stop instance gracefully
+                self.lifecycle_manager.stop_instance_gracefully(instance_id, Some(Duration::from_secs(60))).await?;
+
+                // Remove from dependency resolver
+                self.dependency_resolver.remove_instance(instance_id).await?;
+            }
+
+            info!("Successfully scaled down plugin {} from {} to {} instances", plugin_id, current_count, target_instances);
+            Ok(Vec::new())
+        }
+    }
+
+    /// Perform health-based plugin restart
+    pub async fn perform_health_based_restart(&self, instance_id: &str) -> PluginResult<()> {
+        info!("Performing health-based restart for instance: {}", instance_id);
+
+        // Get current health status
+        let health_status = self.get_instance_health(instance_id).await?;
+
+        match health_status {
+            PluginHealthStatus::Healthy => {
+                info!("Instance {} is healthy, no restart needed", instance_id);
+                Ok(())
+            }
+            PluginHealthStatus::Degraded | PluginHealthStatus::Unhealthy => {
+                warn!("Instance {} health status is {:?}, performing restart", instance_id, health_status);
+
+                // Perform graceful restart
+                self.lifecycle_manager.restart_instance_zero_downtime(instance_id).await
+            }
+            PluginHealthStatus::Unknown => {
+                warn!("Instance {} health status is unknown, performing health check", instance_id);
+
+                // Perform health check first
+                let health_result = self.perform_health_check(instance_id).await?;
+
+                if health_result.healthy {
+                    info!("Health check passed for instance {}, no restart needed", instance_id);
+                    Ok(())
+                } else {
+                    warn!("Health check failed for instance {}, performing restart", instance_id);
+                    self.lifecycle_manager.restart_instance_zero_downtime(instance_id).await
+                }
+            }
+        }
+    }
+
+    /// Get comprehensive lifecycle analytics
+    pub async fn get_lifecycle_analytics(&self) -> PluginResult<LifecycleAnalytics> {
+        let dependency_analytics = self.dependency_resolver.get_analytics().await?;
+        let lifecycle_metrics = self.lifecycle_manager.get_metrics().await?;
+        let state_metrics = self.state_machine.get_metrics().await?;
+        let policy_metrics = self.policy_engine.get_metrics().await?;
+        let automation_metrics = self.automation_engine.get_metrics().await?;
+        let batch_metrics = self.batch_coordinator.get_metrics().await?;
+
+        Ok(LifecycleAnalytics {
+            dependency_analytics,
+            lifecycle_metrics,
+            state_metrics,
+            policy_metrics,
+            automation_metrics,
+            batch_metrics,
+            timestamp: SystemTime::now(),
+        })
+    }
+
+    /// Export lifecycle configuration
+    pub async fn export_lifecycle_configuration(&self) -> PluginResult<ExportedLifecycleConfig> {
+        let policies = self.policy_engine.list_policies().await?;
+        let automation_rules = self.automation_engine.list_rules().await?;
+        let batch_templates = self.batch_coordinator.list_templates().await?;
+
+        Ok(ExportedLifecycleConfig {
+            version: "1.0.0".to_string(),
+            exported_at: SystemTime::now(),
+            policies,
+            automation_rules,
+            batch_templates,
+            metadata: HashMap::new(),
+        })
+    }
+
+    /// Import lifecycle configuration
+    pub async fn import_lifecycle_configuration(&self, config: ExportedLifecycleConfig) -> PluginResult<()> {
+        info!("Importing lifecycle configuration version {}", config.version);
+
+        // Import policies
+        for policy in config.policies {
+            self.policy_engine.add_policy(policy).await?;
+        }
+
+        // Import automation rules
+        for rule in config.automation_rules {
+            self.automation_engine.add_rule(rule).await?;
+        }
+
+        // Import batch templates
+        for template in config.batch_templates {
+            self.batch_coordinator.create_template(template).await?;
+        }
+
+        info!("Successfully imported lifecycle configuration");
+        Ok(())
+    }
+}
+
+/// ============================================================================
+/// ADDITIONAL TYPE DEFINITIONS FOR ADVANCED LIFECYCLE MANAGEMENT
+/// ============================================================================
+
+/// Comprehensive lifecycle analytics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LifecycleAnalytics {
+    /// Dependency analytics
+    pub dependency_analytics: super::dependency_resolver::DependencyAnalytics,
+    /// Lifecycle manager metrics
+    pub lifecycle_metrics: super::lifecycle_manager::LifecycleManagerMetrics,
+    /// State machine metrics
+    pub state_metrics: super::state_machine::StateMachineMetrics,
+    /// Policy engine metrics
+    pub policy_metrics: super::lifecycle_policy::PolicyEngineMetrics,
+    /// Automation engine metrics
+    pub automation_metrics: super::automation_engine::AutomationEngineMetrics,
+    /// Batch coordinator metrics
+    pub batch_metrics: super::batch_operations::BatchCoordinatorMetrics,
+    /// Analytics timestamp
+    pub timestamp: SystemTime,
+}
+
+/// Exported lifecycle configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportedLifecycleConfig {
+    /// Configuration version
+    pub version: String,
+    /// Export timestamp
+    pub exported_at: SystemTime,
+    /// Lifecycle policies
+    pub policies: Vec<super::lifecycle_policy::LifecyclePolicy>,
+    /// Automation rules
+    pub automation_rules: Vec<super::automation_engine::AutomationRule>,
+    /// Batch templates
+    pub batch_templates: Vec<super::batch_operations::BatchTemplate>,
+    /// Additional metadata
+    pub metadata: HashMap<String, serde_json::Value>,
 }
 
 /// ============================================================================

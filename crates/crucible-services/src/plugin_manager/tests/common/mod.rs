@@ -271,3 +271,230 @@ pub fn generate_test_performance_metrics() -> PerformanceMetrics {
         timestamp: SystemTime::now(),
     }
 }
+
+// ============================================================================
+// LIFECYCLE MANAGEMENT TEST UTILITIES
+// ============================================================================
+
+use crate::plugin_manager::lifecycle_manager::*;
+use crate::plugin_manager::state_machine::*;
+use crate::plugin_manager::dependency_resolver::*;
+use crate::plugin_manager::lifecycle_policy::*;
+use crate::plugin_manager::automation_engine::*;
+use crate::plugin_manager::batch_operations::*;
+
+/// Create test lifecycle manager configuration
+pub fn test_lifecycle_config() -> LifecycleConfig {
+    LifecycleConfig {
+        auto_start: false,
+        shutdown_timeout: Duration::from_millis(500),
+        startup_order: vec![],
+        shutdown_order: vec![],
+        concurrent_startup_limit: Some(2),
+    }
+}
+
+/// Create test plugin instance
+pub fn create_test_plugin_instance(id: &str, plugin_id: &str) -> PluginInstance {
+    PluginInstance {
+        instance_id: id.to_string(),
+        plugin_id: plugin_id.to_string(),
+        version: "1.0.0".to_string(),
+        state: PluginInstanceState::Created,
+        health_status: PluginHealthStatus::Unknown,
+        config: std::collections::HashMap::new(),
+        process_info: None,
+        resource_usage: None,
+        metadata: std::collections::HashMap::new(),
+        created_at: SystemTime::now(),
+        updated_at: SystemTime::now(),
+        last_health_check: None,
+        dependencies: vec![],
+        dependents: vec![],
+    }
+}
+
+/// Create test state machine
+pub fn create_test_state_machine() -> PluginStateMachine {
+    PluginStateMachine::new()
+}
+
+/// Create test dependency resolver
+pub fn create_test_dependency_resolver() -> DependencyResolver {
+    DependencyResolver::new()
+}
+
+/// Create test lifecycle policy engine
+pub fn create_test_lifecycle_policy() -> LifecyclePolicy {
+    LifecyclePolicy::new()
+}
+
+/// Create test automation rule
+pub fn create_test_automation_rule(id: &str, name: &str) -> AutomationRule {
+    AutomationRule {
+        id: id.to_string(),
+        name: name.to_string(),
+        description: format!("Test automation rule: {}", name),
+        version: "1.0.0".to_string(),
+        enabled: true,
+        priority: AutomationPriority::Normal,
+        triggers: vec![],
+        conditions: vec![],
+        actions: vec![],
+        scope: AutomationScope {
+            plugins: vec![],
+            instances: vec![],
+            environments: vec![],
+            exclude_plugins: vec![],
+            exclude_instances: vec![],
+        },
+        schedule: None,
+        limits: None,
+        metadata: AutomationMetadata {
+            created_at: SystemTime::now(),
+            created_by: "test".to_string(),
+            updated_at: SystemTime::now(),
+            updated_by: "test".to_string(),
+            tags: vec!["test".to_string()],
+            documentation: None,
+            additional_info: std::collections::HashMap::new(),
+        },
+    }
+}
+
+/// Create test batch operation
+pub fn create_test_batch_operation(id: &str, name: &str) -> BatchOperation {
+    BatchOperation {
+        batch_id: id.to_string(),
+        name: name.to_string(),
+        description: format!("Test batch operation: {}", name),
+        operations: vec![],
+        strategy: BatchExecutionStrategy::Sequential {
+            stop_on_failure: true,
+            failure_handling: FailureHandling::Stop,
+        },
+        config: BatchConfig::default(),
+        scope: BatchScope::default(),
+        metadata: BatchMetadata::default(),
+    }
+}
+
+/// Create test lifecycle operation request
+pub fn create_test_lifecycle_operation_request(
+    operation: LifecycleOperation,
+    priority: OperationPriority,
+) -> LifecycleOperationRequest {
+    LifecycleOperationRequest {
+        operation_id: uuid::Uuid::new_v4().to_string(),
+        operation,
+        requested_at: SystemTime::now(),
+        priority,
+        timeout: Some(Duration::from_secs(30)),
+        requester: RequesterContext {
+            requester_id: "test".to_string(),
+            requester_type: RequesterType::System,
+            source: "test".to_string(),
+            auth_token: None,
+            metadata: std::collections::HashMap::new(),
+        },
+        parameters: std::collections::HashMap::new(),
+        depends_on: vec![],
+        rollback_config: None,
+    }
+}
+
+/// Wait for state transition
+pub async fn wait_for_state_transition(
+    state_machine: &PluginStateMachine,
+    instance_id: &str,
+    expected_state: PluginInstanceState,
+    timeout: Duration,
+) -> PluginResult<()> {
+    let start = std::time::Instant::now();
+
+    while start.elapsed() < timeout {
+        match state_machine.get_state(instance_id).await {
+            Ok(current_state) if current_state == expected_state => return Ok(()),
+            Ok(_) => tokio::time::sleep(Duration::from_millis(10)).await,
+            Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
+        }
+    }
+
+    Err(PluginError::timeout(format!(
+        "State transition to {:?} not reached within timeout for instance {}",
+        expected_state, instance_id
+    )))
+}
+
+/// Wait for health status change
+pub async fn wait_for_health_status(
+    state_machine: &PluginStateMachine,
+    instance_id: &str,
+    expected_health: PluginHealthStatus,
+    timeout: Duration,
+) -> PluginResult<()> {
+    let start = std::time::Instant::now();
+
+    while start.elapsed() < timeout {
+        match state_machine.get_health_status(instance_id).await {
+            Ok(current_health) if current_health == expected_health => return Ok(()),
+            Ok(_) => tokio::time::sleep(Duration::from_millis(10)).await,
+            Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
+        }
+    }
+
+    Err(PluginError::timeout(format!(
+        "Health status {:?} not reached within timeout for instance {}",
+        expected_health, instance_id
+    )))
+}
+
+/// Create test dependency graph
+pub fn create_test_dependency_graph() -> DependencyGraph {
+    let mut graph = DependencyGraph::new();
+
+    // Add some test nodes and edges
+    graph.add_node("plugin-a".to_string(), DependencyNode::Plugin {
+        plugin_id: "plugin-a".to_string(),
+        version: "1.0.0".to_string(),
+        required: true,
+        health_required: false,
+    });
+
+    graph.add_node("plugin-b".to_string(), DependencyNode::Plugin {
+        plugin_id: "plugin-b".to_string(),
+        version: "1.0.0".to_string(),
+        required: true,
+        health_required: false,
+    });
+
+    graph.add_dependency("plugin-a".to_string(), "plugin-b".to_string()).unwrap();
+
+    graph
+}
+
+/// Test performance benchmark helper
+pub async fn benchmark_operation<F, Fut>(
+    operation_name: &str,
+    operation: F,
+    iterations: usize,
+) -> (Duration, Vec<Duration>)
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    let mut durations = Vec::with_capacity(iterations);
+
+    for _ in 0..iterations {
+        let start = std::time::Instant::now();
+        operation().await;
+        durations.push(start.elapsed());
+    }
+
+    let total_time: Duration = durations.iter().sum();
+    let average_time = total_time / iterations as u32;
+
+    println!("Benchmark: {} - Average time: {:?}", operation_name, average_time);
+
+    (average_time, durations)
+}
