@@ -12,6 +12,7 @@ use tokio::sync::{RwLock, Mutex};
 use tracing::{info, warn, error};
 
 /// Tool registry for managing Rune tools
+#[derive(Debug, Clone)]
 pub struct RuneToolRegistry {
     /// Registered tools by name
     tools: Arc<RwLock<HashMap<String, Arc<RuneTool>>>>,
