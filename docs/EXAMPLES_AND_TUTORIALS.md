@@ -1,9 +1,9 @@
-# Crucible Examples and Tutorials
+# Examples and Tutorials for ScriptEngine Architecture
 
 > **Status**: Active Examples
-> **Version**: 1.0.0
-> **Date**: 2025-10-20
-> **Purpose**: Practical examples and tutorials for the new service architecture
+> **Version**: 2.0.0 (ScriptEngine Architecture)
+> **Date**: 2025-10-22
+> **Purpose**: Practical examples and tutorials for the new simplified ScriptEngine service architecture
 
 ## Table of Contents
 

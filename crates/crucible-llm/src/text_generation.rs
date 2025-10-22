@@ -627,7 +627,7 @@ impl OpenAITextProvider {
 impl TextGenerationProvider for OpenAITextProvider {
     type Config = TextProviderConfig;
 
-    async fn generate_completion(&self, request: CompletionRequest) -> EmbeddingResult<CompletionResponse> {
+    async fn generate_completion(&self, _request: CompletionRequest) -> EmbeddingResult<CompletionResponse> {
         // Implementation would go here
         todo!("OpenAI completion implementation")
     }
@@ -640,7 +640,7 @@ impl TextGenerationProvider for OpenAITextProvider {
         todo!("OpenAI streaming completion implementation")
     }
 
-    async fn generate_chat_completion(&self, request: ChatCompletionRequest) -> EmbeddingResult<ChatCompletionResponse> {
+    async fn generate_chat_completion(&self, _request: ChatCompletionRequest) -> EmbeddingResult<ChatCompletionResponse> {
         // Implementation would go here
         todo!("OpenAI chat completion implementation")
     }
@@ -735,7 +735,7 @@ impl OllamaTextProvider {
 impl TextGenerationProvider for OllamaTextProvider {
     type Config = TextProviderConfig;
 
-    async fn generate_completion(&self, request: CompletionRequest) -> EmbeddingResult<CompletionResponse> {
+    async fn generate_completion(&self, _request: CompletionRequest) -> EmbeddingResult<CompletionResponse> {
         // Implementation would go here
         todo!("Ollama completion implementation")
     }
@@ -748,7 +748,7 @@ impl TextGenerationProvider for OllamaTextProvider {
         todo!("Ollama streaming completion implementation")
     }
 
-    async fn generate_chat_completion(&self, request: ChatCompletionRequest) -> EmbeddingResult<ChatCompletionResponse> {
+    async fn generate_chat_completion(&self, _request: ChatCompletionRequest) -> EmbeddingResult<ChatCompletionResponse> {
         // Implementation would go here
         todo!("Ollama chat completion implementation")
     }
