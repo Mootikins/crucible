@@ -1,7 +1,7 @@
 //! Integration test for Rune tools in crucible-tools
 
 use crucible_tools::{RuneService, RuneServiceConfig};
-use crucible_services::traits::tool::ToolService;
+use crucible_services::traits::ToolService;
 use std::collections::HashMap;
 use tempfile::TempDir;
 use std::fs;

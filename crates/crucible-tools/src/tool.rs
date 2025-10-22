@@ -234,11 +234,20 @@ impl RuneTool {
         // Create context reference for this execution
         let mut metadata = std::collections::HashMap::new();
         metadata.insert("tool_name".to_string(), self.name.clone());
-        if let Some(user_id) = &execution_context.user_id {
-            metadata.insert("user_id".to_string(), user_id.clone());
-        }
-        if let Some(session_id) = &execution_context.session_id {
-            metadata.insert("session_id".to_string(), session_id.clone());
+        metadata.insert("execution_id".to_string(), execution_context.execution_id.clone());
+
+        // Extract user and session info from user_context if available
+        if let Some(user_context) = &execution_context.user_context {
+            if let Some(user_id) = user_context.get("user_id") {
+                if let Some(user_id_str) = user_id.as_str() {
+                    metadata.insert("user_id".to_string(), user_id_str.to_string());
+                }
+            }
+            if let Some(session_id) = user_context.get("session_id") {
+                if let Some(session_id_str) = session_id.as_str() {
+                    metadata.insert("session_id".to_string(), session_id_str.to_string());
+                }
+            }
         }
 
         let context_ref = crucible_services::types::tool::ContextRef::with_metadata(metadata);
