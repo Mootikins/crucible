@@ -362,6 +362,81 @@ pub struct ResourceMonitoringConfig {
     pub metrics: Vec<ResourceMetric>,
     /// Historical data retention
     pub retention_period: Duration,
+    /// Maximum history entries per plugin
+    pub max_history_entries: usize,
+    /// Resource thresholds configuration
+    pub thresholds: HashMap<ResourceMetric, ResourceThreshold>,
+    /// Enable adaptive monitoring
+    pub adaptive_monitoring: bool,
+    /// Batch collection size
+    pub batch_size: usize,
+    /// Collection timeout
+    pub collection_timeout: Duration,
+    /// Platform-specific monitoring settings
+    pub platform_settings: PlatformMonitoringSettings,
+}
+
+/// Resource threshold configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceThreshold {
+    /// Warning threshold (percentage or absolute value)
+    pub warning_threshold: f64,
+    /// Critical threshold (percentage or absolute value)
+    pub critical_threshold: f64,
+    /// Grace period before triggering alerts
+    pub grace_period: Duration,
+    /// Enable automatic throttling
+    pub auto_throttle: bool,
+    /// Enable notifications
+    pub enable_notifications: bool,
+}
+
+/// Platform-specific monitoring settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlatformMonitoringSettings {
+    /// Linux-specific settings
+    pub linux: LinuxMonitoringSettings,
+    /// macOS-specific settings
+    pub macos: MacOsMonitoringSettings,
+    /// Windows-specific settings
+    pub windows: WindowsMonitoringSettings,
+}
+
+/// Linux-specific monitoring settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinuxMonitoringSettings {
+    /// Use /proc filesystem
+    pub use_proc_fs: bool,
+    /// Use cgroups for resource control
+    pub use_cgroups: bool,
+    /// Cgroup path pattern
+    pub cgroup_path_pattern: Option<String>,
+    /// Enable detailed I/O statistics
+    pub enable_detailed_io: bool,
+    /// Use systemd for process management
+    pub use_systemd: bool,
+}
+
+/// macOS-specific monitoring settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MacOsMonitoringSettings {
+    /// Use libproc for process information
+    pub use_libproc: bool,
+    /// Use sysctl for system information
+    pub use_sysctl: bool,
+    /// Enable power management integration
+    pub enable_power_management: bool,
+}
+
+/// Windows-specific monitoring settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WindowsMonitoringSettings {
+    /// Use Windows Performance Counters
+    pub use_performance_counters: bool,
+    /// Use Windows Management Instrumentation
+    pub use_wmi: bool,
+    /// Enable Job Object integration
+    pub use_job_objects: bool,
 }
 
 /// Resource metric type
@@ -437,6 +512,324 @@ pub struct HealthMonitoringConfig {
     pub unhealthy_threshold: u32,
     /// Recovery strategies
     pub recovery: RecoveryConfig,
+    /// Health check scheduling settings
+    pub scheduling: HealthCheckSchedulingConfig,
+    /// Health status aggregation settings
+    pub aggregation: HealthStatusAggregationConfig,
+    /// Health check performance settings
+    pub performance: HealthCheckPerformanceConfig,
+    /// Health alerting configuration
+    pub alerting: HealthAlertingConfig,
+}
+
+/// Health check scheduling configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthCheckSchedulingConfig {
+    /// Enable adaptive scheduling
+    pub adaptive_scheduling: bool,
+    /// Maximum parallel health checks
+    pub max_parallel_checks: usize,
+    /// Check jitter percentage (to avoid thundering herd)
+    pub jitter_percentage: f64,
+    /// Priority-based scheduling
+    pub priority_scheduling: bool,
+    /// Schedule optimization settings
+    pub optimization: ScheduleOptimizationConfig,
+}
+
+/// Schedule optimization configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduleOptimizationConfig {
+    /// Enable schedule optimization
+    pub enabled: bool,
+    /// Optimization strategy
+    pub strategy: ScheduleOptimizationStrategy,
+    /// Minimum interval between checks
+    pub min_interval: Duration,
+    /// Maximum interval between checks
+    pub max_interval: Duration,
+    /// Load-based scaling factor
+    pub load_scaling_factor: f64,
+}
+
+/// Schedule optimization strategy
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ScheduleOptimizationStrategy {
+    /// Fixed interval scheduling
+    Fixed,
+    /// Load-based adaptive scheduling
+    LoadBased,
+    /// Health-based adaptive scheduling
+    HealthBased,
+    /// Resource-based adaptive scheduling
+    ResourceBased,
+    /// Machine learning-based optimization
+    MLOptimized,
+}
+
+/// Health status aggregation configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthStatusAggregationConfig {
+    /// Aggregation strategy
+    pub strategy: AggregationStrategy,
+    /// Status weighting configuration
+    pub status_weights: HashMap<PluginHealthStatus, f64>,
+    /// Time-based decay factor
+    pub time_decay_factor: f64,
+    /// Minimum samples for aggregation
+    pub min_samples: usize,
+    /// Maximum samples for aggregation
+    pub max_samples: usize,
+}
+
+/// Aggregation strategy for health status
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AggregationStrategy {
+    /// Use most recent status
+    Latest,
+    /// Weighted average of recent statuses
+    WeightedAverage,
+    /// Worst case status in window
+    WorstCase,
+    /// Best case status in window
+    BestCase,
+    /// Majority vote in window
+    MajorityVote,
+    /// Custom aggregation logic
+    Custom(String),
+}
+
+/// Health check performance configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthCheckPerformanceConfig {
+    /// Enable performance monitoring
+    pub enabled: bool,
+    /// Maximum allowed check duration
+    pub max_check_duration: Duration,
+    /// Performance statistics window size
+    pub statistics_window_size: usize,
+    /// Enable check caching
+    pub enable_caching: bool,
+    /// Cache TTL for health check results
+    pub cache_ttl: Duration,
+    /// Performance alert thresholds
+    pub performance_thresholds: PerformanceThresholds,
+}
+
+/// Performance thresholds for health checks
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerformanceThresholds {
+    /// Warning threshold for check duration
+    pub warning_duration_ms: u64,
+    /// Critical threshold for check duration
+    pub critical_duration_ms: u64,
+    /// Consecutive slow checks threshold
+    pub consecutive_slow_checks: u32,
+    /// Success rate warning threshold
+    pub success_rate_warning_threshold: f64,
+    /// Success rate critical threshold
+    pub success_rate_critical_threshold: f64,
+}
+
+/// Health alerting configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthAlertingConfig {
+    /// Enable health alerting
+    pub enabled: bool,
+    /// Alert channels
+    pub channels: Vec<AlertChannel>,
+    /// Alert rules
+    pub rules: Vec<AlertRule>,
+    /// Alert rate limiting
+    pub rate_limiting: AlertRateLimitingConfig,
+    /// Alert escalation settings
+    pub escalation: AlertEscalationConfig,
+}
+
+/// Alert channel configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertChannel {
+    /// Channel name
+    pub name: String,
+    /// Channel type
+    pub channel_type: AlertChannelType,
+    /// Channel configuration
+    pub config: HashMap<String, serde_json::Value>,
+    /// Enabled flag
+    pub enabled: bool,
+    /// Alert severity levels for this channel
+    pub severity_levels: Vec<AlertSeverity>,
+}
+
+/// Alert channel type
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AlertChannelType {
+    /// Log-based alerts
+    Log,
+    /// Email alerts
+    Email,
+    /// Webhook alerts
+    Webhook,
+    /// Slack integration
+    Slack,
+    /// PagerDuty integration
+    PagerDuty,
+    /// Custom alert channel
+    Custom(String),
+}
+
+/// Alert severity levels
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub enum AlertSeverity {
+    /// Informational
+    Info = 1,
+    /// Warning
+    Warning = 2,
+    /// Error
+    Error = 3,
+    /// Critical
+    Critical = 4,
+}
+
+/// Alert rule configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertRule {
+    /// Rule name
+    pub name: String,
+    /// Rule description
+    pub description: String,
+    /// Rule conditions
+    pub conditions: Vec<AlertCondition>,
+    /// Rule actions
+    pub actions: Vec<AlertAction>,
+    /// Rule priority
+    pub priority: u32,
+    /// Enabled flag
+    pub enabled: bool,
+    /// Cooldown period between alerts
+    pub cooldown_period: Duration,
+}
+
+/// Alert condition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertCondition {
+    /// Condition field
+    pub field: String,
+    /// Condition operator
+    pub operator: AlertOperator,
+    /// Condition value
+    pub value: serde_json::Value,
+    /// Condition weight
+    pub weight: f64,
+}
+
+/// Alert operator
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AlertOperator {
+    /// Equals
+    Equals,
+    /// Not equals
+    NotEquals,
+    /// Greater than
+    GreaterThan,
+    /// Less than
+    LessThan,
+    /// Greater than or equal
+    GreaterThanOrEqual,
+    /// Less than or equal
+    LessThanOrEqual,
+    /// Contains
+    Contains,
+    /// Matches regex
+    Matches,
+    /// In list
+    In,
+    /// Not in list
+    NotIn,
+}
+
+/// Alert action
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertAction {
+    /// Action type
+    pub action_type: AlertActionType,
+    /// Action parameters
+    pub parameters: HashMap<String, serde_json::Value>,
+    /// Action timeout
+    pub timeout: Option<Duration>,
+}
+
+/// Alert action type
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AlertActionType {
+    /// Send notification
+    Notify,
+    /// Execute script
+    ExecuteScript,
+    /// Send webhook
+    SendWebhook,
+    /// Create ticket
+    CreateTicket,
+    /// Scale resources
+    ScaleResources,
+    /// Restart plugin
+    RestartPlugin,
+    /// Custom action
+    Custom(String),
+}
+
+/// Alert rate limiting configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertRateLimitingConfig {
+    /// Enable rate limiting
+    pub enabled: bool,
+    /// Maximum alerts per minute
+    pub max_alerts_per_minute: u32,
+    /// Maximum alerts per hour
+    pub max_alerts_per_hour: u32,
+    /// Rate limiting strategy
+    pub strategy: RateLimitingStrategy,
+}
+
+/// Rate limiting strategy
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RateLimitingStrategy {
+    /// Fixed window rate limiting
+    FixedWindow,
+    /// Sliding window rate limiting
+    SlidingWindow,
+    /// Token bucket rate limiting
+    TokenBucket,
+    /// Exponential backoff
+    ExponentialBackoff,
+}
+
+/// Alert escalation configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertEscalationConfig {
+    /// Enable escalation
+    pub enabled: bool,
+    /// Escalation rules
+    pub rules: Vec<EscalationRule>,
+    /// Escalation delay
+    pub escalation_delay: Duration,
+    /// Maximum escalation level
+    pub max_escalation_level: u32,
+}
+
+/// Escalation rule
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EscalationRule {
+    /// Rule name
+    pub name: String,
+    /// Trigger condition
+    pub trigger_condition: String,
+    /// Escalation level
+    pub escalation_level: u32,
+    /// Actions to perform at this level
+    pub actions: Vec<AlertAction>,
+    /// Notification channels for this level
+    pub channels: Vec<String>,
 }
 
 /// Health check strategy
@@ -1340,6 +1733,22 @@ impl Default for AuditConfig {
 
 impl Default for ResourceManagementConfig {
     fn default() -> Self {
+        let mut thresholds = HashMap::new();
+        thresholds.insert(ResourceMetric::CpuUsage, ResourceThreshold {
+            warning_threshold: 70.0,
+            critical_threshold: 90.0,
+            grace_period: Duration::from_secs(30),
+            auto_throttle: true,
+            enable_notifications: true,
+        });
+        thresholds.insert(ResourceMetric::MemoryUsage, ResourceThreshold {
+            warning_threshold: 80.0,
+            critical_threshold: 95.0,
+            grace_period: Duration::from_secs(60),
+            auto_throttle: true,
+            enable_notifications: true,
+        });
+
         Self {
             global_limits: ResourceLimits {
                 max_memory_bytes: Some(8 * 1024 * 1024 * 1024), // 8GB
@@ -1365,6 +1774,12 @@ impl Default for ResourceManagementConfig {
                     ResourceMetric::ProcessCount,
                 ],
                 retention_period: Duration::from_secs(60 * 60 * 24), // 24 hours
+                max_history_entries: 1000,
+                thresholds,
+                adaptive_monitoring: true,
+                batch_size: 10,
+                collection_timeout: Duration::from_secs(10),
+                platform_settings: PlatformMonitoringSettings::default(),
             },
             enforcement: ResourceEnforcementConfig {
                 enabled: true,
@@ -1420,6 +1835,161 @@ impl Default for HealthMonitoringConfig {
                     ],
                 },
             },
+            scheduling: HealthCheckSchedulingConfig::default(),
+            aggregation: HealthStatusAggregationConfig::default(),
+            performance: HealthCheckPerformanceConfig::default(),
+            alerting: HealthAlertingConfig::default(),
+        }
+    }
+}
+
+impl Default for PlatformMonitoringSettings {
+    fn default() -> Self {
+        Self {
+            linux: LinuxMonitoringSettings::default(),
+            macos: MacOsMonitoringSettings::default(),
+            windows: WindowsMonitoringSettings::default(),
+        }
+    }
+}
+
+impl Default for LinuxMonitoringSettings {
+    fn default() -> Self {
+        Self {
+            use_proc_fs: true,
+            use_cgroups: false,
+            cgroup_path_pattern: None,
+            enable_detailed_io: true,
+            use_systemd: false,
+        }
+    }
+}
+
+impl Default for MacOsMonitoringSettings {
+    fn default() -> Self {
+        Self {
+            use_libproc: true,
+            use_sysctl: true,
+            enable_power_management: false,
+        }
+    }
+}
+
+impl Default for WindowsMonitoringSettings {
+    fn default() -> Self {
+        Self {
+            use_performance_counters: true,
+            use_wmi: true,
+            use_job_objects: false,
+        }
+    }
+}
+
+impl Default for HealthCheckSchedulingConfig {
+    fn default() -> Self {
+        Self {
+            adaptive_scheduling: true,
+            max_parallel_checks: 10,
+            jitter_percentage: 10.0,
+            priority_scheduling: false,
+            optimization: ScheduleOptimizationConfig::default(),
+        }
+    }
+}
+
+impl Default for ScheduleOptimizationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            strategy: ScheduleOptimizationStrategy::HealthBased,
+            min_interval: Duration::from_secs(5),
+            max_interval: Duration::from_secs(300), // 5 minutes
+            load_scaling_factor: 1.5,
+        }
+    }
+}
+
+impl Default for HealthStatusAggregationConfig {
+    fn default() -> Self {
+        let mut status_weights = HashMap::new();
+        status_weights.insert(PluginHealthStatus::Healthy, 1.0);
+        status_weights.insert(PluginHealthStatus::Degraded, 0.5);
+        status_weights.insert(PluginHealthStatus::Unhealthy, 0.0);
+        status_weights.insert(PluginHealthStatus::Unknown, 0.25);
+
+        Self {
+            strategy: AggregationStrategy::WeightedAverage,
+            status_weights,
+            time_decay_factor: 0.9,
+            min_samples: 3,
+            max_samples: 10,
+        }
+    }
+}
+
+impl Default for HealthCheckPerformanceConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_check_duration: Duration::from_secs(30),
+            statistics_window_size: 100,
+            enable_caching: true,
+            cache_ttl: Duration::from_secs(30),
+            performance_thresholds: PerformanceThresholds::default(),
+        }
+    }
+}
+
+impl Default for PerformanceThresholds {
+    fn default() -> Self {
+        Self {
+            warning_duration_ms: 5000,
+            critical_duration_ms: 15000,
+            consecutive_slow_checks: 3,
+            success_rate_warning_threshold: 0.95,
+            success_rate_critical_threshold: 0.8,
+        }
+    }
+}
+
+impl Default for HealthAlertingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            channels: vec![
+                AlertChannel {
+                    name: "log".to_string(),
+                    channel_type: AlertChannelType::Log,
+                    config: HashMap::new(),
+                    enabled: true,
+                    severity_levels: vec![AlertSeverity::Warning, AlertSeverity::Error, AlertSeverity::Critical],
+                },
+            ],
+            rules: vec![],
+            rate_limiting: AlertRateLimitingConfig::default(),
+            escalation: AlertEscalationConfig::default(),
+        }
+    }
+}
+
+impl Default for AlertRateLimitingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_alerts_per_minute: 10,
+            max_alerts_per_hour: 100,
+            strategy: RateLimitingStrategy::SlidingWindow,
+        }
+    }
+}
+
+impl Default for AlertEscalationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            rules: vec![],
+            escalation_delay: Duration::from_secs(300), // 5 minutes
+            max_escalation_level: 3,
         }
     }
 }

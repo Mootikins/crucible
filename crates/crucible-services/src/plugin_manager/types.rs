@@ -5,7 +5,7 @@
 //! capability definitions.
 
 use super::error::{PluginError, PluginResult};
-use super::config::{PluginManagerConfig, SandboxConfig};
+use super::config::{PluginManagerConfig, SandboxConfig, SecurityAction, SecurityActionType, SecurityRule, SecurityRuleType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -839,39 +839,6 @@ pub struct SecurityPolicy {
     pub rules: Vec<SecurityRule>,
 }
 
-/// Security rule definition
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SecurityRule {
-    /// Rule name
-    pub name: String,
-    /// Rule type
-    pub rule_type: SecurityRuleType,
-    /// Rule conditions
-    pub conditions: Vec<SecurityCondition>,
-    /// Rule actions
-    pub actions: Vec<SecurityAction],
-    /// Rule priority
-    pub priority: u32,
-    /// Enabled flag
-    pub enabled: bool,
-}
-
-/// Security rule type
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum SecurityRuleType {
-    /// Allow rule
-    Allow,
-    /// Deny rule
-    Deny,
-    /// Log rule
-    Log,
-    /// Alert rule
-    Alert,
-    /// Block rule
-    Block,
-    /// Custom rule
-    Custom(String),
-}
 
 /// Security condition
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -907,30 +874,3 @@ pub enum SecurityOperator {
     StartsWith,
 }
 
-/// Security action
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SecurityAction {
-    /// Action type
-    pub action_type: SecurityActionType,
-    /// Action parameters
-    pub parameters: HashMap<String, serde_json::Value>,
-}
-
-/// Security action type
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum SecurityActionType {
-    /// Block operation
-    Block,
-    /// Allow operation
-    Allow,
-    /// Log event
-    Log,
-    /// Send alert
-    Alert,
-    /// Terminate process
-    Terminate,
-    /// Quarantine plugin
-    Quarantine,
-    /// Custom action
-    Custom(String),
-}

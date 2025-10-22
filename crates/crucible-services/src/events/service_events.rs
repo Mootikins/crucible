@@ -899,7 +899,7 @@ mod tests {
 
         assert_eq!(health_event.source.id, "test-service");
         match health_event.event_type {
-            super::core::EventType::Service(super::core::ServiceEventType::HealthCheck { service_id, status }) => {
+            crate::events::EventType::Service(crate::events::core::ServiceEventType::HealthCheck { service_id, status }) => {
                 assert_eq!(service_id, "test-service");
                 assert_eq!(status, "healthy");
             }

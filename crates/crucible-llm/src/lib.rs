@@ -37,9 +37,17 @@
 #![warn(clippy::all)]
 
 pub mod embeddings;
+pub mod text_generation;
 
 // Re-export commonly used types at crate root
 pub use embeddings::{
     EmbeddingConfig, EmbeddingError, EmbeddingProvider, EmbeddingResponse, EmbeddingResult,
     OllamaProvider, OpenAIProvider,
+};
+
+pub use text_generation::{
+    TextGenerationProvider, create_text_provider, TextProviderConfig,
+    CompletionRequest, CompletionResponse, ChatCompletionRequest, ChatCompletionResponse,
+    ChatMessage, CompletionChunk, ChatCompletionChunk, TokenUsage,
+    OpenAITextProvider, OllamaTextProvider, OpenAIConfig, OllamaConfig,
 };

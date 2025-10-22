@@ -8,7 +8,7 @@
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // Event system for daemon coordination
-// pub mod events;
+pub mod events;
 
 /// Comprehensive service trait definitions
 pub mod service_traits;
@@ -65,11 +65,6 @@ pub mod errors {
     /// Service result type
     pub type ServiceResult<T> = Result<T, ServiceError>;
 }
-
-// Commented out to focus on event system compilation
-// pub mod service_traits;
-// pub mod service_types;
-// pub mod examples;
 
 /// Essential service traits (maintaining compatibility)
 pub mod traits {
@@ -324,15 +319,47 @@ pub mod types {
     }
 }
 
+/// MCP Gateway service implementation
+// pub mod mcp_gateway;
+
+/// Data Store service implementation
+// pub mod data_store;
+
+/// Script Engine service implementation
+pub mod script_engine;
+
+/// Plugin Manager service implementation
+pub mod plugin_manager;
+
+/// Inference Engine service implementation
+pub mod inference_engine;
+
+/// Plugin Event Subscription System
+pub mod plugin_events;
+
+// Services unit tests
+#[cfg(test)]
+pub mod services;
+
+// Memory testing framework
+#[cfg(feature = "memory-testing")]
+pub mod memory_testing;
+
+#[cfg(feature = "memory-testing")]
+pub use memory_testing::*;
+
 // Re-export main components for easier access
 pub use errors::*;
 pub use traits::*;
 pub use types::*;
 pub use service_traits::*;
 pub use service_types::*;
-
-// Events module disabled for now
-// pub use events::*;
+pub use events::*;
+// pub use mcp_gateway::*;
+// pub use data_store::*;
+// pub use script_engine::*;
+pub use inference_engine::*;
+pub use plugin_events::*;
 
 #[cfg(test)]
 mod tests {
