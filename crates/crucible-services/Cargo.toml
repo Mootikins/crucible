@@ -22,20 +22,8 @@ chrono = { workspace = true, features = ["serde"] }
 # UUID generation
 uuid = { workspace = true, features = ["v4", "serde"] }
 
-# Concurrent data structures
-dashmap = { workspace = true }
-
 # Async utilities
 futures = { workspace = true }
-
-# Random numbers for load balancing
-rand = { workspace = true }
-
-# Base64 encoding for binary payloads
-base64 = { workspace = true }
-
-# MD5 hashing for payload integrity
-md5 = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
@@ -45,37 +33,10 @@ anyhow = { workspace = true }
 
 # Rune scripting language
 rune = { workspace = true }
-
-# Internal dependencies (commented out to avoid cyclic dependencies)
-# crucible-tools = { path = "../crucible-tools" }
+rune-modules = { workspace = true }
 
 # LLM integration
 crucible-llm = { path = "../crucible-llm" }
 
-# Regular expressions
-regex = { workspace = true }
-
-# Configuration file parsing
-toml = { workspace = true }
-
-# Web framework for API
-warp = { version = "0.3", features = ["tls"] }
-
-# CPU count information
-num_cpus = "1.16"
-
-# Additional async utilities
-futures-util = "0.3"
-
-# HTTP types
-http = "0.2"
-
 [features]
 default = []
-memory-testing = ["tikv-jemallocator"]
-jemalloc = ["tikv-jemallocator"]
-
-# Optional dependencies for memory testing
-[dependencies.tikv-jemallocator]
-version = "0.5"
-optional = true
