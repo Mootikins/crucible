@@ -24,10 +24,7 @@ pub use controller::{
     MasterController, ControllerState, ControllerStatus, ControllerMetrics,
     HealthStatus, ControllerEvent, ControllerBuilder,
 };
-pub use crucible_core::{
-    CrucibleCore, CoreConfig, CoreState, CoreEvent, AlertLevel, CoreHealthData,
-    CoreMetrics, CoreMetricsSnapshot, CrucibleCoreBuilder,
-};
+pub use crucible_core::CrucibleCore;
 pub use database::{
     RelationalDB, GraphDB, DocumentDB,
     // Core types
