@@ -128,7 +128,15 @@ impl LoaderEventHandler for DefaultEventHandler {
 }
 
 impl ToolLoader {
-    /// Create a new tool loader
+    /// Create a new tool loader with just a config (creates its own registry and context manager)
+    pub fn from_service_config(config: &crate::types::RuneServiceConfig) -> Result<Self, RuneError> {
+        let registry = Arc::new(RuneToolRegistry::new()?);
+        let context_manager = Arc::new(Mutex::new(crate::context::ContextManager::new(crate::context::ContextConfig::default())));
+        let loader_config = LoaderConfig::default();
+        Self::new(loader_config, registry, context_manager)
+    }
+
+    /// Create a new tool loader with explicit dependencies
     pub fn new(
         config: LoaderConfig,
         registry: Arc<RuneToolRegistry>,

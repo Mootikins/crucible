@@ -3,10 +3,347 @@
 //! This module contains common types used across the Rune system.
 
 use chrono::{DateTime, Utc};
-use crucible_services::types::tool::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::time::Duration;
+use uuid::Uuid;
+
+// Re-export tool types that were previously imported from crucible-services
+/// Definition of a tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolDefinition {
+    /// Tool name
+    pub name: String,
+    /// Tool description
+    pub description: String,
+    /// JSON schema for tool input
+    pub input_schema: Value,
+    /// Tool category (optional)
+    pub category: Option<String>,
+    /// Tool version (optional)
+    pub version: Option<String>,
+    /// Tool author (optional)
+    pub author: Option<String>,
+    /// Tool tags
+    pub tags: Vec<String>,
+    /// Whether the tool is enabled
+    pub enabled: bool,
+    /// Tool parameters
+    pub parameters: Vec<ToolParameter>,
+}
+
+/// Tool parameter definition
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolParameter {
+    /// Parameter name
+    pub name: String,
+    /// Parameter type
+    pub param_type: String,
+    /// Parameter description
+    pub description: String,
+    /// Whether parameter is required
+    pub required: bool,
+    /// Default value (optional)
+    pub default_value: Option<Value>,
+}
+
+/// Context for tool execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolExecutionContext {
+    /// Execution ID
+    pub execution_id: String,
+    /// Context reference for tracking
+    pub context_ref: Option<ContextRef>,
+    /// Execution timeout
+    pub timeout: Option<Duration>,
+    /// Environment variables
+    pub environment: HashMap<String, String>,
+    /// User context
+    pub user_context: Option<Value>,
+    /// Service context
+    pub service_context: Option<Value>,
+    /// Timestamp when execution started
+    pub started_at: DateTime<Utc>,
+}
+
+impl Default for ToolExecutionContext {
+    fn default() -> Self {
+        Self {
+            execution_id: Uuid::new_v4().to_string(),
+            context_ref: Some(ContextRef::new()),
+            timeout: Some(Duration::from_secs(30)),
+            environment: HashMap::new(),
+            user_context: None,
+            service_context: None,
+            started_at: Utc::now(),
+        }
+    }
+}
+
+/// Context reference for tracking tool execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextRef {
+    /// Unique context ID
+    pub id: String,
+    /// Context metadata
+    pub metadata: HashMap<String, Value>,
+    /// Parent context ID (for nested calls)
+    pub parent_id: Option<String>,
+    /// Context creation timestamp
+    pub created_at: DateTime<Utc>,
+}
+
+impl ContextRef {
+    /// Create a new context reference
+    pub fn new() -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            metadata: HashMap::new(),
+            parent_id: None,
+            created_at: Utc::now(),
+        }
+    }
+
+    /// Create a new context reference with metadata
+    pub fn with_metadata(metadata: HashMap<String, Value>) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            metadata,
+            parent_id: None,
+            created_at: Utc::now(),
+        }
+    }
+
+    /// Create a child context
+    pub fn child(&self) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            metadata: HashMap::new(),
+            parent_id: Some(self.id.clone()),
+            created_at: Utc::now(),
+        }
+    }
+
+    /// Add metadata to context
+    pub fn add_metadata(&mut self, key: String, value: Value) {
+        self.metadata.insert(key, value);
+    }
+
+    /// Get metadata value
+    pub fn get_metadata(&self, key: &str) -> Option<&Value> {
+        self.metadata.get(key)
+    }
+}
+
+/// Request for tool execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolExecutionRequest {
+    /// Tool name to execute
+    pub tool_name: String,
+    /// Tool input parameters
+    pub parameters: Value,
+    /// Execution context
+    pub context: ToolExecutionContext,
+    /// Request ID
+    pub request_id: String,
+}
+
+impl ToolExecutionRequest {
+    /// Create a new execution request
+    pub fn new(tool_name: String, parameters: Value, context: ToolExecutionContext) -> Self {
+        Self {
+            tool_name,
+            parameters,
+            context,
+            request_id: Uuid::new_v4().to_string(),
+        }
+    }
+
+    /// Create a request with minimal context
+    pub fn simple(tool_name: String, parameters: Value) -> Self {
+        Self::new(tool_name, parameters, ToolExecutionContext::default())
+    }
+}
+
+/// Result of tool execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolExecutionResult {
+    /// Whether execution was successful
+    pub success: bool,
+    /// Execution result data
+    pub result: Option<Value>,
+    /// Error message if execution failed
+    pub error: Option<String>,
+    /// Execution duration (alias for duration)
+    pub execution_time: Duration,
+    /// Execution duration
+    pub duration: Duration,
+    /// Timestamp when execution completed
+    pub completed_at: DateTime<Utc>,
+    /// Tool name that was executed
+    pub tool_name: String,
+    /// Execution context (alias for context_ref)
+    pub context: Option<ContextRef>,
+    /// Execution context
+    pub context_ref: Option<ContextRef>,
+    /// Additional metadata
+    pub metadata: HashMap<String, Value>,
+}
+
+impl ToolExecutionResult {
+    /// Create a successful result
+    pub fn success(result: Value) -> Self {
+        let duration = Duration::from_millis(0);
+        Self {
+            success: true,
+            result: Some(result),
+            error: None,
+            execution_time: duration.clone(),
+            duration: duration.clone(),
+            completed_at: Utc::now(),
+            tool_name: "unknown".to_string(),
+            context: None,
+            context_ref: None,
+            metadata: HashMap::new(),
+        }
+    }
+
+    /// Create an error result
+    pub fn error(error: String) -> Self {
+        let duration = Duration::from_millis(0);
+        Self {
+            success: false,
+            result: None,
+            error: Some(error),
+            execution_time: duration.clone(),
+            duration: duration.clone(),
+            completed_at: Utc::now(),
+            tool_name: "unknown".to_string(),
+            context: None,
+            context_ref: None,
+            metadata: HashMap::new(),
+        }
+    }
+}
+
+/// Service error type
+#[derive(Debug, thiserror::Error)]
+pub enum ServiceError {
+    #[error("Tool not found: {0}")]
+    ToolNotFound(String),
+    #[error("Execution error: {0}")]
+    ExecutionError(String),
+    #[error("Configuration error: {0}")]
+    ConfigurationError(String),
+    #[error("Validation error: {0}")]
+    ValidationError(String),
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("Serialization error: {0}")]
+    SerializationError(#[from] serde_json::Error),
+    #[error("Other error: {0}")]
+    Other(String),
+}
+
+/// Service result type
+pub type ServiceResult<T> = Result<T, ServiceError>;
+
+/// Service health information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceHealth {
+    pub status: ServiceStatus,
+    pub message: Option<String>,
+    pub last_check: DateTime<Utc>,
+    pub details: HashMap<String, String>,
+}
+
+/// Service status
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ServiceStatus {
+    Healthy,
+    Degraded,
+    Unhealthy,
+}
+
+/// Service metrics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceMetrics {
+    pub total_requests: u64,
+    pub successful_requests: u64,
+    pub failed_requests: u64,
+    pub average_response_time: Duration,
+    pub uptime: Duration,
+    pub memory_usage: u64,
+    pub cpu_usage: f64,
+}
+
+/// Tool service trait for local implementation
+#[async_trait::async_trait]
+pub trait ToolService: Send + Sync {
+    /// List all available tools
+    async fn list_tools(&self) -> ServiceResult<Vec<ToolDefinition>>;
+
+    /// Get tool definition by name
+    async fn get_tool(&self, name: &str) -> ServiceResult<Option<ToolDefinition>>;
+
+    /// Execute a tool
+    async fn execute_tool(&self, request: ToolExecutionRequest) -> ServiceResult<ToolExecutionResult>;
+
+    /// Validate a tool without executing it
+    async fn validate_tool(&self, name: &str) -> ServiceResult<ValidationResult>;
+
+    /// Get service health and status
+    async fn service_health(&self) -> ServiceResult<ServiceHealth>;
+
+    /// Get performance metrics
+    async fn get_metrics(&self) -> ServiceResult<ServiceMetrics>;
+}
+
+/// Tool validation result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidationResult {
+    /// Whether validation passed
+    pub valid: bool,
+    /// Validation errors
+    pub errors: Vec<String>,
+    /// Validation warnings
+    pub warnings: Vec<String>,
+    /// Tool name
+    pub tool_name: String,
+    /// Additional validation metadata
+    pub metadata: Option<HashMap<String, Value>>,
+}
+
+impl ValidationResult {
+    /// Create a successful validation result
+    pub fn valid(tool_name: String) -> Self {
+        Self {
+            valid: true,
+            errors: Vec::new(),
+            warnings: Vec::new(),
+            tool_name,
+            metadata: Some(HashMap::new()),
+        }
+    }
+
+    /// Create a failed validation result
+    pub fn invalid(tool_name: String, errors: Vec<String>) -> Self {
+        Self {
+            valid: false,
+            errors,
+            warnings: Vec::new(),
+            tool_name,
+            metadata: Some(HashMap::new()),
+        }
+    }
+
+    /// Add a warning to the validation result
+    pub fn with_warning(mut self, warning: String) -> Self {
+        self.warnings.push(warning);
+        self
+    }
+}
 
 /// Tool dependency definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -372,18 +709,7 @@ pub enum LoadingStatus {
     Skipped,
 }
 
-/// Validation result
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ValidationResult {
-    /// Whether validation passed
-    pub valid: bool,
-    /// Validation errors
-    pub errors: Vec<String>,
-    /// Validation warnings
-    pub warnings: Vec<String>,
-    /// Validation metadata
-    pub metadata: HashMap<String, serde_json::Value>,
-}
+/// Validation result is defined above in this file to avoid duplication
 
 /// Hot reload event
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -626,31 +952,7 @@ pub struct ErrorStats {
     pub last_error: Option<DateTime<Utc>>,
 }
 
-/// Service health information
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServiceHealth {
-    /// Overall health status
-    pub status: ServiceHealthStatus,
-    /// Last health check
-    pub last_check: DateTime<Utc>,
-    /// Health checks performed
-    pub checks: HashMap<String, HealthCheckResult>,
-    /// Overall health score (0-100)
-    pub health_score: u8,
-}
-
-/// Service health status
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ServiceHealthStatus {
-    /// Service is healthy
-    Healthy,
-    /// Service is degraded but functional
-    Degraded,
-    /// Service is unhealthy
-    Unhealthy,
-    /// Service health is unknown
-    Unknown,
-}
+/// Service health information is defined above in this file to avoid duplication
 
 /// Health check result
 #[derive(Debug, Clone, Serialize, Deserialize)]

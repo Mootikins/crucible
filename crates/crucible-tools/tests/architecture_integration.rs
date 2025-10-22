@@ -5,19 +5,18 @@
 //! 2. Proper error handling with anyhow
 //! 3. Simplified memory management with convenience functions
 
-use crucible_services::types::tool::ContextRef;
+use crucible_tools::ContextRef;
 use chrono::Utc;
 
 #[test]
 fn test_context_ref_architecture() {
     // Test that ContextRef breaks circular dependencies correctly
 
-    // Create a ContextRef
-    let context_ref = ContextRef {
-        id: "test-context-123".to_string(),
-        created_at: Utc::now(),
-        metadata: std::collections::HashMap::new(),
-    };
+    // Create a ContextRef using the constructor
+    let context_ref = ContextRef::new();
+    // Override the ID for testing purposes
+    let mut context_ref = context_ref;
+    context_ref.id = "test-context-123".to_string();
 
     // Verify ContextRef can be created and used independently
     assert!(!context_ref.id.is_empty(), "ContextRef should have valid ID");

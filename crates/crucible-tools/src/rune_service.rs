@@ -8,8 +8,7 @@ use crate::loader;
 use crate::rune_registry;
 use crate::context_factory::ContextFactory;
 use crate::types::{RuneServiceConfig, SystemInfo};
-use crucible_services::types::tool::{ToolDefinition, ToolExecutionRequest, ToolExecutionResult, ContextRef};
-use crucible_services::ToolService;
+use crate::types::{ToolDefinition, ToolExecutionRequest, ToolExecutionResult, ContextRef, ToolService, ServiceResult, ServiceError, ServiceHealth, ServiceMetrics, ValidationResult, ServiceStatus};
 use anyhow::Result;
 use std::path::Path;
 use std::sync::Arc;
@@ -38,7 +37,7 @@ impl RuneService {
 
         // Initialize core components
         let registry = Arc::new(RwLock::new(rune_registry::RuneToolRegistry::new()?));
-        let loader = Arc::new(loader::ToolLoader::new(&config)?);
+        let loader = Arc::new(loader::ToolLoader::from_service_config(&config)?);
         let discovery = Arc::new(discovery::ToolDiscovery::new(&config.discovery)?);
         let context_factory = Arc::new(ContextFactory::new()?);
 
@@ -76,7 +75,7 @@ impl RuneService {
             info!("Discovered {} tools in {:?}", discovery.tools.len(), discovery.directory);
 
             for tool in discovery.tools {
-                match self.registry.write().await.register_tool(tool) {
+                match self.registry.write().await.register_tool(tool).await {
                     Ok(_) => total_tools += 1,
                     Err(e) => warn!("Failed to register tool: {}", e),
                 }
@@ -136,22 +135,22 @@ impl RuneService {
 #[async_trait::async_trait]
 impl ToolService for RuneService {
     /// Execute a tool by name
-    async fn execute_tool(&self, request: ToolExecutionRequest) -> crucible_services::ServiceResult<ToolExecutionResult> {
+    async fn execute_tool(&self, request: ToolExecutionRequest) -> ServiceResult<ToolExecutionResult> {
         debug!("Executing tool: {}", request.tool_name);
 
         let registry = self.registry.read().await;
         let tool = registry.get_tool(&request.tool_name).await
-            .ok_or_else(|| crucible_services::ServiceError::ToolNotFound(request.tool_name.clone()))?;
+            .ok_or_else(|| ServiceError::ToolNotFound(request.tool_name.clone()))?;
 
         // Create a fresh context for each execution
         let fresh_context = self.context_factory.create_fresh_context(&request.tool_name)
             .await
-            .map_err(|e| crucible_services::ServiceError::ExecutionError(format!("Failed to create context: {}", e)))?;
+            .map_err(|e| ServiceError::ExecutionError(format!("Failed to create context: {}", e)))?;
 
         // Execute the tool using the fresh context
         let result = tool.call(request.parameters, &fresh_context)
             .await
-            .map_err(|e| crucible_services::ServiceError::ExecutionError(e.to_string()))?;
+            .map_err(|e| ServiceError::ExecutionError(e.to_string()))?;
 
         debug!("Tool execution completed successfully with fresh context");
         Ok(ToolExecutionResult {
@@ -165,19 +164,19 @@ impl ToolService for RuneService {
     }
 
     /// List all available tools
-    async fn list_tools(&self) -> crucible_services::ServiceResult<Vec<ToolDefinition>> {
+    async fn list_tools(&self) -> ServiceResult<Vec<ToolDefinition>> {
         let tools = self.registry.read().await.list_tools().await
-            .map_err(|e| crucible_services::ServiceError::ExecutionError(e.to_string()))?;
+            .map_err(|e| ServiceError::ExecutionError(e.to_string()))?;
 
         let tool_definitions = tools.into_iter().map(|tool| tool.to_tool_definition()).collect();
         Ok(tool_definitions)
     }
 
     /// Get tool definition by name
-    async fn get_tool(&self, name: &str) -> crucible_services::ServiceResult<Option<ToolDefinition>> {
+    async fn get_tool(&self, name: &str) -> ServiceResult<Option<ToolDefinition>> {
         let registry = self.registry.read().await;
         let tool = registry.get_tool(name).await
-            .map_err(|e| crucible_services::ServiceError::ExecutionError(e.to_string()))?;
+            .map_err(|e| ServiceError::ExecutionError(e.to_string()))?;
 
         Ok(tool.map(|tool| ToolDefinition {
             name: tool.name.clone(),
@@ -193,20 +192,20 @@ impl ToolService for RuneService {
     }
 
     /// Validate a tool without executing it
-    async fn validate_tool(&self, name: &str) -> crucible_services::ServiceResult<crucible_services::types::tool::ValidationResult> {
+    async fn validate_tool(&self, name: &str) -> ServiceResult<ValidationResult> {
         let registry = self.registry.read().await;
         let tool = registry.get_tool(name).await
-            .map_err(|e| crucible_services::ServiceError::ExecutionError(e.to_string()))?;
+            .map_err(|e| ServiceError::ExecutionError(e.to_string()))?;
 
         match tool {
-            Some(tool) => Ok(crucible_services::types::tool::ValidationResult {
+            Some(tool) => Ok(ValidationResult {
                 valid: true,
                 errors: vec![],
                 warnings: vec![],
                 tool_name: name.to_string(),
                 metadata: None,
             }),
-            None => Ok(crucible_services::types::tool::ValidationResult {
+            None => Ok(ValidationResult {
                 valid: false,
                 errors: vec![format!("Tool '{}' not found", name)],
                 warnings: vec![],
@@ -217,12 +216,12 @@ impl ToolService for RuneService {
     }
 
     /// Get service health and status
-    async fn service_health(&self) -> crucible_services::ServiceResult<crucible_services::types::ServiceHealth> {
+    async fn service_health(&self) -> ServiceResult<ServiceHealth> {
         let tools = self.registry.read().await.list_tools().await.unwrap_or_default();
         let tool_count = tools.len();
 
-        Ok(crucible_services::types::ServiceHealth {
-            status: crucible_services::types::ServiceStatus::Healthy,
+        Ok(ServiceHealth {
+            status: ServiceStatus::Healthy,
             message: Some(format!("Rune service running with {} tools", tool_count)),
             details: std::collections::HashMap::new(),
             last_check: chrono::Utc::now(),
@@ -230,9 +229,9 @@ impl ToolService for RuneService {
     }
 
     /// Get performance metrics
-    async fn get_metrics(&self) -> crucible_services::ServiceResult<crucible_services::types::ServiceMetrics> {
+    async fn get_metrics(&self) -> ServiceResult<ServiceMetrics> {
         // Simple metrics implementation
-        Ok(crucible_services::types::ServiceMetrics {
+        Ok(ServiceMetrics {
             total_requests: 0,
             successful_requests: 0,
             failed_requests: 0,
