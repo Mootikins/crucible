@@ -8,6 +8,8 @@ pub mod rune;
 pub mod config;
 pub mod chat;
 pub mod repl;
+pub mod service;
+pub mod migration;
 // pub mod enhanced_chat; // Temporarily disabled due to compilation issues
 // pub mod enhanced_chat_session; // Temporarily disabled due to compilation issues
 // pub mod performance_tracker; // Temporarily disabled due to compilation issues

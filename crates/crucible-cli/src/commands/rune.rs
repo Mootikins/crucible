@@ -1,36 +1,148 @@
 use anyhow::{Context, Result};
 use crate::config::CliConfig;
-use crucible_tools::{RuneService, RuneServiceConfig};
+use crucible_tools::{RuneService, RuneServiceConfig, ToolMigrationBridge, MigrationConfig};
 use crucible_services::traits::tool::ToolService;
+use crucible_services::SecurityLevel;
 use std::path::PathBuf;
 use glob::glob;
 use std::sync::Arc;
 
 pub async fn execute(config: CliConfig, script: String, args: Option<String>) -> Result<()> {
     let script_path = PathBuf::from(&script);
-    
-    if !script_path.exists() {
-        // Try to find it in standard locations
+
+    // Try to find the script in standard locations if it doesn't exist
+    let final_script_path = if !script_path.exists() {
         let locations = vec![
             format!("{}/.config/crucible/commands/{}.rn", dirs::home_dir().unwrap().display(), script),
             format!(".crucible/commands/{}.rn", script),
             format!("{}", script),
         ];
-        
+
+        let mut found_path = None;
         for loc in locations {
             let path = PathBuf::from(&loc);
             if path.exists() {
-                return execute_script(config, path, args).await;
+                found_path = Some(path);
+                break;
             }
         }
-        
-        anyhow::bail!("Script not found: {}", script);
+
+        if let Some(path) = found_path {
+            path
+        } else {
+            anyhow::bail!("Script not found: {}", script);
+        }
+    } else {
+        script_path
+    };
+
+    // Try to execute using migration bridge first (if enabled)
+    if config.migration.enabled {
+        match execute_with_migration_bridge(config.clone(), &final_script_path, args).await {
+            Ok(result) => {
+                println!("✓ Executed using ScriptEngine service");
+                return Ok(result);
+            }
+            Err(e) => {
+                eprintln!("Warning: ScriptEngine execution failed: {}", e);
+                eprintln!("Falling back to legacy Rune service...");
+                // Fall back to legacy execution
+            }
+        }
     }
-    
-    execute_script(config, script_path, args).await
+
+    // Fall back to legacy execution
+    execute_script_legacy(config, final_script_path, args).await
 }
 
-async fn execute_script(_config: CliConfig, script_path: PathBuf, args: Option<String>) -> Result<()> {
+/// Execute script using migration bridge and ScriptEngine service
+async fn execute_with_migration_bridge(
+    config: CliConfig,
+    script_path: &PathBuf,
+    args: Option<String>,
+) -> Result<()> {
+    println!("Executing with ScriptEngine service: {}", script_path.display());
+
+    // Initialize migration bridge
+    let rune_config = RuneServiceConfig::default();
+    let migration_config = MigrationConfig {
+        auto_migrate: true, // Auto-migrate discovered tools
+        security_level: parse_security_level_from_config(&config),
+        enable_caching: config.migration.enable_caching,
+        max_cache_size: config.migration.max_cache_size,
+        preserve_tool_ids: config.migration.preserve_tool_ids,
+    };
+
+    let migration_bridge = ToolMigrationBridge::new(rune_config, migration_config).await
+        .context("Failed to initialize migration bridge")?;
+
+    // Get the tool name from the script filename
+    let tool_name = script_path.file_stem()
+        .and_then(|s| s.to_str())
+        .context("Invalid script filename")?;
+
+    // Parse arguments
+    let args_obj: serde_json::Value = if let Some(a) = args {
+        serde_json::from_str(&a)?
+    } else {
+        serde_json::json!({})
+    };
+
+    // Execute the tool using the migration bridge
+    let execution_result = migration_bridge.execute_migrated_tool(
+        tool_name,
+        args_obj,
+        None, // Use default execution context
+    ).await.context("Failed to execute migrated tool")?;
+
+    // Display results
+    println!("\nExecution Results:");
+    println!("  Tool: {}", execution_result.tool_name);
+    println!("  Success: {}", if execution_result.success {
+        "✓"
+    } else {
+        "✗"
+    });
+
+    if let Some(result) = execution_result.result {
+        println!("  Result: {}", serde_json::to_string_pretty(&result)?);
+    }
+
+    if let Some(error) = execution_result.error {
+        println!("  Error: {}", error);
+    }
+
+    println!("  Execution time: {:?}", execution_result.execution_time);
+
+    // Display metadata if available
+    if let Some(metadata) = execution_result.metadata {
+        if let Some(stdout) = metadata.get("stdout") {
+            if let Some(stdout_str) = stdout.as_str() {
+                if !stdout_str.trim().is_empty() {
+                    println!("  Output:");
+                    for line in stdout_str.lines() {
+                        println!("    {}", line);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Parse security level from configuration
+fn parse_security_level_from_config(config: &CliConfig) -> SecurityLevel {
+    match config.migration.default_security_level.to_lowercase().as_str() {
+        "safe" => SecurityLevel::Safe,
+        "development" | "dev" => SecurityLevel::Development,
+        "production" | "prod" => SecurityLevel::Production,
+        _ => SecurityLevel::Safe,
+    }
+}
+
+/// Execute script using legacy Rune service
+async fn execute_script_legacy(config: CliConfig, script_path: PathBuf, args: Option<String>) -> Result<()> {
     println!("Executing: {}", script_path.display());
 
     // Parse arguments

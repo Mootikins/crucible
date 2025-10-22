@@ -35,6 +35,12 @@ pub struct CliConfig {
     /// Network configuration
     #[serde(default)]
     pub network: NetworkConfig,
+    /// Service configuration
+    #[serde(default)]
+    pub services: ServicesConfig,
+    /// Migration configuration
+    #[serde(default)]
+    pub migration: MigrationConfig,
 }
 
 /// Vault configuration
@@ -135,6 +141,108 @@ pub struct AnthropicConfig {
     pub api_key: Option<String>,
 }
 
+/// Services configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServicesConfig {
+    /// ScriptEngine service configuration
+    #[serde(default)]
+    pub script_engine: ScriptEngineConfig,
+    /// Service discovery configuration
+    #[serde(default)]
+    pub discovery: ServiceDiscoveryConfig,
+    /// Service health monitoring configuration
+    #[serde(default)]
+    pub health: ServiceHealthConfig,
+}
+
+/// ScriptEngine service configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScriptEngineConfig {
+    /// Enable ScriptEngine service
+    pub enabled: bool,
+    /// Security level for script execution
+    pub security_level: String,
+    /// Maximum script source size in bytes
+    pub max_source_size: usize,
+    /// Default execution timeout in seconds
+    pub default_timeout_secs: u64,
+    /// Enable script caching
+    pub enable_caching: bool,
+    /// Maximum number of cached scripts
+    pub max_cache_size: usize,
+    /// Maximum memory usage in MB
+    pub max_memory_mb: usize,
+    /// Maximum CPU percentage
+    pub max_cpu_percentage: f32,
+    /// Maximum concurrent operations
+    pub max_concurrent_operations: usize,
+}
+
+/// Service discovery configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceDiscoveryConfig {
+    /// Enable service discovery
+    pub enabled: bool,
+    /// Discovery endpoints
+    pub endpoints: Vec<String>,
+    /// Discovery timeout in seconds
+    pub timeout_secs: u64,
+    /// Refresh interval in seconds
+    pub refresh_interval_secs: u64,
+}
+
+/// Service health monitoring configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceHealthConfig {
+    /// Enable health monitoring
+    pub enabled: bool,
+    /// Health check interval in seconds
+    pub check_interval_secs: u64,
+    /// Health check timeout in seconds
+    pub timeout_secs: u64,
+    /// Number of consecutive failures before marking as unhealthy
+    pub failure_threshold: u32,
+    /// Enable automatic recovery
+    pub auto_recovery: bool,
+}
+
+/// Migration configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MigrationConfig {
+    /// Enable migration features
+    pub enabled: bool,
+    /// Default security level for migrated tools
+    pub default_security_level: String,
+    /// Enable automatic migration
+    pub auto_migrate: bool,
+    /// Enable caching of migrated tools
+    pub enable_caching: bool,
+    /// Maximum number of cached migrated tools
+    pub max_cache_size: usize,
+    /// Preserve original tool IDs during migration
+    pub preserve_tool_ids: bool,
+    /// Backup original tools before migration
+    pub backup_originals: bool,
+    /// Migration validation settings
+    #[serde(default)]
+    pub validation: MigrationValidationConfig,
+}
+
+/// Migration validation configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MigrationValidationConfig {
+    /// Enable automatic validation after migration
+    pub auto_validate: bool,
+    /// Strict validation mode (fail on any issue)
+    pub strict: bool,
+    /// Validate tool functionality
+    pub validate_functionality: bool,
+    /// Validate performance characteristics
+    pub validate_performance: bool,
+    /// Maximum performance degradation percentage
+    pub max_performance_degradation: f32,
+}
+
 /// Default configuration constants
 impl Default for CliConfig {
     fn default() -> Self {
@@ -146,6 +254,8 @@ impl Default for CliConfig {
             },
             llm: LlmConfig::default(),
             network: NetworkConfig::default(),
+            services: ServicesConfig::default(),
+            migration: MigrationConfig::default(),
         }
     }
 }
@@ -197,6 +307,82 @@ impl Default for AnthropicConfig {
         Self {
             endpoint: Some("https://api.anthropic.com".to_string()),
             api_key: None,
+        }
+    }
+}
+
+impl Default for ServicesConfig {
+    fn default() -> Self {
+        Self {
+            script_engine: ScriptEngineConfig::default(),
+            discovery: ServiceDiscoveryConfig::default(),
+            health: ServiceHealthConfig::default(),
+        }
+    }
+}
+
+impl Default for ScriptEngineConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            security_level: "safe".to_string(),
+            max_source_size: 1024 * 1024, // 1MB
+            default_timeout_secs: 30,
+            enable_caching: true,
+            max_cache_size: 1000,
+            max_memory_mb: 100,
+            max_cpu_percentage: 80.0,
+            max_concurrent_operations: 50,
+        }
+    }
+}
+
+impl Default for ServiceDiscoveryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            endpoints: vec!["localhost:8080".to_string()],
+            timeout_secs: 5,
+            refresh_interval_secs: 30,
+        }
+    }
+}
+
+impl Default for ServiceHealthConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            check_interval_secs: 10,
+            timeout_secs: 5,
+            failure_threshold: 3,
+            auto_recovery: true,
+        }
+    }
+}
+
+impl Default for MigrationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            default_security_level: "safe".to_string(),
+            auto_migrate: false,
+            enable_caching: true,
+            max_cache_size: 500,
+            preserve_tool_ids: true,
+            backup_originals: true,
+            validation: MigrationValidationConfig::default(),
+        }
+    }
+}
+
+impl Default for MigrationValidationConfig {
+    fn default() -> Self {
+        Self {
+            auto_validate: true,
+            strict: false,
+            validate_functionality: true,
+            validate_performance: false,
+            max_performance_degradation: 20.0, // 20%
         }
     }
 }
@@ -380,6 +566,107 @@ endpoint = "https://api.anthropic.com"
 # Note: The following are automatically derived from vault path:
 #   - Database: {vault}/.crucible/embeddings.db
 #   - Tools: {vault}/tools/
+
+[services]
+# ScriptEngine service configuration
+[services.script_engine]
+# Enable ScriptEngine service for tool execution
+enabled = true
+
+# Security level for script execution (safe, development, production)
+security_level = "safe"
+
+# Maximum script source size in bytes (1MB default)
+max_source_size = 1048576
+
+# Default execution timeout in seconds
+default_timeout_secs = 30
+
+# Enable script caching for performance
+enable_caching = true
+
+# Maximum number of cached scripts
+max_cache_size = 1000
+
+# Maximum memory usage per script execution (MB)
+max_memory_mb = 100
+
+# Maximum CPU percentage per script
+max_cpu_percentage = 80.0
+
+# Maximum concurrent script executions
+max_concurrent_operations = 50
+
+# Service discovery configuration
+[services.discovery]
+# Enable automatic service discovery
+enabled = true
+
+# Service discovery endpoints
+endpoints = ["localhost:8080"]
+
+# Discovery timeout in seconds
+timeout_secs = 5
+
+# Service discovery refresh interval in seconds
+refresh_interval_secs = 30
+
+# Service health monitoring configuration
+[services.health]
+# Enable health monitoring for services
+enabled = true
+
+# Health check interval in seconds
+check_interval_secs = 10
+
+# Health check timeout in seconds
+timeout_secs = 5
+
+# Number of consecutive failures before marking as unhealthy
+failure_threshold = 3
+
+# Enable automatic recovery for unhealthy services
+auto_recovery = true
+
+# Migration configuration
+[migration]
+# Enable migration features for tool migration
+enabled = true
+
+# Default security level for migrated tools
+default_security_level = "safe"
+
+# Enable automatic migration of discovered tools
+auto_migrate = false
+
+# Enable caching of migrated tools
+enable_caching = true
+
+# Maximum number of cached migrated tools
+max_cache_size = 500
+
+# Preserve original tool IDs during migration
+preserve_tool_ids = true
+
+# Backup original tools before migration
+backup_originals = true
+
+# Migration validation settings
+[migration.validation]
+# Enable automatic validation after migration
+auto_validate = true
+
+# Strict validation mode (fail on any issue)
+strict = false
+
+# Validate tool functionality
+validate_functionality = true
+
+# Validate performance characteristics
+validate_performance = false
+
+# Maximum performance degradation percentage (20% default)
+max_performance_degradation = 20.0
 "#;
 
         // Create parent directory if it doesn't exist
