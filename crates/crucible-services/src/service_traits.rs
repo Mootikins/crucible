@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use crucible_llm::text_generation::ToolDefinition;
 
 /// ============================================================================
 /// COMMON SERVICE TRAITS

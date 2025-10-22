@@ -70,6 +70,8 @@ pub mod errors {
 pub mod traits {
     use super::{errors::ServiceResult, types::*};
     use async_trait::async_trait;
+    use crucible_llm::text_generation::{ToolDefinition, ToolExecutionRequest, ToolExecutionResult};
+    use super::types::tool::ValidationResult;
 
     /// Basic tool service trait - simplified version
     #[async_trait]
