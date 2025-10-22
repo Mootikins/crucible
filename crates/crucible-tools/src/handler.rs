@@ -8,8 +8,7 @@ use crate::tool::RuneTool;
 use crate::context_factory::ContextFactory;
 use crate::types::ExecutionConfig;
 use anyhow::Result;
-use crucible_services::types::tool::{ToolExecutionRequest, ToolExecutionResult};
-use crucible_services::types::tool::ToolExecutionContext;
+use crate::types::{ToolExecutionRequest, ToolExecutionResult, ToolExecutionContext};
 use uuid::Uuid;
 use std::sync::Arc;
 use std::time::Duration;
@@ -61,7 +60,7 @@ impl DynamicRuneToolHandler {
     }
 
     /// Execute the tool with the given request
-    pub async fn execute(&self, request: &ToolExecutionRequest) -> Result<(ToolExecutionResult, crucible_services::types::tool::ContextRef), ContextualError> {
+    pub async fn execute(&self, request: &ToolExecutionRequest) -> Result<(ToolExecutionResult, crate::types::ContextRef), ContextualError> {
         let start_time = std::time::Instant::now();
         let execution_id = uuid::Uuid::new_v4().to_string();
 
@@ -159,7 +158,7 @@ impl DynamicRuneToolHandler {
     }
 
     /// Execute the actual tool logic
-    async fn execute_tool(&self, parameters: &serde_json::Value, request_context: &serde_json::Value) -> Result<(serde_json::Value, crucible_services::types::tool::ContextRef)> {
+    async fn execute_tool(&self, parameters: &serde_json::Value, request_context: &serde_json::Value) -> Result<(serde_json::Value, crate::types::ContextRef)> {
         // Create execution context
         let execution_context = ToolExecutionContext {
             user_id: None,
@@ -427,7 +426,7 @@ impl BatchToolHandler {
     pub async fn execute_batch(
         &self,
         requests: Vec<ToolExecutionRequest>,
-    ) -> Vec<Result<(ToolExecutionResult, crucible_services::types::tool::ContextRef), ContextualError>> {
+    ) -> Vec<Result<(ToolExecutionResult, crate::types::ContextRef), ContextualError>> {
         let semaphore = Arc::new(tokio::sync::Semaphore::new(self.batch_config.max_concurrent));
         let mut tasks = Vec::new();
 

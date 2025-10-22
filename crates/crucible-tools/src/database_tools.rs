@@ -5,7 +5,7 @@
 
 use crate::system_tools::{schemas, Tool};
 use crate::types::*;
-use crucible_services::types::tool::{ToolDefinition, ToolExecutionContext, ToolExecutionResult};
+use crate::types::{ToolDefinition, ToolExecutionContext, ToolExecutionResult};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};

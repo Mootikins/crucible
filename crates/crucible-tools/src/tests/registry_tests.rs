@@ -3,8 +3,8 @@
 //! This module tests the new tool registry implementation that was added in Phase 4.1,
 //! including tool registration, discovery, dependency validation, and statistics.
 
-use crucible_tools::registry::*;
-use crucible_tools::types::{ToolCategory, ToolDependency};
+use crate::registry::*;
+use crate::types::{ToolCategory, ToolDependency};
 use crucible_services::types::tool::*;
 use serde_json::{json, Value};
 use std::collections::HashMap;

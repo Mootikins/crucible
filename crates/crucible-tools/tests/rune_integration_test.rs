@@ -1,7 +1,6 @@
 //! Integration test for Rune tools in crucible-tools
 
-use crucible_tools::{RuneService, RuneServiceConfig};
-use crucible_services::traits::ToolService;
+use crucible_tools::{RuneService, RuneServiceConfig, ToolService};
 use std::collections::HashMap;
 use tempfile::TempDir;
 use std::fs;
@@ -103,18 +102,12 @@ async fn test_rune_tool_execution() {
     let mut context_data = HashMap::new();
     context_data.insert("execution_id".to_string(), "test-123".to_string());
 
-    let request = crucible_services::types::tool::ToolExecutionRequest {
+    let request = crucible_tools::ToolExecutionRequest {
         tool_name: "echo_tool".to_string(),
         parameters: serde_json::json!({
             "message": "Hello from Rune test!"
         }),
-        context: crucible_services::types::tool::ToolExecutionContext {
-            user_id: Some("test_user".to_string()),
-            session_id: None,
-            working_directory: None,
-            environment: HashMap::new(),
-            context: context_data,
-        },
+        context: crucible_tools::ToolExecutionContext::default(),
     };
 
     let result = service.execute_tool(request).await.unwrap();

@@ -490,7 +490,6 @@ pub struct RegistryStats {
 mod tests {
     use super::*;
     use crate::discovery::DiscoveredTool;
-    use crate::types::ToolMetadata;
 
     #[tokio::test]
     async fn test_registry_basic_operations() {

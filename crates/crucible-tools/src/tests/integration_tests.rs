@@ -4,9 +4,9 @@
 //! modified in Phase 4.1, including the new ContextRef patterns, tool registry,
 //! and compatibility with the crucible-services architecture.
 
-use crucible_tools::registry::*;
-use crucible_tools::tool::*;
-use crucible_tools::types::{ToolDependency, ToolCategory};
+use crate::registry::*;
+use crate::tool::*;
+use crate::types::{ToolDependency, ToolCategory};
 use anyhow::Result;
 use crucible_services::types::tool::*;
 use serde_json::{json, Value};
