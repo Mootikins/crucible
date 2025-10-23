@@ -1,81 +1,81 @@
-//! Crucible Tools - System and Rune tools for knowledge management
+//! Crucible Tools - Simple async function composition for knowledge management
 //!
-//! This crate provides system-level and dynamic Rune scripting tools that offer
-//! core functionality for the Crucible knowledge management system. It includes tools for:
+//! This crate provides a collection of async function tools for the Crucible knowledge management system.
+//! The architecture focuses on simple async function composition without complex enterprise patterns.
 //!
-//! - **Vault operations**: Search, indexing, and metadata management
-//! - **Database operations**: CRUD, semantic search, and maintenance
-//! - **Search capabilities**: Advanced search with multiple criteria
-//! - **Rune scripting**: Dynamic tool execution with the Rune scripting language
-//! - **Tool discovery**: Automatic discovery and loading of Rune tools
+//! ## Quick Start
 //!
-//! # Architecture
-//!
-//! The crate is organized into several key modules:
-//!
-//! - [`system_tools`]: Core tool framework and base implementations
-//! - [`vault_tools`]: Vault-specific operations and file management
-//! - [`database_tools`]: Database interactions and semantic operations
-//! - [`search_tools`]: Advanced search and indexing capabilities
-//! - [`registry`]: Static tool registration and discovery
-//! - [`types`]: Tool-specific types and parameter structures
-//! - [`analyzer`]: Rune AST analysis and tool metadata extraction
-//! - [`context`]: Rune execution context and security management
-//! - [`discovery`]: Automatic discovery and loading of Rune tools
-//! - [`handler`]: Rune tool execution handlers
-//! - [`loader`]: Dynamic loading and compilation of Rune scripts
-//! - [`tool`]: Rune tool implementations and execution engine
-//! - [`rune_registry`]: Rune tool registration and management
-//! - [`stdlib`]: Standard library functions for Rune tools
-//! - [`embeddings`]: Embedding generation and vector operations
-//! - [`utils`]: Utility functions for tool operations
-//! - [`rune_service`]: Simple Rune service interface
-//!
-//! # Quick Start
-//!
-//! ## Using Rune Tools
+//! ### Using Individual Tool Functions
 //!
 //! ```rust
-//! use crucible_tools::{RuneService, RuneServiceConfig};
+//! use crucible_tools::{search_tools, vault_tools};
+//! use serde_json::json;
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
-//!     let config = RuneServiceConfig::default();
-//!     let service = RuneService::new(config).await?;
+//!     // Get tool functions directly
+//!     let search_fn = search_tools::search_documents();
+//!     let vault_fn = vault_tools::get_vault_stats();
 //!
-//!     // Discover tools from a directory
-//!     service.discover_tools_from_directory("./tools").await?;
+//!     // Execute tools with the unified ToolFunction signature
+//!     let search_result = search_fn(
+//!         "search_documents".to_string(),
+//!         json!({"query": "machine learning", "top_k": 10}),
+//!         Some("user123".to_string()),
+//!         Some("session456".to_string()),
+//!     ).await?;
 //!
-//!     // List available tools
-//!     let tools = service.list_tools().await?;
-//!     println!("Found {} tools", tools.len());
+//!     let vault_stats = vault_fn(
+//!         "get_vault_stats".to_string(),
+//!         json!({}),
+//!         Some("user123".to_string()),
+//!         Some("session456".to_string()),
+//!     ).await?;
+//!
+//!     println!("Search successful: {}", search_result.success);
+//!     println!("Vault has {} notes", vault_stats.data.unwrap()["total_notes"]);
 //!
 //!     Ok(())
 //! }
 //! ```
 //!
-//! ## Using System Tools
+//! ### Using the Unified Tool Interface
 //!
 //! ```rust
-//! use crucible_tools::{init, create_tool_manager};
+//! use crucible_tools::{execute_tool, load_all_tools};
+//! use serde_json::json;
 //!
-//! // Initialize the tool registry
-//! let registry = init();
+//! #[tokio::main]
+//! async fn main() -> anyhow::Result<()> {
+//!     // Load all tools into the registry
+//!     load_all_tools().await?;
 //!
-//! // Create a tool manager
-//! let manager = create_tool_manager();
-//! let tools = manager.list_tools();
-//! println!("Available tools: {}", tools.len());
+//!     // Execute any tool by name
+//!     let result = execute_tool(
+//!         "system_info".to_string(),
+//!         json!({}),
+//!         Some("user123".to_string()),
+//!         Some("session456".to_string()),
+//!     ).await?;
+//!
+//!     if result.success {
+//!         println!("Tool executed successfully: {:?}", result.data);
+//!     } else {
+//!         println!("Tool execution failed: {:?}", result.error);
+//!     }
+//!
+//!     Ok(())
+//! }
 //! ```
 //!
-//! # Features
+//! ## Available Tools
 //!
-//! - **Rune Scripting**: Dynamic tool execution with the Rune scripting language
-//! - **Tool Discovery**: Automatic discovery and loading of Rune tools
-//! - **Static Tools**: Built-in system tools for common operations
-//! - **Tool Macros**: `#[tool]` attribute macro for easy tool definition
-//! - **Type Safety**: Strong typing with clear parameter schemas
-//! - **Error Handling**: Comprehensive error handling and logging
+//! The library provides 25 tools across 4 categories:
+//!
+//! - **System Tools** (5): `system_info`, `execute_command`, `list_files`, `read_file`, `get_environment`
+//! - **Vault Tools** (8): `search_by_properties`, `search_by_tags`, `search_by_folder`, `create_note`, `update_note`, `delete_note`, `get_vault_stats`, `list_tags`
+//! - **Database Tools** (7): `semantic_search`, `search_by_content`, `search_by_filename`, `update_note_properties`, `index_document`, `get_document_stats`, `sync_metadata`
+//! - **Search Tools** (5): `search_documents`, `rebuild_index`, `get_index_stats`, `optimize_index`, `advanced_search`
 
 #![warn(missing_docs)]
 #![warn(clippy::all)]
@@ -87,47 +87,41 @@ pub mod system_tools;
 pub mod types;
 pub mod vault_tools;
 
-// Rune modules
-pub mod analyzer;
-pub mod context;
-pub mod context_factory;
-pub mod database;
-pub mod discovery;
-pub mod errors;
-pub mod handler;
-pub mod loader;
-pub mod registry;
-pub mod stdlib;
-pub mod tool;
-pub mod rune_registry;
-pub mod rune_service;
-pub mod utils;
-pub mod embeddings;
-pub mod validation;
+// ===== PUBLIC API EXPORTS =====
+// Simple async function composition interface
 
-// Phase 5.1 Migration modules
-pub mod migration_bridge;
-pub mod migration_manager;
+// Core types for tool composition
+pub use types::{
+    ToolDefinition,
+    ToolExecutionRequest,
+    ToolExecutionContext,
+    ToolError,
+    ToolResult,
+    ToolFunction
+};
 
-// Re-export commonly used types and functions
-pub use system_tools::Tool;
-pub use system_tools::ToolManager;
-pub use rune_service::RuneService;
-pub use context_factory::ContextFactory;
-pub use types::{RuneServiceConfig, ValidationResult, SystemInfo, ToolDefinition, ToolExecutionRequest, ToolExecutionResult, ToolExecutionContext, ContextRef, ServiceError, ServiceResult, ServiceHealth, ServiceMetrics, ServiceStatus, ToolService};
+// Unified tool interface
+pub use types::{
+    execute_tool,
+    register_tool_function,
+    initialize_tool_registry,
+    list_registered_tools
+};
 
-// Re-export migration types
-pub use migration_bridge::{ToolMigrationBridge, MigrationConfig, MigratedTool, MigrationStats, MigrationValidation};
-pub use migration_manager::{Phase51MigrationManager, MigrationManagerConfig, MigrationState, MigrationPhase, MigrationReport, MigrationError, MigrationErrorType, MigrationMode, ValidationMode};
+// Tool loading utilities
+pub use types::{
+    load_all_tools,
+    tool_loader_info,
+    ToolLoaderInfo
+};
 
 /// Crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Initialize the crucible-tools library
 ///
-/// This function initializes the global tool registry and prepares
-/// all built-in tools for use. It should be called once during
-/// application startup.
+/// This function initializes the simplified tool registry. Tool loading is handled
+/// asynchronously by the `load_all_tools()` function when needed.
 ///
 /// # Example
 ///
@@ -135,58 +129,32 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// use crucible_tools::init;
 ///
 /// // Initialize the library
-/// let registry = init();
-///
-/// // Now tools can be discovered and used
-/// let tool_names = registry.list_tools();
-/// println!("Available tools: {:?}", tool_names);
+/// init();
 /// ```
-pub fn init() -> std::sync::Arc<registry::ToolRegistry> {
+pub fn init() {
     tracing::info!("Initializing crucible-tools v{}", VERSION);
-    let registry = registry::initialize_registry();
-    tracing::info!(
-        "Initialized {} tools across {} categories",
-        registry.tools.len(),
-        registry.categories.len()
-    );
-    registry
-}
-
-/// Create a pre-configured tool manager
-///
-/// This is a convenience function that creates a tool manager
-/// with all built-in tools already registered.
-///
-/// # Example
-///
-/// ```rust
-/// use crucible_tools::create_tool_manager;
-///
-/// let manager = create_tool_manager();
-/// let tools = manager.list_tools();
-/// println!("Available tools: {}", tools.len());
-/// ```
-pub fn create_tool_manager() -> system_tools::ToolManager {
-    // Ensure the registry is initialized
-    init();
-    registry::create_tool_manager_from_registry()
+    tracing::info!("Simple async function composition interface ready");
+    tracing::info!("Tools will be loaded on-demand via load_all_tools()");
 }
 
 /// Get library information
 ///
-/// Returns information about the library version and configuration.
+/// Returns information about the library version and available features.
 pub fn library_info() -> LibraryInfo {
     LibraryInfo {
         version: VERSION.to_string(),
         name: "crucible-tools".to_string(),
-        description: "System and Rune tools for Crucible knowledge management".to_string(),
+        description: "Simple async function composition for Crucible knowledge management".to_string(),
         features: vec![
-            "vault_operations".to_string(),
-            "database_operations".to_string(),
-            "search_capabilities".to_string(),
-            "rune_scripting".to_string(),
-            "tool_discovery".to_string(),
-            "tool_macros".to_string(),
+            "simple_composition".to_string(),
+            "direct_async_functions".to_string(),
+            "database_tools".to_string(),
+            "search_tools".to_string(),
+            "vault_tools".to_string(),
+            "system_tools".to_string(),
+            "unified_interface".to_string(),
+            "25_tools_registered".to_string(),
+            "direct_tool_registration".to_string(),
         ],
     }
 }

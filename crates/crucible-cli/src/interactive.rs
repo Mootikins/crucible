@@ -4,7 +4,7 @@ use nucleo_matcher::{pattern::{Pattern, CaseMatching}, Matcher, Config};
 use std::io::{self, Write};
 
 /// Compatibility wrapper for search results with display information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SearchResultWithScore {
     pub id: String,
     pub title: String,
@@ -14,9 +14,10 @@ pub struct SearchResultWithScore {
 
 impl From<SearchResult> for SearchResultWithScore {
     fn from(result: SearchResult) -> Self {
+        let doc_id = result.document_id.0; // Move once
         Self {
-            id: result.document_id.0,
-            title: result.document_id.0.clone(), // Use document ID as title for now
+            id: doc_id.clone(),
+            title: doc_id, // Use document ID as title for now
             content: result.snippet.unwrap_or_default(),
             score: result.score,
         }

@@ -33,9 +33,9 @@
       "sidebar_width": 300,
       "panel_layout": "default",
       "panels": {
+        "toolbar": true,
         "status_bar": true,
-        "sidebar": true,
-        "toolbar": true
+        "sidebar": true
       },
       "window_state": null
     }

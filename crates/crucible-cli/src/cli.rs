@@ -125,6 +125,9 @@ pub enum Commands {
     /// Display vault statistics
     Stats,
 
+    /// Test tool loading and execution
+    Test,
+
     /// Run a Rune script as a command
     Run {
         /// Path to .rn script
@@ -351,7 +354,7 @@ pub enum AgentCommands {
 }
 
 /// Service management commands
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum ServiceCommands {
     /// Show service health status
     Health {
@@ -418,11 +421,11 @@ pub enum ServiceCommands {
         format: String,
 
         /// Show service status
-        #[arg(short, 's', long)]
+        #[arg(short = 's', long)]
         status: bool,
 
         /// Show detailed information
-        #[arg(short, 'd', long)]
+        #[arg(short = 'd', long)]
         detailed: bool,
     },
 
@@ -446,7 +449,7 @@ pub enum ServiceCommands {
 }
 
 /// Migration management commands
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum MigrationCommands {
     /// Start migration of Rune tools to ScriptEngine service
     Migrate {
@@ -473,7 +476,7 @@ pub enum MigrationCommands {
         format: String,
 
         /// Show detailed migration information
-        #[arg(short, 'd', long)]
+        #[arg(short = 'd', long)]
         detailed: bool,
 
         /// Validate migration integrity

@@ -1,5 +1,6 @@
 use anyhow::Result;
-use crucible_core::database::{Database, SearchResult, DocumentId, SearchOptions};
+use crucible_tools::execute_tool;
+use serde_json::json;
 use crate::config::CliConfig;
 use crate::interactive::{FuzzyPicker, SearchResultWithScore};
 use crate::output;
@@ -11,21 +12,21 @@ pub async fn execute(
     format: String,
     show_content: bool,
 ) -> Result<()> {
-    let db = Database::new(&config.database_path_str()?).await?;
-
-    // Get all files from database
-    let files = list_all_files(&db).await?;
-
-    if files.is_empty() {
-        println!("No files indexed. Run 'crucible index' first.");
-        return Ok(());
-    }
+    // Initialize crucible-tools for simplified search
+    crucible_tools::init();
 
     let results = if let Some(q) = query {
-        // Direct search with query
-        search_files(&db, &files, &q, limit).await?
+        // Direct search with query using simplified tools
+        search_with_tools(&q, limit).await?
     } else {
-        // Interactive picker
+        // Interactive picker with available files
+        let files = get_available_files().await?;
+
+        if files.is_empty() {
+            println!("No files available. Run 'crucible index' first.");
+            return Ok(());
+        }
+
         let mut picker = FuzzyPicker::new();
         let filtered_indices = picker.filter_items(&files, "");
 
@@ -45,8 +46,10 @@ pub async fn execute(
         if let Some(selection) = picker.pick_result(&results)? {
             let selected = &results[selection];
             println!("\nSelected: {}\n", selected.title);
-            if let Some(doc) = db.get_document(&DocumentId(selected.id.clone())).await? {
-                println!("{}", doc.content);
+
+            // Get document content using tools
+            if let Ok(content) = get_document_content(&selected.id).await {
+                println!("{}", content);
             }
             return Ok(());
         }
@@ -60,52 +63,102 @@ pub async fn execute(
     Ok(())
 }
 
-async fn search_files(
-    db: &Database,
-    files: &[String],
-    query: &str,
-    limit: u32,
-) -> Result<Vec<SearchResultWithScore>> {
-    let mut picker = FuzzyPicker::new();
-    let filtered = picker.filter_items(files, query);
+/// Search using simplified crucible-tools
+async fn search_with_tools(query: &str, limit: u32) -> Result<Vec<SearchResultWithScore>> {
+    let result = execute_tool(
+        "search_documents".to_string(),
+        json!({
+            "query": query,
+            "top_k": limit
+        }),
+        Some("cli_user".to_string()),
+        Some("cli_search".to_string()),
+    ).await?;
 
-    let mut results = Vec::new();
-    for (idx, score) in filtered.into_iter().take(limit as usize) {
-        if let Some(path) = files.get(idx) {
-            let content = if let Some(doc) = db.get_document(&DocumentId(path.clone())).await? {
-                doc.content
-            } else {
-                String::new()
-            };
+    if let Some(data) = result.data {
+        if let Some(results) = data.get("results").and_then(|r| r.as_array()) {
+            let search_results: Vec<SearchResultWithScore> = results
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, item)| {
+                    if let (Some(file_path), Some(title), Some(score)) = (
+                        item.get("file_path").and_then(|p| p.as_str()),
+                        item.get("title").and_then(|t| t.as_str()),
+                        item.get("score").and_then(|s| s.as_f64())
+                    ) {
+                        Some(SearchResultWithScore {
+                            id: file_path.to_string(),
+                            title: title.to_string(),
+                            content: item.get("content")
+                                .and_then(|c| c.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            score,
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect();
 
-            results.push(SearchResultWithScore {
-                id: path.clone(),
-                title: path.split('/').next_back().unwrap_or(path).to_string(),
-                content,
-                score: score as f64,
-            });
+            return Ok(search_results);
         }
     }
 
-    Ok(results)
+    // Fallback to empty results if tool fails
+    Ok(vec![])
 }
 
-/// Helper function to list all files from the database
-async fn list_all_files(db: &Database) -> Result<Vec<String>> {
-    // For now, use a simple approach. In the future, this could use a proper
-    // service layer method to list all documents
-    let search_options = SearchOptions {
-        limit: Some(10000), // Large limit to get all files
-        offset: Some(0),
-        filters: None,
-    };
+/// Get available files using simplified tools
+async fn get_available_files() -> Result<Vec<String>> {
+    let result = execute_tool(
+        "search_by_folder".to_string(),
+        json!({
+            "path": ".",
+            "recursive": true
+        }),
+        Some("cli_user".to_string()),
+        Some("cli_search".to_string()),
+    ).await?;
 
-    // Search with empty query to get all documents
-    let search_results = db.search("", search_options).await?;
-    let files = search_results
-        .into_iter()
-        .map(|result| result.document_id.0)
-        .collect();
+    if let Some(data) = result.data {
+        if let Some(files) = data.get("files").and_then(|f| f.as_array()) {
+            let file_paths: Vec<String> = files
+                .iter()
+                .filter_map(|item| {
+                    item.get("path").and_then(|p| p.as_str()).map(|s| s.to_string())
+                })
+                .collect();
+            return Ok(file_paths);
+        }
+    }
 
-    Ok(files)
+    // Fallback to empty list
+    Ok(vec![])
+}
+
+/// Get document content using simplified tools
+async fn get_document_content(path: &str) -> Result<String> {
+    let result = execute_tool(
+        "search_by_content".to_string(),
+        json!({
+            "query": path,
+            "limit": 1
+        }),
+        Some("cli_user".to_string()),
+        Some("cli_search".to_string()),
+    ).await?;
+
+    if let Some(data) = result.data {
+        if let Some(results) = data.get("results").and_then(|r| r.as_array()) {
+            if let Some(first_result) = results.first() {
+                if let Some(content) = first_result.get("content").and_then(|c| c.as_str()) {
+                    return Ok(content.to_string());
+                }
+            }
+        }
+    }
+
+    // Fallback to empty content
+    Ok("".to_string())
 }

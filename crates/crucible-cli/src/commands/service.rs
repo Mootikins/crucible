@@ -306,12 +306,12 @@ async fn execute_list_command(
             if status {
                 table.set_header(vec!["Service", "State", "Version", "Uptime"]);
 
-                for (name, state, _, version, uptime) in services {
-                    let state_cell = match state {
-                        "running" => Cell::new(state).fg(Color::Green),
-                        "degraded" => Cell::new(state).fg(Color::Yellow),
-                        "stopped" => Cell::new(state).fg(Color::Red),
-                        _ => Cell::new(state),
+                for (name, state, _, version, uptime) in &services {
+                    let state_cell = match *state {
+                        "running" => Cell::new(*state).fg(Color::Green),
+                        "degraded" => Cell::new(*state).fg(Color::Yellow),
+                        "stopped" => Cell::new(*state).fg(Color::Red),
+                        _ => Cell::new(*state),
                     };
 
                     table.add_row(vec![
@@ -324,12 +324,12 @@ async fn execute_list_command(
             } else {
                 table.set_header(vec!["Service", "Description", "Version", "State"]);
 
-                for (name, state, description, version, _) in services {
-                    let state_cell = match state {
-                        "running" => Cell::new(state).fg(Color::Green),
-                        "degraded" => Cell::new(state).fg(Color::Yellow),
-                        "stopped" => Cell::new(state).fg(Color::Red),
-                        _ => Cell::new(state),
+                for (name, state, description, version, _) in &services {
+                    let state_cell = match *state {
+                        "running" => Cell::new(*state).fg(Color::Green),
+                        "degraded" => Cell::new(*state).fg(Color::Yellow),
+                        "stopped" => Cell::new(*state).fg(Color::Red),
+                        _ => Cell::new(*state),
                     };
 
                     table.add_row(vec![
@@ -345,18 +345,18 @@ async fn execute_list_command(
 
             if detailed {
                 println!("\nDetailed Information:");
-                for (name, state, description, version, uptime) in services {
+                for (name, state, description, version, uptime) in &services {
                     println!("\n{} ({})", name.cyan().bold(), version);
                     println!("  Description: {}", description);
-                    println!("  State: {}", match state {
-                        "running" => state.green(),
-                        "degraded" => state.yellow(),
-                        "stopped" => state.red(),
-                        _ => state.normal(),
+                    println!("  State: {}", match *state {
+                        "running" => (*state).green(),
+                        "degraded" => (*state).yellow(),
+                        "stopped" => (*state).red(),
+                        _ => (*state).normal(),
                     });
                     println!("  Uptime: {}", uptime);
 
-                    if state == "degraded" {
+                    if *state == "degraded" {
                         println!("  Warning: Service is running in degraded mode");
                     }
                 }
@@ -446,7 +446,7 @@ async fn execute_logs_command(
         };
 
         for (timestamp, level, message) in logs_to_show {
-            if !errors || level == "ERROR" {
+            if !errors || *level == "ERROR" {
                 let formatted_log = match *level {
                     "ERROR" => format!("[{}] {} {}", timestamp, level.red().bold(), message),
                     "WARN" => format!("[{}] {} {}", timestamp, level.yellow().bold(), message),
