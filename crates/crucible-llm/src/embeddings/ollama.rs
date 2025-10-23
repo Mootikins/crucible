@@ -35,6 +35,7 @@ struct OllamaTagsResponse {
 struct OllamaModelInfo {
     name: String,
     #[serde(default)]
+    #[allow(dead_code)]
     model: Option<String>,
     modified_at: Option<String>,
     size: Option<u64>,
@@ -47,10 +48,12 @@ struct OllamaModelInfo {
 #[derive(Debug, Deserialize)]
 struct OllamaModelDetails {
     #[serde(default)]
+    #[allow(dead_code)]
     parent_model: Option<String>,
     format: Option<String>,
     family: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     families: Option<Vec<String>>,
     parameter_size: Option<String>,
     quantization_level: Option<String>,

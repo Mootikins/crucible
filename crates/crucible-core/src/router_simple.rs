@@ -494,6 +494,7 @@ mod tests {
     async fn test_request_routing() {
         let config_manager = Arc::new(ConfigManager::new().await.unwrap());
         let router = SimpleRequestRouter::new(config_manager).await.unwrap();
+        router.start().await.unwrap();
 
         let mock_service = Arc::new(MockServiceHandler::new(
             "test-service".to_string(),

@@ -128,12 +128,25 @@ SELECT title, tags FROM notes WHERE tags CONTAINS '#project';
 
 ## 📚 Documentation
 
+### User Documentation
 - **[Architecture](./docs/ARCHITECTURE.md)** - Updated simplified system architecture
 - **[CLI Reference](./docs/CLI_REFERENCE.md)** - Comprehensive CLI command documentation
-- **[ScriptEngine Service](./crates/crucible-services/SCRIPT_ENGINE.md)** - Service architecture and API
-- **[Service Integration](./crates/crucible-cli/CLI_SERVICE_INTEGRATION.md)** - CLI and service integration guide
 - **[Migration Guide](./docs/MIGRATION_GUIDE.md)** - Tool migration and validation
+- **[Examples and Tutorials](./docs/EXAMPLES_AND_TUTORIALS.md)** - Practical examples and tutorials
+- **[Troubleshooting](./docs/TROUBLESHOOTING.md)** - Common issues and solutions
+- **[FAQ](./docs/FAQ.md)** - Frequently asked questions
+- **[System Requirements](./docs/SYSTEM_REQUIREMENTS.md)** - Hardware and software requirements
+
+### Technical Documentation
+- **[API Documentation](./docs/API_DOCUMENTATION.md)** - Complete API reference
+- **[ScriptEngine API](./docs/SCRIPTENGINE_API.md)** - Service architecture and API
+- **[Service Integration](./crates/crucible-cli/CLI_SERVICE_INTEGRATION.md)** - CLI and service integration guide
+- **[Developer Guide](./docs/DEVELOPER_GUIDE.md)** - Development environment and workflow
 - **[AI Agent Guide](./AGENTS.md)** - Instructions for AI agents working on the codebase
+
+### Contributing
+- **[Contributing Guidelines](./CONTRIBUTING.md)** - How to contribute to Crucible
+- **[Documentation Audit Report](./PHASE8_5_DOCUMENTATION_AUDIT_REPORT.md)** - Latest documentation quality assessment
 
 ## 🔥 New in This Version
 

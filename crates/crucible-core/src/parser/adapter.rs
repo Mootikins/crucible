@@ -178,7 +178,7 @@ impl Default for SurrealDBAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::types::{DocumentContent, Frontmatter, FrontmatterFormat, Heading};
+    use crate::parser::types::{DocumentContent, Frontmatter, FrontmatterFormat, Heading, Wikilink, Tag};
 
     fn create_test_document() -> ParsedDocument {
         use std::path::PathBuf;

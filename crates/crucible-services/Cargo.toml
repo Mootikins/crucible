@@ -27,6 +27,12 @@ futures = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Configuration
+toml = { workspace = true }
+serde_yaml = { workspace = true }
+regex = { workspace = true }
 
 # Error handling
 anyhow = { workspace = true }
@@ -37,6 +43,9 @@ rune-modules = { workspace = true }
 
 # LLM integration
 crucible-llm = { path = "../crucible-llm" }
+
+# System utilities
+hostname = { workspace = true }
 
 [features]
 default = []
