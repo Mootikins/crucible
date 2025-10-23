@@ -7,6 +7,7 @@ mod rune_db;
 mod types;
 mod tool_group;
 mod system_tool_group;
+mod unified_registry;
 
 // Re-export main types
 pub use registry::ToolRegistry;
@@ -17,3 +18,4 @@ pub use tool_group::{
     ParameterConverter, ResultConverter
 };
 pub use system_tool_group::SystemToolGroup;
+pub use unified_registry::UnifiedToolRegistry;

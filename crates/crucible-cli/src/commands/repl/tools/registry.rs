@@ -21,7 +21,7 @@ use tokio::fs;
 /// Tools are Rune scripts (.rn files) that expose a `main()` function.
 /// The registry handles compilation, caching, and execution with proper
 /// error handling and timeout support.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ToolRegistry {
     /// Directory containing tool scripts (.rn files)
     tool_dir: PathBuf,
