@@ -1,5 +1,5 @@
 use anyhow::Result;
-use crucible_tools::execute_tool;
+use crate::common::CrucibleToolManager;
 use serde_json::json;
 use crate::config::CliConfig;
 use crate::interactive::{FuzzyPicker, SearchResultWithScore};
@@ -12,8 +12,8 @@ pub async fn execute(
     format: String,
     show_content: bool,
 ) -> Result<()> {
-    // Initialize crucible-tools for simplified search
-    crucible_tools::init();
+    // Ensure crucible-tools are initialized through centralized manager
+    CrucibleToolManager::ensure_initialized_global().await?;
 
     let results = if let Some(q) = query {
         // Direct search with query using simplified tools
@@ -65,8 +65,8 @@ pub async fn execute(
 
 /// Search using simplified crucible-tools
 async fn search_with_tools(query: &str, limit: u32) -> Result<Vec<SearchResultWithScore>> {
-    let result = execute_tool(
-        "search_documents".to_string(),
+    let result = CrucibleToolManager::execute_tool_global(
+        "search_documents",
         json!({
             "query": query,
             "top_k": limit
@@ -111,8 +111,8 @@ async fn search_with_tools(query: &str, limit: u32) -> Result<Vec<SearchResultWi
 
 /// Get available files using simplified tools
 async fn get_available_files() -> Result<Vec<String>> {
-    let result = execute_tool(
-        "search_by_folder".to_string(),
+    let result = CrucibleToolManager::execute_tool_global(
+        "search_by_folder",
         json!({
             "path": ".",
             "recursive": true
@@ -139,8 +139,8 @@ async fn get_available_files() -> Result<Vec<String>> {
 
 /// Get document content using simplified tools
 async fn get_document_content(path: &str) -> Result<String> {
-    let result = execute_tool(
-        "search_by_content".to_string(),
+    let result = CrucibleToolManager::execute_tool_global(
+        "search_by_content",
         json!({
             "query": path,
             "limit": 1

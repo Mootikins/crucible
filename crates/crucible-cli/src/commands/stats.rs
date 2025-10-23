@@ -1,19 +1,16 @@
 use anyhow::Result;
-use crucible_tools::execute_tool;
+use crate::common::CrucibleToolManager;
 use serde_json::json;
 use crate::config::CliConfig;
 use crate::output;
 
 pub async fn execute(config: CliConfig) -> Result<()> {
-    // Initialize and load crucible-tools for simplified statistics
-    crucible_tools::init();
-    if let Err(e) = crucible_tools::load_all_tools().await {
-        return Err(anyhow::anyhow!("Failed to load tools: {}", e));
-    }
+    // Ensure crucible-tools are initialized through centralized manager
+    CrucibleToolManager::ensure_initialized_global().await?;
 
     // Get vault statistics using tools
-    let result = execute_tool(
-        "get_vault_stats".to_string(),
+    let result = CrucibleToolManager::execute_tool_global(
+        "get_vault_stats",
         json!({}),
         Some("cli_user".to_string()),
         Some("stats_session".to_string()),
