@@ -8,13 +8,14 @@ members = [
     "crates/crucible-sync",
     "crates/crucible-surrealdb",
     "crates/crucible-config",
-    "crates/crucible-watch",
+    # "crates/crucible-watch",  # Temporarily excluded due to compilation issues
     "crates/crucible-a2a",
     "crates/crucible-daemon",
     "crates/crucible-llm",
     "crates/crucible-services",
     "crates/crucible-rune-macros",
     "crates/crucible-tools",
+    "benches",
 ]
 
 [workspace.package]
@@ -23,6 +24,11 @@ authors = ["Matthew Krohn <matthew.d.krohn@gmail.com>"]
 license = "Proprietary"
 edition = "2021"
 rust-version = "1.75"
+description = "A high-performance knowledge management system with AI agent integration"
+homepage = "https://github.com/crucible/crucible"
+repository = "https://github.com/crucible/crucible"
+keywords = ["knowledge-management", "ai", "collaboration", "crdt", "rust"]
+categories = ["development-tools", "text-processing", "database"]
 
 [workspace.dependencies]
 yrs = "0.24"
@@ -86,6 +92,7 @@ md5 = "0.7"
 toml = "0.8"
 futures-util = "0.3"
 tokio-stream = "0.1"
+hostname = "0.4"
 
 # Metrics and monitoring
 metrics = "0.24"
@@ -114,6 +121,11 @@ syn = { version = "2.0", features = ["full"] }
 # Additional utilities for event system
 base64 = "0.22"
 
+# Additional dependencies
+rustc_version = "0.4"
+clap = { version = "4.0", features = ["derive"] }
+colored = "2.1"
+
 # Internal workspace crates
 crucible-core = { path = "crates/crucible-core" }
 crucible-config = { path = "crates/crucible-config" }
@@ -122,4 +134,19 @@ crucible-rune-macros = { path = "crates/crucible-rune-macros" }
 crucible-tools = { path = "crates/crucible-tools" }
 crucible-llm = { path = "crates/crucible-llm" }
 crucible-surrealdb = { path = "crates/crucible-surrealdb" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.release-debug]
+inherits = "release"
+debug = true
+strip = false
+
+[profile.bench]
+debug = true
 

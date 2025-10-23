@@ -1,9 +1,9 @@
 {
   "metadata": {
     "version": "1.0.0",
-    "created_at": "2025-10-20T23:13:41.480412059Z",
-    "modified_at": "2025-10-20T23:13:41.480412059Z",
-    "state_id": "fb3dc021-c296-4d5d-80e9-7d3d0e129ab8",
+    "created_at": "2025-10-23T14:32:39.462258907Z",
+    "modified_at": "2025-10-23T14:32:39.462258907Z",
+    "state_id": "399dc556-4d81-435a-8728-2be55d682877",
     "previous_state_id": null,
     "checksum": null
   },
@@ -15,8 +15,8 @@
       "desktop_enabled": true,
       "email_enabled": false,
       "levels": {
-        "info": true,
         "warning": true,
+        "info": true,
         "error": true,
         "critical": true
       }
@@ -34,8 +34,8 @@
       "panel_layout": "default",
       "panels": {
         "status_bar": true,
-        "toolbar": true,
-        "sidebar": true
+        "sidebar": true,
+        "toolbar": true
       },
       "window_state": null
     }
@@ -43,10 +43,10 @@
   "system_overrides": {},
   "feature_flags": {},
   "runtime_stats": {
-    "start_time": "2025-10-20T23:13:41.480414159Z",
+    "start_time": "2025-10-23T14:32:39.462261397Z",
     "uptime_seconds": 0,
     "session_count": 1,
-    "last_activity": "2025-10-20T23:13:41.480414159Z",
+    "last_activity": "2025-10-23T14:32:39.462261397Z",
     "performance": {
       "memory_usage_bytes": 0,
       "cpu_usage_percent": 0.0,

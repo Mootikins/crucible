@@ -1,64 +1,71 @@
 [package]
 name = "crucible-benchmarks"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["Matthew Krohn <matthew.d.krohn@gmail.com>"]
 edition = "2021"
-publish = false
+description = "Comprehensive performance testing framework for Crucible - Phase 6 Complete"
+
+[[bin]]
+name = "benchmark_runner"
+path = "src/main.rs"
 
 [dependencies]
 # Core dependencies
-crucible-core = { path = "../crates/crucible-core" }
-crucible-daemon = { path = "../crates/crucible-daemon" }
-crucible-services = { path = "../crates/crucible-services" }
-crucible-config = { path = "../crates/crucible-config" }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+num_cpus = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
 
 # Benchmarking
 criterion = { workspace = true, features = ["html_reports"] }
 
-# Async runtime
-tokio = { workspace = true, features = ["full"] }
+# CLI parsing
+clap = { version = "4.0", features = ["derive"] }
 
-# Serialization
+# System information
+rustc_version = "0.4"
+
+# Additional utilities for stress testing
+futures = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+
+# Colored output for stress test runner
+colored = "2.1"
+
+# Internal dependencies
+crucible-tools = { workspace = true }
+crucible-core = { workspace = true }
+crucible-services = { workspace = true }
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+futures = { workspace = true }
+rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
-# Utilities
-uuid = { workspace = true }
-chrono = { workspace = true }
-anyhow = "1.0"
-
-# Async traits
-async-trait = { workspace = true }
-
-# Futures
-futures = { workspace = true }
-
-# Mock data generation
-rand = { workspace = true }
-
-# Base64 encoding for payload data
-base64 = { workspace = true }
-
 [[bench]]
-name = "basic_performance"
+name = "plugin_stress_test_runner"
+path = "plugin_stress_test_runner.rs"
 harness = false
 
 [[bench]]
-name = "daemon_performance"
+name = "phase6_test_validation"
+path = "phase6_test_validation.rs"
 harness = false
 
 [[bench]]
-name = "load_testing"
+name = "load_testing_framework"
+path = "load_testing_framework.rs"
 harness = false
 
 [[bench]]
-name = "memory_profiling"
-harness = false
-
-[[bench]]
-name = "comparison_analysis"
-harness = false
-
-[[bench]]
-name = "scalability_testing"
+name = "plugin_stress_testing_framework"
+path = "plugin_stress_testing_framework.rs"
 harness = false

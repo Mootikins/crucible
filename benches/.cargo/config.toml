@@ -18,11 +18,8 @@ warm-up-time = 3
 measurement-time = 5
 
 [target.benchmark]
-# Optimize for current CPU architecture
-rustflags = ["-C", "target-cpu=native"]
-
-# Link-time optimization
-rustflags = ["-C", "link-args=-Wl,-O2"]
+# Optimize for current CPU architecture and link-time optimization
+rustflags = ["-C", "target-cpu=native", "-C", "link-args=-Wl,-O2"]
 
 # Performance debugging flags (comment out for production runs)
 # rustflags = ["-C", "instrument-coverage"]
