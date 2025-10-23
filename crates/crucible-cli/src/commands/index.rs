@@ -1,11 +1,17 @@
+//! Simplified vault indexing commands for CLI
+//!
+//! This module provides simplified CLI commands for vault indexing.
+//! Complex database and embedding services have been removed in Phase 1.1 dead code elimination.
+//! Now provides basic file discovery and tool-based indexing functionality.
+
 use anyhow::Result;
-use crucible_core::database::{Database, DocumentId, Document};
-use crucible_services::LLMService;
+use crucible_tools::execute_tool;
+use serde_json::json;
 use crate::config::CliConfig;
+use colored::Colorize;
 use glob::glob;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
-use std::sync::Arc;
 use chrono;
 
 pub async fn execute(
@@ -20,8 +26,11 @@ pub async fn execute(
         config.vault.path.clone()
     };
 
-    println!("Indexing vault: {}", vault_path.display());
-    println!("Pattern: {}\n", glob_pattern);
+    println!("🔍 Indexing vault: {}", vault_path.display());
+    println!("📋 Pattern: {}\n", glob_pattern);
+
+    // Initialize crucible-tools for simplified indexing
+    crucible_tools::init();
 
     // Find all files matching pattern
     let pattern_str = format!("{}/{}", vault_path.display(), glob_pattern);
@@ -30,18 +39,11 @@ pub async fn execute(
         .collect();
 
     if files.is_empty() {
-        println!("No files found matching pattern");
+        println!("❌ No files found matching pattern");
         return Ok(());
     }
 
-    println!("Found {} files\n", files.len());
-
-    // Create database
-    let db = Database::new(&config.database_path_str()?).await?;
-
-    // Create a simple embedding service for now
-    // TODO: Replace with proper LLMService integration
-    let embedding_service = create_simple_embedding_service(&config).await?;
+    println!("📁 Found {} files\n", files.len());
 
     // Progress bar
     let pb = ProgressBar::new(files.len() as u64);
@@ -58,58 +60,33 @@ pub async fn execute(
 
     for file_path in files {
         let file_path_str = file_path.to_string_lossy().to_string();
-        pb.set_message(file_path.file_name().unwrap().to_string_lossy().to_string());
+        let file_name = file_path.file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
 
-        // Check if file already exists and skip if not forcing
-        if !force && document_exists(&db, &file_path_str).await? {
-            skipped += 1;
-            pb.inc(1);
-            continue;
-        }
+        pb.set_message(file_name.clone());
 
         // Read file content
         match std::fs::read_to_string(&file_path) {
             Ok(content) => {
-                // Generate embedding
-                match embedding_service.embed(&content).await {
-                    Ok(embedding) => {
-                        // Store in database
-                        let now = chrono::Utc::now();
-                        let folder = file_path.parent()
-                            .and_then(|p| p.to_str())
-                            .unwrap_or("")
-                            .to_string();
-                        let title = file_path.file_stem()
-                            .and_then(|s| s.to_str())
-                            .map(|s| s.to_string());
-
-                        let document = Document {
-                            id: DocumentId(file_path_str.clone()),
-                            content,
-                            title,
-                            folder,
-                            tags: Vec::new(),
-                            properties: std::collections::HashMap::new(),
-                            created_at: now,
-                            updated_at: now,
-                            embedding: Some(embedding),
-                        };
-
-                        if let Err(e) = db.store_document(document).await {
-                            eprintln!("Error storing {}: {}", file_path_str, e);
-                            errors += 1;
-                        } else {
+                // Use simplified indexing with tools
+                match index_file_with_tools(&file_path_str, &content, force).await {
+                    Ok(success) => {
+                        if success {
                             indexed += 1;
+                        } else {
+                            skipped += 1;
                         }
                     }
                     Err(e) => {
-                        eprintln!("Error embedding {}: {}", file_path_str, e);
+                        eprintln!("❌ Error indexing {}: {}", file_name, e);
                         errors += 1;
                     }
                 }
             }
             Err(e) => {
-                eprintln!("Error reading {}: {}", file_path_str, e);
+                eprintln!("❌ Error reading {}: {}", file_name, e);
                 errors += 1;
             }
         }
@@ -117,53 +94,112 @@ pub async fn execute(
         pb.inc(1);
     }
 
-    pb.finish_with_message("Done!");
+    pb.finish_with_message("Indexing complete");
 
-    println!("\nIndexing complete:");
-    println!("  Indexed: {}", indexed);
-    println!("  Skipped: {}", skipped);
-    println!("  Errors:  {}", errors);
+    // Display results
+    println!("\n📊 Indexing Results:");
+    println!("  ✅ Indexed: {}", indexed.to_string().green());
+    println!("  ⏭️  Skipped: {}", skipped.to_string().yellow());
+    println!("  ❌ Errors:  {}", errors.to_string().red());
+
+    // Show vault statistics
+    if let Ok(stats) = get_vault_statistics().await {
+        println!("\n📈 Vault Statistics:");
+        if let Some(total_notes) = stats.get("total_notes").and_then(|v| v.as_u64()) {
+            println!("  📝 Total notes: {}", total_notes);
+        }
+        if let Some(total_size) = stats.get("total_size_mb").and_then(|v| v.as_f64()) {
+            println!("  💾 Total size: {:.1} MB", total_size);
+        }
+        if let Some(last_indexed) = stats.get("last_indexed").and_then(|v| v.as_str()) {
+            println!("  🕐 Last indexed: {}", last_indexed);
+        }
+    }
+
+    println!("\n💡 Phase 1.1 Simplification Notice:");
+    println!("   Complex database indexing has been simplified.");
+    println!("   Advanced embedding features are now disabled.");
+    println!("   File discovery and basic indexing preserved.");
 
     Ok(())
 }
 
-/// Simple embedding service for compatibility
-/// TODO: Replace with proper LLMService integration
-async fn create_simple_embedding_service(_config: &CliConfig) -> Result<Arc<dyn EmbeddingService>> {
-    Ok(Arc::new(MockEmbeddingService))
-}
-
-/// Check if document exists
-async fn document_exists(db: &Database, file_path: &str) -> Result<bool> {
-    Ok(db.get_document(&DocumentId(file_path.to_string())).await?.is_some())
-}
-
-/// Trait for embedding services
-#[async_trait::async_trait]
-trait EmbeddingService: Send + Sync {
-    async fn embed(&self, text: &str) -> Result<Vec<f32>>;
-}
-
-/// Mock embedding service for testing
-struct MockEmbeddingService;
-
-#[async_trait::async_trait]
-impl EmbeddingService for MockEmbeddingService {
-    async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        // Create a simple mock embedding based on text hash
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut hasher = DefaultHasher::new();
-        text.hash(&mut hasher);
-        let hash = hasher.finish();
-
-        // Create a simple 384-dimensional embedding (common size)
-        let mut embedding = Vec::with_capacity(384);
-        for i in 0..384 {
-            embedding.push(((hash >> (i % 64)) % 1000) as f32 / 1000.0);
+/// Index a file using simplified tools
+async fn index_file_with_tools(file_path: &str, content: &str, force: bool) -> Result<bool> {
+    // Check if already indexed (unless forcing)
+    if !force {
+        if let Ok(existing) = check_if_indexed(file_path).await {
+            if existing {
+                return Ok(false); // Skip
+            }
         }
-
-        Ok(embedding)
     }
+
+    // Use index_document tool
+    let result = execute_tool(
+        "index_document".to_string(),
+        json!({
+            "document": {
+                "id": file_path,
+                "content": content,
+                "title": extract_title_from_path(file_path),
+                "folder": extract_folder_from_path(file_path),
+                "indexed_at": chrono::Utc::now().to_rfc3339()
+            }
+        }),
+        Some("cli_indexer".to_string()),
+        Some("index_session".to_string()),
+    ).await?;
+
+    Ok(result.success)
+}
+
+/// Check if a file is already indexed
+async fn check_if_indexed(file_path: &str) -> Result<bool> {
+    let result = execute_tool(
+        "search_by_filename".to_string(),
+        json!({
+            "pattern": file_path
+        }),
+        Some("cli_indexer".to_string()),
+        Some("index_session".to_string()),
+    ).await?;
+
+    if let Some(data) = result.data {
+        if let Some(files) = data.get("files").and_then(|f| f.as_array()) {
+            return Ok(!files.is_empty());
+        }
+    }
+
+    Ok(false)
+}
+
+/// Get vault statistics using tools
+async fn get_vault_statistics() -> Result<serde_json::Value> {
+    let result = execute_tool(
+        "get_vault_stats".to_string(),
+        json!({}),
+        Some("cli_indexer".to_string()),
+        Some("index_session".to_string()),
+    ).await?;
+
+    Ok(result.data.unwrap_or(json!({})))
+}
+
+/// Extract title from file path
+fn extract_title_from_path(file_path: &str) -> String {
+    std::path::Path::new(file_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Untitled")
+        .to_string()
+}
+
+/// Extract folder from file path
+fn extract_folder_from_path(file_path: &str) -> String {
+    std::path::Path::new(file_path)
+        .parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or("")
+        .to_string()
 }

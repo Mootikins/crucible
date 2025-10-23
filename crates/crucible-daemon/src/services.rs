@@ -9,6 +9,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn, error};
 
+// Import local types from coordinator
+use super::coordinator::{ServiceStatus, ServiceHealth};
+
 /// Simplified service manager for coordinating data layer services
 #[derive(Clone)]
 pub struct ServiceManager {
@@ -69,13 +72,13 @@ impl ServiceManager {
     }
 
     /// Get health status for all services
-    pub async fn get_all_health(&self) -> Result<HashMap<String, crucible_services::types::ServiceHealth>> {
+    pub async fn get_all_health(&self) -> Result<HashMap<String, ServiceHealth>> {
         let services = self.services.read().await;
         let mut health_map = HashMap::new();
 
         for service_name in services.keys() {
-            health_map.insert(service_name.clone(), crucible_services::types::ServiceHealth {
-                status: crucible_services::types::ServiceStatus::Healthy,
+            health_map.insert(service_name.clone(), ServiceHealth {
+                status: ServiceStatus::Healthy,
                 message: Some("Service is running".to_string()),
                 last_check: chrono::Utc::now(),
                 details: HashMap::new(),
@@ -195,18 +198,14 @@ impl DatabaseService for SimpleDatabaseService {
 /// Simple event service implementation
 pub struct SimpleEventService {
     subscribers: Arc<RwLock<HashMap<String, Vec<String>>>>,
-    event_sender: Option<flume::Sender<String>>,
 }
 
 impl SimpleEventService {
     pub fn new() -> Self {
         Self {
             subscribers: Arc::new(RwLock::new(HashMap::new())),
-            event_sender: None,
         }
     }
-
-    // Removed new_with_sender - not needed for simplified implementation
 }
 
 #[async_trait]

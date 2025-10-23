@@ -10,7 +10,6 @@ description = "System and Rune tools for Crucible knowledge management with dyna
 # Core crates
 crucible-core = { workspace = true }
 crucible-config = { workspace = true }
-crucible-services = { workspace = true }
 crucible-llm = { workspace = true, features = ["test-utils"] }
 
 # Serialization
@@ -39,6 +38,9 @@ lazy_static = { workspace = true }
 # Database and embeddings
 chrono = { workspace = true }
 uuid = { workspace = true }
+
+# System information
+num_cpus = "1.16"
 
 # SurrealDB for database operations
 crucible-surrealdb = { workspace = true }

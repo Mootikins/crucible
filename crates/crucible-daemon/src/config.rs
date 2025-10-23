@@ -52,7 +52,7 @@ pub struct WatchPath {
     /// Path-specific filters (overrides global filters)
     pub filters: Option<Vec<FilterRule>>,
     /// Path-specific events to watch
-    pub events: Option<Vec<FilesystemEventType>>,
+    pub events: Option<Vec<WatchFilesystemEventType>>,
 }
 
 /// Filesystem watch backends
@@ -76,12 +76,12 @@ pub enum WatchMode {
     /// Watch only file creation/deletion
     CreateDelete,
     /// Custom event set
-    Custom(Vec<FilesystemEventType>),
+    Custom(Vec<WatchFilesystemEventType>),
 }
 
 /// Filesystem event types to watch
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum FilesystemEventType {
+pub enum WatchFilesystemEventType {
     Created,
     Modified,
     Deleted,

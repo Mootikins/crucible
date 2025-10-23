@@ -1,47 +1,57 @@
-//! Data layer coordinator
+//! Simplified data layer coordinator for crucible-daemon
 //!
-//! Main coordination logic for the daemon, orchestrating filesystem watching,
-//! database synchronization, event publishing, and service management.
-//! Enhanced with advanced event routing capabilities via crucible-services.
+//! Main coordination logic using simple event communication via tokio::broadcast.
+//! Eliminates complex service event routing in favor of direct channel communication.
 
 use crate::config::DaemonConfig;
-use crate::events::DaemonEvent;
+use crate::events::{DaemonEvent, EventBus, EventBuilder, convert_watch_event_to_daemon_event};
 use crate::handlers::EventLogger;
 use crate::services::{ServiceManager, FileService, EventService, SyncService, SimpleEventService, SimpleFileService, SimpleSyncService};
 use anyhow::Result;
 use async_trait::async_trait;
-use crucible_services::events::{
-    EventRouter, DefaultEventRouter, RoutingConfig, ServiceRegistration,
-    RoutingRule, LoadBalancingStrategy, EventBus, EventBusImpl, EventHandler,
-};
-use crucible_services::events::core::*;
-use crucible_services::events::core::ServiceTarget;
 use crucible_watch::{WatchManager, WatchConfig, FileEvent, FileEventKind};
-use flume;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{RwLock, watch, mpsc};
+use tokio::sync::{RwLock, watch, broadcast};
 use tokio::time::{interval, Duration};
 use tracing::{debug, error, info, trace, warn};
 
-/// Service information for discovery and coordination
+/// Simple service information
 #[derive(Debug, Clone)]
 pub struct ServiceInfo {
     pub service_id: String,
     pub service_type: String,
     pub instance_id: String,
     pub endpoint: Option<String>,
-    pub health: crucible_services::types::ServiceHealth,
+    pub status: ServiceStatus,
     pub last_seen: chrono::DateTime<chrono::Utc>,
     pub capabilities: Vec<String>,
     pub metadata: HashMap<String, String>,
 }
 
-/// Daemon health status for monitoring
+/// Simple service status
+#[derive(Debug, Clone, PartialEq)]
+pub enum ServiceStatus {
+    Healthy,
+    Degraded,
+    Unhealthy,
+    Unknown,
+}
+
+/// Simple service health information
+#[derive(Debug, Clone)]
+pub struct ServiceHealth {
+    pub status: ServiceStatus,
+    pub message: Option<String>,
+    pub last_check: chrono::DateTime<chrono::Utc>,
+    pub details: HashMap<String, String>,
+}
+
+/// Simple daemon health status
 #[derive(Debug, Clone)]
 pub struct DaemonHealth {
-    pub status: crucible_services::types::ServiceStatus,
+    pub status: ServiceStatus,
     pub uptime_seconds: u64,
     pub events_processed: u64,
     pub services_connected: usize,
@@ -53,7 +63,7 @@ pub struct DaemonHealth {
 impl Default for DaemonHealth {
     fn default() -> Self {
         Self {
-            status: crucible_services::types::ServiceStatus::Healthy,
+            status: ServiceStatus::Healthy,
             uptime_seconds: 0,
             events_processed: 0,
             services_connected: 0,
@@ -64,137 +74,195 @@ impl Default for DaemonHealth {
     }
 }
 
-/// Daemon event handler for service lifecycle events
+/// Simple daemon event handler
 pub struct DaemonEventHandler {
+    event_bus: Arc<EventBus>,
     coordinator_state: Arc<RwLock<HashMap<String, serde_json::Value>>>,
 }
 
 impl DaemonEventHandler {
-    pub fn new() -> Self {
+    pub fn new(event_bus: Arc<EventBus>) -> Self {
         Self {
+            event_bus,
             coordinator_state: Arc::new(RwLock::new(HashMap::new())),
         }
     }
-}
 
-#[async_trait::async_trait]
-impl EventHandler for DaemonEventHandler {
-    async fn handle_event(&self, event: DaemonEvent) -> EventResult<()> {
+    /// Handle incoming daemon events
+    pub async fn handle_event(&self, event: DaemonEvent) -> Result<()> {
+        match &event {
+            DaemonEvent::Service(service_event) => {
+                self.handle_service_event(service_event).await?;
+            }
+            DaemonEvent::Health(health_event) => {
+                self.handle_health_event(health_event).await?;
+            }
+            DaemonEvent::Error(error_event) => {
+                self.handle_error_event(error_event).await?;
+            }
+            DaemonEvent::Filesystem(fs_event) => {
+                self.handle_filesystem_event(fs_event).await?;
+            }
+            DaemonEvent::Database(db_event) => {
+                self.handle_database_event(db_event).await?;
+            }
+            DaemonEvent::Sync(sync_event) => {
+                self.handle_sync_event(sync_event).await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_service_event(&self, event: &crate::events::ServiceEvent) -> Result<()> {
         match &event.event_type {
-            EventType::Service(service_event) => {
-                self.handle_service_event(service_event, &event).await?;
-            }
-            EventType::System(system_event) => {
-                self.handle_system_event(system_event, &event).await?;
-            }
-            EventType::Health(_) => {
-                self.handle_health_event(&event).await?;
-            }
-            _ => {
-                debug!("Unhandled event type: {:?}", event.event_type);
-            }
-        }
-        Ok(())
-    }
-
-    fn name(&self) -> &str {
-        "daemon_event_handler"
-    }
-
-    fn priority(&self) -> u32 {
-        100 // High priority for daemon events
-    }
-}
-
-impl DaemonEventHandler {
-    async fn handle_service_event(&self, event: &ServiceEventType, source_event: &DaemonEvent) -> EventResult<()> {
-        match event {
-            ServiceEventType::ServiceRegistered { service_id, service_type } => {
-                info!("Service registered: {} ({})", service_id, service_type);
-                // Update internal service registry
+            crate::events::ServiceEventType::Started => {
+                info!("Service started: {} ({})", event.service_id, event.service_type);
                 let mut state = self.coordinator_state.write().await;
                 state.insert(
-                    format!("service:{}", service_id),
+                    format!("service:{}", event.service_id),
                     serde_json::json!({
-                        "type": service_type,
-                        "status": "registered",
-                        "registered_at": chrono::Utc::now().to_rfc3339()
-                    })
-                );
-            }
-            ServiceEventType::ServiceUnregistered { service_id } => {
-                info!("Service unregistered: {}", service_id);
-                let mut state = self.coordinator_state.write().await;
-                state.remove(&format!("service:{}", service_id));
-            }
-            ServiceEventType::HealthCheck { service_id, status } => {
-                debug!("Health check for {}: {}", service_id, status);
-                let mut state = self.coordinator_state.write().await;
-                if let Some(service_info) = state.get_mut(&format!("service:{}", service_id)) {
-                    if let Some(obj) = service_info.as_object_mut() {
-                        obj.insert("status".to_string(), serde_json::Value::String(status.clone()));
-                        obj.insert("last_health_check".to_string(),
-                                 serde_json::Value::String(chrono::Utc::now().to_rfc3339()));
-                    }
-                }
-            }
-            ServiceEventType::ServiceStatusChanged { service_id, old_status, new_status } => {
-                info!("Service {} status changed: {} -> {}", service_id, old_status, new_status);
-            }
-            _ => {
-                debug!("Unhandled service event: {:?}", event);
-            }
-        }
-        Ok(())
-    }
-
-    async fn handle_system_event(&self, event: &SystemEventType, source_event: &DaemonEvent) -> EventResult<()> {
-        match event {
-            SystemEventType::DaemonStarted { version } => {
-                info!("Daemon started: version {}", version);
-                let mut state = self.coordinator_state.write().await;
-                state.insert(
-                    "daemon".to_string(),
-                    serde_json::json!({
-                        "status": "running",
-                        "version": version,
+                        "type": event.service_type,
+                        "status": "started",
                         "started_at": chrono::Utc::now().to_rfc3339()
                     })
                 );
             }
-            SystemEventType::DaemonStopped { reason } => {
-                info!("Daemon stopped: {:?}", reason);
+            crate::events::ServiceEventType::Stopped => {
+                info!("Service stopped: {}", event.service_id);
+                let mut state = self.coordinator_state.write().await;
+                if let Some(service_info) = state.get_mut(&format!("service:{}", event.service_id)) {
+                    if let Some(obj) = service_info.as_object_mut() {
+                        obj.insert("status".to_string(), serde_json::Value::String("stopped".to_string()));
+                        obj.insert("stopped_at".to_string(),
+                                 serde_json::Value::String(chrono::Utc::now().to_rfc3339()));
+                    }
+                }
             }
-            SystemEventType::ConfigurationReloaded { config_hash } => {
-                info!("Configuration reloaded: {}", config_hash);
+            crate::events::ServiceEventType::Registered => {
+                info!("Service registered: {} ({})", event.service_id, event.service_type);
             }
-            _ => {
-                debug!("Unhandled system event: {:?}", event);
+            crate::events::ServiceEventType::Unregistered => {
+                info!("Service unregistered: {}", event.service_id);
+            }
+            crate::events::ServiceEventType::HealthCheck => {
+                debug!("Health check received for: {}", event.service_id);
+            }
+            crate::events::ServiceEventType::StatusChanged => {
+                info!("Service status changed: {}", event.service_id);
+            }
+            crate::events::ServiceEventType::Failed => {
+                warn!("Service failed: {}", event.service_id);
             }
         }
         Ok(())
     }
 
-    async fn handle_health_event(&self, event: &DaemonEvent) -> EventResult<()> {
-        debug!("Health event received: {:?}", event.source);
-        // Handle health-related events
+    async fn handle_health_event(&self, event: &crate::events::HealthEvent) -> Result<()> {
+        debug!("Health event for {}: {:?}", event.service, event.status);
+
+        // Update service health in state
+        let mut state = self.coordinator_state.write().await;
+        state.insert(
+            format!("health:{}", event.service),
+            serde_json::json!({
+                "status": format!("{:?}", event.status),
+                "message": event.message,
+                "last_check": chrono::Utc::now().to_rfc3339()
+            })
+        );
+        Ok(())
+    }
+
+    async fn handle_error_event(&self, event: &crate::events::ErrorEvent) -> Result<()> {
+        error!("Error event [{}]: {} - {}", event.code, event.category, event.message);
+
+        // Store error in state for monitoring
+        let mut state = self.coordinator_state.write().await;
+        let error_key = format!("error:{}:{}", event.category, event.code);
+        let error_list = state.entry(error_key.clone())
+            .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+
+        if let Some(array) = error_list.as_array_mut() {
+            array.push(serde_json::json!({
+                "timestamp": event.timestamp.to_rfc3339(),
+                "severity": format!("{:?}", event.severity),
+                "message": event.message,
+                "details": event.details
+            }));
+
+            // Keep only last 10 errors of this type
+            if array.len() > 10 {
+                array.remove(0);
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_filesystem_event(&self, event: &crate::events::FilesystemEvent) -> Result<()> {
+        debug!("Filesystem event: {:?} on {}", event.event_type, event.path.display());
+
+        // Update file tracking state
+        let mut state = self.coordinator_state.write().await;
+        let file_key = format!("file:{}", event.path.display());
+        state.insert(
+            file_key,
+            serde_json::json!({
+                "event_type": format!("{:?}", event.event_type),
+                "timestamp": event.timestamp.to_rfc3339(),
+                "source_path": event.source_path.as_ref().map(|p| p.display().to_string())
+            })
+        );
+        Ok(())
+    }
+
+    async fn handle_database_event(&self, event: &crate::events::DatabaseEvent) -> Result<()> {
+        debug!("Database event: {:?} on {}.{}", event.event_type, event.database,
+               event.table.as_deref().unwrap_or("N/A"));
+
+        // Track database operations
+        let mut state = self.coordinator_state.write().await;
+        let db_key = format!("database:{}", event.database);
+        state.insert(
+            db_key,
+            serde_json::json!({
+                "event_type": format!("{:?}", event.event_type),
+                "table": event.table,
+                "record_id": event.record_id,
+                "timestamp": event.timestamp.to_rfc3339()
+            })
+        );
+        Ok(())
+    }
+
+    async fn handle_sync_event(&self, event: &crate::events::SyncEvent) -> Result<()> {
+        debug!("Sync event: {:?} from {} to {}", event.event_type, event.source, event.target);
+
+        // Track sync operations
+        let mut state = self.coordinator_state.write().await;
+        let sync_key = format!("sync:{}:{}", event.source, event.target);
+        state.insert(
+            sync_key,
+            serde_json::json!({
+                "event_type": format!("{:?}", event.event_type),
+                "progress": event.progress,
+                "timestamp": event.timestamp.to_rfc3339()
+            })
+        );
         Ok(())
     }
 }
 
-/// Main data coordinator for the daemon
+/// Simplified data coordinator using direct event communication
 #[derive(Clone)]
 pub struct DataCoordinator {
     /// Configuration
     config: Arc<RwLock<DaemonConfig>>,
     /// Service manager
     service_manager: Arc<ServiceManager>,
-    /// Event sender (legacy - preserved for backward compatibility)
-    event_sender: flume::Sender<DaemonEvent>,
-    /// Event router (new advanced routing system)
-    event_router: Arc<dyn EventRouter>,
-    /// Event bus for service coordination
-    event_bus: Arc<dyn EventBus>,
+    /// Event bus for communication
+    event_bus: Arc<EventBus>,
+    /// Event handler
+    event_handler: Arc<DaemonEventHandler>,
     /// Event logger
     event_logger: Arc<EventLogger>,
     /// Filesystem watcher
@@ -204,20 +272,12 @@ pub struct DataCoordinator {
     shutdown_rx: watch::Receiver<bool>,
     /// Running state
     running: Arc<RwLock<bool>>,
-    /// Event routing configuration
-    routing_config: Arc<RwLock<RoutingConfig>>,
-    /// Service registrations for advanced routing
-    service_registrations: Arc<RwLock<HashMap<String, ServiceRegistration>>>,
-    /// Event routing statistics
-    routing_stats: Arc<RwLock<HashMap<String, u64>>>,
-    /// Daemon event handlers
-    daemon_handlers: Arc<RwLock<Vec<Arc<dyn EventHandler>>>>,
-    /// Service event subscriptions
-    event_subscriptions: Arc<RwLock<HashMap<String, mpsc::UnboundedSender<DaemonEvent>>>>,
     /// Service discovery cache
     service_discovery: Arc<RwLock<HashMap<String, ServiceInfo>>>,
     /// Daemon health status
     daemon_health: Arc<RwLock<DaemonHealth>>,
+    /// Event statistics
+    event_stats: Arc<RwLock<HashMap<String, u64>>>,
 }
 
 impl DataCoordinator {
@@ -227,66 +287,42 @@ impl DataCoordinator {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let running = Arc::new(RwLock::new(false));
 
-        // Initialize event channel (legacy - preserved for backward compatibility)
-        let (event_sender, _event_receiver) = flume::unbounded();
+        // Initialize simplified event bus
+        let event_bus = Arc::new(EventBus::new());
 
-        // Initialize service manager - simplified without enterprise router
+        // Initialize service manager
         let service_manager = Arc::new(ServiceManager::new().await?);
 
         // Initialize event logger
         let event_logger = Arc::new(EventLogger::new());
 
-        // Initialize advanced event router with enhanced configuration
-        let routing_config = RoutingConfig {
-            max_queue_size: 2000,
-            default_max_retries: 5,
-            circuit_breaker_threshold: 10,
-            circuit_breaker_timeout_ms: 60000,
-            event_timeout_ms: 45000,
-            max_concurrent_events: 200,
-            load_balancing_strategy: LoadBalancingStrategy::HealthBased,
-            enable_deduplication: true,
-            deduplication_window_s: 120,
-        };
+        // Initialize event handler
+        let event_handler = Arc::new(DaemonEventHandler::new(event_bus.clone()));
 
-        let event_router: Arc<dyn EventRouter> = Arc::new(DefaultEventRouter::with_config(routing_config.clone()));
-
-        // Initialize routing state
-        let routing_config = Arc::new(RwLock::new(routing_config));
-        let service_registrations = Arc::new(RwLock::new(HashMap::new()));
-        let routing_stats = Arc::new(RwLock::new(HashMap::new()));
-
-        // Initialize enhanced event-driven components
-        let event_bus: Arc<dyn EventBus> = Arc::new(EventBusImpl::new());
-        let daemon_handlers = Arc::new(RwLock::new(Vec::new()));
-        let event_subscriptions = Arc::new(RwLock::new(HashMap::new()));
+        // Initialize tracking structures
         let service_discovery = Arc::new(RwLock::new(HashMap::new()));
         let daemon_health = Arc::new(RwLock::new(DaemonHealth::default()));
+        let event_stats = Arc::new(RwLock::new(HashMap::new()));
 
         Ok(Self {
             config,
             service_manager,
-            event_sender,
-            event_router,
             event_bus,
+            event_handler,
             event_logger,
             watcher: None,
             shutdown_tx,
             shutdown_rx,
             running,
-            routing_config,
-            service_registrations,
-            routing_stats,
-            daemon_handlers,
-            event_subscriptions,
             service_discovery,
             daemon_health,
+            event_stats,
         })
     }
 
     /// Initialize the coordinator
     pub async fn initialize(&mut self) -> Result<()> {
-        info!("Initializing data coordinator");
+        info!("Initializing simplified data coordinator");
 
         // Validate configuration
         self.config.read().await.validate()?;
@@ -294,17 +330,8 @@ impl DataCoordinator {
         // Initialize services
         self.initialize_services().await?;
 
-        // Initialize event handlers
-        self.initialize_handlers().await?;
-
-        // Initialize advanced event routing
-        self.initialize_event_routing().await?;
-
-        // Initialize daemon event subscriptions
+        // Initialize event subscriptions
         self.initialize_event_subscriptions().await?;
-
-        // Initialize daemon event handlers
-        self.initialize_daemon_handlers().await?;
 
         // Initialize filesystem watcher
         self.initialize_watcher().await?;
@@ -318,15 +345,10 @@ impl DataCoordinator {
 
     /// Start the coordinator
     pub async fn start(&mut self) -> Result<()> {
-        info!("Starting data coordinator");
+        info!("Starting simplified data coordinator");
 
         // Set running state
         *self.running.write().await = true;
-
-        // Start filesystem watcher (simplified - not actually starting anything)
-        if self.watcher.is_some() {
-            info!("Filesystem watcher placeholder started");
-        }
 
         // Start background tasks
         self.start_background_tasks().await?;
@@ -345,13 +367,11 @@ impl DataCoordinator {
         // Set running state to false
         *self.running.write().await = false;
 
-        // Stop filesystem watcher (simplified - nothing to stop)
-        if self.watcher.is_some() {
-            info!("Filesystem watcher placeholder stopped");
-        }
-
         // Shutdown service manager
         self.service_manager.shutdown().await?;
+
+        // Publish daemon shutdown event
+        self.publish_daemon_stopped().await?;
 
         info!("Data coordinator stopped");
         Ok(())
@@ -373,17 +393,79 @@ impl DataCoordinator {
         new_config.validate()?;
 
         // Update configuration
-        *self.config.write().await = new_config;
+        *self.config.write().await = new_config.clone();
+
+        // Publish configuration reloaded event
+        let config_event = DaemonEvent::Service(EventBuilder::service_with_data(
+            crate::events::ServiceEventType::StatusChanged,
+            "daemon".to_string(),
+            "coordinator".to_string(),
+            serde_json::json!({
+                "config_reloaded": true,
+                "config_hash": format!("{:x}", md5::compute(format!("{:?}", new_config)))
+            })
+        ));
+
+        if let Err(e) = self.event_bus.publish(config_event).await {
+            warn!("Failed to publish config reload event: {}", e);
+        }
 
         info!("Configuration updated successfully");
         Ok(())
+    }
+
+    /// Publish an event to the event bus
+    pub async fn publish_event(&self, event: DaemonEvent) -> Result<()> {
+        let receiver_count = self.event_bus.publish(event.clone()).await
+            .map_err(|e| anyhow::anyhow!("Failed to publish event: {}", e))?;
+
+        // Update statistics
+        {
+            let mut stats = self.event_stats.write().await;
+            let event_type_name = self.get_event_type_name(&event);
+            *stats.entry(event_type_name).or_insert(0) += 1;
+        }
+
+        // Update daemon health
+        {
+            let mut health = self.daemon_health.write().await;
+            health.events_processed += 1;
+        }
+
+        trace!("Event published to {} receivers", receiver_count);
+        Ok(())
+    }
+
+    /// Subscribe to events
+    pub fn subscribe(&self) -> broadcast::Receiver<DaemonEvent> {
+        self.event_bus.subscribe()
+    }
+
+    /// Get event statistics
+    pub async fn get_event_statistics(&self) -> HashMap<String, u64> {
+        self.event_stats.read().await.clone()
+    }
+
+    /// Get event bus statistics
+    pub async fn get_event_bus_stats(&self) -> crate::events::EventStats {
+        self.event_bus.get_stats().await
+    }
+
+    /// Get service discovery information
+    pub async fn get_discovered_services(&self) -> HashMap<String, ServiceInfo> {
+        self.service_discovery.read().await.clone()
+    }
+
+    /// Get daemon health status
+    pub async fn get_daemon_health(&self) -> DaemonHealth {
+        self.daemon_health.read().await.clone()
     }
 
     /// Initialize services
     async fn initialize_services(&self) -> Result<()> {
         debug!("Initializing services");
 
-        // Create event service - simplified version
+        // Create event service
         let event_service = Arc::new(SimpleEventService::new());
         self.service_manager.register_service("event_service", event_service).await?;
 
@@ -403,131 +485,37 @@ impl DataCoordinator {
         Ok(())
     }
 
-    /// Initialize advanced event routing system
-    async fn initialize_event_routing(&self) -> Result<()> {
-        debug!("Initializing advanced event routing system");
+    /// Initialize event subscriptions
+    async fn initialize_event_subscriptions(&self) -> Result<()> {
+        debug!("Initializing event subscriptions");
 
-        // Register services with the event router
-        self.register_service_for_routing("event_service", &["system", "external"]).await?;
-        self.register_service_for_routing("file_service", &["filesystem", "external"]).await?;
-        self.register_service_for_routing("database_service", &["database", "system"]).await?;
-        self.register_service_for_routing("sync_service", &["sync", "system"]).await?;
+        // Subscribe to event bus
+        let mut receiver = self.event_bus.subscribe();
+        let event_handler = self.event_handler.clone();
+        let event_bus = self.event_bus.clone();
 
-        // Setup default routing rules
-        self.setup_default_routing_rules().await?;
+        // Spawn event processing task
+        tokio::spawn(async move {
+            while let Ok(event) = receiver.recv().await {
+                if let Err(e) = event_handler.handle_event(event.clone()).await {
+                    error!("Error handling event: {}", e);
 
-        info!("Advanced event routing system initialized successfully");
-        Ok(())
-    }
+                    // Create error event for the handling failure
+                    let error_event = DaemonEvent::Error(EventBuilder::error(
+                        crate::events::ErrorSeverity::Error,
+                        crate::events::ErrorCategory::Unknown,
+                        "EVENT_HANDLER_FAILED".to_string(),
+                        format!("Failed to handle event: {}", e),
+                    ));
 
-    /// Register a service for advanced event routing
-    async fn register_service_for_routing(&self, service_name: &str, supported_events: &[&str]) -> Result<()> {
-        let registration = ServiceRegistration {
-            service_id: service_name.to_string(),
-            service_type: self.get_service_type(service_name).await?,
-            instance_id: format!("{}-{}", service_name, uuid::Uuid::new_v4()),
-            endpoint: None,
-            supported_event_types: supported_events.iter().map(|s| s.to_string()).collect(),
-            priority: self.get_service_priority(service_name),
-            weight: self.get_service_weight(service_name),
-            max_concurrent_events: self.get_max_concurrent_events(service_name),
-            filters: Vec::new(),
-            metadata: self.get_service_metadata(service_name).await?,
-        };
+                    if let Err(pub_err) = event_bus.publish(error_event).await {
+                        error!("Failed to publish error event: {}", pub_err);
+                    }
+                }
+            }
+        });
 
-        // Register with advanced router
-        self.event_router.register_service(registration.clone()).await?;
-
-        // Store registration locally
-        let mut registrations = self.service_registrations.write().await;
-        registrations.insert(service_name.to_string(), registration);
-
-        debug!("Registered service '{}' for advanced routing", service_name);
-        Ok(())
-    }
-
-    /// Setup default routing rules for the daemon
-    async fn setup_default_routing_rules(&self) -> Result<()> {
-        // Rule: Route filesystem events primarily to file service
-        let filesystem_filter = EventFilter {
-            event_types: vec!["Filesystem".to_string()],
-            categories: vec![EventCategory::Filesystem],
-            priorities: vec![],
-            sources: vec![],
-            expression: None,
-            max_payload_size: None,
-        };
-
-        let filesystem_rule = RoutingRule {
-            rule_id: "filesystem-routing".to_string(),
-            name: "Filesystem Event Routing".to_string(),
-            description: "Routes filesystem events to appropriate services".to_string(),
-            filter: filesystem_filter,
-            targets: vec![
-                ServiceTarget::new("file_service".to_string()),
-                ServiceTarget::new("sync_service".to_string()),
-            ],
-            priority: 10,
-            enabled: true,
-            conditions: Vec::new(),
-        };
-        self.event_router.add_routing_rule(filesystem_rule).await?;
-
-        // Rule: Route database events to database service
-        let database_filter = EventFilter {
-            event_types: vec!["Database".to_string()],
-            categories: vec![EventCategory::Database],
-            priorities: vec![],
-            sources: vec![],
-            expression: None,
-            max_payload_size: None,
-        };
-
-        let database_rule = RoutingRule {
-            rule_id: "database-routing".to_string(),
-            name: "Database Event Routing".to_string(),
-            description: "Routes database events to database service".to_string(),
-            filter: database_filter,
-            targets: vec![ServiceTarget::new("database_service".to_string())],
-            priority: 15,
-            enabled: true,
-            conditions: Vec::new(),
-        };
-        self.event_router.add_routing_rule(database_rule).await?;
-
-        // Rule: Route service events (including health) to event service for logging
-        let service_filter = EventFilter {
-            event_types: vec!["Service".to_string()],
-            categories: vec![EventCategory::Service],
-            priorities: vec![],
-            sources: vec![],
-            expression: None,
-            max_payload_size: None,
-        };
-
-        let service_rule = RoutingRule {
-            rule_id: "service-routing".to_string(),
-            name: "Service Event Routing".to_string(),
-            description: "Routes service events for monitoring".to_string(),
-            filter: service_filter,
-            targets: vec![ServiceTarget::new("event_service".to_string())],
-            priority: 5,
-            enabled: true,
-            conditions: Vec::new(),
-        };
-        self.event_router.add_routing_rule(service_rule).await?;
-
-        debug!("Default routing rules configured successfully");
-        Ok(())
-    }
-
-    /// Initialize event handlers
-    async fn initialize_handlers(&self) -> Result<()> {
-        debug!("Initializing event handlers");
-
-        // Simplified event handling - using EventLogger directly
-        // The complex EventPublisher system has been replaced with flume channels
-        info!("Event handlers initialized successfully");
+        info!("Event subscriptions initialized");
         Ok(())
     }
 
@@ -535,8 +523,8 @@ impl DataCoordinator {
     async fn initialize_watcher(&mut self) -> Result<()> {
         debug!("Initializing filesystem watcher");
 
-        // Simplified watcher initialization - the WatchManager API has changed
-        // For now, we'll just set up a placeholder
+        // For now, we'll use a placeholder implementation
+        // In a real implementation, this would set up actual file watching
         info!("Filesystem watcher initialized successfully");
         Ok(())
     }
@@ -551,109 +539,68 @@ impl DataCoordinator {
         // Metrics collection task
         let metrics_task = self.start_metrics_collection().await?;
 
-        // Event processing task
-        let event_task = self.start_event_processing().await?;
-
-        // Advanced routing statistics task
-        let routing_stats_task = self.start_routing_statistics().await?;
-
-        // Event routing monitoring task
-        let routing_monitor_task = self.start_routing_monitoring().await?;
-
         // Service discovery task
         let discovery_task = self.start_service_discovery().await?;
 
-        // Event subscription monitoring task
-        let subscription_monitor_task = self.start_subscription_monitoring().await?;
-
-        // Daemon health reporting task
-        let health_reporting_task = self.start_health_reporting().await?;
+        // Event statistics task
+        let stats_task = self.start_event_statistics().await?;
 
         // Spawn tasks
         tokio::spawn(health_task);
         tokio::spawn(metrics_task);
-        tokio::spawn(event_task);
-        tokio::spawn(routing_stats_task);
-        tokio::spawn(routing_monitor_task);
         tokio::spawn(discovery_task);
-        tokio::spawn(subscription_monitor_task);
-        tokio::spawn(health_reporting_task);
+        tokio::spawn(stats_task);
 
         info!("Background tasks started");
         Ok(())
     }
 
-    
     /// Create database service
     async fn create_database_service(&self) -> Result<Arc<MockDatabaseService>> {
         let mock_db = Arc::new(MockDatabaseService);
         Ok(mock_db)
     }
 
-    
-    /// Convert daemon filesystem config to watch config (placeholder)
-    fn convert_to_watch_config(&self, _config: &crate::config::FilesystemConfig) -> WatchConfig {
-        // Placeholder - return default config for now
-        WatchConfig::default()
-    }
+    /// Publish daemon startup event
+    async fn publish_daemon_started(&self) -> Result<()> {
+        let startup_event = DaemonEvent::Service(EventBuilder::service_with_data(
+            crate::events::ServiceEventType::Started,
+            "daemon".to_string(),
+            "coordinator".to_string(),
+            serde_json::json!({
+                "version": env!("CARGO_PKG_VERSION"),
+                "startup_time": chrono::Utc::now().to_rfc3339(),
+                "features": vec!["simplified_events", "tokio_broadcast"]
+            })
+        ));
 
-    /// Handle filesystem watch events (enhanced with advanced routing)
-    async fn handle_watch_event(event: FileEvent, event_sender: &flume::Sender<DaemonEvent>, event_router: &Arc<dyn EventRouter>) -> Result<()> {
-        let daemon_event = Self::convert_watch_event_to_daemon_event(event)?;
-
-        // Send via legacy channel for backward compatibility
-        if let Err(e) = event_sender.send(daemon_event.clone()) {
-            warn!("Failed to send event via legacy channel: {}", e);
-        }
-
-        // Also route via advanced router
-        let advanced_event = Self::convert_to_advanced_event(daemon_event)?;
-        if let Err(e) = event_router.route_event(advanced_event).await {
-            warn!("Failed to route event via advanced router: {}", e);
-        }
-
+        self.publish_event(startup_event).await?;
+        info!("Daemon startup event published");
         Ok(())
     }
 
-    /// Convert watch event to daemon event
-    fn convert_watch_event_to_daemon_event(event: FileEvent) -> Result<DaemonEvent> {
-        let event_type = match event.kind {
-            FileEventKind::Created => crate::events::FilesystemEventType::Created,
-            FileEventKind::Modified => crate::events::FilesystemEventType::Modified,
-            FileEventKind::Deleted => crate::events::FilesystemEventType::Deleted,
-            // Handle rename events (since Renamed variant doesn't exist, treat as Modified)
-            _ if event.path.to_string_lossy().contains("rename") => {
-                // Handle rename events with source and target paths
-                return Ok(DaemonEvent::Filesystem(crate::events::FilesystemEvent {
-                    event_id: uuid::Uuid::new_v4(),
-                    timestamp: chrono::Utc::now(),
-                    event_type: crate::events::FilesystemEventType::Renamed {
-                        from: event.path.clone(),
-                        to: event.path.clone(), // This would need proper rename handling
-                    },
-                    path: event.path,
-                    metadata: crate::events::FileMetadata::default(),
-                    data: std::collections::HashMap::new(),
-                }));
-            }
-            _ => crate::events::FilesystemEventType::Modified,
-        };
+    /// Publish daemon shutdown event
+    async fn publish_daemon_stopped(&self) -> Result<()> {
+        let shutdown_event = DaemonEvent::Service(EventBuilder::service_with_data(
+            crate::events::ServiceEventType::Stopped,
+            "daemon".to_string(),
+            "coordinator".to_string(),
+            serde_json::json!({
+                "shutdown_time": chrono::Utc::now().to_rfc3339(),
+                "reason": "coordinator_stop_called"
+            })
+        ));
 
-        Ok(DaemonEvent::Filesystem(crate::events::FilesystemEvent {
-            event_id: uuid::Uuid::new_v4(),
-            timestamp: chrono::Utc::now(),
-            event_type,
-            path: event.path,
-            metadata: crate::events::FileMetadata::default(),
-            data: std::collections::HashMap::new(),
-        }))
+        self.publish_event(shutdown_event).await?;
+        info!("Daemon shutdown event published");
+        Ok(())
     }
 
     /// Start health monitoring task
     async fn start_health_monitoring(&self) -> Result<impl std::future::Future<Output = Result<()>>> {
         let service_manager = self.service_manager.clone();
+        let event_bus = self.event_bus.clone();
         let mut shutdown_rx = self.shutdown_rx.clone();
-        let event_sender = self.event_sender.clone();
 
         Ok(async move {
             let mut interval = interval(Duration::from_secs(60)); // Check every minute
@@ -665,26 +612,37 @@ impl DataCoordinator {
                         match service_manager.get_all_health().await {
                             Ok(health_statuses) => {
                                 for (service_name, health) in health_statuses {
-                                    let health_event = DaemonEvent::Health(crate::events::HealthEvent {
-                                        event_id: uuid::Uuid::new_v4(),
-                                        timestamp: chrono::Utc::now(),
-                                        service: service_name.clone(),
-                                        status: match health.status {
-                                            crucible_services::types::ServiceStatus::Healthy => crate::events::HealthStatus::Healthy,
-                                            crucible_services::types::ServiceStatus::Degraded => crate::events::HealthStatus::Degraded,
-                                            crucible_services::types::ServiceStatus::Unhealthy => crate::events::HealthStatus::Unhealthy,
-                                        },
-                                        metrics: std::collections::HashMap::new(), // Simplified metrics
-                                        data: std::collections::HashMap::new(),
-                                    });
+                                    let status = match health.status {
+                                        ServiceStatus::Healthy => crate::events::HealthStatus::Healthy,
+                                        ServiceStatus::Degraded => crate::events::HealthStatus::Degraded,
+                                        ServiceStatus::Unhealthy => crate::events::HealthStatus::Unhealthy,
+                                        _ => crate::events::HealthStatus::Unknown,
+                                    };
 
-                                    if let Err(e) = event_sender.send(health_event) {
-                                        error!("Failed to send health event: {}", e);
+                                    let health_event = DaemonEvent::Health(EventBuilder::health_with_message(
+                                        service_name.clone(),
+                                        status,
+                                        health.message.unwrap_or_default(),
+                                    ));
+
+                                    if let Err(e) = event_bus.publish(health_event).await {
+                                        error!("Failed to publish health event: {}", e);
                                     }
                                 }
                             }
                             Err(e) => {
                                 error!("Failed to get service health: {}", e);
+
+                                let error_event = DaemonEvent::Error(EventBuilder::error(
+                                    crate::events::ErrorSeverity::Error,
+                                    crate::events::ErrorCategory::Resource,
+                                    "HEALTH_CHECK_FAILED".to_string(),
+                                    format!("Failed to get service health: {}", e),
+                                ));
+
+                                if let Err(pub_err) = event_bus.publish(error_event).await {
+                                    error!("Failed to publish health check error: {}", pub_err);
+                                }
                             }
                         }
                     }
@@ -703,6 +661,8 @@ impl DataCoordinator {
 
     /// Start metrics collection task
     async fn start_metrics_collection(&self) -> Result<impl std::future::Future<Output = Result<()>>> {
+        let event_bus = self.event_bus.clone();
+        let daemon_health = self.daemon_health.clone();
         let mut shutdown_rx = self.shutdown_rx.clone();
 
         Ok(async move {
@@ -712,8 +672,30 @@ impl DataCoordinator {
                 tokio::select! {
                     _ = interval.tick() => {
                         debug!("Collecting metrics");
-                        // Collect and publish metrics
-                        // This would implement actual metrics collection
+
+                        // Update daemon health metrics
+                        {
+                            let mut health = daemon_health.write().await;
+                            health.metrics.insert("memory_usage_mb".to_string(),
+                                Self::get_memory_usage() as f64 / 1024.0 / 1024.0);
+                            health.uptime_seconds += 300; // 5 minutes in seconds
+                            health.last_health_check = chrono::Utc::now();
+                        }
+
+                        // Publish metrics event
+                        let metrics_event = DaemonEvent::Service(EventBuilder::service_with_data(
+                            crate::events::ServiceEventType::StatusChanged,
+                            "daemon".to_string(),
+                            "metrics".to_string(),
+                            serde_json::json!({
+                                "collection_time": chrono::Utc::now().to_rfc3339(),
+                                "metrics_collected": true
+                            })
+                        ));
+
+                        if let Err(e) = event_bus.publish(metrics_event).await {
+                            warn!("Failed to publish metrics event: {}", e);
+                        }
                     }
                     _ = shutdown_rx.changed() => {
                         if *shutdown_rx.borrow() {
@@ -728,601 +710,10 @@ impl DataCoordinator {
         })
     }
 
-    /// Start event processing task
-    async fn start_event_processing(&self) -> Result<impl std::future::Future<Output = Result<()>>> {
-        let event_logger = self.event_logger.clone();
-        let mut shutdown_rx = self.shutdown_rx.clone();
-
-        Ok(async move {
-            // This would handle any queued events or batch processing
-            let mut interval = interval(Duration::from_secs(10)); // Process every 10 seconds
-
-            loop {
-                tokio::select! {
-                    _ = interval.tick() => {
-                        debug!("Processing queued events");
-                        // Process any queued events
-                        // This would implement event batching and processing
-                    }
-                    _ = shutdown_rx.changed() => {
-                        if *shutdown_rx.borrow() {
-                            debug!("Event processing task shutting down");
-                            break;
-                        }
-                    }
-                }
-            }
-
-            Ok(())
-        })
-    }
-
-    /// Start routing statistics collection task
-    async fn start_routing_statistics(&self) -> Result<impl std::future::Future<Output = Result<()>>> {
-        let event_router = self.event_router.clone();
-        let routing_stats = self.routing_stats.clone();
-        let mut shutdown_rx = self.shutdown_rx.clone();
-
-        Ok(async move {
-            let mut interval = interval(Duration::from_secs(30)); // Collect stats every 30 seconds
-
-            loop {
-                tokio::select! {
-                    _ = interval.tick() => {
-                        debug!("Collecting routing statistics");
-
-                        if let Ok(stats) = event_router.get_routing_stats().await {
-                            let mut local_stats = routing_stats.write().await;
-                            local_stats.insert("total_events_routed".to_string(), stats.total_events_routed);
-                            local_stats.insert("events_routed_last_minute".to_string(), stats.events_routed_last_minute);
-                            local_stats.insert("events_routed_last_hour".to_string(), stats.events_routed_last_hour);
-                            local_stats.insert("error_rate".to_string(), (stats.error_rate * 1000.0) as u64); // Convert to integer for storage
-                            local_stats.insert("average_routing_time_ms".to_string(), stats.average_routing_time_ms as u64);
-
-                            for (service_id, service_stats) in stats.service_stats {
-                                local_stats.insert(format!("{}_events_processed", service_id), service_stats.events_processed);
-                                local_stats.insert(format!("{}_events_failed", service_id), service_stats.events_failed);
-                                local_stats.insert(format!("{}_current_queue_size", service_id), service_stats.current_queue_size as u64);
-                            }
-
-                            trace!("Routing statistics updated: {} total events, {:.2}% error rate",
-                                  stats.total_events_routed, stats.error_rate * 100.0);
-                        }
-                    }
-                    _ = shutdown_rx.changed() => {
-                        if *shutdown_rx.borrow() {
-                            debug!("Routing statistics task shutting down");
-                            break;
-                        }
-                    }
-                }
-            }
-
-            Ok(())
-        })
-    }
-
-    /// Start routing monitoring task
-    async fn start_routing_monitoring(&self) -> Result<impl std::future::Future<Output = Result<()>>> {
-        let event_router = self.event_router.clone();
-        let service_manager = self.service_manager.clone();
-        let mut shutdown_rx = self.shutdown_rx.clone();
-
-        Ok(async move {
-            let mut interval = interval(Duration::from_secs(60)); // Monitor every minute
-
-            loop {
-                tokio::select! {
-                    _ = interval.tick() => {
-                        debug!("Monitoring routing health");
-
-                        // Update service health in the router based on service manager status
-                        if let Ok(health_statuses) = service_manager.get_all_health().await {
-                            for (service_name, health) in health_statuses {
-                                let router_health = crucible_services::types::ServiceHealth {
-                                    status: health.status,
-                                    message: health.message,
-                                    last_check: health.last_check,
-                                    details: health.details,
-                                };
-
-                                if let Err(e) = event_router.update_service_health(&service_name, router_health).await {
-                                    warn!("Failed to update service health for {}: {}", service_name, e);
-                                }
-                            }
-                        }
-                    }
-                    _ = shutdown_rx.changed() => {
-                        if *shutdown_rx.borrow() {
-                            debug!("Routing monitoring task shutting down");
-                            break;
-                        }
-                    }
-                }
-            }
-
-            Ok(())
-        })
-    }
-  /// Get service type for registration
-    async fn get_service_type(&self, service_name: &str) -> Result<String> {
-        match service_name {
-            "event_service" => Ok("event_processor".to_string()),
-            "file_service" => Ok("file_handler".to_string()),
-            "database_service" => Ok("data_store".to_string()),
-            "sync_service" => Ok("synchronizer".to_string()),
-            _ => Ok("unknown".to_string()),
-        }
-    }
-
-    /// Get service priority for load balancing
-    fn get_service_priority(&self, service_name: &str) -> u8 {
-        match service_name {
-            "event_service" => 5,  // Medium priority
-            "file_service" => 10,  // High priority for filesystem events
-            "database_service" => 15, // High priority for data consistency
-            "sync_service" => 8,   // Medium-high priority
-            _ => 1,                // Low priority for unknown services
-        }
-    }
-
-    /// Get service weight for weighted random load balancing
-    fn get_service_weight(&self, service_name: &str) -> f64 {
-        match service_name {
-            "event_service" => 1.0,
-            "file_service" => 1.5,  // Higher weight for filesystem operations
-            "database_service" => 2.0, // Highest weight for data operations
-            "sync_service" => 1.2,
-            _ => 0.5,              // Lower weight for unknown services
-        }
-    }
-
-    /// Get maximum concurrent events for a service
-    fn get_max_concurrent_events(&self, service_name: &str) -> usize {
-        match service_name {
-            "event_service" => 50,
-            "file_service" => 20,   // Limit concurrent file operations
-            "database_service" => 30,
-            "sync_service" => 10,   // Limit concurrent sync operations
-            _ => 5,                 // Conservative limit for unknown services
-        }
-    }
-
-    /// Get service metadata for registration
-    async fn get_service_metadata(&self, service_name: &str) -> Result<HashMap<String, String>> {
-        let mut metadata = HashMap::new();
-        metadata.insert("registered_at".to_string(), chrono::Utc::now().to_rfc3339());
-        metadata.insert("coordinator_version".to_string(), "2.0".to_string());
-
-        match service_name {
-            "event_service" => {
-                metadata.insert("description".to_string(), "Handles event processing and logging".to_string());
-                metadata.insert("capabilities".to_string(), "publish,subscribe,log".to_string());
-            }
-            "file_service" => {
-                metadata.insert("description".to_string(), "Manages file system operations".to_string());
-                metadata.insert("capabilities".to_string(), "read,write,delete,list".to_string());
-            }
-            "database_service" => {
-                metadata.insert("description".to_string(), "Provides database access and query execution".to_string());
-                metadata.insert("capabilities".to_string(), "query,health_check".to_string());
-            }
-            "sync_service" => {
-                metadata.insert("description".to_string(), "Handles data synchronization operations".to_string());
-                metadata.insert("capabilities".to_string(), "sync,status,health_check".to_string());
-            }
-            _ => {
-                metadata.insert("description".to_string(), "Unknown service".to_string());
-            }
-        }
-
-        Ok(metadata)
-    }
-
-    /// Convert legacy daemon event to advanced event format
-    fn convert_to_advanced_event(legacy_event: DaemonEvent) -> Result<crucible_services::events::core::DaemonEvent> {
-        use crucible_services::events::core::*;
-
-        let event_type = match legacy_event {
-            DaemonEvent::Filesystem(fs_event) => {
-                match fs_event.event_type {
-                    crate::events::FilesystemEventType::Created => {
-                        EventType::Filesystem(FilesystemEventType::FileCreated {
-                            path: fs_event.path.to_string_lossy().to_string(),
-                        })
-                    }
-                    crate::events::FilesystemEventType::Modified => {
-                        EventType::Filesystem(FilesystemEventType::FileModified {
-                            path: fs_event.path.to_string_lossy().to_string(),
-                        })
-                    }
-                    crate::events::FilesystemEventType::Deleted => {
-                        EventType::Filesystem(FilesystemEventType::FileDeleted {
-                            path: fs_event.path.to_string_lossy().to_string(),
-                        })
-                    }
-                    crate::events::FilesystemEventType::Renamed { from, to } => {
-                        EventType::Filesystem(FilesystemEventType::FileMoved {
-                            from: from.to_string_lossy().to_string(),
-                            to: to.to_string_lossy().to_string(),
-                        })
-                    }
-                    _ => EventType::Custom(format!("filesystem: {:?}", fs_event.event_type)),
-                }
-            }
-            DaemonEvent::Database(db_event) => {
-                match db_event.event_type {
-                    crate::events::DatabaseEventType::RecordInserted => {
-                        EventType::Database(DatabaseEventType::RecordCreated {
-                            table: db_event.table.clone().unwrap_or_default(),
-                            id: db_event.record_id.clone().unwrap_or_default(),
-                        })
-                    }
-                    crate::events::DatabaseEventType::RecordUpdated => {
-                        EventType::Database(DatabaseEventType::RecordUpdated {
-                            table: db_event.table.clone().unwrap_or_default(),
-                            id: db_event.record_id.clone().unwrap_or_default(),
-                            changes: HashMap::new(),
-                        })
-                    }
-                    crate::events::DatabaseEventType::RecordDeleted => {
-                        EventType::Database(DatabaseEventType::RecordDeleted {
-                            table: db_event.table.clone().unwrap_or_default(),
-                            id: db_event.record_id.clone().unwrap_or_default(),
-                        })
-                    }
-                    _ => EventType::Custom(format!("database: {:?}", db_event.event_type)),
-                }
-            }
-            DaemonEvent::Sync(sync_event) => {
-                EventType::Custom(format!("sync: {:?}", sync_event.event_type))
-            }
-            DaemonEvent::Error(error_event) => {
-                EventType::Custom(format!("error: {} - {}", error_event.category, error_event.message))
-            }
-            DaemonEvent::Health(health_event) => {
-                EventType::Service(ServiceEventType::HealthCheck {
-                    service_id: health_event.service,
-                    status: format!("{:?}", health_event.status),
-                })
-            }
-        };
-
-        let priority = match legacy_event {
-            DaemonEvent::Error(error_event) => match error_event.severity {
-                crate::events::ErrorSeverity::Critical => EventPriority::Critical,
-                crate::events::ErrorSeverity::Error => EventPriority::High,
-                crate::events::ErrorSeverity::Warning => EventPriority::Normal,
-                _ => EventPriority::Low,
-            },
-            _ => EventPriority::Normal,
-        };
-
-        let payload = EventPayload::json(serde_json::to_value(&legacy_event).unwrap_or_default());
-
-        let mut advanced_event = crucible_services::events::core::DaemonEvent::new(
-            event_type,
-            crucible_services::events::core::EventSource::service("daemon".to_string()),
-            payload,
-        );
-
-        advanced_event.priority = priority;
-        Ok(advanced_event)
-    }
-
-    /// Public method to publish events via both routing systems
-    pub async fn publish_event(&self, event: DaemonEvent) -> Result<()> {
-        // Send via legacy channel for backward compatibility
-        if let Err(e) = self.event_sender.send(event.clone()) {
-            warn!("Failed to send event via legacy channel: {}", e);
-        }
-
-        // Also route via advanced router
-        let advanced_event = Self::convert_to_advanced_event(event)?;
-        if let Err(e) = self.event_router.route_event(advanced_event).await {
-            warn!("Failed to route event via advanced router: {}", e);
-        }
-
-        Ok(())
-    }
-
-    /// Get routing statistics
-    pub async fn get_routing_statistics(&self) -> HashMap<String, u64> {
-        self.routing_stats.read().await.clone()
-    }
-
-    /// Update routing configuration
-    pub async fn update_routing_config(&self, new_config: RoutingConfig) -> Result<()> {
-        *self.routing_config.write().await = new_config.clone();
-        info!("Routing configuration updated");
-        Ok(())
-    }
-
-    /// Test event routing for a given event
-    pub async fn test_event_routing(&self, event: &DaemonEvent) -> Result<Vec<String>> {
-        let advanced_event = Self::convert_to_advanced_event(event.clone())?;
-        self.event_router.test_routing(&advanced_event).await
-            .map_err(|e| anyhow::anyhow!("Routing test failed: {}", e))
-    }
-
-    /// Initialize daemon event subscriptions for service coordination
-    async fn initialize_event_subscriptions(&self) -> Result<()> {
-        debug!("Initializing daemon event subscriptions");
-
-        // Subscribe to service lifecycle events
-        self.subscribe_to_service_events().await?;
-
-        // Subscribe to system events
-        self.subscribe_to_system_events().await?;
-
-        // Subscribe to health events
-        self.subscribe_to_health_events().await?;
-
-        info!("Daemon event subscriptions initialized");
-        Ok(())
-    }
-
-    /// Initialize daemon event handlers
-    async fn initialize_daemon_handlers(&self) -> Result<()> {
-        debug!("Initializing daemon event handlers");
-
-        // Create and register daemon event handler
-        let daemon_handler = Arc::new(DaemonEventHandler::new());
-        self.event_bus.subscribe(daemon_handler.clone()).await?;
-
-        // Store handler reference
-        let mut handlers = self.daemon_handlers.write().await;
-        handlers.push(daemon_handler);
-
-        info!("Daemon event handlers initialized");
-        Ok(())
-    }
-
-    /// Subscribe to service lifecycle events
-    async fn subscribe_to_service_events(&self) -> Result<()> {
-        let service_filter = EventFilter {
-            event_types: vec!["service".to_string()],
-            categories: vec![EventCategory::Service],
-            priorities: vec![],
-            sources: vec![],
-            expression: None,
-            max_payload_size: None,
-        };
-
-        // Create subscription for service events
-        let (tx, mut rx) = mpsc::unbounded_channel::<DaemonEvent>();
-
-        // Store subscription
-        let mut subscriptions = self.event_subscriptions.write().await;
-        subscriptions.insert("service_events".to_string(), tx);
-
-        // Start event processing task
-        let event_router = self.event_router.clone();
-        let service_discovery = self.service_discovery.clone();
-        let daemon_health = self.daemon_health.clone();
-
-        tokio::spawn(async move {
-            while let Some(event) = rx.recv().await {
-                if let Err(e) = Self::handle_service_subscription_event(event, &event_router, &service_discovery, &daemon_health).await {
-                    error!("Error handling service subscription event: {}", e);
-                }
-            }
-        });
-
-        info!("Subscribed to service lifecycle events");
-        Ok(())
-    }
-
-    /// Subscribe to system events
-    async fn subscribe_to_system_events(&self) -> Result<()> {
-        let system_filter = EventFilter {
-            event_types: vec!["system".to_string()],
-            categories: vec![EventCategory::System],
-            priorities: vec![],
-            sources: vec![],
-            expression: None,
-            max_payload_size: None,
-        };
-
-        // Create subscription for system events
-        let (tx, mut rx) = mpsc::unbounded_channel::<DaemonEvent>();
-
-        // Store subscription
-        let mut subscriptions = self.event_subscriptions.write().await;
-        subscriptions.insert("system_events".to_string(), tx);
-
-        // Start event processing task
-        let event_router = self.event_router.clone();
-        let daemon_health = self.daemon_health.clone();
-
-        tokio::spawn(async move {
-            while let Some(event) = rx.recv().await {
-                if let Err(e) = Self::handle_system_subscription_event(event, &event_router, &daemon_health).await {
-                    error!("Error handling system subscription event: {}", e);
-                }
-            }
-        });
-
-        info!("Subscribed to system events");
-        Ok(())
-    }
-
-    /// Subscribe to health events
-    async fn subscribe_to_health_events(&self) -> Result<()> {
-        let health_filter = EventFilter {
-            event_types: vec!["health".to_string()],
-            categories: vec![EventCategory::Service],
-            priorities: vec![],
-            sources: vec![],
-            expression: None,
-            max_payload_size: None,
-        };
-
-        // Create subscription for health events
-        let (tx, mut rx) = mpsc::unbounded_channel::<DaemonEvent>();
-
-        // Store subscription
-        let mut subscriptions = self.event_subscriptions.write().await;
-        subscriptions.insert("health_events".to_string(), tx);
-
-        // Start event processing task
-        let service_discovery = self.service_discovery.clone();
-
-        tokio::spawn(async move {
-            while let Some(event) = rx.recv().await {
-                if let Err(e) = Self::handle_health_subscription_event(event, &service_discovery).await {
-                    error!("Error handling health subscription event: {}", e);
-                }
-            }
-        });
-
-        info!("Subscribed to health events");
-        Ok(())
-    }
-
-    /// Handle service subscription events
-    async fn handle_service_subscription_event(
-        event: DaemonEvent,
-        _event_router: &Arc<dyn EventRouter>,
-        service_discovery: &Arc<RwLock<HashMap<String, ServiceInfo>>>,
-        _daemon_health: &Arc<RwLock<DaemonHealth>>,
-    ) -> Result<()> {
-        match &event.event_type {
-            EventType::Service(service_event) => {
-                match service_event {
-                    ServiceEventType::ServiceRegistered { service_id, service_type } => {
-                        info!("Service discovered via events: {} ({})", service_id, service_type);
-
-                        let service_info = ServiceInfo {
-                            service_id: service_id.clone(),
-                            service_type: service_type.clone(),
-                            instance_id: event.source.instance.clone().unwrap_or_default(),
-                            endpoint: None, // Would be extracted from event metadata
-                            health: crucible_services::types::ServiceHealth {
-                                status: crucible_services::types::ServiceStatus::Healthy,
-                                message: Some("Service registered".to_string()),
-                                details: HashMap::new(),
-                                last_check: chrono::Utc::now(),
-                            },
-                            last_seen: chrono::Utc::now(),
-                            capabilities: vec![], // Would be extracted from event metadata
-                            metadata: HashMap::new(),
-                        };
-
-                        let mut discovery = service_discovery.write().await;
-                        discovery.insert(service_id.clone(), service_info);
-                    }
-                    ServiceEventType::ServiceUnregistered { service_id } => {
-                        info!("Service removed via events: {}", service_id);
-                        let mut discovery = service_discovery.write().await;
-                        discovery.remove(service_id);
-                    }
-                    ServiceEventType::ServiceStatusChanged { service_id, new_status, .. } => {
-                        debug!("Service status changed via events: {} -> {}", service_id, new_status);
-                        let mut discovery = service_discovery.write().await;
-                        if let Some(service_info) = discovery.get_mut(service_id) {
-                            service_info.health.status = match new_status.as_str() {
-                                "healthy" => crucible_services::types::ServiceStatus::Healthy,
-                                "degraded" => crucible_services::types::ServiceStatus::Degraded,
-                                "unhealthy" => crucible_services::types::ServiceStatus::Unhealthy,
-                                _ => crucible_services::types::ServiceStatus::Unknown,
-                            };
-                            service_info.last_seen = chrono::Utc::now();
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-
-    /// Handle system subscription events
-    async fn handle_system_subscription_event(
-        event: DaemonEvent,
-        _event_router: &Arc<dyn EventRouter>,
-        daemon_health: &Arc<RwLock<DaemonHealth>>,
-    ) -> Result<()> {
-        match &event.event_type {
-            EventType::System(system_event) => {
-                match system_event {
-                    SystemEventType::DaemonStarted { version } => {
-                        info!("Daemon started event received: version {}", version);
-                        let mut health = daemon_health.write().await;
-                        health.status = crucible_services::types::ServiceStatus::Healthy;
-                        health.uptime_seconds = 0;
-                        health.last_health_check = chrono::Utc::now();
-                    }
-                    SystemEventType::DaemonStopped { reason } => {
-                        info!("Daemon stopped event received: {:?}", reason);
-                        let mut health = daemon_health.write().await;
-                        health.status = crucible_services::types::ServiceStatus::Unknown;
-                    }
-                    SystemEventType::EmergencyShutdown { reason } => {
-                        warn!("Emergency shutdown event received: {}", reason);
-                        let mut health = daemon_health.write().await;
-                        health.status = crucible_services::types::ServiceStatus::Unhealthy;
-                        health.errors.push(format!("Emergency shutdown: {}", reason));
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-
-    /// Handle health subscription events
-    async fn handle_health_subscription_event(
-        event: DaemonEvent,
-        service_discovery: &Arc<RwLock<HashMap<String, ServiceInfo>>>,
-    ) -> Result<()> {
-        match &event.event_type {
-            EventType::Service(service_event) => {
-                if let ServiceEventType::HealthCheck { service_id, status } = service_event {
-                    let mut discovery = service_discovery.write().await;
-                    if let Some(service_info) = discovery.get_mut(service_id) {
-                        service_info.health.status = match status.as_str() {
-                            "healthy" => crucible_services::types::ServiceStatus::Healthy,
-                            "degraded" => crucible_services::types::ServiceStatus::Degraded,
-                            "unhealthy" => crucible_services::types::ServiceStatus::Unhealthy,
-                            _ => crucible_services::types::ServiceStatus::Unknown,
-                        };
-                        service_info.health.last_check = chrono::Utc::now();
-                        service_info.last_seen = chrono::Utc::now();
-                    }
-                }
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-
-    /// Publish daemon startup event
-    async fn publish_daemon_started(&self) -> Result<()> {
-        let startup_event = DaemonEvent::new(
-            EventType::System(SystemEventType::DaemonStarted {
-                version: env!("CARGO_PKG_VERSION").to_string(),
-            }),
-            EventSource::service("daemon".to_string()),
-            EventPayload::json(serde_json::json!({
-                "startup_time": chrono::Utc::now().to_rfc3339(),
-                "features": vec!["event_routing", "service_discovery", "health_monitoring"]
-            }))
-        ).with_priority(EventPriority::High);
-
-        if let Err(e) = self.event_router.route_event(startup_event).await {
-            warn!("Failed to publish daemon startup event: {}", e);
-        }
-
-        Ok(())
-    }
-
     /// Start service discovery task
     async fn start_service_discovery(&self) -> Result<impl std::future::Future<Output = Result<()>>> {
         let service_discovery = self.service_discovery.clone();
-        let event_router = self.event_router.clone();
+        let event_bus = self.event_bus.clone();
         let mut shutdown_rx = self.shutdown_rx.clone();
 
         Ok(async move {
@@ -1347,6 +738,17 @@ impl DataCoordinator {
                         for stale_service in stale_services {
                             info!("Removing stale service from discovery: {}", stale_service);
                             discovery.remove(&stale_service);
+
+                            // Publish service unregistered event
+                            let unregister_event = DaemonEvent::Service(EventBuilder::service(
+                                crate::events::ServiceEventType::Unregistered,
+                                stale_service.clone(),
+                                "stale_cleanup".to_string(),
+                            ));
+
+                            if let Err(e) = event_bus.publish(unregister_event).await {
+                                warn!("Failed to publish stale service cleanup event: {}", e);
+                            }
                         }
                     }
                     _ = shutdown_rx.changed() => {
@@ -1362,25 +764,42 @@ impl DataCoordinator {
         })
     }
 
-    /// Start subscription monitoring task
-    async fn start_subscription_monitoring(&self) -> Result<impl std::future::Future<Output = Result<()>>> {
-        let event_subscriptions = self.event_subscriptions.clone();
+    /// Start event statistics task
+    async fn start_event_statistics(&self) -> Result<impl std::future::Future<Output = Result<()>>> {
+        let event_stats = self.event_stats.clone();
+        let event_bus = self.event_bus.clone();
         let mut shutdown_rx = self.shutdown_rx.clone();
 
         Ok(async move {
-            let mut interval = interval(Duration::from_secs(60)); // Check every minute
+            let mut interval = interval(Duration::from_secs(60)); // Every minute
 
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
-                        debug!("Monitoring event subscriptions");
+                        debug!("Collecting event statistics");
 
-                        let subscriptions = event_subscriptions.read().await;
-                        trace!("Active subscriptions: {}", subscriptions.len());
+                        let stats = event_stats.read().await.clone();
+                        let total_events: u64 = stats.values().sum();
+
+                        // Publish statistics event
+                        let stats_event = DaemonEvent::Service(EventBuilder::service_with_data(
+                            crate::events::ServiceEventType::StatusChanged,
+                            "daemon".to_string(),
+                            "event_statistics".to_string(),
+                            serde_json::json!({
+                                "total_events": total_events,
+                                "events_by_type": stats,
+                                "collection_time": chrono::Utc::now().to_rfc3339()
+                            })
+                        ));
+
+                        if let Err(e) = event_bus.publish(stats_event).await {
+                            warn!("Failed to publish event statistics: {}", e);
+                        }
                     }
                     _ = shutdown_rx.changed() => {
                         if *shutdown_rx.borrow() {
-                            debug!("Subscription monitoring task shutting down");
+                            debug!("Event statistics task shutting down");
                             break;
                         }
                     }
@@ -1391,58 +810,16 @@ impl DataCoordinator {
         })
     }
 
-    /// Start daemon health reporting task
-    async fn start_health_reporting(&self) -> Result<impl std::future::Future<Output = Result<()>>> {
-        let daemon_health = self.daemon_health.clone();
-        let service_discovery = self.service_discovery.clone();
-        let event_router = self.event_router.clone();
-        let mut shutdown_rx = self.shutdown_rx.clone();
-
-        Ok(async move {
-            let mut interval = interval(Duration::from_secs(30)); // Report every 30 seconds
-
-            loop {
-                tokio::select! {
-                    _ = interval.tick() => {
-                        debug!("Reporting daemon health");
-
-                        let discovery = service_discovery.read().await;
-                        let mut health = daemon_health.write().await;
-
-                        health.services_connected = discovery.len();
-                        health.last_health_check = chrono::Utc::now();
-
-                        // Update metrics
-                        health.metrics.insert("memory_usage_mb".to_string(),
-                            Self::get_memory_usage() as f64 / 1024.0 / 1024.0);
-                        health.metrics.insert("uptime_seconds".to_string(),
-                            health.uptime_seconds as f64);
-
-                        // Create health report event
-                        let health_event = DaemonEvent::new(
-                            EventType::Service(ServiceEventType::HealthCheck {
-                                service_id: "daemon".to_string(),
-                                status: format!("{:?}", health.status),
-                            }),
-                            EventSource::service("daemon".to_string()),
-                            EventPayload::json(serde_json::to_value(&*health).unwrap_or_default())
-                        ).with_priority(EventPriority::Low);
-
-                        if let Err(e) = event_router.route_event(health_event).await {
-                            warn!("Failed to publish daemon health event: {}", e);
-                        }
-                    }
-                    _ = shutdown_rx.changed() => {
-                        if *shutdown_rx.borrow() {
-                            debug!("Health reporting task shutting down");
-                            break;
-                        }
-                    }
-                }
-            }
-
-            Ok(())
-        })
+    /// Get the name of an event type for statistics
+    fn get_event_type_name(&self, event: &DaemonEvent) -> String {
+        match event {
+            DaemonEvent::Filesystem(_) => "filesystem".to_string(),
+            DaemonEvent::Database(_) => "database".to_string(),
+            DaemonEvent::Sync(_) => "sync".to_string(),
+            DaemonEvent::Error(_) => "error".to_string(),
+            DaemonEvent::Health(_) => "health".to_string(),
+            DaemonEvent::Service(_) => "service".to_string(),
+        }
     }
 
     /// Get current memory usage (simplified)
@@ -1450,247 +827,6 @@ impl DataCoordinator {
         // In a real implementation, this would use platform-specific APIs
         // For now, return a placeholder value
         50 * 1024 * 1024 // 50MB
-    }
-
-    /// Get service discovery information
-    pub async fn get_discovered_services(&self) -> HashMap<String, ServiceInfo> {
-        self.service_discovery.read().await.clone()
-    }
-
-    /// Get daemon health status
-    pub async fn get_daemon_health(&self) -> DaemonHealth {
-        self.daemon_health.read().await.clone()
-    }
-
-    /// Subscribe to specific event type
-    pub async fn subscribe_to_events(&self, event_type: &str) -> Result<mpsc::UnboundedReceiver<DaemonEvent>> {
-        let (tx, rx) = mpsc::unbounded_channel();
-
-        let mut subscriptions = self.event_subscriptions.write().await;
-        subscriptions.insert(event_type.to_string(), tx);
-
-        info!("Created subscription for event type: {}", event_type);
-        Ok(rx)
-    }
-
-    /// Publish daemon operation event
-    pub async fn publish_operation_event(&self, operation: &str, details: serde_json::Value) -> Result<()> {
-        let operation_event = DaemonEvent::new(
-            EventType::Custom(format!("daemon_operation:{}", operation)),
-            EventSource::service("daemon".to_string()),
-            EventPayload::json(details)
-        ).with_priority(EventPriority::Normal);
-
-        if let Err(e) = self.event_router.route_event(operation_event).await {
-            warn!("Failed to publish daemon operation event: {}", e);
-            // Fallback: try to send via legacy channel
-            if let Err(legacy_e) = self.event_sender.send(crate::events::DaemonEvent::Error(crate::events::ErrorEvent {
-                event_id: uuid::Uuid::new_v4(),
-                timestamp: chrono::Utc::now(),
-                severity: crate::events::ErrorSeverity::Warning,
-                category: crate::events::ErrorCategory::Network,
-                code: "EVENT_PUBLISH_FAILED".to_string(),
-                message: format!("Failed to publish operation event: {}", e),
-                details: Some(format!("Operation: {}", operation)),
-                stack_trace: None,
-                context: std::collections::HashMap::new(),
-                recoverable: true,
-                suggested_actions: vec!["Check event router connectivity".to_string()],
-            })) {
-                error!("Fallback event publishing also failed: {}", legacy_e);
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Handle event routing failures with fallback mechanisms
-    async fn handle_event_routing_failure(&self, event: &DaemonEvent, error: &str) -> Result<()> {
-        error!("Event routing failure: {} for event {:?}", error, event);
-
-        // Update daemon health status
-        {
-            let mut health = self.daemon_health.write().await;
-            health.errors.push(format!("Event routing failure: {}", error));
-            if health.errors.len() > 10 {
-                health.status = crucible_services::types::ServiceStatus::Degraded;
-            }
-        }
-
-        // Try alternative routing or local processing
-        match &event.event_type {
-            EventType::Filesystem(fs_event) => {
-                // Process filesystem events locally
-                self.handle_filesystem_event_locally(fs_event).await?;
-            }
-            EventType::Database(db_event) => {
-                // Queue database events for retry
-                self.queue_database_event_for_retry(db_event).await?;
-            }
-            EventType::Service(service_event) => {
-                // Service events are critical, retry immediately
-                self.retry_service_event_immediately(service_event).await?;
-            }
-            _ => {
-                // Log and continue for other events
-                warn!("Unhandled event type during routing failure: {:?}", event.event_type);
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Handle filesystem events locally when routing fails
-    async fn handle_filesystem_event_locally(&self, fs_event: &crucible_services::events::core::FilesystemEventType) -> Result<()> {
-        debug!("Processing filesystem event locally: {:?}", fs_event);
-
-        match fs_event {
-            crucible_services::events::core::FilesystemEventType::FileCreated { path } => {
-                // Local processing: update file cache, trigger local handlers
-                info!("Local file creation detected: {}", path);
-            }
-            crucible_services::events::core::FilesystemEventType::FileModified { path } => {
-                // Local processing: update file cache, validate changes
-                info!("Local file modification detected: {}", path);
-            }
-            crucible_services::events::core::FilesystemEventType::FileDeleted { path } => {
-                // Local processing: remove from cache, cleanup
-                info!("Local file deletion detected: {}", path);
-            }
-            _ => {}
-        }
-
-        Ok(())
-    }
-
-    /// Queue database events for retry when routing fails
-    async fn queue_database_event_for_retry(&self, db_event: &crucible_services::events::core::DatabaseEventType) -> Result<()> {
-        debug!("Queueing database event for retry: {:?}", db_event);
-
-        // In a real implementation, this would add to a persistent queue
-        // For now, just log the event for retry
-        info!("Database event queued for retry: {:?}", db_event);
-
-        // Publish retry event
-        let retry_event = DaemonEvent::new(
-            EventType::Custom("database_retry_queued".to_string()),
-            EventSource::service("daemon".to_string()),
-            EventPayload::json(serde_json::json!({
-                "original_event": format!("{:?}", db_event),
-                "retry_scheduled_at": chrono::Utc::now().to_rfc3339(),
-                "retry_attempts": 1
-            }))
-        );
-
-        if let Err(e) = self.event_router.route_event(retry_event).await {
-            warn!("Failed to publish retry event: {}", e);
-        }
-
-        Ok(())
-    }
-
-    /// Retry service events immediately when routing fails
-    async fn retry_service_event_immediately(&self, service_event: &ServiceEventType) -> Result<()> {
-        warn!("Immediate retry for service event: {:?}", service_event);
-
-        // Service events are critical, try multiple routing strategies
-        let retry_event = DaemonEvent::new(
-            EventType::Service(service_event.clone()),
-            EventSource::service("daemon".to_string()),
-            EventPayload::json(serde_json::json!({
-                "retry_attempt": 1,
-                "original_timestamp": chrono::Utc::now().to_rfc3339()
-            }))
-        ).with_priority(EventPriority::High);
-
-        // Try routing with higher priority
-        for attempt in 1..=3 {
-            match self.event_router.route_event(retry_event.clone()).await {
-                Ok(()) => {
-                    info!("Service event retry successful on attempt {}", attempt);
-                    return Ok(());
-                }
-                Err(e) => {
-                    warn!("Service event retry attempt {} failed: {}", attempt, e);
-                    tokio::time::sleep(Duration::from_millis(100 * attempt as u64)).await;
-                }
-            }
-        }
-
-        // All retries failed, escalate error
-        error!("All service event retry attempts failed for: {:?}", service_event);
-        {
-            let mut health = self.daemon_health.write().await;
-            health.status = crucible_services::types::ServiceStatus::Unhealthy;
-            health.errors.push(format!("Service event routing failed: {:?}", service_event));
-        }
-
-        Ok(())
-    }
-
-    /// Check and recover from degraded state
-    async fn check_and_recover(&self) -> Result<()> {
-        let health = self.daemon_health.read().await.clone();
-
-        if health.status == crucible_services::types::ServiceStatus::Degraded {
-            info!("Attempting recovery from degraded state");
-
-            // Check if event router is responsive
-            match self.event_router.get_routing_stats().await {
-                Ok(_) => {
-                    info!("Event router is responsive, attempting recovery");
-
-                    // Test with a simple event
-                    let test_event = DaemonEvent::new(
-                        EventType::Custom("recovery_test".to_string()),
-                        EventSource::service("daemon".to_string()),
-                        EventPayload::json(serde_json::json!({"test": true}))
-                    );
-
-                    match self.event_router.route_event(test_event).await {
-                        Ok(()) => {
-                            info!("Recovery test successful, restoring healthy status");
-                            let mut health = self.daemon_health.write().await;
-                            health.status = crucible_services::types::ServiceStatus::Healthy;
-                            health.errors.clear();
-                        }
-                        Err(e) => {
-                            warn!("Recovery test failed: {}", e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    warn!("Event router not responsive: {}", e);
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Enhanced event publishing with error handling and fallback
-    pub async fn publish_event_with_fallback(&self, event: DaemonEvent) -> Result<()> {
-        // Try primary routing first
-        if let Err(e) = self.event_router.route_event(event.clone()).await {
-            warn!("Primary event routing failed: {}", e);
-
-            // Handle failure with fallback mechanisms
-            self.handle_event_routing_failure(&event, &e.to_string()).await?;
-
-            // Try fallback: legacy channel
-            if let Err(legacy_e) = self.event_sender.send(event.clone()) {
-                error!("Legacy fallback also failed: {}", legacy_e);
-                return Err(anyhow::anyhow!("All event publishing methods failed"));
-            }
-        }
-
-        // Update statistics
-        {
-            let mut health = self.daemon_health.write().await;
-            health.events_processed += 1;
-        }
-
-        Ok(())
     }
 }
 
@@ -1714,7 +850,6 @@ impl crate::services::DatabaseService for MockDatabaseService {
 mod tests {
     use super::*;
     use crate::config::*;
-    use std::collections::HashMap;
 
     #[tokio::test]
     async fn test_coordinator_creation() {
@@ -1728,509 +863,181 @@ mod tests {
         let config = DaemonConfig::default();
         let mut coordinator = DataCoordinator::new(config).await.unwrap();
 
-        // This would need proper configuration to work
-        // For now, we'll just test that the method exists
         let result = coordinator.initialize().await;
         // This might fail due to missing configuration, but that's expected
         assert!(result.is_err() || result.is_ok());
     }
 
     #[tokio::test]
-    async fn test_event_routing_integration() {
+    async fn test_event_publishing() {
         let config = DaemonConfig::default();
         let coordinator = DataCoordinator::new(config).await.unwrap();
 
-        // Test that event router is initialized
-        let stats = coordinator.get_routing_statistics().await;
-        assert!(stats.contains_key("total_events_routed"));
+        // Create a test event
+        let test_event = DaemonEvent::Health(EventBuilder::health(
+            "test-service".to_string(),
+            crate::events::HealthStatus::Healthy,
+        ));
+
+        // Publish the event
+        let result = coordinator.publish_event(test_event).await;
+        assert!(result.is_ok());
+
+        // Check statistics
+        let stats = coordinator.get_event_statistics().await;
+        assert_eq!(stats.get("health"), Some(&1));
     }
 
     #[tokio::test]
-    async fn test_service_metadata_generation() {
+    async fn test_event_subscription() {
         let config = DaemonConfig::default();
         let coordinator = DataCoordinator::new(config).await.unwrap();
 
-        let metadata = coordinator.get_service_metadata("event_service").await.unwrap();
-        assert!(metadata.contains_key("description"));
-        assert!(metadata.contains_key("capabilities"));
-        assert_eq!(metadata.get("description").unwrap(), "Handles event processing and logging");
-    }
+        // Subscribe to events
+        let mut receiver = coordinator.subscribe();
 
-    #[tokio::test]
-    async fn test_service_priorities() {
-        let config = DaemonConfig::default();
-        let coordinator = DataCoordinator::new(config).await.unwrap();
+        // Publish an event
+        let test_event = DaemonEvent::Service(EventBuilder::service(
+            crate::events::ServiceEventType::Started,
+            "test-service".to_string(),
+            "test-type".to_string(),
+        ));
 
-        assert_eq!(coordinator.get_service_priority("database_service"), 15); // Highest priority
-        assert_eq!(coordinator.get_service_priority("file_service"), 10);     // High priority
-        assert_eq!(coordinator.get_service_priority("event_service"), 5);      // Medium priority
-        assert_eq!(coordinator.get_service_priority("unknown_service"), 1);    // Low priority
-    }
+        coordinator.publish_event(test_event).await.unwrap();
 
-    #[tokio::test]
-    async fn test_service_weights() {
-        let config = DaemonConfig::default();
-        let coordinator = DataCoordinator::new(config).await.unwrap();
-
-        assert_eq!(coordinator.get_service_weight("database_service"), 2.0);   // Highest weight
-        assert_eq!(coordinator.get_service_weight("file_service"), 1.5);       // Higher weight
-        assert_eq!(coordinator.get_service_weight("event_service"), 1.0);      // Normal weight
-        assert_eq!(coordinator.get_service_weight("unknown_service"), 0.5);    // Lower weight
-    }
-
-    #[tokio::test]
-    async fn test_event_conversion() {
-        use crate::events::*;
-        use std::path::PathBuf;
-
-        let config = DaemonConfig::default();
-        let coordinator = DataCoordinator::new(config).await.unwrap();
-
-        // Create a test filesystem event
-        let fs_event = DaemonEvent::Filesystem(FilesystemEvent {
-            event_id: uuid::Uuid::new_v4(),
-            timestamp: chrono::Utc::now(),
-            event_type: FilesystemEventType::Created,
-            path: PathBuf::from("/test/file.txt"),
-            metadata: FileMetadata::default(),
-            data: HashMap::new(),
-        });
-
-        // Test conversion to advanced event
-        let advanced_event = DataCoordinator::convert_to_advanced_event(fs_event);
-        assert!(advanced_event.is_ok());
-
-        let advanced = advanced_event.unwrap();
-        match advanced.event_type {
-            crucible_services::events::core::EventType::Filesystem(fs_data) => {
-                match fs_data {
-                    crucible_services::events::core::FilesystemEventType::FileCreated { path: _ } => {
-                        // Success - converted correctly
-                    }
-                    _ => panic!("Expected filesystem created event"),
-                }
+        // Receive the event
+        let received_event = receiver.recv().await.unwrap();
+        match received_event {
+            DaemonEvent::Service(service_event) => {
+                assert_eq!(service_event.service_id, "test-service");
+                assert_eq!(service_event.service_type, "test-type");
             }
-            _ => panic!("Expected filesystem event type"),
+            _ => panic!("Expected service event"),
         }
     }
 
     #[tokio::test]
-    async fn test_event_publishing_backward_compatibility() {
-        let config = DaemonConfig::default();
-        let coordinator = DataCoordinator::new(config).await.unwrap();
-
-        // Create a test event
-        let test_event = crate::events::DaemonEvent::Health(crate::events::HealthEvent {
-            event_id: uuid::Uuid::new_v4(),
-            timestamp: chrono::Utc::now(),
-            service: "test_service".to_string(),
-            status: crate::events::HealthStatus::Healthy,
-            metrics: HashMap::new(),
-            data: HashMap::new(),
-        });
-
-        // This should not panic and should handle both routing systems
-        let result = coordinator.publish_event(test_event).await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_routing_config_update() {
-        let config = DaemonConfig::default();
-        let coordinator = DataCoordinator::new(config).await.unwrap();
-
-        let new_config = RoutingConfig {
-            max_queue_size: 5000,
-            default_max_retries: 10,
-            circuit_breaker_threshold: 20,
-            circuit_breaker_timeout_ms: 120000,
-            event_timeout_ms: 90000,
-            max_concurrent_events: 500,
-            load_balancing_strategy: LoadBalancingStrategy::RoundRobin,
-            enable_deduplication: false,
-            deduplication_window_s: 300,
-        };
-
-        let result = coordinator.update_routing_config(new_config).await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_test_event_routing() {
-        let config = DaemonConfig::default();
-        let coordinator = DataCoordinator::new(config).await.unwrap();
-
-        // Create a test event
-        let test_event = crate::events::DaemonEvent::Filesystem(crate::events::FilesystemEvent {
-            event_id: uuid::Uuid::new_v4(),
-            timestamp: chrono::Utc::now(),
-            event_type: crate::events::FilesystemEventType::Created,
-            path: std::path::PathBuf::from("/test/file.txt"),
-            metadata: crate::events::FileMetadata::default(),
-            data: HashMap::new(),
-        });
-
-        // Test routing (may return empty list if no services are registered yet)
-        let result = coordinator.test_event_routing(&test_event).await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_max_concurrent_events() {
-        let config = DaemonConfig::default();
-        let coordinator = DataCoordinator::new(config).await.unwrap();
-
-        assert_eq!(coordinator.get_max_concurrent_events("file_service"), 20);
-        assert_eq!(coordinator.get_max_concurrent_events("database_service"), 30);
-        assert_eq!(coordinator.get_max_concurrent_events("sync_service"), 10);
-        assert_eq!(coordinator.get_max_concurrent_events("unknown_service"), 5);
-    }
-
-    #[tokio::test]
-    async fn test_service_type_mapping() {
-        let config = DaemonConfig::default();
-        let coordinator = DataCoordinator::new(config).await.unwrap();
-
-        assert_eq!(coordinator.get_service_type("event_service").await.unwrap(), "event_processor");
-        assert_eq!(coordinator.get_service_type("file_service").await.unwrap(), "file_handler");
-        assert_eq!(coordinator.get_service_type("database_service").await.unwrap(), "data_store");
-        assert_eq!(coordinator.get_service_type("sync_service").await.unwrap(), "synchronizer");
-        assert_eq!(coordinator.get_service_type("unknown_service").await.unwrap(), "unknown");
-    }
-
-    // ========== PHASE 5.5: DAEMON EVENT INTEGRATION TESTS ==========
-
-    #[tokio::test]
-    async fn test_daemon_event_subscription() {
-        let config = DaemonConfig::default();
-        let coordinator = DataCoordinator::new(config).await.unwrap();
-
-        // Test event subscription creation
-        let mut rx = coordinator.subscribe_to_events("test_events").await.unwrap();
-
-        // Test subscription is active
-        let services = coordinator.get_discovered_services().await;
-        assert!(services.is_empty()); // Should be empty initially
-
-        // Test daemon health
-        let health = coordinator.get_daemon_health().await;
-        assert_eq!(health.status, crucible_services::types::ServiceStatus::Healthy);
-        assert_eq!(health.events_processed, 0);
-    }
-
-    #[tokio::test]
-    async fn test_daemon_event_handler() {
-        let handler = DaemonEventHandler::new();
-
-        // Create a service registration event
-        let service_event = DaemonEvent::new(
-            EventType::Service(ServiceEventType::ServiceRegistered {
-                service_id: "test-service".to_string(),
-                service_type: "test-type".to_string(),
-            }),
-            EventSource::service("test-source".to_string()),
-            EventPayload::json(serde_json::json!({"test": true}))
-        );
-
-        // Handle the event
-        let result = handler.handle_event(service_event).await;
-        assert!(result.is_ok());
-        assert_eq!(handler.name(), "daemon_event_handler");
-        assert_eq!(handler.priority(), 100);
-    }
-
-    #[tokio::test]
-    async fn test_service_discovery_via_events() {
-        let config = DaemonConfig::default();
-        let coordinator = DataCoordinator::new(config).await.unwrap();
-
-        // Simulate service registration event
-        let registration_event = DaemonEvent::new(
-            EventType::Service(ServiceEventType::ServiceRegistered {
-                service_id: "discovered-service".to_string(),
-                service_type: "test-service".to_string(),
-            }),
-            EventSource::service("external".to_string()),
-            EventPayload::json(serde_json::json!({"endpoint": "http://localhost:8080"}))
-        );
-
-        // Handle the event via the subscription handler
-        let service_discovery = coordinator.service_discovery.clone();
-        DataCoordinator::handle_service_subscription_event(
-            registration_event,
-            &coordinator.event_router,
-            &service_discovery,
-            &coordinator.daemon_health
-        ).await.unwrap();
-
-        // Verify service was discovered
-        let services = coordinator.get_discovered_services().await;
-        assert!(services.contains_key("discovered-service"));
-
-        let service_info = services.get("discovered-service").unwrap();
-        assert_eq!(service_info.service_id, "discovered-service");
-        assert_eq!(service_info.service_type, "test-service");
-    }
-
-    #[tokio::test]
-    async fn test_daemon_health_monitoring() {
+    async fn test_daemon_health_tracking() {
         let config = DaemonConfig::default();
         let coordinator = DataCoordinator::new(config).await.unwrap();
 
         // Get initial health
         let health = coordinator.get_daemon_health().await;
-        assert_eq!(health.status, crucible_services::types::ServiceStatus::Healthy);
-        assert_eq!(health.services_connected, 0);
+        assert_eq!(health.status, ServiceStatus::Healthy);
+        assert_eq!(health.events_processed, 0);
 
-        // Simulate some errors to test degraded state
-        {
-            let mut health_guard = coordinator.daemon_health.write().await;
-            for i in 0..15 {
-                health_guard.errors.push(format!("Test error {}", i));
-            }
+        // Publish some events
+        for i in 0..5 {
+            let event = DaemonEvent::Error(EventBuilder::error(
+                crate::events::ErrorSeverity::Warning,
+                crate::events::ErrorCategory::Unknown,
+                format!("TEST_ERROR_{}", i),
+                format!("Test error message {}", i),
+            ));
+            coordinator.publish_event(event).await.unwrap();
         }
 
-        // Check if status changes to degraded
+        // Check health was updated
         let health = coordinator.get_daemon_health().await;
-        assert_eq!(health.status, crucible_services::types::ServiceStatus::Degraded);
-        assert!(health.errors.len() > 10);
+        assert_eq!(health.events_processed, 5);
     }
 
     #[tokio::test]
-    async fn test_event_conversion_legacy_to_advanced() {
+    async fn test_service_discovery_cleanup() {
         let config = DaemonConfig::default();
         let coordinator = DataCoordinator::new(config).await.unwrap();
 
-        // Test filesystem event conversion
-        let fs_event = crate::events::DaemonEvent::Filesystem(crate::events::FilesystemEvent {
-            event_id: uuid::Uuid::new_v4(),
-            timestamp: chrono::Utc::now(),
-            event_type: crate::events::FilesystemEventType::Created,
-            path: std::path::PathBuf::from("/test/file.txt"),
-            metadata: crate::events::FileMetadata::default(),
-            data: std::collections::HashMap::new(),
-        });
-
-        let advanced_event = DataCoordinator::convert_to_advanced_event(fs_event).unwrap();
-        match advanced_event.event_type {
-            EventType::Filesystem(fs_type) => {
-                match fs_type {
-                    crucible_services::events::core::FilesystemEventType::FileCreated { path } => {
-                        assert_eq!(path, "/test/file.txt");
-                    }
-                    _ => panic!("Expected FileCreated event"),
-                }
-            }
-            _ => panic!("Expected Filesystem event type"),
-        }
-
-        // Test health event conversion
-        let health_event = crate::events::DaemonEvent::Health(crate::events::HealthEvent {
-            event_id: uuid::Uuid::new_v4(),
-            timestamp: chrono::Utc::now(),
-            service: "test-service".to_string(),
-            status: crate::events::HealthStatus::Healthy,
-            metrics: std::collections::HashMap::new(),
-            data: std::collections::HashMap::new(),
-        });
-
-        let advanced_event = DataCoordinator::convert_to_advanced_event(health_event).unwrap();
-        match advanced_event.event_type {
-            EventType::Service(service_type) => {
-                match service_type {
-                    ServiceEventType::HealthCheck { service_id, status } => {
-                        assert_eq!(service_id, "test-service");
-                        assert_eq!(status, "Healthy");
-                    }
-                    _ => panic!("Expected HealthCheck event"),
-                }
-            }
-            _ => panic!("Expected Service event type"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_event_fallback_mechanisms() {
-        let config = DaemonConfig::default();
-        let coordinator = DataCoordinator::new(config).await.unwrap();
-
-        // Test operation event publishing with fallback
-        let result = coordinator.publish_operation_event(
-            "test_operation",
-            serde_json::json!({"test": "data"})
-        ).await;
-
-        assert!(result.is_ok()); // Should succeed even if routing fails due to fallback
-    }
-
-    #[tokio::test]
-    async fn test_service_event_subscriptions() {
-        let config = DaemonConfig::default();
-        let coordinator = DataCoordinator::new(config).await.unwrap();
-
-        // Test service event subscription
-        let service_rx = coordinator.subscribe_to_events("service_events").await.unwrap();
-        let system_rx = coordinator.subscribe_to_events("system_events").await.unwrap();
-        let health_rx = coordinator.subscribe_to_events("health_events").await.unwrap();
-
-        // All subscriptions should be created successfully
-        assert!(service_rx.is_some());
-        assert!(system_rx.is_some());
-        assert!(health_rx.is_some());
-    }
-
-    #[tokio::test]
-    async fn test_daemon_startup_event() {
-        let config = DaemonConfig::default();
-        let coordinator = DataCoordinator::new(config).await.unwrap();
-
-        // Publish daemon startup event
-        let result = coordinator.publish_daemon_started().await;
-        assert!(result.is_ok());
-
-        // Check daemon health after startup
-        let health = coordinator.get_daemon_health().await;
-        assert!(health.last_health_check > chrono::Utc::now() - chrono::Duration::minutes(1));
-    }
-
-    #[tokio::test]
-    async fn test_error_handling_and_recovery() {
-        let config = DaemonConfig::default();
-        let coordinator = DataCoordinator::new(config).await.unwrap();
-
-        // Simulate error conditions
-        let test_event = DaemonEvent::new(
-            EventType::Service(ServiceEventType::HealthCheck {
-                service_id: "test-service".to_string(),
-                status: "unhealthy".to_string(),
-            }),
-            EventSource::service("test-source".to_string()),
-            EventPayload::json(serde_json::json!({"error": "test"}))
-        );
-
-        // Test error handling
-        let result = coordinator.handle_event_routing_failure(&test_event, "test error").await;
-        assert!(result.is_ok());
-
-        // Check if errors were recorded
-        let health = coordinator.get_daemon_health().await;
-        assert!(!health.errors.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_enhanced_event_publishing() {
-        let config = DaemonConfig::default();
-        let coordinator = DataCoordinator::new(config).await.unwrap();
-
-        // Test enhanced event publishing with fallback
-        let test_event = DaemonEvent::new(
-            EventType::Custom("test_enhanced_publishing".to_string()),
-            EventSource::service("daemon".to_string()),
-            EventPayload::json(serde_json::json!({"enhanced": true}))
-        );
-
-        let initial_events_processed = coordinator.get_daemon_health().await.events_processed;
-
-        let result = coordinator.publish_event_with_fallback(test_event).await;
-        assert!(result.is_ok());
-
-        // Check that events processed counter was updated
-        let final_events_processed = coordinator.get_daemon_health().await.events_processed;
-        assert!(final_events_processed > initial_events_processed);
-    }
-
-    #[tokio::test]
-    async fn test_service_info_and_discovery() {
-        let service_info = ServiceInfo {
-            service_id: "test-service".to_string(),
+        // Add a stale service to discovery
+        let stale_service = ServiceInfo {
+            service_id: "stale-service".to_string(),
             service_type: "test-type".to_string(),
             instance_id: "instance-1".to_string(),
-            endpoint: Some("http://localhost:8080".to_string()),
-            health: crucible_services::types::ServiceHealth {
-                status: crucible_services::types::ServiceStatus::Healthy,
-                message: Some("Service is healthy".to_string()),
-                details: std::collections::HashMap::new(),
-                last_check: chrono::Utc::now(),
-            },
-            last_seen: chrono::Utc::now(),
-            capabilities: vec!["read".to_string(), "write".to_string()],
-            metadata: std::collections::HashMap::new(),
+            endpoint: None,
+            status: ServiceStatus::Healthy,
+            last_seen: chrono::Utc::now() - chrono::Duration::minutes(10), // 10 minutes ago
+            capabilities: vec![],
+            metadata: HashMap::new(),
         };
 
-        // Verify ServiceInfo structure
-        assert_eq!(service_info.service_id, "test-service");
-        assert_eq!(service_info.service_type, "test-type");
-        assert!(service_info.endpoint.is_some());
-        assert_eq!(service_info.capabilities.len(), 2);
+        {
+            let mut discovery = coordinator.service_discovery.write().await;
+            discovery.insert("stale-service".to_string(), stale_service);
+        }
+
+        // Verify service is in discovery
+        let services = coordinator.get_discovered_services().await;
+        assert!(services.contains_key("stale-service"));
+
+        // The service discovery task would eventually remove stale services
+        // For testing, we can manually trigger the cleanup logic
+        let now = chrono::Utc::now();
+        let mut discovery = coordinator.service_discovery.write().await;
+        discovery.retain(|_, info| now.signed_duration_since(info.last_seen).num_minutes() <= 5);
+
+        // Verify service was removed
+        assert!(!discovery.contains_key("stale-service"));
     }
 
     #[tokio::test]
-    async fn test_daemon_health_default() {
-        let health = DaemonHealth::default();
+    async fn test_event_handler_integration() {
+        let event_bus = Arc::new(EventBus::new());
+        let event_handler = DaemonEventHandler::new(event_bus.clone());
 
-        assert_eq!(health.status, crucible_services::types::ServiceStatus::Healthy);
-        assert_eq!(health.uptime_seconds, 0);
-        assert_eq!(health.events_processed, 0);
-        assert_eq!(health.services_connected, 0);
-        assert!(health.errors.is_empty());
-        assert!(health.metrics.is_empty());
+        // Create a service event
+        let service_event = DaemonEvent::Service(EventBuilder::service_with_data(
+            crate::events::ServiceEventType::Started,
+            "test-service".to_string(),
+            "test-type".to_string(),
+            serde_json::json!({"test": "data"}),
+        ));
+
+        // Handle the event
+        let result = event_handler.handle_event(service_event).await;
+        assert!(result.is_ok());
+
+        // Check that state was updated
+        let state = event_handler.coordinator_state.read().await;
+        assert!(state.contains_key("service:test-service"));
     }
 
     #[tokio::test]
-    async fn test_complete_event_integration_workflow() {
+    async fn test_error_event_handling() {
+        let event_bus = Arc::new(EventBus::new());
+        let event_handler = DaemonEventHandler::new(event_bus.clone());
+
+        // Create an error event
+        let error_event = DaemonEvent::Error(EventBuilder::error_with_details(
+            crate::events::ErrorSeverity::Critical,
+            crate::events::ErrorCategory::Database,
+            "DB_CONNECTION_FAILED".to_string(),
+            "Database connection failed".to_string(),
+            "Connection timeout after 30 seconds".to_string(),
+        ));
+
+        // Handle the event
+        let result = event_handler.handle_event(error_event).await;
+        assert!(result.is_ok());
+
+        // Check that error was tracked
+        let state = event_handler.coordinator_state.read().await;
+        assert!(state.contains_key("error:Database:DB_CONNECTION_FAILED"));
+    }
+
+    #[tokio::test]
+    async fn test_config_update() {
         let config = DaemonConfig::default();
         let coordinator = DataCoordinator::new(config).await.unwrap();
 
-        // 1. Test service discovery via events
-        let registration_event = DaemonEvent::new(
-            EventType::Service(ServiceEventType::ServiceRegistered {
-                service_id: "integration-test-service".to_string(),
-                service_type: "test-type".to_string(),
-            }),
-            EventSource::service("external".to_string()),
-            EventPayload::json(serde_json::json!({"test": "integration"}))
-        );
+        // Create a new config
+        let mut new_config = coordinator.get_config().await;
+        // Modify config if needed
 
-        let service_discovery = coordinator.service_discovery.clone();
-        DataCoordinator::handle_service_subscription_event(
-            registration_event,
-            &coordinator.event_router,
-            &service_discovery,
-            &coordinator.daemon_health
-        ).await.unwrap();
+        // Update config
+        let result = coordinator.update_config(new_config.clone()).await;
+        assert!(result.is_ok());
 
-        // 2. Verify service discovery
-        let services = coordinator.get_discovered_services().await;
-        assert!(services.contains_key("integration-test-service"));
-
-        // 3. Test health event for the service
-        let health_event = DaemonEvent::new(
-            EventType::Service(ServiceEventType::HealthCheck {
-                service_id: "integration-test-service".to_string(),
-                status: "healthy".to_string(),
-            }),
-            EventSource::service("integration-test-service".to_string()),
-            EventPayload::json(serde_json::json!({"status": "ok"}))
-        );
-
-        DataCoordinator::handle_health_subscription_event(
-            health_event,
-            &service_discovery
-        ).await.unwrap();
-
-        // 4. Verify service health was updated
-        let services = coordinator.get_discovered_services().await;
-        let service_info = services.get("integration-test-service").unwrap();
-        assert_eq!(service_info.health.status, crucible_services::types::ServiceStatus::Healthy);
-
-        // 5. Test daemon operation event
-        coordinator.publish_operation_event(
-            "integration_test",
-            serde_json::json!({"workflow": "completed"})
-        ).await.unwrap();
-
-        // 6. Verify daemon health tracking
-        let health = coordinator.get_daemon_health().await;
-        assert!(health.services_connected >= 1); // Should include our test service
+        // Verify config was updated
+        let current_config = coordinator.get_config().await;
+        assert_eq!(format!("{:?}", current_config), format!("{:?}", new_config));
     }
 }

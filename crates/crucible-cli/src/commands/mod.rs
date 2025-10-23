@@ -4,6 +4,7 @@ pub mod semantic;
 pub mod note;
 pub mod index;
 pub mod stats;
+pub mod test_tools;
 pub mod rune;
 pub mod config;
 pub mod chat;
