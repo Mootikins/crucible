@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use crucible_tools::execute_tool;
+use crate::common::CrucibleToolManager;
 use serde_json::json;
 use crate::config::CliConfig;
 use crate::cli::NoteCommands;
@@ -17,8 +17,8 @@ pub async fn execute(config: CliConfig, cmd: NoteCommands) -> Result<()> {
 
 async fn get_note(config: CliConfig, path: String, format: String) -> Result<()> {
     // Use search_by_content tool to find the note
-    let result = execute_tool(
-        "search_by_content".to_string(),
+    let result = CrucibleToolManager::execute_tool_global(
+        "search_by_content",
         json!({
             "query": path,
             "limit": 1
@@ -113,11 +113,11 @@ async fn update_note(config: CliConfig, path: String, properties: String) -> Res
 
 async fn list_notes(config: CliConfig, format: String) -> Result<()> {
     // Use simplified tools approach instead of direct database access
-    crucible_tools::init();
+    CrucibleToolManager::ensure_initialized_global().await?;
 
     // Get all documents using search_by_folder tool
-    let result = crucible_tools::execute_tool(
-        "search_by_folder".to_string(),
+    let result = CrucibleToolManager::execute_tool_global(
+        "search_by_folder",
         serde_json::json!({
             "path": ".",
             "recursive": true

@@ -5,7 +5,7 @@
 //! Now provides basic file discovery and tool-based indexing functionality.
 
 use anyhow::Result;
-use crucible_tools::execute_tool;
+use crate::common::CrucibleToolManager;
 use serde_json::json;
 use crate::config::CliConfig;
 use colored::Colorize;
@@ -29,8 +29,8 @@ pub async fn execute(
     println!("🔍 Indexing vault: {}", vault_path.display());
     println!("📋 Pattern: {}\n", glob_pattern);
 
-    // Initialize crucible-tools for simplified indexing
-    crucible_tools::init();
+    // Ensure crucible-tools are initialized through centralized manager
+    CrucibleToolManager::ensure_initialized_global().await?;
 
     // Find all files matching pattern
     let pattern_str = format!("{}/{}", vault_path.display(), glob_pattern);
@@ -135,9 +135,9 @@ async fn index_file_with_tools(file_path: &str, content: &str, force: bool) -> R
         }
     }
 
-    // Use index_document tool
-    let result = execute_tool(
-        "index_document".to_string(),
+    // Use index_document tool through centralized manager
+    let result = CrucibleToolManager::execute_tool_global(
+        "index_document",
         json!({
             "document": {
                 "id": file_path,
@@ -156,8 +156,8 @@ async fn index_file_with_tools(file_path: &str, content: &str, force: bool) -> R
 
 /// Check if a file is already indexed
 async fn check_if_indexed(file_path: &str) -> Result<bool> {
-    let result = execute_tool(
-        "search_by_filename".to_string(),
+    let result = CrucibleToolManager::execute_tool_global(
+        "search_by_filename",
         json!({
             "pattern": file_path
         }),
@@ -176,8 +176,8 @@ async fn check_if_indexed(file_path: &str) -> Result<bool> {
 
 /// Get vault statistics using tools
 async fn get_vault_statistics() -> Result<serde_json::Value> {
-    let result = execute_tool(
-        "get_vault_stats".to_string(),
+    let result = CrucibleToolManager::execute_tool_global(
+        "get_vault_stats",
         json!({}),
         Some("cli_indexer".to_string()),
         Some("index_session".to_string()),
