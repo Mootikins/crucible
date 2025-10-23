@@ -6,7 +6,13 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
-use super::tool_group::{ToolGroup, ToolGroupResult, ToolGroupError, ToolSchema, ParameterConverter, ResultConverter};
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock as AsyncRwLock;
+use super::tool_group::{
+    ToolGroup, ToolGroupResult, ToolGroupError, ToolSchema, ParameterConverter, ResultConverter,
+    ToolGroupMetrics, ToolGroupCacheConfig, ToolCacheEntry, SchemaCacheEntry
+};
 use super::types::ToolResult;
 
 /// System Tool Group that wraps crucible-tools functionality
@@ -14,21 +20,52 @@ use super::types::ToolResult;
 /// This tool group provides access to all crucible-tools (system tools) through
 /// the unified ToolGroup interface. It handles parameter conversion from
 /// string arguments to JSON and result conversion back to ToolResult format.
+///
+/// Features:
+/// - Lazy initialization (only initializes when first needed)
+/// - Caching for tool discovery and schemas
+/// - Performance metrics tracking
+/// - Memory-efficient tool loading
 #[derive(Debug)]
 pub struct SystemToolGroup {
+    /// Whether crucible-tools has been initialized
     initialized: bool,
-    available_tools: Vec<String>,
-    tool_schemas: HashMap<String, ToolSchema>,
+    /// Cache configuration
+    cache_config: ToolGroupCacheConfig,
+    /// Cached tool discovery result
+    tools_cache: AsyncRwLock<Option<ToolCacheEntry>>,
+    /// Cached tool schemas
+    schema_cache: AsyncRwLock<HashMap<String, SchemaCacheEntry>>,
+    /// Performance metrics
+    metrics: Arc<RwLock<ToolGroupMetrics>>,
+    /// Available tools (populated after initialization)
+    available_tools: AsyncRwLock<Vec<String>>,
+    /// Tool schemas (static, can be shared)
+    static_schemas: HashMap<String, ToolSchema>,
 }
 
 impl SystemToolGroup {
-    /// Create a new SystemToolGroup
+    /// Create a new SystemToolGroup with default caching
     pub fn new() -> Self {
+        Self::with_cache_config(ToolGroupCacheConfig::default())
+    }
+
+    /// Create a new SystemToolGroup with custom cache configuration
+    pub fn with_cache_config(cache_config: ToolGroupCacheConfig) -> Self {
         Self {
             initialized: false,
-            available_tools: Vec::new(),
-            tool_schemas: HashMap::new(),
+            cache_config,
+            tools_cache: AsyncRwLock::new(None),
+            schema_cache: AsyncRwLock::new(HashMap::new()),
+            metrics: Arc::new(RwLock::new(ToolGroupMetrics::default())),
+            available_tools: AsyncRwLock::new(Vec::new()),
+            static_schemas: Self::create_tool_schemas(),
         }
+    }
+
+    /// Create a new SystemToolGroup with no caching (for testing)
+    pub fn without_cache() -> Self {
+        Self::with_cache_config(ToolGroupCacheConfig::no_caching())
     }
 
     /// Create tool schemas for known crucible-tools
@@ -307,29 +344,101 @@ impl ToolGroup for SystemToolGroup {
     }
 
     async fn discover_tools(&mut self) -> ToolGroupResult<Vec<String>> {
-        // Initialize crucible-tools if not already done
+        let start_time = Instant::now();
+
+        // Initialize if needed
         if !self.is_initialized() {
-            return Err(ToolGroupError::InitializationFailed(
-                "SystemToolGroup not initialized. Call initialize() first.".to_string()
-            ));
+            self.initialize().await?;
         }
 
-        // Get all available tools from crucible-tools
-        let tools = crucible_tools::list_registered_tools().await;
+        // Check cache first
+        if self.cache_config.caching_enabled {
+            let mut cache = self.tools_cache.write().await;
+            if let Some(cached) = &*cache {
+                if cached.is_valid() {
+                    // Cache hit
+                    self.metrics.write().unwrap().record_cache_hit();
+                    tracing::debug!("Tool discovery cache hit for {} tools", cached.tools.len());
+                    return Ok(cached.tools.clone());
+                }
+            }
+            // Cache miss
+            self.metrics.write().unwrap().record_cache_miss();
+        }
 
-        // Store for faster access
-        self.available_tools = tools.clone();
+        // Perform actual discovery
+        let tools = self.perform_discovery().await?;
 
-        tracing::info!("Discovered {} system tools", tools.len());
+        // Update cache
+        if self.cache_config.caching_enabled {
+            let cache_entry = ToolCacheEntry::new(tools.clone(), self.cache_config.discovery_ttl);
+            *self.tools_cache.write().await = Some(cache_entry);
+        }
+
+        // Update metrics
+        let duration = start_time.elapsed();
+        self.metrics.write().unwrap().add_discovery_time(duration);
+
+        tracing::info!("Discovered {} system tools in {}ms", tools.len(), duration.as_millis());
         Ok(tools)
     }
 
-    fn list_tools(&self) -> Vec<String> {
-        self.available_tools.clone()
+    async fn list_tools(&mut self) -> ToolGroupResult<Vec<String>> {
+        // If not initialized, do lazy initialization
+        if !self.is_initialized() {
+            self.initialize().await?;
+        }
+
+        // Check if we have cached tools
+        if self.cache_config.caching_enabled {
+            let cache = self.tools_cache.read().await;
+            if let Some(cached) = &*cache {
+                if cached.is_valid() {
+                    return Ok(cached.tools.clone());
+                }
+            }
+        }
+
+        // Fall back to discovery
+        self.discover_tools().await
     }
 
     async fn get_tool_schema(&self, tool_name: &str) -> ToolGroupResult<Option<ToolSchema>> {
-        Ok(self.tool_schemas.get(tool_name).cloned())
+        // Check cache first
+        if self.cache_config.caching_enabled {
+            let mut cache = self.schema_cache.write().await;
+            if let Some(cached) = cache.get(tool_name) {
+                if cached.is_valid() {
+                    self.metrics.write().unwrap().record_cache_hit();
+                    return Ok(cached.schema.clone());
+                }
+            }
+            // Cache miss
+            self.metrics.write().unwrap().record_cache_miss();
+        }
+
+        // Perform actual schema retrieval
+        let schema = self.perform_schema_retrieval(tool_name).await?;
+
+        // Update cache
+        if self.cache_config.caching_enabled {
+            let cache_entry = SchemaCacheEntry::new(schema.clone(), self.cache_config.schema_ttl);
+            let mut cache = self.schema_cache.write().await;
+            cache.insert(tool_name.to_string(), cache_entry);
+
+            // Enforce cache size limit
+            if cache.len() > self.cache_config.max_schema_cache_size {
+                // Remove oldest entries (simple FIFO strategy)
+                let mut keys: Vec<String> = cache.keys().cloned().collect();
+                keys.sort(); // This is a crude way to remove some entries - in practice, you'd want timestamp-based eviction
+                let excess = cache.len() - self.cache_config.max_schema_cache_size;
+                for key in keys.into_iter().take(excess) {
+                    cache.remove(&key);
+                }
+            }
+        }
+
+        Ok(schema)
     }
 
     async fn execute_tool(
@@ -337,6 +446,9 @@ impl ToolGroup for SystemToolGroup {
         tool_name: &str,
         args: &[String],
     ) -> ToolGroupResult<ToolResult> {
+        let start_time = Instant::now();
+
+        // Initialize if needed (this should be ensured by the registry)
         if !self.is_initialized() {
             return Err(ToolGroupError::InitializationFailed(
                 "SystemToolGroup not initialized".to_string()
@@ -354,6 +466,10 @@ impl ToolGroup for SystemToolGroup {
             Some("repl_session".to_string()),
         ).await.map_err(|e| ToolGroupError::ExecutionFailed(format!("crucible-tools error: {}", e)))?;
 
+        // Update metrics
+        let duration = start_time.elapsed();
+        self.metrics.write().unwrap().add_execution_time(duration);
+
         // Convert result back to ToolResult format
         self.convert_crucible_result_to_tool_result(tool_name, result)
     }
@@ -367,6 +483,7 @@ impl ToolGroup for SystemToolGroup {
             return Ok(());
         }
 
+        let start_time = Instant::now();
         tracing::info!("Initializing SystemToolGroup with crucible-tools");
 
         // Initialize crucible-tools library
@@ -378,26 +495,86 @@ impl ToolGroup for SystemToolGroup {
                 format!("Failed to load crucible-tools: {}", e)
             ))?;
 
-        // Create tool schemas
-        self.tool_schemas = Self::create_tool_schemas();
-
         // Discover available tools
         let tools = crucible_tools::list_registered_tools().await;
-        self.available_tools = tools;
+        *self.available_tools.write().await = tools.clone();
 
         self.initialized = true;
 
-        tracing::info!("SystemToolGroup initialized with {} tools", self.available_tools.len());
+        // Update metrics
+        let duration = start_time.elapsed();
+        self.metrics.write().unwrap().initialization_time_ms = Some(duration.as_millis() as u64);
+
+        tracing::info!("SystemToolGroup initialized with {} tools in {}ms", tools.len(), duration.as_millis());
         Ok(())
+    }
+
+    async fn refresh_cache(&mut self) -> ToolGroupResult<()> {
+        tracing::info!("Refreshing SystemToolGroup cache");
+
+        // Clear tool discovery cache
+        if self.cache_config.caching_enabled {
+            *self.tools_cache.write().await = None;
+        }
+
+        // Clear schema cache
+        if self.cache_config.caching_enabled {
+            self.schema_cache.write().await.clear();
+        }
+
+        // Re-discover tools
+        if self.is_initialized() {
+            self.discover_tools().await?;
+        }
+
+        tracing::info!("SystemToolGroup cache refreshed");
+        Ok(())
+    }
+
+    fn get_metrics(&self) -> ToolGroupMetrics {
+        self.metrics.read().unwrap().clone()
+    }
+
+    fn get_cache_config(&self) -> &ToolGroupCacheConfig {
+        &self.cache_config
     }
 
     fn get_metadata(&self) -> HashMap<String, String> {
         let mut metadata = HashMap::new();
-        metadata.insert("tool_count".to_string(), self.available_tools.len().to_string());
+        let available_count = match self.available_tools.try_read() {
+            Ok(guard) => guard.len(),
+            Err(_) => 0,
+        };
+        metadata.insert("tool_count".to_string(), available_count.to_string());
         metadata.insert("initialized".to_string(), self.initialized.to_string());
         metadata.insert("backend".to_string(), "crucible-tools".to_string());
         metadata.insert("version".to_string(), crucible_tools::VERSION.to_string());
+        metadata.insert("caching_enabled".to_string(), self.cache_config.caching_enabled.to_string());
         metadata
+    }
+
+    /// Internal method: Perform actual tool discovery
+    async fn perform_discovery(&self) -> ToolGroupResult<Vec<String>> {
+        // Get all available tools from crucible-tools
+        let tools = crucible_tools::list_registered_tools().await;
+
+        // Update the cached tools list
+        *self.available_tools.write().await = tools.clone();
+
+        tracing::debug!("Performed actual discovery of {} system tools", tools.len());
+        Ok(tools)
+    }
+
+    /// Internal method: Perform actual schema retrieval
+    async fn perform_schema_retrieval(&self, tool_name: &str) -> ToolGroupResult<Option<ToolSchema>> {
+        // Check our static schemas first
+        if let Some(schema) = self.static_schemas.get(tool_name) {
+            return Ok(Some(schema.clone()));
+        }
+
+        // For unknown tools, return None
+        tracing::debug!("No schema available for tool: {}", tool_name);
+        Ok(None)
     }
 }
 

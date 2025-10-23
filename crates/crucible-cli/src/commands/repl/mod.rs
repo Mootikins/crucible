@@ -208,7 +208,7 @@ impl Repl {
     async fn execute_command(&mut self, cmd: Command) -> Result<(), ReplError> {
         match cmd {
             Command::ListTools => {
-                self.list_tools();
+                self.list_tools().await;
                 Ok(())
             }
             Command::RunTool { tool_name, args } => {
@@ -224,7 +224,7 @@ impl Repl {
                 self.run_tool(tool_name, args).await
             }
             Command::ShowStats => {
-                self.show_stats();
+                self.show_stats().await;
                 Ok(())
             }
             Command::ShowConfig => {
@@ -332,10 +332,10 @@ impl Repl {
     }
 
     /// List available tools by group
-    fn list_tools(&self) {
+    async fn list_tools(&self) {
         use colored::Colorize;
 
-        let grouped_tools = self.tools.list_tools_by_group();
+        let grouped_tools = self.tools.list_tools_by_group().await;
 
         if grouped_tools.is_empty() {
             println!("\n{} No tools found. Add .rn files to {}\n",
@@ -401,13 +401,13 @@ impl Repl {
     }
 
     /// Show REPL and database statistics
-    fn show_stats(&self) {
+    async fn show_stats(&self) {
         println!("\n📊 Statistics:\n");
         println!("  Commands executed: {}", self.stats.command_count);
         println!("  Queries executed:  {}", self.stats.query_count);
         println!("  Avg query time:    {:?}", self.stats.avg_query_time());
         println!("  History size:      {}", self.history.len());
-        println!("  Tools loaded:      {}", self.tools.list_tools().len());
+        println!("  Tools loaded:      {}", self.tools.list_tools().await.len());
         println!();
     }
 
@@ -505,6 +505,12 @@ impl Repl {
         println!("{}", "╚═══════════════════════════════════════════════════╝".cyan());
         println!("\nType {} for available commands or {} to exit.", ":help".green(), ":quit".red());
         println!("Connected to real SurrealDB - execute actual queries!\n");
+    }
+
+    /// Get access to the tool registry (for testing)
+    #[cfg(test)]
+    pub fn get_tools(&self) -> &Arc<UnifiedToolRegistry> {
+        &self.tools
     }
 }
 
