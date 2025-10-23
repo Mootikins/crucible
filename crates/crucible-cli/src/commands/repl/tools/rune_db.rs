@@ -11,7 +11,7 @@ use std::sync::Arc;
 ///
 /// This is a placeholder for the actual database connection.
 /// In production, this would wrap a SurrealDB client or similar.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DbHandle {
     // TODO: Replace with actual database connection when SurrealDB integration is ready
     // e.g., Arc<SurrealClient> or similar

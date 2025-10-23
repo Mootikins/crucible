@@ -3,7 +3,7 @@
 use reedline::{Completer, Span, Suggestion};
 use std::sync::Arc;
 
-use super::tools::ToolRegistry;
+use super::tools::UnifiedToolRegistry;
 use super::database::ReplDatabase;
 
 /// REPL autocompleter
@@ -12,7 +12,7 @@ pub struct ReplCompleter {
     db: ReplDatabase,
 
     /// Tool registry for tool name completion
-    tools: Arc<ToolRegistry>,
+    tools: Arc<UnifiedToolRegistry>,
 
     /// Built-in commands
     commands: Vec<CommandCompletion>,
@@ -25,7 +25,7 @@ struct CommandCompletion {
 }
 
 impl ReplCompleter {
-    pub fn new(db: ReplDatabase, tools: Arc<ToolRegistry>) -> Self {
+    pub fn new(db: ReplDatabase, tools: Arc<UnifiedToolRegistry>) -> Self {
         let commands = Self::build_command_list();
         Self { db, tools, commands }
     }

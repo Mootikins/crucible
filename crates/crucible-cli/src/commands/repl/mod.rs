@@ -23,7 +23,7 @@ pub mod error;
 pub mod tools;
 pub mod database;
 
-use tools::ToolRegistry;
+use tools::UnifiedToolRegistry;
 use crate::config::CliConfig;
 
 use command::Command;
@@ -43,8 +43,8 @@ pub struct Repl {
     /// Database connection using SurrealDB
     db: ReplDatabase,
 
-    /// Tool registry for `:run` commands (includes Rune execution)
-    tools: ToolRegistry,
+    /// Tool registry for `:run` commands (includes system and Rune tools)
+    tools: Arc<UnifiedToolRegistry>,
 
     /// Configuration
     config: ReplConfig,
@@ -97,23 +97,14 @@ impl Repl {
             }
         };
 
-        // Initialize tool registry and discover tools
+        // Initialize unified tool registry
         let tool_dir = config.tool_dir.clone();
-        let mut tools = ToolRegistry::new(tool_dir)?;
+        let tools = UnifiedToolRegistry::new(tool_dir).await?;
 
-        // Discover and load all available tools
-        info!("Discovering tools...");
-        match tools.discover_tools().await {
-            Ok(discovered) => {
-                info!("Discovered {} tools", discovered.len());
-            }
-            Err(e) => {
-                warn!("Failed to discover tools: {}", e);
-            }
-        }
+        info!("Initialized unified tool registry");
 
-        let tools_arc = Arc::new(tools.clone());
-        let completer = ReplCompleter::new(db.clone(), tools_arc);
+        let tools_arc = Arc::new(tools);
+        let completer = ReplCompleter::new(db.clone(), tools_arc.clone());
 
         let editor = Reedline::create()
             .with_highlighter(Box::new(highlighter))
@@ -133,7 +124,7 @@ impl Repl {
         Ok(Self {
             editor,
             db,
-            tools,
+            tools: tools_arc,
             config,
             formatter,
             history,
@@ -340,24 +331,46 @@ impl Repl {
         }
     }
 
-    /// List available tools
+    /// List available tools by group
     fn list_tools(&self) {
         use colored::Colorize;
 
-        let tools = self.tools.list_tools();
+        let grouped_tools = self.tools.list_tools_by_group();
 
-        if tools.is_empty() {
+        if grouped_tools.is_empty() {
             println!("\n{} No tools found. Add .rn files to {}\n",
                      "ℹ".blue(),
                      self.config.tool_dir.display());
             return;
         }
 
-        println!("\n{} Available Tools ({}):\n", "📦".green(), tools.len());
-        for name in tools {
-            println!("  {:<20}", name.cyan());
+        let total_tools: usize = grouped_tools.values().map(|v| v.len()).sum();
+        println!("\n{} Available Tools ({}) - Grouped by Source:\n", "📦".green(), total_tools);
+
+        for (group_name, tools) in grouped_tools {
+            let group_color = match group_name.as_str() {
+                "system" => colored::Color::Magenta,
+                "rune" => colored::Color::Cyan,
+                _ => colored::Color::White,
+            };
+
+            println!("  {} ({}) [{} tools]:",
+                     group_name.to_uppercase().color(group_color),
+                     match group_name.as_str() {
+                         "system" => "crucible-tools",
+                         "rune" => "scripted tools",
+                         _ => "external tools"
+                     },
+                     tools.len()
+            );
+
+            for tool in &tools {
+                println!("    {}", tool.cyan());
+            }
+            println!();
         }
-        println!("\n{} :run <tool> [args...]", "Tip:".yellow());
+
+        println!("{} :run <tool> [args...] | Example: :run system_info", "Tip:".yellow());
         println!();
     }
 
