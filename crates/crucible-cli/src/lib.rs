@@ -6,6 +6,7 @@
 pub mod agents;
 pub mod cli;
 pub mod commands;
+pub mod common;
 pub mod config;
 pub mod interactive;
 pub mod output;
