@@ -22,6 +22,10 @@ mod enhanced_rune_command_tests;
 mod configuration_tests;
 mod integration_tests;
 mod performance_load_tests;
+mod repl_process_integration_tests;
+mod repl_direct_integration_tests;
+mod repl_tool_execution_tests;
+mod cli_repl_tool_consistency_tests;
 
 /// Test suite runner for CLI integration tests
 pub struct TestRunner {
