@@ -599,10 +599,14 @@ pub struct ProviderCapabilities {
 
 /// OpenAI text generation provider
 pub struct OpenAITextProvider {
+    #[allow(dead_code)]
     client: reqwest::Client,
+    #[allow(dead_code)]
     api_key: String,
+    #[allow(dead_code)]
     base_url: String,
     default_model: String,
+    #[allow(dead_code)]
     timeout: Duration,
 }
 
@@ -709,9 +713,12 @@ pub struct OpenAIConfig {
 
 /// Ollama text generation provider
 pub struct OllamaTextProvider {
+    #[allow(dead_code)]
     client: reqwest::Client,
+    #[allow(dead_code)]
     base_url: String,
     default_model: String,
+    #[allow(dead_code)]
     timeout: Duration,
 }
 

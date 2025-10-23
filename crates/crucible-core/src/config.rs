@@ -790,6 +790,10 @@ mod tests {
         let config = CrucibleConfig {
             network: NetworkConfig {
                 http: HttpConfig {
+                    port: 9091,
+                    ..Default::default()
+                },
+                grpc: GrpcConfig {
                     port: 9090,
                     ..Default::default()
                 },
@@ -805,7 +809,7 @@ mod tests {
         // Load config
         let loaded_config = ConfigManager::load_config(Some(&config_path)).await.unwrap();
 
-        assert_eq!(loaded_config.network.http.port, 9090);
+        assert_eq!(loaded_config.network.http.port, 9091);
     }
 
     #[tokio::test]

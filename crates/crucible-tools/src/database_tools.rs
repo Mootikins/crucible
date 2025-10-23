@@ -4,14 +4,12 @@
 //! search, indexing, and maintenance operations.
 
 use crate::system_tools::{schemas, Tool};
-use crate::types::*;
 use crate::types::{ToolDefinition, ToolExecutionContext, ToolExecutionResult};
 use anyhow::Result;
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::json;
 use std::collections::HashMap;
 use std::time::Duration;
-use tracing::info;
 
 /// Semantic search using embeddings
 pub struct SemanticSearchTool {

@@ -6,6 +6,18 @@
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+// Logging and debugging framework
+pub mod logging;
+
+// Event routing system
+pub mod event_routing;
+
+// Configuration management
+pub mod config;
+
+// Debugging utilities
+pub mod debugging;
+
 // Type definitions
 pub mod types;
 

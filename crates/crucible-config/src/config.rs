@@ -42,6 +42,11 @@ pub enum ConfigError {
     #[error("TOML parsing error: {0}")]
     Toml(#[from] toml::de::Error),
 
+    /// TOML serialization error.
+    #[cfg(feature = "toml")]
+    #[error("TOML serialization error: {0}")]
+    TomlSer(String),
+
     /// Provider configuration error.
     #[error("Provider configuration error: {0}")]
     Provider(String),
