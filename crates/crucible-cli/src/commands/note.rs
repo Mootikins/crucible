@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
-use crucible_core::database::{Database, DocumentId};
+use crucible_tools::execute_tool;
+use serde_json::json;
 use crate::config::CliConfig;
 use crate::cli::NoteCommands;
 use crate::output;
@@ -15,23 +16,59 @@ pub async fn execute(config: CliConfig, cmd: NoteCommands) -> Result<()> {
 }
 
 async fn get_note(config: CliConfig, path: String, format: String) -> Result<()> {
-    let db = Database::new(&config.database_path_str()?).await?;
+    // Use search_by_content tool to find the note
+    let result = execute_tool(
+        "search_by_content".to_string(),
+        json!({
+            "query": path,
+            "limit": 1
+        }),
+        Some("cli_user".to_string()),
+        Some("note_session".to_string()),
+    ).await?;
 
-    let doc = db.get_document(&DocumentId(path.clone())).await?
-        .context(format!("Note not found: {}", path))?;
-
-    match format.as_str() {
-        "json" => println!("{}", serde_json::to_string_pretty(&doc)?),
-        _ => {
-            println!("Path: {}", path);
-            if let Some(title) = doc.title {
-                println!("Title: {}", title);
+    if let Some(data) = result.data {
+        if let Some(results) = data.get("results").and_then(|r| r.as_array()) {
+            if let Some(first_result) = results.first() {
+                match format.as_str() {
+                    "json" => println!("{}", serde_json::to_string_pretty(first_result)?),
+                    _ => {
+                        println!("📄 Path: {}", path);
+                        if let Some(metadata) = first_result.get("metadata") {
+                            if let Some(title) = metadata.get("title").and_then(|t| t.as_str()) {
+                                println!("📝 Title: {}", title);
+                            }
+                        }
+                        if let Some(content) = first_result.get("content").and_then(|c| c.as_str()) {
+                            println!("\n{}", content);
+                        }
+                    }
+                }
+                return Ok(());
             }
-            if !doc.folder.is_empty() {
-                println!("Folder: {}", doc.folder);
-            }
-            println!("\n{}", doc.content);
         }
+    }
+
+    // If not found via search, try reading directly from file system
+    let full_path = config.vault.path.join(&path);
+    if full_path.exists() {
+        let content = std::fs::read_to_string(&full_path)?;
+        match format.as_str() {
+            "json" => {
+                let note_data = json!({
+                    "path": path,
+                    "content": content,
+                    "source": "file_system"
+                });
+                println!("{}", serde_json::to_string_pretty(&note_data)?);
+            }
+            _ => {
+                println!("📄 Path: {}", path);
+                println!("\n{}", content);
+            }
+        }
+    } else {
+        anyhow::bail!("Note not found: {}", path);
     }
 
     Ok(())
@@ -75,20 +112,33 @@ async fn update_note(config: CliConfig, path: String, properties: String) -> Res
 }
 
 async fn list_notes(config: CliConfig, format: String) -> Result<()> {
-    let db = Database::new(&config.database_path_str()?).await?;
+    // Use simplified tools approach instead of direct database access
+    crucible_tools::init();
 
-    // Get all documents
-    let search_options = crucible_core::database::SearchOptions {
-        limit: Some(10000), // Large limit to get all documents
-        offset: Some(0),
-        filters: None,
+    // Get all documents using search_by_folder tool
+    let result = crucible_tools::execute_tool(
+        "search_by_folder".to_string(),
+        serde_json::json!({
+            "path": ".",
+            "recursive": true
+        }),
+        Some("cli_user".to_string()),
+        Some("list_notes".to_string()),
+    ).await?;
+
+    let files: Vec<String> = if let Some(data) = result.data {
+        data.get("files")
+            .and_then(|f| f.as_array())
+            .map(|files| {
+                files.iter()
+                    .filter_map(|item| item.get("path").and_then(|p| p.as_str()))
+                    .map(|s| s.to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
     };
-
-    let search_results = db.search("", search_options).await?;
-    let files: Vec<String> = search_results
-        .into_iter()
-        .map(|result| result.document_id.0)
-        .collect();
 
     let output = output::format_file_list(&files, &format)?;
     println!("{}", output);

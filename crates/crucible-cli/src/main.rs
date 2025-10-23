@@ -52,9 +52,21 @@ async fn main() -> Result<()> {
 
         Some(Commands::Stats) => commands::stats::execute(config).await?,
 
+        Some(Commands::Test) => commands::test_tools::execute(config).await?,
+
         Some(Commands::Run { script, args }) => commands::rune::execute(config, script, args).await?,
 
-        Some(Commands::Commands) => commands::rune::list_commands(config).await?,
+        Some(Commands::Commands) => {
+            println!("📋 Available Commands:");
+            println!("   crucible run <script>     - Execute a Rune script");
+            println!("   crucible search <query>  - Search documents");
+            println!("   crucible index          - Index vault files");
+            println!("   crucible stats          - Show vault statistics");
+            println!("   crucible migrate        - Migration management");
+            println!("   crucible service        - Service management");
+            println!("   crucible config         - Configuration management");
+            println!("💡 Phase 1.1 Simplification: Complex command listing features have been removed.");
+        },
 
         Some(Commands::Config(cmd)) => commands::config::execute(cmd).await?,
 
