@@ -4,7 +4,7 @@ use nucleo_matcher::{pattern::{Pattern, CaseMatching}, Matcher, Config};
 use std::io::{self, Write};
 
 /// Compatibility wrapper for search results with display information
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SearchResultWithScore {
     pub id: String,
     pub title: String,

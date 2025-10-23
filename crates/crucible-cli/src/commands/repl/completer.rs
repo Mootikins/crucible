@@ -14,6 +14,9 @@ pub struct ReplCompleter {
     /// Tool registry for tool name completion
     tools: Arc<UnifiedToolRegistry>,
 
+    /// Cached tool names for completion (updated periodically)
+    cached_tools: std::sync::Arc<std::sync::RwLock<Vec<String>>>,
+
     /// Built-in commands
     commands: Vec<CommandCompletion>,
 }
@@ -27,7 +30,14 @@ struct CommandCompletion {
 impl ReplCompleter {
     pub fn new(db: ReplDatabase, tools: Arc<UnifiedToolRegistry>) -> Self {
         let commands = Self::build_command_list();
-        Self { db, tools, commands }
+        let cached_tools = std::sync::Arc::new(std::sync::RwLock::new(Vec::new()));
+        Self { db, tools, cached_tools, commands }
+    }
+
+    /// Update cached tool list (call this periodically)
+    pub async fn refresh_tools(&self) {
+        let tools = self.tools.list_tools().await;
+        *self.cached_tools.write().unwrap() = tools;
     }
 
     /// Build list of built-in commands with descriptions
@@ -98,7 +108,7 @@ impl ReplCompleter {
 
     /// Complete tool names for `:run` command
     fn complete_tool_names(&self, prefix: &str, start_pos: usize, end_pos: usize) -> Vec<Suggestion> {
-        let tools = self.tools.list_tools();
+        let tools = self.cached_tools.read().unwrap();
 
         tools
             .iter()
@@ -276,14 +286,16 @@ impl Completer for ReplCompleter {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+    use crate::commands::repl::tools::{ToolRegistry, UnifiedToolRegistry};
 
     fn create_test_completer() -> ReplCompleter {
-        let db = tokio::runtime::Runtime::new().unwrap().block_on(async {
-            ReplDatabase::new_memory().await.unwrap()
-        });
-        let temp_dir = TempDir::new().unwrap();
-        let tools = Arc::new(ToolRegistry::new(temp_dir.path().to_path_buf()).unwrap());
-        ReplCompleter::new(db, tools)
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let db = ReplDatabase::new_memory().await.unwrap();
+            let temp_dir = TempDir::new().unwrap();
+            let tools = Arc::new(UnifiedToolRegistry::new(temp_dir.path().to_path_buf()).await.unwrap());
+            ReplCompleter::new(db, tools)
+        })
     }
 
     #[test]
@@ -355,11 +367,11 @@ mod tests {
     fn test_table_name_completion() {
         // Use a mock database to avoid async issues in test
         let temp_dir = TempDir::new().unwrap();
-        let tools = Arc::new(ToolRegistry::new(temp_dir.path().to_path_buf()).unwrap());
-
-        // Create a database that doesn't require async context for table listing
-        let db = tokio::runtime::Runtime::new().unwrap().block_on(async {
-            ReplDatabase::new_memory().await.unwrap()
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let (db, tools) = rt.block_on(async {
+            let db = ReplDatabase::new_memory().await.unwrap();
+            let tools = Arc::new(UnifiedToolRegistry::new(temp_dir.path().to_path_buf()).await.unwrap());
+            (db, tools)
         });
 
         let mut completer = ReplCompleter::new(db, tools);
