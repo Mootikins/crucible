@@ -594,6 +594,7 @@ impl super::WatcherFactory for EditorFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backends::WatcherFactory;
     use crate::traits::{WatchConfig, DebounceConfig};
     use std::collections::HashMap;
     use tempfile::TempDir;
