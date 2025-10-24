@@ -271,6 +271,33 @@ impl ConfigErrorHandler {
 
         strategies
     }
+
+    // Public getter methods for testing
+
+    /// Get the error history (for testing)
+    pub fn error_history(&self) -> &[ErrorRecord] {
+        &self.error_history
+    }
+
+    /// Get the maximum history size (for testing)
+    pub fn max_history_size(&self) -> usize {
+        self.max_history_size
+    }
+
+    /// Get the reporting configuration (for testing)
+    pub fn reporting_config(&self) -> &ErrorReportingConfig {
+        &self.reporting_config
+    }
+
+    /// Get the recovery strategies (for testing)
+    pub fn recovery_strategies(&self) -> &HashMap<String, RecoveryStrategy> {
+        &self.recovery_strategies
+    }
+
+    /// Set the maximum history size (for testing)
+    pub fn set_max_history_size(&mut self, size: usize) {
+        self.max_history_size = size;
+    }
 }
 
 impl Default for ConfigErrorHandler {
