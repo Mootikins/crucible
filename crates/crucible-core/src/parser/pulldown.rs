@@ -352,9 +352,15 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
                     current_code_content.push_str(&text);
                 } else if in_paragraph {
                     current_paragraph_text.push_str(&text);
+                    // Also add to plain_text for backward compatibility
+                    plain_text.push_str(&text);
+                    plain_text.push(' ');
                 } else if in_list_item {
                     // Accumulate text within list item
                     current_list_item_text.push_str(&text);
+                    // Also add to plain_text for backward compatibility
+                    plain_text.push_str(&text);
+                    plain_text.push(' ');
                 } else {
                     plain_text.push_str(&text);
                     plain_text.push(' '); // Add space between text nodes
@@ -366,8 +372,14 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
                     current_code_content.push_str(&code);
                 } else if in_paragraph {
                     current_paragraph_text.push_str(&code);
+                    // Also add to plain_text for backward compatibility
+                    plain_text.push_str(&code);
+                    plain_text.push(' ');
                 } else if in_list_item {
                     current_list_item_text.push_str(&code);
+                    // Also add to plain_text for backward compatibility
+                    plain_text.push_str(&code);
+                    plain_text.push(' ');
                 } else {
                     plain_text.push_str(&code);
                     plain_text.push(' ');
@@ -491,6 +503,7 @@ mod tests {
         let doc = parser.parse_content(content, &path).unwrap();
         assert_eq!(doc.content.headings.len(), 1);
         assert_eq!(doc.content.headings[0].text, "Hello World");
+
         assert!(doc.content.plain_text.contains("This is a test"));
     }
 
