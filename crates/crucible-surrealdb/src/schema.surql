@@ -209,6 +209,53 @@ DEFINE FIELD added_by ON TABLE tagged_with
     TYPE option<string>;  -- "user" or "auto"
 
 -- ============================================================================
+-- RELATION: embeds
+-- ============================================================================
+-- Represents ![[Document]] embed relationships between notes
+
+DEFINE TABLE embeds SCHEMAFULL
+    TYPE RELATION
+    FROM notes TO notes;
+
+-- Edge metadata for embeds
+DEFINE FIELD embed_type ON TABLE embeds
+    TYPE string
+    DEFAULT "simple";
+
+-- Reference target (heading name or block ID)
+DEFINE FIELD reference_target ON TABLE embeds
+    TYPE option<string>;
+
+-- Display alias for embeds
+DEFINE FIELD display_alias ON TABLE embeds
+    TYPE option<string>;
+
+-- Context where the embed appears
+DEFINE FIELD context ON TABLE embeds
+    TYPE option<string>;
+
+-- Position in source document
+DEFINE FIELD position ON TABLE embeds
+    TYPE int;
+
+-- Creation timestamp
+DEFINE FIELD created_at ON TABLE embeds
+    TYPE datetime
+    DEFAULT time::now();
+
+-- For weighted graph algorithms
+DEFINE FIELD weight ON TABLE embeds
+    TYPE float
+    DEFAULT 1.0;
+
+-- Indexes for filtering
+DEFINE INDEX embed_type_idx ON TABLE embeds
+    COLUMNS embed_type;
+
+DEFINE INDEX reference_target_idx ON TABLE embeds
+    COLUMNS reference_target;
+
+-- ============================================================================
 -- RELATION: relates_to
 -- ============================================================================
 -- Semantic similarity and other computed relationships
@@ -374,6 +421,10 @@ DEFINE PERMISSION update ON TABLE tags FOR update WHERE true;
 DEFINE PERMISSION read ON TABLE wikilink FOR select WHERE true;
 DEFINE PERMISSION create ON TABLE wikilink FOR create WHERE true;
 DEFINE PERMISSION delete ON TABLE wikilink FOR delete WHERE true;
+
+DEFINE PERMISSION read ON TABLE embeds FOR select WHERE true;
+DEFINE PERMISSION create ON TABLE embeds FOR create WHERE true;
+DEFINE PERMISSION delete ON TABLE embeds FOR delete WHERE true;
 */
 
 -- ============================================================================
