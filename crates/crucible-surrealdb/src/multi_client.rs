@@ -51,6 +51,7 @@ use async_trait::async_trait;
 ///
 /// **Note**: This is currently an in-memory implementation for testing and evaluation.
 /// In production, this would connect to an actual SurrealDB instance.
+#[derive(Debug, Clone)]
 pub struct SurrealClient {
     /// In-memory storage for testing (replace with actual SurrealDB client)
     storage: Arc<tokio::sync::RwLock<SurrealStorage>>,
@@ -61,7 +62,7 @@ pub struct SurrealClient {
 }
 
 /// In-memory storage implementation for testing
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct SurrealStorage {
     // Relational model storage
     tables: HashMap<String, TableData>,
@@ -74,10 +75,23 @@ struct SurrealStorage {
     search_indexes: HashMap<String, SearchIndexData>,
     // Transaction support
     transactions: HashMap<TransactionId, TransactionData>,
+    // SurrealDB-style relationship storage (for RELATE statements)
+    relationships: HashMap<String, Vec<RelationshipRecord>>,
+}
+
+/// Relationship record for SurrealDB-style RELATE statements
+#[derive(Debug, Clone)]
+struct RelationshipRecord {
+    id: String,
+    from: String,
+    to: String,
+    relation_type: String,
+    properties: HashMap<String, serde_json::Value>,
+    created_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// Table data for relational model
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct TableData {
     schema: Option<TableSchema>,
     records: HashMap<RecordId, Record>,
@@ -85,7 +99,7 @@ struct TableData {
 }
 
 /// Search index data for document model
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct SearchIndexData {
     fields: Vec<String>,
     analyzer: Option<String>,
@@ -93,7 +107,7 @@ struct SearchIndexData {
 }
 
 /// Transaction data for rollback support
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TransactionData {
     operations: Vec<TransactionOperation>,
     timestamp: chrono::DateTime<chrono::Utc>,
@@ -1662,27 +1676,206 @@ impl SurrealClient {
 impl SurrealClient {
     /// Execute a raw SQL query with parameters and return results
     pub async fn query(&self, sql: &str, params: &[serde_json::Value]) -> DbResult<QueryResult> {
-        // For now, implement a simple query interpreter
-        // In a real implementation, this would parse SQL and execute against the appropriate storage
+        // Simple query interpreter for basic operations needed by tests
+        let sql_lower = sql.to_lowercase();
+        let sql_trimmed = sql_lower.trim();
 
-        // Mock implementation for SELECT queries
-        if sql.to_lowercase().starts_with("select") {
-            // Return empty result for now
-            Ok(QueryResult {
-                records: vec![],
-                total_count: Some(0),
-                execution_time_ms: Some(0),
-                has_more: false,
-            })
-        } else {
-            // For INSERT/UPDATE/DELETE, return affected count as a single record
-            Ok(QueryResult {
+        // Handle CREATE TABLE and DEFINE statements (schema creation)
+        if sql_trimmed.contains("define table") || sql_trimmed.contains("define field") ||
+           sql_trimmed.contains("define index") || sql_trimmed.contains("define analyzer") {
+            // For DEFINE TABLE statements, actually create the table in storage
+            if sql_trimmed.contains("define table") {
+                // Extract table name from DEFINE TABLE statement
+                let parts: Vec<&str> = sql.split_whitespace().collect();
+                let table_name = if parts.len() >= 3 {
+                    parts[2].trim_matches(|c| c == ';') // "DEFINE", "TABLE", "tablename"
+                } else {
+                    "default"
+                };
+
+                // Create the table in storage if it doesn't exist
+                let mut storage = self.storage.write().await;
+                if !storage.tables.contains_key(table_name) {
+                    storage.tables.insert(table_name.to_string(), TableData {
+                        records: HashMap::new(),
+                        indexes: HashMap::new(),
+                        schema: None,
+                    });
+                }
+            }
+            return Ok(QueryResult {
                 records: vec![],
                 total_count: Some(1),
                 execution_time_ms: Some(0),
                 has_more: false,
-            })
+            });
         }
+
+        // Handle CREATE statements
+        if sql_trimmed.starts_with("create") {
+            return Ok(QueryResult {
+                records: vec![],
+                total_count: Some(1),
+                execution_time_ms: Some(0),
+                has_more: false,
+            });
+        }
+
+        // Handle UPDATE statements
+        if sql_trimmed.starts_with("update") {
+            return self.handle_update_statement(sql).await;
+        }
+
+        // Handle RELATE statements
+        if sql_trimmed.starts_with("relate") {
+            // Parse RELATE from->relation_type->to CONTENT {...}
+            return self.handle_relate_statement(sql).await;
+        }
+
+        // Handle SELECT queries
+        if sql_trimmed.starts_with("select") {
+            // Parse basic SELECT * FROM table WHERE id = record_id queries
+            if sql_trimmed.contains("where id =") {
+                // Extract table name and ID from the query (basic parsing)
+                let table_name = if let Some(from_part) = sql.split("from").nth(1) {
+                    from_part.split_whitespace().next().unwrap_or("notes")
+                } else {
+                    "notes"
+                };
+
+                // Extract the ID from the query (basic parsing)
+                let id_part = sql.split("WHERE id =").nth(1).unwrap_or("").trim();
+                // Remove any trailing characters like semicolons or whitespace
+                let id = id_part.split(';').next().unwrap_or(id_part).trim_matches(|c| c == '\'' || c == '"' || c == ';');
+
+                // Actually read from storage
+                let storage = self.storage.read().await;
+                if let Some(table_data) = storage.tables.get(table_name) {
+                    let record_id = RecordId(id.to_string());
+                    if let Some(record) = table_data.records.get(&record_id) {
+                        return Ok(QueryResult {
+                            records: vec![record.clone()],
+                            total_count: Some(1),
+                            execution_time_ms: Some(0),
+                            has_more: false,
+                        });
+                    }
+                }
+
+                // Return empty result if not found
+                return Ok(QueryResult {
+                    records: vec![],
+                    total_count: Some(0),
+                    execution_time_ms: Some(0),
+                    has_more: false,
+                });
+            }
+
+            // Check if this is a relationship query (e.g., "SELECT target.* FROM wikilink WHERE from = doc_id")
+            if sql_trimmed.contains("from wikilink where") && sql_trimmed.contains("target.*") {
+                return self.handle_wikilink_query(sql).await;
+            }
+
+            // Check if this is an embed relationship query (e.g., "SELECT target.* FROM embeds WHERE from = doc_id")
+            if sql_trimmed.contains("from embeds where") && sql_trimmed.contains("target.*") {
+                return self.handle_embed_query(sql).await;
+            }
+
+            // Check if this is a generic embed metadata query (e.g., "SELECT * FROM embeds WHERE from = doc_id")
+            if sql_trimmed.contains("from embeds where") && sql_trimmed.contains("select *") {
+                return self.handle_embed_metadata_query(sql).await;
+            }
+
+            // Handle WHERE title = 'something' queries
+            if sql_trimmed.contains("where title =") || sql_trimmed.contains("WHERE title =") {
+                if let Some(from_part) = sql.split("from").nth(1) {
+                    let table_name = from_part.split_whitespace().next().unwrap_or("notes");
+
+                    // Extract the title from the WHERE clause
+                    let title = if let Some(where_part) = sql.split("WHERE title =").nth(1) {
+                        where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
+                    } else if let Some(where_part) = sql.split("where title =").nth(1) {
+                        where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
+                    } else {
+                        return Err(DbError::InvalidOperation("Invalid WHERE title query format".to_string()));
+                    };
+
+                    println!("🔍 Looking for documents with title: '{}'", title);
+
+                    let storage = self.storage.read().await;
+                    if let Some(table_data) = storage.tables.get(table_name) {
+                        println!("🔍 Total documents in table: {}", table_data.records.len());
+
+                        // Debug: print all document titles
+                        for (id, record) in &table_data.records {
+                            if let Some(stored_title) = record.data.get("title").and_then(|v| v.as_str()) {
+                                println!("📄 Document {}: title='{}'", id, stored_title);
+                            }
+                        }
+
+                        let records: Vec<Record> = table_data.records.values()
+                            .filter(|record| {
+                                if let Some(stored_title) = record.data.get("title").and_then(|v| v.as_str()) {
+                                    let matches = stored_title.to_lowercase() == title.to_lowercase();
+                                    println!("🔍 Comparing '{}' == '{}': {}", stored_title, title, matches);
+                                    matches
+                                } else {
+                                    println!("⚠️ Document has no title field");
+                                    false
+                                }
+                            })
+                            .cloned()
+                            .collect();
+
+                        println!("✅ Found {} matching documents", records.len());
+                        let count = records.len() as u64;
+
+                        return Ok(QueryResult {
+                            records,
+                            total_count: Some(count),
+                            execution_time_ms: Some(0),
+                            has_more: false,
+                        });
+                    }
+                }
+            }
+
+            // Handle simple SELECT * FROM table queries (but only if no WHERE clause)
+            if let Some(from_part) = sql.split("from").nth(1) {
+                let table_name = from_part.split_whitespace().next().unwrap_or("notes");
+
+                // Only use this handler if there's no WHERE clause
+                if !sql_trimmed.contains("where") && !sql_trimmed.contains("WHERE") {
+                    let storage = self.storage.read().await;
+                    if let Some(table_data) = storage.tables.get(table_name) {
+                        let records: Vec<Record> = table_data.records.values().cloned().collect();
+                        let count = records.len() as u64;
+                        return Ok(QueryResult {
+                            records,
+                            total_count: Some(count),
+                            execution_time_ms: Some(0),
+                            has_more: false,
+                        });
+                    }
+                }
+            }
+
+            // Return empty result for other SELECT queries
+            return Ok(QueryResult {
+                records: vec![],
+                total_count: Some(0),
+                execution_time_ms: Some(0),
+                has_more: false,
+            });
+        }
+
+        // For INSERT/UPDATE/DELETE and other statements, return affected count
+        Ok(QueryResult {
+            records: vec![],
+            total_count: Some(1),
+            execution_time_ms: Some(0),
+            has_more: false,
+        })
     }
 
     /// Execute a raw SQL statement with parameters and return results
@@ -1690,12 +1883,278 @@ impl SurrealClient {
         // Delegate to query method for now
         self.query(sql, params).await
     }
+
+    /// Handle RELATE statements (SurrealDB relationship creation)
+    async fn handle_relate_statement(&self, sql: &str) -> DbResult<QueryResult> {
+        // Parse: RELATE from_id->relation_type->to_id CONTENT {properties}
+        // Example: RELATE notes:abc123->wikilink->notes:def456 CONTENT {link_text: '...', position: 123}
+
+        let mut storage = self.storage.write().await;
+
+        // Extract from_id, relation_type, and to_id using simple parsing
+        let relate_pattern = if let Some(relate_part) = sql.split("RELATE").nth(1) {
+            relate_part.trim()
+        } else {
+            return Err(DbError::InvalidOperation("Invalid RELATE statement format".to_string()));
+        };
+
+        // Split by "->" to get the three parts
+        let parts: Vec<&str> = relate_pattern.split("->").collect();
+        if parts.len() < 3 {
+            return Err(DbError::InvalidOperation("Invalid RELATE statement format".to_string()));
+        }
+
+        let from = parts[0].trim().to_string();
+        let relation_type = parts[1].trim().to_string();
+
+        // Extract to_id (might have CONTENT after it)
+        let to_and_content = parts[2].trim();
+        let to = if let Some(content_pos) = to_and_content.find("CONTENT") {
+            to_and_content[..content_pos].trim().to_string()
+        } else {
+            to_and_content.to_string()
+        };
+
+        // Parse properties from CONTENT block if present
+        let mut properties = HashMap::new();
+        if let Some(content_start) = relate_pattern.find("CONTENT") {
+            let content_part = &relate_pattern[content_start..];
+            if let Some(start_brace) = content_part.find('{') {
+                if let Some(end_brace) = content_part.rfind('}') { // Use rfind to get the last }
+                    let json_str = &content_part[start_brace..=end_brace];
+
+                    if let Ok(parsed) = serde_json::from_str::<HashMap<String, serde_json::Value>>(json_str) {
+                        properties = parsed;
+                    }
+                }
+            }
+        }
+
+        // Create relationship record
+        let relationship = RelationshipRecord {
+            id: self.generate_id("rel"),
+            from,
+            to,
+            relation_type,
+            properties,
+            created_at: chrono::Utc::now(),
+        };
+
+        // Store the relationship
+        let relationships = storage.relationships.entry(relationship.relation_type.clone()).or_insert_with(Vec::new);
+        relationships.push(relationship.clone());
+
+        Ok(QueryResult {
+            records: vec![],
+            total_count: Some(1),
+            execution_time_ms: Some(0),
+            has_more: false,
+        })
+    }
+
+    /// Handle wikilink relationship queries (e.g., "SELECT target.* FROM wikilink WHERE from = doc_id")
+    async fn handle_wikilink_query(&self, sql: &str) -> DbResult<QueryResult> {
+        // Parse: SELECT target.* FROM wikilink WHERE from = doc_id
+        let storage = self.storage.read().await;
+
+        // Extract the document ID from the WHERE clause
+        let doc_id = if let Some(where_part) = sql.split("WHERE from =").nth(1) {
+            where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
+        } else {
+            return Err(DbError::InvalidOperation("Invalid wikilink query format".to_string()));
+        };
+
+        // Find all wikilink relationships from this document
+        let mut linked_records = Vec::new();
+
+        if let Some(relationships) = storage.relationships.get("wikilink") {
+            for relationship in relationships {
+                if relationship.from == doc_id {
+                    // Look up the target document in the notes table
+                    if let Some(table_data) = storage.tables.get("notes") {
+                        let target_record_id = RecordId(relationship.to.clone());
+                        if let Some(target_record) = table_data.records.get(&target_record_id) {
+                            // Create a record with the target data nested under "target"
+                            let mut result_data = HashMap::new();
+                            result_data.insert("target".to_string(), serde_json::Value::Object(
+                                target_record.data.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+                            ));
+
+                            linked_records.push(Record {
+                                id: None,
+                                data: result_data,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        let total_count = linked_records.len() as u64;
+        Ok(QueryResult {
+            records: linked_records,
+            total_count: Some(total_count),
+            execution_time_ms: Some(0),
+            has_more: false,
+        })
+    }
+
+    /// Handle embed relationship queries (e.g., "SELECT target.* FROM embeds WHERE from = doc_id")
+    async fn handle_embed_query(&self, sql: &str) -> DbResult<QueryResult> {
+        // Parse: SELECT target.* FROM embeds WHERE from = doc_id
+        let storage = self.storage.read().await;
+
+        // Extract the document ID from the WHERE clause
+        let doc_id = if let Some(where_part) = sql.split("WHERE from =").nth(1) {
+            where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
+        } else {
+            return Err(DbError::InvalidOperation("Invalid embed query format".to_string()));
+        };
+
+        // Find all embed relationships from this document
+        let mut embedded_records = Vec::new();
+
+        if let Some(relationships) = storage.relationships.get("embeds") {
+            for relationship in relationships {
+                if relationship.from == doc_id {
+                    // Look up the target document in the notes table
+                    if let Some(table_data) = storage.tables.get("notes") {
+                        let target_record_id = RecordId(relationship.to.clone());
+                        if let Some(target_record) = table_data.records.get(&target_record_id) {
+                            // Create a record with the target data nested under "target"
+                            let mut result_data = HashMap::new();
+                            result_data.insert("target".to_string(), serde_json::Value::Object(
+                                target_record.data.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+                            ));
+
+                            embedded_records.push(Record {
+                                id: None,
+                                data: result_data,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        let total_count = embedded_records.len() as u64;
+        Ok(QueryResult {
+            records: embedded_records,
+            total_count: Some(total_count),
+            execution_time_ms: Some(0),
+            has_more: false,
+        })
+    }
+
+    /// Handle embed metadata queries (e.g., "SELECT * FROM embeds WHERE from = doc_id")
+    async fn handle_embed_metadata_query(&self, sql: &str) -> DbResult<QueryResult> {
+        // Parse: SELECT * FROM embeds WHERE from = doc_id
+        let storage = self.storage.read().await;
+
+        // Extract the document ID from the WHERE clause
+        let doc_id = if let Some(where_part) = sql.split("WHERE from =").nth(1) {
+            where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
+        } else {
+            return Err(DbError::InvalidOperation("Invalid embed metadata query format".to_string()));
+        };
+
+        
+        // Find all embed relationships from this document
+        let mut embed_records = Vec::new();
+
+        if let Some(relationships) = storage.relationships.get("embeds") {
+            for relationship in relationships {
+                if relationship.from == doc_id {
+                    // Look up the target document in the notes table
+                    if let Some(table_data) = storage.tables.get("notes") {
+                        let target_record_id = RecordId(relationship.to.clone());
+                        if let Some(target_record) = table_data.records.get(&target_record_id) {
+                            // Create a record with embed data and target document data
+                            let mut result_data = HashMap::new();
+
+                            // Add embed properties
+                            for (key, value) in &relationship.properties {
+                                result_data.insert(key.clone(), value.clone());
+                            }
+
+                            // Add target document data nested under "target"
+                            result_data.insert("target".to_string(), serde_json::Value::Object(
+                                target_record.data.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+                            ));
+                            embed_records.push(Record {
+                                id: Some(RecordId(relationship.id.clone())),
+                                data: result_data,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        let total_count = embed_records.len() as u64;
+        Ok(QueryResult {
+            records: embed_records,
+            total_count: Some(total_count),
+            execution_time_ms: Some(0),
+            has_more: false,
+        })
+    }
+
+    /// Handle UPDATE statements (basic support for simple updates)
+    async fn handle_update_statement(&self, sql: &str) -> DbResult<QueryResult> {
+        // Parse: UPDATE table SET field = value WHERE id = record_id
+        let mut storage = self.storage.write().await;
+
+        // Extract table name
+        let table_name = if let Some(update_part) = sql.split("UPDATE").nth(1) {
+            update_part.split_whitespace().next().unwrap_or("notes")
+        } else {
+            return Err(DbError::InvalidOperation("Invalid UPDATE statement format".to_string()));
+        };
+
+        // Find the table
+        if let Some(table_data) = storage.tables.get_mut(table_name) {
+            // Extract WHERE clause to find the record
+            if let Some(where_part) = sql.split("WHERE").nth(1) {
+                // Simple parsing for "id = record_id"
+                if let Some(id_part) = where_part.split("id =").nth(1) {
+                    let record_id_str = id_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';');
+                    let record_id = RecordId(record_id_str.to_string());
+
+                    if let Some(record) = table_data.records.get_mut(&record_id) {
+                        // Parse SET clause
+                        if let Some(set_part) = sql.split("SET").nth(1) {
+                            if let Some(where_pos) = set_part.find("WHERE") {
+                                let set_clause_content = &set_part[..where_pos].trim();
+                                // Simple parsing for "field = 'value'"
+                                if let Some(eq_pos) = set_clause_content.find('=') {
+                                    let field = set_clause_content[..eq_pos].trim();
+                                    let value_part = &set_clause_content[eq_pos + 1..].trim();
+                                    let value_str = value_part.trim_matches(|c| c == '\'' || c == '"');
+
+                                    // Update the record
+                                    record.data.insert(field.to_string(), serde_json::Value::String(value_str.to_string()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(QueryResult {
+            records: vec![],
+            total_count: Some(1),
+            execution_time_ms: Some(0),
+            has_more: false,
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_core::*;
+    use ::crucible_core::*;
 
     #[tokio::test]
     async fn test_multi_client_creation() {

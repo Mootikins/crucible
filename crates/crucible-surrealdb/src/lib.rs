@@ -33,9 +33,39 @@ pub mod multi_client;
 pub mod query;
 pub mod schema_types;
 pub mod types;
+pub mod vault_integration;
+pub mod vault_scanner;
+pub mod vault_processor;
+
+// Embedding modules
+pub mod embedding_config;
+pub mod embedding_pool;
+pub mod embedding_pipeline;
+pub mod embedding;
 
 pub use database::SurrealEmbeddingDatabase;
 pub use multi_client::SurrealClient;
 pub use schema_types::*;
 pub use types::*;
+
+// Re-export embedding functionality with specific exports to avoid conflicts
+pub use embedding_config::{
+    EmbeddingConfig, EmbeddingModel, PrivacyMode, EmbeddingProcessingResult,
+    DocumentEmbedding, EmbeddingError, ThreadPoolMetrics
+};
+pub use embedding_pool::EmbeddingThreadPool;
+pub use embedding_pipeline::EmbeddingPipeline;
+
+// Vault scanner exports
+pub use vault_scanner::{
+    VaultScanner, VaultScannerConfig, VaultScannerState, VaultFileInfo,
+    VaultScanResult, VaultScanError, VaultProcessResult, VaultProcessError,
+    VaultScannerMetrics, VaultScannerErrorType, ChangeDetectionMethod, ErrorHandlingMode,
+    create_vault_scanner, create_vault_scanner_with_embeddings, validate_vault_scanner_config,
+    parse_file_to_document
+};
+pub use vault_processor::{
+    scan_vault_directory, process_vault_files, process_vault_files_with_error_handling,
+    process_incremental_changes, process_document_embeddings
+};
 
