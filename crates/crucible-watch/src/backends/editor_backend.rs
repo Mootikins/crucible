@@ -69,6 +69,8 @@ struct InodeState {
 struct EditorWatchState {
     /// Watch configuration
     config: WatchConfig,
+    /// Path being watched
+    watched_path: PathBuf,
     /// Editor configuration
     editor_config: EditorConfig,
     /// File states tracked by inode
@@ -481,7 +483,10 @@ impl FileWatcher for EditorWatcher {
         }
 
         let watch_id = config.id.clone();
-        let watch_handle = WatchHandle::new(path.clone());
+        let watch_handle = WatchHandle {
+            id: watch_id.clone(),
+            path: path.clone(),
+        };
 
         // Extract editor configuration from backend options
         let editor_config = config.backend_options.get("editor_config")
@@ -497,6 +502,7 @@ impl FileWatcher for EditorWatcher {
         // Create editor watch state
         let watch_state = EditorWatchState {
             config: config.clone(),
+            watched_path: path.clone(),
             editor_config,
             file_states: HashMap::new(),
             last_check: Instant::now(),
@@ -512,12 +518,11 @@ impl FileWatcher for EditorWatcher {
     async fn unwatch(&mut self, handle: WatchHandle) -> Result<()> {
         debug!("Removing editor watch for: {}", handle.path.display());
 
-        // Find and remove watch by path
-        let path_str = handle.path.to_string_lossy().to_string();
+        // Find and remove watch by handle ID
         let mut removed = false;
 
-        self.watches.retain(|_id, state| {
-            if state.config.id == path_str {
+        self.watches.retain(|id, _state| {
+            if *id == handle.id {
                 removed = true;
                 false
             } else {
@@ -535,8 +540,11 @@ impl FileWatcher for EditorWatcher {
     }
 
     fn active_watches(&self) -> Vec<WatchHandle> {
-        self.watches.values()
-            .map(|state| WatchHandle::new(PathBuf::from(&state.config.id)))
+        self.watches.iter()
+            .map(|(id, state)| WatchHandle {
+                id: id.clone(),
+                path: state.watched_path.clone(),
+            })
             .collect()
     }
 
@@ -614,6 +622,10 @@ mod tests {
         let mut watcher = EditorWatcher::new();
         let temp_dir = TempDir::new().unwrap();
         let watch_path = temp_dir.path().to_path_buf();
+
+        // Set up event sender before calling watch()
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        watcher.set_event_sender(tx);
 
         let config = WatchConfig::new("test")
             .with_recursive(false) // Editor watching is typically non-recursive

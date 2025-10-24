@@ -20,6 +20,8 @@ use tracing::{debug, error, info, warn};
 struct WatchState {
     /// Watch configuration
     config: WatchConfig,
+    /// Path being watched
+    watched_path: PathBuf,
     /// Last known modification times for files
     file_states: HashMap<PathBuf, FileState>,
     /// Last time this watch was checked
@@ -342,11 +344,15 @@ impl FileWatcher for PollingWatcher {
 
         let watch_id = config.id.clone();
         let _path_str = path.to_string_lossy().to_string();
-        let watch_handle = WatchHandle::new(path.clone());
+        let watch_handle = WatchHandle {
+            id: watch_id.clone(),
+            path: path.clone(),
+        };
 
         // Create initial watch state
         let mut watch_state = WatchState {
             config: config.clone(),
+            watched_path: path.clone(),
             file_states: HashMap::new(),
             last_check: Instant::now(),
         };
@@ -369,12 +375,11 @@ impl FileWatcher for PollingWatcher {
     async fn unwatch(&mut self, handle: WatchHandle) -> Result<()> {
         debug!("Removing polling watch for: {}", handle.path.display());
 
-        // Find and remove watch by path
-        let path_str = handle.path.to_string_lossy().to_string();
+        // Find and remove watch by handle ID
         let mut removed = false;
 
-        self.watches.retain(|_id, state| {
-            if state.config.id == path_str {
+        self.watches.retain(|id, _state| {
+            if *id == handle.id {
                 removed = true;
                 false
             } else {
@@ -392,8 +397,11 @@ impl FileWatcher for PollingWatcher {
     }
 
     fn active_watches(&self) -> Vec<WatchHandle> {
-        self.watches.values()
-            .map(|state| WatchHandle::new(PathBuf::from(&state.config.id)))
+        self.watches.iter()
+            .map(|(id, state)| WatchHandle {
+                id: id.clone(),
+                path: state.watched_path.clone(),
+            })
             .collect()
     }
 
@@ -458,6 +466,7 @@ impl super::WatcherFactory for PollingFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backends::WatcherFactory;
     use crate::traits::{WatchConfig, DebounceConfig};
     use tempfile::TempDir;
 
@@ -482,6 +491,10 @@ mod tests {
         let mut watcher = PollingWatcher::new();
         let temp_dir = TempDir::new().unwrap();
         let watch_path = temp_dir.path().to_path_buf();
+
+        // Set up event sender before calling watch()
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        watcher.set_event_sender(tx);
 
         let config = WatchConfig::new("test")
             .with_recursive(true)

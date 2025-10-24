@@ -266,6 +266,7 @@ impl super::WatcherFactory for NotifyFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backends::WatcherFactory;
     use crate::traits::{WatchConfig, DebounceConfig};
     use tempfile::TempDir;
 
@@ -284,6 +285,10 @@ mod tests {
         let mut watcher = NotifyWatcher::new();
         let temp_dir = TempDir::new().unwrap();
         let watch_path = temp_dir.path().to_path_buf();
+
+        // Set up event sender before calling watch()
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        watcher.set_event_sender(tx);
 
         let config = WatchConfig::new("test")
             .with_recursive(true)
@@ -306,10 +311,9 @@ mod tests {
     #[tokio::test]
     async fn test_event_conversion() {
         use notify::EventKind;
-        use std::time::SystemTime;
 
         // Test creation event
-        let notify_event = Event {
+        let notify_event = notify::Event {
             kind: EventKind::Create(notify::event::CreateKind::File),
             paths: vec![PathBuf::from("test.txt")],
             attrs: Default::default(),
