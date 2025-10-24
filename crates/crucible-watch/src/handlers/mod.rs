@@ -106,6 +106,7 @@ pub fn create_default_handlers() -> Result<HandlerRegistry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use crate::events::{FileEvent, FileEventKind};
     use std::path::PathBuf;
 
