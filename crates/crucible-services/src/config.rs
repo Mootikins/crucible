@@ -22,7 +22,7 @@ pub use manager::*;
 pub use error_handling::*;
 
 /// Main configuration for Crucible services
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CrucibleConfig {
     /// Logging configuration
     pub logging: LoggingConfig,

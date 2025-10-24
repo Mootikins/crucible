@@ -681,7 +681,7 @@ max_performance_degradation = 20.0
     }
 
     /// Load config from file or return default
-    fn from_file_or_default(config_file: Option<PathBuf>) -> Result<Self> {
+    pub fn from_file_or_default(config_file: Option<PathBuf>) -> Result<Self> {
         // Check for test mode environment variable to skip loading user config
         if std::env::var("CRUCIBLE_TEST_MODE").is_ok() {
             return Ok(Self::default());

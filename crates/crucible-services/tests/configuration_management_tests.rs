@@ -4,7 +4,7 @@
 //! and integration with logging and debugging systems.
 
 use crucible_services::config::*;
-use crucible_services::logging::{LoggingConfig, Level};
+use crucible_services::logging::LoggingConfig;
 use std::env;
 use tempfile::TempDir;
 
@@ -460,7 +460,7 @@ mod validation_tests {
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            crate::errors::ServiceError::ConfigurationError(msg) => {
+            crucible_services::errors::ServiceError::ConfigurationError(msg) => {
                 assert!(msg.contains("max_event_age_seconds"));
             }
             _ => panic!("Expected ConfigurationError"),
@@ -476,7 +476,7 @@ mod validation_tests {
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            crate::errors::ServiceError::ConfigurationError(msg) => {
+            crucible_services::errors::ServiceError::ConfigurationError(msg) => {
                 assert!(msg.contains("max_concurrent_events"));
             }
             _ => panic!("Expected ConfigurationError"),
@@ -492,7 +492,7 @@ mod validation_tests {
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            crate::errors::ServiceError::ConfigurationError(msg) => {
+            crucible_services::errors::ServiceError::ConfigurationError(msg) => {
                 assert!(msg.contains("timeout_seconds"));
             }
             _ => panic!("Expected ConfigurationError"),
@@ -508,7 +508,7 @@ mod validation_tests {
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            crate::errors::ServiceError::ConfigurationError(msg) => {
+            crucible_services::errors::ServiceError::ConfigurationError(msg) => {
                 assert!(msg.contains("max_debug_file_size_mb"));
             }
             _ => panic!("Expected ConfigurationError"),
@@ -685,7 +685,7 @@ mod config_utility_tests {
 #[cfg(test)]
 mod env_helper_tests {
     use super::*;
-    use crate::config::env_vars;
+    use crucible_services::config::env_vars;
 
     #[test]
     fn test_get_bool_with_existing_var() {

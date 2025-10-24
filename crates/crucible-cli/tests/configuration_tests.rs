@@ -17,8 +17,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::TempDir;
 use serde_json;
-use crate::test_utilities::*;
-use crate::config::CliConfig;
+use crucible_cli::test_utilities::*;
+use crucible_cli::config::CliConfig;
 
 /// Test configuration loading from defaults
 #[test]

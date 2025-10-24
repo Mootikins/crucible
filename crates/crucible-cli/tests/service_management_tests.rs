@@ -12,11 +12,12 @@ mod test_utilities;
 
 use anyhow::Result;
 use std::time::Duration;
+use std::sync::Arc;
 use tokio::time::{sleep, timeout};
 use crate::test_utilities::*;
-use crate::config::CliConfig;
-use crate::cli::ServiceCommands;
-use crate::commands::service::execute;
+use crucible_cli::config::CliConfig;
+use crucible_cli::cli::ServiceCommands;
+use crucible_cli::commands::service::execute;
 
 /// Test service health monitoring commands
 #[tokio::test]

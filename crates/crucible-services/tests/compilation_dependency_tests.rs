@@ -416,10 +416,10 @@ mod compilation_dependency_tests {
             .expect("Failed to read Cargo.toml");
 
         // Count feature flags
-        let feature_section = cargo_toml_content.split("[features]");
-        let feature_count = if feature_section.count() > 1 {
+        let feature_section: Vec<&str> = cargo_toml_content.split("[features]").collect();
+        let feature_count = if feature_section.len() > 1 {
             feature_section.last()
-                .unwrap_or("")
+                .unwrap_or(&"")
                 .lines()
                 .filter(|line| {
                     let trimmed = line.trim();

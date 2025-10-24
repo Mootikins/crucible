@@ -914,4 +914,5 @@ async fn test_configuration_validation_integration() {
     let health = manager.health_status().await;
     assert!(health.is_healthy);
     assert_eq!(health.error_count, 0);
-}
+use tokio_test;
+use serde_json::json;

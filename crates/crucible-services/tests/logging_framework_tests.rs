@@ -641,4 +641,5 @@ mod thread_safety_tests {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<LoggingConfig>();
     }
-}
+use tracing::Level;
+use serde_json::json;

@@ -16,12 +16,12 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 use tokio::time::timeout;
-use crate::test_utilities::*;
-use crate::config::CliConfig;
-use crate::cli::{ServiceCommands, MigrationCommands};
-use crate::commands::service::execute as service_execute;
-use crate::commands::migration::execute as migration_execute;
-use crate::commands::rune::{execute as rune_execute, list_commands};
+use crucible_cli::test_utilities::*;
+use crucible_cli::config::CliConfig;
+use crucible_cli::cli::{ServiceCommands, MigrationCommands};
+use crucible_cli::commands::service::execute as service_execute;
+use crucible_cli::commands::migration::execute as migration_execute;
+use crucible_cli::commands::rune::{execute as rune_execute, list_commands};
 
 /// Test end-to-end service management workflow
 #[tokio::test]

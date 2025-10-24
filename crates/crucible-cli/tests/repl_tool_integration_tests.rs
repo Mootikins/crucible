@@ -77,8 +77,8 @@ async fn test_tool_group_registration_basic() -> Result<()> {
     let mut registry = ToolGroupRegistry::new();
 
     // Initially should have no groups and no tools
-    assert!(registry.list_groups().is_empty(), "New registry should have no groups");
-    assert!(registry.list_all_tools().is_empty(), "New registry should have no tools");
+    assert!(registry.list_groups().await.is_empty(), "New registry should have no groups");
+    assert!(registry.list_all_tools().await.is_empty(), "New registry should have no tools");
 
     // Mock tool group for testing the interface
     #[derive(Debug)]
@@ -151,11 +151,11 @@ async fn test_tool_group_registration_basic() -> Result<()> {
         .expect("Should be able to register mock tool group");
 
     // Should now have one group
-    assert_eq!(registry.list_groups().len(), 1, "Should have one registered group");
-    assert!(registry.list_groups().contains(&"mock".to_string()), "Should contain mock group");
+    assert_eq!(registry.list_groups().await.len(), 1, "Should have one registered group");
+    assert!(registry.list_groups().await.contains(&"mock".to_string()), "Should contain mock group");
 
     // Should have tools from the mock group
-    let all_tools = registry.list_all_tools();
+    let all_tools = registry.list_all_tools().await;
     assert_eq!(all_tools.len(), 2, "Should have two tools from mock group");
     assert!(all_tools.contains(&"test_tool1".to_string()), "Should contain test_tool1");
     assert!(all_tools.contains(&"test_tool2".to_string()), "Should contain test_tool2");
@@ -167,7 +167,7 @@ async fn test_tool_group_registration_basic() -> Result<()> {
     assert!(result.output.contains("test_tool1"), "Output should mention tool name");
 
     // Should get proper group assignment
-    let group_name = registry.get_tool_group("test_tool1")
+    let group_name = registry.get_tool_group("test_tool1").await
         .expect("Should find group for test_tool1");
     assert_eq!(group_name, "mock", "test_tool1 should belong to mock group");
 
@@ -209,7 +209,7 @@ async fn test_system_tool_group_basic() -> Result<()> {
     assert!(system_group.is_initialized(), "SystemToolGroup should be initialized after initialize()");
 
     // Should have tools available
-    let tools = system_group.list_tools();
+    let tools = system_group.list_tools().await;
     assert!(!tools.is_empty(), "SystemToolGroup should have tools after initialization");
     println!("✅ SystemToolGroup initialized with {} tools", tools.len());
 
@@ -242,11 +242,11 @@ async fn test_system_tool_group_basic() -> Result<()> {
         .expect("Should be able to register SystemToolGroup");
 
     // Should have system group
-    let groups = registry.list_groups();
+    let groups = registry.list_groups().await;
     assert!(groups.contains(&"system".to_string()), "Registry should contain 'system' group");
 
     // Should have system tools in registry
-    let all_tools = registry.list_all_tools();
+    let all_tools = registry.list_all_tools().await;
     assert!(!all_tools.is_empty(), "Registry should have tools from SystemToolGroup");
     assert!(all_tools.contains(&"search_documents".to_string()), "Should have search_documents");
 

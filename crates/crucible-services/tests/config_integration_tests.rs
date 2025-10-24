@@ -365,14 +365,14 @@ mod error_handling_integration_tests {
         assert!(recovery_results.iter().any(|r| matches!(r, ErrorHandlingResult::Recovered(_))));
 
         // Verify error history
-        assert_eq!(error_handler.error_history.len(), 2);
+        assert_eq!(error_handler.error_history().len(), 2);
 
         // Get error statistics
         let stats = error_handler.get_error_statistics();
         assert_eq!(stats.total_errors, 2);
 
         // Generate error report
-        let report = utils::generate_error_report(&error_handler.error_history);
+        let report = utils::generate_error_report(&error_handler.error_history());
         assert!(report.contains("Configuration Error Report"));
         assert!(report.contains("service.name"));
         assert!(report.contains("logging.level"));
