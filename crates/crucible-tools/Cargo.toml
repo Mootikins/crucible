@@ -62,9 +62,19 @@ validator = { version = "0.18", features = ["derive"] }
 
 # Hashing
 md5 = "0.7"
+sha2 = "0.10"
 
 # Random number generation
 rand = "0.8"
+
+# File system operations for vault parsing
+walkdir = "2.4"
+
+# YAML parsing for frontmatter
+serde_yaml = "0.9"
+
+# Markdown parsing
+pulldown-cmark = "0.9"
 
 # Rune macros
 crucible-rune-macros = { workspace = true }

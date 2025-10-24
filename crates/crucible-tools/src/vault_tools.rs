@@ -1,15 +1,15 @@
-//! Vault operation tools
+//! Vault operation tools - Phase 1B Real Implementation
 //!
-//! This module provides simple async functions for interacting with Obsidian vaults,
-//! including file operations, metadata management, and indexing. Converted from
-//! Tool trait implementations to direct async function composition as part of
-//! Phase 1.3 service architecture removal. Now updated to Phase 2.1 ToolFunction interface.
+//! This module provides real async functions for interacting with Obsidian vaults,
+//! including file operations, metadata management, and indexing. Uses the Phase 1A
+//! parsing system to provide actual vault data instead of mock responses.
 
 use crate::types::{ToolResult, ToolError, ToolFunction};
+use crate::vault_operations::RealVaultOperations;
 use serde_json::{json, Value};
 use tracing::info;
 
-/// Search notes by frontmatter properties - Phase 2.1 ToolFunction
+/// Search notes by frontmatter properties - Real Implementation using Phase 1A parsing
 pub fn search_by_properties() -> ToolFunction {
     |tool_name: String,
      parameters: Value,
@@ -24,36 +24,33 @@ pub fn search_by_properties() -> ToolFunction {
 
             info!("Searching for files with properties: {:?}", properties);
 
-            let matching_files = vec![
-                json!({
-                    "path": "projects/project1.md",
-                    "name": "Project 1",
-                    "folder": "projects",
-                    "properties": {
-                        "status": "active",
-                        "priority": "high"
-                    }
-                }),
-            ];
+            // Use real vault operations
+            let vault_ops = RealVaultOperations::new();
+            match vault_ops.search_by_properties(properties).await {
+                Ok(matching_files) => {
+                    let result_data = json!({
+                        "matching_files": matching_files,
+                        "count": matching_files.len(),
+                        "user_id": user_id,
+                        "session_id": session_id,
+                        "vault_path": vault_ops.vault_path()
+                    });
 
-            let result_data = json!({
-                "matching_files": matching_files,
-                "searched_properties": properties,
-                "count": matching_files.len(),
-                "user_id": user_id,
-                "session_id": session_id
-            });
-
-            Ok(ToolResult::success_with_duration(
-                tool_name,
-                result_data,
-                start_time.elapsed().as_millis() as u64,
-            ))
+                    Ok(ToolResult::success_with_duration(
+                        tool_name,
+                        result_data,
+                        start_time.elapsed().as_millis() as u64,
+                    ))
+                }
+                Err(e) => {
+                    Err(ToolError::Other(format!("Vault search failed: {}", e)))
+                }
+            }
         })
     }
 }
 
-/// Search notes by tags - Phase 2.1 ToolFunction
+/// Search notes by tags - Real Implementation using Phase 1A parsing
 pub fn search_by_tags() -> ToolFunction {
     |tool_name: String,
      parameters: Value,
@@ -74,33 +71,33 @@ pub fn search_by_tags() -> ToolFunction {
 
             info!("Searching for files with tags: {:?}", tags);
 
-            let matching_files = vec![
-                json!({
-                    "path": "knowledge/ai.md",
-                    "name": "AI Research",
-                    "folder": "knowledge",
-                    "tags": ["ai", "research", "technology"]
-                }),
-            ];
+            // Use real vault operations
+            let vault_ops = RealVaultOperations::new();
+            match vault_ops.search_by_tags(tags).await {
+                Ok(matching_files) => {
+                    let result_data = json!({
+                        "matching_files": matching_files,
+                        "count": matching_files.len(),
+                        "user_id": user_id,
+                        "session_id": session_id,
+                        "vault_path": vault_ops.vault_path()
+                    });
 
-            let result_data = json!({
-                "matching_files": matching_files,
-                "searched_tags": tags,
-                "count": matching_files.len(),
-                "user_id": user_id,
-                "session_id": session_id
-            });
-
-            Ok(ToolResult::success_with_duration(
-                tool_name,
-                result_data,
-                start_time.elapsed().as_millis() as u64,
-            ))
+                    Ok(ToolResult::success_with_duration(
+                        tool_name,
+                        result_data,
+                        start_time.elapsed().as_millis() as u64,
+                    ))
+                }
+                Err(e) => {
+                    Err(ToolError::Other(format!("Tag search failed: {}", e)))
+                }
+            }
         })
     }
 }
 
-/// Search notes in a specific folder - Phase 2.1 ToolFunction
+/// Search notes in a specific folder - Real Implementation using Phase 1A parsing
 pub fn search_by_folder() -> ToolFunction {
     |tool_name: String,
      parameters: Value,
@@ -119,35 +116,30 @@ pub fn search_by_folder() -> ToolFunction {
 
             info!("Searching in folder: {} (recursive: {})", path, recursive);
 
-            let files = vec![
-                json!({
-                    "path": "projects/active/project1.md",
-                    "name": "Project 1",
-                    "size": 2048,
-                    "modified": "2024-01-20T10:30:00Z"
-                }),
-                json!({
-                    "path": "projects/active/project2.md",
-                    "name": "Project 2",
-                    "size": 1536,
-                    "modified": "2024-01-18T14:22:00Z"
-                }),
-            ];
+            // Use real vault operations
+            let vault_ops = RealVaultOperations::new();
+            match vault_ops.search_by_folder(path, recursive).await {
+                Ok(files) => {
+                    let result_data = json!({
+                        "files": files,
+                        "search_path": path,
+                        "recursive": recursive,
+                        "count": files.len(),
+                        "user_id": user_id,
+                        "session_id": session_id,
+                        "vault_path": vault_ops.vault_path()
+                    });
 
-            let result_data = json!({
-                "files": files,
-                "search_path": path,
-                "recursive": recursive,
-                "count": files.len(),
-                "user_id": user_id,
-                "session_id": session_id
-            });
-
-            Ok(ToolResult::success_with_duration(
-                tool_name,
-                result_data,
-                start_time.elapsed().as_millis() as u64,
-            ))
+                    Ok(ToolResult::success_with_duration(
+                        tool_name,
+                        result_data,
+                        start_time.elapsed().as_millis() as u64,
+                    ))
+                }
+                Err(e) => {
+                    Err(ToolError::Other(format!("Folder search failed: {}", e)))
+                }
+            }
         })
     }
 }
@@ -273,7 +265,7 @@ pub fn delete_note() -> ToolFunction {
     }
 }
 
-/// Get vault statistics - Phase 2.1 ToolFunction
+/// Get vault statistics - Real Implementation using Phase 1A parsing
 pub fn get_vault_stats() -> ToolFunction {
     |tool_name: String,
      _parameters: Value,
@@ -284,27 +276,33 @@ pub fn get_vault_stats() -> ToolFunction {
 
             info!("Getting vault statistics");
 
-            let stats = json!({
-                "total_notes": 1250,
-                "total_size_mb": 156.7,
-                "folders": 45,
-                "tags": 234,
-                "last_indexed": "2024-01-20T15:30:00Z",
-                "vault_type": "obsidian",
-                "user_id": user_id,
-                "session_id": session_id
-            });
+            // Use real vault operations
+            let vault_ops = RealVaultOperations::new();
+            match vault_ops.get_vault_stats().await {
+                Ok(mut stats) => {
+                    // Add user and session info
+                    if let Some(user_id) = user_id {
+                        stats["user_id"] = json!(user_id);
+                    }
+                    if let Some(session_id) = session_id {
+                        stats["session_id"] = json!(session_id);
+                    }
 
-            Ok(ToolResult::success_with_duration(
-                tool_name,
-                stats,
-                start_time.elapsed().as_millis() as u64,
-            ))
+                    Ok(ToolResult::success_with_duration(
+                        tool_name,
+                        stats,
+                        start_time.elapsed().as_millis() as u64,
+                    ))
+                }
+                Err(e) => {
+                    Err(ToolError::Other(format!("Vault stats calculation failed: {}", e)))
+                }
+            }
         })
     }
 }
 
-/// List all tags in the vault - Phase 2.1 ToolFunction
+/// List all tags in the vault - Real Implementation using Phase 1A parsing
 pub fn list_tags() -> ToolFunction {
     |tool_name: String,
      _parameters: Value,
@@ -315,36 +313,28 @@ pub fn list_tags() -> ToolFunction {
 
             info!("Listing all vault tags");
 
-            let tags = vec![
-                json!({
-                    "name": "ai",
-                    "count": 45,
-                    "category": "technology"
-                }),
-                json!({
-                    "name": "research",
-                    "count": 67,
-                    "category": "work"
-                }),
-                json!({
-                    "name": "project",
-                    "count": 23,
-                    "category": "work"
-                }),
-            ];
+            // Use real vault operations
+            let vault_ops = RealVaultOperations::new();
+            match vault_ops.list_tags().await {
+                Ok(mut result_data) => {
+                    // Add user and session info
+                    if let Some(user_id) = user_id {
+                        result_data["user_id"] = json!(user_id);
+                    }
+                    if let Some(session_id) = session_id {
+                        result_data["session_id"] = json!(session_id);
+                    }
 
-            let result_data = json!({
-                "tags": tags,
-                "total_tags": tags.len(),
-                "user_id": user_id,
-                "session_id": session_id
-            });
-
-            Ok(ToolResult::success_with_duration(
-                tool_name,
-                result_data,
-                start_time.elapsed().as_millis() as u64,
-            ))
+                    Ok(ToolResult::success_with_duration(
+                        tool_name,
+                        result_data,
+                        start_time.elapsed().as_millis() as u64,
+                    ))
+                }
+                Err(e) => {
+                    Err(ToolError::Other(format!("Tag listing failed: {}", e)))
+                }
+            }
         })
     }
 }
