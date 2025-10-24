@@ -1804,15 +1804,21 @@ dependencies = [
  "chrono",
  "comfy-table",
  "crucible-core",
+ "futures",
  "ndarray 0.16.1",
+ "num_cpus",
  "serde",
  "serde_json",
+ "serde_yaml",
+ "sha2",
  "surrealdb",
  "tempfile",
  "thiserror 2.0.17",
  "tokio",
  "tokio-test",
+ "tracing",
  "uuid",
+ "walkdir",
 ]
 
 [[package]]
