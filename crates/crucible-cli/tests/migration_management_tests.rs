@@ -13,10 +13,10 @@ mod test_utilities;
 use anyhow::Result;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
-use crate::test_utilities::*;
-use crate::config::CliConfig;
-use crate::cli::MigrationCommands;
-use crate::commands::migration::execute;
+use crucible_cli::test_utilities::*;
+use crucible_cli::config::CliConfig;
+use crucible_cli::cli::MigrationCommands;
+use crucible_cli::commands::migration::execute;
 
 /// Test migration status command
 #[tokio::test]

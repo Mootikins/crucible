@@ -5,14 +5,14 @@
 
 use anyhow::Result;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
-use crate::config::CliConfig;
-use crate::cli::{ServiceCommands, MigrationCommands};
+use crucible_cli::config::CliConfig;
+use crucible_cli::cli::{ServiceCommands, MigrationCommands};
 
 /// Test context for isolated CLI testing
 pub struct TestContext {

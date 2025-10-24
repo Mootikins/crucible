@@ -14,9 +14,9 @@ use anyhow::Result;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
-use crate::test_utilities::*;
-use crate::config::CliConfig;
-use crate::commands::rune::{execute, list_commands};
+use crucible_cli::test_utilities::*;
+use crucible_cli::config::CliConfig;
+use crucible_cli::commands::rune::{execute, list_commands};
 
 /// Test basic rune execution
 #[tokio::test]

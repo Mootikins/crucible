@@ -441,4 +441,5 @@ mod architecture_removal_validation_tests {
         println!("• Performance and memory optimized");
         println!("• Integration compatibility maintained");
     }
-}
+use crucible_services::*;
+use serde_json::json;

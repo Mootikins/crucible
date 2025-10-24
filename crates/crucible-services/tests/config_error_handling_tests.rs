@@ -17,10 +17,10 @@ mod config_error_handler_tests {
     fn test_config_error_handler_new() {
         let handler = ConfigErrorHandler::new();
 
-        assert_eq!(handler.error_history.len(), 0);
-        assert_eq!(handler.max_history_size, 1000);
-        assert!(!handler.reporting_config.enable_reporting);
-        assert!(!handler.recovery_strategies.is_empty());
+        assert_eq!(handler.error_history().len(), 0);
+        assert_eq!(handler.max_history_size()(), 1000);
+        assert!(!handler.reporting_config().enable_reporting);
+        assert!(!handler.recovery_strategies()().is_empty());
     }
 
     #[test]
@@ -36,17 +36,17 @@ mod config_error_handler_tests {
 
         let handler = ConfigErrorHandler::with_config(reporting_config.clone());
 
-        assert_eq!(handler.reporting_config.enable_reporting, true);
-        assert_eq!(handler.reporting_config.reporting_endpoint, reporting_config.reporting_endpoint);
-        assert_eq!(handler.reporting_config.max_reports_per_hour, Some(50));
+        assert_eq!(handler.reporting_config().enable_reporting, true);
+        assert_eq!(handler.reporting_config().reporting_endpoint, reporting_config.reporting_endpoint);
+        assert_eq!(handler.reporting_config().max_reports_per_hour, Some(50));
     }
 
     #[test]
     fn test_config_error_handler_default() {
         let handler = ConfigErrorHandler::default();
 
-        assert_eq!(handler.error_history.len(), 0);
-        assert!(!handler.reporting_config.enable_reporting);
+        assert_eq!(handler.error_history().len(), 0);
+        assert!(!handler.reporting_config().enable_reporting);
     }
 
     #[test]
@@ -67,8 +67,8 @@ mod config_error_handler_tests {
             _ => panic!("Expected Failed result"),
         }
 
-        assert_eq!(handler.error_history.len(), 1);
-        assert_eq!(handler.error_history[0].field, Some("required_field".to_string()));
+        assert_eq!(handler.error_history().len(), 1);
+        assert_eq!(handler.error_history()[0].field, Some("required_field".to_string()));
     }
 
     #[test]
@@ -93,9 +93,9 @@ mod config_error_handler_tests {
             _ => panic!("Expected Recovered result"),
         }
 
-        assert_eq!(handler.error_history.len(), 1);
-        assert!(handler.error_history[0].recovery_attempted);
-        assert!(handler.error_history[0].recovery_successful);
+        assert_eq!(handler.error_history().len(), 1);
+        assert!(handler.error_history()[0].recovery_attempted);
+        assert!(handler.error_history()[0].recovery_successful);
     }
 
     #[test]
@@ -118,8 +118,8 @@ mod config_error_handler_tests {
             _ => panic!("Expected Warning result"),
         }
 
-        assert_eq!(handler.error_history.len(), 1);
-        assert_eq!(handler.error_history[0].severity, ValidationSeverity::Warning);
+        assert_eq!(handler.error_history().len(), 1);
+        assert_eq!(handler.error_history()[0].severity, ValidationSeverity::Warning);
     }
 
     #[test]
@@ -142,8 +142,8 @@ mod config_error_handler_tests {
             _ => panic!("Expected Critical result"),
         }
 
-        assert_eq!(handler.error_history.len(), 1);
-        assert_eq!(handler.error_history[0].severity, ValidationSeverity::Error);
+        assert_eq!(handler.error_history().len(), 1);
+        assert_eq!(handler.error_history()[0].severity, ValidationSeverity::Error);
     }
 
     #[test]
@@ -160,7 +160,7 @@ mod config_error_handler_tests {
             _ => panic!("Expected Success result"),
         }
 
-        assert_eq!(handler.error_history.len(), 0);
+        assert_eq!(handler.error_history().len(), 0);
     }
 
     #[test]
@@ -195,7 +195,7 @@ mod config_error_handler_tests {
             _ => panic!("Expected Failed result"),
         }
 
-        assert_eq!(handler.error_history.len(), 2);
+        assert_eq!(handler.error_history().len(), 2);
     }
 
     #[test]
@@ -225,7 +225,7 @@ mod config_error_handler_tests {
             _ => panic!("Expected Warning result"),
         }
 
-        assert_eq!(handler.error_history.len(), 1);
+        assert_eq!(handler.error_history().len(), 1);
     }
 
     #[test]
@@ -256,13 +256,13 @@ mod config_error_handler_tests {
             _ => panic!("Expected Failed result due to error severity"),
         }
 
-        assert_eq!(handler.error_history.len(), 2);
+        assert_eq!(handler.error_history().len(), 2);
     }
 
     #[test]
     fn test_error_history_management() {
         let mut handler = ConfigErrorHandler::new();
-        handler.max_history_size = 5;
+        handler.max_history_size() = 5;
 
         // Add more errors than the history size
         for i in 0..10 {
@@ -275,9 +275,9 @@ mod config_error_handler_tests {
         }
 
         // Should only keep the most recent errors
-        assert_eq!(handler.error_history.len(), 5);
-        assert_eq!(handler.error_history[0].field, Some("field_5".to_string()));
-        assert_eq!(handler.error_history[4].field, Some("field_9".to_string()));
+        assert_eq!(handler.error_history().len(), 5);
+        assert_eq!(handler.error_history()[0].field, Some("field_5".to_string()));
+        assert_eq!(handler.error_history()[4].field, Some("field_9".to_string()));
     }
 
     #[test]
@@ -294,10 +294,10 @@ mod config_error_handler_tests {
             handler.handle_validation_error(error);
         }
 
-        assert_eq!(handler.error_history.len(), 3);
+        assert_eq!(handler.error_history().len(), 3);
 
         handler.clear_history();
-        assert_eq!(handler.error_history.len(), 0);
+        assert_eq!(handler.error_history().len(), 0);
     }
 
     #[test]
@@ -331,20 +331,20 @@ mod config_error_handler_tests {
         handler.add_recovery_strategy("custom_field", custom_strategy.clone());
 
         // Test that the strategy is available
-        let strategy = handler.recovery_strategies.get("custom_field").unwrap();
+        let strategy = handler.recovery_strategies().get("custom_field").unwrap();
         assert_eq!(strategy.name(), "custom");
     }
 
     #[test]
-    fn test_default_recovery_strategies() {
+    fn test_default_recovery_strategies()() {
         let handler = ConfigErrorHandler::new();
 
         // Check that default strategies exist
-        assert!(handler.recovery_strategies.contains_key("logging.level"));
-        assert!(handler.recovery_strategies.contains_key("logging.format"));
-        assert!(handler.recovery_strategies.contains_key("service.environment"));
-        assert!(handler.recovery_strategies.contains_key("event_routing.max_concurrent_events"));
-        assert!(handler.recovery_strategies.contains_key("event_routing.max_event_age_seconds"));
+        assert!(handler.recovery_strategies().contains_key("logging.level"));
+        assert!(handler.recovery_strategies().contains_key("logging.format"));
+        assert!(handler.recovery_strategies().contains_key("service.environment"));
+        assert!(handler.recovery_strategies().contains_key("event_routing.max_concurrent_events"));
+        assert!(handler.recovery_strategies().contains_key("event_routing.max_event_age_seconds"));
     }
 }
 
@@ -568,7 +568,7 @@ mod error_handling_result_tests {
         let error = ValidationError::EnvironmentError {
             variable: "OPTIONAL_VAR".to_string(),
             error: "not set".to_string(),
-            source: None,
+            env_source: None,
         };
 
         let result = ErrorHandlingResult::Info(error.clone());
@@ -1026,7 +1026,7 @@ mod integration_error_handling_tests {
         assert!(results.iter().any(|r| matches!(r, ErrorHandlingResult::Warning(_))));
 
         // Verify error history
-        assert_eq!(handler.error_history.len(), 3);
+        assert_eq!(handler.error_history().len(), 3);
 
         // Get statistics
         let stats = handler.get_error_statistics();
@@ -1063,8 +1063,8 @@ mod integration_error_handling_tests {
             _ => panic!("Expected Critical result for parse error"),
         }
 
-        assert_eq!(handler.error_history.len(), 1);
-        assert!(handler.error_history[0].context.is_some());
+        assert_eq!(handler.error_history().len(), 1);
+        assert!(handler.error_history()[0].context.is_some());
     }
 
     #[test]
@@ -1115,7 +1115,7 @@ mod integration_error_handling_tests {
         assert!(duration.as_millis() < 1000);
 
         // Verify all errors were recorded
-        assert_eq!(handler.error_history.len(), 1000);
+        assert_eq!(handler.error_history().len(), 1000);
 
         // Verify statistics are calculated efficiently
         let stats = handler.get_error_statistics();
@@ -1212,6 +1212,6 @@ mod integration_error_handling_tests {
         assert!(matches!(result3, ErrorHandlingResult::Failed(_)));
 
         // Verify all errors were recorded correctly
-        assert_eq!(handler.error_history.len(), 3);
+        assert_eq!(handler.error_history().len(), 3);
     }
 }

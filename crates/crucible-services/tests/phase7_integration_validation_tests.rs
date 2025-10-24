@@ -13,7 +13,8 @@ use crucible_services::{
     logging::{LoggingConfig, EventTracer, EventMetrics, init_logging},
     event_routing::{EventRouter, Event, EventType, EventPriority, RoutingStrategy, EventHandler},
     errors::{ServiceError, ServiceResult},
-    script_engine::{ScriptEngine, ScriptEngineConfig},
+    script_engine::{CrucibleScriptEngine},
+    ScriptEngineConfig,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -116,7 +117,7 @@ async fn test_phase7_integration_validation() {
 
     // Initialize script engine
     let script_engine_config = ScriptEngineConfig::default();
-    let script_engine = ScriptEngine::new(script_engine_config);
+    let script_engine = CrucibleScriptEngine::new(script_engine_config);
     info!("✅ Script engine initialized");
 
     println!("✅ All Phase 7 components initialized successfully");
@@ -297,7 +298,7 @@ async fn test_phase7_regression_validation() {
     // Test 1: ScriptEngine Service Architecture Still Works
     println!("\n🔧 Test 1: ScriptEngine Service Architecture Validation");
 
-    let script_engine = ScriptEngine::new(ScriptEngineConfig::default());
+    let script_engine = CrucibleScriptEngine::new(ScriptEngineConfig::default());
 
     // Test that ScriptEngine still implements expected interfaces
     let tool_list = script_engine.list_tools().await.unwrap();
@@ -537,8 +538,8 @@ async fn test_phase7_quality_assurance() {
     println!("✅ Type safety and interface consistency maintained");
 }
 
-#[test]
-fn test_phase7_architecture_streamlined_validation() {
+#[tokio::test]
+async fn test_phase7_architecture_streamlined_validation() {
     println!("\n🏗️ Phase 7 Streamlined Architecture Validation");
     println!("==============================================");
 
@@ -773,8 +774,8 @@ fn test_phase7_closed_source_alignment() {
     println!("\n🔌 Test 5: Integration Points for Closed Source");
 
     // Validate that there are clear integration points
-    let script_engine = crucible_services::script_engine::ScriptEngine::new(
-        crucible_services::script_engine::ScriptEngineConfig::default()
+    let script_engine = crucible_services::script_engine::CrucibleScriptEngine::new(
+        crucible_services::ScriptEngineConfig::default()
     );
 
     // Should be able to list tools (integration point)

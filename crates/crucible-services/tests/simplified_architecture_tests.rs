@@ -772,4 +772,5 @@ mod simplified_architecture_tests {
         // Count the number of public items in the API
         35 // Expected after simplification
     }
-}
+use std::time::Duration;
+use serde_json::json;

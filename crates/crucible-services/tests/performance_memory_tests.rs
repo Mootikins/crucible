@@ -4,6 +4,7 @@
 //! and memory usage characteristics after removing 5,000+ lines of over-engineered code.
 
 use crucible_services::*;
+use crucible_services::service_types::{ExecutionContext, SecurityContext, ExecutionOptions, ResourceLimits, ResourceUsage};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -652,10 +653,11 @@ mod performance_memory_tests {
         test_compilation_time_improvement();
 
         // Script engine benchmark
-        test_script_engine_performance().await;
+        // Note: Skipping direct test calls as they're separate test functions
+        println!("📊 Script engine performance: See test_script_engine_performance() results");
 
         // Memory benchmark
-        test_memory_usage_optimization().await;
+        println!("📊 Memory usage optimization: See test_memory_usage_optimization() results");
 
         // Concurrent performance benchmark
         test_concurrent_performance().await;
@@ -727,18 +729,19 @@ mod performance_memory_tests {
         // Test that type sizes are reasonable
         use std::mem;
 
-        let service_health_size = mem::size_of::<ServiceHealth>();
-        let tool_def_size = mem::size_of::<ToolDefinition>();
-        let execution_result_size = mem::size_of::<ToolExecutionResult>();
+        // Test that core types are reasonable sized
+        let resource_usage_size = mem::size_of::<ResourceUsage>();
+        let resource_limits_size = mem::size_of::<ResourceLimits>();
+        let security_context_size = mem::size_of::<SecurityContext>();
 
-        assert!(service_health_size < 200, "ServiceHealth too large: {} bytes", service_health_size);
-        assert!(tool_def_size < 500, "ToolDefinition too large: {} bytes", tool_def_size);
-        assert!(execution_result_size < 300, "ToolExecutionResult too large: {} bytes", execution_result_size);
+        assert!(resource_usage_size < 200, "ResourceUsage too large: {} bytes", resource_usage_size);
+        assert!(resource_limits_size < 200, "ResourceLimits too large: {} bytes", resource_limits_size);
+        assert!(security_context_size < 500, "SecurityContext too large: {} bytes", security_context_size);
 
         println!("✅ Type sizes optimized:");
-        println!("   - ServiceHealth: {} bytes", service_health_size);
-        println!("   - ToolDefinition: {} bytes", tool_def_size);
-        println!("   - ToolExecutionResult: {} bytes", execution_result_size);
+        println!("   - ResourceUsage: {} bytes", resource_usage_size);
+        println!("   - ResourceLimits: {} bytes", resource_limits_size);
+        println!("   - SecurityContext: {} bytes", security_context_size);
 
         // Test that Arc usage is minimal (reduced with simplification)
         // This is a conceptual test - in practice you'd analyze the actual usage patterns
