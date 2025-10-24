@@ -11,7 +11,8 @@ pub mod pulldown;
 
 pub use types::{
     ParsedDocument, Frontmatter, FrontmatterFormat, Wikilink, Tag,
-    DocumentContent, Heading, CodeBlock,
+    DocumentContent, Heading, CodeBlock, Paragraph, ListBlock, ListItem,
+    ListType, TaskStatus,
 };
 pub use traits::{MarkdownParser, ParserCapabilities};
 pub use error::{ParserError, ParserResult};
