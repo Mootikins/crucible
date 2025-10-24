@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::runtime::Runtime;
 use tracing::{info, warn, debug};
 
 use super::tool_group::{
@@ -85,14 +84,12 @@ pub struct BenchmarkSummary {
 /// Performance benchmark suite
 pub struct PerformanceBenchmarks {
     config: BenchmarkConfig,
-    runtime: Runtime,
 }
 
 impl PerformanceBenchmarks {
     /// Create a new benchmark suite
     pub fn new(config: BenchmarkConfig) -> Result<Self, Box<dyn std::error::Error>> {
-        let runtime = Runtime::new()?;
-        Ok(Self { config, runtime })
+        Ok(Self { config })
     }
 
     /// Run all benchmarks

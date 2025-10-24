@@ -15,8 +15,8 @@
       "desktop_enabled": true,
       "email_enabled": false,
       "levels": {
-        "warning": true,
         "info": true,
+        "warning": true,
         "error": true,
         "critical": true
       }
@@ -34,8 +34,8 @@
       "panel_layout": "default",
       "panels": {
         "toolbar": true,
-        "status_bar": true,
-        "sidebar": true
+        "sidebar": true,
+        "status_bar": true
       },
       "window_state": null
     }
