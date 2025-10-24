@@ -47,5 +47,8 @@ crucible-llm = { path = "../crucible-llm" }
 # System utilities
 hostname = { workspace = true }
 
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [features]
 default = []

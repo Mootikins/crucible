@@ -561,7 +561,25 @@ mod tests {
     fn test_config_validation() {
         let mut config = WatchConfig::default();
 
-        // Should be valid
+        // Add a valid default profile first
+        let default_profile = WatchProfile {
+            name: "default".to_string(),
+            description: None,
+            paths: vec![WatchPath {
+                path: "/valid/path".to_string(),
+                recursive: true,
+                filters: None,
+                settings: None,
+            }],
+            backend: WatchBackend::Notify,
+            mode: WatchModeConfig::Standard { debounce: None },
+            filters: None,
+            handlers: None,
+            settings: None,
+        };
+        config.watch_profiles.insert("default".to_string(), default_profile);
+
+        // Should be valid now
         assert!(ConfigValidator::validate_config(&config).is_ok());
 
         // Add a profile with empty paths
@@ -577,7 +595,7 @@ mod tests {
         };
         config.watch_profiles.insert("test".to_string(), profile);
 
-        // Should be invalid
+        // Should be invalid due to empty paths in test profile
         assert!(ConfigValidator::validate_config(&config).is_err());
     }
 

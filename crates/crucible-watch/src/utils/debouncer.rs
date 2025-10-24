@@ -285,6 +285,9 @@ mod tests {
 
         assert_eq!(debouncer.pending_count(), 1);
 
+        // Wait long enough for the event to be considered old (5x debounce delay = 50ms)
+        tokio::time::sleep(Duration::from_millis(60)).await;
+
         // Force cleanup by advancing time
         debouncer.last_cleanup = Instant::now() - Duration::from_secs(11);
         debouncer.cleanup_old_events().await;

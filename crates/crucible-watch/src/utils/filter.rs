@@ -162,6 +162,9 @@ impl EventFilterLogic for TempFileFilter {
             !file_name.ends_with('~') &&
             !file_name.ends_with(".tmp") &&
             !file_name.ends_with(".temp") &&
+            !file_name.ends_with(".swp") &&
+            !file_name.ends_with(".swo") &&
+            !file_name.ends_with(".bak") &&
             !file_name.contains("#") &&
             !file_name.starts_with("tmp")
         } else {
@@ -184,11 +187,23 @@ impl EventFilterLogic for SystemFileFilter {
             let path_lower = path_str.to_lowercase();
 
             !path_lower.contains("/.git/") &&
+            !path_lower.starts_with(".git/") &&
+            !path_lower.ends_with("/.git") &&
             !path_lower.contains("/.svn/") &&
+            !path_lower.starts_with(".svn/") &&
+            !path_lower.ends_with("/.svn") &&
             !path_lower.contains("/node_modules/") &&
+            !path_lower.starts_with("node_modules/") &&
+            !path_lower.ends_with("/node_modules") &&
             !path_lower.contains("/target/") &&
+            !path_lower.starts_with("target/") &&
+            !path_lower.ends_with("/target") &&
             !path_lower.contains("/.vscode/") &&
+            !path_lower.starts_with(".vscode/") &&
+            !path_lower.ends_with("/.vscode") &&
             !path_lower.contains("/.idea/") &&
+            !path_lower.starts_with(".idea/") &&
+            !path_lower.ends_with("/.idea") &&
             !path_lower.ends_with(".ds_store") &&
             !path_lower.ends_with(".thumbs.db")
         } else {
