@@ -995,4 +995,5 @@ mod edge_case_tests {
         let result2 = router.route_event(event2).await;
         assert!(result2.is_ok());
     }
-}
+use uuid::Uuid;
+use serde_json::json;

@@ -41,7 +41,7 @@ async fn test_unified_registry_discovers_system_tools() -> Result<()> {
     let registry = UnifiedToolRegistry::new(context.tool_dir).await?;
 
     // Test that registry has system tools
-    let tools = registry.list_tools();
+    let tools = registry.list_tools().await;
     assert!(!tools.is_empty(), "Registry should have discovered system tools, got empty list");
 
     // Should contain known system tools
@@ -59,7 +59,7 @@ async fn test_unified_registry_discovers_system_tools() -> Result<()> {
     }
 
     // Test grouped tool listing
-    let grouped_tools = registry.list_tools_by_group();
+    let grouped_tools = registry.list_tools_by_group().await;
     assert!(grouped_tools.contains_key("system"),
            "Should have 'system' group. Groups: {:?}", grouped_tools.keys());
 
@@ -71,7 +71,7 @@ async fn test_unified_registry_discovers_system_tools() -> Result<()> {
 
     // Test tool group lookup
     for tool in system_tools {
-        let group_name = registry.get_tool_group(tool).unwrap();
+        let group_name = registry.get_tool_group(tool).await.unwrap();
         assert_eq!(group_name, "system", "Tool '{}' should belong to 'system' group", tool);
     }
 
@@ -84,7 +84,7 @@ async fn test_unified_registry_discovers_system_tools() -> Result<()> {
     println!("📊 Sample output: {}", result.output);
 
     // Test registry statistics
-    let stats = registry.get_stats();
+    let stats = registry.get_stats().await;
     assert!(stats.contains_key("total_tools"), "Stats should contain total_tools");
     assert!(stats.contains_key("system_tools"), "Stats should contain system_tools count");
 
@@ -143,20 +143,20 @@ async fn test_unified_mode_functionality() -> Result<()> {
     assert!(registry.is_unified_enabled(), "Unified mode should be enabled by default");
 
     // Test we can get grouped tools
-    let grouped = registry.list_tools_by_group();
+    let grouped = registry.list_tools_by_group().await;
     println!("🔍 Grouped tools: {:?}", grouped);
 
     // Test we have system group
     assert!(grouped.contains_key("system"), "Should have system group");
 
     // Test we can list all tools
-    let all_tools = registry.list_tools();
+    let all_tools = registry.list_tools().await;
     assert!(!all_tools.is_empty(), "Should have tools available");
     println!("📋 Total tools available: {}", all_tools.len());
 
     // Test tool group lookup
     if let Some(tool_name) = all_tools.first() {
-        let group = registry.get_tool_group(tool_name);
+        let group = registry.get_tool_group(tool_name).await;
         assert!(group.is_some(), "First tool should have a group");
         println!("🏷️  Tool '{}' belongs to group: {}", tool_name, group.unwrap());
     }

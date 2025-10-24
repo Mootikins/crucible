@@ -18,8 +18,8 @@ use crucible_services::{
 };
 use std::sync::Arc;
 use std::time::Duration;
-use async_trait::async_trait;
 use serde_json::json;
+use async_trait::async_trait;
 use tracing::{info, warn};
 
 /// Test event handler for validation

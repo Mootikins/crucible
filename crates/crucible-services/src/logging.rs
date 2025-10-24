@@ -4,6 +4,7 @@
 //! focused on event routing debugging with minimal performance overhead.
 
 use super::errors::ServiceResult;
+use serde::Serialize;
 use std::sync::Once;
 use tracing::{debug, error, info, trace, Level};
 
@@ -11,11 +12,13 @@ use tracing::{debug, error, info, trace, Level};
 static INIT: Once = Once::new();
 
 /// Logging configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct LoggingConfig {
     /// Default log level
+    #[serde(skip_serializing)]
     pub default_level: Level,
     /// Component-specific log levels
+    #[serde(skip_serializing)]
     pub component_levels: Vec<(String, Level)>,
     /// Whether to include timestamps
     pub include_timestamps: bool,

@@ -398,4 +398,5 @@ fn test_phase7_3_validation_rule_completeness() {
     println!("✅ All validation rules correctly reject invalid data ({} errors)", result.errors.len());
 
     println!("\n✅ Validation rule completeness test passed!");
-}
+use tokio_test;
+use serde_json::json;

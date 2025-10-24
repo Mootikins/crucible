@@ -257,7 +257,7 @@ async fn test_repl_tool_output_validation() -> Result<()> {
     let registry = UnifiedToolRegistry::new(context.tool_dir.clone()).await?;
 
     // Get all available tools and test a few
-    let tools = registry.list_tools();
+    let tools = registry.list_tools().await;
     let mut tested_tools = 0;
     let mut successful_json = 0;
 
@@ -312,11 +312,11 @@ async fn test_repl_tool_grouping_and_routing() -> Result<()> {
     let registry = UnifiedToolRegistry::new(context.tool_dir.clone()).await?;
 
     // Test tool group lookup
-    let tools = registry.list_tools();
+    let tools = registry.list_tools().await;
     assert!(!tools.is_empty(), "Should have tools available");
 
     // Verify system tools are properly grouped
-    let grouped = registry.list_tools_by_group();
+    let grouped = registry.list_tools_by_group().await;
     assert!(grouped.contains_key("system"), "Should have system group");
 
     let system_tools = grouped.get("system").unwrap();
@@ -324,7 +324,7 @@ async fn test_repl_tool_grouping_and_routing() -> Result<()> {
 
     // Test that each system tool returns the correct group
     for tool_name in system_tools.iter().take(10) {
-        let group = registry.get_tool_group(tool_name);
+        let group = registry.get_tool_group(tool_name).await;
         assert_eq!(group.unwrap(), "system", "Tool {} should be in system group", tool_name);
     }
 

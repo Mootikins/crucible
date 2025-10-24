@@ -17,12 +17,12 @@ use std::time::{Duration, Instant};
 use std::thread;
 use tokio::time::{sleep, timeout};
 use futures::future::join_all;
-use crate::test_utilities::*;
-use crate::config::CliConfig;
-use crate::cli::{ServiceCommands, MigrationCommands};
-use crate::commands::service::execute as service_execute;
-use crate::commands::migration::execute as migration_execute;
-use crate::commands::rune::{execute as rune_execute, list_commands};
+use crucible_cli::test_utilities::*;
+use crucible_cli::config::CliConfig;
+use crucible_cli::cli::{ServiceCommands, MigrationCommands};
+use crucible_cli::commands::service::execute as service_execute;
+use crucible_cli::commands::migration::execute as migration_execute;
+use crucible_cli::commands::rune::{execute as rune_execute, list_commands};
 
 /// Performance test configuration
 #[derive(Debug, Clone)]

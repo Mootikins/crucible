@@ -1693,6 +1693,7 @@ dependencies = [
  "tokio",
  "toml 0.8.23",
  "tracing",
+ "tracing-subscriber",
  "uuid",
  "yrs 0.24.0",
 ]
@@ -1787,6 +1788,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "tempfile",
  "thiserror 2.0.17",
  "tokio",
  "toml 0.8.23",
@@ -1908,6 +1910,7 @@ dependencies = [
  "chrono",
  "criterion",
  "crucible-config",
+ "crucible-core",
  "crucible-tools",
  "flume",
  "futures",
