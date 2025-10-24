@@ -46,4 +46,5 @@ full = ["orchestration", "hot-reload"]
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
+tracing-subscriber = { workspace = true }
 
