@@ -352,6 +352,12 @@ pub struct DocumentContent {
     /// Code blocks (for potential syntax-aware indexing)
     pub code_blocks: Vec<CodeBlock>,
 
+    /// Paragraph blocks (for content chunking and search)
+    pub paragraphs: Vec<Paragraph>,
+
+    /// List blocks (for structured content extraction)
+    pub lists: Vec<ListBlock>,
+
     /// Word count (approximate)
     pub word_count: usize,
 
@@ -471,6 +477,116 @@ impl CodeBlock {
     pub fn is_language(&self, lang: &str) -> bool {
         self.language.as_deref() == Some(lang)
     }
+}
+
+/// Paragraph block
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Paragraph {
+    /// Paragraph text content
+    pub content: String,
+
+    /// Character offset in source
+    pub offset: usize,
+
+    /// Word count in this paragraph
+    pub word_count: usize,
+}
+
+impl Paragraph {
+    /// Create a new paragraph
+    pub fn new(content: String, offset: usize) -> Self {
+        let word_count = content.split_whitespace().count();
+        Self {
+            content,
+            offset,
+            word_count,
+        }
+    }
+}
+
+/// List block
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListBlock {
+    /// List type (ordered or unordered)
+    pub list_type: ListType,
+
+    /// List items
+    pub items: Vec<ListItem>,
+
+    /// Character offset in source
+    pub offset: usize,
+
+    /// Total item count
+    pub item_count: usize,
+}
+
+impl ListBlock {
+    /// Create a new list block
+    pub fn new(list_type: ListType, offset: usize) -> Self {
+        Self {
+            list_type,
+            items: Vec::new(),
+            offset,
+            item_count: 0,
+        }
+    }
+
+    /// Add an item to the list
+    pub fn add_item(&mut self, item: ListItem) {
+        self.item_count += 1;
+        self.items.push(item);
+    }
+}
+
+/// List type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ListType {
+    /// Unordered list (-, *, +)
+    Unordered,
+    /// Ordered list (1., 2., etc.)
+    Ordered,
+}
+
+/// List item
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListItem {
+    /// Item text content
+    pub content: String,
+
+    /// Item level (for nested lists)
+    pub level: usize,
+
+    /// Task status (for task lists)
+    pub task_status: Option<TaskStatus>,
+}
+
+impl ListItem {
+    /// Create a new list item
+    pub fn new(content: String, level: usize) -> Self {
+        Self {
+            content,
+            level,
+            task_status: None,
+        }
+    }
+
+    /// Create a task list item
+    pub fn new_task(content: String, level: usize, completed: bool) -> Self {
+        Self {
+            content,
+            level,
+            task_status: Some(if completed { TaskStatus::Completed } else { TaskStatus::Pending }),
+        }
+    }
+}
+
+/// Task status for task list items
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskStatus {
+    /// Task is completed ([x])
+    Completed,
+    /// Task is pending ([ ])
+    Pending,
 }
 
 #[cfg(test)]
