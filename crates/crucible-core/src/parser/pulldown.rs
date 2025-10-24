@@ -142,6 +142,7 @@ fn extract_wikilinks(content: &str) -> ParserResult<Vec<Wikilink>> {
 /// Extract tags from content using regex
 fn extract_tags(content: &str) -> ParserResult<Vec<Tag>> {
     use regex::Regex;
+    // Simple regex that matches tags, we'll filter out false positives
     let re = Regex::new(r"#([\w/]+)").unwrap();
 
     let mut tags = Vec::new();
@@ -150,10 +151,31 @@ fn extract_tags(content: &str) -> ParserResult<Vec<Tag>> {
         let offset = full_match.start();
         let tag_name = cap.get(1).unwrap().as_str();
 
-        tags.push(Tag::new(tag_name, offset));
+        // Filter out false positives like in code blocks or URLs
+        if should_include_tag(full_match.as_str(), content, offset) {
+            tags.push(Tag::new(tag_name, offset));
+        }
     }
 
     Ok(tags)
+}
+
+/// Check if a tag match should be included (filter false positives)
+fn should_include_tag(match_text: &str, content: &str, offset: usize) -> bool {
+    // Simple heuristic: don't include tags that are part of longer words
+    // This filters out things like "header#section" where #section isn't a tag
+    let after_end = offset + match_text.len();
+
+    // Check if character after the match is a word character (continuation)
+    if after_end < content.len() {
+        if let Some(next_char) = content.chars().nth(after_end) {
+            if next_char.is_alphanumeric() || next_char == '_' {
+                return false; // Part of a word, not a tag
+            }
+        }
+    }
+
+    true
 }
 
 /// Parse document structure with pulldown-cmark
@@ -162,6 +184,8 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
 
     let mut headings = Vec::new();
     let mut code_blocks = Vec::new();
+    let mut paragraphs = Vec::new();
+    let mut lists = Vec::new();
     let mut plain_text = String::new();
     let mut current_offset = 0;
     let mut in_heading = false;
@@ -172,10 +196,26 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
     let mut current_code_lang: Option<String> = None;
     let mut current_code_content = String::new();
     let mut current_code_offset = 0;
+    let mut in_paragraph = false;
+    let mut current_paragraph_text = String::new();
+    let mut current_paragraph_offset = 0;
+    let mut current_list: Option<ListBlock> = None;
 
     for event in parser {
         match event {
             Event::Start(CmarkTag::Heading{level, id: _, classes: _, attrs: _}) => {
+                // Close any open paragraph
+                if in_paragraph {
+                    if !current_paragraph_text.trim().is_empty() {
+                        paragraphs.push(Paragraph::new(
+                            current_paragraph_text.clone(),
+                            current_paragraph_offset,
+                        ));
+                    }
+                    in_paragraph = false;
+                    current_paragraph_text.clear();
+                }
+
                 in_heading = true;
                 current_heading_level = heading_level_to_u8(level);
                 current_heading_text.clear();
@@ -191,7 +231,71 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
                     in_heading = false;
                 }
             }
+            Event::Start(CmarkTag::Paragraph) => {
+                // Close any open paragraph (shouldn't happen but be safe)
+                if in_paragraph {
+                    if !current_paragraph_text.trim().is_empty() {
+                        paragraphs.push(Paragraph::new(
+                            current_paragraph_text.clone(),
+                            current_paragraph_offset,
+                        ));
+                    }
+                    current_paragraph_text.clear();
+                }
+
+                in_paragraph = true;
+                current_paragraph_offset = current_offset;
+            }
+            Event::End(TagEnd::Paragraph) => {
+                if in_paragraph {
+                    if !current_paragraph_text.trim().is_empty() {
+                        paragraphs.push(Paragraph::new(
+                            current_paragraph_text.clone(),
+                            current_paragraph_offset,
+                        ));
+                    }
+                    in_paragraph = false;
+                    current_paragraph_text.clear();
+                }
+            }
+            Event::Start(CmarkTag::List(_)) => {
+                // Close any open paragraph before starting a list
+                if in_paragraph {
+                    if !current_paragraph_text.trim().is_empty() {
+                        paragraphs.push(Paragraph::new(
+                            current_paragraph_text.clone(),
+                            current_paragraph_offset,
+                        ));
+                    }
+                    in_paragraph = false;
+                    current_paragraph_text.clear();
+                }
+
+                current_list = Some(ListBlock::new(ListType::Unordered, current_offset));
+            }
+            Event::End(TagEnd::Item) => {
+                // End of list item - handled in Text processing for simplicity
+            }
+            Event::End(TagEnd::List(_)) => {
+                if let Some(list) = current_list.take() {
+                    if !list.items.is_empty() {
+                        lists.push(list);
+                    }
+                }
+            }
             Event::Start(CmarkTag::CodeBlock(kind)) => {
+                // Close any open paragraph/code block
+                if in_paragraph {
+                    if !current_paragraph_text.trim().is_empty() {
+                        paragraphs.push(Paragraph::new(
+                            current_paragraph_text.clone(),
+                            current_paragraph_offset,
+                        ));
+                    }
+                    in_paragraph = false;
+                    current_paragraph_text.clear();
+                }
+
                 in_code_block = true;
                 current_code_lang = match kind {
                     pulldown_cmark::CodeBlockKind::Fenced(lang) => {
@@ -221,6 +325,24 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
                     current_heading_text.push_str(&text);
                 } else if in_code_block {
                     current_code_content.push_str(&text);
+                } else if in_paragraph {
+                    current_paragraph_text.push_str(&text);
+                } else if let Some(ref mut list) = current_list {
+                    // This is list item text - create a new list item
+                    // For simplicity, treat each text node as a separate list item
+                    let item_text = text.trim().to_string();
+                    if !item_text.is_empty() {
+                        // Check if this is a task list item
+                        if let Some(task_content) = extract_task_content(&item_text) {
+                            list.add_item(ListItem::new_task(
+                                task_content.0,
+                                0, // level detection would need more complex logic
+                                task_content.1,
+                            ));
+                        } else {
+                            list.add_item(ListItem::new(item_text, 0));
+                        }
+                    }
                 } else {
                     plain_text.push_str(&text);
                     plain_text.push(' '); // Add space between text nodes
@@ -228,7 +350,11 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
                 current_offset += text.len();
             }
             Event::Code(code) => {
-                if !in_code_block {
+                if in_code_block {
+                    current_code_content.push_str(&code);
+                } else if in_paragraph {
+                    current_paragraph_text.push_str(&code);
+                } else {
                     plain_text.push_str(&code);
                     plain_text.push(' ');
                 }
@@ -237,12 +363,31 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
             Event::SoftBreak | Event::HardBreak => {
                 if in_code_block {
                     current_code_content.push('\n');
+                } else if in_paragraph {
+                    current_paragraph_text.push(' ');
                 } else if !in_heading {
                     plain_text.push(' ');
                 }
                 current_offset += 1;
             }
             _ => {}
+        }
+    }
+
+    // Close any open paragraph at the end
+    if in_paragraph {
+        if !current_paragraph_text.trim().is_empty() {
+            paragraphs.push(Paragraph::new(
+                current_paragraph_text.clone(),
+                current_paragraph_offset,
+            ));
+        }
+    }
+
+    // Close any open list at the end
+    if let Some(list) = current_list.take() {
+        if !list.items.is_empty() {
+            lists.push(list);
         }
     }
 
@@ -263,9 +408,26 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
         plain_text,
         headings,
         code_blocks,
+        paragraphs,
+        lists,
         word_count,
         char_count,
     })
+}
+
+/// Extract task list content and status
+/// Returns (content_without_checkbox, is_completed)
+fn extract_task_content(text: &str) -> Option<(String, bool)> {
+    // Check for task list patterns: [x] or [ ]
+    let trimmed = text.trim();
+
+    if let Some(task_text) = trimmed.strip_prefix("[x] ") {
+        Some((task_text.trim().to_string(), true))
+    } else if let Some(task_text) = trimmed.strip_prefix("[ ] ") {
+        Some((task_text.trim().to_string(), false))
+    } else {
+        None
+    }
 }
 
 /// Convert pulldown-cmark HeadingLevel to u8
