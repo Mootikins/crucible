@@ -87,6 +87,15 @@ pub mod system_tools;
 pub mod types;
 pub mod vault_tools;
 
+// Vault parsing modules - Phase 1A TDD Implementation
+pub mod vault_types;
+pub mod vault_scanner;
+pub mod vault_parser;
+pub mod vault_change_detection;
+
+// Real vault operations - Phase 1B Implementation
+pub mod vault_operations;
+
 // ===== PUBLIC API EXPORTS =====
 // Simple async function composition interface
 

@@ -15,7 +15,6 @@ members = [
     "crates/crucible-services",
     "crates/crucible-rune-macros",
     "crates/crucible-tools",
-    "benches",
 ]
 
 [workspace.package]
