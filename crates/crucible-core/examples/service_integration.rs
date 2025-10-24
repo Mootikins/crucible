@@ -156,18 +156,18 @@ impl HealthCheck for MockMcpGateway {
 impl Configurable for MockMcpGateway {
     type Config = McpGatewayConfig;
 
-    async fn get_config(&self) -> ServiceResult<Self::Config> {
+    async fn get_config(&self) -> ServiceResult<<Self as Configurable>::Config> {
         Ok(self.config.clone())
     }
 
-    async fn update_config(&mut self, config: Self::Config) -> ServiceResult<()> {
+    async fn update_config(&mut self, config: <Self as Configurable>::Config) -> ServiceResult<()> {
         println!("⚙️ Updating MCP Gateway configuration");
         self.config = config;
         println!("✅ MCP Gateway configuration updated");
         Ok(())
     }
 
-    async fn validate_config(&self, config: &Self::Config) -> ServiceResult<()> {
+    async fn validate_config(&self, config: &<Self as Configurable>::Config) -> ServiceResult<()> {
         if config.max_tools == 0 {
             return Err(crucible_services::errors::ServiceError::ValidationError(
                 "max_tools must be greater than 0".to_string(),
@@ -366,18 +366,18 @@ impl HealthCheck for MockInferenceEngine {
 impl Configurable for MockInferenceEngine {
     type Config = InferenceEngineConfig;
 
-    async fn get_config(&self) -> ServiceResult<Self::Config> {
+    async fn get_config(&self) -> ServiceResult<<Self as Configurable>::Config> {
         Ok(self.config.clone())
     }
 
-    async fn update_config(&mut self, config: Self::Config) -> ServiceResult<()> {
+    async fn update_config(&mut self, config: <Self as Configurable>::Config) -> ServiceResult<()> {
         println!("⚙️ Updating Inference Engine configuration");
         self.config = config;
         println!("✅ Inference Engine configuration updated");
         Ok(())
     }
 
-    async fn validate_config(&self, config: &Self::Config) -> ServiceResult<()> {
+    async fn validate_config(&self, config: &<Self as Configurable>::Config) -> ServiceResult<()> {
         if config.max_models == 0 {
             return Err(crucible_services::errors::ServiceError::ValidationError(
                 "max_models must be greater than 0".to_string(),
@@ -445,6 +445,7 @@ struct ServiceRegistry {
     services: Vec<Box<dyn ServiceLifecycleWrapper>>,
 }
 
+#[async_trait]
 trait ServiceLifecycleWrapper: Send + Sync {
     async fn start(&mut self) -> ServiceResult<()>;
     async fn stop(&mut self) -> ServiceResult<()>;
