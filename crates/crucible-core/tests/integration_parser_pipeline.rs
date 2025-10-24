@@ -199,7 +199,6 @@ def hello():
     // Verify paragraph extraction
     assert!(parsed_doc.content.paragraphs.len() >= 1, "Should extract at least 1 paragraph, got {}", parsed_doc.content.paragraphs.len());
     let intro_paragraph = &parsed_doc.content.paragraphs[0];
-    println!("First paragraph: '{}' (word count: {})", intro_paragraph.content, intro_paragraph.word_count);
     assert!(intro_paragraph.content.contains("first paragraph"));
     assert_eq!(intro_paragraph.word_count, 5);
 
@@ -211,24 +210,9 @@ def hello():
     assert!(python_block.unwrap().content.contains("def hello"));
 
     // Verify list extraction
-    println!("Extracted {} lists:", parsed_doc.content.lists.len());
-    for (i, list) in parsed_doc.content.lists.iter().enumerate() {
-        println!("  List {}: {} items, type: {:?}", i, list.items.len(), list.list_type);
-        for (j, item) in list.items.iter().enumerate() {
-            println!("    Item {}: '{}' (status: {:?})", j, item.content, item.task_status);
-        }
-    }
-
     let lists: Vec<_> = parsed_doc.content.lists.iter()
         .filter(|l| !l.items.is_empty()).collect();
-    println!("Non-empty lists: {}", lists.len());
-
-    // For now, just check that we have some lists (task detection is broken)
-    if lists.is_empty() {
-        println!("No lists extracted - list parsing needs fixing");
-        // Skip the task list assertion for now
-        return Ok(());
-    }
+    assert!(lists.len() >= 2, "Should extract at least 2 lists");
 
     // Verify task list extraction
     let task_list = lists.iter().find(|l|

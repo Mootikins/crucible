@@ -200,6 +200,8 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
     let mut current_paragraph_text = String::new();
     let mut current_paragraph_offset = 0;
     let mut current_list: Option<ListBlock> = None;
+    let mut in_list_item = false;
+    let mut current_list_item_text = String::new();
 
     for event in parser {
         match event {
@@ -273,8 +275,31 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
 
                 current_list = Some(ListBlock::new(ListType::Unordered, current_offset));
             }
+            Event::Start(CmarkTag::Item) => {
+                in_list_item = true;
+                current_list_item_text.clear();
+            }
             Event::End(TagEnd::Item) => {
-                // End of list item - handled in Text processing for simplicity
+                if in_list_item {
+                    // Create list item from accumulated text
+                    let item_text = current_list_item_text.trim().to_string();
+                    if !item_text.is_empty() {
+                        if let Some(ref mut list) = current_list {
+                            // Check if this is a task list item
+                            if let Some(task_content) = extract_task_content(&item_text) {
+                                list.add_item(ListItem::new_task(
+                                    task_content.0,
+                                    0, // level detection would need more complex logic
+                                    task_content.1,
+                                ));
+                            } else {
+                                list.add_item(ListItem::new(item_text, 0));
+                            }
+                        }
+                    }
+                    in_list_item = false;
+                    current_list_item_text.clear();
+                }
             }
             Event::End(TagEnd::List(_)) => {
                 if let Some(list) = current_list.take() {
@@ -327,22 +352,9 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
                     current_code_content.push_str(&text);
                 } else if in_paragraph {
                     current_paragraph_text.push_str(&text);
-                } else if let Some(ref mut list) = current_list {
-                    // This is list item text - create a new list item
-                    // For simplicity, treat each text node as a separate list item
-                    let item_text = text.trim().to_string();
-                    if !item_text.is_empty() {
-                        // Check if this is a task list item
-                        if let Some(task_content) = extract_task_content(&item_text) {
-                            list.add_item(ListItem::new_task(
-                                task_content.0,
-                                0, // level detection would need more complex logic
-                                task_content.1,
-                            ));
-                        } else {
-                            list.add_item(ListItem::new(item_text, 0));
-                        }
-                    }
+                } else if in_list_item {
+                    // Accumulate text within list item
+                    current_list_item_text.push_str(&text);
                 } else {
                     plain_text.push_str(&text);
                     plain_text.push(' '); // Add space between text nodes
@@ -354,6 +366,8 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
                     current_code_content.push_str(&code);
                 } else if in_paragraph {
                     current_paragraph_text.push_str(&code);
+                } else if in_list_item {
+                    current_list_item_text.push_str(&code);
                 } else {
                     plain_text.push_str(&code);
                     plain_text.push(' ');
@@ -365,6 +379,8 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
                     current_code_content.push('\n');
                 } else if in_paragraph {
                     current_paragraph_text.push(' ');
+                } else if in_list_item {
+                    current_list_item_text.push(' ');
                 } else if !in_heading {
                     plain_text.push(' ');
                 }
@@ -381,6 +397,25 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
                 current_paragraph_text.clone(),
                 current_paragraph_offset,
             ));
+        }
+    }
+
+    // Close any open list item at the end
+    if in_list_item {
+        let item_text = current_list_item_text.trim().to_string();
+        if !item_text.is_empty() {
+            if let Some(ref mut list) = current_list {
+                // Check if this is a task list item
+                if let Some(task_content) = extract_task_content(&item_text) {
+                    list.add_item(ListItem::new_task(
+                        task_content.0,
+                        0, // level detection would need more complex logic
+                        task_content.1,
+                    ));
+                } else {
+                    list.add_item(ListItem::new(item_text, 0));
+                }
+            }
         }
     }
 
