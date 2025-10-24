@@ -22,6 +22,7 @@ notify-debouncer-full = { workspace = true }
 
 # Configuration
 crucible-config = { workspace = true }
+crucible-core = { workspace = true }
 
 # Time and scheduling
 chrono = { workspace = true, features = ["serde"] }
