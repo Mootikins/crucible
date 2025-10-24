@@ -194,6 +194,8 @@ mod tests {
                 plain_text: "Test\n\nThis is a test document with link and tag.".to_string(),
                 word_count: 10,
                 char_count: 47,
+                paragraphs: vec![],
+                lists: vec![],
                 headings: vec![
                     Heading {
                         level: 1,
@@ -330,6 +332,8 @@ mod tests {
                 char_count: 14,
                 headings: vec![],
                 code_blocks: vec![],
+                paragraphs: vec![],
+                lists: vec![],
             },
             wikilinks: vec![],
             tags: vec![],
