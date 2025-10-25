@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 # Core CRDT
-yrs = "0.18"
+yrs = { workspace = true }
 yrs-kvstore = "0.1"
 
 # Async runtime
