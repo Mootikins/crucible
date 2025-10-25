@@ -58,7 +58,7 @@ async fn main() -> Result<()> {
             println!("📋 Available Commands:");
             println!("   crucible run <script>     - Execute a Rune script");
             println!("   crucible search <query>  - Search documents");
-            println!("   crucible stats          - Show vault statistics");
+            println!("   crucible stats          - Show kiln statistics");
             println!("   crucible migrate        - Migration management");
             println!("   crucible service        - Service management");
             println!("   crucible config         - Configuration management");
