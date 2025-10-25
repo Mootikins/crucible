@@ -17,24 +17,24 @@ use std::path::Path;
 use anyhow::Result;
 use tempfile::TempDir;
 
-use crucible_cli::common::TestVault;
+use crucible_cli::tests::common::TestKiln;
 use crucible_cli::commands::search::{get_file_content, search_files_in_kiln};
 
 /// Test harness for binary safety TDD tests
 pub struct BinarySafetyTestHarness {
     pub temp_dir: TempDir,
-    pub test_vault: TestVault,
+    pub test_kiln: TestKiln,
 }
 
 impl BinarySafetyTestHarness {
     /// Create a new test harness with temporary directory
     pub fn new() -> Result<Self> {
         let temp_dir = TempDir::new()?;
-        let test_vault = TestVault::new()?;
+        let test_kiln = TestKiln::new()?;
 
         Ok(Self {
             temp_dir,
-            test_vault,
+            test_kiln,
         })
     }
 

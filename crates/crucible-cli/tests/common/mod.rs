@@ -57,6 +57,7 @@ impl TestKiln {
     }
 }
 
+
 /// Helper function to assert output contains expected string
 pub fn assert_output_contains(output: &str, expected: &str) {
     assert!(
@@ -77,30 +78,30 @@ mod tests {
     use super::*;
     
     #[test]
-    fn test_vault_creation() {
-        let vault = TestVault::new().unwrap();
-        assert!(vault.vault_path.exists());
+    fn test_kiln_creation() {
+        let kiln = TestKiln::new().unwrap();
+        assert!(kiln.kiln_path.exists());
     }
-    
+
     #[test]
     fn test_create_note() {
-        let vault = TestVault::new().unwrap();
-        let note_path = vault.create_note("test.md", "# Test").unwrap();
-        
+        let kiln = TestKiln::new().unwrap();
+        let note_path = kiln.create_note("test.md", "# Test").unwrap();
+
         assert!(note_path.exists());
         let content = std::fs::read_to_string(&note_path).unwrap();
         assert_eq!(content, "# Test");
     }
-    
+
     #[test]
     fn test_create_notes_batch() {
-        let vault = TestVault::new().unwrap();
-        vault.create_notes_batch(vec![
+        let kiln = TestKiln::new().unwrap();
+        kiln.create_notes_batch(vec![
             ("note1.md", "Content 1"),
             ("folder/note2.md", "Content 2"),
         ]).unwrap();
         
-        assert!(vault.vault_path.join("note1.md").exists());
-        assert!(vault.vault_path.join("folder/note2.md").exists());
+        assert!(kiln.kiln_path.join("note1.md").exists());
+        assert!(kiln.kiln_path.join("folder/note2.md").exists());
     }
 }

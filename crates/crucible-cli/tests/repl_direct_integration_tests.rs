@@ -16,7 +16,7 @@ use tempfile::TempDir;
 use anyhow::Result;
 use tokio::time::timeout;
 
-use super::common::TestKiln;
+use crate::tests::common::TestKiln;
 use crucible_cli::commands::repl::Repl;
 use crucible_cli::config::CliConfig;
 
