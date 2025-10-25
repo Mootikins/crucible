@@ -162,7 +162,7 @@ impl SystemToolGroup {
         // Vault tools
         schemas.insert("search_by_properties".to_string(), ToolSchema {
             name: "search_by_properties".to_string(),
-            description: "Search vault notes by frontmatter properties".to_string(),
+            description: "Search kiln notes by frontmatter properties".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -179,7 +179,7 @@ impl SystemToolGroup {
 
         schemas.insert("search_by_tags".to_string(), ToolSchema {
             name: "search_by_tags".to_string(),
-            description: "Search vault notes by tags".to_string(),
+            description: "Search kiln notes by tags".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -194,9 +194,9 @@ impl SystemToolGroup {
             })),
         });
 
-        schemas.insert("get_vault_stats".to_string(), ToolSchema {
-            name: "get_vault_stats".to_string(),
-            description: "Get vault statistics".to_string(),
+        schemas.insert("get_kiln_stats".to_string(), ToolSchema {
+            name: "get_kiln_stats".to_string(),
+            description: "Get kiln statistics".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {},
@@ -214,7 +214,7 @@ impl SystemToolGroup {
 
         schemas.insert("create_note".to_string(), ToolSchema {
             name: "create_note".to_string(),
-            description: "Create a new vault note".to_string(),
+            description: "Create a new kiln note".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -237,7 +237,7 @@ impl SystemToolGroup {
         // Database tools
         schemas.insert("semantic_search".to_string(), ToolSchema {
             name: "semantic_search".to_string(),
-            description: "Perform semantic search on vault content".to_string(),
+            description: "Perform semantic search on kiln content".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -254,7 +254,7 @@ impl SystemToolGroup {
 
         schemas.insert("search_by_content".to_string(), ToolSchema {
             name: "search_by_content".to_string(),
-            description: "Search vault content by text".to_string(),
+            description: "Search kiln content by text".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -340,7 +340,7 @@ impl ToolGroup for SystemToolGroup {
     }
 
     fn group_description(&self) -> &str {
-        "System tools (crucible-tools) for vault management, search, and system operations"
+        "System tools (crucible-tools) for kiln management, search, and system operations"
     }
 
     async fn discover_tools(&mut self) -> ToolGroupResult<Vec<String>> {
@@ -582,7 +582,7 @@ impl ParameterConverter for SystemToolGroup {
     fn convert_args_to_params(&self, tool_name: &str, args: &[String]) -> ToolGroupResult<Value> {
         match tool_name {
             // Tools that take no arguments
-            "system_info" | "get_vault_stats" | "get_index_stats" | "get_environment" => {
+            "system_info" | "get_kiln_stats" | "get_index_stats" | "get_environment" => {
                 if !args.is_empty() {
                     return Err(ToolGroupError::ParameterConversionFailed(
                         format!("{} takes no arguments, got {}", tool_name, args.len())
