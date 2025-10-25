@@ -61,6 +61,7 @@ struct InodeState {
     /// File size
     size: Option<u64>,
     /// Last known content hash (optional)
+    #[allow(dead_code)]
     content_hash: Option<String>,
 }
 
@@ -78,6 +79,7 @@ struct EditorWatchState {
     /// Last time this watch was checked
     last_check: Instant,
     /// Editor-specific state
+    #[allow(dead_code)]
     editor_state: HashMap<String, serde_json::Value>,
 }
 

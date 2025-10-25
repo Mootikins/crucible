@@ -95,8 +95,8 @@ impl EnhancedConfig {
 
         // Logging configuration overrides
         if let Ok(level) = std::env::var("CRUCIBLE_LOG_LEVEL") {
-            if let Ok(parsed_level) = level.parse() {
-                self.logging.level = parsed_level;
+            if let Ok(parsed_level) = level.parse::<tracing::Level>() {
+                self.logging.level = parsed_level.to_string();
             }
         }
         if let Ok(format) = std::env::var("CRUCIBLE_LOG_FORMAT") {
@@ -213,7 +213,7 @@ impl EnhancedConfig {
             self.service.environment,
             self.logging.level,
             self.event_routing.max_concurrent_events,
-            self.database.as_ref().map(|d| "configured").unwrap_or("none"),
+            self.database.as_ref().map(|_d| "configured").unwrap_or("none"),
             self.plugins.enabled_plugins.len()
         )
     }
@@ -505,7 +505,7 @@ impl ConfigValidator for LoggingConfig {
             required: true,
         });
 
-        if let Some(file_size) = self.max_file_size {
+        if let Some(_file_size) = self.max_file_size {
             engine.add_rule("max_file_size", ValidationRule {
                 field: "max_file_size".to_string(),
                 rule_type: ValidationRuleType::Positive,
@@ -515,7 +515,7 @@ impl ConfigValidator for LoggingConfig {
             });
         }
 
-        if let Some(max_files) = self.max_files {
+        if let Some(_max_files) = self.max_files {
             engine.add_rule("max_files", ValidationRule {
                 field: "max_files".to_string(),
                 rule_type: ValidationRuleType::Range { min: Some(1.0), max: Some(100.0) },

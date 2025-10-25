@@ -94,6 +94,9 @@ async fn test_repl_multiple_tool_sequence() -> Result<()> {
 /// Create a test configuration for the REPL
 fn create_test_config(vault: &TestVault) -> Result<CliConfig> {
     let temp_dir = TempDir::new()?;
+
+    // Set required environment variable for security
+    env::set_var("OBSIDIAN_VAULT_PATH", &vault.path);
     let config_content = format!(
         r#"
 vault:
@@ -120,7 +123,6 @@ logging:
     // Load configuration from the temporary file
     CliConfig::load(
         Some(config_file.to_string_lossy().to_string().into()),
-        None,
         None,
         None,
     )

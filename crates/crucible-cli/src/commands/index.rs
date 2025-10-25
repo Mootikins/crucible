@@ -16,15 +16,10 @@ use chrono;
 
 pub async fn execute(
     config: CliConfig,
-    path: Option<String>,
     force: bool,
     glob_pattern: String,
 ) -> Result<()> {
-    let vault_path = if let Some(p) = path {
-        PathBuf::from(p)
-    } else {
-        config.vault.path.clone()
-    };
+    let vault_path = config.vault.path.clone();
 
     println!("🔍 Indexing vault: {}", vault_path.display());
     println!("📋 Pattern: {}\n", glob_pattern);

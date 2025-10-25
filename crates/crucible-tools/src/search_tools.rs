@@ -310,7 +310,7 @@ pub fn advanced_search() -> ToolFunction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{ToolResult, ToolError};
+    use crate::types::ToolError;
 
     #[tokio::test]
     async fn test_search_documents_function() {

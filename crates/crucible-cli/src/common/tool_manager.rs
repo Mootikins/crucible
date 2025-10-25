@@ -68,6 +68,7 @@ impl CachedResult {
 
 impl CrucibleToolManager {
     /// Get the global tool manager instance
+    #[allow(static_mut_refs)]
     pub fn instance() -> &'static Self {
         static mut INSTANCE: Option<CrucibleToolManager> = None;
         static INIT: Once = Once::new();

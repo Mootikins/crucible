@@ -27,7 +27,7 @@ fn test_configuration_default_values() -> Result<()> {
 
     // Test vault defaults
     assert_eq!(config.vault.embedding_url, "http://localhost:11434");
-    assert_eq!(config.vault.embedding_model, "nomic-embed-text");
+    assert_eq!(config.vault.embedding_model, None);
 
     // Test LLM defaults
     assert_eq!(config.chat_model(), "llama3.2");
@@ -96,7 +96,7 @@ max_cache_size = 100
     // Test vault configuration
     assert_eq!(config.vault.path.to_string_lossy(), "/test/vault");
     assert_eq!(config.vault.embedding_url, "https://test-embedding.com");
-    assert_eq!(config.vault.embedding_model, "test-model");
+    assert_eq!(config.vault.embedding_model, Some("test-model".to_string()));
 
     // Test LLM configuration
     assert_eq!(config.chat_model(), "test-model");
@@ -142,12 +142,12 @@ fn test_environment_variable_overrides() -> Result<()> {
     env::set_var("ANTHROPIC_API_KEY", "sk-ant-env-test");
     env::set_var("CRUCIBLE_TIMEOUT", "60");
 
-    let config = CliConfig::load(None, None, None, None)?;
+    let config = CliConfig::load(None, None, None)?;
 
     // Test vault environment overrides
     assert_eq!(config.vault.path.to_string_lossy(), "/test/env/vault");
     assert_eq!(config.vault.embedding_url, "https://env-embedding.com");
-    assert_eq!(config.vault.embedding_model, "env-model");
+    assert_eq!(config.vault.embedding_model, Some("env-model".to_string()));
 
     // Test LLM environment overrides
     assert_eq!(config.chat_model(), "env-chat-model");
@@ -170,10 +170,10 @@ fn test_environment_variable_overrides() -> Result<()> {
 #[test]
 fn test_cli_argument_overrides() -> Result<()> {
     env::set_var("CRUCIBLE_TEST_MODE", "1"); // Skip loading user config
+    env::set_var("OBSIDIAN_VAULT_PATH", "/test/cli/vault"); // Set required vault path
 
     let config = CliConfig::load(
         None,
-        Some("/test/cli/vault".to_string()),
         Some("https://cli-embedding.com".to_string()),
         Some("cli-model".to_string()),
     )?;
@@ -181,7 +181,7 @@ fn test_cli_argument_overrides() -> Result<()> {
     // Test CLI argument overrides
     assert_eq!(config.vault.path.to_string_lossy(), "/test/cli/vault");
     assert_eq!(config.vault.embedding_url, "https://cli-embedding.com");
-    assert_eq!(config.vault.embedding_model, "cli-model");
+    assert_eq!(config.vault.embedding_model, Some("cli-model".to_string()));
 
     env::remove_var("CRUCIBLE_TEST_MODE");
 
@@ -210,13 +210,13 @@ temperature = 0.3
 
     // Set environment variables
     env::set_var("CRUCIBLE_TEST_MODE", "1");
+    env::set_var("OBSIDIAN_VAULT_PATH", "/cli/vault"); // Set required vault path
     env::set_var("EMBEDDING_MODEL", "env-model");
     env::set_var("CRUCIBLE_TEMPERATURE", "0.7");
 
     // Load with CLI arguments
     let config = CliConfig::load(
         Some(config_path),
-        Some("/cli/vault".to_string()),
         Some("https://cli-embedding.com".to_string()),
         None, // Use environment model
     )?;
@@ -229,7 +229,7 @@ temperature = 0.3
     assert_eq!(config.vault.embedding_url, "https://cli-embedding.com");
 
     // - vault.embedding_model should be from environment (middle precedence)
-    assert_eq!(config.vault.embedding_model, "env-model");
+    assert_eq!(config.vault.embedding_model, Some("env-model".to_string()));
 
     // - llm.chat_model should be from file (lower precedence)
     assert_eq!(config.chat_model(), "file-model");
@@ -394,9 +394,11 @@ fn test_path_derivation() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let vault_path = temp_dir.path().join("test_vault");
 
+    // Set required environment variable for security
+    env::set_var("OBSIDIAN_VAULT_PATH", &vault_path);
+
     let config = CliConfig::load(
         None,
-        Some(vault_path.to_str().unwrap().to_string()),
         None,
         None,
     )?;
@@ -534,10 +536,10 @@ fn test_test_mode_configuration() -> Result<()> {
     env::set_var("EMBEDDING_MODEL", "test-model");
     env::set_var("CRUCIBLE_CHAT_MODEL", "test-chat-model");
 
-    let config = CliConfig::load(None, None, None, None)?;
+    let config = CliConfig::load(None, None, None)?;
 
     // In test mode, should still respect environment variables
-    assert_eq!(config.vault.embedding_model, "test-model");
+    assert_eq!(config.vault.embedding_model, Some("test-model".to_string()));
     assert_eq!(config.chat_model(), "test-chat-model");
 
     // Clean up
@@ -623,7 +625,7 @@ max_performance_degradation = 10.0
     // Verify complex values were parsed correctly
     assert_eq!(config.vault.path.to_string_lossy(), "/complex/path with spaces");
     assert_eq!(config.vault.embedding_url, "https://complex-endpoint.com:8443/v1");
-    assert_eq!(config.vault.embedding_model, "complex-model-v1.2.3");
+    assert_eq!(config.vault.embedding_model, Some("complex-model-v1.2.3".to_string()));
 
     assert_eq!(config.temperature(), 1.5);
     assert_eq!(config.max_tokens(), 8192);

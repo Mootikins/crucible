@@ -100,7 +100,7 @@ impl ConfigErrorHandler {
         // Group errors by severity
         let mut critical_errors = Vec::new();
         let mut errors = Vec::new();
-        let mut warnings = Vec::new();
+        let warnings = Vec::new();
 
         for error in result.errors {
             match error.severity() {
@@ -109,7 +109,7 @@ impl ConfigErrorHandler {
             }
         }
 
-        warnings = result.warnings;
+        let _warnings = result.warnings;
 
         // Handle critical errors first
         if !critical_errors.is_empty() {

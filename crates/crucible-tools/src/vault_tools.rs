@@ -342,7 +342,7 @@ pub fn list_tags() -> ToolFunction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{ToolResult, ToolError};
+    use crate::types::ToolError;
 
     #[tokio::test]
     async fn test_search_by_properties_function() {

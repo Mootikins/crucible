@@ -168,6 +168,7 @@ async fn execute_validate_command(config: CliConfig, tool: Option<String>) -> Re
 }
 
 /// Execute reset command
+#[allow(dead_code)]
 async fn execute_reset_command(config: CliConfig) -> Result<()> {
     if !config.migration.enabled {
         println!("{}", "❌ Migration is disabled".red());

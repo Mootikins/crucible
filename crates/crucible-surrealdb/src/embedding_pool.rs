@@ -257,7 +257,7 @@ impl EmbeddingThreadPool {
             let worker_metrics = metrics.clone();
             let worker_circuit_breaker = circuit_breaker.clone();
             let worker_shutdown = shutdown_signal.clone();
-            let worker_provider = embedding_provider.clone();
+            let _worker_provider = embedding_provider.clone();
             let use_mock = use_mock_embeddings;
 
             workers.spawn(async move {
@@ -272,7 +272,7 @@ impl EmbeddingThreadPool {
 
                     // Check circuit breaker
                     {
-                        let mut cb = worker_circuit_breaker.write().await;
+                        let cb = worker_circuit_breaker.write().await;
                         if !cb.can_execute() {
                             // Wait before checking again
                             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -472,7 +472,7 @@ impl EmbeddingThreadPool {
 
             // Attempt processing
             match self.process_document_internal(document_id, content).await {
-                Ok(embedding) => {
+                Ok(_embedding) => {
                     // Record success
                     {
                         let mut circuit_breaker = self.circuit_breaker.write().await;

@@ -10,7 +10,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, trace};
 
 /// Debug event capture for detailed analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]

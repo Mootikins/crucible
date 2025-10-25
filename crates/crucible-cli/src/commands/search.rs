@@ -6,7 +6,7 @@ use crate::interactive::{FuzzyPicker, SearchResultWithScore};
 use crate::output;
 
 pub async fn execute(
-    config: CliConfig,
+    _config: CliConfig,
     query: Option<String>,
     limit: u32,
     format: String,
@@ -80,7 +80,7 @@ async fn search_with_tools(query: &str, limit: u32) -> Result<Vec<SearchResultWi
             let search_results: Vec<SearchResultWithScore> = results
                 .iter()
                 .enumerate()
-                .filter_map(|(idx, item)| {
+                .filter_map(|(_idx, item)| {
                     if let (Some(file_path), Some(title), Some(score)) = (
                         item.get("file_path").and_then(|p| p.as_str()),
                         item.get("title").and_then(|t| t.as_str()),

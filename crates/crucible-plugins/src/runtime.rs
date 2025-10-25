@@ -2,6 +2,7 @@ use anyhow::Result;
 use rune::Context;
 
 pub struct RuneRuntime {
+    #[allow(dead_code)]
     context: Context,
 }
 
@@ -18,15 +19,15 @@ impl RuneRuntime {
         Self { context }
     }
 
-    pub async fn load_script(&mut self, path: &str) -> Result<()> {
+    pub async fn load_script(&mut self, _path: &str) -> Result<()> {
         // Load and compile Rune script
         Ok(())
     }
 
     pub async fn execute_command(
         &self,
-        command: &str,
-        args: serde_json::Value,
+        _command: &str,
+        _args: serde_json::Value,
     ) -> Result<serde_json::Value> {
         // Execute Rune command
         Ok(serde_json::Value::Null)

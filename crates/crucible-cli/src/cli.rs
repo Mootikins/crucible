@@ -1,6 +1,9 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+// Import daemon command types
+use crate::commands::daemon::DaemonCommands;
+
 #[derive(Parser)]
 #[command(name = "crucible")]
 #[command(about = "Crucible CLI - Interactive knowledge management with semantic search")]
@@ -19,10 +22,7 @@ pub struct Cli {
     #[arg(short = 'C', long, global = true)]
     pub config: Option<PathBuf>,
 
-    /// Vault path (overrides config file)
-    #[arg(short = 'p', long, global = true, env = "CRUCIBLE_VAULT_PATH")]
-    pub vault_path: Option<String>,
-
+  
     /// Embedding service URL (overrides config file)
     #[arg(long, global = true)]
     pub embedding_url: Option<String>,
@@ -110,9 +110,6 @@ pub enum Commands {
 
     /// Index vault for search and embeddings
     Index {
-        /// Path to vault (defaults to current directory or --vault-path)
-        path: Option<String>,
-
         /// Force re-indexing of all files
         #[arg(short = 'F', long)]
         force: bool,
@@ -148,6 +145,10 @@ pub enum Commands {
     /// Service management and monitoring
     #[command(subcommand)]
     Service(ServiceCommands),
+
+    /// Daemon management for background processing
+    #[command(subcommand)]
+    Daemon(DaemonCommands),
 
     /// Migration management for tool migration
     #[command(subcommand)]

@@ -21,14 +21,14 @@ pub async fn initialize_database() -> std::result::Result<(), String> {
 
 #[tauri::command]
 pub async fn search_documents(
-    query: String,
+    _query: String,
 ) -> std::result::Result<Vec<serde_json::Value>, String> {
     // MCP functionality has been removed - please use crucible-services instead
     Err("Search functionality has been moved to crucible-services".to_string())
 }
 
 #[tauri::command]
-pub async fn get_document(path: String) -> std::result::Result<serde_json::Value, String> {
+pub async fn get_document(_path: String) -> std::result::Result<serde_json::Value, String> {
     // MCP functionality has been removed - please use crucible-services instead
     Err("Document retrieval functionality has been moved to crucible-services".to_string())
 }
@@ -45,13 +45,13 @@ pub async fn create_document(
 }
 
 #[tauri::command]
-pub async fn update_document(path: String, content: String) -> std::result::Result<(), String> {
+pub async fn update_document(_path: String, _content: String) -> std::result::Result<(), String> {
     // MCP functionality has been removed - please use crucible-services instead
     Err("Document update functionality has been moved to crucible-services".to_string())
 }
 
 #[tauri::command]
-pub async fn delete_document(path: String) -> std::result::Result<(), String> {
+pub async fn delete_document(_path: String) -> std::result::Result<(), String> {
     // TODO: Implement document deletion
     Err("Not implemented".to_string())
 }
@@ -63,14 +63,14 @@ pub async fn list_documents() -> std::result::Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-pub async fn search_by_tags(tags: Vec<String>) -> std::result::Result<Vec<String>, String> {
+pub async fn search_by_tags(_tags: Vec<String>) -> std::result::Result<Vec<String>, String> {
     // MCP functionality has been removed - please use crucible-services instead
     Err("Tag search functionality has been moved to crucible-services".to_string())
 }
 
 #[tauri::command]
 pub async fn search_by_properties(
-    properties: HashMap<String, serde_json::Value>,
+    _properties: HashMap<String, serde_json::Value>,
 ) -> std::result::Result<Vec<String>, String> {
     // MCP functionality has been removed - please use crucible-services instead
     Err("Property search functionality has been moved to crucible-services".to_string())
@@ -78,29 +78,29 @@ pub async fn search_by_properties(
 
 #[tauri::command]
 pub async fn semantic_search(
-    query: String,
-    top_k: u32,
+    _query: String,
+    _top_k: u32,
 ) -> std::result::Result<Vec<serde_json::Value>, String> {
     // MCP functionality has been removed - please use crucible-services instead
     Err("Semantic search functionality has been moved to crucible-services".to_string())
 }
 
 #[tauri::command]
-pub async fn index_vault(force: bool) -> std::result::Result<serde_json::Value, String> {
+pub async fn index_vault(_force: bool) -> std::result::Result<serde_json::Value, String> {
     // MCP functionality has been removed - please use crucible-services instead
     Err("Vault indexing functionality has been moved to crucible-services".to_string())
 }
 
 #[tauri::command]
-pub async fn get_note_metadata(path: String) -> std::result::Result<serde_json::Value, String> {
+pub async fn get_note_metadata(_path: String) -> std::result::Result<serde_json::Value, String> {
     // MCP functionality has been removed - please use crucible-services instead
     Err("Note metadata functionality has been moved to crucible-services".to_string())
 }
 
 #[tauri::command]
 pub async fn update_note_properties(
-    path: String,
-    properties: HashMap<String, serde_json::Value>,
+    _path: String,
+    _properties: HashMap<String, serde_json::Value>,
 ) -> std::result::Result<(), String> {
     // MCP functionality has been removed - please use crucible-services instead
     Err("Note property update functionality has been moved to crucible-services".to_string())

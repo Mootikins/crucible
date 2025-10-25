@@ -56,6 +56,7 @@ pub struct SurrealClient {
     /// In-memory storage for testing (replace with actual SurrealDB client)
     storage: Arc<tokio::sync::RwLock<SurrealStorage>>,
     /// Configuration for the client
+    #[allow(dead_code)]
     config: SurrealDbConfig,
     /// Transaction counter for testing
     transaction_counter: Arc<std::sync::atomic::AtomicU64>,
@@ -87,6 +88,7 @@ struct RelationshipRecord {
     to: String,
     relation_type: String,
     properties: HashMap<String, serde_json::Value>,
+    #[allow(dead_code)]
     created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -102,6 +104,7 @@ struct TableData {
 #[derive(Debug, Default, Clone)]
 struct SearchIndexData {
     fields: Vec<String>,
+    #[allow(dead_code)]
     analyzer: Option<String>,
     index: HashMap<String, Vec<DocumentId>>, // word -> document IDs
 }
@@ -109,11 +112,14 @@ struct SearchIndexData {
 /// Transaction data for rollback support
 #[derive(Debug, Clone)]
 struct TransactionData {
+    #[allow(dead_code)]
     operations: Vec<TransactionOperation>,
+    #[allow(dead_code)]
     timestamp: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum TransactionOperation {
     InsertRecord { table: String, record_id: RecordId, record: Record },
     UpdateRecord { table: String, record_id: RecordId, old_record: Record, new_record: Record },
@@ -352,6 +358,7 @@ impl SurrealClient {
     }
 
     /// Convert JSON value to Crucible data type
+    #[allow(dead_code)]
     fn json_to_data_type(&self, value: &serde_json::Value) -> DataType {
         match value {
             serde_json::Value::String(_) => DataType::String,
@@ -1108,7 +1115,7 @@ impl DocumentDB for SurrealClient {
 
         // Update search indexes - do this after releasing the mutable reference to collection_data
         let document_clone = document.clone();
-        drop(collection_data);
+        let _ = collection_data;
 
         if storage.search_indexes.contains_key(collection) {
             self.update_search_index(&mut storage.search_indexes, collection, id, &document_clone);
@@ -1532,6 +1539,7 @@ impl SurrealClient {
     }
 
     /// Remove a nested field from JSON value using dot notation
+    #[allow(dead_code)]
     fn unset_nested_field(&mut self, value: &mut serde_json::Value, path: &str) {
         let parts: Vec<&str> = path.split('.').collect();
 
@@ -1675,7 +1683,7 @@ impl SurrealClient {
 // Additional query and execute methods for compatibility with crucible-tools
 impl SurrealClient {
     /// Execute a raw SQL query with parameters and return results
-    pub async fn query(&self, sql: &str, params: &[serde_json::Value]) -> DbResult<QueryResult> {
+    pub async fn query(&self, sql: &str, _params: &[serde_json::Value]) -> DbResult<QueryResult> {
         // Simple query interpreter for basic operations needed by tests
         let sql_lower = sql.to_lowercase();
         let sql_trimmed = sql_lower.trim();

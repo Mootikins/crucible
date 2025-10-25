@@ -82,23 +82,30 @@ impl Default for FileMetadata {
 }
 
 /// Vault-specific error types
+/// Errors that can occur during vault operations
 #[derive(Debug, thiserror::Error)]
 pub enum VaultError {
+    /// File not found at the specified path
     #[error("File not found: {0}")]
     FileNotFound(String),
 
+    /// IO error during file operations
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
 
+    /// Error parsing YAML frontmatter
     #[error("Frontmatter parsing error: {0}")]
     FrontmatterParseError(String),
 
+    /// YAML parsing error
     #[error("YAML parsing error: {0}")]
     YamlError(#[from] serde_yaml::Error),
 
+    /// Hash calculation error
     #[error("Hash calculation error: {0}")]
     HashError(String),
 
+    /// Invalid file path provided
     #[error("Invalid file path: {0}")]
     InvalidPath(String),
 }

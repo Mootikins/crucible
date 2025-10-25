@@ -206,6 +206,7 @@ pub struct EventSummary {
 
 impl EventSummary {
     /// Get the percentage of events that are files.
+    #[allow(dead_code)]
     pub fn file_percentage(&self) -> f64 {
         if self.total_events == 0 {
             0.0
@@ -215,6 +216,7 @@ impl EventSummary {
     }
 
     /// Get the percentage of events that are directories.
+    #[allow(dead_code)]
     pub fn directory_percentage(&self) -> f64 {
         if self.total_events == 0 {
             0.0

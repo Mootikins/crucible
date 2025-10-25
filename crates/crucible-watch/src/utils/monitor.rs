@@ -43,6 +43,7 @@ impl PerformanceMonitor {
     }
 
     /// Create a performance monitor with custom history size.
+    #[allow(dead_code)]
     pub fn with_history_size(max_history_size: usize) -> Self {
         Self {
             max_history_size,
@@ -145,6 +146,7 @@ impl PerformanceMonitor {
     }
 
     /// Reset all statistics.
+    #[allow(dead_code)]
     pub fn reset(&mut self) {
         self.total_events.store(0, Ordering::Relaxed);
         self.total_processing_time.store(0, Ordering::Relaxed);
@@ -157,6 +159,7 @@ impl PerformanceMonitor {
     }
 
     /// Check if performance is degraded.
+    #[allow(dead_code)]
     pub fn is_performance_degraded(&self) -> bool {
         let stats = self.get_stats();
 
@@ -170,6 +173,7 @@ impl PerformanceMonitor {
     }
 
     /// Get performance recommendations.
+    #[allow(dead_code)]
     pub fn get_recommendations(&self) -> Vec<String> {
         let mut recommendations = Vec::new();
         let stats = self.get_stats();
