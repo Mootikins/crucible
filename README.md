@@ -28,25 +28,25 @@ cd crucible
 cargo build -p crucible-cli
 
 # Start interactive REPL (default behavior)
-cargo run -p crucible-cli
+cru
 
 # Show available commands
-cargo run -p crucible-cli -- --help
+cru --help
 ```
 
 ## 🖥️ CLI Overview
 
-The Crucible CLI provides comprehensive command-line tools for knowledge management, service orchestration, and AI integration:
+The Crucible CLI (`cru`) provides comprehensive command-line tools for knowledge management, service orchestration, and AI integration:
 
 ### Core Commands
 ```bash
 # Interactive REPL with SurrealQL support
-crucible-cli
+cru
 
 # Search operations (with built-in safety)
-crucible-cli search "your query" --limit 20 --format table
-crucible-cli fuzzy "concept" --content --tags --paths
-crucible-cli semantic "machine learning concepts" --show-scores
+cru search "your query" --limit 20 --format table
+cru fuzzy "concept" --content --tags --paths
+cru semantic "machine learning concepts" --show-scores
 
 # Search automatically handles:
 # - Large files (>10MB skipped, >1MB content limited)
@@ -54,9 +54,9 @@ crucible-cli semantic "machine learning concepts" --show-scores
 # - Input validation (2-1000 character queries)
 
 # Note management
-crucible-cli note create projects/research.md --edit
-crucible-cli note get projects/research.md --format json
-crucible-cli note list --format table
+cru note create projects/research.md --edit
+cru note get projects/research.md --format json
+cru note list --format table
 ```
 
 ### Service Management (NEW)
