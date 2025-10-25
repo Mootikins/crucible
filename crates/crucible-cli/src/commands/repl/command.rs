@@ -25,7 +25,7 @@ pub enum Command {
         args: Vec<String>,
     },
 
-    /// :stats - Show vault and REPL statistics
+    /// :stats - Show kiln and REPL statistics
     ShowStats,
 
     /// :config - Display current configuration
@@ -224,7 +224,7 @@ TOOLS:
   :rune <script> [args...]    Run a Rune script
 
 INFORMATION:
-  :stats                      Show vault and REPL statistics
+  :stats                      Show kiln and REPL statistics
   :config                     Display current configuration
   :history [limit]            Show command history (default: 20)
 
@@ -392,7 +392,7 @@ USAGE:
   :stats
 
 DESCRIPTION:
-  Displays statistics about the REPL session and vault:
+  Displays statistics about the REPL session and kiln:
   - Number of commands/queries executed
   - Average query time
   - History size
@@ -413,7 +413,7 @@ USAGE:
 
 DESCRIPTION:
   Displays current daemon configuration:
-  - Vault path
+  - Kiln path
   - Database path
   - History file location
   - Output format
