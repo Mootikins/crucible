@@ -101,7 +101,7 @@ async fn create_note(config: CliConfig, path: String, content: Option<String>, e
     Ok(())
 }
 
-async fn update_note(config: CliConfig, path: String, properties: String) -> Result<()> {
+async fn update_note(_config: CliConfig, path: String, properties: String) -> Result<()> {
     let _props: serde_json::Value = serde_json::from_str(&properties)?;
     
     // TODO: Implement property updates in frontmatter
@@ -111,7 +111,7 @@ async fn update_note(config: CliConfig, path: String, properties: String) -> Res
     Ok(())
 }
 
-async fn list_notes(config: CliConfig, format: String) -> Result<()> {
+async fn list_notes(_config: CliConfig, format: String) -> Result<()> {
     // Use simplified tools approach instead of direct database access
     CrucibleToolManager::ensure_initialized_global().await?;
 

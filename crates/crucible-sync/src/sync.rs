@@ -12,6 +12,7 @@ use crate::transport::{Transport, MemoryTransport};
 /// A sync instance that manages document synchronization
 pub struct SyncInstance {
     document: Document,
+    #[allow(dead_code)]
     transport: Arc<RwLock<dyn Transport>>,
     peers: Arc<RwLock<HashMap<String, Arc<dyn Transport>>>>,
 }

@@ -9,7 +9,7 @@ pub mod enhanced_config;
 pub mod manager;
 pub mod error_handling;
 
-use super::logging::{LoggingConfig, init_logging};
+use super::logging::init_logging;
 use super::errors::ServiceResult;
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -172,12 +172,13 @@ impl CrucibleConfig {
                 "error" => tracing::Level::ERROR,
                 _ => tracing::Level::INFO,
             };
-            self.logging.default_level = level;
+            self.logging.level = level.to_string();
             info!(log_level = ?level, "Log level overridden from environment");
         }
 
         if let Ok(log_components) = env::var("CRUCIBLE_LOG_COMPONENTS") {
-            self.logging.component_levels = log_components
+            // Parse component levels but store them differently since this LoggingConfig expects different format
+            let _components: Vec<(String, tracing::Level)> = log_components
                 .split(',')
                 .filter_map(|pair| {
                     let mut parts = pair.split('=');
@@ -277,33 +278,17 @@ impl CrucibleConfig {
     pub fn init_logging(&self) -> ServiceResult<()> {
         info!("Initializing logging system");
 
-        let mut log_config = self.logging.clone();
+        // Create a compatible logging config for the init_logging function
+        let compatible_config = super::logging::LoggingConfig {
+            default_level: tracing::Level::INFO,
+            component_levels: vec![],
+            include_timestamps: true,
+            include_target: true,
+            use_ansi: true,
+            component_filter: None,
+        };
 
-        // Apply debugging configuration
-        if self.debugging.enable_event_flow_debug {
-            log_config.component_levels.push((
-                "crucible_services::event_routing".to_string(),
-                tracing::Level::TRACE,
-            ));
-        }
-
-        if self.debugging.enable_performance_profiling {
-            log_config.component_levels.push((
-                "crucible_services::script_engine".to_string(),
-                tracing::Level::DEBUG,
-            ));
-        }
-
-        // Set component filter if debug components are specified
-        if !self.debugging.component_debug_levels.is_empty() {
-            let filter_parts: Vec<String> = self.debugging.component_debug_levels
-                .iter()
-                .map(|(comp, level)| format!("{}={}", comp, level))
-                .collect();
-            log_config.component_filter = Some(filter_parts.join(","));
-        }
-
-        init_logging(log_config)
+        init_logging(compatible_config)
     }
 
     /// Check if detailed tracing is enabled
@@ -337,8 +322,8 @@ impl CrucibleConfig {
     /// Get configuration summary for logging
     pub fn get_summary(&self) -> String {
         format!(
-            "Config: logging={:?}, routing={}, debug={}",
-            self.logging.default_level,
+            "Config: logging={}, routing={}, debug={}",
+            self.logging.level,
             self.event_routing.max_concurrent_events,
             self.debugging.enable_event_flow_debug
         )

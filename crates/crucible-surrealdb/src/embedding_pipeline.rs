@@ -9,7 +9,7 @@ use crate::multi_client::SurrealClient;
 use anyhow::{Result, anyhow};
 use crucible_core::parser::ParsedDocument;
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tracing::{debug, info, warn, error};
 
 /// Default chunk size for document processing (characters)
@@ -193,7 +193,7 @@ impl EmbeddingPipeline {
         );
 
         let mut embeddings_created = 0;
-        let mut embeddings_updated = 0;
+        let embeddings_updated = 0;
 
         // Process each chunk
         for (chunk_index, chunk_content) in chunks.iter().enumerate() {
@@ -218,7 +218,7 @@ impl EmbeddingPipeline {
                         if let Err(e) = self.store_document_embedding(client, &embedding).await {
                             error!("Failed to store embedding for chunk {}: {}", chunk_id, e);
 
-                            let error = EmbeddingError::new(
+                            let _error = EmbeddingError::new(
                                 chunk_id,
                                 EmbeddingErrorType::DatabaseError,
                                 format!("Failed to store embedding: {}", e),
@@ -325,8 +325,8 @@ impl EmbeddingPipeline {
     /// Retrieve a single document from database
     async fn retrieve_document(
         &self,
-        client: &SurrealClient,
-        document_id: &str,
+        _client: &SurrealClient,
+        _document_id: &str,
     ) -> Result<Option<ParsedDocument>> {
         // This would be implemented in the vault_integration module
         // For now, return None to indicate document not found
@@ -336,7 +336,7 @@ impl EmbeddingPipeline {
     /// Check if document needs processing based on content hash
     fn should_process_document(
         &self,
-        document: &ParsedDocument,
+        _document: &ParsedDocument,
         existing_embeddings: &[DocumentEmbedding],
     ) -> Result<bool> {
         // Simple check: if no embeddings exist, process
@@ -356,8 +356,8 @@ impl EmbeddingPipeline {
     /// Get existing embeddings for a document
     async fn get_document_embeddings(
         &self,
-        client: &SurrealClient,
-        document_id: &str,
+        _client: &SurrealClient,
+        _document_id: &str,
     ) -> Result<Vec<DocumentEmbedding>> {
         // This would query the database for existing embeddings
         // For now, return empty vector
@@ -367,18 +367,18 @@ impl EmbeddingPipeline {
     /// Clear existing embeddings for a document
     async fn clear_document_embeddings(
         &self,
-        client: &SurrealClient,
-        document_id: &str,
+        _client: &SurrealClient,
+        _document_id: &str,
     ) -> Result<()> {
         // This would delete existing embeddings from the database
-        debug!("Clearing existing embeddings for document {}", document_id);
+        debug!("Clearing existing embeddings for document {}", _document_id);
         Ok(())
     }
 
     /// Store document embedding in database
     async fn store_document_embedding(
         &self,
-        client: &SurrealClient,
+        _client: &SurrealClient,
         embedding: &DocumentEmbedding,
     ) -> Result<()> {
         // This would store the embedding in the database
@@ -394,16 +394,16 @@ impl EmbeddingPipeline {
     /// Update document's processed timestamp
     async fn update_document_processed_timestamp(
         &self,
-        client: &SurrealClient,
-        document_id: &str,
+        _client: &SurrealClient,
+        _document_id: &str,
     ) -> Result<()> {
         // This would update the document's metadata
-        debug!("Updating processed timestamp for document {}", document_id);
+        debug!("Updating processed timestamp for document {}", _document_id);
         Ok(())
     }
 
     /// Chunk document content for processing
-    fn chunk_document(&self, document: &ParsedDocument, model_type: &EmbeddingModel) -> Vec<String> {
+    fn chunk_document(&self, document: &ParsedDocument, _model_type: &EmbeddingModel) -> Vec<String> {
         let content = &document.content.plain_text;
 
         // For empty content, return no chunks
@@ -531,19 +531,19 @@ pub async fn process_document_with_retry(
 
 /// Update document content in database
 pub async fn update_document_content(
-    client: &SurrealClient,
-    document_id: &str,
-    document: &ParsedDocument,
+    _client: &SurrealClient,
+    _document_id: &str,
+    _document: &ParsedDocument,
 ) -> Result<()> {
     // This would be implemented in the vault_integration module
-    info!("Updating content for document {}", document_id);
+    info!("Updating content for document {}", _document_id);
     Ok(())
 }
 
 /// Get document embeddings from database
 pub async fn get_document_embeddings(
-    client: &SurrealClient,
-    document_id: &str,
+    _client: &SurrealClient,
+    _document_id: &str,
 ) -> Result<Vec<DocumentEmbedding>> {
     // This would query the database for document embeddings
     // For now, return empty vector

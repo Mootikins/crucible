@@ -1097,17 +1097,55 @@ impl Default for EventSubscriptionConfig {
 
 impl DaemonConfig {
     /// Load configuration from a file (simplified)
-    pub async fn load_from_file(path: &PathBuf) -> Result<Self, ConfigError> {
+    pub async fn load_from_file(_path: &PathBuf) -> Result<Self, ConfigError> {
         // Simplified loading - for now just return default config
         // In a real implementation, this would load and parse the file
         Ok(Self::default())
     }
 
-    /// Load configuration from environment variables (simplified)
+    /// Load configuration from environment variables
     pub fn from_env() -> Result<Self, ConfigError> {
-        // Simplified loading - for now just return default config
-        // In a real implementation, this would read from environment
-        Ok(Self::default())
+        let mut config = Self::default();
+
+        // Read OBSIDIAN_VAULT_PATH for secure configuration
+        if let Ok(vault_path) = std::env::var("OBSIDIAN_VAULT_PATH") {
+            let vault_path = std::path::PathBuf::from(vault_path);
+
+            // Set up filesystem watching for the vault
+            config.filesystem.watch_paths.push(
+                WatchPath {
+                    path: vault_path.clone(),
+                    recursive: true,
+                    mode: WatchMode::All,
+                    filters: None,
+                    events: None,
+                }
+            );
+
+            // Set database connection to use vault's .crucible directory
+            // Use the same database path, namespace, and database as the CLI for consistency
+            config.database.connection.connection_string = format!(
+                "file://{}/.crucible/embeddings.db/crucible/vault",
+                vault_path.display()
+            );
+
+        } else {
+            // SECURITY: Require OBSIDIAN_VAULT_PATH to be set
+            return Err(ConfigError::InvalidValue {
+                field: "OBSIDIAN_VAULT_PATH".to_string(),
+                value: "missing".to_string(),
+            });
+        }
+
+        // Additional environment variables can be read here
+        if let Ok(timeout) = std::env::var("CRUCIBLE_DAEMON_TIMEOUT") {
+            if let Ok(timeout_secs) = timeout.parse::<u64>() {
+                config.health.checks.iter_mut()
+                    .for_each(|check| check.timeout_seconds = timeout_secs);
+            }
+        }
+
+        Ok(config)
     }
 
     /// Validate the configuration
@@ -1142,7 +1180,7 @@ impl DaemonConfig {
     }
 
     /// Get configuration as a typed value
-    pub fn get<T>(&self, key: &str) -> Option<T>
+    pub fn get<T>(&self, _key: &str) -> Option<T>
     where
         T: for<'de> Deserialize<'de>,
     {
@@ -1151,7 +1189,7 @@ impl DaemonConfig {
     }
 
     /// Set a configuration value
-    pub fn set<T>(&mut self, key: &str, value: T) -> Result<(), ConfigError>
+    pub fn set<T>(&mut self, _key: &str, _value: T) -> Result<(), ConfigError>
     where
         T: Serialize,
     {

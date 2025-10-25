@@ -331,10 +331,15 @@ impl ChatMessage {
 /// Message role
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum MessageRole {
+    /// System message (sets behavior)
     System,
+    /// User message (input)
     User,
+    /// Assistant message (response)
     Assistant,
+    /// Function result message
     Function,
+    /// Tool result message
     Tool,
 }
 
@@ -503,7 +508,12 @@ pub enum ToolChoice {
     /// No tools
     None,
     /// Specific tool
-    Specific { r#type: String, function: FunctionDefinition },
+    Specific {
+        /// Tool type (typically "function")
+        r#type: String,
+        /// Function definition to use
+        function: FunctionDefinition
+    },
 }
 
 /// Response format

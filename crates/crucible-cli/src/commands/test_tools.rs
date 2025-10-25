@@ -6,7 +6,7 @@ use anyhow::Result;
 use crate::config::CliConfig;
 
 /// Test tool loading and execution
-pub async fn execute(config: CliConfig) -> Result<()> {
+pub async fn execute(_config: CliConfig) -> Result<()> {
     println!("🧪 Testing tool loading and execution...");
 
     // Initialize crucible-tools

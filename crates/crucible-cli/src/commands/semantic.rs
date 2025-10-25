@@ -8,6 +8,7 @@ use anyhow::Result;
 use serde_json::json;
 use crate::config::CliConfig;
 use crate::interactive::SearchResultWithScore;
+use crate::common::DaemonManager;
 use indicatif::{ProgressBar, ProgressStyle};
 use crucible_surrealdb::{
     vault_integration::{semantic_search, retrieve_parsed_document},
@@ -44,7 +45,7 @@ pub async fn execute(
 
     let client = match SurrealClient::new(db_config).await {
         Ok(client) => {
-            pb.set_message("Database connected, performing semantic search...");
+            pb.set_message("Database connected, checking embeddings...");
             client
         }
         Err(e) => {
@@ -52,6 +53,53 @@ pub async fn execute(
             return Err(anyhow::anyhow!("Failed to connect to database: {}. Make sure embeddings have been generated for your vault.", e));
         }
     };
+
+    // Check if embeddings exist, spawn daemon if needed
+    let mut daemon_manager = DaemonManager::new();
+    let embeddings_exist = daemon_manager.check_embeddings_exist(&client).await?;
+
+    if !embeddings_exist {
+        pb.finish_with_message("No embeddings found, starting daemon...");
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("{spinner:.green} {msg:.cyan}")
+                .unwrap()
+        );
+
+        println!("❌ No embeddings found in database");
+        println!("🚀 Starting vault processing to generate embeddings...\n");
+
+        // Spawn daemon for processing
+        match daemon_manager.spawn_daemon_for_processing(&config.vault.path).await {
+            Ok(daemon_result) => {
+                println!("✅ {}", daemon_result.status_message());
+                println!("📊 {}", daemon_result.processing_info());
+                println!();
+
+                // Verify embeddings were created
+                let embeddings_check = daemon_manager.check_embeddings_exist(&client).await?;
+                if !embeddings_check {
+                    return Err(anyhow::anyhow!(
+                        "Daemon completed but no embeddings were found. \
+                        Check the daemon logs for processing errors."
+                    ));
+                }
+
+                // Update progress bar for search
+                pb.set_message("Embeddings ready, performing semantic search...");
+                pb.enable_steady_tick(std::time::Duration::from_millis(100));
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to process vault: {}. \
+                    Please check that OBSIDIAN_VAULT_PATH is set correctly and try again.",
+                    e
+                ));
+            }
+        }
+    } else {
+        pb.set_message("Embeddings found, performing semantic search...");
+    }
 
     // Perform real semantic search using vector similarity
     let search_results = match semantic_search(&client, &query, top_k as usize).await {
@@ -70,10 +118,15 @@ pub async fn execute(
 
     if cli_results.is_empty() {
         println!("❌ No semantic search results found for query: {}", query);
-        println!("\n💡 Real Vector Search Integration:");
+        println!("\n💡 Semantic Search Integration:");
         println!("   No embeddings found matching your query.");
-        println!("   Ensure documents have been processed with embeddings using:");
-        println!("   'crucible vault process' to generate embeddings for your vault.");
+        println!("   This could mean:");
+        println!("   • Your vault hasn't been processed yet");
+        println!("   • No documents match your semantic query");
+        println!("   • There was an issue during processing");
+        println!("\n💡 If you believe there should be results, try:");
+        println!("   • Running semantic search again to trigger re-processing");
+        println!("   • Checking that OBSIDIAN_VAULT_PATH points to the correct vault");
         return Ok(());
     }
 
@@ -124,9 +177,10 @@ pub async fn execute(
                 println!();
             }
 
-            println!("💡 Real Vector Search Integration:");
+            println!("💡 Semantic Search Integration:");
             println!("   Results are based on vector similarity using document embeddings.");
             println!("   Higher scores indicate better semantic matches to your query.");
+            println!("   Embeddings are auto-generated when needed by the daemon.");
         }
     }
 

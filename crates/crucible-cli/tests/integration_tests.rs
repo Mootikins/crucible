@@ -510,7 +510,7 @@ async fn test_concurrent_operations_workflow() -> Result<()> {
 
         let future = async move {
             let start_command = ServiceCommands::Start {
-                service: name.clone(),
+                service: name.to_string(),
                 wait: false,
             };
             service_execute(config, start_command).await
@@ -621,7 +621,7 @@ async fn test_concurrent_operations_workflow() -> Result<()> {
 
         let future = async move {
             let stop_command = ServiceCommands::Stop {
-                service: name.clone(),
+                service: name.to_string(),
                 force: false,
             };
             service_execute(config, stop_command).await
@@ -953,7 +953,7 @@ function main(args) {
     assert!(result.is_ok(), "Rune execution should respect custom configuration");
 
     // Verify configuration values are properly applied
-    assert_eq!(config.vault.embedding_model, "integration-test-model");
+    assert_eq!(config.vault.embedding_model, Some("integration-test-model".to_string()));
     assert_eq!(config.chat_model(), "integration-test-chat-model");
     assert_eq!(config.services.script_engine.security_level, "development");
     assert_eq!(config.migration.default_security_level, "development");

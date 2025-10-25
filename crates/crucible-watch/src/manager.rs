@@ -19,6 +19,7 @@ use tracing::{debug, error, info, warn};
 /// Main manager for file watching operations.
 pub struct WatchManager {
     /// Manager configuration
+    #[allow(dead_code)]
     config: WatchManagerConfig,
     /// Backend registry
     backend_registry: ExtendedBackendRegistry,

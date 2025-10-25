@@ -45,12 +45,14 @@ impl Debouncer {
     }
 
     /// Set the maximum batch size.
+    #[allow(dead_code)]
     pub fn with_max_batch_size(mut self, size: usize) -> Self {
         self.max_batch_size = size;
         self
     }
 
     /// Enable or disable deduplication.
+    #[allow(dead_code)]
     pub fn with_deduplication(mut self, enabled: bool) -> Self {
         self.deduplicate = enabled;
         self
@@ -172,6 +174,7 @@ impl Debouncer {
     }
 
     /// Force emit all pending events immediately.
+    #[allow(dead_code)]
     pub async fn flush(&mut self) -> Vec<FileEvent> {
         let _now = Instant::now();
         let mut events = Vec::new();
@@ -186,11 +189,13 @@ impl Debouncer {
     }
 
     /// Get the number of pending events.
+    #[allow(dead_code)]
     pub fn pending_count(&self) -> usize {
         self.pending_events.len()
     }
 
     /// Get statistics about the debouncer.
+    #[allow(dead_code)]
     pub fn get_stats(&self) -> DebouncerStats {
         DebouncerStats {
             pending_events: self.pending_events.len(),
@@ -202,6 +207,7 @@ impl Debouncer {
 }
 
 /// Statistics for the debouncer.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct DebouncerStats {
     /// Number of pending events

@@ -120,8 +120,11 @@ impl ToolExecutionRequest {
 /// Simplified tool error type for Phase 3.1
 #[derive(Debug, Clone)]
 pub enum ToolError {
+    /// Tool with the specified name was not found in the registry
     ToolNotFound(String),
+    /// Tool execution failed with the provided error message
     ExecutionFailed(String),
+    /// Other error with the provided message
     Other(String),
 }
 
@@ -261,6 +264,7 @@ pub async fn initialize_tool_registry() {
 }
 
 /// Get the global tool registry
+#[allow(static_mut_refs)]
 pub async fn get_tool_registry() -> std::sync::Arc<tokio::sync::RwLock<ToolFunctionRegistry>> {
     initialize_tool_registry().await;
     unsafe { GLOBAL_TOOL_REGISTRY.as_ref().unwrap().clone() }

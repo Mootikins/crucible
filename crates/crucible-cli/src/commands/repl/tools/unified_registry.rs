@@ -7,7 +7,7 @@
 //!
 //! It provides backward compatibility while enabling the new tool group architecture.
 
-use super::tool_group::{ToolGroupRegistry, ToolGroup, ToolGroupMetrics, ToolGroupCacheConfig};
+use super::tool_group::{ToolGroupRegistry, ToolGroupMetrics, ToolGroupCacheConfig};
 use super::system_tool_group::SystemToolGroup;
 use super::types::ToolResult;
 use super::registry::ToolRegistry;

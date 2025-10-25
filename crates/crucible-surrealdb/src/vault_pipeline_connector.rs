@@ -13,18 +13,17 @@
 //! - Connect change detection to embedding updates
 //! - Provide end-to-end pipeline: ParsedDocument → embed → store → search
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use chrono::{DateTime, Utc};
 use tracing::{debug, info, warn, error};
 use sha2::{Sha256, Digest};
 
 use crate::embedding_pool::EmbeddingThreadPool;
 use crate::multi_client::SurrealClient;
 use crucible_core::parser::ParsedDocument;
-use crate::vault_scanner::{VaultScanResult, VaultFileInfo};
+use crate::vault_scanner::VaultScanResult;
 
 /// Configuration for vault pipeline connector
 #[derive(Debug, Clone)]
@@ -381,10 +380,10 @@ pub fn generate_document_id_from_path(path: &Path) -> String {
             'ü' | 'Ü' => 'u',
             'ß' => 's',
             'é' | 'è' | 'ê' | 'ë' | 'É' | 'È' | 'Ê' | 'Ë' => 'e',
-            'á' | 'à' | 'â' | 'ä' | 'ã' | 'å' | 'Á' | 'À' | 'Â' | 'Ä' | 'Ã' | 'Å' => 'a',
+            'á' | 'à' | 'â' | 'ã' | 'å' | 'Á' | 'À' | 'Â' | 'Ã' | 'Å' => 'a',
             'í' | 'ì' | 'î' | 'ï' | 'Í' | 'Ì' | 'Î' | 'Ï' => 'i',
-            'ó' | 'ò' | 'ô' | 'ö' | 'õ' | 'ø' | 'Ó' | 'Ò' | 'Ô' | 'Ö' | 'Õ' | 'Ø' => 'o',
-            'ú' | 'ù' | 'û' | 'ü' | 'Ú' | 'Ù' | 'Û' | 'Ü' => 'u',
+            'ó' | 'ò' | 'ô' | 'õ' | 'ø' | 'Ó' | 'Ò' | 'Ô' | 'Õ' | 'Ø' => 'o',
+            'ú' | 'ù' | 'û' | 'Ú' | 'Ù' | 'Û' => 'u',
             'ñ' | 'Ñ' => 'n',
             'ç' | 'Ç' => 'c',
             // For other non-ASCII characters, convert to underscore
@@ -444,6 +443,7 @@ pub fn generate_document_id_from_path(path: &Path) -> String {
 }
 
 /// Generate document ID with caching for consistency
+#[allow(dead_code)]
 fn generate_document_id_from_path_cached(
     path: &Path,
     cache: &mut HashMap<PathBuf, String>

@@ -17,7 +17,6 @@ async fn main() -> Result<()> {
     // Load configuration
     let config = config::CliConfig::load(
         cli.config,
-        cli.vault_path,
         cli.embedding_url,
         cli.embedding_model,
     )?;
@@ -48,7 +47,7 @@ async fn main() -> Result<()> {
 
         Some(Commands::Note(cmd)) => commands::note::execute(config, cmd).await?,
 
-        Some(Commands::Index { path, force, glob }) => commands::index::execute(config, path, force, glob).await?,
+        Some(Commands::Index { force, glob }) => commands::index::execute(config, force, glob).await?,
 
         Some(Commands::Stats) => commands::stats::execute(config).await?,
 
@@ -71,6 +70,8 @@ async fn main() -> Result<()> {
         Some(Commands::Config(cmd)) => commands::config::execute(cmd).await?,
 
         Some(Commands::Service(cmd)) => commands::service::execute(config, cmd).await?,
+
+        Some(Commands::Daemon(cmd)) => commands::daemon::execute(config, cmd).await?,
 
         Some(Commands::Migration(cmd)) => commands::migration::execute(config, cmd).await?,
 

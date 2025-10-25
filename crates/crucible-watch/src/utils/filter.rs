@@ -1,5 +1,7 @@
 //! Advanced filtering for file events.
 
+#![allow(dead_code)]
+
 use crate::{events::FileEvent, events::EventFilter};
 use chrono::Timelike;
 use std::time::Instant;

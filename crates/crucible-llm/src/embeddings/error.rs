@@ -42,7 +42,10 @@ pub enum EmbeddingError {
 
     /// Timeout error
     #[error("Request timed out after {timeout_secs}s")]
-    Timeout { timeout_secs: u64 },
+    Timeout {
+        /// Number of seconds before the request timed out
+        timeout_secs: u64
+    },
 
     /// Circuit breaker open
     #[error("Circuit breaker open, too many failures")]
@@ -50,7 +53,12 @@ pub enum EmbeddingError {
 
     /// Invalid embedding dimensions
     #[error("Invalid embedding dimensions: expected {expected}, got {actual}")]
-    InvalidDimensions { expected: usize, actual: usize },
+    InvalidDimensions {
+        /// Expected number of dimensions
+        expected: usize,
+        /// Actual number of dimensions received
+        actual: usize
+    },
 
     /// Serialization/deserialization error
     #[error("Serialization error: {0}")]

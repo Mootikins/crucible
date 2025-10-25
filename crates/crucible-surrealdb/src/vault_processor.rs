@@ -14,7 +14,7 @@ use tracing::{debug, info, warn, error};
 
 use crate::SurrealClient;
 use crate::embedding_pool::EmbeddingThreadPool;
-use crate::embedding_config::{DocumentEmbedding, EmbeddingProcessingResult, EmbeddingError, RetryProcessingResult};
+use crate::embedding_config::EmbeddingProcessingResult;
 use crate::vault_scanner::{VaultFileInfo, VaultProcessResult, VaultProcessError, VaultScannerErrorType, VaultScannerConfig};
 use crate::vault_integration::*;
 use crucible_core::parser::ParsedDocument;
@@ -24,7 +24,7 @@ pub async fn scan_vault_directory(
     vault_path: &PathBuf,
     config: &VaultScannerConfig
 ) -> Result<Vec<VaultFileInfo>> {
-    use crate::vault_scanner::VaultScanner;
+    
 
     let mut scanner = crate::vault_scanner::create_vault_scanner(config.clone()).await?;
     let scan_result = scanner.scan_vault_directory(vault_path).await?;

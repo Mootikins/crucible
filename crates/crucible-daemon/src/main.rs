@@ -9,13 +9,21 @@
 
 use anyhow::Result;
 use crucible_daemon::{DataCoordinator, DaemonConfig};
-use std::path::PathBuf;
-use tokio::signal;
 use tracing::{info, error, warn};
 use tracing_subscriber::EnvFilter;
+use std::process;
+
+/// Exit codes for different scenarios
+mod exit_codes {
+    pub const SUCCESS: i32 = 0;
+    pub const CONFIG_ERROR: i32 = 1;
+    pub const PROCESSING_ERROR: i32 = 2;
+    pub const DATABASE_ERROR: i32 = 3;
+    pub const OTHER_ERROR: i32 = 4;
+}
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     // Initialize logging
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -24,144 +32,104 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    info!("Starting Crucible data layer daemon v{}", env!("CARGO_PKG_VERSION"));
+    info!("Starting Crucible one-shot daemon v{}", env!("CARGO_PKG_VERSION"));
 
     // Load configuration
-    let config = load_configuration().await?;
-    info!("Configuration loaded successfully");
+    let config = match load_configuration().await {
+        Ok(config) => {
+            info!("Configuration loaded successfully");
+            config
+        }
+        Err(e) => {
+            error!("Failed to load configuration: {}", e);
+            process::exit(exit_codes::CONFIG_ERROR);
+        }
+    };
 
     // Create and initialize data coordinator
-    let mut coordinator = DataCoordinator::new(config).await
-        .map_err(|e| {
+    let mut coordinator = match DataCoordinator::new(config).await {
+        Ok(coordinator) => {
+            info!("Data coordinator created successfully");
+            coordinator
+        }
+        Err(e) => {
             error!("Failed to create data coordinator: {}", e);
-            e
-        })?;
+            process::exit(exit_codes::CONFIG_ERROR);
+        }
+    };
 
     // Initialize the coordinator
     if let Err(e) = coordinator.initialize().await {
         error!("Failed to initialize data coordinator: {}", e);
-        return Err(e);
+        process::exit(exit_codes::CONFIG_ERROR);
     }
 
-    // Start the coordinator
+    // Process vault once and exit
+    match process_vault_once(&mut coordinator).await {
+        Ok(_) => {
+            info!("Vault processing completed successfully");
+            process::exit(exit_codes::SUCCESS);
+        }
+        Err(e) => {
+            error!("Vault processing failed: {}", e);
+            // Determine error type for appropriate exit code
+            let error_msg = e.to_string().to_lowercase();
+            let exit_code = if error_msg.contains("database") || error_msg.contains("surrealdb") {
+                exit_codes::DATABASE_ERROR
+            } else if error_msg.contains("processing") || error_msg.contains("parse") {
+                exit_codes::PROCESSING_ERROR
+            } else {
+                exit_codes::OTHER_ERROR
+            };
+            process::exit(exit_code);
+        }
+    }
+}
+
+/// Process the vault exactly once and return result
+async fn process_vault_once(coordinator: &mut DataCoordinator) -> Result<()> {
+    info!("Starting one-shot vault processing");
+
+    // Start the coordinator (but don't run indefinitely)
     if let Err(e) = coordinator.start().await {
         error!("Failed to start data coordinator: {}", e);
         return Err(e);
     }
 
-    info!("Crucible data layer daemon is running. Use Ctrl+C to stop.");
-
-    // Set up signal handlers for graceful shutdown
-    let mut coordinator_clone = coordinator.clone();
-    tokio::spawn(async move {
-        if let Err(e) = signal::ctrl_c().await {
-            error!("Failed to listen for Ctrl+C: {}", e);
-        } else {
-            info!("Received Ctrl+C, initiating graceful shutdown");
-            if let Err(e) = coordinator_clone.stop().await {
-                error!("Error during shutdown: {}", e);
-            }
-        }
-    });
-
-    // Handle SIGTERM (for systemd/docker environments)
-    let mut coordinator_clone = coordinator.clone();
-    tokio::spawn(async move {
-        #[cfg(unix)]
-        {
-            use tokio::signal::unix::{signal, SignalKind};
-            let mut sigterm = signal(SignalKind::terminate()).unwrap();
-            match sigterm.recv().await {
-                Some(_) => {
-                    info!("Received SIGTERM, initiating graceful shutdown");
-                    if let Err(e) = coordinator_clone.stop().await {
-                        error!("Error during shutdown: {}", e);
-                    }
-                }
-                None => {
-                    warn!("SIGTERM signal stream ended unexpectedly");
-                }
-            }
-        }
-    });
-
-    // Wait for the coordinator to stop
-    while coordinator.is_running().await {
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    // Process the vault once
+    if let Err(e) = coordinator.process_vault_once().await {
+        error!("Failed to process vault: {}", e);
+        return Err(e);
     }
 
-    info!("Crucible data layer daemon has shut down successfully");
+    // Stop the coordinator gracefully
+    if let Err(e) = coordinator.stop().await {
+        warn!("Error during coordinator shutdown: {}", e);
+        // Don't fail the whole operation for shutdown errors
+    }
+
+    info!("One-shot vault processing completed");
     Ok(())
 }
 
-/// Load daemon configuration from various sources
+/// Load daemon configuration from environment variables (secure only)
 async fn load_configuration() -> Result<DaemonConfig> {
-    // Try loading from command line arguments first
-    let args: Vec<String> = std::env::args().collect();
-
-    if args.len() > 1 {
-        let config_path = PathBuf::from(&args[1]);
-        if config_path.exists() {
-            match DaemonConfig::load_from_file(&config_path).await {
-                Ok(config) => {
-                    info!("Loaded configuration from file: {}", config_path.display());
-                    return Ok(config);
-                }
-                Err(e) => {
-                    warn!("Failed to load configuration from {}: {}, using defaults", config_path.display(), e);
-                }
-            }
-        }
-    }
-
-    // Try loading from default locations
-    let default_paths = vec![
-        PathBuf::from("/etc/crucible/daemon.yaml"),
-        PathBuf::from("daemon.yaml"),
-        PathBuf::from("config/daemon.yaml"),
-    ];
-
-    for path in default_paths {
-        if path.exists() {
-            match DaemonConfig::load_from_file(&path).await {
-                Ok(config) => {
-                    info!("Loaded configuration from default path: {}", path.display());
-                    return Ok(config);
-                }
-                Err(e) => {
-                    warn!("Failed to load configuration from {}: {}, trying next", path.display(), e);
-                }
-            }
-        }
-    }
-
-    // Try loading from environment variables
+    // SECURITY: Load configuration only from environment variables
     match DaemonConfig::from_env() {
         Ok(config) => {
             info!("Loaded configuration from environment variables");
             return Ok(config);
         }
         Err(e) => {
-            warn!("Failed to load configuration from environment: {}, using defaults", e);
+            error!("Failed to load configuration from environment: {}", e);
+            error!("OBSIDIAN_VAULT_PATH environment variable is required for daemon security");
+            return Err(anyhow::anyhow!(
+                "Failed to load secure daemon configuration. \
+                Please set OBSIDIAN_VAULT_PATH environment variable.\n\
+                Example: export OBSIDIAN_VAULT_PATH=/path/to/your/vault"
+            ));
         }
     }
-
-    // Fall back to default configuration
-    info!("Using default configuration");
-    let mut default_config = DaemonConfig::default();
-
-    // Apply some sensible defaults for a running daemon
-    default_config.filesystem.watch_paths.push(
-        crucible_daemon::config::WatchPath {
-            path: PathBuf::from("./data"),
-            recursive: true,
-            mode: crucible_daemon::config::WatchMode::All,
-            filters: None,
-            events: None,
-        }
-    );
-
-    Ok(default_config)
 }
 
 #[cfg(test)]

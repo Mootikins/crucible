@@ -1,5 +1,7 @@
 //! Event batching for grouping related events together.
 
+#![allow(dead_code)]
+
 use crate::events::FileEvent;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};

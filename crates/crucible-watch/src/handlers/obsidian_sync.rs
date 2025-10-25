@@ -40,14 +40,18 @@ pub struct ObsidianVaultConfig {
 #[derive(Debug, Clone)]
 pub struct SyncConfig {
     /// Debounce delay for sync operations
+    #[allow(dead_code)]
     sync_debounce: std::time::Duration,
     /// Whether to sync frontmatter changes
+    #[allow(dead_code)]
     sync_frontmatter: bool,
     /// Whether to sync content changes
+    #[allow(dead_code)]
     sync_content: bool,
     /// Whether to trigger Obsidian reindex
     trigger_reindex: bool,
     /// Maximum batch size for sync operations
+    #[allow(dead_code)]
     max_batch_size: usize,
 }
 
@@ -55,10 +59,13 @@ pub struct SyncConfig {
 #[derive(Debug, Clone, Default)]
 struct SyncState {
     /// Files currently being processed
+    #[allow(dead_code)]
     processing_files: HashMap<PathBuf, std::time::Instant>,
     /// Last full sync timestamp
+    #[allow(dead_code)]
     last_full_sync: Option<chrono::DateTime<chrono::Utc>>,
     /// Pending changes to sync
+    #[allow(dead_code)]
     pending_changes: Vec<FileEvent>,
     /// Sync statistics
     stats: SyncStats,

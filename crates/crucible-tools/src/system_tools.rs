@@ -431,8 +431,7 @@ pub fn get_environment() -> ToolFunction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{ToolResult, ToolError};
-    use std::collections::HashMap;
+    use crate::types::ToolError;
 
     // Tests for utility functions
     #[test]
@@ -474,7 +473,7 @@ mod tests {
             "test_tool",
             params.clone(),
             &context,
-            |params, _context| async {
+            |_params, _context| async {
                 // Add a small delay to ensure measurable timing
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                 Ok(success_result("timing_test".to_string(), json!({"processed": true}), 0))

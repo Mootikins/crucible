@@ -7,10 +7,10 @@ use crate::vault_types::{VaultFile, VaultError, VaultResult};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
 
 /// Parser for markdown files with YAML frontmatter
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct VaultParser {
     /// Whether to validate frontmatter strictly
     strict_mode: bool,
@@ -330,9 +330,7 @@ impl Default for VaultParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-    use std::fs;
-
+    
     #[tokio::test]
     async fn test_parser_creates_successfully() {
         let parser = VaultParser::new();
