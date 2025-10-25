@@ -108,17 +108,6 @@ pub enum Commands {
     #[command(subcommand)]
     Note(NoteCommands),
 
-    /// Index vault for search and embeddings
-    Index {
-        /// Force re-indexing of all files
-        #[arg(short = 'F', long)]
-        force: bool,
-
-        /// File pattern to match (e.g., "**/*.md")
-        #[arg(short = 'g', long, default_value = "**/*.md")]
-        glob: String,
-    },
-
     /// Display vault statistics
     Stats,
 
