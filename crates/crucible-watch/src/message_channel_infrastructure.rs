@@ -7,6 +7,7 @@
 use crate::{
     embedding_events::{EmbeddingEvent, EmbeddingEventResult, EventDrivenEmbeddingConfig},
     error::Result,
+    events::FileEventKind,
 };
 use std::collections::HashMap;
 use std::sync::Arc;

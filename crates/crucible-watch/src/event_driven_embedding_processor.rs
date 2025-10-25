@@ -7,9 +7,10 @@
 use crate::{
     embedding_events::{EmbeddingEvent, EmbeddingEventResult, EventDrivenEmbeddingConfig},
     error::{Error, Result},
-    events::FileEvent,
+    events::{FileEvent, FileEventKind},
     traits::EventHandler,
 };
+use crucible_llm::EmbeddingConfig;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -715,8 +716,8 @@ mod tests {
     #[tokio::test]
     async fn test_event_processor_creation() -> Result<()> {
         let config = EventDrivenEmbeddingConfig::default();
-        let embedding_config = crate::embedding_config::EmbeddingConfig::default();
-        let embedding_pool = crate::embedding_pool::EmbeddingThreadPool::new(embedding_config).await?;
+        let embedding_config = EmbeddingConfig::default();
+        let embedding_pool = EmbeddingThreadPool::new(embedding_config).await?;
 
         let processor = EventDrivenEmbeddingProcessor::new(
             config,
@@ -736,8 +737,8 @@ mod tests {
     #[tokio::test]
     async fn test_file_event_transformation() -> Result<()> {
         let config = EventDrivenEmbeddingConfig::default();
-        let embedding_config = crate::embedding_config::EmbeddingConfig::default();
-        let embedding_pool = crate::embedding_pool::EmbeddingThreadPool::new(embedding_config).await?;
+        let embedding_config = EmbeddingConfig::default();
+        let embedding_pool = EmbeddingThreadPool::new(embedding_config).await?;
 
         let processor = EventDrivenEmbeddingProcessor::new(
             config,
@@ -772,8 +773,8 @@ mod tests {
             ..Default::default()
         };
 
-        let embedding_config = crate::embedding_config::EmbeddingConfig::default();
-        let embedding_pool = crate::embedding_pool::EmbeddingThreadPool::new(embedding_config).await?;
+        let embedding_config = EmbeddingConfig::default();
+        let embedding_pool = EmbeddingThreadPool::new(embedding_config).await?;
 
         let processor = EventDrivenEmbeddingProcessor::new(
             config,
@@ -796,8 +797,8 @@ mod tests {
             ..Default::default()
         };
 
-        let embedding_config = crate::embedding_config::EmbeddingConfig::default();
-        let embedding_pool = crate::embedding_pool::EmbeddingThreadPool::new(embedding_config).await?;
+        let embedding_config = EmbeddingConfig::default();
+        let embedding_pool = EmbeddingThreadPool::new(embedding_config).await?;
 
         let processor = EventDrivenEmbeddingProcessor::new(
             config,
@@ -815,8 +816,8 @@ mod tests {
     #[tokio::test]
     async fn test_embedding_event_handler() -> Result<()> {
         let config = EventDrivenEmbeddingConfig::default();
-        let embedding_config = crate::embedding_config::EmbeddingConfig::default();
-        let embedding_pool = crate::embedding_pool::EmbeddingThreadPool::new(embedding_config).await?;
+        let embedding_config = EmbeddingConfig::default();
+        let embedding_pool = EmbeddingThreadPool::new(embedding_config).await?;
 
         let processor = Arc::new(EventDrivenEmbeddingProcessor::new(
             config,
@@ -851,8 +852,8 @@ mod tests {
     #[tokio::test]
     async fn test_metrics_tracking() -> Result<()> {
         let config = EventDrivenEmbeddingConfig::default();
-        let embedding_config = crate::embedding_config::EmbeddingConfig::default();
-        let embedding_pool = crate::embedding_pool::EmbeddingThreadPool::new(embedding_config).await?;
+        let embedding_config = EmbeddingConfig::default();
+        let embedding_pool = EmbeddingThreadPool::new(embedding_config).await?;
 
         let processor = EventDrivenEmbeddingProcessor::new(
             config,
