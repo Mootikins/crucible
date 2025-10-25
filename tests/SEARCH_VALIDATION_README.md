@@ -20,7 +20,7 @@ This test suite provides thorough validation of search functionality including:
 - `search_validation_comprehensive.rs` - Core test harness and metadata/text content tests
 - `search_validation_extended.rs` - Semantic, tool, link, parity, and performance tests
 - `search_validation_test_runner.rs` - Organized test execution and reporting
-- `tests/test-vault/` - Comprehensive static test vault with 11 realistic markdown files
+- `tests/test-kiln/` - Comprehensive static test vault with 11 realistic markdown files
 
 ### Test Categories
 
@@ -149,7 +149,7 @@ This test suite provides thorough validation of search functionality including:
 
 ## Test Vault
 
-The test suite uses a comprehensive static test vault located in `tests/test-vault/` containing:
+The test suite uses a comprehensive static test vault located in `tests/test-kiln/` containing:
 
 ### Documents (11 files)
 - **README - Test Vault Structure.md** - Meta documentation and testing guide

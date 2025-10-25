@@ -15,13 +15,13 @@ pub async fn execute(
     _search_paths: bool,
     limit: u32,
 ) -> Result<()> {
-    let kiln_path = &config.vault.path;
+    let kiln_path = &config.kiln.path;
 
     // Check if kiln path exists
     if !kiln_path.exists() {
-        eprintln!("Error: Kiln path does not exist: {}", kiln_path.display());
-        eprintln!("Please set OBSIDIAN_VAULT_PATH to a valid kiln directory.");
-        return Err(anyhow::anyhow!("Kiln path does not exist"));
+        eprintln!("Error: kiln path does not exist: {}", kiln_path.display());
+        eprintln!("Please set OBSIDIAN_KILN_PATH to a valid kiln directory.");
+        return Err(anyhow::anyhow!("kiln path does not exist"));
     }
 
     println!("🔍 Fuzzy search: {}", query);

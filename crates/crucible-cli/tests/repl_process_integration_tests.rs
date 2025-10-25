@@ -19,8 +19,7 @@ use tempfile::TempDir;
 use anyhow::{Result, Context};
 use tracing::{info, warn, debug};
 
-mod common;
-use common::TestVault;
+use crate::common::TestKiln;
 
 /// REPL process wrapper for end-to-end testing
 pub struct ReplProcess {
@@ -40,7 +39,7 @@ pub struct ReplProcess {
 
 impl ReplProcess {
     /// Spawn a new REPL process for testing
-    pub fn spawn(vault_path: &str, db_path: Option<&str>) -> Result<Self> {
+    pub fn spawn(kiln_path: &str, db_path: Option<&str>) -> Result<Self> {
         info!("Spawning REPL process for testing");
 
         // Create temporary config and history files
@@ -55,7 +54,7 @@ impl ReplProcess {
             "run",
             "--bin", "crucible",
             "--",
-            "--vault-path", vault_path,
+            "--vault-path", kiln_path,
             "--format", "table",  // Use table format for easier testing
         ]);
 
@@ -288,11 +287,11 @@ impl Drop for ReplProcess {
 /// Test helper to validate system tool execution
 #[tokio::test]
 async fn test_repl_run_system_info() -> Result<()> {
-    // Create test vault
-    let vault = TestVault::new()?;
+    // Create test kiln
+    let kiln = TestKiln::new()?;
 
     // Spawn REPL process
-    let mut repl = ReplProcess::spawn(vault.vault_path_str(), Some(vault.db_path_str()))?;
+    let mut repl = ReplProcess::spawn(kiln.kiln_path_str(), Some(kiln.db_path_str()))?;
 
     // Wait for REPL to initialize (look for welcome message)
     let initialized = repl.wait_for_output("Crucible CLI REPL", 10)
@@ -328,16 +327,16 @@ async fn test_repl_run_system_info() -> Result<()> {
     Ok(())
 }
 
-/// Test vault statistics tool execution
+/// Test kiln statistics tool execution
 #[tokio::test]
-async fn test_repl_run_vault_stats() -> Result<()> {
-    // Create test vault with some content
-    let vault = TestVault::new()?;
-    vault.create_note("test.md", "# Test Document\n\nThis is a test.")?;
-    vault.create_note("project/notes.md", "# Project Notes\n\nImportant project info.")?;
+async fn test_repl_run_kiln_stats() -> Result<()> {
+    // Create test kiln with some content
+    let kiln = TestKiln::new()?;
+    kiln.create_note("test.md", "# Test Document\n\nThis is a test.")?;
+    kiln.create_note("project/notes.md", "# Project Notes\n\nImportant project info.")?;
 
     // Spawn REPL process
-    let mut repl = ReplProcess::spawn(vault.vault_path_str(), Some(vault.db_path_str()))?;
+    let mut repl = ReplProcess::spawn(kiln.kiln_path_str(), Some(kiln.db_path_str()))?;
 
     // Wait for REPL to initialize
     let initialized = repl.wait_for_output("Crucible CLI REPL", 10)
@@ -347,10 +346,10 @@ async fn test_repl_run_vault_stats() -> Result<()> {
     // Clear initial output
     repl.clear_output()?;
 
-    // Send :run get_vault_stats command
-    repl.send_command(":run get_vault_stats")?;
+    // Send :run get_kiln_stats command
+    repl.send_command(":run get_kiln_stats")?;
 
-    // Wait for vault statistics output
+    // Wait for kiln statistics output
     let found = repl.wait_for_output("total_notes", 15)
         .context("Vault stats command did not produce expected output")?;
     assert!(found, "Should see total_notes in output");
@@ -358,7 +357,7 @@ async fn test_repl_run_vault_stats() -> Result<()> {
     // Get output and validate content
     let output = repl.get_output()?;
 
-    // Validate that vault statistics are present
+    // Validate that kiln statistics are present
     assert!(output.contains("total_notes") || output.contains("Total Notes"),
             "Output should contain total notes count");
     assert!(output.contains("total_size") || output.contains("Total Size"),
@@ -374,11 +373,11 @@ async fn test_repl_run_vault_stats() -> Result<()> {
 /// Test error handling with invalid tool names
 #[tokio::test]
 async fn test_repl_run_invalid_tool() -> Result<()> {
-    // Create test vault
-    let vault = TestVault::new()?;
+    // Create test kiln
+    let kiln = TestKiln::new()?;
 
     // Spawn REPL process
-    let mut repl = ReplProcess::spawn(vault.vault_path_str(), Some(vault.db_path_str()))?;
+    let mut repl = ReplProcess::spawn(kiln.kiln_path_str(), Some(kiln.db_path_str()))?;
 
     // Wait for REPL to initialize
     let initialized = repl.wait_for_output("Crucible CLI REPL", 10)
@@ -415,13 +414,13 @@ async fn test_repl_run_invalid_tool() -> Result<()> {
 /// Test multiple tool execution sequence
 #[tokio::test]
 async fn test_repl_multiple_tool_sequence() -> Result<()> {
-    // Create test vault with content
-    let vault = TestVault::new()?;
-    vault.create_note("research/ai.md", "# AI Research\n\nMachine learning topics.")?;
-    vault.create_note("project/todo.md", "# TODO\n\nTasks to complete.")?;
+    // Create test kiln with content
+    let kiln = TestKiln::new()?;
+    kiln.create_note("research/ai.md", "# AI Research\n\nMachine learning topics.")?;
+    kiln.create_note("project/todo.md", "# TODO\n\nTasks to complete.")?;
 
     // Spawn REPL process
-    let mut repl = ReplProcess::spawn(vault.vault_path_str(), Some(vault.db_path_str()))?;
+    let mut repl = ReplProcess::spawn(kiln.kiln_path_str(), Some(kiln.db_path_str()))?;
 
     // Wait for REPL to initialize
     let initialized = repl.wait_for_output("Crucible CLI REPL", 10)
@@ -445,10 +444,10 @@ async fn test_repl_multiple_tool_sequence() -> Result<()> {
     assert!(sysinfo_found, "Should show system info");
     repl.clear_output()?;
 
-    // 3. Run vault stats
-    repl.send_command(":run get_vault_stats")?;
+    // 3. Run kiln stats
+    repl.send_command(":run get_kiln_stats")?;
     let stats_found = repl.wait_for_output("total_notes", 15)?;
-    assert!(stats_found, "Should show vault stats");
+    assert!(stats_found, "Should show kiln stats");
     repl.clear_output()?;
 
     // 4. Run search by tags (if available)
@@ -472,11 +471,11 @@ async fn test_repl_multiple_tool_sequence() -> Result<()> {
 /// Test REPL stability after multiple commands
 #[tokio::test]
 async fn test_repl_stability_after_commands() -> Result<()> {
-    // Create test vault
-    let vault = TestVault::new()?;
+    // Create test kiln
+    let kiln = TestKiln::new()?;
 
     // Spawn REPL process
-    let mut repl = ReplProcess::spawn(vault.vault_path_str(), Some(vault.db_path_str()))?;
+    let mut repl = ReplProcess::spawn(kiln.kiln_path_str(), Some(kiln.db_path_str()))?;
 
     // Wait for REPL to initialize
     let initialized = repl.wait_for_output("Crucible CLI REPL", 10)
@@ -498,7 +497,7 @@ async fn test_repl_stability_after_commands() -> Result<()> {
                 repl.wait_for_output("Available Tools", 10)?;
             }
             2 => {
-                repl.send_command(":run get_vault_stats")?;
+                repl.send_command(":run get_kiln_stats")?;
                 repl.wait_for_output("total_notes", 10)?;
             }
             3 => {
@@ -528,14 +527,14 @@ async fn test_repl_stability_after_commands() -> Result<()> {
 /// Test tool execution with arguments
 #[tokio::test]
 async fn test_repl_run_tool_with_args() -> Result<()> {
-    // Create test vault with tagged content
-    let vault = TestVault::new()?;
-    vault.create_note("research/ml.md", "# Machine Learning\n\n#research #ml #ai")?;
-    vault.create_note("project/main.md", "# Main Project\n\n#project #important")?;
-    vault.create_note("notes/ideas.md", "# Ideas\n\n#ideas #research")?;
+    // Create test kiln with tagged content
+    let kiln = TestKiln::new()?;
+    kiln.create_note("research/ml.md", "# Machine Learning\n\n#research #ml #ai")?;
+    kiln.create_note("project/main.md", "# Main Project\n\n#project #important")?;
+    kiln.create_note("notes/ideas.md", "# Ideas\n\n#ideas #research")?;
 
     // Spawn REPL process
-    let mut repl = ReplProcess::spawn(vault.vault_path_str(), Some(vault.db_path_str()))?;
+    let mut repl = ReplProcess::spawn(kiln.kiln_path_str(), Some(kiln.db_path_str()))?;
 
     // Wait for REPL to initialize
     let initialized = repl.wait_for_output("Crucible CLI REPL", 10)
@@ -570,11 +569,11 @@ async fn test_repl_run_tool_with_args() -> Result<()> {
 /// Test REPL commands help functionality
 #[tokio::test]
 async fn test_repl_help_functionality() -> Result<()> {
-    // Create test vault
-    let vault = TestVault::new()?;
+    // Create test kiln
+    let kiln = TestKiln::new()?;
 
     // Spawn REPL process
-    let mut repl = ReplProcess::spawn(vault.vault_path_str(), Some(vault.db_path_str()))?;
+    let mut repl = ReplProcess::spawn(kiln.kiln_path_str(), Some(kiln.db_path_str()))?;
 
     // Wait for REPL to initialize
     let initialized = repl.wait_for_output("Crucible CLI REPL", 10)
@@ -609,11 +608,11 @@ async fn test_repl_help_functionality() -> Result<()> {
 /// Performance test for tool execution
 #[tokio::test]
 async fn test_repl_tool_execution_performance() -> Result<()> {
-    // Create test vault
-    let vault = TestVault::new()?;
+    // Create test kiln
+    let kiln = TestKiln::new()?;
 
     // Spawn REPL process
-    let mut repl = ReplProcess::spawn(vault.vault_path_str(), Some(vault.db_path_str()))?;
+    let mut repl = ReplProcess::spawn(kiln.kiln_path_str(), Some(kiln.db_path_str()))?;
 
     // Wait for REPL to initialize
     let initialized = repl.wait_for_output("Crucible CLI REPL", 10)

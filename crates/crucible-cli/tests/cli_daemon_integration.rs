@@ -199,7 +199,7 @@ fn load_secure_config() -> Result<CliConfig> {
     // Verify the vault path came from environment variable
     let expected_vault_path = env::var("OBSIDIAN_VAULT_PATH")?;
     assert_eq!(
-        config.vault.path.to_string_lossy(),
+        config.kiln.path.to_string_lossy(),
         expected_vault_path,
         "Vault path should come from environment variable, not CLI arguments"
     );
@@ -315,7 +315,7 @@ async fn spawn_daemon_from_path(daemon_path: &Path, config: &CliConfig) -> Resul
     let child = AsyncCommand::new(daemon_path)
         .arg("daemon")
         .arg("start")
-        .env("OBSIDIAN_VAULT_PATH", &config.vault.path)
+        .env("OBSIDIAN_VAULT_PATH", &config.kiln.path)
         .env("CRUCIBLE_TEST_MODE", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -518,7 +518,7 @@ async fn test_security_vault_path_not_in_cli_arguments() -> Result<()> {
 
     // Verify the configuration loaded correctly
     assert_eq!(
-        config.vault.path,
+        config.kiln.path,
         vault_path,
         "Vault path should match environment variable"
     );
@@ -526,7 +526,7 @@ async fn test_security_vault_path_not_in_cli_arguments() -> Result<()> {
     // Additional security checks
     let current_dir = env::current_dir()?;
     assert_ne!(
-        config.vault.path, current_dir,
+        config.kiln.path, current_dir,
         "Vault path should not default to current directory when env var is set"
     );
 
@@ -671,7 +671,7 @@ async fn test_valid_environment_variable() -> Result<()> {
         Ok(config) => {
             // Verify vault path came from environment variable
             assert_eq!(
-                config.vault.path, vault_path,
+                config.kiln.path, vault_path,
                 "CLI vault path should match environment variable"
             );
             println!("     ✅ CLI correctly reads vault path from environment variable");
@@ -679,7 +679,7 @@ async fn test_valid_environment_variable() -> Result<()> {
             // Test 2: Verify no CLI arguments were used
             let env_vault_path = env::var("OBSIDIAN_VAULT_PATH")?;
             assert_eq!(
-                config.vault.path.to_string_lossy(),
+                config.kiln.path.to_string_lossy(),
                 env_vault_path,
                 "Vault path should come exclusively from environment variable"
             );
@@ -815,7 +815,7 @@ async fn test_cli_flag_ignored() -> Result<()> {
 
     // Verify config still uses environment variable, not any potential CLI args
     assert_eq!(
-        config.vault.path, vault_path,
+        config.kiln.path, vault_path,
         "Config should use environment variable even if CLI args are present"
     );
 
@@ -881,7 +881,7 @@ async fn test_process_argument_security(config: &CliConfig) -> Result<()> {
     // Try to spawn CLI process and inspect its arguments
     let mut child = AsyncCommand::new(&cli_path)
         .arg("help") // Use help command to avoid needing full setup
-        .env("OBSIDIAN_VAULT_PATH", &config.vault.path)
+        .env("OBSIDIAN_VAULT_PATH", &config.kiln.path)
         .env("CRUCIBLE_TEST_MODE", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

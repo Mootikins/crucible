@@ -799,6 +799,14 @@ impl EmbeddingThreadPool {
                     Some(config.model.name.clone()),
                 )
             }
+            EmbeddingProviderType::Candle => {
+                // For Candle, map to OpenAI-like config for now
+                // This should be replaced with proper Candle configuration
+                LlmEmbeddingConfig::openai(
+                    "dummy_key".to_string(),
+                    Some(config.model.name.clone()),
+                )
+            }
             EmbeddingProviderType::Custom(_) => {
                 return Err(anyhow!("Custom embedding providers are not yet supported"));
             }

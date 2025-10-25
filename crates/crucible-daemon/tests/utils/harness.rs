@@ -137,6 +137,23 @@ pub struct DaemonEmbeddingHarness {
     config: EmbeddingHarnessConfig,
 }
 
+impl Clone for DaemonEmbeddingHarness {
+    fn clone(&self) -> Self {
+        // Note: This creates a new temporary directory, which is the best we can do
+        // since TempDir doesn't implement Clone. The database and provider are shared.
+        let new_vault_dir = tempfile::TempDir::new().expect("Failed to create temporary directory");
+
+        Self {
+            vault_dir: new_vault_dir,
+            db: self.db.clone(),
+            parser: self.parser.clone(),
+            adapter: self.adapter.clone(),
+            provider: self.provider.clone(),
+            config: self.config.clone(),
+        }
+    }
+}
+
 impl DaemonEmbeddingHarness {
     /// Create a new test harness with custom configuration
     ///
@@ -514,6 +531,98 @@ impl DaemonEmbeddingHarness {
         let data = self.db.get_embedding(&full_path).await?;
 
         Ok(data.map(|d| d.embedding))
+    }
+
+    // ========================================================================
+    // Direct Embedding Generation
+    // ========================================================================
+
+    /// Generate an embedding for the given text
+    ///
+    /// This is a convenience method that directly generates an embedding
+    /// without storing it in the database. Tests expect this method to exist.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - Text to generate embedding for
+    ///
+    /// # Returns
+    ///
+    /// Embedding vector as `Vec<f32>`
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let embedding = harness.generate_embedding("Hello world").await?;
+    /// assert_eq!(embedding.len(), 768);
+    /// ```
+    pub async fn generate_embedding(&self, text: &str) -> Result<Vec<f32>> {
+        let response = self.provider.embed(text).await?;
+        Ok(response.embedding)
+    }
+
+    /// Generate embeddings for multiple texts (batch processing)
+    ///
+    /// This is a convenience method that generates embeddings for multiple
+    /// texts at once, useful for performance testing.
+    ///
+    /// # Arguments
+    ///
+    /// * `texts` - Vector of texts to generate embeddings for
+    ///
+    /// # Returns
+    ///
+    /// Vector of embedding vectors as `Vec<Vec<f32>>`
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let texts = vec!["Hello".to_string(), "World".to_string()];
+    /// let embeddings = harness.generate_batch_embeddings(&texts).await?;
+    /// assert_eq!(embeddings.len(), 2);
+    /// ```
+    pub async fn generate_batch_embeddings(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+        let mut embeddings = Vec::with_capacity(texts.len());
+
+        for text in texts {
+            let response = self.provider.embed(text).await?;
+            embeddings.push(response.embedding);
+        }
+
+        Ok(embeddings)
+    }
+
+    /// Create a new harness with custom embedding configuration
+    ///
+    /// This is a convenience constructor that takes an EmbeddingConfig
+    /// instead of EmbeddingHarnessConfig, making it compatible with tests
+    /// that have embedding configurations.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Embedding configuration
+    ///
+    /// # Returns
+    ///
+    /// New DaemonEmbeddingHarness instance
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use crucible_llm::embeddings::EmbeddingConfig;
+    /// let config = EmbeddingConfig::default();
+    /// let harness = DaemonEmbeddingHarness::new_with_config(config).await?;
+    /// ```
+    pub async fn new_with_config(config: crucible_llm::embeddings::EmbeddingConfig) -> Result<Self> {
+        // Convert EmbeddingConfig to EmbeddingHarnessConfig
+        let harness_config = EmbeddingHarnessConfig {
+            strategy: EmbeddingStrategy::Mock, // Default to mock for testing
+            dimensions: config.dimensions.unwrap_or(768),
+            validate_dimensions: false, // Don't validate by default
+            store_full_content: true,
+        };
+
+        Self::new(harness_config).await
     }
 
     // ========================================================================

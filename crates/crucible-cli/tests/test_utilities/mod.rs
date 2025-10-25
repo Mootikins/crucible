@@ -43,14 +43,14 @@ impl TestContext {
         let mut config = CliConfig::default();
 
         // Use isolated paths
-        config.vault.path = temp_dir.path().join("vault");
+        config.kiln.path = temp_dir.path().join("vault");
         config.services.script_engine.max_cache_size = 10; // Small for testing
         config.migration.max_cache_size = 5; // Small for testing
         config.migration.enabled = true; // Enable migration for testing
 
         // Create necessary directories
-        std::fs::create_dir_all(&config.vault.path)?;
-        std::fs::create_dir_all(config.vault.path.join(".crucible"))?;
+        std::fs::create_dir_all(&config.kiln.path)?;
+        std::fs::create_dir_all(config.kiln.path.join(".crucible"))?;
 
         Ok(config)
     }
@@ -777,8 +777,8 @@ mod tests {
 
         // Verify temp directory structure
         assert!(context.temp_dir.path().exists());
-        assert!(context.config.vault.path.exists());
-        assert!(context.config.vault.path.join(".crucible").exists());
+        assert!(context.config.kiln.path.exists());
+        assert!(context.config.kiln.path.join(".crucible").exists());
 
         // Verify test configuration
         assert!(context.config.migration.enabled);

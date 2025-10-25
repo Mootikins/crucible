@@ -15,6 +15,8 @@ crucible-core = { path = "../crucible-core" }
 crucible-services = { path = "../crucible-services" }
 crucible-tools = { path = "../crucible-tools" }
 crucible-surrealdb = { path = "../crucible-surrealdb" }
+crucible-llm = { path = "../crucible-llm" }
+crucible-config = { path = "../crucible-config" }
 
 # CLI framework
 clap = { version = "4.5", features = ["derive", "env", "string"] }
@@ -94,3 +96,4 @@ assert_cmd = "2.0"
 predicates = "3.0"
 tokio-test = "0.4"
 wiremock = "0.6"
+mockall = "0.12"

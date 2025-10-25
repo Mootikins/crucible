@@ -8,13 +8,11 @@
 //! - Script discovery and execution
 //! - Argument passing and result handling
 
-mod test_utilities;
-
 use anyhow::Result;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
-use crucible_cli::test_utilities::*;
+use super::test_utilities::*;
 use crucible_cli::config::CliConfig;
 use crucible_cli::commands::rune::{execute, list_commands};
 

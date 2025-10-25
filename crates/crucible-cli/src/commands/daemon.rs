@@ -34,10 +34,10 @@ async fn execute_start_command(
     wait: bool,
     background: bool,
 ) -> Result<()> {
-    info!("Starting daemon for kiln: {}", config.vault.path.display());
+    info!("Starting daemon for kiln: {}", config.kiln.path.display());
 
     println!("🚀 Starting crucible-daemon...");
-    println!("📁 Kiln path: {}", config.vault.path.display());
+    println!("📁 Kiln path: {}", config.kiln.path.display());
 
     let mut daemon_manager = DaemonManager::new();
 
@@ -45,7 +45,7 @@ async fn execute_start_command(
         println!("🔄 Starting daemon in background mode...");
         // For now, we'll use the existing spawn_daemon_for_processing method
         // In the future, this could start a persistent background daemon
-        match daemon_manager.spawn_daemon_for_processing(&config.vault.path).await {
+        match daemon_manager.spawn_daemon_for_processing(&config.kiln.path).await {
             Ok(result) => {
                 println!("✅ {}", result.status_message());
                 println!("📊 {}", result.processing_info());
@@ -57,7 +57,7 @@ async fn execute_start_command(
         }
     } else {
         println!("🔄 Starting daemon in one-shot mode...");
-        match daemon_manager.spawn_daemon_for_processing(&config.vault.path).await {
+        match daemon_manager.spawn_daemon_for_processing(&config.kiln.path).await {
             Ok(result) => {
                 println!("✅ {}", result.status_message());
                 println!("📊 {}", result.processing_info());
@@ -99,10 +99,10 @@ async fn execute_stop_command(_config: CliConfig, force: bool) -> Result<()> {
 
 /// Execute status command
 async fn execute_status_command(config: CliConfig) -> Result<()> {
-    info!("Checking daemon status for kiln: {}", config.vault.path.display());
+    info!("Checking daemon status for kiln: {}", config.kiln.path.display());
 
     println!("🔍 Checking daemon status...");
-    println!("📁 Kiln path: {}", config.vault.path.display());
+    println!("📁 Kiln path: {}", config.kiln.path.display());
 
     // Check if embeddings exist (indirect daemon status check)
     let daemon_manager = DaemonManager::new();

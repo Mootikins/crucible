@@ -11,23 +11,23 @@
 //! 5. Verify REPL stability and proper cleanup
 
 use std::time::Duration;
+use std::env;
 use tempfile::TempDir;
 use anyhow::Result;
 use tokio::time::timeout;
 
-mod common;
-use common::TestVault;
+use super::common::TestKiln;
 use crucible_cli::commands::repl::Repl;
 use crucible_cli::config::CliConfig;
 
 /// Test system tool execution through REPL
 #[tokio::test]
 async fn test_repl_system_tool_execution() -> Result<()> {
-    // Create test vault
-    let vault = TestVault::new()?;
+    // Create test kiln
+    let kiln = TestKiln::new()?;
 
     // Create CLI config for testing
-    let config = create_test_config(&vault)?;
+    let config = create_test_config(&kiln)?;
 
     // Create REPL instance
     let mut repl = timeout(Duration::from_secs(30), Repl::new(&config, None, None, "table".to_string()))
@@ -37,8 +37,8 @@ async fn test_repl_system_tool_execution() -> Result<()> {
     // Test system info tool execution
     test_system_info_tool(&repl).await?;
 
-    // Test vault stats tool execution
-    test_vault_stats_tool(&repl, &vault).await?;
+    // Test kiln stats tool execution
+    test_kiln_stats_tool(&repl, &kiln).await?;
 
     // Test tools listing
     test_tools_listing(&repl).await?;
@@ -50,11 +50,11 @@ async fn test_repl_system_tool_execution() -> Result<()> {
 /// Test error handling for invalid tools
 #[tokio::test]
 async fn test_repl_error_handling() -> Result<()> {
-    // Create test vault
-    let vault = TestVault::new()?;
+    // Create test kiln
+    let kiln = TestKiln::new()?;
 
     // Create CLI config for testing
-    let config = create_test_config(&vault)?;
+    let config = create_test_config(&kiln)?;
 
     // Create REPL instance
     let mut repl = timeout(Duration::from_secs(30), Repl::new(&config, None, None, "table".to_string()))
@@ -71,13 +71,13 @@ async fn test_repl_error_handling() -> Result<()> {
 /// Test multiple tool execution sequence
 #[tokio::test]
 async fn test_repl_multiple_tool_sequence() -> Result<()> {
-    // Create test vault with content
-    let vault = TestVault::new()?;
-    vault.create_note("test.md", "# Test Document\n\nContent here.")?;
-    vault.create_note("project/notes.md", "# Project Notes\n\nImportant info.")?;
+    // Create test kiln with content
+    let kiln = TestKiln::new()?;
+    kiln.create_note("test.md", "# Test Document\n\nContent here.")?;
+    kiln.create_note("project/notes.md", "# Project Notes\n\nImportant info.")?;
 
     // Create CLI config for testing
-    let config = create_test_config(&vault)?;
+    let config = create_test_config(&kiln)?;
 
     // Create REPL instance
     let mut repl = timeout(Duration::from_secs(30), Repl::new(&config, None, None, "table".to_string()))
@@ -92,14 +92,14 @@ async fn test_repl_multiple_tool_sequence() -> Result<()> {
 }
 
 /// Create a test configuration for the REPL
-fn create_test_config(vault: &TestVault) -> Result<CliConfig> {
+fn create_test_config(kiln: &TestKiln) -> Result<CliConfig> {
     let temp_dir = TempDir::new()?;
 
     // Set required environment variable for security
-    env::set_var("OBSIDIAN_VAULT_PATH", &vault.path);
+    env::set_var("OBSIDIAN_VAULT_PATH", &kiln.kiln_path_str());
     let config_content = format!(
         r#"
-vault:
+kiln:
   path: "{}"
 
 database:
@@ -111,8 +111,8 @@ tools:
 logging:
   level: "info"
 "#,
-        vault.vault_path_str(),
-        vault.db_path_str(),
+        kiln.kiln_path_str(),
+        kiln.db_path_str(),
         temp_dir.path().display()
     );
 
@@ -173,33 +173,33 @@ async fn test_system_info_tool(repl: &Repl) -> Result<()> {
     Ok(())
 }
 
-/// Test vault stats tool execution
-async fn test_vault_stats_tool(repl: &Repl, vault: &TestVault) -> Result<()> {
-    println!("Testing get_vault_stats tool execution...");
+/// Test kiln stats tool execution
+async fn test_kiln_stats_tool(repl: &Repl, kiln: &TestKiln) -> Result<()> {
+    println!("Testing get_kiln_stats tool execution...");
 
     // Get the tool registry from the REPL
     let tools = repl.get_tools();
 
     // Create some test content
-    vault.create_note("test1.md", "# Test 1\n\nContent.")?;
-    vault.create_note("test2.md", "# Test 2\n\nMore content.")?;
+    kiln.create_note("test1.md", "# Test 1\n\nContent.")?;
+    kiln.create_note("test2.md", "# Test 2\n\nMore content.")?;
 
-    // Check if get_vault_stats tool is available
+    // Check if get_kiln_stats tool is available
     let tool_list = tools.list_tools().await;
-    if tool_list.contains(&"get_vault_stats".to_string()) {
-        // Execute get_vault_stats tool
-        let result = tools.execute_tool("get_vault_stats", &[]).await
-            .map_err(|e| anyhow::anyhow!("Failed to execute get_vault_stats: {}", e))?;
+    if tool_list.contains(&"get_kiln_stats".to_string()) {
+        // Execute get_kiln_stats tool
+        let result = tools.execute_tool("get_kiln_stats", &[]).await
+            .map_err(|e| anyhow::anyhow!("Failed to execute get_kiln_stats: {}", e))?;
 
         // Verify successful execution
         assert!(matches!(result.status, crucible_cli::commands::repl::tools::ToolStatus::Success),
-               "get_vault_stats should execute successfully");
+               "get_kiln_stats should execute successfully");
 
-        // Verify output contains vault statistics
+        // Verify output contains kiln statistics
         let output = result.output;
-        assert!(!output.is_empty(), "get_vault_stats should produce output");
+        assert!(!output.is_empty(), "get_kiln_stats should produce output");
 
-        // Check for expected vault statistics indicators
+        // Check for expected kiln statistics indicators
         let has_notes_count = output.to_lowercase().contains("notes") ||
                              output.to_lowercase().contains("total") ||
                              output.contains("2"); // We created 2 notes
@@ -208,12 +208,12 @@ async fn test_vault_stats_tool(repl: &Repl, vault: &TestVault) -> Result<()> {
                            output.to_lowercase().contains("bytes");
 
         assert!(has_notes_count || has_size_info,
-               "Output should contain vault statistics");
+               "Output should contain kiln statistics");
 
-        println!("✓ get_vault_stats tool executed successfully");
+        println!("✓ get_kiln_stats tool executed successfully");
         println!("Output preview: {}", &output[..output.len().min(100)]);
     } else {
-        println!("ℹ get_vault_stats tool not available, skipping test");
+        println!("ℹ get_kiln_stats tool not available, skipping test");
     }
 
     Ok(())
@@ -349,11 +349,11 @@ async fn test_tool_execution_sequence(repl: &Repl) -> Result<()> {
 async fn test_repl_performance_stability() -> Result<()> {
     println!("Testing REPL performance and stability...");
 
-    // Create test vault
-    let vault = TestVault::new()?;
+    // Create test kiln
+    let kiln = TestKiln::new()?;
 
     // Create CLI config for testing
-    let config = create_test_config(&vault)?;
+    let config = create_test_config(&kiln)?;
 
     // Create REPL instance
     let mut repl = timeout(Duration::from_secs(30), Repl::new(&config, None, None, "table".to_string()))
@@ -411,8 +411,8 @@ async fn test_repl_performance_stability() -> Result<()> {
 async fn test_repl_configuration() -> Result<()> {
     println!("Testing REPL configuration and initialization...");
 
-    // Create test vault
-    let vault = TestVault::new()?;
+    // Create test kiln
+    let kiln = TestKiln::new()?;
 
     // Test with different configurations
     let configs = vec![
@@ -425,7 +425,7 @@ async fn test_repl_configuration() -> Result<()> {
         println!("Testing with format: {}", format);
 
         // Create CLI config for testing
-        let config = create_test_config(&vault)?;
+        let config = create_test_config(&kiln)?;
 
         // Create REPL instance with specific configuration
         let mut repl = timeout(Duration::from_secs(30), Repl::new(&config, db_path, None, format.to_string()))
