@@ -9,11 +9,11 @@ use crate::handlers::EventLogger;
 use crate::services::{ServiceManager, SimpleEventService, SimpleFileService, SimpleSyncService};
 use crate::surrealdb_service::{SurrealDBService, create_surrealdb_from_config};
 use anyhow::Result;
-use async_trait::async_trait;
 use crucible_watch::{
-    WatchManager, WatchManagerConfig, EventDrivenEmbeddingProcessor, EmbeddingEventHandler, EmbeddingEvent,
+    EventDrivenEmbeddingProcessor, EmbeddingEventHandler, EmbeddingEvent,
 };
 use crucible_surrealdb::embedding_pool::EmbeddingThreadPool;
+use crucible_surrealdb::{vault_processor, vault_scanner::VaultScannerConfig};
 use tokio::sync::mpsc;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -81,8 +81,10 @@ impl Default for DaemonHealth {
 
 /// Simple daemon event handler
 pub struct DaemonEventHandler {
+    #[allow(dead_code)]
     event_bus: Arc<EventBus>,
     coordinator_state: Arc<RwLock<HashMap<String, serde_json::Value>>>,
+    embedding_event_tx: Option<tokio::sync::mpsc::UnboundedSender<EmbeddingEvent>>,
 }
 
 impl DaemonEventHandler {
@@ -90,7 +92,14 @@ impl DaemonEventHandler {
         Self {
             event_bus,
             coordinator_state: Arc::new(RwLock::new(HashMap::new())),
+            embedding_event_tx: None,
         }
+    }
+
+    /// Set the embedding event sender
+    pub fn with_embedding_event_tx(mut self, embedding_event_tx: tokio::sync::mpsc::UnboundedSender<EmbeddingEvent>) -> Self {
+        self.embedding_event_tx = Some(embedding_event_tx);
+        self
     }
 
     /// Handle incoming daemon events
@@ -206,17 +215,57 @@ impl DaemonEventHandler {
     async fn handle_filesystem_event(&self, event: &crate::events::FilesystemEvent) -> Result<()> {
         debug!("Filesystem event: {:?} on {}", event.event_type, event.path.display());
 
-        // Update file tracking state
-        let mut state = self.coordinator_state.write().await;
-        let file_key = format!("file:{}", event.path.display());
-        state.insert(
-            file_key,
-            serde_json::json!({
-                "event_type": format!("{:?}", event.event_type),
-                "timestamp": event.timestamp.to_rfc3339(),
-                "source_path": event.source_path.as_ref().map(|p| p.display().to_string())
-            })
+        // Only process markdown files for embeddings
+        if !event.path.extension().map_or(false, |ext| ext == "md") {
+            debug!("Skipping non-markdown file: {}", event.path.display());
+            return Ok(());
+        }
+
+        // Read file content for embedding
+        let content = match std::fs::read_to_string(&event.path) {
+            Ok(content) => content,
+            Err(e) => {
+                warn!("Failed to read file {} for embedding: {}", event.path.display(), e);
+                return Ok(());
+            }
+        };
+
+        // Convert FilesystemEventType to FileEventKind
+        let file_event_kind = match event.event_type {
+            crate::events::FilesystemEventType::Created => crucible_watch::FileEventKind::Created,
+            crate::events::FilesystemEventType::Modified => crucible_watch::FileEventKind::Modified,
+            crate::events::FilesystemEventType::Deleted => crucible_watch::FileEventKind::Deleted,
+            crate::events::FilesystemEventType::Renamed => {
+                // For renamed events, treat as modification since the content may have changed
+                crucible_watch::FileEventKind::Modified
+            }
+            crate::events::FilesystemEventType::DirectoryCreated |
+            crate::events::FilesystemEventType::DirectoryDeleted => {
+                // Skip directory events for embedding processing
+                debug!("Skipping directory event for embedding: {}", event.path.display());
+                return Ok(());
+            }
+        };
+
+        // Create embedding event (removed .await since EmbeddingEvent::new is not async)
+        let embedding_event = EmbeddingEvent::new(
+            event.path.clone(),
+            file_event_kind,
+            content,
+            Default::default(),
         );
+
+        // Send to embedding processor
+        if let Some(ref tx) = self.embedding_event_tx {
+            if let Err(e) = tx.send(embedding_event) {
+                warn!("Failed to send embedding event for {}: {}", event.path.display(), e);
+            } else {
+                debug!("Successfully queued embedding event for: {}", event.path.display());
+            }
+        } else {
+            warn!("Embedding event sender not configured for: {}", event.path.display());
+        }
+
         Ok(())
     }
 
@@ -269,9 +318,8 @@ pub struct DataCoordinator {
     /// Event handler
     event_handler: Arc<DaemonEventHandler>,
     /// Event logger
+    #[allow(dead_code)]
     event_logger: Arc<EventLogger>,
-    /// Filesystem watcher
-    watcher: Option<Arc<WatchManager>>,
     /// Event-driven embedding processor
     embedding_processor: Option<Arc<EventDrivenEmbeddingProcessor>>,
     /// Embedding thread pool
@@ -280,6 +328,7 @@ pub struct DataCoordinator {
     embedding_event_tx: Option<mpsc::UnboundedSender<EmbeddingEvent>>,
     /// Shutdown signal
     shutdown_tx: watch::Sender<bool>,
+    #[allow(dead_code)]
     shutdown_rx: watch::Receiver<bool>,
     /// Running state
     running: Arc<RwLock<bool>>,
@@ -321,7 +370,6 @@ impl DataCoordinator {
             event_bus,
             event_handler,
             event_logger,
-            watcher: None,
             embedding_processor: None,
             embedding_pool: None,
             embedding_event_tx: None,
@@ -359,15 +407,16 @@ impl DataCoordinator {
 
     /// Start the coordinator
     pub async fn start(&mut self) -> Result<()> {
-        info!("Starting simplified data coordinator");
+        info!("Starting simplified data coordinator for one-shot processing");
 
         // Set running state
         *self.running.write().await = true;
 
-        // Start background tasks
-        self.start_background_tasks().await?;
+        // For one-shot processing, we don't start infinite background tasks
+        // Instead, we initialize only the essential components
+        self.initialize_essential_components().await?;
 
-        info!("Data coordinator started successfully");
+        info!("Data coordinator started successfully for one-shot processing");
         Ok(())
     }
 
@@ -381,11 +430,7 @@ impl DataCoordinator {
         // Set running state to false
         *self.running.write().await = false;
 
-        // Note: WatchManager shutdown is handled automatically when it goes out of scope
-        // The Arc<WatchManager> will be dropped when this DataCoordinator is dropped
-        if self.watcher.is_some() {
-            info!("Filesystem watcher will be shut down automatically");
-        }
+        // Note: Filesystem watcher functionality has been removed from this implementation
 
         // Shutdown embedding processor if initialized
         if let Some(processor) = &self.embedding_processor {
@@ -494,6 +539,199 @@ impl DataCoordinator {
         self.service_manager.clone()
     }
 
+    /// Process the vault exactly once using the existing vault processing infrastructure
+    pub async fn process_vault_once(&mut self) -> Result<()> {
+        info!("Starting one-shot vault processing");
+
+        let config = self.config.read().await;
+        let vault_path = match std::env::var("OBSIDIAN_VAULT_PATH") {
+            Ok(path) => PathBuf::from(path),
+            Err(_) => {
+                return Err(anyhow::anyhow!(
+                    "OBSIDIAN_VAULT_PATH environment variable is required"
+                ));
+            }
+        };
+
+        if !vault_path.exists() || !vault_path.is_dir() {
+            return Err(anyhow::anyhow!(
+                "Vault path does not exist or is not a directory: {}",
+                vault_path.display()
+            ));
+        }
+
+        info!("Processing vault at: {}", vault_path.display());
+
+        // Create vault scanner configuration
+        let scan_config = VaultScannerConfig {
+            max_file_size_bytes: 10 * 1024 * 1024, // 10MB
+            max_recursion_depth: 10,
+            recursive_scan: true,
+            include_hidden_files: false,
+            file_extensions: vec!["md".to_string()],
+            parallel_processing: config.performance.workers.num_workers.unwrap_or(4),
+            batch_processing: true,
+            batch_size: 50,
+            enable_embeddings: true,
+            process_embeds: true,
+            process_wikilinks: true,
+            enable_incremental: true,
+            track_file_changes: true,
+            change_detection_method: crucible_surrealdb::vault_scanner::ChangeDetectionMethod::ContentHash,
+            error_handling_mode: crucible_surrealdb::vault_scanner::ErrorHandlingMode::ContinueOnError,
+            max_error_count: 100,
+            error_retry_attempts: 3,
+            error_retry_delay_ms: 1000,
+            skip_problematic_files: true,
+            log_errors_detailed: true,
+            error_threshold_circuit_breaker: 10,
+            circuit_breaker_timeout_ms: 30000,
+            processing_timeout_ms: 30000,
+        };
+
+        // Scan the vault for files
+        info!("Scanning vault for files...");
+        let discovered_files = match vault_processor::scan_vault_directory(&vault_path, &scan_config).await {
+            Ok(files) => {
+                info!("Discovered {} files in vault", files.len());
+                files
+            }
+            Err(e) => {
+                error!("Failed to scan vault directory: {}", e);
+                return Err(anyhow::anyhow!("Vault scanning failed: {}", e));
+            }
+        };
+
+        if discovered_files.is_empty() {
+            warn!("No files found to process in vault");
+            info!("One-shot vault processing completed (no files to process)");
+            return Ok(());
+        }
+
+        // For now, we'll implement a simplified processing that doesn't require
+        // direct database access - this leverages the existing event-driven
+        // embedding infrastructure for one-time processing
+        info!("Processing vault files using event-driven infrastructure...");
+
+        // Simulate processing all discovered files by triggering file events
+        let mut processed_count = 0;
+        let mut failed_count = 0;
+
+        for file_info in &discovered_files {
+            if file_info.is_markdown && file_info.is_accessible {
+                debug!("Processing file: {}", file_info.path.display());
+
+                // Create a filesystem event to trigger processing
+                debug!("Creating filesystem event for file: {}", file_info.path.display());
+                let fs_event = DaemonEvent::Filesystem(EventBuilder::filesystem(
+                    crate::events::FilesystemEventType::Modified,
+                    file_info.path.clone(),
+                ));
+
+                // Publish the event
+                debug!("Publishing filesystem event for: {}", file_info.path.display());
+                if let Err(e) = self.publish_event(fs_event).await {
+                    error!("Failed to publish processing event for {}: {}",
+                          file_info.path.display(), e);
+                    failed_count += 1;
+                } else {
+                    debug!("Successfully published filesystem event for: {}", file_info.path.display());
+                    processed_count += 1;
+                }
+
+                // Small delay to prevent overwhelming the system
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }
+
+        info!("One-shot vault processing completed: {} files queued for processing, {} failed",
+              processed_count, failed_count);
+
+        // Wait a bit for processing to complete
+        info!("Waiting for processing to complete...");
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
+        // Publish completion event
+        let completion_event = DaemonEvent::Service(EventBuilder::service_with_data(
+            crate::events::ServiceEventType::StatusChanged,
+            "daemon".to_string(),
+            "one_shot_processor".to_string(),
+            serde_json::json!({
+                "processing_completed": true,
+                "files_processed": processed_count,
+                "files_failed": failed_count,
+                "completion_time": chrono::Utc::now().to_rfc3339()
+            })
+        ));
+
+        if let Err(e) = self.publish_event(completion_event).await {
+            warn!("Failed to publish completion event: {}", e);
+        }
+
+        Ok(())
+    }
+
+    /// Initialize essential components for one-shot processing
+    async fn initialize_essential_components(&mut self) -> Result<()> {
+        debug!("Initializing essential components for one-shot processing");
+
+        // Initialize event subscriptions (needed for processing)
+        self.initialize_event_subscriptions().await?;
+
+        // Start embedding processor for one-shot processing
+        // Note: For one-shot processing, the embedding processor will be used
+        // to process embedding events directly
+        self.initialize_embedding_processor_for_one_shot().await?;
+
+        info!("Essential components initialized for one-shot processing");
+        Ok(())
+    }
+
+    /// Initialize embedding processor for one-shot processing
+    async fn initialize_embedding_processor_for_one_shot(&mut self) -> Result<()> {
+        debug!("Initializing embedding processor for one-shot processing");
+
+        let config = self.config.read().await;
+
+        // Initialize embedding thread pool with configuration from environment variables
+        let embedding_config = create_embedding_config_from_env(&config)?;
+        // Create embedding provider integration from environment
+        let provider_integration = create_embedding_provider_integration_from_env()?;
+        let embedding_pool = Arc::new(
+            EmbeddingThreadPool::new_with_provider_config(embedding_config, provider_integration).await?
+        );
+
+        // Create embedding event channel
+        let (embedding_tx, embedding_rx) = mpsc::unbounded_channel::<EmbeddingEvent>();
+
+        // Create and start event-driven embedding processor with default config
+        let embedding_config = crucible_watch::EventDrivenEmbeddingConfig::default();
+        let embedding_processor = Arc::new(
+            EventDrivenEmbeddingProcessor::new(embedding_config, embedding_pool.clone())
+                .await?
+                .with_embedding_event_receiver(embedding_rx)
+                .await
+        );
+
+        // Start the embedding processor
+        embedding_processor.start().await?;
+
+        // Update event handler to include embedding event sender
+        self.event_handler = Arc::new(
+            DaemonEventHandler::new(self.event_bus.clone())
+                .with_embedding_event_tx(embedding_tx.clone())
+        );
+
+        // Store components
+        self.embedding_processor = Some(embedding_processor);
+        self.embedding_pool = Some(embedding_pool);
+        self.embedding_event_tx = Some(embedding_tx);
+
+        info!("Embedding processor initialized successfully for one-shot processing");
+
+        Ok(())
+    }
+
     /// Initialize services
     async fn initialize_services(&self) -> Result<()> {
         debug!("Initializing services");
@@ -552,26 +790,19 @@ impl DataCoordinator {
         Ok(())
     }
 
-    /// Initialize filesystem watcher
+    /// Initialize filesystem watcher (for continuous operation - not used in one-shot mode)
     async fn initialize_watcher(&mut self) -> Result<()> {
-        debug!("Initializing filesystem watcher");
+        debug!("Initializing filesystem watcher (background mode)");
 
         let config = self.config.read().await;
 
-        // Initialize embedding thread pool with a simple configuration
-        let embedding_config = crucible_surrealdb::embedding_config::EmbeddingConfig {
-            worker_count: config.performance.workers.num_workers.unwrap_or(4),
-            batch_size: 16,
-            model_type: crucible_surrealdb::embedding_config::EmbeddingModel::LocalStandard,
-            privacy_mode: crucible_surrealdb::embedding_config::PrivacyMode::StrictLocal,
-            max_queue_size: config.performance.workers.max_queue_size,
-            timeout_ms: 30000,
-            retry_attempts: 3,
-            retry_delay_ms: 500,
-            circuit_breaker_threshold: 10,
-            circuit_breaker_timeout_ms: 60000,
-        };
-        let embedding_pool = Arc::new(EmbeddingThreadPool::new(embedding_config).await?);
+        // Initialize embedding thread pool with configuration from environment variables
+        let embedding_config = create_embedding_config_from_env(&config)?;
+        // Create embedding provider integration from environment
+        let provider_integration = create_embedding_provider_integration_from_env()?;
+        let embedding_pool = Arc::new(
+            EmbeddingThreadPool::new_with_provider_config(embedding_config, provider_integration).await?
+        );
 
         // Create embedding event channel
         let (embedding_tx, embedding_rx) = mpsc::unbounded_channel::<EmbeddingEvent>();
@@ -585,41 +816,27 @@ impl DataCoordinator {
                 .await
         );
 
-        // Create watch manager with a simple configuration
-        let manager_config = WatchManagerConfig {
-            queue_capacity: 10000,
-            debounce_delay: Duration::from_millis(100),
-            enable_default_handlers: true,
-            max_concurrent_handlers: 50,
-            enable_monitoring: true,
-        };
-        let mut watch_manager = WatchManager::new(manager_config).await?;
-
         // Register embedding event handler
-        let embedding_handler = Arc::new(EmbeddingEventHandler::new(
+        let _embedding_handler = Arc::new(EmbeddingEventHandler::new(
             embedding_processor.clone(),
             embedding_tx.clone(), // Pass the embedding event sender
         ));
-        watch_manager.register_handler(embedding_handler).await?;
 
-        // Start the embedding processor after the handler is registered
+        // Start the embedding processor
         embedding_processor.start().await?;
 
-        // Start the watch manager
-        watch_manager.start().await?;
-
         // Store components
-        self.watcher = Some(Arc::new(watch_manager));
         self.embedding_processor = Some(embedding_processor);
         self.embedding_pool = Some(embedding_pool);
         self.embedding_event_tx = Some(embedding_tx);
 
-        info!("Filesystem watcher initialized successfully with event-driven embedding processing");
+        info!("Embedding processor initialized successfully for continuous operation");
 
         Ok(())
     }
 
     /// Start background tasks
+    #[allow(dead_code)]
     async fn start_background_tasks(&self) -> Result<()> {
         debug!("Starting background tasks");
 
@@ -688,6 +905,7 @@ impl DataCoordinator {
     }
 
     /// Start health monitoring task
+    #[allow(dead_code)]
     async fn start_health_monitoring(&self) -> Result<impl std::future::Future<Output = Result<()>>> {
         let service_manager = self.service_manager.clone();
         let event_bus = self.event_bus.clone();
@@ -751,6 +969,7 @@ impl DataCoordinator {
     }
 
     /// Start metrics collection task
+    #[allow(dead_code)]
     async fn start_metrics_collection(&self) -> Result<impl std::future::Future<Output = Result<()>>> {
         let event_bus = self.event_bus.clone();
         let daemon_health = self.daemon_health.clone();
@@ -802,6 +1021,7 @@ impl DataCoordinator {
     }
 
     /// Start service discovery task
+    #[allow(dead_code)]
     async fn start_service_discovery(&self) -> Result<impl std::future::Future<Output = Result<()>>> {
         let service_discovery = self.service_discovery.clone();
         let event_bus = self.event_bus.clone();
@@ -856,6 +1076,7 @@ impl DataCoordinator {
     }
 
     /// Start event statistics task
+    #[allow(dead_code)]
     async fn start_event_statistics(&self) -> Result<impl std::future::Future<Output = Result<()>>> {
         let event_stats = self.event_stats.clone();
         let event_bus = self.event_bus.clone();
@@ -914,6 +1135,7 @@ impl DataCoordinator {
     }
 
     /// Get current memory usage (simplified)
+    #[allow(dead_code)]
     fn get_memory_usage() -> usize {
         // In a real implementation, this would use platform-specific APIs
         // For now, return a placeholder value
@@ -921,6 +1143,99 @@ impl DataCoordinator {
     }
 }
 
+
+/// Create embedding provider integration from environment variables
+fn create_embedding_provider_integration_from_env(
+) -> Result<crucible_surrealdb::embedding_pool::EmbeddingProviderIntegration> {
+    use crucible_surrealdb::embedding_pool::EmbeddingProviderIntegration;
+    use crucible_config::{EmbeddingProviderConfig, EmbeddingProviderType};
+
+    // Read embedding configuration from environment variables
+    let embedding_endpoint = std::env::var("EMBEDDING_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+    let embedding_model = std::env::var("EMBEDDING_MODEL")
+        .map_err(|_| anyhow::anyhow!(
+            "EMBEDDING_MODEL environment variable is required. \
+            Please set it to your embedding model name, e.g., 'nomic-embed-text-v1.5-q8_0'"
+        ))?;
+
+    // Create real embedding provider configuration
+    use std::collections::HashMap;
+    let provider_config = Some(EmbeddingProviderConfig {
+        provider_type: EmbeddingProviderType::Ollama,
+        api: crucible_config::ApiConfig {
+            key: None,
+            base_url: Some(embedding_endpoint.clone()),
+            timeout_seconds: Some(30),
+            retry_attempts: Some(3),
+            headers: HashMap::new(),
+        },
+        model: crucible_config::ModelConfig {
+            name: embedding_model.clone(),
+            dimensions: None,
+            max_tokens: Some(2048),
+        },
+        options: HashMap::new(),
+    });
+
+    let provider_integration = EmbeddingProviderIntegration {
+        use_mock: false, // Use real embeddings
+        config: provider_config,
+        mock_model: embedding_model.clone(),
+        mock_dimensions: 768,
+    };
+
+    info!("Created embedding provider integration: endpoint={}, model={}",
+          embedding_endpoint, embedding_model);
+
+    Ok(provider_integration)
+}
+
+/// Create embedding configuration from environment variables
+fn create_embedding_config_from_env(
+    daemon_config: &crate::config::DaemonConfig,
+) -> Result<crucible_surrealdb::embedding_config::EmbeddingConfig> {
+    use crucible_surrealdb::embedding_config::{EmbeddingConfig, EmbeddingModel, PrivacyMode};
+
+    // Read embedding configuration from environment variables
+    let embedding_endpoint = std::env::var("EMBEDDING_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+    let embedding_model = std::env::var("EMBEDDING_MODEL")
+        .map_err(|_| anyhow::anyhow!(
+            "EMBEDDING_MODEL environment variable is required. \
+            Please set it to your embedding model name, e.g., 'nomic-embed-text-v1.5-q8_0'"
+        ))?;
+
+    // Create embedding configuration based on environment
+    let (model_type, privacy_mode) = if embedding_endpoint.starts_with("http://localhost:11434") {
+        // Local Ollama instance - use standard local model
+        (EmbeddingModel::LocalStandard, PrivacyMode::StrictLocal)
+    } else if embedding_endpoint.starts_with("http") {
+        // Remote embedding service - allow external fallback
+        (EmbeddingModel::LocalStandard, PrivacyMode::AllowExternalFallback)
+    } else {
+        // Default to local standard
+        (EmbeddingModel::LocalStandard, PrivacyMode::StrictLocal)
+    };
+
+    let embedding_config = EmbeddingConfig {
+        worker_count: daemon_config.performance.workers.num_workers.unwrap_or(4),
+        batch_size: 16,
+        model_type,
+        privacy_mode,
+        max_queue_size: daemon_config.performance.workers.max_queue_size,
+        timeout_ms: 30000,
+        retry_attempts: 3,
+        retry_delay_ms: 500,
+        circuit_breaker_threshold: 10,
+        circuit_breaker_timeout_ms: 60000,
+    };
+
+    info!("Created embedding config: endpoint={}, model={}, workers={}",
+          embedding_endpoint, embedding_model, embedding_config.worker_count);
+
+    Ok(embedding_config)
+}
 
 #[cfg(test)]
 mod tests {

@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use crate::config::CliConfig;
 use std::path::PathBuf;
 
-pub async fn execute(config: CliConfig, script: String, args: Option<String>) -> Result<()> {
+pub async fn execute(_config: CliConfig, script: String, args: Option<String>) -> Result<()> {
     let script_path = PathBuf::from(&script);
 
     // Try to find the script in standard locations if it doesn't exist

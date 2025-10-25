@@ -604,6 +604,7 @@ impl ConfigManager {
     }
 
     /// Start file watcher for hot reload
+    #[allow(dead_code)]
     fn start_file_watcher(
         config_path: PathBuf,
         change_notifier: broadcast::Sender<ConfigChange>,

@@ -403,8 +403,7 @@ impl Default for RealVaultOperations {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
-
+    
     #[tokio::test]
     async fn test_real_vault_operations_creation() {
         let ops = RealVaultOperations::new();

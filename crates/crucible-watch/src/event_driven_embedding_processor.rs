@@ -7,22 +7,17 @@
 use crate::{
     embedding_events::{EmbeddingEvent, EmbeddingEventResult, EventDrivenEmbeddingConfig},
     error::{Error, Result},
-    events::{FileEvent, FileEventKind},
+    events::FileEvent,
     traits::EventHandler,
 };
-use async_trait::async_trait;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, error, info, warn};
 
 // Import embedding pool types
-use crucible_surrealdb::{
-    embedding_pool::EmbeddingThreadPool,
-    embedding_config::{ThreadPoolMetrics, RetryProcessingResult},
-};
+use crucible_surrealdb::embedding_pool::EmbeddingThreadPool;
 
 /// Event-driven embedding processor that connects file system events to embedding generation
 pub struct EventDrivenEmbeddingProcessor {
@@ -117,7 +112,7 @@ impl EventDrivenEmbeddingProcessor {
 
     /// Set the embedding event receiver channel
     pub async fn with_embedding_event_receiver(
-        mut self,
+        self,
         rx: mpsc::UnboundedReceiver<EmbeddingEvent>,
     ) -> Self {
         *self.embedding_rx.write().await = Some(rx);
@@ -157,17 +152,22 @@ impl EventDrivenEmbeddingProcessor {
                 // Process incoming events with timeout
                 match tokio::time::timeout(Duration::from_millis(10), rx.recv()).await {
                     Ok(Some(event)) => {
+                        let file_path = event.file_path.clone();
+                        info!("📥 Batch processor received embedding event for: {}",
+                              file_path.display());
                         if let Err(e) = Self::process_embedding_event(
                             &state,
                             &config,
                             &embedding_pool,
                             event,
                         ).await {
-                            error!("Error processing embedding event: {}", e);
+                            error!("Error processing embedding event for {}: {}", file_path.display(), e);
+                        } else {
+                            info!("✅ Successfully processed embedding event for: {}", file_path.display());
                         }
                     }
                     Ok(None) => {
-                        info!("Embedding event channel closed, shutting down processor");
+                        warn!("🔌 Embedding event channel closed, shutting down processor");
                         break;
                     }
                     Err(_) => {
@@ -195,7 +195,8 @@ impl EventDrivenEmbeddingProcessor {
         embedding_pool: &Arc<EmbeddingThreadPool>,
         event: EmbeddingEvent,
     ) -> Result<()> {
-        debug!("Processing embedding event for: {}", event.file_path.display());
+        info!("🔧 Processing embedding event for: {} (content length: {})",
+              event.file_path.display(), event.content.len());
 
         // Update metrics
         {
@@ -246,10 +247,12 @@ impl EventDrivenEmbeddingProcessor {
 
             state_guard.current_batch.push(batched_event);
 
-            debug!("Added event to batch (size: {})", state_guard.current_batch.len());
+            info!("📦 Added event to batch (size: {}) for: {}",
+                  state_guard.current_batch.len(), event.file_path.display());
 
             // Process batch if it's full
             if state_guard.current_batch.len() >= config.max_batch_size {
+                info!("🚀 Batch full, processing {} events", state_guard.current_batch.len());
                 let batch = std::mem::take(&mut state_guard.current_batch);
                 let batch_id = state_guard.current_batch_id.take();
                 state_guard.batch_deadline.take();
@@ -284,7 +287,7 @@ impl EventDrivenEmbeddingProcessor {
     /// Check if the current batch has timed out and process it if needed
     async fn check_batch_timeout(
         state: &Arc<RwLock<EventProcessorState>>,
-        config: &EventDrivenEmbeddingConfig,
+        _config: &EventDrivenEmbeddingConfig,
         embedding_pool: &Arc<EmbeddingThreadPool>,
     ) {
         let (batch, batch_id) = {
@@ -327,7 +330,10 @@ impl EventDrivenEmbeddingProcessor {
         batch: Vec<EmbeddingEvent>,
         batch_id: uuid::Uuid,
     ) -> Result<()> {
-        debug!("Processing batch {} with {} events", batch_id, batch.len());
+        info!("🔄 Processing batch {} with {} events", batch_id, batch.len());
+        for (i, event) in batch.iter().enumerate() {
+            info!("  Event {}: {} ({} chars)", i, event.file_path.display(), event.content.len());
+        }
 
         let start_time = Instant::now();
         let mut successful = 0;
@@ -412,31 +418,34 @@ impl EventDrivenEmbeddingProcessor {
 
     /// Process a single embedding event
     async fn process_single_event(
-        state: &Arc<RwLock<EventProcessorState>>,
+        _state: &Arc<RwLock<EventProcessorState>>,
         embedding_pool: &Arc<EmbeddingThreadPool>,
         event: EmbeddingEvent,
     ) -> Result<()> {
-        debug!("Processing single event for: {}", event.file_path.display());
+        info!("⚡ Processing single event for: {} (doc_id: {})",
+              event.file_path.display(), event.document_id);
 
         let start_time = Instant::now();
 
+        info!("🔄 Sending document to embedding pool: {}", event.file_path.display());
         // Process with embedding pool
         let retry_result = embedding_pool.process_document_with_retry(
             &event.document_id,
             &event.content,
         ).await.map_err(|e| {
+            error!("❌ Embedding pool failed for {}: {}", event.file_path.display(), e);
             Error::Embedding(format!("Failed to process document: {}", e))
         })?;
 
         let elapsed = start_time.elapsed();
 
         if retry_result.succeeded {
-            debug!("Successfully processed event for: {} (attempt: {}, time: {:?})",
+            info!("✅ Successfully processed event for: {} (attempt: {}, time: {:?})",
                    event.file_path.display(), retry_result.attempt_count, elapsed);
         } else {
-            warn!("Failed to process event for: {} after {} attempts in {:?}: {}",
-                  event.file_path.display(), retry_result.attempt_count, elapsed,
-                  retry_result.final_error.map(|e| e.error_message).unwrap_or_default());
+            error!("❌ Failed to process event for: {} after {} attempts in {:?}: {}",
+                   event.file_path.display(), retry_result.attempt_count, elapsed,
+                   retry_result.final_error.map(|e| e.error_message).unwrap_or_default());
         }
 
         Ok(())
@@ -445,7 +454,7 @@ impl EventDrivenEmbeddingProcessor {
     /// Process any remaining batch before shutdown
     async fn process_remaining_batch(
         state: &Arc<RwLock<EventProcessorState>>,
-        config: &EventDrivenEmbeddingConfig,
+        _config: &EventDrivenEmbeddingConfig,
         embedding_pool: &Arc<EmbeddingThreadPool>,
     ) -> Result<()> {
         let (batch, batch_id) = {
@@ -638,25 +647,33 @@ impl EmbeddingEventHandler {
 #[async_trait::async_trait]
 impl EventHandler for EmbeddingEventHandler {
     async fn handle(&self, event: FileEvent) -> Result<()> {
-        debug!("EmbeddingEventHandler processing event: {:?}", event.kind);
+        info!("🔥 EmbeddingEventHandler received event: {:?} for file: {}",
+              event.kind, event.path.display());
 
         if !self.enable_real_time {
-            debug!("Real-time processing disabled, skipping event");
+            warn!("Real-time processing disabled, skipping event for: {}", event.path.display());
             return Ok(());
         }
 
+        info!("Converting file event to embedding event for: {}", event.path.display());
         // Convert file event to embedding event
-        let embedding_event = match self.convert_file_event_to_embedding_event(event).await {
-            Ok(embedding_event) => embedding_event,
+        let embedding_event = match self.convert_file_event_to_embedding_event(event.clone()).await {
+            Ok(embedding_event) => {
+                info!("Successfully created embedding event for: {}", event.path.display());
+                embedding_event
+            },
             Err(e) => {
-                warn!("Failed to convert file event to embedding event: {}", e);
+                error!("Failed to convert file event to embedding event for {}: {}",
+                       event.path.display(), e);
                 return Err(e);
             }
         };
 
         // Send embedding event through the channel for batch processing
+        info!("Sending embedding event to batch processor for: {}", event.path.display());
         match self.embedding_event_tx.send(embedding_event) {
             Ok(_) => {
+                info!("Successfully queued embedding event for: {}", event.path.display());
                 debug!("Successfully sent embedding event for batch processing");
             }
             Err(e) => {

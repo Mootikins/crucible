@@ -173,6 +173,7 @@ impl FileService for SimpleFileService {
 
 /// Simple database service implementation
 pub struct SimpleDatabaseService {
+    #[allow(dead_code)]
     connection_string: String,
 }
 

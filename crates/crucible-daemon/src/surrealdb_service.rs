@@ -17,6 +17,7 @@ pub struct SurrealDBService {
     /// The underlying SurrealDB client
     client: Arc<RwLock<SurrealClient>>,
     /// Database configuration
+    #[allow(dead_code)]
     config: SurrealDbConfig,
     /// Connection status
     is_connected: Arc<RwLock<bool>>,
@@ -79,7 +80,7 @@ impl SurrealDBService {
     ) -> Result<String> {
         debug!("Storing embedding for document: {}", document_path);
 
-        let client = self.client.read().await;
+        let _client = self.client.read().await;
 
         // Create a record with embedding
         let record_id = format!("notes:{}", uuid::Uuid::new_v4());
@@ -223,7 +224,7 @@ impl DatabaseService for SurrealDBService {
             // In a real implementation, this would attempt reconnection
         }
 
-        let client = self.client.read().await;
+        let _client = self.client.read().await;
 
         // For now, execute the query using the mock client
         // In a real implementation, this would send the query to SurrealDB

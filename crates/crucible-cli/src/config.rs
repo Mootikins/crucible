@@ -53,8 +53,7 @@ pub struct VaultConfig {
     pub embedding_url: String,
 
     /// Embedding model name
-    #[serde(default = "default_embedding_model")]
-    pub embedding_model: String,
+    pub embedding_model: Option<String>,
 }
 
 /// Network configuration
@@ -249,7 +248,7 @@ impl Default for CliConfig {
             vault: VaultConfig {
                 path: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
                 embedding_url: default_embedding_url(),
-                embedding_model: default_embedding_model(),
+                embedding_model: None,
             },
             llm: LlmConfig::default(),
             network: NetworkConfig::default(),
@@ -390,30 +389,27 @@ fn default_embedding_url() -> String {
     "http://localhost:11434".to_string()
 }
 
-fn default_embedding_model() -> String {
-    "nomic-embed-text".to_string()
-}
 
 impl CliConfig {
-    /// Load configuration with precedence: defaults < file < env < args
+    /// Load configuration with precedence: defaults < file < env
     pub fn load(
         config_file: Option<PathBuf>,
-        vault_path: Option<String>,
         embedding_url: Option<String>,
         embedding_model: Option<String>,
     ) -> Result<Self> {
         // Start with defaults from config file (if exists)
         let mut config = Self::from_file_or_default(config_file)?;
 
-        // Override with env vars
+        // Override with env vars (optional for testing/on-the-fly)
         if let Ok(path) = std::env::var("OBSIDIAN_VAULT_PATH") {
             config.vault.path = PathBuf::from(path);
         }
+
         if let Ok(url) = std::env::var("EMBEDDING_ENDPOINT") {
             config.vault.embedding_url = url;
         }
         if let Ok(model) = std::env::var("EMBEDDING_MODEL") {
-            config.vault.embedding_model = model;
+            config.vault.embedding_model = Some(model);
         }
 
         // LLM environment variables
@@ -446,15 +442,12 @@ impl CliConfig {
             config.network.timeout_secs = timeout.parse().ok();
         }
 
-        // Override with CLI args (highest priority)
-        if let Some(path) = vault_path {
-            config.vault.path = PathBuf::from(path);
-        }
+        // Override with CLI args (highest priority) - but only for non-vault-path options
         if let Some(url) = embedding_url {
             config.vault.embedding_url = url;
         }
         if let Some(model) = embedding_model {
-            config.vault.embedding_model = model;
+            config.vault.embedding_model = Some(model);
         }
 
         Ok(config)
@@ -510,10 +503,9 @@ path = "/home/user/Documents/my-vault"
 # For remote Ollama: https://your-server.com
 embedding_url = "http://localhost:11434"
 
-# Embedding model name
-# Default: nomic-embed-text
-# Other options: nomic-embed-text-v1.5, all-minilm-l6-v2, etc.
-embedding_model = "nomic-embed-text"
+# Embedding model name (required)
+# Options: nomic-embed-text-v1.5-q8_0, nomic-embed-text-v2-moe-q4_k_m, all-minilm-l6-v2, etc.
+# embedding_model = "nomic-embed-text-v1.5-q8_0"
 
 [network]
 # Request timeout in seconds
@@ -713,13 +705,22 @@ max_performance_degradation = 20.0
 
     /// Convert to EmbeddingConfig for use with create_provider
     pub fn to_embedding_config(&self) -> Result<EmbeddingConfig> {
+        // Validate that embedding model is configured
+        let model = self.vault.embedding_model.as_ref()
+            .ok_or_else(|| anyhow::anyhow!(
+                "Embedding model is not configured. Please set it via:\n\
+                - Environment variable: EMBEDDING_MODEL\n\
+                - CLI argument: --embedding-model <model>\n\
+                - Config file: embedding_model = \"<model>\""
+            ))?;
+
         // For now, we default to Ollama provider
         // In the future, we could add provider selection to the config
         Ok(EmbeddingConfig {
             provider: ProviderType::Ollama,
             endpoint: self.vault.embedding_url.clone(),
             api_key: None, // Not needed for Ollama
-            model: self.vault.embedding_model.clone(),
+            model: model.clone(),
             timeout_secs: self.network.timeout_secs.unwrap_or(30),
             max_retries: self.network.max_retries.unwrap_or(3),
             batch_size: 1,
@@ -801,7 +802,7 @@ mod tests {
         // Enable test mode to skip loading user config
         std::env::set_var("CRUCIBLE_TEST_MODE", "1");
 
-        let config = CliConfig::load(None, None, None, None).unwrap();
+        let config = CliConfig::load(None, None, None).unwrap();
 
         // Should have default LLM settings
         assert_eq!(config.chat_model(), "llama3.2");
@@ -811,8 +812,8 @@ mod tests {
         // Should have default embedding URL
         assert_eq!(config.vault.embedding_url, "http://localhost:11434");
 
-        // Should have default model
-        assert_eq!(config.vault.embedding_model, "nomic-embed-text");
+        // Should have no default model (None)
+        assert_eq!(config.vault.embedding_model, None);
 
         // Should have default Ollama endpoint
         assert_eq!(config.ollama_endpoint(), "https://llama.terminal.krohnos.io");
@@ -838,25 +839,24 @@ mod tests {
     }
 
     #[test]
-    fn test_load_config_with_explicit_vault() {
-        let temp = TempDir::new().unwrap();
-        let vault_path = temp.path().join("vault");
+    fn test_load_config_without_obsidian_vault_path() {
+        // Clear environment variable to test default behavior
+        std::env::remove_var("OBSIDIAN_VAULT_PATH");
 
-        let config = CliConfig::load(
-            None,
-            Some(vault_path.to_str().unwrap().to_string()),
-            None,
-            None,
-        )
-        .unwrap();
+        let result = CliConfig::load(None, None, None);
+        assert!(result.is_ok());
+        let config = result.unwrap();
 
-        assert_eq!(config.vault.path, vault_path);
+        // Should use current directory as default when no env var is set
+        assert!(config.vault.path.is_absolute() || config.vault.path.as_path() == Path::new("."));
     }
 
     #[test]
     fn test_load_config_with_explicit_url() {
+        // Set the required environment variable
+        std::env::set_var("OBSIDIAN_VAULT_PATH", "/tmp/test");
+
         let config = CliConfig::load(
-            None,
             None,
             Some("https://example.com".to_string()),
             None,
@@ -864,6 +864,9 @@ mod tests {
         .unwrap();
 
         assert_eq!(config.vault.embedding_url, "https://example.com");
+
+        // Clean up
+        std::env::remove_var("OBSIDIAN_VAULT_PATH");
     }
 
     #[test]
@@ -871,16 +874,16 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let vault_path = temp.path().join("vault");
 
-        let config = CliConfig::load(
-            None,
-            Some(vault_path.to_str().unwrap().to_string()),
-            None,
-            None,
-        )
-        .unwrap();
+        // Set the required environment variable
+        std::env::set_var("OBSIDIAN_VAULT_PATH", vault_path.to_str().unwrap());
+
+        let config = CliConfig::load(None, None, None).unwrap();
 
         let expected_db = vault_path.join(".crucible/embeddings.db");
         assert_eq!(config.database_path(), expected_db);
+
+        // Clean up
+        std::env::remove_var("OBSIDIAN_VAULT_PATH");
     }
 
     #[test]
@@ -888,16 +891,16 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let vault_path = temp.path().join("vault");
 
-        let config = CliConfig::load(
-            None,
-            Some(vault_path.to_str().unwrap().to_string()),
-            None,
-            None,
-        )
-        .unwrap();
+        // Set the required environment variable
+        std::env::set_var("OBSIDIAN_VAULT_PATH", vault_path.to_str().unwrap());
+
+        let config = CliConfig::load(None, None, None).unwrap();
 
         let expected_tools = vault_path.join("tools");
         assert_eq!(config.tools_path(), expected_tools);
+
+        // Clean up
+        std::env::remove_var("OBSIDIAN_VAULT_PATH");
     }
 
     #[test]
@@ -915,20 +918,32 @@ mod tests {
 
     #[test]
     fn test_display_as_toml() {
-        let config = CliConfig::load(None, None, None, None).unwrap();
+        // Set the required environment variable
+        std::env::set_var("OBSIDIAN_VAULT_PATH", "/tmp/test");
+
+        let config = CliConfig::load(None, None, None).unwrap();
         let toml_str = config.display_as_toml().unwrap();
         assert!(toml_str.contains("[vault]"));
         assert!(toml_str.contains("path"));
         assert!(toml_str.contains("embedding_url"));
+
+        // Clean up
+        std::env::remove_var("OBSIDIAN_VAULT_PATH");
     }
 
     #[test]
     fn test_display_as_json() {
-        let config = CliConfig::load(None, None, None, None).unwrap();
+        // Set the required environment variable
+        std::env::set_var("OBSIDIAN_VAULT_PATH", "/tmp/test");
+
+        let config = CliConfig::load(None, None, None).unwrap();
         let json_str = config.display_as_json().unwrap();
         assert!(json_str.contains("\"vault\""));
         assert!(json_str.contains("\"path\""));
         assert!(json_str.contains("\"embedding_url\""));
+
+        // Clean up
+        std::env::remove_var("OBSIDIAN_VAULT_PATH");
     }
 
     #[test]
@@ -979,7 +994,7 @@ timeout_secs = 60
 
         std::fs::write(&config_path, config_content).unwrap();
 
-        let config = CliConfig::load(Some(config_path), None, None, None).unwrap();
+        let config = CliConfig::load(Some(config_path), None, None).unwrap();
 
         assert_eq!(config.chat_model(), "custom-model");
         assert_eq!(config.temperature(), 0.5);
@@ -1001,6 +1016,7 @@ timeout_secs = 60
     #[test]
     fn test_environment_variable_override() {
         // Store original environment variables
+        let original_vault_path = std::env::var("OBSIDIAN_VAULT_PATH");
         let original_chat_model = std::env::var("CRUCIBLE_CHAT_MODEL");
         let original_temperature = std::env::var("CRUCIBLE_TEMPERATURE");
         let original_ollama_endpoint = std::env::var("OLLAMA_ENDPOINT");
@@ -1009,22 +1025,28 @@ timeout_secs = 60
         std::env::set_var("CRUCIBLE_TEST_MODE", "1");
 
         // Set environment variables
+        std::env::set_var("OBSIDIAN_VAULT_PATH", "/tmp/env-test");
         std::env::set_var("CRUCIBLE_CHAT_MODEL", "env-model");
         std::env::set_var("CRUCIBLE_TEMPERATURE", "0.9");
         std::env::set_var("OLLAMA_ENDPOINT", "https://env-ollama.example.com");
 
-        let config = CliConfig::load(None, None, None, None).unwrap();
+        let config = CliConfig::load(None, None, None).unwrap();
 
+        assert_eq!(config.vault.path, std::path::PathBuf::from("/tmp/env-test"));
         assert_eq!(config.chat_model(), "env-model");
         assert_eq!(config.temperature(), 0.9);
         assert_eq!(config.ollama_endpoint(), "https://env-ollama.example.com");
 
         // Restore original environment variables
         std::env::remove_var("CRUCIBLE_TEST_MODE");
+        std::env::remove_var("OBSIDIAN_VAULT_PATH");
         std::env::remove_var("CRUCIBLE_CHAT_MODEL");
         std::env::remove_var("CRUCIBLE_TEMPERATURE");
         std::env::remove_var("OLLAMA_ENDPOINT");
 
+        if let Ok(val) = original_vault_path {
+            std::env::set_var("OBSIDIAN_VAULT_PATH", val);
+        }
         if let Ok(val) = original_chat_model {
             std::env::set_var("CRUCIBLE_CHAT_MODEL", val);
         }
@@ -1038,15 +1060,18 @@ timeout_secs = 60
 
     #[test]
     fn test_api_key_from_environment() {
+        // Set required environment variable
+        std::env::set_var("OBSIDIAN_VAULT_PATH", "/tmp/test");
         std::env::set_var("OPENAI_API_KEY", "sk-test-openai");
         std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-test-anthropic");
 
-        let config = CliConfig::load(None, None, None, None).unwrap();
+        let config = CliConfig::load(None, None, None).unwrap();
 
         assert_eq!(config.openai_api_key(), Some("sk-test-openai".to_string()));
         assert_eq!(config.anthropic_api_key(), Some("sk-ant-test-anthropic".to_string()));
 
         // Clean up
+        std::env::remove_var("OBSIDIAN_VAULT_PATH");
         std::env::remove_var("OPENAI_API_KEY");
         std::env::remove_var("ANTHROPIC_API_KEY");
     }

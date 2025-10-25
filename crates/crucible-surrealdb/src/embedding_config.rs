@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 
 /// Configuration for embedding thread pool operations
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

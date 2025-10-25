@@ -1,17 +1,13 @@
 pub mod agent;
 pub mod canvas;
 pub mod config;
-pub mod controller;
 pub mod crdt;
 pub mod crucible_core;
 pub mod database;
 pub mod document;
-pub mod orchestrator_simple;
 pub mod properties;
 pub mod parser;
-pub mod router_simple;
 pub mod sink;
-pub mod state;
 // pub mod task_router; // Temporarily disabled due to compilation issues
 
 pub use agent::{AgentDefinition, AgentLoader, AgentMatch, AgentQuery, AgentRegistry, CapabilityMatcher};
@@ -19,10 +15,6 @@ pub use canvas::{CanvasEdge, CanvasNode};
 pub use config::{
     ConfigManager, CrucibleConfig, ServiceConfig, DatabaseConfig, NetworkConfig,
     LoggingConfig, FeatureConfig, PerformanceConfig, ConfigChange,
-};
-pub use controller::{
-    MasterController, ControllerState, ControllerStatus, ControllerMetrics,
-    HealthStatus, ControllerEvent, ControllerBuilder,
 };
 pub use crucible_core::CrucibleCore;
 pub use database::{
@@ -44,21 +36,15 @@ pub use database::{
     SearchIndexOptions, AggregationStage, GroupOperation,
 };
 pub use document::{DocumentNode, ViewportState};
-pub use orchestrator_simple::{SimpleServiceOrchestrator, ServiceInstance, ServiceEvent, OrchestrationMetrics, SimpleServiceRegistrationBuilder};
 pub use properties::{PropertyMap, PropertyValue};
 pub use parser::{
     ParsedDocument, Frontmatter, FrontmatterFormat, Wikilink, Tag,
     DocumentContent, Heading, CodeBlock, MarkdownParser, ParserCapabilities,
     ParserError, ParserResult,
 };
-pub use router_simple::{SimpleRequestRouter, RouterMetrics, RouterEvent};
 pub use sink::{
     OutputSink, SinkHealth, SinkError, SinkResult,
     CircuitBreaker, CircuitState, CircuitBreakerConfig,
-};
-pub use state::{
-    StateManager, ApplicationState, StateMetadata, UserPreferences,
-    StateEvent, StateCommand, CacheEntry, CacheStats,
 };
 // pub use task_router::{
 //     TaskRouter, TaskAnalyzer, IntelligentRouter, TaskQueueManager, ExecutionEngine,

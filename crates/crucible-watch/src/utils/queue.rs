@@ -25,12 +25,15 @@ pub struct EventQueue {
 #[derive(Debug, Clone)]
 pub enum BackpressureStrategy {
     /// Drop new events
+    #[allow(dead_code)]
     DropNew,
     /// Drop oldest events
     DropOldest,
     /// Block until space is available
+    #[allow(dead_code)]
     Block,
     /// Drop events with lowest priority
+    #[allow(dead_code)]
     DropLowPriority,
 }
 
@@ -48,6 +51,7 @@ impl EventQueue {
     }
 
     /// Set the backpressure strategy.
+    #[allow(dead_code)]
     pub fn with_backpressure_strategy(mut self, strategy: BackpressureStrategy) -> Self {
         self.backpressure_strategy = strategy;
         self
@@ -143,6 +147,7 @@ impl EventQueue {
     }
 
     /// Pop an event from the front of the queue.
+    #[allow(dead_code)]
     pub fn pop(&mut self) -> Option<FileEvent> {
         if let Some(event) = self.queue.pop_front() {
             self.size.fetch_sub(1, Ordering::Relaxed);
@@ -168,16 +173,19 @@ impl EventQueue {
     }
 
     /// Check if the queue is empty.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Check if the queue is full.
+    #[allow(dead_code)]
     pub fn is_full(&self) -> bool {
         self.len() >= self.capacity
     }
 
     /// Get the queue capacity.
+    #[allow(dead_code)]
     pub fn capacity(&self) -> usize {
         self.capacity
     }
@@ -203,12 +211,14 @@ impl EventQueue {
     }
 
     /// Reset statistics.
+    #[allow(dead_code)]
     pub fn reset_stats(&mut self) {
         self.processed_events.store(0, Ordering::Relaxed);
         self.dropped_events.store(0, Ordering::Relaxed);
     }
 
     /// Resize the queue capacity.
+    #[allow(dead_code)]
     pub fn resize(&mut self, new_capacity: usize) {
         if new_capacity < self.len() {
             // Need to drop some events

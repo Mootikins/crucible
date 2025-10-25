@@ -12,7 +12,7 @@ use super::unified_registry::UnifiedToolRegistry;
 use super::tool_group::ToolGroupCacheConfig;
 
 /// Quick performance test for REPL use
-pub async fn quick_performance_test(tool_dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn quick_performance_test(_tool_dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     info!("Running quick performance test...");
 
     let config = BenchmarkConfig {
@@ -34,7 +34,7 @@ pub async fn quick_performance_test(tool_dir: PathBuf) -> Result<(), Box<dyn std
 }
 
 /// Compare different caching strategies
-pub async fn compare_caching_strategies(tool_dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn compare_caching_strategies(_tool_dir: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     info!("Comparing caching strategies...");
 
     let config = BenchmarkConfig {

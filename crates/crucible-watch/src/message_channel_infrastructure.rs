@@ -6,8 +6,7 @@
 
 use crate::{
     embedding_events::{EmbeddingEvent, EmbeddingEventResult, EventDrivenEmbeddingConfig},
-    error::{Error, Result},
-    events::FileEventKind,
+    error::Result,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -271,7 +270,7 @@ impl MessageChannelInfrastructure {
     /// Check and process batch timeout
     async fn check_and_process_batch_timeout(
         state: &Arc<RwLock<ChannelState>>,
-        config: &EventDrivenEmbeddingConfig,
+        _config: &EventDrivenEmbeddingConfig,
         embedding_result_tx: &mut mpsc::UnboundedSender<EmbeddingEventResult>,
     ) {
         let should_process = {
@@ -326,10 +325,10 @@ impl MessageChannelInfrastructure {
     /// Process remaining batch before shutdown
     async fn process_remaining_batch(
         state: &Arc<RwLock<ChannelState>>,
-        config: &EventDrivenEmbeddingConfig,
+        _config: &EventDrivenEmbeddingConfig,
         embedding_result_tx: &mut mpsc::UnboundedSender<EmbeddingEventResult>,
     ) -> Result<()> {
-        let (batch, batch_id) = {
+        let (batch, _batch_id) = {
             let mut state = state.write().await;
             let batch = std::mem::take(&mut state.current_batch);
             let batch_id = state.current_batch_id.take();
@@ -507,7 +506,7 @@ mod tests {
     #[tokio::test]
     async fn test_channel_infrastructure_creation() -> Result<()> {
         let config = EventDrivenEmbeddingConfig::default();
-        let infrastructure = MessageChannelInfrastructure::new(config)?;
+        let mut infrastructure = MessageChannelInfrastructure::new(config)?;
 
         assert!(!infrastructure.is_shutdown().await);
 
@@ -522,7 +521,7 @@ mod tests {
     #[tokio::test]
     async fn test_embedding_event_sending() -> Result<()> {
         let config = EventDrivenEmbeddingConfig::default();
-        let infrastructure = MessageChannelInfrastructure::new(config)?;
+        let mut infrastructure = MessageChannelInfrastructure::new(config)?;
 
         // Test sending an event
         let temp_dir = TempDir::new()?;
@@ -568,7 +567,7 @@ mod tests {
             let content = format!("# Test Document {}\nThis is test {}.", i, i);
 
             let event = EmbeddingEvent::new(
-                file_path,
+                file_path.clone(),
                 FileEventKind::Modified,
                 content,
                 crate::embedding_events::create_embedding_metadata(
@@ -600,7 +599,7 @@ mod tests {
             ..Default::default()
         };
 
-        let infrastructure = MessageChannelInfrastructure::new(config)?;
+        let mut infrastructure = MessageChannelInfrastructure::new(config)?;
 
         let temp_dir = TempDir::new()?;
         let file_path = temp_dir.path().join("test.md");
@@ -633,17 +632,17 @@ mod tests {
     #[tokio::test]
     async fn test_optimization_presets() -> Result<()> {
         // Test throughput optimization
-        let throughput_infra = MessageChannelInfrastructure::optimize_for_throughput()?;
+        let mut throughput_infra = MessageChannelInfrastructure::optimize_for_throughput()?;
         let throughput_metrics = throughput_infra.get_metrics().await;
         assert_eq!(throughput_metrics.total_events_received, 0);
 
         // Test latency optimization
-        let latency_infra = MessageChannelInfrastructure::optimize_for_latency()?;
+        let mut latency_infra = MessageChannelInfrastructure::optimize_for_latency()?;
         let latency_metrics = latency_infra.get_metrics().await;
         assert_eq!(latency_metrics.total_events_received, 0);
 
         // Test resource optimization
-        let resource_infra = MessageChannelInfrastructure::optimize_for_resources()?;
+        let mut resource_infra = MessageChannelInfrastructure::optimize_for_resources()?;
         let resource_metrics = resource_infra.get_metrics().await;
         assert_eq!(resource_metrics.total_events_received, 0);
 

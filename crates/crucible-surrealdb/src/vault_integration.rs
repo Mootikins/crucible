@@ -566,7 +566,7 @@ pub async fn get_embed_metadata(client: &SurrealClient, doc_id: &str) -> Result<
             .unwrap_or("Unknown")
             .to_string();
 
-        let embed_type = record.data.get("embed_type")
+        let _embed_type = record.data.get("embed_type")
             .and_then(|t| t.as_str())
             .unwrap_or("simple")
             .to_string();
@@ -803,7 +803,7 @@ pub async fn get_embed_with_metadata(client: &SurrealClient, doc_id: &str, targe
         .map_err(|e| anyhow::anyhow!("Failed to query embed with metadata: {}", e))?;
 
     if let Some(record) = result.records.first() {
-        let embed_type = record.data.get("embed_type")
+        let _embed_type = record.data.get("embed_type")
             .and_then(|t| t.as_str())
             .unwrap_or("simple")
             .to_string();
@@ -1164,7 +1164,7 @@ pub async fn get_all_document_embeddings(client: &SurrealClient) -> Result<Vec<D
 
 /// Generate mock query embedding for testing
 fn generate_mock_query_embedding(query: &str) -> Result<Vec<f32>> {
-    let dimensions = 768; // Standard embedding dimension
+    let _dimensions = 768; // Standard embedding dimension
 
     // Use patterns that match test expectations for common queries
     let pattern = if query.to_lowercase().contains("machine learning") {
@@ -1317,6 +1317,7 @@ fn format_json_value(value: &serde_json::Value) -> String {
 }
 
 /// Calculate mock similarity score for testing
+#[allow(dead_code)]
 fn calculate_mock_similarity(query: &str, content: &str) -> f64 {
     let query_lower = query.to_lowercase();
     let content_lower = content.to_lowercase();
@@ -1345,8 +1346,9 @@ fn calculate_mock_similarity(query: &str, content: &str) -> f64 {
 }
 
 /// Generate mock semantic search results for testing
-fn generate_mock_semantic_results(query: &str, limit: usize) -> Vec<(String, f64)> {
-    let query_lower = query.to_lowercase();
+#[allow(dead_code)]
+fn generate_mock_semantic_results(query: &str, _limit: usize) -> Vec<(String, f64)> {
+    let _query_lower = query.to_lowercase();
     let mut results = Vec::new();
 
     // Mock documents that should be returned based on query content

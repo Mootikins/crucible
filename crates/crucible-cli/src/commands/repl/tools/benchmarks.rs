@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use tracing::{info, debug};
 
 use super::tool_group::{
-    ToolGroup, ToolGroupCacheConfig,
+    ToolGroupCacheConfig,
 };
 use super::unified_registry::UnifiedToolRegistry;
 

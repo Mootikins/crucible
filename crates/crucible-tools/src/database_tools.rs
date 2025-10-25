@@ -287,7 +287,7 @@ pub fn sync_metadata() -> ToolFunction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{ToolResult, ToolError};
+    use crate::types::ToolError;
 
     #[tokio::test]
     async fn test_semantic_search_function() {

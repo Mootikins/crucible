@@ -5,15 +5,14 @@
 //! with robust error handling and configuration management.
 
 use std::path::{Path, PathBuf};
-use std::collections::HashMap;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Deserialize};
 use tokio::fs;
 use walkdir::{WalkDir, DirEntry};
 use sha2::{Sha256, Digest};
-use tracing::{debug, info, warn, error};
+use tracing::{debug, warn};
 use num_cpus;
 
 use crate::SurrealClient;
@@ -697,7 +696,7 @@ impl VaultScanner {
 
         // Process embeddings if enabled
         if self.config.enable_embeddings {
-            if let Some(embedding_pool) = &self.embedding_pool {
+            if let Some(_embedding_pool) = &self.embedding_pool {
                 // For now, just log that embedding processing would happen
                 debug!("Would process embeddings for document: {}", doc_id);
             }

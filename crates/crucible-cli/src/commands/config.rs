@@ -53,7 +53,7 @@ async fn init(path: Option<PathBuf>, force: bool) -> Result<()> {
 /// Show the current effective configuration
 async fn show(format: String) -> Result<()> {
     // Load the current config (with all precedence applied)
-    let config = CliConfig::load(None, None, None, None)?;
+    let config = CliConfig::load(None, None, None)?;
 
     match format.as_str() {
         "json" => {

@@ -9,6 +9,7 @@ use sha2::{Sha256, Digest};
 
 /// Change detector for vault files using SHA256 hashing
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ChangeDetector {
     /// Whether to cache hashes for performance
     cache_enabled: bool,

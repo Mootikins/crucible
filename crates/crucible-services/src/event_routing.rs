@@ -288,7 +288,7 @@ impl EventRouter {
     }
 
     /// Route an event through the system
-    pub async fn route_event(&self, mut event: Event) -> ServiceResult<RoutingResult> {
+    pub async fn route_event(&self, event: Event) -> ServiceResult<RoutingResult> {
         let start_time = Instant::now();
         let event_id = event.id.clone();
 

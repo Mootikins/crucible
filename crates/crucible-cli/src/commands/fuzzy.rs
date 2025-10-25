@@ -11,7 +11,7 @@ use crate::config::CliConfig;
 use crate::interactive::SearchResultWithScore;
 
 pub async fn execute(
-    config: CliConfig,
+    _config: CliConfig,
     query: String,
     search_content: bool,
     search_tags: bool,
