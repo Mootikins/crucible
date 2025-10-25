@@ -15,12 +15,15 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true, features = ["fs"] }
+tempfile = { workspace = true, optional = true }
 
 [features]
 default = ["yaml"]
 yaml = ["serde_yaml"]
 toml = ["dep:toml"]
+test-utils = ["tempfile"]
 
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+futures = "0.3"

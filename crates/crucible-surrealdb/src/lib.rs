@@ -36,6 +36,7 @@ pub mod types;
 pub mod vault_integration;
 pub mod vault_scanner;
 pub mod vault_processor;
+pub mod vault_pipeline_connector;
 
 // Embedding modules
 pub mod embedding_config;
@@ -67,5 +68,12 @@ pub use vault_scanner::{
 pub use vault_processor::{
     scan_vault_directory, process_vault_files, process_vault_files_with_error_handling,
     process_incremental_changes, process_document_embeddings
+};
+
+// Vault pipeline connector exports
+pub use vault_pipeline_connector::{
+    VaultPipelineConnector, VaultPipelineConfig, DocumentProcessingResult,
+    BatchProcessingResult, generate_document_id_from_path,
+    transform_parsed_document_to_embedding_inputs, get_parsed_documents_from_scan
 };
 

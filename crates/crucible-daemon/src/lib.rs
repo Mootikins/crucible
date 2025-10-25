@@ -8,6 +8,7 @@ pub mod events;
 pub mod config;
 pub mod services;
 pub mod handlers;
+pub mod surrealdb_service;
 
 // Re-export main types
 pub use coordinator::DataCoordinator;

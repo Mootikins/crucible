@@ -1,12 +1,12 @@
 //! Event handlers for integrating with existing Crucible systems.
 
 // TODO: Re-enable when crucible_mcp is available
-// mod indexing;
+mod indexing;
 mod rune_reload;
 mod obsidian_sync;
 pub mod composite;
 
-// pub use indexing::*;
+pub use indexing::*;
 pub use rune_reload::*;
 pub use obsidian_sync::*;
 pub use composite::*;

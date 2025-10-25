@@ -8,8 +8,7 @@ use anyhow::Result;
 use crucible_tools::execute_tool;
 use serde_json::json;
 use crate::config::CliConfig;
-use crate::interactive::{FuzzyPicker, SearchResultWithScore};
-use crate::output;
+use crate::interactive::SearchResultWithScore;
 
 pub async fn execute(
     config: CliConfig,

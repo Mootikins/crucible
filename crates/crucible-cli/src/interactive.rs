@@ -1,5 +1,5 @@
 use anyhow::Result;
-use crucible_core::database::{SearchResult, DocumentId};
+use crucible_core::database::SearchResult;
 use nucleo_matcher::{pattern::{Pattern, CaseMatching}, Matcher, Config};
 use std::io::{self, Write};
 
