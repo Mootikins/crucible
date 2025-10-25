@@ -11,7 +11,7 @@
 use anyhow::Result;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
-use super::test_utilities::*;
+use crate::tests::test_utilities::*;
 use crucible_cli::config::CliConfig;
 use crucible_cli::cli::MigrationCommands;
 use crucible_cli::commands::migration::execute;

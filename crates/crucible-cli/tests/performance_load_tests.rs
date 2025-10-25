@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use std::thread;
 use tokio::time::{sleep, timeout};
 use futures::future::join_all;
-use super::test_utilities::*;
+use crate::tests::test_utilities::*;
 use crucible_cli::config::CliConfig;
 use crucible_cli::cli::{ServiceCommands, MigrationCommands};
 use crucible_cli::commands::service::execute as service_execute;
