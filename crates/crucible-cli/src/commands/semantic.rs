@@ -50,7 +50,7 @@ pub async fn execute(
         }
         Err(e) => {
             pb.finish_with_message("Database connection failed");
-            return Err(anyhow::anyhow!("Failed to connect to database: {}. Make sure embeddings have been generated for your vault.", e));
+            return Err(anyhow::anyhow!("Failed to connect to database: {}. Make sure embeddings have been generated for your kiln.", e));
         }
     };
 
@@ -67,7 +67,7 @@ pub async fn execute(
         );
 
         println!("❌ No embeddings found in database");
-        println!("🚀 Starting vault processing to generate embeddings...\n");
+        println!("🚀 Starting kiln processing to generate embeddings...\n");
 
         // Spawn daemon for processing
         match daemon_manager.spawn_daemon_for_processing(&config.vault.path).await {
@@ -91,7 +91,7 @@ pub async fn execute(
             }
             Err(e) => {
                 return Err(anyhow::anyhow!(
-                    "Failed to process vault: {}. \
+                    "Failed to process kiln: {}. \
                     Please check that OBSIDIAN_VAULT_PATH is set correctly and try again.",
                     e
                 ));
@@ -109,7 +109,7 @@ pub async fn execute(
         }
         Err(e) => {
             pb.finish_with_message("Search failed");
-            return Err(anyhow::anyhow!("Semantic search failed: {}. Make sure embeddings exist for your vault documents.", e));
+            return Err(anyhow::anyhow!("Semantic search failed: {}. Make sure embeddings exist for your kiln documents.", e));
         }
     };
 
@@ -121,12 +121,12 @@ pub async fn execute(
         println!("\n💡 Semantic Search Integration:");
         println!("   No embeddings found matching your query.");
         println!("   This could mean:");
-        println!("   • Your vault hasn't been processed yet");
+        println!("   • Your kiln hasn't been processed yet");
         println!("   • No documents match your semantic query");
         println!("   • There was an issue during processing");
         println!("\n💡 If you believe there should be results, try:");
         println!("   • Running semantic search again to trigger re-processing");
-        println!("   • Checking that OBSIDIAN_VAULT_PATH points to the correct vault");
+        println!("   • Checking that OBSIDIAN_VAULT_PATH points to the correct kiln");
         return Ok(());
     }
 

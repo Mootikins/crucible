@@ -47,8 +47,7 @@ async fn main() -> Result<()> {
 
         Some(Commands::Note(cmd)) => commands::note::execute(config, cmd).await?,
 
-        Some(Commands::Index { force, glob }) => commands::index::execute(config, force, glob).await?,
-
+        
         Some(Commands::Stats) => commands::stats::execute(config).await?,
 
         Some(Commands::Test) => commands::test_tools::execute(config).await?,
@@ -59,7 +58,6 @@ async fn main() -> Result<()> {
             println!("📋 Available Commands:");
             println!("   crucible run <script>     - Execute a Rune script");
             println!("   crucible search <query>  - Search documents");
-            println!("   crucible index          - Index vault files");
             println!("   crucible stats          - Show vault statistics");
             println!("   crucible migrate        - Migration management");
             println!("   crucible service        - Service management");

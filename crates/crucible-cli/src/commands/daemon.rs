@@ -34,10 +34,10 @@ async fn execute_start_command(
     wait: bool,
     background: bool,
 ) -> Result<()> {
-    info!("Starting daemon for vault: {}", config.vault.path.display());
+    info!("Starting daemon for kiln: {}", config.vault.path.display());
 
     println!("🚀 Starting crucible-daemon...");
-    println!("📁 Vault path: {}", config.vault.path.display());
+    println!("📁 Kiln path: {}", config.vault.path.display());
 
     let mut daemon_manager = DaemonManager::new();
 
@@ -99,10 +99,10 @@ async fn execute_stop_command(_config: CliConfig, force: bool) -> Result<()> {
 
 /// Execute status command
 async fn execute_status_command(config: CliConfig) -> Result<()> {
-    info!("Checking daemon status for vault: {}", config.vault.path.display());
+    info!("Checking daemon status for kiln: {}", config.vault.path.display());
 
     println!("🔍 Checking daemon status...");
-    println!("📁 Vault path: {}", config.vault.path.display());
+    println!("📁 Kiln path: {}", config.vault.path.display());
 
     // Check if embeddings exist (indirect daemon status check)
     let daemon_manager = DaemonManager::new();
@@ -120,12 +120,12 @@ async fn execute_status_command(config: CliConfig) -> Result<()> {
         Ok(client) => {
             match daemon_manager.check_embeddings_exist(&client).await {
                 Ok(true) => {
-                    println!("✅ Daemon has processed this vault");
+                    println!("✅ Daemon has processed this kiln");
                     println!("📊 Embeddings are available for semantic search");
                 }
                 Ok(false) => {
                     println!("❌ No embeddings found");
-                    println!("💡 Run 'crucible daemon start' to process the vault");
+                    println!("💡 Run 'crucible daemon start' to process the kiln");
                 }
                 Err(e) => {
                     println!("⚠️  Could not check embeddings: {}", e);
