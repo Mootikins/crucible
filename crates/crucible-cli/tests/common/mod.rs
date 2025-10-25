@@ -2,32 +2,32 @@ use anyhow::Result;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
-/// Test vault with temporary directory and database
-pub struct TestVault {
+/// Test kiln with temporary directory and database
+pub struct TestKiln {
     pub temp_dir: TempDir,
-    pub vault_path: PathBuf,
+    pub kiln_path: PathBuf,
     pub db_path: PathBuf,
 }
 
-impl TestVault {
-    /// Create a new test vault with temporary directory
+impl TestKiln {
+    /// Create a new test kiln with temporary directory
     pub fn new() -> Result<Self> {
         let temp_dir = TempDir::new()?;
-        let vault_path = temp_dir.path().join("vault");
+        let kiln_path = temp_dir.path().join("kiln");
         let db_path = temp_dir.path().join("test.db");
-        
-        std::fs::create_dir_all(&vault_path)?;
-        
+
+        std::fs::create_dir_all(&kiln_path)?;
+
         Ok(Self {
             temp_dir,
-            vault_path,
+            kiln_path,
             db_path,
         })
     }
     
-    /// Create a single note in the vault
+    /// Create a single note in the kiln
     pub fn create_note(&self, relative_path: &str, content: &str) -> Result<PathBuf> {
-        let full_path = self.vault_path.join(relative_path);
+        let full_path = self.kiln_path.join(relative_path);
         
         // Create parent directories
         if let Some(parent) = full_path.parent() {
@@ -46,9 +46,9 @@ impl TestVault {
         Ok(())
     }
     
-    /// Get vault path as string
-    pub fn vault_path_str(&self) -> &str {
-        self.vault_path.to_str().unwrap()
+    /// Get kiln path as string
+    pub fn kiln_path_str(&self) -> &str {
+        self.kiln_path.to_str().unwrap()
     }
     
     /// Get database path as string

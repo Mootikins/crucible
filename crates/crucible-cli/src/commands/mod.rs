@@ -11,6 +11,7 @@ pub mod repl;
 pub mod service;
 pub mod daemon;
 pub mod migration;
+pub mod secure_filesystem;
 // pub mod enhanced_chat; // Temporarily disabled due to compilation issues
 // pub mod enhanced_chat_session; // Temporarily disabled due to compilation issues
 // pub mod performance_tracker; // Temporarily disabled due to compilation issues

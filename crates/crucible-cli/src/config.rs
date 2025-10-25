@@ -26,8 +26,8 @@ pub enum ProviderType {
 /// CLI configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CliConfig {
-    /// Vault configuration
-    pub vault: VaultConfig,
+    /// Kiln configuration
+    pub kiln: KilnConfig,
     /// LLM configuration
     #[serde(default)]
     pub llm: LlmConfig,
@@ -40,12 +40,15 @@ pub struct CliConfig {
     /// Migration configuration
     #[serde(default)]
     pub migration: MigrationConfig,
+    /// Custom database path (overrides default kiln/.crucible/embeddings.db)
+    #[serde(skip)]
+    pub custom_database_path: Option<PathBuf>,
 }
 
-/// Vault configuration
+/// Kiln configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VaultConfig {
-    /// Path to the vault directory
+pub struct KilnConfig {
+    /// Path to the kiln directory
     pub path: PathBuf,
 
     /// Embedding service URL
@@ -245,7 +248,7 @@ pub struct MigrationValidationConfig {
 impl Default for CliConfig {
     fn default() -> Self {
         Self {
-            vault: VaultConfig {
+            kiln: KilnConfig {
                 path: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
                 embedding_url: default_embedding_url(),
                 embedding_model: None,
@@ -254,6 +257,7 @@ impl Default for CliConfig {
             network: NetworkConfig::default(),
             services: ServicesConfig::default(),
             migration: MigrationConfig::default(),
+            custom_database_path: None,
         }
     }
 }
@@ -401,15 +405,15 @@ impl CliConfig {
         let mut config = Self::from_file_or_default(config_file)?;
 
         // Override with env vars (optional for testing/on-the-fly)
-        if let Ok(path) = std::env::var("OBSIDIAN_VAULT_PATH") {
-            config.vault.path = PathBuf::from(path);
+        if let Ok(path) = std::env::var("OBSIDIAN_KILN_PATH") {
+            config.kiln.path = PathBuf::from(path);
         }
 
         if let Ok(url) = std::env::var("EMBEDDING_ENDPOINT") {
-            config.vault.embedding_url = url;
+            config.kiln.embedding_url = url;
         }
         if let Ok(model) = std::env::var("EMBEDDING_MODEL") {
-            config.vault.embedding_model = Some(model);
+            config.kiln.embedding_model = Some(model);
         }
 
         // LLM environment variables
@@ -424,6 +428,11 @@ impl CliConfig {
         }
         if let Ok(prompt) = std::env::var("CRUCIBLE_SYSTEM_PROMPT") {
             config.llm.system_prompt = Some(prompt);
+        }
+
+        // Database configuration environment variables
+        if let Ok(db_path) = std::env::var("CRUCIBLE_DB_PATH") {
+            config.custom_database_path = Some(PathBuf::from(db_path));
         }
 
         // Backend-specific environment variables
@@ -442,25 +451,29 @@ impl CliConfig {
             config.network.timeout_secs = timeout.parse().ok();
         }
 
-        // Override with CLI args (highest priority) - but only for non-vault-path options
+        // Override with CLI args (highest priority) - but only for non-kiln-path options
         if let Some(url) = embedding_url {
-            config.vault.embedding_url = url;
+            config.kiln.embedding_url = url;
         }
         if let Some(model) = embedding_model {
-            config.vault.embedding_model = Some(model);
+            config.kiln.embedding_model = Some(model);
         }
 
         Ok(config)
     }
 
-    /// Get database path (always derived from vault path)
+    /// Get database path (always derived from kiln path)
     pub fn database_path(&self) -> PathBuf {
-        self.vault.path.join(".crucible/embeddings.db")
+        if let Some(custom_path) = &self.custom_database_path {
+            custom_path.clone()
+        } else {
+            self.kiln.path.join(".crucible/embeddings.db")
+        }
     }
 
-    /// Get tools directory path (always derived from vault path)
+    /// Get tools directory path (always derived from kiln path)
     pub fn tools_path(&self) -> PathBuf {
-        self.vault.path.join("tools")
+        self.kiln.path.join("tools")
     }
 
     /// Get database path as a string
@@ -471,9 +484,9 @@ impl CliConfig {
             .context("Database path is not valid UTF-8")
     }
 
-    /// Get vault path as a string
-    pub fn vault_path_str(&self) -> Result<String> {
-        self.vault
+    /// Get kiln path as a string
+    pub fn kiln_path_str(&self) -> Result<String> {
+        self.kiln
             .path
             .to_str()
             .map(|s| s.to_string())
@@ -493,7 +506,7 @@ impl CliConfig {
         let example = r#"# Crucible CLI Configuration
 # Location: ~/.config/crucible/config.toml
 
-[vault]
+[kiln]
 # Path to your Obsidian kiln
 # Default: current directory
 path = "/home/user/Documents/my-kiln"
@@ -706,7 +719,7 @@ max_performance_degradation = 20.0
     /// Convert to EmbeddingConfig for use with create_provider
     pub fn to_embedding_config(&self) -> Result<EmbeddingConfig> {
         // Validate that embedding model is configured
-        let model = self.vault.embedding_model.as_ref()
+        let model = self.kiln.embedding_model.as_ref()
             .ok_or_else(|| anyhow::anyhow!(
                 "Embedding model is not configured. Please set it via:\n\
                 - Environment variable: EMBEDDING_MODEL\n\
@@ -718,7 +731,7 @@ max_performance_degradation = 20.0
         // In the future, we could add provider selection to the config
         Ok(EmbeddingConfig {
             provider: ProviderType::Ollama,
-            endpoint: self.vault.embedding_url.clone(),
+            endpoint: self.kiln.embedding_url.clone(),
             api_key: None, // Not needed for Ollama
             model: model.clone(),
             timeout_secs: self.network.timeout_secs.unwrap_or(30),
@@ -810,10 +823,10 @@ mod tests {
         assert_eq!(config.max_tokens(), 2048);
 
         // Should have default embedding URL
-        assert_eq!(config.vault.embedding_url, "http://localhost:11434");
+        assert_eq!(config.kiln.embedding_url, "http://localhost:11434");
 
         // Should have no default model (None)
-        assert_eq!(config.vault.embedding_model, None);
+        assert_eq!(config.kiln.embedding_model, None);
 
         // Should have default Ollama endpoint
         assert_eq!(config.ollama_endpoint(), "https://llama.terminal.krohnos.io");
@@ -839,22 +852,22 @@ mod tests {
     }
 
     #[test]
-    fn test_load_config_without_obsidian_vault_path() {
+    fn test_load_config_without_obsidian_kiln_path() {
         // Clear environment variable to test default behavior
-        std::env::remove_var("OBSIDIAN_VAULT_PATH");
+        std::env::remove_var("OBSIDIAN_KILN_PATH");
 
         let result = CliConfig::load(None, None, None);
         assert!(result.is_ok());
         let config = result.unwrap();
 
         // Should use current directory as default when no env var is set
-        assert!(config.vault.path.is_absolute() || config.vault.path.as_path() == std::path::Path::new("."));
+        assert!(config.kiln.path.is_absolute() || config.kiln.path.as_path() == std::path::Path::new("."));
     }
 
     #[test]
     fn test_load_config_with_explicit_url() {
         // Set the required environment variable
-        std::env::set_var("OBSIDIAN_VAULT_PATH", "/tmp/test");
+        std::env::set_var("OBSIDIAN_KILN_PATH", "/tmp/test");
 
         let config = CliConfig::load(
             None,
@@ -863,44 +876,62 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(config.vault.embedding_url, "https://example.com");
+        assert_eq!(config.kiln.embedding_url, "https://example.com");
 
         // Clean up
-        std::env::remove_var("OBSIDIAN_VAULT_PATH");
+        std::env::remove_var("OBSIDIAN_KILN_PATH");
     }
 
     #[test]
     fn test_database_path_derivation() {
+        // Clear any existing environment variables first
+        std::env::remove_var("OBSIDIAN_KILN_PATH");
+        std::env::remove_var("CRUCIBLE_TEST_MODE");
+
         let temp = TempDir::new().unwrap();
-        let vault_path = temp.path().join("vault");
+        let vault_path = temp.path().join("kiln");
 
         // Set the required environment variable
-        std::env::set_var("OBSIDIAN_VAULT_PATH", vault_path.to_str().unwrap());
+        std::env::set_var("OBSIDIAN_KILN_PATH", vault_path.to_str().unwrap());
 
         let config = CliConfig::load(None, None, None).unwrap();
 
+        // Debug: check what path the config actually has
+        let config_kiln_path = &config.kiln.path;
         let expected_db = vault_path.join(".crucible/embeddings.db");
+
+        // The config should use the same path we set in the environment
+        assert_eq!(config_kiln_path, &vault_path, "Config kiln path should match environment variable");
         assert_eq!(config.database_path(), expected_db);
 
         // Clean up
-        std::env::remove_var("OBSIDIAN_VAULT_PATH");
+        std::env::remove_var("OBSIDIAN_KILN_PATH");
     }
 
     #[test]
     fn test_tools_path_derivation() {
+        // Clear any existing environment variables first
+        std::env::remove_var("OBSIDIAN_KILN_PATH");
+        std::env::remove_var("CRUCIBLE_TEST_MODE");
+
         let temp = TempDir::new().unwrap();
-        let vault_path = temp.path().join("vault");
+        let vault_path = temp.path().join("kiln");
 
         // Set the required environment variable
-        std::env::set_var("OBSIDIAN_VAULT_PATH", vault_path.to_str().unwrap());
+        std::env::set_var("OBSIDIAN_KILN_PATH", vault_path.to_str().unwrap());
 
         let config = CliConfig::load(None, None, None).unwrap();
 
+        // Debug: check what path the config actually has
+        let config_kiln_path = &config.kiln.path;
         let expected_tools = vault_path.join("tools");
+
+        // The config should use the same path we set in the environment
+        assert_eq!(config_kiln_path, &vault_path, "Config kiln path should match environment variable");
         assert_eq!(config.tools_path(), expected_tools);
 
         // Clean up
-        std::env::remove_var("OBSIDIAN_VAULT_PATH");
+        std::env::remove_var("OBSIDIAN_KILN_PATH");
     }
 
     #[test]
@@ -913,37 +944,37 @@ mod tests {
         assert!(config_path.exists());
         let contents = std::fs::read_to_string(&config_path).unwrap();
         assert!(contents.contains("Crucible CLI Configuration"));
-        assert!(contents.contains("[vault]"));
+        assert!(contents.contains("[kiln]"));
     }
 
     #[test]
     fn test_display_as_toml() {
         // Set the required environment variable
-        std::env::set_var("OBSIDIAN_VAULT_PATH", "/tmp/test");
+        std::env::set_var("OBSIDIAN_KILN_PATH", "/tmp/test");
 
         let config = CliConfig::load(None, None, None).unwrap();
         let toml_str = config.display_as_toml().unwrap();
-        assert!(toml_str.contains("[vault]"));
+        assert!(toml_str.contains("[kiln]"));
         assert!(toml_str.contains("path"));
         assert!(toml_str.contains("embedding_url"));
 
         // Clean up
-        std::env::remove_var("OBSIDIAN_VAULT_PATH");
+        std::env::remove_var("OBSIDIAN_KILN_PATH");
     }
 
     #[test]
     fn test_display_as_json() {
         // Set the required environment variable
-        std::env::set_var("OBSIDIAN_VAULT_PATH", "/tmp/test");
+        std::env::set_var("OBSIDIAN_KILN_PATH", "/tmp/test");
 
         let config = CliConfig::load(None, None, None).unwrap();
         let json_str = config.display_as_json().unwrap();
-        assert!(json_str.contains("\"vault\""));
+        assert!(json_str.contains("\"kiln\""));
         assert!(json_str.contains("\"path\""));
         assert!(json_str.contains("\"embedding_url\""));
 
         // Clean up
-        std::env::remove_var("OBSIDIAN_VAULT_PATH");
+        std::env::remove_var("OBSIDIAN_KILN_PATH");
     }
 
     #[test]
@@ -974,8 +1005,8 @@ mod tests {
         let config_path = temp.path().join("config.toml");
 
         let config_content = r#"
-[vault]
-path = "/tmp/test-vault"
+[kiln]
+path = "/tmp/test-kiln"
 
 [llm]
 chat_model = "custom-model"
@@ -1016,7 +1047,7 @@ timeout_secs = 60
     #[test]
     fn test_environment_variable_override() {
         // Store original environment variables
-        let original_vault_path = std::env::var("OBSIDIAN_VAULT_PATH");
+        let original_kiln_path = std::env::var("OBSIDIAN_KILN_PATH");
         let original_chat_model = std::env::var("CRUCIBLE_CHAT_MODEL");
         let original_temperature = std::env::var("CRUCIBLE_TEMPERATURE");
         let original_ollama_endpoint = std::env::var("OLLAMA_ENDPOINT");
@@ -1025,27 +1056,27 @@ timeout_secs = 60
         std::env::set_var("CRUCIBLE_TEST_MODE", "1");
 
         // Set environment variables
-        std::env::set_var("OBSIDIAN_VAULT_PATH", "/tmp/env-test");
+        std::env::set_var("OBSIDIAN_KILN_PATH", "/tmp/env-test");
         std::env::set_var("CRUCIBLE_CHAT_MODEL", "env-model");
         std::env::set_var("CRUCIBLE_TEMPERATURE", "0.9");
         std::env::set_var("OLLAMA_ENDPOINT", "https://env-ollama.example.com");
 
         let config = CliConfig::load(None, None, None).unwrap();
 
-        assert_eq!(config.vault.path, std::path::PathBuf::from("/tmp/env-test"));
+        assert_eq!(config.kiln.path, std::path::PathBuf::from("/tmp/env-test"));
         assert_eq!(config.chat_model(), "env-model");
         assert_eq!(config.temperature(), 0.9);
         assert_eq!(config.ollama_endpoint(), "https://env-ollama.example.com");
 
         // Restore original environment variables
         std::env::remove_var("CRUCIBLE_TEST_MODE");
-        std::env::remove_var("OBSIDIAN_VAULT_PATH");
+        std::env::remove_var("OBSIDIAN_KILN_PATH");
         std::env::remove_var("CRUCIBLE_CHAT_MODEL");
         std::env::remove_var("CRUCIBLE_TEMPERATURE");
         std::env::remove_var("OLLAMA_ENDPOINT");
 
-        if let Ok(val) = original_vault_path {
-            std::env::set_var("OBSIDIAN_VAULT_PATH", val);
+        if let Ok(val) = original_kiln_path {
+            std::env::set_var("OBSIDIAN_KILN_PATH", val);
         }
         if let Ok(val) = original_chat_model {
             std::env::set_var("CRUCIBLE_CHAT_MODEL", val);
@@ -1061,7 +1092,7 @@ timeout_secs = 60
     #[test]
     fn test_api_key_from_environment() {
         // Set required environment variable
-        std::env::set_var("OBSIDIAN_VAULT_PATH", "/tmp/test");
+        std::env::set_var("OBSIDIAN_KILN_PATH", "/tmp/test");
         std::env::set_var("OPENAI_API_KEY", "sk-test-openai");
         std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-test-anthropic");
 
@@ -1071,7 +1102,7 @@ timeout_secs = 60
         assert_eq!(config.anthropic_api_key(), Some("sk-ant-test-anthropic".to_string()));
 
         // Clean up
-        std::env::remove_var("OBSIDIAN_VAULT_PATH");
+        std::env::remove_var("OBSIDIAN_KILN_PATH");
         std::env::remove_var("OPENAI_API_KEY");
         std::env::remove_var("ANTHROPIC_API_KEY");
     }

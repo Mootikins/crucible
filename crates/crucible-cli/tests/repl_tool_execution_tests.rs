@@ -16,8 +16,7 @@ use anyhow::Result;
 use tokio::time::timeout;
 use std::time::Duration;
 
-mod common;
-use common::TestVault;
+use crate::common::TestKiln;
 use crucible_cli::commands::repl::tools::UnifiedToolRegistry;
 
 /// Test tool registry initialization and basic functionality
@@ -327,15 +326,15 @@ async fn test_tool_execution_performance() -> Result<()> {
     Ok(())
 }
 
-/// Test integration with vault tools
+/// Test integration with kiln tools
 #[tokio::test]
-async fn test_vault_tools_integration() -> Result<()> {
-    println!("Testing vault tools integration...");
+async fn test_kiln_tools_integration() -> Result<()> {
+    println!("Testing kiln tools integration...");
 
-    // Create test vault with content
-    let vault = TestVault::new()?;
-    vault.create_note("test1.md", "# Test Document 1\n\nContent here.")?;
-    vault.create_note("test2.md", "# Test Document 2\n\nMore content.")?;
+    // Create test kiln with content
+    let kiln = TestKiln::new()?;
+    kiln.create_note("test1.md", "# Test Document 1\n\nContent here.")?;
+    kiln.create_note("test2.md", "# Test Document 2\n\nMore content.")?;
 
     // Create a temporary directory for tools
     let temp_dir = TempDir::new()?;
@@ -346,41 +345,41 @@ async fn test_vault_tools_integration() -> Result<()> {
         .await
         .map_err(|_| anyhow::anyhow!("Tool registry initialization timed out"))??;
 
-    // Look for vault-related tools
+    // Look for kiln-related tools
     let tools = registry.list_tools().await;
-    let vault_tools: Vec<&String> = tools.iter()
-        .filter(|tool| tool.contains("vault") || tool.contains("search") || tool.contains("stats"))
+    let kiln_tools: Vec<&String> = tools.iter()
+        .filter(|tool| tool.contains("kiln") || tool.contains("search") || tool.contains("stats"))
         .collect();
 
-    println!("Found vault-related tools: {:?}", vault_tools);
+    println!("Found kiln-related tools: {:?}", kiln_tools);
 
-    // If vault tools are available, test one
-    if let Some(vault_tool) = vault_tools.first() {
-        println!("Testing vault tool: {}", vault_tool);
+    // If kiln tools are available, test one
+    if let Some(kiln_tool) = kiln_tools.first() {
+        println!("Testing kiln tool: {}", kiln_tool);
 
-        // Try to execute the vault tool
-        let result = registry.execute_tool(vault_tool, &[]).await;
+        // Try to execute the kiln tool
+        let result = registry.execute_tool(kiln_tool, &[]).await;
 
         match result {
             Ok(tool_result) => {
                 match tool_result.status {
                     crucible_cli::commands::repl::tools::ToolStatus::Success => {
-                        println!("✓ Vault tool '{}' executed successfully", vault_tool);
+                        println!("✓ Kiln tool '{}' executed successfully", kiln_tool);
                         println!("Output preview: {}", &tool_result.output[..tool_result.output.len().min(100)]);
                     }
                     crucible_cli::commands::repl::tools::ToolStatus::Error(ref error) => {
-                        println!("ℹ Vault tool '{}' returned error: {}", vault_tool, error);
+                        println!("ℹ Kiln tool '{}' returned error: {}", kiln_tool, error);
                         // This might be expected if the tool needs specific setup
                     }
                 }
             }
             Err(e) => {
-                println!("ℹ Vault tool '{}' failed to execute: {}", vault_tool, e);
+                println!("ℹ Kiln tool '{}' failed to execute: {}", kiln_tool, e);
                 // This might be expected if the tool needs specific configuration
             }
         }
     } else {
-        println!("ℹ No vault-related tools found");
+        println!("ℹ No kiln-related tools found");
     }
 
     println!("✓ Vault tools integration test passed");

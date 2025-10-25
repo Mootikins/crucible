@@ -1,7 +1,5 @@
-mod common;
-
 use assert_cmd::Command;
-use common::TestVault;
+use crate::common::TestKiln;
 use predicates::prelude::*;
 use std::fs;
 
@@ -17,11 +15,11 @@ fn test_chat_help() {
 
 #[test]
 fn test_chat_with_agent_flag() {
-    let vault = TestVault::new().unwrap();
+    let kiln = TestKiln::new().unwrap();
 
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path").arg(vault.vault_path_str())
-        .arg("--database").arg(vault.db_path_str())
+    cmd.arg("--vault-path").arg(kiln.kiln_path_str())
+        .arg("--database").arg(kiln.db_path_str())
         .arg("chat")
         .arg("--agent").arg("researcher")
         .arg("--start-message").arg("Hello")
@@ -33,11 +31,11 @@ fn test_chat_with_agent_flag() {
 
 #[test]
 fn test_chat_with_model_override() {
-    let vault = TestVault::new().unwrap();
+    let kiln = TestKiln::new().unwrap();
 
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path").arg(vault.vault_path_str())
-        .arg("--database").arg(vault.db_path_str())
+    cmd.arg("--vault-path").arg(kiln.kiln_path_str())
+        .arg("--database").arg(kiln.db_path_str())
         .arg("chat")
         .arg("--model").arg("llama3.2")
         .arg("--start-message").arg("Hello")
@@ -48,11 +46,11 @@ fn test_chat_with_model_override() {
 
 #[test]
 fn test_chat_with_temperature() {
-    let vault = TestVault::new().unwrap();
+    let kiln = TestKiln::new().unwrap();
 
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path").arg(vault.vault_path_str())
-        .arg("--database").arg(vault.db_path_str())
+    cmd.arg("--vault-path").arg(kiln.kiln_path_str())
+        .arg("--database").arg(kiln.db_path_str())
         .arg("chat")
         .arg("--temperature").arg("0.7")
         .arg("--start-message").arg("Hello")
@@ -63,11 +61,11 @@ fn test_chat_with_temperature() {
 
 #[test]
 fn test_chat_with_max_tokens() {
-    let vault = TestVault::new().unwrap();
+    let kiln = TestKiln::new().unwrap();
 
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path").arg(vault.vault_path_str())
-        .arg("--database").arg(vault.db_path_str())
+    cmd.arg("--vault-path").arg(kiln.kiln_path_str())
+        .arg("--database").arg(kiln.db_path_str())
         .arg("chat")
         .arg("--max-tokens").arg("500")
         .arg("--start-message").arg("Hello")
@@ -78,11 +76,11 @@ fn test_chat_with_max_tokens() {
 
 #[test]
 fn test_chat_no_stream_flag() {
-    let vault = TestVault::new().unwrap();
+    let kiln = TestKiln::new().unwrap();
 
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path").arg(vault.vault_path_str())
-        .arg("--database").arg(vault.db_path_str())
+    cmd.arg("--vault-path").arg(kiln.kiln_path_str())
+        .arg("--database").arg(kiln.db_path_str())
         .arg("chat")
         .arg("--no-stream")
         .arg("--start-message").arg("Hello")
@@ -93,14 +91,14 @@ fn test_chat_no_stream_flag() {
 
 #[test]
 fn test_chat_conversation_history_save_load() {
-    let vault = TestVault::new().unwrap();
-    let history_path = vault.vault_path.join("test_history.json");
+    let kiln = TestKiln::new().unwrap();
+    let history_path = kiln.kiln_path.join("test_history.json");
 
     // First session - create history
     {
         let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-        cmd.arg("--vault-path").arg(vault.vault_path_str())
-            .arg("--database").arg(vault.db_path_str())
+        cmd.arg("--vault-path").arg(kiln.kiln_path_str())
+            .arg("--database").arg(kiln.db_path_str())
             .arg("chat")
             .arg("--start-message").arg("Test message")
             .write_stdin("save\nquit\n")
@@ -126,12 +124,12 @@ fn test_chat_conversation_history_save_load() {
 
 #[test]
 fn test_chat_with_unknown_agent() {
-    let vault = TestVault::new().unwrap();
+    let kiln = TestKiln::new().unwrap();
 
     // Should fallback to default agent
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path").arg(vault.vault_path_str())
-        .arg("--database").arg(vault.db_path_str())
+    cmd.arg("--vault-path").arg(kiln.kiln_path_str())
+        .arg("--database").arg(kiln.db_path_str())
         .arg("chat")
         .arg("--agent").arg("nonexistent-agent")
         .arg("--start-message").arg("Hello")
@@ -142,11 +140,11 @@ fn test_chat_with_unknown_agent() {
 
 #[test]
 fn test_chat_start_message() {
-    let vault = TestVault::new().unwrap();
+    let kiln = TestKiln::new().unwrap();
 
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path").arg(vault.vault_path_str())
-        .arg("--database").arg(vault.db_path_str())
+    cmd.arg("--vault-path").arg(kiln.kiln_path_str())
+        .arg("--database").arg(kiln.db_path_str())
         .arg("chat")
         .arg("--start-message").arg("What is Crucible?")
         .write_stdin("quit\n")

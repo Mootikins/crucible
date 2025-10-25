@@ -8,15 +8,13 @@
 //! - Cross-component integration
 //! - Error propagation and handling
 
-mod test_utilities;
-
 use anyhow::Result;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 use tokio::time::timeout;
-use crucible_cli::test_utilities::*;
+use super::test_utilities::*;
 use crucible_cli::config::CliConfig;
 use crucible_cli::cli::{ServiceCommands, MigrationCommands};
 use crucible_cli::commands::service::execute as service_execute;

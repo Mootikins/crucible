@@ -414,7 +414,7 @@ impl Repl {
     /// Show current configuration
     async fn show_config(&self) {
         println!("\n⚙️  Configuration:\n");
-        println!("  Vault path:       {}", self.config.vault_path.display());
+        println!("  Kiln path:       {}", self.config.kiln_path.display());
         println!("  Database path:    {}", self.config.db_path.display());
         println!("  History file:     {}", self.config.history_file.display());
         println!("  Output format:    {}", self.config.default_format);
@@ -517,7 +517,7 @@ impl Repl {
 /// REPL configuration
 #[derive(Debug, Clone)]
 pub struct ReplConfig {
-    pub vault_path: std::path::PathBuf,
+    pub kiln_path: std::path::PathBuf,
     pub db_path: std::path::PathBuf,
     pub history_file: std::path::PathBuf,
     pub tool_dir: std::path::PathBuf,
@@ -533,13 +533,13 @@ impl ReplConfig {
         tool_dir: Option<String>,
         format: String,
     ) -> Result<Self> {
-        let vault_path = cli_config.vault.path.clone();
+        let kiln_path = cli_config.kiln.path.clone();
         let config_dir = dirs::home_dir()
             .ok_or_else(|| anyhow::anyhow!("Failed to get home directory"))?
             .join(".crucible");
 
         Ok(Self {
-            vault_path,
+            kiln_path,
             db_path: db_path.map(|p| p.into()).unwrap_or_else(|| config_dir.join("embeddings.db")),
             history_file: config_dir.join("repl_history"),
             tool_dir: tool_dir.map(|p| p.into()).unwrap_or_else(|| config_dir.join("tools")),

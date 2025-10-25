@@ -14,6 +14,7 @@
 //! - `performance_load_tests.rs`: Performance and load testing
 
 pub mod test_utilities;
+pub mod common;
 
 // Import test modules
 mod service_management_tests;
@@ -26,6 +27,17 @@ mod repl_process_integration_tests;
 mod repl_direct_integration_tests;
 mod repl_tool_execution_tests;
 mod cli_repl_tool_consistency_tests;
+mod binary_detection_tdd_standalone;
+mod semantic_search_integration;
+mod embedding_pipeline_tdd;
+mod kiln_schema_tdd;
+mod repl_end_to_end_tests;
+mod repl_unified_tool_error_handling_tests;
+mod repl_error_handling_simple;
+mod repl_error_handling_comprehensive;
+mod repl_unit_tests;
+mod repl_unified_tools_test;
+mod vault_processing_integration_tdd;
 
 /// Test suite runner for CLI integration tests
 pub struct TestRunner {

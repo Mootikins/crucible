@@ -50,7 +50,7 @@ async fn get_note(config: CliConfig, path: String, format: String) -> Result<()>
     }
 
     // If not found via search, try reading directly from file system
-    let full_path = config.vault.path.join(&path);
+    let full_path = config.kiln.path.join(&path);
     if full_path.exists() {
         let content = std::fs::read_to_string(&full_path)?;
         match format.as_str() {
@@ -77,7 +77,7 @@ async fn get_note(config: CliConfig, path: String, format: String) -> Result<()>
 async fn create_note(config: CliConfig, path: String, content: Option<String>, edit: bool) -> Result<()> {
     
 
-    let full_path = config.vault.path.join(&path);
+    let full_path = config.kiln.path.join(&path);
     
     // Create parent directories
     if let Some(parent) = full_path.parent() {

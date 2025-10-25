@@ -47,6 +47,32 @@ mod fixtures {
         )
     }
 
+    /// Candle provider fixture with deterministic test data
+    pub fn candle_provider_fixture() -> EmbeddingProviderConfig {
+        EmbeddingProviderConfig {
+            provider_type: EmbeddingProviderType::Candle,
+            api: ApiConfig {
+                key: None,
+                base_url: Some("local".to_string()),
+                timeout_seconds: Some(120),
+                retry_attempts: Some(1),
+                headers: HashMap::new(),
+            },
+            model: ModelConfig {
+                name: "nomic-embed-text-v1.5".to_string(),
+                dimensions: Some(768),
+                max_tokens: Some(2048),
+            },
+            options: {
+                let mut options = HashMap::new();
+                options.insert("model_cache_dir".to_string(), json!("/tmp/candle-models"));
+                options.insert("memory_limit_mb".to_string(), json!(4096));
+                options.insert("device".to_string(), json!("cpu"));
+                options
+            },
+        }
+    }
+
     /// Custom provider fixture for testing extensibility
     pub fn custom_provider_fixture() -> EmbeddingProviderConfig {
         EmbeddingProviderConfig {
@@ -140,6 +166,12 @@ mod embedding_provider_config_tests {
         assert!(custom.provider_type.requires_api_key());
         assert_eq!(custom.provider_type.default_base_url(), None);
         assert_eq!(custom.provider_type.default_model(), None);
+
+        // RED Phase: Test Candle provider (should fail initially)
+        let candle = candle_provider_fixture();
+        assert!(!candle.provider_type.requires_api_key());
+        assert_eq!(candle.provider_type.default_base_url(), Some("local".to_string()));
+        assert_eq!(candle.provider_type.default_model(), Some("nomic-embed-text-v1.5".to_string()));
     }
 
     #[test]
@@ -798,5 +830,202 @@ mod performance_tests {
         // Test accessing embedding provider from large config
         let embedding_provider = deserialized.embedding_provider();
         assert!(embedding_provider.is_ok());
+    }
+}
+
+/// RED Phase: Candle provider configuration tests (will fail until implementation)
+#[cfg(test)]
+mod candle_provider_tests {
+    use super::*;
+    use fixtures::*;
+
+    #[test]
+    fn test_candle_provider_configuration() {
+        let candle_provider = candle_provider_fixture();
+
+        assert_eq!(candle_provider.provider_type, EmbeddingProviderType::Candle);
+        assert_eq!(candle_provider.api.base_url, Some("local".to_string()));
+        assert_eq!(candle_provider.model.name, "nomic-embed-text-v1.5");
+        assert_eq!(candle_provider.model.dimensions, Some(768));
+        assert!(candle_provider.api.key.is_none()); // Candle doesn't require API key
+        assert!(candle_provider.validate().is_ok());
+
+        // Verify Candle-specific options
+        assert_eq!(candle_provider.options.get("model_cache_dir"), Some(&json!("/tmp/candle-models")));
+        assert_eq!(candle_provider.options.get("memory_limit_mb"), Some(&json!(4096)));
+        assert_eq!(candle_provider.options.get("device"), Some(&json!("cpu")));
+    }
+
+    #[test]
+    fn test_candle_provider_different_models() {
+        let models = vec![
+            ("nomic-embed-text-v1.5", 768),
+            ("jina-embeddings-v2-base-en", 768),
+            ("jina-embeddings-v3-base-en", 768),
+            ("all-MiniLM-L6-v2", 384),
+            ("bge-small-en-v1.5", 384),
+        ];
+
+        for (model_name, expected_dims) in models {
+            let mut candle_config = candle_provider_fixture();
+            candle_config.model.name = model_name.to_string();
+            candle_config.model.dimensions = Some(expected_dims);
+
+            assert!(candle_config.validate().is_ok());
+            assert_eq!(candle_config.model.name, model_name);
+            assert_eq!(candle_config.model.dimensions, Some(expected_dims));
+        }
+    }
+
+    #[test]
+    fn test_candle_provider_device_options() {
+        let devices = vec!["cpu", "cuda", "metal"];
+
+        for device in devices {
+            let mut candle_config = candle_provider_fixture();
+            candle_config.options.insert("device".to_string(), json!(device));
+
+            assert!(candle_config.validate().is_ok());
+            assert_eq!(candle_config.options.get("device"), Some(&json!(device)));
+        }
+    }
+
+    #[test]
+    fn test_candle_provider_memory_configuration() {
+        let memory_limits = vec![1024, 2048, 4096, 8192];
+
+        for memory_mb in memory_limits {
+            let mut candle_config = candle_provider_fixture();
+            candle_config.options.insert("memory_limit_mb".to_string(), json!(memory_mb));
+
+            assert!(candle_config.validate().is_ok());
+            assert_eq!(candle_config.options.get("memory_limit_mb"), Some(&json!(memory_mb)));
+        }
+    }
+
+    #[test]
+    fn test_candle_provider_cache_configuration() {
+        let cache_dirs = vec![
+            "/tmp/candle-models",
+            "/var/cache/candle",
+            "/home/user/.cache/candle",
+        ];
+
+        for cache_dir in cache_dirs {
+            let mut candle_config = candle_provider_fixture();
+            candle_config.options.insert("model_cache_dir".to_string(), json!(cache_dir));
+
+            assert!(candle_config.validate().is_ok());
+            assert_eq!(candle_config.options.get("model_cache_dir"), Some(&json!(cache_dir)));
+        }
+    }
+
+    #[test]
+    fn test_candle_provider_serialization() {
+        let candle_provider = candle_provider_fixture();
+
+        // Test JSON serialization
+        let json_str = serde_json::to_string_pretty(&candle_provider).expect("Failed to serialize Candle provider");
+        let deserialized: EmbeddingProviderConfig = serde_json::from_str(&json_str)
+            .expect("Failed to deserialize Candle provider");
+
+        assert_eq!(candle_provider, deserialized);
+
+        // Test YAML serialization
+        let yaml_str = serde_yaml::to_string(&candle_provider).expect("Failed to serialize Candle provider to YAML");
+        let yaml_deserialized: EmbeddingProviderConfig = serde_yaml::from_str(&yaml_str)
+            .expect("Failed to deserialize Candle provider from YAML");
+
+        assert_eq!(candle_provider, yaml_deserialized);
+    }
+
+    #[tokio::test]
+    async fn test_load_config_with_candle_provider() {
+        let config = TestConfigBuilder::new()
+            .profile("test")
+            .embedding_provider(candle_provider_fixture())
+            .memory_database()
+            .debug_logging()
+            .build();
+
+        let (_temp_file, config_path) = TempConfig::create_temp_file(&config);
+
+        // Load configuration from file
+        let loaded_config = ConfigLoader::load_from_file(&config_path).await
+            .expect("Failed to load configuration with Candle provider");
+
+        // Verify Candle provider configuration
+        let embedding_provider = loaded_config.embedding_provider()
+            .expect("Failed to get Candle embedding provider");
+
+        assert_eq!(embedding_provider.provider_type, EmbeddingProviderType::Candle);
+        assert_eq!(embedding_provider.model.name, "nomic-embed-text-v1.5");
+        assert!(embedding_provider.api.key.is_none());
+        assert_eq!(embedding_provider.options.get("device"), Some(&json!("cpu")));
+    }
+
+    #[test]
+    fn test_candle_provider_model_validation() {
+        let valid_models = vec![
+            "nomic-embed-text-v1.5",
+            "jina-embeddings-v2-base-en",
+            "jina-embeddings-v3-base-en",
+            "all-MiniLM-L6-v2",
+            "bge-small-en-v1.5",
+        ];
+
+        for model in valid_models {
+            let mut candle_config = candle_provider_fixture();
+            candle_config.model.name = model.to_string();
+
+            assert!(candle_config.validate().is_ok(), "Model {} should be valid", model);
+        }
+
+        // Test invalid model name
+        let mut candle_config = candle_provider_fixture();
+        candle_config.model.name = "invalid-model-name".to_string();
+
+        // This should still validate since we don't enforce strict model validation at the config level
+        // The actual validation would happen at runtime when trying to load the model
+        assert!(candle_config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_candle_provider_type_methods() {
+        let candle_type = EmbeddingProviderType::Candle;
+
+        assert!(!candle_type.requires_api_key());
+        assert_eq!(candle_type.default_base_url(), Some("local".to_string()));
+        assert_eq!(candle_type.default_model(), Some("nomic-embed-text-v1.5".to_string()));
+    }
+
+    #[test]
+    fn test_candle_provider_edge_cases() {
+        // Test with empty options
+        let mut candle_config = candle_provider_fixture();
+        candle_config.options.clear();
+        assert!(candle_config.validate().is_ok());
+
+        // Test with additional custom options
+        candle_config.options.insert("custom_option".to_string(), json!("custom_value"));
+        candle_config.options.insert("batch_size".to_string(), json!(32));
+        assert!(candle_config.validate().is_ok());
+
+        // Test with custom headers (should be allowed but not used by Candle)
+        candle_config.api.headers.insert("Custom-Header".to_string(), "custom-value".to_string());
+        assert!(candle_config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_candle_provider_timeout_configuration() {
+        let timeouts = vec![30, 60, 120, 300];
+
+        for timeout in timeouts {
+            let mut candle_config = candle_provider_fixture();
+            candle_config.api.timeout_seconds = Some(timeout);
+
+            assert!(candle_config.validate().is_ok());
+            assert_eq!(candle_config.api.timeout_seconds, Some(timeout));
+        }
     }
 }

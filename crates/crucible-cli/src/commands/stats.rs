@@ -3,13 +3,13 @@ use std::fs;
 use crate::config::CliConfig;
 
 pub async fn execute(config: CliConfig) -> Result<()> {
-    let kiln_path = &config.vault.path;
+    let kiln_path = &config.kiln.path;
 
     // Check if kiln path exists
     if !kiln_path.exists() {
-        eprintln!("Error: Kiln path does not exist: {}", kiln_path.display());
-        eprintln!("Please set OBSIDIAN_VAULT_PATH to a valid kiln directory.");
-        return Err(anyhow::anyhow!("Kiln path does not exist"));
+        eprintln!("Error: kiln path does not exist: {}", kiln_path.display());
+        eprintln!("Please set OBSIDIAN_KILN_PATH to a valid kiln directory.");
+        return Err(anyhow::anyhow!("kiln path does not exist"));
     }
 
     let mut total_files = 0;

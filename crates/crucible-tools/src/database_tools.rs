@@ -4,14 +4,19 @@
 //! search, indexing, and maintenance operations. Converted from Tool trait implementations
 //! to direct async function composition as part of Phase 1.3 service architecture removal.
 //! Now updated to Phase 2.1 ToolFunction interface for unified tool execution.
+//!
+//! Semantic search now uses integrated crucible-surrealdb functionality instead of mock data.
 
 use crate::types::{ToolResult, ToolError, ToolFunction};
 use serde_json::{json, Value};
 use tracing::info;
+use std::env;
+use std::path::PathBuf;
 
 /// Semantic search using embeddings - Phase 2.1 ToolFunction
 ///
 /// This function implements the ToolFunction signature for unified execution.
+/// Now uses integrated crucible-surrealdb functionality for real semantic search.
 pub fn semantic_search() -> ToolFunction {
     |tool_name: String,
      parameters: Value,
@@ -29,30 +34,14 @@ pub fn semantic_search() -> ToolFunction {
                 .and_then(|v| v.as_u64())
                 .unwrap_or(10);
 
-            info!("Performing semantic search: {} (top_k: {})", query, top_k);
+            info!("Performing integrated semantic search: {} (top_k: {})", query, top_k);
 
-            // Mock implementation - in real implementation this would:
-            // 1. Generate embedding for the query
-            // 2. Search the database for similar embeddings
-            // 3. Return ranked results with similarity scores
-
-            let mock_results = vec![
-                json!({
-                    "file_path": "docs/ai-research.md",
-                    "title": "AI Research Notes",
-                    "content": "Comprehensive research on artificial intelligence and machine learning...",
-                    "score": 0.95
-                }),
-                json!({
-                    "file_path": "projects/ml-project.md",
-                    "title": "Machine Learning Project",
-                    "content": "Implementation details for our ML project using transformers...",
-                    "score": 0.87
-                }),
-            ];
+            // Use integrated crucible-surrealdb semantic search functionality
+            let search_results = perform_integrated_semantic_search(query, top_k as usize).await
+                .map_err(|e| ToolError::Other(format!("Semantic search failed: {}", e)))?;
 
             let result_data = json!({
-                "results": mock_results,
+                "results": search_results,
                 "query": query,
                 "top_k": top_k,
                 "user_id": user_id,
@@ -66,6 +55,144 @@ pub fn semantic_search() -> ToolFunction {
             ))
         })
     }
+}
+
+/// Perform integrated semantic search using crucible-surrealdb
+async fn perform_integrated_semantic_search(query: &str, top_k: usize) -> Result<Vec<Value>, anyhow::Error> {
+    use crucible_surrealdb::{
+        vault_integration::{semantic_search, retrieve_parsed_document},
+        SurrealClient, SurrealDbConfig,
+    };
+
+    // Get vault path from environment
+    let vault_path = env::var("OBSIDIAN_VAULT_PATH")
+        .map_err(|_| anyhow::anyhow!("OBSIDIAN_VAULT_PATH environment variable not set"))?;
+
+    let vault_path = PathBuf::from(vault_path);
+
+    // Validate vault path exists
+    if !vault_path.exists() {
+        return Err(anyhow::anyhow!("Vault path '{}' does not exist", vault_path.display()));
+    }
+
+    // Initialize database connection
+    let db_config = SurrealDbConfig {
+        namespace: "crucible".to_string(),
+        database: "vault".to_string(),
+        path: format!("{}/.crucible/cache.db", vault_path.display()),
+        max_connections: Some(10),
+        timeout_seconds: Some(30),
+    };
+
+    let client = SurrealClient::new(db_config).await
+        .map_err(|e| anyhow::anyhow!("Failed to connect to database: {}", e))?;
+
+    // Check if embeddings exist, process vault if needed
+    let embeddings_exist = check_embeddings_exist_integrated(&client).await?;
+
+    if !embeddings_exist {
+        // Process vault to generate embeddings
+        process_vault_if_needed(&client, &vault_path).await?;
+    }
+
+    // Perform semantic search
+    let search_results = semantic_search(&client, query, top_k).await
+        .map_err(|e| anyhow::anyhow!("Semantic search failed: {}", e))?;
+
+    // Convert search results to tool format
+    let mut tool_results = Vec::new();
+
+    for (document_id, similarity_score) in search_results {
+        match retrieve_parsed_document(&client, &document_id).await {
+            Ok(parsed_document) => {
+                let title = parsed_document.frontmatter
+                    .and_then(|fm| fm.get_string("title"))
+                    .unwrap_or_else(|| {
+                        parsed_document.content.plain_text
+                            .lines()
+                            .next()
+                            .unwrap_or("Untitled Document")
+                            .to_string()
+                    });
+
+                // Create content preview
+                let content_preview = if parsed_document.content.plain_text.len() > 200 {
+                    format!("{}...", &parsed_document.content.plain_text[..200])
+                } else {
+                    parsed_document.content.plain_text.clone()
+                };
+
+                tool_results.push(json!({
+                    "id": document_id,
+                    "file_path": document_id,
+                    "title": title,
+                    "content": content_preview,
+                    "score": similarity_score
+                }));
+            }
+            Err(_) => {
+                // If document retrieval fails, create basic result
+                tool_results.push(json!({
+                    "id": document_id,
+                    "file_path": document_id,
+                    "title": format!("Document {}", document_id),
+                    "content": "Document content not available",
+                    "score": similarity_score
+                }));
+            }
+        }
+    }
+
+    // Sort by similarity score (descending)
+    tool_results.sort_by(|a, b| {
+        let score_a = a.get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
+        let score_b = b.get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
+        score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    Ok(tool_results)
+}
+
+/// Check if embeddings exist in the database
+async fn check_embeddings_exist_integrated(client: &crucible_surrealdb::SurrealClient) -> Result<bool, anyhow::Error> {
+    use crucible_surrealdb::vault_integration::get_database_stats;
+
+    match get_database_stats(client).await {
+        Ok(stats) => Ok(stats.total_embeddings > 0),
+        Err(_) => {
+            // Fallback to direct query
+            let embeddings_sql = "SELECT count() as total FROM embeddings LIMIT 1";
+            let result = client.query(embeddings_sql, &[]).await
+                .map_err(|e| anyhow::anyhow!("Failed to query embeddings: {}", e))?;
+
+            let embeddings_count = result.records.first()
+                .and_then(|r| r.data.get("total"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+
+            Ok(embeddings_count > 0)
+        }
+    }
+}
+
+/// Process vault if embeddings don't exist
+async fn process_vault_if_needed(
+    _client: &crucible_surrealdb::SurrealClient,
+    vault_path: &PathBuf,
+) -> Result<(), anyhow::Error> {
+    // For now, provide clear instructions to use the CLI command first
+    // This avoids the complex lifetime issues in the vault processor
+    // and provides a reliable path forward for users
+    Err(anyhow::anyhow!(
+        "No embeddings found in database. Please run the CLI semantic search command first to generate embeddings:\n\
+        \n\
+        OBSIDIAN_VAULT_PATH={} ./target/release/cru semantic \"test query\"\n\
+        \n\
+        This will process your vault and generate the required embeddings for semantic search.\n\
+        \n\
+        After the initial processing, semantic search will work through the REPL tools.",
+        vault_path.display()
+    ))
 }
 
 /// Full-text search in note contents - Phase 2.1 ToolFunction

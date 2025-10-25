@@ -1,7 +1,5 @@
-mod common;
-
 use assert_cmd::Command;
-use common::TestVault;
+use crate::common::TestKiln;
 use predicates::prelude::*;
 
 #[test]
@@ -22,12 +20,12 @@ fn test_version_command() {
 }
 
 #[test]
-fn test_stats_command_with_empty_vault() {
-    let vault = TestVault::new().unwrap();
+fn test_stats_command_with_empty_kiln() {
+    let kiln = TestKiln::new().unwrap();
     
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path").arg(vault.vault_path_str())
-        .arg("--db-path").arg(vault.db_path_str())
+    cmd.arg("--vault-path").arg(kiln.kiln_path_str())
+        .arg("--db-path").arg(kiln.db_path_str())
         .arg("stats")
         .assert()
         .success();
@@ -35,11 +33,11 @@ fn test_stats_command_with_empty_vault() {
 
 #[test]
 fn test_note_list_empty() {
-    let vault = TestVault::new().unwrap();
+    let kiln = TestKiln::new().unwrap();
     
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path").arg(vault.vault_path_str())
-        .arg("--db-path").arg(vault.db_path_str())
+    cmd.arg("--vault-path").arg(kiln.kiln_path_str())
+        .arg("--db-path").arg(kiln.db_path_str())
         .arg("note")
         .arg("list")
         .assert()
@@ -48,12 +46,12 @@ fn test_note_list_empty() {
 
 #[test]
 fn test_note_create() {
-    let vault = TestVault::new().unwrap();
+    let kiln = TestKiln::new().unwrap();
     let note_path = "test-note.md";
     
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path").arg(vault.vault_path_str())
-        .arg("--db-path").arg(vault.db_path_str())
+    cmd.arg("--vault-path").arg(kiln.kiln_path_str())
+        .arg("--db-path").arg(kiln.db_path_str())
         .arg("note")
         .arg("create")
         .arg(note_path)
@@ -64,12 +62,12 @@ fn test_note_create() {
         .stdout(predicate::str::contains("Created"));
     
     // Verify file was created
-    assert!(vault.vault_path.join(note_path).exists());
+    assert!(kiln.kiln_path.join(note_path).exists());
 }
 
 #[test]
 fn test_commands_list() {
-    let _vault = TestVault::new().unwrap();
+    let _kiln = TestKiln::new().unwrap();
     
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
     cmd.arg("commands")
@@ -87,13 +85,13 @@ fn test_invalid_command() {
 }
 
 #[test]
-fn test_missing_vault_path() {
-    let vault = TestVault::new().unwrap();
+fn test_missing_kiln_path() {
+    let kiln = TestKiln::new().unwrap();
     
-    // Use a nonexistent vault path
+    // Use a nonexistent kiln path
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
     cmd.arg("--vault-path").arg("/nonexistent/path")
-        .arg("--db-path").arg(vault.db_path_str())
+        .arg("--db-path").arg(kiln.db_path_str())
         .arg("stats")
         .assert()
         .success(); // Should succeed but show empty stats

@@ -42,6 +42,7 @@ use crucible_core::database::{
 use std::collections::HashMap;
 use std::sync::Arc;
 use async_trait::async_trait;
+use serde::{Serialize, Deserialize};
 
 /// Unified Multi-Model SurrealDB Client
 ///
@@ -63,7 +64,7 @@ pub struct SurrealClient {
 }
 
 /// In-memory storage implementation for testing
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct SurrealStorage {
     // Relational model storage
     tables: HashMap<String, TableData>,
@@ -78,10 +79,13 @@ struct SurrealStorage {
     transactions: HashMap<TransactionId, TransactionData>,
     // SurrealDB-style relationship storage (for RELATE statements)
     relationships: HashMap<String, Vec<RelationshipRecord>>,
+    // Database file path for persistent storage
+    #[serde(skip)]
+    db_path: Option<String>,
 }
 
 /// Relationship record for SurrealDB-style RELATE statements
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct RelationshipRecord {
     id: String,
     from: String,
@@ -93,7 +97,7 @@ struct RelationshipRecord {
 }
 
 /// Table data for relational model
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct TableData {
     schema: Option<TableSchema>,
     records: HashMap<RecordId, Record>,
@@ -101,7 +105,7 @@ struct TableData {
 }
 
 /// Search index data for document model
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct SearchIndexData {
     fields: Vec<String>,
     #[allow(dead_code)]
@@ -110,7 +114,7 @@ struct SearchIndexData {
 }
 
 /// Transaction data for rollback support
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct TransactionData {
     #[allow(dead_code)]
     operations: Vec<TransactionOperation>,
@@ -118,7 +122,7 @@ struct TransactionData {
     timestamp: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 enum TransactionOperation {
     InsertRecord { table: String, record_id: RecordId, record: Record },
@@ -135,10 +139,100 @@ enum TransactionOperation {
     DeleteDocument { collection: String, document_id: DocumentId, document: Document },
 }
 
+impl Default for SurrealStorage {
+    fn default() -> Self {
+        Self {
+            tables: HashMap::new(),
+            nodes: HashMap::new(),
+            edges: HashMap::new(),
+            adjacency_list: HashMap::new(),
+            collections: HashMap::new(),
+            search_indexes: HashMap::new(),
+            transactions: HashMap::new(),
+            relationships: HashMap::new(),
+            db_path: None,
+        }
+    }
+}
+
+impl SurrealStorage {
+    /// Load existing database from file or create a new one
+    pub async fn load_or_create(db_path: &str) -> DbResult<Self> {
+        // Ensure parent directory exists
+        if let Some(parent) = std::path::Path::new(db_path).parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| DbError::Connection(format!("Failed to create database directory: {}", e)))?;
+        }
+
+        // Try to load existing database
+        if std::path::Path::new(db_path).exists() {
+            match Self::load_from_file(db_path).await {
+                Ok(storage) => {
+                    println!("✅ Loaded existing database from: {}", db_path);
+                    return Ok(storage);
+                }
+                Err(e) => {
+                    println!("⚠️  Failed to load existing database ({}), creating new one", e);
+                    // Continue to create new database
+                }
+            }
+        }
+
+        // Create new database
+        println!("📁 Creating new database at: {}", db_path);
+        let mut storage = Self::default();
+        storage.db_path = Some(db_path.to_string());
+
+        // Save the empty database to create the file
+        storage.save_to_file().await?;
+
+        Ok(storage)
+    }
+
+    /// Load database from file
+    async fn load_from_file(db_path: &str) -> DbResult<Self> {
+        let content = std::fs::read_to_string(db_path)
+            .map_err(|e| DbError::Connection(format!("Failed to read database file: {}", e)))?;
+
+        // The storage is serialized as JSON for simplicity
+        let storage: SurrealStorage = serde_json::from_str(&content)
+            .map_err(|e| DbError::Connection(format!("Failed to deserialize database: {}", e)))?;
+
+        Ok(storage)
+    }
+
+    /// Save database to file
+    async fn save_to_file(&self) -> DbResult<()> {
+        if let Some(db_path) = &self.db_path {
+            let content = serde_json::to_string_pretty(self)
+                .map_err(|e| DbError::Connection(format!("Failed to serialize database: {}", e)))?;
+
+            std::fs::write(db_path, content)
+                .map_err(|e| DbError::Connection(format!("Failed to write database file: {}", e)))?;
+        }
+        Ok(())
+    }
+
+    /// Mark storage as modified and save if persistent
+    pub async fn mark_modified(&mut self) -> DbResult<()> {
+        if self.db_path.is_some() {
+            self.save_to_file().await?;
+        }
+        Ok(())
+    }
+}
+
 impl SurrealClient {
     /// Create a new multi-model client with the given configuration
     pub async fn new(config: SurrealDbConfig) -> DbResult<Self> {
-        let storage = Arc::new(tokio::sync::RwLock::new(SurrealStorage::default()));
+        let storage = if config.path.is_empty() || config.path == ":memory:" {
+            // Use in-memory storage for testing or when explicitly requested
+            Arc::new(tokio::sync::RwLock::new(SurrealStorage::default()))
+        } else {
+            // Use persistent file-based storage
+            let persistent_storage = SurrealStorage::load_or_create(&config.path).await?;
+            Arc::new(tokio::sync::RwLock::new(persistent_storage))
+        };
 
         Ok(Self {
             storage,
@@ -248,6 +342,13 @@ impl SurrealClient {
     fn generate_transaction_id(&self) -> TransactionId {
         let id = self.transaction_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         TransactionId(format!("tx_{}", id))
+    }
+
+    /// Auto-save storage if it's persistent
+    async fn auto_save(&self) -> DbResult<()> {
+        let mut storage = self.storage.write().await;
+        storage.mark_modified().await?;
+        Ok(())
     }
 
     /// Evaluate a filter clause against record data
@@ -447,6 +548,10 @@ impl RelationalDB for SurrealClient {
                 index.entry(serde_json::Value::String(index_key)).or_insert_with(Vec::new).push(record_id.clone());
             }
         }
+
+        // Auto-save after record insertion
+        drop(storage); // Release the lock before calling auto_save
+        self.auto_save().await?;
 
         Ok(QueryResult {
             records: vec![new_record],
@@ -1072,6 +1177,10 @@ impl DocumentDB for SurrealClient {
         if storage.search_indexes.contains_key(collection) {
             self.update_search_index(&mut storage.search_indexes, collection, &document_id, &document_clone);
         }
+
+        // Auto-save after document creation
+        drop(storage); // Release the lock before calling auto_save
+        self.auto_save().await?;
 
         Ok(document_id)
     }
@@ -1709,6 +1818,9 @@ impl SurrealClient {
                         indexes: HashMap::new(),
                         schema: None,
                     });
+                    // Auto-save after table creation
+                    drop(storage); // Release the lock before calling auto_save
+                    self.auto_save().await?;
                 }
             }
             return Ok(QueryResult {
@@ -1994,6 +2106,9 @@ impl SurrealClient {
                     if let Some(table_data) = storage.tables.get_mut(table_name) {
                         let count = table_data.records.len() as u64;
                         table_data.records.clear();
+                        // Auto-save after clearing records
+                        drop(storage); // Release the lock before calling auto_save
+                        self.auto_save().await?;
                         return Ok(QueryResult {
                             records: vec![],
                             total_count: Some(count),
@@ -2277,6 +2392,10 @@ impl SurrealClient {
                 }
             }
         }
+
+        // Auto-save after record update
+        drop(storage); // Release the lock before calling auto_save
+        self.auto_save().await?;
 
         Ok(QueryResult {
             records: vec![],

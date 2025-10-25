@@ -38,7 +38,7 @@ async fn execute_list_agents(config: CliConfig, format: String, detailed: bool) 
     let mut agent_registry = EnhancedAgentRegistry::new();
 
     // Add vault paths for agent discovery
-    if let Ok(vault_path) = config.vault_path_str() {
+    if let Ok(vault_path) = config.kiln_path_str() {
         agent_registry.add_vault_path(std::path::Path::new(&vault_path));
     }
 
@@ -136,7 +136,7 @@ async fn execute_show_rankings(config: CliConfig, limit: usize, sort_by: String)
     let mut agent_registry = EnhancedAgentRegistry::new();
 
     // Add vault paths for agent discovery
-    if let Ok(vault_path) = config.vault_path_str() {
+    if let Ok(vault_path) = config.kiln_path_str() {
         agent_registry.add_vault_path(std::path::Path::new(&vault_path));
     }
 
@@ -176,7 +176,7 @@ async fn execute_show_performance(config: CliConfig, agent_name: String, show_in
     let mut agent_registry = EnhancedAgentRegistry::new();
 
     // Add vault paths for agent discovery
-    if let Ok(vault_path) = config.vault_path_str() {
+    if let Ok(vault_path) = config.kiln_path_str() {
         agent_registry.add_vault_path(std::path::Path::new(&vault_path));
     }
 
@@ -265,7 +265,7 @@ async fn execute_suggest_agents(
     let mut agent_registry = EnhancedAgentRegistry::new();
 
     // Add vault paths for agent discovery
-    if let Ok(vault_path) = config.vault_path_str() {
+    if let Ok(vault_path) = config.kiln_path_str() {
         agent_registry.add_vault_path(std::path::Path::new(&vault_path));
     }
 

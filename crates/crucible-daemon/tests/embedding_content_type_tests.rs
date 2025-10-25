@@ -53,7 +53,7 @@ async fn test_technical_content_code_examples() -> Result<()> {
     let harness = DaemonEmbeddingHarness::new_default().await?;
 
     // Read technical documentation from test vault
-    let tech_doc_path = "tests/test-vault/Technical Documentation.md";
+    let tech_doc_path = "tests/test-kiln/Technical Documentation.md";
     let tech_content = std::fs::read_to_string(tech_doc_path)?;
 
     // Generate embedding for full technical document
@@ -125,7 +125,7 @@ async fn test_api_documentation_content() -> Result<()> {
     let harness = DaemonEmbeddingHarness::new_default().await?;
 
     // Read API documentation from test vault
-    let api_doc_path = "tests/test-vault/API Documentation.md";
+    let api_doc_path = "tests/test-kiln/API Documentation.md";
     let api_content = std::fs::read_to_string(api_doc_path)?;
 
     // Generate embedding for API documentation
@@ -322,7 +322,7 @@ async fn test_academic_research_content() -> Result<()> {
     let harness = DaemonEmbeddingHarness::new_default().await?;
 
     // Read research methods from test vault
-    let research_doc_path = "tests/test-vault/Research Methods.md";
+    let research_doc_path = "tests/test-kiln/Research Methods.md";
     let research_content = std::fs::read_to_string(research_doc_path)?;
 
     // Generate embedding for academic content
@@ -510,7 +510,7 @@ async fn test_business_project_management_content() -> Result<()> {
     let harness = DaemonEmbeddingHarness::new_default().await?;
 
     // Read project management document from test vault
-    let pm_doc_path = "tests/test-vault/Project Management.md";
+    let pm_doc_path = "tests/test-kiln/Project Management.md";
     let pm_content = std::fs::read_to_string(pm_doc_path)?;
 
     // Generate embedding for project management content
@@ -567,7 +567,7 @@ async fn test_meeting_notes_and_action_items() -> Result<()> {
     let harness = DaemonEmbeddingHarness::new_default().await?;
 
     // Read meeting notes from test vault
-    let meeting_doc_path = "tests/test-vault/Meeting Notes.md";
+    let meeting_doc_path = "tests/test-kiln/Meeting Notes.md";
     let meeting_content = std::fs::read_to_string(meeting_doc_path)?;
 
     // Generate embedding for meeting content

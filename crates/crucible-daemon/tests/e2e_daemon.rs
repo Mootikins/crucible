@@ -100,7 +100,7 @@ impl DaemonHandle {
         watcher.register_handler(handler.clone()).await?;
         watcher.start().await?;
         watcher
-            .add_watch(vault_path.clone(), WatchConfig::new("test-vault"))
+            .add_watch(vault_path.clone(), WatchConfig::new("test-kiln"))
             .await?;
 
         // Give watcher time to initialize

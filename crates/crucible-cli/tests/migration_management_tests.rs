@@ -8,12 +8,10 @@
 //! - Error scenarios and recovery
 //! - Integration with migration bridge
 
-mod test_utilities;
-
 use anyhow::Result;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
-use crucible_cli::test_utilities::*;
+use super::test_utilities::*;
 use crucible_cli::config::CliConfig;
 use crucible_cli::cli::MigrationCommands;
 use crucible_cli::commands::migration::execute;

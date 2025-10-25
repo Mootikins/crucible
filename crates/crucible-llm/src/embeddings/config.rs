@@ -13,6 +13,8 @@ pub enum ProviderType {
     Ollama,
     /// OpenAI embedding API
     OpenAI,
+    /// Candle local embedding framework
+    Candle,
 }
 
 impl ProviderType {
@@ -21,8 +23,9 @@ impl ProviderType {
         match s.to_lowercase().as_str() {
             "ollama" => Ok(ProviderType::Ollama),
             "openai" => Ok(ProviderType::OpenAI),
+            "candle" => Ok(ProviderType::Candle),
             _ => Err(EmbeddingError::ConfigError(format!(
-                "Unknown provider type: {}. Valid options: ollama, openai",
+                "Unknown provider type: {}. Valid options: ollama, openai, candle",
                 s
             ))),
         }
@@ -33,6 +36,7 @@ impl ProviderType {
         match self {
             ProviderType::Ollama => "https://llama.terminal.krohnos.io",
             ProviderType::OpenAI => "https://api.openai.com/v1",
+            ProviderType::Candle => "local",
         }
     }
 
@@ -41,6 +45,7 @@ impl ProviderType {
         match self {
             ProviderType::Ollama => "nomic-embed-text",
             ProviderType::OpenAI => "text-embedding-3-small",
+            ProviderType::Candle => "nomic-embed-text-v1.5",
         }
     }
 
@@ -49,6 +54,7 @@ impl ProviderType {
         match self {
             ProviderType::Ollama => 768,  // nomic-embed-text
             ProviderType::OpenAI => 1536, // text-embedding-3-small
+            ProviderType::Candle => 768,  // nomic-embed-text-v1.5
         }
     }
 
@@ -57,6 +63,7 @@ impl ProviderType {
         match self {
             ProviderType::Ollama => false,
             ProviderType::OpenAI => true,
+            ProviderType::Candle => false,
         }
     }
 }
@@ -157,6 +164,19 @@ impl EmbeddingConfig {
         }
     }
 
+    /// Create configuration for Candle provider
+    pub fn candle(_endpoint: Option<String>, model: Option<String>) -> Self {
+        Self {
+            provider: ProviderType::Candle,
+            endpoint: "local".to_string(),
+            api_key: None,
+            model: model.unwrap_or_else(|| "nomic-embed-text-v1.5".to_string()),
+            timeout_secs: 120,  // Longer timeout for local processing
+            max_retries: 1,     // Fewer retries for local processing
+            batch_size: 1,      // Conservative batch size for local processing
+        }
+    }
+
     /// Validate configuration
     pub fn validate(&self) -> EmbeddingResult<()> {
         // Check API key requirement
@@ -166,6 +186,7 @@ impl EmbeddingConfig {
                 match self.provider {
                     ProviderType::OpenAI => "OpenAI",
                     ProviderType::Ollama => "Ollama",
+                    ProviderType::Candle => "Candle",
                 }
             )));
         }
@@ -210,9 +231,16 @@ impl EmbeddingConfig {
             (ProviderType::OpenAI, "text-embedding-3-small") => 1536,
             (ProviderType::OpenAI, "text-embedding-3-large") => 3072,
             (ProviderType::OpenAI, "text-embedding-ada-002") => 1536,
+            // Candle models
+            (ProviderType::Candle, "nomic-embed-text-v1.5") => 768,
+            (ProviderType::Candle, "jina-embeddings-v2-base-en") => 768,
+            (ProviderType::Candle, "jina-embeddings-v3-base-en") => 768,
+            (ProviderType::Candle, "all-MiniLM-L6-v2") => 384,
+            (ProviderType::Candle, "bge-small-en-v1.5") => 384,
             // Default to provider defaults for unknown models
             (ProviderType::Ollama, _) => 768,
             (ProviderType::OpenAI, _) => 1536,
+            (ProviderType::Candle, _) => 768,
         }
     }
 }
@@ -239,6 +267,11 @@ mod tests {
 
         assert!(ProviderType::from_str("unknown").is_err());
         assert!(ProviderType::from_str("").is_err());
+
+        // GREEN Phase: Test for Candle provider (should now pass)
+        assert_eq!(ProviderType::from_str("candle").unwrap(), ProviderType::Candle);
+        assert_eq!(ProviderType::from_str("Candle").unwrap(), ProviderType::Candle);
+        assert_eq!(ProviderType::from_str("CANDLE").unwrap(), ProviderType::Candle);
     }
 
     #[test]
@@ -254,6 +287,13 @@ mod tests {
         assert_eq!(openai.default_model(), "text-embedding-3-small");
         assert_eq!(openai.default_dimensions(), 1536);
         assert!(openai.requires_api_key());
+
+        // GREEN Phase: Test Candle provider defaults (should now pass)
+        let candle = ProviderType::Candle;
+        assert_eq!(candle.default_endpoint(), "local");
+        assert_eq!(candle.default_model(), "nomic-embed-text-v1.5");
+        assert_eq!(candle.default_dimensions(), 768);
+        assert!(!candle.requires_api_key());
     }
 
     #[test]
@@ -262,6 +302,10 @@ mod tests {
         assert!(config.validate().is_ok());
 
         let config = EmbeddingConfig::openai("test-key".to_string(), None);
+        assert!(config.validate().is_ok());
+
+        // GREEN Phase: Test Candle configuration creation (should now pass)
+        let config = EmbeddingConfig::candle(None, None);
         assert!(config.validate().is_ok());
     }
 
@@ -397,5 +441,83 @@ mod tests {
         assert_eq!(config.provider, ProviderType::Ollama); // Default
         assert_eq!(config.model, "nomic-embed-text"); // Default
         assert_eq!(config.timeout_secs, 30); // Default
+    }
+
+    // RED Phase: Candle-specific tests (will fail until implementation)
+    #[test]
+    fn test_candle_provider_from_str() {
+        assert_eq!(ProviderType::from_str("candle").unwrap(), ProviderType::Candle);
+        assert_eq!(ProviderType::from_str("Candle").unwrap(), ProviderType::Candle);
+        assert_eq!(ProviderType::from_str("CANDLE").unwrap(), ProviderType::Candle);
+    }
+
+    #[test]
+    fn test_candle_provider_defaults() {
+        let candle = ProviderType::Candle;
+        assert_eq!(candle.default_endpoint(), "local");
+        assert_eq!(candle.default_model(), "nomic-embed-text-v1.5");
+        assert_eq!(candle.default_dimensions(), 768);
+        assert!(!candle.requires_api_key());
+    }
+
+    #[test]
+    fn test_candle_config_creation() {
+        let config = EmbeddingConfig::candle(None, None);
+        assert_eq!(config.provider, ProviderType::Candle);
+        assert_eq!(config.endpoint, "local");
+        assert_eq!(config.model, "nomic-embed-text-v1.5");
+        assert!(config.api_key.is_none());
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_candle_config_with_custom_model() {
+        let config = EmbeddingConfig::candle(None, Some("jina-embeddings-v2-base-en".to_string()));
+        assert_eq!(config.provider, ProviderType::Candle);
+        assert_eq!(config.model, "jina-embeddings-v2-base-en");
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_candle_expected_dimensions() {
+        // Test default model
+        let config = EmbeddingConfig::candle(None, None);
+        assert_eq!(config.expected_dimensions(), 768);
+
+        // Test different models
+        let models = vec![
+            ("nomic-embed-text-v1.5", 768),
+            ("jina-embeddings-v2-base-en", 768),
+            ("jina-embeddings-v3-base-en", 768),
+            ("all-MiniLM-L6-v2", 384),
+            ("bge-small-en-v1.5", 384),
+        ];
+
+        for (model, expected_dims) in models {
+            let config = EmbeddingConfig::candle(None, Some(model.to_string()));
+            assert_eq!(config.expected_dimensions(), expected_dims, "Model {} should have {} dimensions", model, expected_dims);
+        }
+
+        // Test unknown model defaults to 768
+        let config = EmbeddingConfig::candle(None, Some("unknown-model".to_string()));
+        assert_eq!(config.expected_dimensions(), 768);
+    }
+
+    #[test]
+    fn test_candle_config_from_env() {
+        // Set environment variables for Candle
+        std::env::set_var("EMBEDDING_PROVIDER", "candle");
+        std::env::set_var("EMBEDDING_MODEL", "all-MiniLM-L6-v2");
+
+        let config = EmbeddingConfig::from_env();
+        assert!(config.is_ok());
+
+        let config = config.unwrap();
+        assert_eq!(config.provider, ProviderType::Candle);
+        assert_eq!(config.model, "all-MiniLM-L6-v2");
+
+        // Clean up
+        std::env::remove_var("EMBEDDING_PROVIDER");
+        std::env::remove_var("EMBEDDING_MODEL");
     }
 }
