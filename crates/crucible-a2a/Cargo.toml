@@ -22,7 +22,7 @@ anyhow = "1"
 thiserror = { workspace = true }
 
 # Rune scripting
-rune = "0.14"
+rune = { workspace = true }
 
 # Utilities
 uuid = { version = "1", features = ["v4", "serde"] }

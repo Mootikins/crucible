@@ -114,7 +114,7 @@ pub struct CandleConfig {
 #[derive(Debug)]
 struct CandleModel {
     /// Model name identifier
-    name: String,
+    _name: String,
     /// Embedding dimensions for this model
     dimensions: usize,
     // TODO: Replace with actual Candle model when dependencies are resolved
@@ -185,7 +185,7 @@ impl CandleProvider {
         let dimensions = self.get_model_dimensions(&self.config.model);
 
         Ok(CandleModel {
-            name: self.config.model.clone(),
+            _name: self.config.model.clone(),
             dimensions,
         })
     }

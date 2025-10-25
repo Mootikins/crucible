@@ -105,3 +105,10 @@ impl From<globset::Error> for Error {
         Error::Pattern(err.to_string())
     }
 }
+
+/// Convert anyhow errors to our error type.
+impl From<anyhow::Error> for Error {
+    fn from(err: anyhow::Error) -> Self {
+        Error::Embedding(err.to_string())
+    }
+}
