@@ -1,57 +1,45 @@
 use anyhow::Result;
-use crate::common::CrucibleToolManager;
-use serde_json::json;
+use std::fs;
 use crate::config::CliConfig;
-use crate::output;
 
 pub async fn execute(config: CliConfig) -> Result<()> {
-    // Ensure crucible-tools are initialized through centralized manager
-    CrucibleToolManager::ensure_initialized_global().await?;
+    let kiln_path = &config.vault.path;
 
-    // Get vault statistics using tools
-    let result = CrucibleToolManager::execute_tool_global(
-        "get_vault_stats",
-        json!({}),
-        Some("cli_user".to_string()),
-        Some("stats_session".to_string()),
-    ).await?;
-
-    let mut stats = std::collections::HashMap::new();
-
-    if let Some(data) = result.data {
-        if let Some(total_notes) = data.get("total_notes").and_then(|v| v.as_u64()) {
-            stats.insert("total_documents".to_string(), total_notes as i64);
-        }
-        if let Some(total_size) = data.get("total_size_mb").and_then(|v| v.as_f64()) {
-            stats.insert("total_size_mb".to_string(), total_size as i64);
-        }
-        if let Some(folders) = data.get("folders").and_then(|v| v.as_u64()) {
-            stats.insert("total_folders".to_string(), folders as i64);
-        }
-        if let Some(tags) = data.get("tags").and_then(|v| v.as_u64()) {
-            stats.insert("total_tags".to_string(), tags as i64);
-        }
-    } else {
-        // Fallback values
-        stats.insert("total_documents".to_string(), 0);
-        stats.insert("total_size_mb".to_string(), 0);
-        stats.insert("total_folders".to_string(), 0);
-        stats.insert("total_tags".to_string(), 0);
+    // Check if kiln path exists
+    if !kiln_path.exists() {
+        eprintln!("Error: Kiln path does not exist: {}", kiln_path.display());
+        eprintln!("Please set OBSIDIAN_VAULT_PATH to a valid kiln directory.");
+        return Err(anyhow::anyhow!("Kiln path does not exist"));
     }
 
-    // Add additional statistics that weren't provided by the tool
-    if !stats.contains_key("total_documents") {
-        stats.insert("total_documents".to_string(), 0);
+    let mut total_files = 0;
+    let mut total_size = 0;
+    let mut markdown_files = 0;
+
+    // Simple file system scanning
+    if let Ok(entries) = fs::read_dir(kiln_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                total_files += 1;
+                if let Ok(metadata) = fs::metadata(&path) {
+                    total_size += metadata.len();
+                }
+                if let Some(ext) = path.extension() {
+                    if ext == "md" {
+                        markdown_files += 1;
+                    }
+                }
+            }
+        }
     }
-    stats.insert("indexed_files".to_string(), stats.get("total_documents").copied().unwrap_or(0));
-    stats.insert("database_size_mb".to_string(), 0); // TODO: Get actual database size
 
-    println!("📊 Vault Statistics\n");
-    let output = output::format_stats(&stats);
-    println!("{}", output);
-
-    println!("\n📁 Vault: {}", config.vault.path.display());
-    println!("💡 Phase 1.1 Simplification: Complex database statistics have been replaced with tool-based statistics.");
+    println!("📊 Kiln Statistics\n");
+    println!("📁 Total files: {}", total_files);
+    println!("📝 Markdown files: {}", markdown_files);
+    println!("💾 Total size: {} KB", total_size / 1024);
+    println!("🗂️  Kiln path: {}", kiln_path.display());
+    println!("\n✅ Kiln scan completed successfully.");
 
     Ok(())
 }

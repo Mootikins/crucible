@@ -269,7 +269,7 @@ mod tests {
         let original_path = std::env::var("OBSIDIAN_VAULT_PATH").ok();
         std::env::remove_var("OBSIDIAN_VAULT_PATH");
 
-        let result = manager.spawn_daemon_for_processing(Path::new("/nonexistent")).await;
+        let result = manager.spawn_daemon_for_processing(std::path::Path::new("/nonexistent")).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("does not exist or is not accessible"));
 

@@ -477,7 +477,7 @@ impl CliConfig {
             .path
             .to_str()
             .map(|s| s.to_string())
-            .context("Vault path is not valid UTF-8")
+            .context("Kiln path is not valid UTF-8")
     }
 
     /// Get default config file path
@@ -494,9 +494,9 @@ impl CliConfig {
 # Location: ~/.config/crucible/config.toml
 
 [vault]
-# Path to your Obsidian vault
+# Path to your Obsidian kiln
 # Default: current directory
-path = "/home/user/Documents/my-vault"
+path = "/home/user/Documents/my-kiln"
 
 # Embedding service endpoint
 # Default: http://localhost:11434 (local Ollama)
@@ -554,9 +554,9 @@ endpoint = "https://api.anthropic.com"
 # API key (can also be set via ANTHROPIC_API_KEY env var)
 # api_key = "sk-ant-..."
 
-# Note: The following are automatically derived from vault path:
-#   - Database: {vault}/.crucible/embeddings.db
-#   - Tools: {vault}/tools/
+# Note: The following are automatically derived from kiln path:
+#   - Database: {kiln}/.crucible/embeddings.db
+#   - Tools: {kiln}/tools/
 
 [services]
 # ScriptEngine service configuration
@@ -848,7 +848,7 @@ mod tests {
         let config = result.unwrap();
 
         // Should use current directory as default when no env var is set
-        assert!(config.vault.path.is_absolute() || config.vault.path.as_path() == Path::new("."));
+        assert!(config.vault.path.is_absolute() || config.vault.path.as_path() == std::path::Path::new("."));
     }
 
     #[test]
