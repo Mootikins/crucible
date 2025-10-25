@@ -4,7 +4,7 @@
 //! in the REPL environment.
 
 use std::path::PathBuf;
-use tracing::{info, warn, debug};
+use tracing::{info, warn};
 use super::benchmarks::{
     PerformanceBenchmarks, BenchmarkConfig, print_benchmark_results, print_comparison_results
 };

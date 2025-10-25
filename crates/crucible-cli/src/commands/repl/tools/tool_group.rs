@@ -12,7 +12,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock, Once};
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock as AsyncRwLock;
 use super::types::ToolResult;

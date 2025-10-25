@@ -1,6 +1,5 @@
 //! Test utilities for configuration testing.
 
-#[cfg(test)]
 use crate::{
     Config, ConfigLoader, DatabaseConfig,
     EmbeddingProviderConfig, LoggingConfig, ProfileConfig, ServerConfig, Environment,
@@ -22,9 +21,17 @@ impl TestConfigBuilder {
         }
     }
 
-    /// Set the active profile.
-    pub fn profile<S: Into<String>>(mut self, profile: S) -> Self {
-        self.config.profile = Some(profile.into());
+    /// Set the active profile and add it to profiles if not already present.
+    pub fn profile<S: Into<String>>(mut self, profile_name: S) -> Self {
+        let profile_name = profile_name.into();
+        self.config.profile = Some(profile_name.clone());
+
+        // If the profile doesn't exist yet, create a basic one
+        if !self.config.profiles.contains_key(&profile_name) {
+            let profile = ProfileConfig::new(profile_name.clone(), Environment::Test);
+            self.config.profiles.insert(profile_name, profile);
+        }
+
         self
     }
 
@@ -221,7 +228,7 @@ pub struct TempConfig;
 impl TempConfig {
     /// Create a temporary configuration file with the given configuration.
     pub fn create_temp_file(config: &Config) -> (NamedTempFile, String) {
-        let mut temp_file = NamedTempFile::new().unwrap();
+        let mut temp_file = NamedTempFile::with_suffix("yaml").unwrap();
         let content = serde_yaml::to_string(config).unwrap();
         temp_file.write_all(content.as_bytes()).unwrap();
         let path = temp_file.path().to_string_lossy().to_string();
@@ -238,7 +245,7 @@ impl TempConfig {
         config: &Config,
         format: crate::ConfigFormat,
     ) -> (NamedTempFile, String) {
-        let mut temp_file = NamedTempFile::new().unwrap();
+        let temp_file = NamedTempFile::with_suffix(format.extension()).unwrap();
         let content = match format {
             crate::ConfigFormat::Yaml => serde_yaml::to_string(config).unwrap(),
             crate::ConfigFormat::Json => serde_json::to_string_pretty(config).unwrap(),
@@ -248,7 +255,8 @@ impl TempConfig {
             crate::ConfigFormat::Toml => serde_yaml::to_string(config).unwrap(),
             crate::ConfigFormat::Auto => serde_yaml::to_string(config).unwrap(),
         };
-        temp_file.write_all(content.as_bytes()).unwrap();
+        let mut file = temp_file.as_file();
+        file.write_all(content.as_bytes()).unwrap();
         let path = temp_file.path().to_string_lossy().to_string();
         (temp_file, path)
     }
@@ -372,7 +380,7 @@ mod tests {
         assert!(config.embedding_provider().is_ok());
         assert!(config.database().is_ok());
         assert!(config.server().is_ok());
-        assert_eq!(config.profiles.len(), 3); // default + development + testing
+        assert_eq!(config.profiles.len(), 4); // default + test + development + testing
     }
 
     #[test]

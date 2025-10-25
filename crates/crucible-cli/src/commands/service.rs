@@ -5,13 +5,13 @@
 
 use crate::config::CliConfig;
 use crate::cli::ServiceCommands;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use colored::*;
 use comfy_table::{Table, Cell, Color};
 use serde_json;
 use std::time::Duration;
 use tokio::time::interval;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, info};
 
 /// Execute service commands
 pub async fn execute(config: CliConfig, command: ServiceCommands) -> Result<()> {

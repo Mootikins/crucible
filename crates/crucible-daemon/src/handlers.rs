@@ -3,7 +3,7 @@
 //! Basic event logging without over-engineering. Uses direct flume channels.
 
 use anyhow::Result;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info};
 
 /// Simple event logger - no complex handler system
 pub struct EventLogger;

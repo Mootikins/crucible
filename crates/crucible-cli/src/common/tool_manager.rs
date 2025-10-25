@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::sync::{Arc, Mutex, Once};
 use std::collections::HashMap;
 use tokio::sync::RwLock as AsyncRwLock;
-use tracing::{info, warn, debug, error};
+use tracing::{info, debug, error};
 
 /// Centralized tool manager that handles all crucible-tools interactions
 ///

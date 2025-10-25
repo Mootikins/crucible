@@ -64,6 +64,22 @@ pub enum Error {
     /// Internal error.
     #[error("Internal error: {0}")]
     Internal(String),
+
+    /// Parser error.
+    #[error("Parser error: {0}")]
+    Parser(String),
+
+    /// Embedding error.
+    #[error("Embedding error: {0}")]
+    Embedding(String),
+
+    /// Channel error.
+    #[error("Channel error: {0}")]
+    Channel(String),
+
+    /// Other error.
+    #[error("Other error: {0}")]
+    Other(String),
 }
 
 /// Result type for file watching operations.

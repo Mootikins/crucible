@@ -4,12 +4,17 @@
 //! Eliminates complex service event routing in favor of direct channel communication.
 
 use crate::config::DaemonConfig;
-use crate::events::{DaemonEvent, EventBus, EventBuilder, convert_watch_event_to_daemon_event};
+use crate::events::{DaemonEvent, EventBus, EventBuilder};
 use crate::handlers::EventLogger;
-use crate::services::{ServiceManager, FileService, EventService, SyncService, SimpleEventService, SimpleFileService, SimpleSyncService};
+use crate::services::{ServiceManager, SimpleEventService, SimpleFileService, SimpleSyncService};
+use crate::surrealdb_service::{SurrealDBService, create_surrealdb_from_config};
 use anyhow::Result;
 use async_trait::async_trait;
-use crucible_watch::{WatchManager, WatchConfig, FileEvent, FileEventKind};
+use crucible_watch::{
+    WatchManager, WatchManagerConfig, EventDrivenEmbeddingProcessor, EmbeddingEventHandler, EmbeddingEvent,
+};
+use crucible_surrealdb::embedding_pool::EmbeddingThreadPool;
+use tokio::sync::mpsc;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -267,6 +272,12 @@ pub struct DataCoordinator {
     event_logger: Arc<EventLogger>,
     /// Filesystem watcher
     watcher: Option<Arc<WatchManager>>,
+    /// Event-driven embedding processor
+    embedding_processor: Option<Arc<EventDrivenEmbeddingProcessor>>,
+    /// Embedding thread pool
+    embedding_pool: Option<Arc<EmbeddingThreadPool>>,
+    /// Embedding event sender
+    embedding_event_tx: Option<mpsc::UnboundedSender<EmbeddingEvent>>,
     /// Shutdown signal
     shutdown_tx: watch::Sender<bool>,
     shutdown_rx: watch::Receiver<bool>,
@@ -311,6 +322,9 @@ impl DataCoordinator {
             event_handler,
             event_logger,
             watcher: None,
+            embedding_processor: None,
+            embedding_pool: None,
+            embedding_event_tx: None,
             shutdown_tx,
             shutdown_rx,
             running,
@@ -366,6 +380,20 @@ impl DataCoordinator {
 
         // Set running state to false
         *self.running.write().await = false;
+
+        // Note: WatchManager shutdown is handled automatically when it goes out of scope
+        // The Arc<WatchManager> will be dropped when this DataCoordinator is dropped
+        if self.watcher.is_some() {
+            info!("Filesystem watcher will be shut down automatically");
+        }
+
+        // Shutdown embedding processor if initialized
+        if let Some(processor) = &self.embedding_processor {
+            info!("Shutting down embedding processor");
+            if let Err(e) = processor.shutdown().await {
+                warn!("Error shutting down embedding processor: {}", e);
+            }
+        }
 
         // Shutdown service manager
         self.service_manager.shutdown().await?;
@@ -461,6 +489,11 @@ impl DataCoordinator {
         self.daemon_health.read().await.clone()
     }
 
+    /// Get the service manager (for testing purposes)
+    pub fn service_manager(&self) -> Arc<ServiceManager> {
+        self.service_manager.clone()
+    }
+
     /// Initialize services
     async fn initialize_services(&self) -> Result<()> {
         debug!("Initializing services");
@@ -523,9 +556,66 @@ impl DataCoordinator {
     async fn initialize_watcher(&mut self) -> Result<()> {
         debug!("Initializing filesystem watcher");
 
-        // For now, we'll use a placeholder implementation
-        // In a real implementation, this would set up actual file watching
-        info!("Filesystem watcher initialized successfully");
+        let config = self.config.read().await;
+
+        // Initialize embedding thread pool with a simple configuration
+        let embedding_config = crucible_surrealdb::embedding_config::EmbeddingConfig {
+            worker_count: config.performance.workers.num_workers.unwrap_or(4),
+            batch_size: 16,
+            model_type: crucible_surrealdb::embedding_config::EmbeddingModel::LocalStandard,
+            privacy_mode: crucible_surrealdb::embedding_config::PrivacyMode::StrictLocal,
+            max_queue_size: config.performance.workers.max_queue_size,
+            timeout_ms: 30000,
+            retry_attempts: 3,
+            retry_delay_ms: 500,
+            circuit_breaker_threshold: 10,
+            circuit_breaker_timeout_ms: 60000,
+        };
+        let embedding_pool = Arc::new(EmbeddingThreadPool::new(embedding_config).await?);
+
+        // Create embedding event channel
+        let (embedding_tx, embedding_rx) = mpsc::unbounded_channel::<EmbeddingEvent>();
+
+        // Create and start event-driven embedding processor with default config
+        let embedding_config = crucible_watch::EventDrivenEmbeddingConfig::default();
+        let embedding_processor = Arc::new(
+            EventDrivenEmbeddingProcessor::new(embedding_config, embedding_pool.clone())
+                .await?
+                .with_embedding_event_receiver(embedding_rx)
+                .await
+        );
+
+        // Create watch manager with a simple configuration
+        let manager_config = WatchManagerConfig {
+            queue_capacity: 10000,
+            debounce_delay: Duration::from_millis(100),
+            enable_default_handlers: true,
+            max_concurrent_handlers: 50,
+            enable_monitoring: true,
+        };
+        let mut watch_manager = WatchManager::new(manager_config).await?;
+
+        // Register embedding event handler
+        let embedding_handler = Arc::new(EmbeddingEventHandler::new(
+            embedding_processor.clone(),
+            embedding_tx.clone(), // Pass the embedding event sender
+        ));
+        watch_manager.register_handler(embedding_handler).await?;
+
+        // Start the embedding processor after the handler is registered
+        embedding_processor.start().await?;
+
+        // Start the watch manager
+        watch_manager.start().await?;
+
+        // Store components
+        self.watcher = Some(Arc::new(watch_manager));
+        self.embedding_processor = Some(embedding_processor);
+        self.embedding_pool = Some(embedding_pool);
+        self.embedding_event_tx = Some(embedding_tx);
+
+        info!("Filesystem watcher initialized successfully with event-driven embedding processing");
+
         Ok(())
     }
 
@@ -556,9 +646,10 @@ impl DataCoordinator {
     }
 
     /// Create database service
-    async fn create_database_service(&self) -> Result<Arc<MockDatabaseService>> {
-        let mock_db = Arc::new(MockDatabaseService);
-        Ok(mock_db)
+    async fn create_database_service(&self) -> Result<Arc<SurrealDBService>> {
+        let config = self.config.read().await;
+        let db_service = create_surrealdb_from_config(&*config).await?;
+        Ok(db_service)
     }
 
     /// Publish daemon startup event
@@ -830,21 +921,6 @@ impl DataCoordinator {
     }
 }
 
-/// Mock database service for testing
-struct MockDatabaseService;
-
-#[async_trait]
-impl crate::services::DatabaseService for MockDatabaseService {
-    async fn execute_query(&self, _query: &str) -> Result<serde_json::Value> {
-        // Simple mock implementation
-        Ok(serde_json::json!({"status": "ok", "result": []}))
-    }
-
-    async fn health_check(&self) -> Result<bool> {
-        // Simple health check
-        Ok(true)
-    }
-}
 
 #[cfg(test)]
 mod tests {

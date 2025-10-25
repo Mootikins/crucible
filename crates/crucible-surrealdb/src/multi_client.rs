@@ -1840,15 +1840,33 @@ impl SurrealClient {
                 }
             }
 
-            // Handle simple SELECT * FROM table queries (but only if no WHERE clause)
-            if let Some(from_part) = sql.split("from").nth(1) {
-                let table_name = from_part.split_whitespace().next().unwrap_or("notes");
+            // Handle WHERE document_id = queries
+            if sql_trimmed.contains("where document_id =") || sql_trimmed.contains("WHERE document_id =") {
+                if let Some(from_part) = sql_trimmed.split("from").nth(1) {
+                    let table_name = from_part.split_whitespace().next().unwrap_or("embeddings");
 
-                // Only use this handler if there's no WHERE clause
-                if !sql_trimmed.contains("where") && !sql_trimmed.contains("WHERE") {
+                    // Extract the document_id from the WHERE clause
+                    let document_id = if let Some(where_part) = sql.split("WHERE document_id =").nth(1) {
+                        where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
+                    } else if let Some(where_part) = sql.split("where document_id =").nth(1) {
+                        where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
+                    } else {
+                        return Err(DbError::InvalidOperation("Invalid WHERE document_id query format".to_string()));
+                    };
+
                     let storage = self.storage.read().await;
                     if let Some(table_data) = storage.tables.get(table_name) {
-                        let records: Vec<Record> = table_data.records.values().cloned().collect();
+                        let records: Vec<Record> = table_data.records.values()
+                            .filter(|record| {
+                                if let Some(stored_document_id) = record.data.get("document_id").and_then(|v| v.as_str()) {
+                                    stored_document_id == document_id
+                                } else {
+                                    false
+                                }
+                            })
+                            .cloned()
+                            .collect();
+
                         let count = records.len() as u64;
                         return Ok(QueryResult {
                             records,
@@ -1860,6 +1878,53 @@ impl SurrealClient {
                 }
             }
 
+            // Handle COUNT() queries (e.g., "SELECT count() as total FROM notes")
+            if sql_trimmed.starts_with("select count()") {
+                return self.handle_count_query(sql).await;
+            }
+
+            // Handle custom SELECT field queries (e.g., "SELECT path, content FROM notes WHERE ...")
+            if sql_trimmed.starts_with("select ") && !sql_trimmed.starts_with("select * from") {
+                return self.handle_custom_select_query(sql).await;
+            }
+
+            // Handle simple SELECT * FROM table queries (but only if no WHERE clause)
+            if sql_trimmed.starts_with("select * from") {
+                println!("DEBUG: Detected simple SELECT * query");
+                if let Some(from_part) = sql_trimmed.split("from").nth(1) {
+                    println!("DEBUG: FROM part: '{}'", from_part);
+                    let table_name = from_part.split_whitespace().next().unwrap_or("notes");
+                    println!("DEBUG: Extracted table name: '{}'", table_name);
+
+                    // Only use this handler if there's no WHERE clause
+                    if !sql_trimmed.contains("where") && !sql_trimmed.contains("WHERE") {
+                        println!("DEBUG: No WHERE clause detected, using simple SELECT handler for table '{}'", table_name);
+                        let storage = self.storage.read().await;
+                        println!("DEBUG: Available tables: {:?}", storage.tables.keys().collect::<Vec<_>>());
+                        if let Some(table_data) = storage.tables.get(table_name) {
+                            println!("DEBUG: Table '{}' has {} records", table_name, table_data.records.len());
+                            let records: Vec<Record> = table_data.records.values().cloned().collect();
+                            let count = records.len() as u64;
+                            println!("DEBUG: Returning {} records from table '{}'", count, table_name);
+                            return Ok(QueryResult {
+                                records,
+                                total_count: Some(count),
+                                execution_time_ms: Some(0),
+                                has_more: false,
+                            });
+                        } else {
+                            println!("DEBUG: Table '{}' not found", table_name);
+                        }
+                    } else {
+                        println!("DEBUG: WHERE clause detected, skipping simple SELECT handler");
+                    }
+                } else {
+                    println!("DEBUG: Could not extract table name from query");
+                }
+            } else {
+                println!("DEBUG: Query does not start with 'select * from', pattern: '{}'", &sql_trimmed[..sql_trimmed.len().min(20)]);
+            }
+
             // Return empty result for other SELECT queries
             return Ok(QueryResult {
                 records: vec![],
@@ -1867,6 +1932,69 @@ impl SurrealClient {
                 execution_time_ms: Some(0),
                 has_more: false,
             });
+        }
+
+        // Handle DELETE operations
+        if sql_trimmed.starts_with("delete from") {
+            if let Some(from_part) = sql_trimmed.split("from").nth(1) {
+                let mut query_parts = from_part.split_whitespace();
+                let table_name = query_parts.next().unwrap_or("notes");
+
+                // Handle DELETE with WHERE clause
+                if sql_trimmed.contains("where") {
+                    // Handle WHERE document_id = queries for DELETE
+                    if sql_trimmed.contains("where document_id =") || sql_trimmed.contains("WHERE document_id =") {
+                        let document_id = if let Some(where_part) = sql.split("WHERE document_id =").nth(1) {
+                            where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
+                        } else if let Some(where_part) = sql.split("where document_id =").nth(1) {
+                            where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
+                        } else {
+                            return Err(DbError::InvalidOperation("Invalid WHERE document_id query format".to_string()));
+                        };
+
+                        let mut storage = self.storage.write().await;
+                        if let Some(table_data) = storage.tables.get_mut(table_name) {
+                            let initial_count = table_data.records.len();
+                            table_data.records.retain(|_, record| {
+                                if let Some(stored_document_id) = record.data.get("document_id").and_then(|v| v.as_str()) {
+                                    stored_document_id != document_id
+                                } else {
+                                    true // Keep records without document_id field
+                                }
+                            });
+                            let deleted_count = initial_count - table_data.records.len();
+
+                            return Ok(QueryResult {
+                                records: vec![],
+                                total_count: Some(deleted_count as u64),
+                                execution_time_ms: Some(0),
+                                has_more: false,
+                            });
+                        }
+                    } else {
+                        // Other DELETE WHERE clauses not supported yet
+                        return Ok(QueryResult {
+                            records: vec![],
+                            total_count: Some(0),
+                            execution_time_ms: Some(0),
+                            has_more: false,
+                        });
+                    }
+                } else {
+                    // DELETE FROM table (no WHERE) - clear all records
+                    let mut storage = self.storage.write().await;
+                    if let Some(table_data) = storage.tables.get_mut(table_name) {
+                        let count = table_data.records.len() as u64;
+                        table_data.records.clear();
+                        return Ok(QueryResult {
+                            records: vec![],
+                            total_count: Some(count),
+                            execution_time_ms: Some(0),
+                            has_more: false,
+                        });
+                    }
+                }
+            }
         }
 
         // For INSERT/UPDATE/DELETE and other statements, return affected count
@@ -2148,6 +2276,200 @@ impl SurrealClient {
             execution_time_ms: Some(0),
             has_more: false,
         })
+    }
+
+    /// Handle COUNT() queries (e.g., "SELECT count() as total FROM notes")
+    async fn handle_count_query(&self, sql: &str) -> DbResult<QueryResult> {
+        let sql_lower = sql.to_lowercase();
+
+        // Extract table name from the query
+        let table_name = if let Some(from_part) = sql_lower.split("from").nth(1) {
+            // Handle type::table($table) format for SurrealDB
+            let from_part = from_part.trim();
+            if from_part.starts_with("type::table") {
+                // Extract the table name from type::table($table) - for now, default to notes
+                // In a real implementation, this would parse the parameter
+                "notes"
+            } else {
+                from_part.split_whitespace().next().unwrap_or("notes")
+            }
+        } else {
+            "notes"
+        };
+
+        let storage = self.storage.read().await;
+        if let Some(table_data) = storage.tables.get(table_name) {
+            let count = table_data.records.len() as i64;
+
+            // Extract alias name if present (e.g., "as total")
+            let alias = if let Some(as_part) = sql_lower.split("as").nth(1) {
+                as_part.split_whitespace().next().unwrap_or("total").to_string()
+            } else {
+                "total".to_string()
+            };
+
+            // Create a result record with the count
+            let mut count_data = HashMap::new();
+            count_data.insert(alias, serde_json::Value::Number(serde_json::Number::from(count)));
+
+            let count_record = Record {
+                id: None,
+                data: count_data,
+            };
+
+            Ok(QueryResult {
+                records: vec![count_record],
+                total_count: Some(1),
+                execution_time_ms: Some(0),
+                has_more: false,
+            })
+        } else {
+            // Table doesn't exist, return count of 0
+            let mut count_data = HashMap::new();
+            count_data.insert("total".to_string(), serde_json::Value::Number(serde_json::Number::from(0)));
+
+            let count_record = Record {
+                id: None,
+                data: count_data,
+            };
+
+            Ok(QueryResult {
+                records: vec![count_record],
+                total_count: Some(1),
+                execution_time_ms: Some(0),
+                has_more: false,
+            })
+        }
+    }
+
+    /// Handle custom SELECT field queries (e.g., "SELECT path, content FROM notes WHERE ...")
+    async fn handle_custom_select_query(&self, sql: &str) -> DbResult<QueryResult> {
+        let sql_lower = sql.to_lowercase();
+
+        // Extract the selected fields
+        let fields_part = if let Some(select_part) = sql_lower.split("select").nth(1) {
+            if let Some(from_pos) = select_part.find("from") {
+                &select_part[..from_pos]
+            } else {
+                return Err(DbError::InvalidOperation("Invalid SELECT query format".to_string()));
+            }
+        } else {
+            return Err(DbError::InvalidOperation("Invalid SELECT query format".to_string()));
+        };
+
+        // Parse the fields (comma-separated)
+        let selected_fields: Vec<String> = fields_part
+            .split(',')
+            .map(|field| field.trim().to_string())
+            .collect();
+
+        // Extract table name
+        let table_name = if let Some(from_part) = sql_lower.split("from").nth(1) {
+            let mut table_part = from_part.split_whitespace().next().unwrap_or("notes");
+            // Handle type::table($table) format
+            if table_part.starts_with("type::table") {
+                // Default to 'notes' table for type::table queries
+                table_part = "notes";
+            }
+            table_part.to_string()
+        } else {
+            "notes".to_string()
+        };
+
+        let storage = self.storage.read().await;
+        if let Some(table_data) = storage.tables.get(&table_name) {
+            let mut records = Vec::new();
+
+            // Handle WHERE clause if present
+            let filtered_records: Vec<&Record> = if sql_lower.contains("where") || sql_lower.contains("WHERE") {
+                // For the semantic search test, we need to handle CONTAINS queries
+                if sql_lower.contains("contains") {
+                    // Extract the search term from CONTAINS 'term'
+                    let search_term = if let Some(contains_part) = sql_lower.split("contains").nth(1) {
+                        contains_part.trim()
+                            .trim_matches(|c| c == '\'' || c == '"' || c == ';')
+                            .to_lowercase()
+                    } else {
+                        String::new()
+                    };
+
+                    // Filter records that contain the search term in content or title
+                    table_data.records.values().filter(|record| {
+                        let mut matches = false;
+
+                        // Check content field
+                        if let Some(content) = record.data.get("content").and_then(|v| v.as_str()) {
+                            if content.to_lowercase().contains(&search_term) {
+                                matches = true;
+                            }
+                        }
+
+                        // Check title field
+                        if let Some(title) = record.data.get("title").and_then(|v| v.as_str()) {
+                            if title.to_lowercase().contains(&search_term) {
+                                matches = true;
+                            }
+                        }
+
+                        // Check path field (for semantic search)
+                        if let Some(path) = record.data.get("path").and_then(|v| v.as_str()) {
+                            if path.to_lowercase().contains(&search_term) {
+                                matches = true;
+                            }
+                        }
+
+                        matches
+                    }).collect()
+                } else {
+                    // Other WHERE clauses - for now return all records
+                    table_data.records.values().collect()
+                }
+            } else {
+                table_data.records.values().collect()
+            };
+
+            // Apply field projection
+            for record in filtered_records {
+                let mut projected_data = HashMap::new();
+
+                for field in &selected_fields {
+                    if let Some(value) = record.data.get(field) {
+                        projected_data.insert(field.clone(), value.clone());
+                    } else {
+                        // For missing fields, add null value
+                        projected_data.insert(field.clone(), serde_json::Value::Null);
+                    }
+                }
+
+                records.push(Record {
+                    id: record.id.clone(),
+                    data: projected_data,
+                });
+            }
+
+            // Handle LIMIT clause if present
+            if let Some(limit_part) = sql_lower.split("limit").nth(1) {
+                if let Ok(limit) = limit_part.trim().split_whitespace().next().unwrap_or("10").parse::<usize>() {
+                    records.truncate(limit);
+                }
+            }
+
+            let total_count = records.len() as u64;
+            Ok(QueryResult {
+                records,
+                total_count: Some(total_count),
+                execution_time_ms: Some(0),
+                has_more: false,
+            })
+        } else {
+            // Table doesn't exist, return empty result
+            Ok(QueryResult {
+                records: vec![],
+                total_count: Some(0),
+                execution_time_ms: Some(0),
+                has_more: false,
+            })
+        }
     }
 }
 

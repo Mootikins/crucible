@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::collections::HashMap;
 
 /// Compatibility embedding configuration for service layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
