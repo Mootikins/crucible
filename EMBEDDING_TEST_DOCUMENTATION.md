@@ -62,7 +62,7 @@ crates/crucible-daemon/tests/
 
 Ensure you have:
 - Rust toolchain installed
-- Test vault files in `tests/test-vault/`
+- Test vault files in `tests/test-kiln/`
 - Database access for storage tests
 - Optional: Real embedding model for integration tests
 
@@ -284,7 +284,7 @@ cargo test -p crucible-daemon --test embedding_real_provider_tests
 
 ### Test Vault Structure
 
-The test suite uses a comprehensive test vault located at `tests/test-vault/` containing 11 realistic markdown files:
+The test suite uses a comprehensive test vault located at `tests/test-kiln/` containing 11 realistic markdown files:
 
 - `Knowledge Management Hub.md` - Central linking node
 - `Project Management.md` - Tasks, timelines, tracking
@@ -359,7 +359,7 @@ Embedding quality should meet:
 2. **Missing Test Vault Files**
    ```bash
    # Verify test vault exists
-   ls -la tests/test-vault/
+   ls -la tests/test-kiln/
 
    # If missing, recreate test files
    # Check test documentation for vault structure
