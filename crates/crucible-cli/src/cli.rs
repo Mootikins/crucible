@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use crate::commands::daemon::DaemonCommands;
 
 #[derive(Parser)]
-#[command(name = "crucible")]
-#[command(about = "Crucible CLI - Interactive knowledge management with semantic search")]
+#[command(name = "cru")]
+#[command(about = "cru - Crucible CLI - Interactive knowledge management with semantic search")]
 #[command(version)]
 #[command(arg_required_else_help = false)]
 pub struct Cli {

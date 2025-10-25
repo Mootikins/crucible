@@ -6,6 +6,10 @@ license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[[bin]]
+name = "cru"
+path = "src/main.rs"
+
 [dependencies]
 crucible-core = { path = "../crucible-core" }
 crucible-services = { path = "../crucible-services" }
