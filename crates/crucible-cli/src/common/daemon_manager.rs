@@ -50,12 +50,12 @@ impl DaemonManager {
 
     /// Spawn daemon for one-shot processing with progress feedback
     pub async fn spawn_daemon_for_processing(&mut self, vault_path: &std::path::Path) -> Result<DaemonResult> {
-        info!("Starting daemon for one-shot vault processing...");
+        info!("Starting daemon for one-shot kiln processing...");
 
-        // Validate vault path exists
+        // Validate kiln path exists
         if !vault_path.exists() {
             return Err(anyhow::anyhow!(
-                "Vault path '{}' does not exist or is not accessible",
+                "Kiln path '{}' does not exist or is not accessible",
                 vault_path.display()
             ));
         }
@@ -167,7 +167,7 @@ impl DaemonManager {
 
                     error!("Daemon processing failed: {}", error_msg);
                     Err(anyhow::anyhow!(
-                        "Daemon processing failed: {}. Check that your vault path is correct and accessible.",
+                        "Daemon processing failed: {}. Check that your kiln path is correct and accessible.",
                         error_msg
                     ))
                 }

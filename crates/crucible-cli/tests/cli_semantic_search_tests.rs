@@ -32,7 +32,7 @@ async fn setup_test_vault_with_embeddings() -> Result<(TempDir, CliConfig, Surre
 
     // Create test configuration
     let config = CliConfig {
-        vault: crucible_cli::config::VaultConfig {
+        kiln: crucible_cli::config::KilnConfig {
             path: vault_path.clone(),
             embedding_url: "http://localhost:11434".to_string(),
             embedding_model: "nomic-embed-text".to_string(),
@@ -362,7 +362,7 @@ mod cli_semantic_search_tests {
         // Test with configuration pointing to non-existent database
         let temp_dir = TempDir::new()?;
         let config = CliConfig {
-            vault: crucible_cli::config::VaultConfig {
+            kiln: crucible_cli::config::KilnConfig {
                 path: temp_dir.path().to_path_buf(),
                 embedding_url: "http://localhost:11434".to_string(),
                 embedding_model: "nomic-embed-text".to_string(),

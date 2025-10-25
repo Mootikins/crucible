@@ -8,8 +8,6 @@
 //! - Resource cleanup validation
 //! - Scalability testing
 
-mod test_utilities;
-
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -17,7 +15,7 @@ use std::time::{Duration, Instant};
 use std::thread;
 use tokio::time::{sleep, timeout};
 use futures::future::join_all;
-use crucible_cli::test_utilities::*;
+use super::test_utilities::*;
 use crucible_cli::config::CliConfig;
 use crucible_cli::cli::{ServiceCommands, MigrationCommands};
 use crucible_cli::commands::service::execute as service_execute;

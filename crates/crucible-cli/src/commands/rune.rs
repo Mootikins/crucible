@@ -8,6 +8,19 @@ use anyhow::{Context, Result};
 use crate::config::CliConfig;
 use std::path::PathBuf;
 
+pub async fn list_commands(_config: CliConfig) -> Result<()> {
+    println!("🔧 Available Rune Commands:");
+    println!("  run <script>     - Execute a Rune script");
+    println!("  list             - List available scripts");
+    println!("  help             - Show this help message");
+    println!();
+    println!("📁 Script locations:");
+    println!("  ~/.config/crucible/commands/");
+    println!("  .crucible/commands/");
+    println!("  Current directory");
+    Ok(())
+}
+
 pub async fn execute(_config: CliConfig, script: String, args: Option<String>) -> Result<()> {
     let script_path = PathBuf::from(&script);
 

@@ -1,10 +1,117 @@
 use anyhow::{Context, Result};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::io::{BufReader, Read};
 use crate::config::CliConfig;
 use crate::interactive::{FuzzyPicker, SearchResultWithScore};
 use crate::output;
+use super::secure_filesystem::{SecureFileSystemConfig, SecureFileWalker, SecureFileReader, PathValidator};
+
+/// Binary file detection constants
+const NULL_BYTE: u8 = 0x00;
+const BINARY_DETECTION_SAMPLE_SIZE: usize = 8192; // First 8KB for binary detection
+const MAX_NULL_BYTE_COUNT: usize = 3; // More than this indicates binary
+const BINARY_CONTENT_RATIO: f32 = 0.3; // 30% binary indicators = binary file
+
+/// Common binary file signatures
+const BINARY_SIGNATURES: &[&[u8]] = &[
+    // Image formats
+    &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A], // PNG
+    &[0xFF, 0xD8, 0xFF], // JPEG
+    &[0x47, 0x49, 0x46, 0x38, 0x39, 0x61], // GIF89a
+    &[0x42, 0x4D], // BMP
+    &[0x52, 0x49, 0x46, 0x46], // RIFF (WebP, AVI, etc.)
+
+    // Archive formats
+    &[0x50, 0x4B, 0x03, 0x04], // ZIP
+    &[0x50, 0x4B, 0x05, 0x06], // ZIP (empty)
+    &[0x50, 0x4B, 0x07, 0x08], // ZIP (spanned)
+    &[0x1F, 0x8B, 0x08], // GZIP
+    &[0x42, 0x5A, 0x68], // BZIP2
+    &[0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00], // XZ
+    &[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C], // 7Z
+
+    // Executable formats
+    &[0x7F, 0x45, 0x4C, 0x46], // ELF
+    &[0x4D, 0x5A], // PE/DOS
+    &[0xFE, 0xED, 0xFA, 0xCE], // Mach-O (32-bit)
+    &[0xFE, 0xED, 0xFA, 0xCF], // Mach-O (64-bit)
+    &[0xCE, 0xFA, 0xED, 0xFE], // Mach-O (reverse 32-bit)
+    &[0xCF, 0xFA, 0xED, 0xFE], // Mach-O (reverse 64-bit)
+
+    // Document formats
+    &[b'%', b'P', b'D', b'F'], // PDF
+    &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1], // Microsoft Office
+
+    // Audio/Video formats
+    &[0x49, 0x44, 0x33], // MP3
+    &[0xFF, 0xFB], // MP3 (MPEG)
+    &[0xFF, 0xF3], // MP3 (MPEG)
+    &[0xFF, 0xF2], // MP3 (MPEG)
+    &[0x52, 0x49, 0x46, 0x46], // RIFF/WAV
+    &[0x1A, 0x45, 0xDF, 0xA3], // Matroska/WebM
+
+    // Other binary formats
+    &[0x00, 0x00, 0x01, 0x00], // ICO
+    &[0x00, 0x00, 0x02, 0x00], // CUR
+];
+
+/// Detect if file content is binary by analyzing byte patterns
+pub fn is_binary_content(content: &[u8]) -> bool {
+    // Check for known binary signatures
+    for signature in BINARY_SIGNATURES {
+        if content.starts_with(signature) {
+            return true;
+        }
+    }
+
+    // Count null bytes in the sample
+    let sample_size = content.len().min(BINARY_DETECTION_SAMPLE_SIZE);
+    let sample = &content[..sample_size];
+
+    let null_byte_count = sample.iter().filter(|&&b| b == NULL_BYTE).count();
+    if null_byte_count > MAX_NULL_BYTE_COUNT {
+        return true;
+    }
+
+    // Count non-printable ASCII bytes (excluding common whitespace)
+    let non_printable_count = sample.iter().filter(|&&b| {
+        b < 32 && b != 9 && b != 10 && b != 13 // Not tab, newline, or carriage return
+    }).count();
+
+    // If more than 30% of bytes are non-printable, consider it binary
+    let binary_ratio = non_printable_count as f32 / sample_size as f32;
+    if binary_ratio > BINARY_CONTENT_RATIO {
+        return true;
+    }
+
+    // Check for UTF-8 validity
+    if let Ok(content_str) = std::str::from_utf8(sample) {
+        // If it's valid UTF-8, check for suspicious patterns
+        let replacement_chars = content_str.chars().filter(|&c| c == '\u{FFFD}').count();
+        if replacement_chars > 10 {
+            return true;
+        }
+    } else {
+        // Invalid UTF-8 indicates binary content
+        return true;
+    }
+
+    false
+}
+
+/// Read first bytes of a file for binary detection
+fn read_file_sample(file_path: &str, sample_size: usize) -> Result<Vec<u8>> {
+    let mut file = fs::File::open(file_path)
+        .with_context(|| format!("Failed to open file: {}", file_path))?;
+
+    let mut buffer = vec![0; sample_size];
+    let bytes_read = file.read(&mut buffer)
+        .with_context(|| format!("Failed to read from file: {}", file_path))?;
+
+    buffer.truncate(bytes_read);
+    Ok(buffer)
+}
 
 /// Maximum file size to process (10MB)
 const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
@@ -15,45 +122,10 @@ const MAX_QUERY_LENGTH: usize = 1000;
 /// Minimum meaningful search query length (2 characters)
 const MIN_QUERY_LENGTH: usize = 2;
 
-/// Validate and sanitize search query
-fn validate_search_query(query: &str) -> Result<String> {
-    // Check query length limits
-    if query.len() > MAX_QUERY_LENGTH {
-        return Err(anyhow::anyhow!(
-            "Search query too long ({} > {} characters). Please use a shorter query.",
-            query.len(),
-            MAX_QUERY_LENGTH
-        ));
-    }
-
-    // Trim whitespace
-    let trimmed = query.trim();
-
-    if trimmed.is_empty() {
-        return Err(anyhow::anyhow!(
-            "Search query cannot be empty or only whitespace."
-        ));
-    }
-
-    if trimmed.len() < MIN_QUERY_LENGTH {
-        return Err(anyhow::anyhow!(
-            "Search query too short ({} < {} characters). Please provide a more specific query.",
-            trimmed.len(),
-            MIN_QUERY_LENGTH
-        ));
-    }
-
-    // Check for potentially problematic patterns
-    if trimmed.contains('\0') {
-        return Err(anyhow::anyhow!(
-            "Search query contains invalid null characters."
-        ));
-    }
-
-    // Remove excessive whitespace
-    let normalized = trimmed.split_whitespace().collect::<Vec<_>>().join(" ");
-
-    Ok(normalized)
+/// Validate and sanitize search query using secure validator
+fn validate_search_query(query: &str, validator: &PathValidator) -> Result<String> {
+    validator.validate_search_query(query)
+        .map_err(|e| anyhow::anyhow!("Invalid search query: {}", e))
 }
 
 pub async fn execute(
@@ -63,32 +135,36 @@ pub async fn execute(
     format: String,
     show_content: bool,
 ) -> Result<()> {
-    let vault_path = &config.vault.path;
+    let kiln_path = &config.kiln.path;
 
     // Check if kiln path exists
-    if !vault_path.exists() {
-        eprintln!("Error: Kiln path does not exist: {}", vault_path.display());
-        eprintln!("Please set OBSIDIAN_VAULT_PATH to a valid kiln directory.");
-        return Err(anyhow::anyhow!("Kiln path does not exist"));
+    if !kiln_path.exists() {
+        eprintln!("Error: kiln path does not exist: {}", kiln_path.display());
+        eprintln!("Please set OBSIDIAN_KILN_PATH to a valid kiln directory.");
+        return Err(anyhow::anyhow!("kiln path does not exist"));
     }
+
+    // Initialize secure filesystem components
+    let secure_config = SecureFileSystemConfig::default();
+    let path_validator = PathValidator::new(kiln_path);
 
     // Validate query if provided
     let query_ref = if let Some(ref q) = query {
-        let validated_query = validate_search_query(q)?;
+        let validated_query = validate_search_query(q, &path_validator)?;
         Some(validated_query)
     } else {
         None
     };
 
     let results = if let Some(q) = query_ref {
-        // Direct search with query using file system
-        search_files_in_kiln(vault_path, &q, limit, show_content)?
+        // Direct search with query using secure file system
+        search_files_in_kiln_secure(kiln_path, &q, limit, show_content, &secure_config)?
     } else {
         // Interactive picker with available files
-        let files = get_markdown_files(vault_path)?;
+        let files = get_markdown_files_secure(kiln_path, &secure_config)?;
 
         if files.is_empty() {
-            println!("No markdown files found in kiln: {}", vault_path.display());
+            println!("No markdown files found in kiln: {}", kiln_path.display());
             return Ok(());
         }
 
@@ -112,8 +188,9 @@ pub async fn execute(
             let selected = &results[selection];
             println!("\nSelected: {}\n", selected.title);
 
-            // Get document content from file
-            if let Ok(content) = get_file_content(&selected.id) {
+            // Get document content from file using secure reader
+            let secure_reader = SecureFileReader::new(kiln_path, secure_config);
+            if let Ok(content) = secure_reader.read_file_content(&selected.id) {
                 println!("{}", content);
             }
             return Ok(());
@@ -144,19 +221,34 @@ pub async fn execute(
 
 /// Search for files containing the query string in their content
 pub fn search_files_in_kiln(kiln_path: &Path, query: &str, limit: u32, include_content: bool) -> Result<Vec<SearchResultWithScore>> {
+    let secure_config = SecureFileSystemConfig::default();
+    search_files_in_kiln_secure(kiln_path, query, limit, include_content, &secure_config)
+}
+
+/// Secure version of search_files_in_kiln using secure filesystem utilities
+pub fn search_files_in_kiln_secure(
+    kiln_path: &Path,
+    query: &str,
+    limit: u32,
+    include_content: bool,
+    config: &SecureFileSystemConfig,
+) -> Result<Vec<SearchResultWithScore>> {
     let mut results = Vec::new();
     let query_lower = query.to_lowercase();
 
-    // Get all markdown files
-    let files = get_markdown_files(kiln_path)?;
+    // Get all markdown files using secure walker
+    let files = get_markdown_files_secure(kiln_path, config)?;
+
+    // Create secure file reader
+    let secure_reader = SecureFileReader::new(kiln_path, config.clone());
 
     for file_path in files {
         if results.len() >= limit as usize {
             break;
         }
 
-        // Read file content
-        match get_file_content(&file_path) {
+        // Read file content securely
+        match secure_reader.read_file_content(&file_path) {
             Ok(content) => {
                 // Check if content contains the query (case-insensitive)
                 let content_lower = content.to_lowercase();
@@ -184,7 +276,7 @@ pub fn search_files_in_kiln(kiln_path: &Path, query: &str, limit: u32, include_c
                 }
             }
             Err(_) => {
-                // Skip files that can't be read
+                // Skip files that can't be read - secure reader logs warnings
                 continue;
             }
         }
@@ -196,8 +288,21 @@ pub fn search_files_in_kiln(kiln_path: &Path, query: &str, limit: u32, include_c
     Ok(results)
 }
 
-/// Get all markdown files in the kiln directory recursively
+/// Get all markdown files in the kiln directory recursively using secure walker
 pub fn get_markdown_files(kiln_path: &Path) -> Result<Vec<String>> {
+    let secure_config = SecureFileSystemConfig::default();
+    get_markdown_files_secure(kiln_path, &secure_config)
+}
+
+/// Secure version of get_markdown_files using the secure file walker
+pub fn get_markdown_files_secure(kiln_path: &Path, config: &SecureFileSystemConfig) -> Result<Vec<String>> {
+    let mut walker = SecureFileWalker::new(kiln_path, config.clone());
+    walker.collect_markdown_files()
+}
+
+/// Legacy function for backward compatibility - uses insecure approach
+/// This function is deprecated but kept for existing tests that expect it to fail
+pub fn get_markdown_files_legacy(kiln_path: &Path) -> Result<Vec<String>> {
     let mut files = Vec::new();
 
     // Use WalkDir or manual recursion to find all .md files
@@ -206,7 +311,7 @@ pub fn get_markdown_files(kiln_path: &Path) -> Result<Vec<String>> {
     Ok(files)
 }
 
-/// Recursively visit directories and collect markdown files
+/// Recursively visit directories and collect markdown files (legacy - insecure)
 fn visit_dirs(dir: &Path, files: &mut Vec<String>) -> Result<()> {
     if dir.is_dir() {
         for entry in fs::read_dir(dir)
@@ -238,80 +343,52 @@ fn visit_dirs(dir: &Path, files: &mut Vec<String>) -> Result<()> {
     Ok(())
 }
 
-/// Get file content as a string, handling UTF-8 properly with memory protection
+/// Get file content as a string using secure reader
 pub fn get_file_content(file_path: &str) -> Result<String> {
-    // First check file size to avoid loading huge files into memory
-    let metadata = fs::metadata(file_path)
-        .with_context(|| format!("Failed to read file metadata: {}", file_path))?;
+    let path_buf = PathBuf::from(file_path);
 
-    let file_size = metadata.len();
-    if file_size > MAX_FILE_SIZE {
-        return Err(anyhow::anyhow!(
-            "File too large ({}MB > {}MB limit): {}",
-            file_size / (1024 * 1024),
-            MAX_FILE_SIZE / (1024 * 1024),
-            file_path
-        ));
+    // For absolute paths, we need to determine a reasonable kiln path
+    // For files discovered by the secure walker, they should already be validated
+    let kiln_path = if path_buf.is_absolute() {
+        // Try to find a reasonable parent directory as kiln
+        // Look for common kiln indicators or use parent directory
+        find_kiln_path_for_file(&path_buf)?
+    } else {
+        // For relative paths, use current directory
+        Path::new(".").to_path_buf()
+    };
+
+    let secure_config = SecureFileSystemConfig::default();
+    let secure_reader = SecureFileReader::new(&kiln_path, secure_config);
+
+    // Read the file with the secure reader (no fallback for security)
+    secure_reader.read_file_content(file_path)
+}
+
+/// Find a reasonable kiln path for a given file
+fn find_kiln_path_for_file(file_path: &Path) -> Result<PathBuf> {
+    // Try different strategies to find the kiln path
+
+    // Strategy 1: Use parent directory
+    if let Some(parent) = file_path.parent() {
+        return Ok(parent.to_path_buf());
     }
 
-    // For smaller files, use the efficient read_to_string with UTF-8 handling
-    if file_size <= MAX_CONTENT_LENGTH as u64 {
-        match fs::read_to_string(file_path) {
-            Ok(content) => return Ok(content),
-            Err(e) => {
-                // If it's a UTF-8 error, try to recover by reading as bytes and cleaning
-                if e.to_string().contains("utf-8") || e.to_string().contains("Utf8Error") {
-                    return read_file_with_utf8_recovery(file_path);
-                }
-                return Err(anyhow::anyhow!("Failed to read file: {}: {}", file_path, e));
-            }
-        }
-    }
-
-    // For larger files, read with memory limit
-    let file = fs::File::open(file_path)
-        .with_context(|| format!("Failed to open file: {}", file_path))?;
-    let mut reader = BufReader::new(file);
-
-    let mut content = String::new();
-    let mut buffer = [0; 8192]; // 8KB buffer
-    let mut bytes_read = 0usize;
-
-    loop {
-        let bytes_read_this_time = reader.read(&mut buffer)
-            .with_context(|| format!("Failed to read from file: {}", file_path))?;
-
-        if bytes_read_this_time == 0 {
-            break; // EOF reached
-        }
-
-        bytes_read += bytes_read_this_time;
-
-        // Check memory limit
-        if bytes_read > MAX_CONTENT_LENGTH {
-            return Err(anyhow::anyhow!(
-                "File content exceeds memory limit ({}MB): {}",
-                MAX_CONTENT_LENGTH / (1024 * 1024),
-                file_path
-            ));
-        }
-
-        // Convert buffer to string chunk with UTF-8 error handling
-        match std::str::from_utf8(&buffer[..bytes_read_this_time]) {
-            Ok(chunk) => content.push_str(chunk),
-            Err(_) => {
-                // Handle UTF-8 errors by replacing invalid sequences
-                let chunk = String::from_utf8_lossy(&buffer[..bytes_read_this_time]);
-                content.push_str(&chunk);
-            }
-        }
-    }
-
-    Ok(content)
+    // Strategy 2: Use current directory
+    Ok(Path::new(".").to_path_buf())
 }
 
 /// Read file with UTF-8 error recovery, replacing invalid sequences
 fn read_file_with_utf8_recovery(file_path: &str) -> Result<String> {
+    // Perform binary detection first for recovery function as well
+    let file_sample = read_file_sample(file_path, BINARY_DETECTION_SAMPLE_SIZE)?;
+    if is_binary_content(&file_sample) {
+        return Err(anyhow::anyhow!(
+            "Binary file detected and skipped for safety: {}",
+            file_path
+        ));
+    }
+
     let file = fs::File::open(file_path)
         .with_context(|| format!("Failed to open file: {}", file_path))?;
     let mut reader = BufReader::new(file);
@@ -330,13 +407,10 @@ fn read_file_with_utf8_recovery(file_path: &str) -> Result<String> {
 
         bytes_read += bytes_read_this_time;
 
-        // Check memory limit
+        // Check memory limit - if we're about to exceed it, stop reading and truncate
         if bytes_read > MAX_CONTENT_LENGTH {
-            return Err(anyhow::anyhow!(
-                "File content exceeds memory limit ({}MB): {}",
-                MAX_CONTENT_LENGTH / (1024 * 1024),
-                file_path
-            ));
+            // We've hit the memory limit, stop reading more content
+            break;
         }
 
         // Convert with UTF-8 error recovery

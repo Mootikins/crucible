@@ -16,6 +16,9 @@ pub mod ollama;
 /// OpenAI provider implementation.
 pub mod openai;
 
+/// Candle local provider implementation.
+pub mod candle;
+
 /// Provider trait and common functionality.
 pub mod provider;
 
@@ -27,12 +30,16 @@ pub use config::{EmbeddingConfig, ProviderType};
 pub use error::{EmbeddingError, EmbeddingResult};
 pub use ollama::OllamaProvider;
 pub use openai::OpenAIProvider;
+pub use candle::CandleProvider;
 pub use provider::{EmbeddingProvider, EmbeddingResponse};
 
 use std::sync::Arc;
 
 /// Create an embedding provider from configuration
 pub async fn create_provider(config: EmbeddingConfig) -> EmbeddingResult<Arc<dyn EmbeddingProvider>> {
+    // Validate configuration before creating provider
+    config.validate()?;
+
     match config.provider {
         ProviderType::Ollama => {
             let provider = ollama::OllamaProvider::new(config)?;
@@ -40,6 +47,10 @@ pub async fn create_provider(config: EmbeddingConfig) -> EmbeddingResult<Arc<dyn
         }
         ProviderType::OpenAI => {
             let provider = openai::OpenAIProvider::new(config)?;
+            Ok(Arc::new(provider))
+        }
+        ProviderType::Candle => {
+            let provider = candle::CandleProvider::new(config)?;
             Ok(Arc::new(provider))
         }
     }

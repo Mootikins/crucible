@@ -8,8 +8,6 @@
 //! - Default value handling
 //! - Configuration serialization/deserialization
 
-mod test_utilities;
-
 use anyhow::Result;
 use std::collections::HashMap;
 use std::env;
@@ -17,7 +15,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::TempDir;
 use serde_json;
-use crucible_cli::test_utilities::*;
+use crate::test_utilities::*;
 use crucible_cli::config::CliConfig;
 
 /// Test configuration loading from defaults
@@ -26,8 +24,8 @@ fn test_configuration_default_values() -> Result<()> {
     let config = CliConfig::default();
 
     // Test vault defaults
-    assert_eq!(config.vault.embedding_url, "http://localhost:11434");
-    assert_eq!(config.vault.embedding_model, None);
+    assert_eq!(config.kiln.embedding_url, "http://localhost:11434");
+    assert_eq!(config.kiln.embedding_model, None);
 
     // Test LLM defaults
     assert_eq!(config.chat_model(), "llama3.2");
@@ -57,7 +55,7 @@ fn test_configuration_file_loading() -> Result<()> {
     let config_path = temp_dir.path().join("config.toml");
 
     let config_content = r#"
-[vault]
+[kiln]
 path = "/test/vault"
 embedding_url = "https://test-embedding.com"
 embedding_model = "test-model"
@@ -94,9 +92,9 @@ max_cache_size = 100
     let config = CliConfig::from_file_or_default(Some(config_path))?;
 
     // Test vault configuration
-    assert_eq!(config.vault.path.to_string_lossy(), "/test/vault");
-    assert_eq!(config.vault.embedding_url, "https://test-embedding.com");
-    assert_eq!(config.vault.embedding_model, Some("test-model".to_string()));
+    assert_eq!(config.kiln.path.to_string_lossy(), "/test/vault");
+    assert_eq!(config.kiln.embedding_url, "https://test-embedding.com");
+    assert_eq!(config.kiln.embedding_model, Some("test-model".to_string()));
 
     // Test LLM configuration
     assert_eq!(config.chat_model(), "test-model");
@@ -145,9 +143,9 @@ fn test_environment_variable_overrides() -> Result<()> {
     let config = CliConfig::load(None, None, None)?;
 
     // Test vault environment overrides
-    assert_eq!(config.vault.path.to_string_lossy(), "/test/env/vault");
-    assert_eq!(config.vault.embedding_url, "https://env-embedding.com");
-    assert_eq!(config.vault.embedding_model, Some("env-model".to_string()));
+    assert_eq!(config.kiln.path.to_string_lossy(), "/test/env/vault");
+    assert_eq!(config.kiln.embedding_url, "https://env-embedding.com");
+    assert_eq!(config.kiln.embedding_model, Some("env-model".to_string()));
 
     // Test LLM environment overrides
     assert_eq!(config.chat_model(), "env-chat-model");
@@ -179,9 +177,9 @@ fn test_cli_argument_overrides() -> Result<()> {
     )?;
 
     // Test CLI argument overrides
-    assert_eq!(config.vault.path.to_string_lossy(), "/test/cli/vault");
-    assert_eq!(config.vault.embedding_url, "https://cli-embedding.com");
-    assert_eq!(config.vault.embedding_model, Some("cli-model".to_string()));
+    assert_eq!(config.kiln.path.to_string_lossy(), "/test/cli/vault");
+    assert_eq!(config.kiln.embedding_url, "https://cli-embedding.com");
+    assert_eq!(config.kiln.embedding_model, Some("cli-model".to_string()));
 
     env::remove_var("CRUCIBLE_TEST_MODE");
 
@@ -196,7 +194,7 @@ fn test_configuration_precedence() -> Result<()> {
 
     // Create config file with some values
     let config_content = r#"
-[vault]
+[kiln]
 path = "/file/vault"
 embedding_url = "https://file-embedding.com"
 embedding_model = "file-model"
@@ -223,13 +221,13 @@ temperature = 0.3
 
     // Verify precedence:
     // - vault.path should be from CLI args (highest precedence)
-    assert_eq!(config.vault.path.to_string_lossy(), "/cli/vault");
+    assert_eq!(config.kiln.path.to_string_lossy(), "/cli/vault");
 
     // - vault.embedding_url should be from CLI args
-    assert_eq!(config.vault.embedding_url, "https://cli-embedding.com");
+    assert_eq!(config.kiln.embedding_url, "https://cli-embedding.com");
 
     // - vault.embedding_model should be from environment (middle precedence)
-    assert_eq!(config.vault.embedding_model, Some("env-model".to_string()));
+    assert_eq!(config.kiln.embedding_model, Some("env-model".to_string()));
 
     // - llm.chat_model should be from file (lower precedence)
     assert_eq!(config.chat_model(), "file-model");
@@ -250,7 +248,7 @@ temperature = 0.3
 fn test_configuration_validation() -> Result<()> {
     // Test valid configuration
     let valid_config = r#"
-[vault]
+[kiln]
 path = "/valid/path"
 embedding_url = "http://localhost:11434"
 embedding_model = "valid-model"
@@ -349,14 +347,14 @@ fn test_configuration_serialization() -> Result<()> {
 
     // Test TOML serialization
     let toml_str = config.display_as_toml()?;
-    assert!(toml_str.contains("[vault]"));
+    assert!(toml_str.contains("[kiln]"));
     assert!(toml_str.contains("[services]"));
     assert!(toml_str.contains("[migration]"));
 
     // Test JSON serialization
     let json_str = config.display_as_json()?;
     let json_value: serde_json::Value = serde_json::from_str(&json_str)?;
-    assert!(json_value.get("vault").is_some());
+    assert!(json_value.get("kiln").is_some());
     assert!(json_value.get("services").is_some());
     assert!(json_value.get("migration").is_some());
 
@@ -375,7 +373,7 @@ fn test_configuration_file_creation() -> Result<()> {
     let content = std::fs::read_to_string(&config_path)?;
 
     // Verify example contains all sections
-    assert!(content.contains("[vault]"));
+    assert!(content.contains("[kiln]"));
     assert!(content.contains("[llm]"));
     assert!(content.contains("[network]"));
     assert!(content.contains("[services]"));
@@ -413,7 +411,7 @@ fn test_path_derivation() -> Result<()> {
 
     // Test string conversions
     assert_eq!(config.database_path_str()?, expected_db.to_str().unwrap());
-    assert_eq!(config.vault_path_str()?, vault_path.to_str().unwrap());
+    assert_eq!(config.kiln_path_str()?, vault_path.to_str().unwrap());
 
     Ok(())
 }
@@ -426,8 +424,8 @@ fn test_embedding_config_conversion() -> Result<()> {
     let embedding_config = config.to_embedding_config()?;
 
     assert!(matches!(embedding_config.provider, crate::config::ProviderType::Ollama));
-    assert_eq!(embedding_config.endpoint, config.vault.embedding_url);
-    assert_eq!(embedding_config.model, config.vault.embedding_model);
+    assert_eq!(embedding_config.endpoint, config.kiln.embedding_url);
+    assert_eq!(embedding_config.model, config.kiln.embedding_model);
     assert_eq!(embedding_config.timeout_secs, config.timeout());
     assert_eq!(embedding_config.max_retries, config.network.max_retries.unwrap_or(3));
     assert_eq!(embedding_config.batch_size, 1);
@@ -509,7 +507,7 @@ fn test_configuration_error_handling() -> Result<()> {
 
     // Test with invalid path for string conversion
     let invalid_config = CliConfig {
-        vault: crate::config::VaultConfig {
+        kiln: crate::config::KilnConfig {
             path: PathBuf::from("\0\0\0"), // Invalid UTF-8
             embedding_url: "http://localhost:11434".to_string(),
             embedding_model: "test-model".to_string(),
@@ -518,9 +516,10 @@ fn test_configuration_error_handling() -> Result<()> {
         network: Default::default(),
         services: Default::default(),
         migration: Default::default(),
+        custom_database_path: None,
     };
 
-    let result = invalid_config.vault_path_str();
+    let result = invalid_config.kiln_path_str();
     assert!(result.is_err(), "Should fail with invalid UTF-8 path");
 
     Ok(())
@@ -539,7 +538,7 @@ fn test_test_mode_configuration() -> Result<()> {
     let config = CliConfig::load(None, None, None)?;
 
     // In test mode, should still respect environment variables
-    assert_eq!(config.vault.embedding_model, Some("test-model".to_string()));
+    assert_eq!(config.kiln.embedding_model, Some("test-model".to_string()));
     assert_eq!(config.chat_model(), "test-chat-model");
 
     // Clean up
@@ -557,7 +556,7 @@ fn test_complex_configuration_values() -> Result<()> {
     let config_path = temp_dir.path().join("complex_config.toml");
 
     let complex_config = r#"
-[vault]
+[kiln]
 path = "/complex/path with spaces"
 embedding_url = "https://complex-endpoint.com:8443/v1"
 embedding_model = "complex-model-v1.2.3"
@@ -623,9 +622,9 @@ max_performance_degradation = 10.0
     let config = CliConfig::from_file_or_default(Some(config_path))?;
 
     // Verify complex values were parsed correctly
-    assert_eq!(config.vault.path.to_string_lossy(), "/complex/path with spaces");
-    assert_eq!(config.vault.embedding_url, "https://complex-endpoint.com:8443/v1");
-    assert_eq!(config.vault.embedding_model, Some("complex-model-v1.2.3".to_string()));
+    assert_eq!(config.kiln.path.to_string_lossy(), "/complex/path with spaces");
+    assert_eq!(config.kiln.embedding_url, "https://complex-endpoint.com:8443/v1");
+    assert_eq!(config.kiln.embedding_model, Some("complex-model-v1.2.3".to_string()));
 
     assert_eq!(config.temperature(), 1.5);
     assert_eq!(config.max_tokens(), 8192);
@@ -666,7 +665,7 @@ fn test_configuration_performance() -> Result<()> {
 
     // Create a relatively large configuration
     let mut config_content = String::new();
-    config_content.push_str("[vault]\n");
+    config_content.push_str("[kiln]\n");
     config_content.push_str("path = \"/test/vault\"\n");
     config_content.push_str("embedding_url = \"http://localhost:11434\"\n");
     config_content.push_str("embedding_model = \"test-model\"\n\n");

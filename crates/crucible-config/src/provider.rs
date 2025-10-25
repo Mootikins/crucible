@@ -92,6 +92,37 @@ impl EmbeddingProviderConfig {
         }
     }
 
+    /// Create a new Candle embedding provider configuration.
+    pub fn candle(model: Option<String>, cache_dir: Option<String>, memory_mb: Option<u32>, device: Option<String>) -> Self {
+        let mut options = HashMap::new();
+        if let Some(cache_dir) = cache_dir {
+            options.insert("model_cache_dir".to_string(), serde_json::Value::String(cache_dir));
+        }
+        if let Some(memory_mb) = memory_mb {
+            options.insert("memory_limit_mb".to_string(), serde_json::Value::Number(memory_mb.into()));
+        }
+        if let Some(device) = device {
+            options.insert("device".to_string(), serde_json::Value::String(device));
+        }
+
+        Self {
+            provider_type: EmbeddingProviderType::Candle,
+            api: ApiConfig {
+                key: None,
+                base_url: Some("local".to_string()),
+                timeout_seconds: Some(120),
+                retry_attempts: Some(1),
+                headers: HashMap::new(),
+            },
+            model: ModelConfig {
+                name: model.unwrap_or_else(|| "nomic-embed-text-v1.5".to_string()),
+                dimensions: None,
+                max_tokens: Some(2048),
+            },
+            options,
+        }
+    }
+
     /// Validate the configuration.
     pub fn validate(&self) -> Result<(), ProviderError> {
         // Validate API key for providers that require it
@@ -120,6 +151,8 @@ pub enum EmbeddingProviderType {
     OpenAI,
     /// Ollama local embeddings.
     Ollama,
+    /// Candle local embeddings.
+    Candle,
     /// Cohere embeddings.
     Cohere,
     /// Google Vertex AI embeddings.
@@ -131,7 +164,7 @@ pub enum EmbeddingProviderType {
 impl EmbeddingProviderType {
     /// Check if this provider type requires an API key.
     pub fn requires_api_key(&self) -> bool {
-        !matches!(self, Self::Ollama)
+        !matches!(self, Self::Ollama | Self::Candle)
     }
 
     /// Get the default base URL for the provider.
@@ -139,6 +172,7 @@ impl EmbeddingProviderType {
         match self {
             Self::OpenAI => Some("https://api.openai.com/v1".to_string()),
             Self::Ollama => Some("http://localhost:11434".to_string()),
+            Self::Candle => Some("local".to_string()),
             Self::Cohere => Some("https://api.cohere.ai/v1".to_string()),
             Self::VertexAI => Some("https://aiplatform.googleapis.com/v1".to_string()),
             Self::Custom(_) => None,
@@ -150,6 +184,7 @@ impl EmbeddingProviderType {
         match self {
             Self::OpenAI => Some("text-embedding-3-small".to_string()),
             Self::Ollama => Some("nomic-embed-text".to_string()),
+            Self::Candle => Some("nomic-embed-text-v1.5".to_string()),
             Self::Cohere => Some("embed-english-v3.0".to_string()),
             Self::VertexAI => Some("textembedding-gecko@003".to_string()),
             Self::Custom(_) => None,

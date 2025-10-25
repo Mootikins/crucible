@@ -8,6 +8,7 @@ pub mod cli;
 pub mod commands;
 pub mod common;
 pub mod config;
+pub mod error_recovery;
 pub mod interactive;
 pub mod output;
 pub mod tui;

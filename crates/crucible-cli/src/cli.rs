@@ -46,7 +46,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Interactive search through notes (fuzzy finder)
+    /// Interactive search through kiln notes (fuzzy finder)
     Search {
         /// Search query (optional - opens picker if omitted)
         query: Option<String>,
@@ -86,7 +86,7 @@ pub enum Commands {
         limit: u32,
     },
 
-    /// Semantic search using embeddings
+    /// Semantic search using embeddings across kiln content
     Semantic {
         /// Search query
         query: String,
@@ -108,7 +108,7 @@ pub enum Commands {
     #[command(subcommand)]
     Note(NoteCommands),
 
-    /// Display vault statistics
+    /// Display kiln statistics
     Stats,
 
     /// Test tool loading and execution
