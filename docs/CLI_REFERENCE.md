@@ -132,6 +132,39 @@ crucible-cli search "project" --show-content
 crucible-cli search "AI" --format json | jq '.[] | .title'
 ```
 
+**Search Validation & Safety Features**:
+
+All search commands include built-in safety protections:
+
+| Feature | Limit | Behavior |
+|---------|-------|----------|
+| **Query Length** | 2-1000 characters | Empty/short queries show error, long queries are rejected |
+| **File Size** | 10MB limit | Files >10MB are automatically skipped |
+| **Content Memory** | 1MB limit | Large files processed with streaming reads |
+| **UTF-8 Handling** | Automatic | Invalid UTF-8 sequences replaced safely |
+| **Whitespace** | Normalized | Excessive whitespace cleaned automatically |
+
+**Error Examples**:
+```bash
+# Empty query (shows validation error)
+crucible-cli search ""
+# Error: Search query cannot be empty or only whitespace.
+
+# Too short query (shows validation error)
+crucible-cli search "a"
+# Error: Search query too short (1 < 2 characters).
+
+# Very long query (shows validation error)
+crucible-cli search "$(printf 'a%.0s' {1..1001})"
+# Error: Search query too long (1001 > 1000 characters).
+```
+
+**Performance Notes**:
+- Large files (>10MB) are skipped automatically to prevent memory issues
+- UTF-8 encoding errors are handled gracefully with character replacement
+- Search performance is optimized for typical markdown file sizes
+- Memory usage stays constant regardless of file collection size
+
 #### `fuzzy` - Fuzzy Search
 
 **Description**: Fuzzy search across all metadata (tags, properties, content)

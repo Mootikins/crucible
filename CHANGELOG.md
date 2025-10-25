@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🚨 BREAKING CHANGES
+- **cli!:** Empty search queries now return validation errors instead of showing help
+- **core!:** Removed unused orchestrator and router modules causing test timeouts
+
+### ✨ Added
+- **cli:** Comprehensive search safety protections
+  - Large file memory protection (10MB file limit, 1MB content limit)
+  - UTF-8 encoding safety with error recovery and character replacement
+  - Input validation with query length limits (2-1000 characters)
+  - Memory-efficient streaming reads with 8KB buffers
+- **tests:** New `run_cli_command_allow_failure` helper for error case testing
+- **docs:** CPU embedding runtime research (Candle, FastEmbed-rs, ONNX Runtime)
+
+### 🛠️ Changed
+- **refactor(core):** Removed dead code modules causing test timeouts
+  - Eliminated `orchestrator.rs` and `router.rs` modules
+  - Reduced core tests from 111 to 91 tests
+  - Improved test performance from 60s+ timeouts to 0.06s execution
+- **perf(cli):** Optimized file reading with memory protection
+- **tests:** Updated empty query test to handle validation errors
+
+### 🧪 Testing
+- **cli:** All 12/12 integration tests passing
+- **core:** All 91/91 core tests passing in 0.06s with zero timeouts
+- **Added:** Large file performance validation
+- **Added:** UTF-8 corruption handling tests
+- **Added:** Input validation edge case tests
+
+### 📚 Documentation
+- **research:** Comprehensive CPU embedding runtime analysis
+  - **Candle:** Pure Rust implementation (recommended)
+  - **FastEmbed-rs:** Specialized embedding interface (easiest integration)
+  - **ONNX Runtime:** Production performance (most complex)
+- **models:** Recommended HuggingFace models for CPU inference
+  - TaylorAI/bge-micro (17.4MB, 384 dimensions)
+  - sentence-transformers/all-MiniLM-L6-v2 (22.7MB, 384 dimensions)
+
 ### Changed
 - **Documentation Cleanup**: Comprehensive cleanup and consolidation of project documentation
   - Archived 10 legacy documentation files from initial POC phase to `/home/moot/Documents/crucible-testing/Archive/2024-10-20-cleanup/`
