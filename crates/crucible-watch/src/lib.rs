@@ -65,6 +65,9 @@ mod manager;
 mod config;
 mod handlers;
 mod utils;
+mod embedding_events;
+mod event_driven_embedding_processor;
+mod message_channel_infrastructure;
 
 pub use error::*;
 pub use events::*;
@@ -76,6 +79,9 @@ pub use backends::*;
 pub use manager::*;
 pub use config::*;
 pub use handlers::*;
+pub use embedding_events::*;
+pub use event_driven_embedding_processor::*;
+pub use message_channel_infrastructure::*;
 
 /// Available file watching backends.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
@@ -93,6 +99,16 @@ pub mod prelude {
     pub use crate::{
         FileWatcher, FileEvent, FileEventKind, WatchManager,
         WatchBackend, EventHandler, Error, Result,
+        // Event-driven embedding components
+        event_driven_embedding_processor::{
+            EventDrivenEmbeddingProcessor, EmbeddingEventHandler, EventProcessorMetrics,
+        },
+        embedding_events::{
+            EmbeddingEvent, EmbeddingEventResult, EmbeddingEventMetadata,
+            EmbeddingEventPriority, EventDrivenEmbeddingConfig,
+            generate_document_id, determine_content_type, determine_event_priority,
+            create_embedding_metadata,
+        },
     };
     // Re-export both WatchConfig types with clear names
     pub use crate::traits::WatchConfig as TraitWatchConfig;

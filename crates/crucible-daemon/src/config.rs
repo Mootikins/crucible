@@ -3,11 +3,10 @@
 //! Handles configuration loading, validation, and runtime updates for the data layer daemon.
 
 use anyhow::Result;
-use crucible_config::{Config, ConfigError};
+use crucible_config::ConfigError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::Duration;
 
 
 /// Daemon configuration for data layer coordination

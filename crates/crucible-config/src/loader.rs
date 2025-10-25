@@ -360,19 +360,21 @@ impl ConfigFormat {
     /// Detect format from file path.
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
         let path = path.as_ref();
-        let extension = path.extension()
-            .and_then(|ext| ext.to_str())
-            .ok_or_else(|| ConfigError::MissingValue {
-                field: "file extension".to_string(),
-            })?;
 
-        match extension.to_lowercase().as_str() {
-            "yaml" | "yml" => Ok(Self::Yaml),
-            "toml" => Ok(Self::Toml),
-            "json" => Ok(Self::Json),
-            _ => Err(ConfigError::MissingValue {
-                field: format!("unsupported file extension: {}", extension),
-            }),
+        // Handle temporary files without extensions by trying to detect from content
+        if let Some(extension) = path.extension().and_then(|ext| ext.to_str()) {
+            match extension.to_lowercase().as_str() {
+                "yaml" | "yml" => Ok(Self::Yaml),
+                "toml" => Ok(Self::Toml),
+                "json" => Ok(Self::Json),
+                _ => Err(ConfigError::MissingValue {
+                    field: format!("unsupported file extension: {}", extension),
+                }),
+            }
+        } else {
+            // For files without extensions (like temporary files), default to YAML
+            // The actual format detection will happen during parsing
+            Ok(Self::Auto)
         }
     }
 

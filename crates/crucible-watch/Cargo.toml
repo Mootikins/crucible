@@ -23,6 +23,8 @@ notify-debouncer-full = { workspace = true }
 # Configuration
 crucible-config = { workspace = true }
 crucible-core = { workspace = true }
+crucible-surrealdb = { workspace = true }
+crucible-llm = { workspace = true }
 
 # Time and scheduling
 chrono = { workspace = true, features = ["serde"] }
@@ -50,3 +52,4 @@ obsidian = []
 [dev-dependencies]
 tempfile = { workspace = true }
 criterion = { workspace = true }
+tracing-subscriber = "0.3"

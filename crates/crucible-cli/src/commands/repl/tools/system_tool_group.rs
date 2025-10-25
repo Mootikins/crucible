@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::sync::RwLock as AsyncRwLock;
 use super::tool_group::{
     ToolGroup, ToolGroupResult, ToolGroupError, ToolSchema, ParameterConverter, ResultConverter,
@@ -353,7 +353,7 @@ impl ToolGroup for SystemToolGroup {
 
         // Check cache first
         if self.cache_config.caching_enabled {
-            let mut cache = self.tools_cache.write().await;
+            let cache = self.tools_cache.write().await;
             if let Some(cached) = &*cache {
                 if cached.is_valid() {
                     // Cache hit
@@ -406,7 +406,7 @@ impl ToolGroup for SystemToolGroup {
     async fn get_tool_schema(&self, tool_name: &str) -> ToolGroupResult<Option<ToolSchema>> {
         // Check cache first
         if self.cache_config.caching_enabled {
-            let mut cache = self.schema_cache.write().await;
+            let cache = self.schema_cache.write().await;
             if let Some(cached) = cache.get(tool_name) {
                 if cached.is_valid() {
                     self.metrics.write().unwrap().record_cache_hit();

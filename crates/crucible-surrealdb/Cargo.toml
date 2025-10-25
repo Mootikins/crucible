@@ -8,6 +8,8 @@ description = "SurrealDB backend for the Crucible knowledge management system"
 
 [dependencies]
 crucible-core = { workspace = true }
+crucible-llm = { workspace = true, features = ["test-utils"] }
+crucible-config = { workspace = true, features = ["test-utils"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = "0.9"
@@ -34,7 +36,12 @@ futures = "0.3"
 walkdir = "2.4"
 sha2 = "0.10"
 
+[features]
+default = []
+test-utils = ["crucible-llm/test-utils", "crucible-config/test-utils"]
+
 [dev-dependencies]
 tempfile = "3.8"
 tokio-test = "0.4"
 num_cpus = "1.16"
+tracing-test = "0.2"

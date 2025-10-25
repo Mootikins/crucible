@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use crate::common::CrucibleToolManager;
 use serde_json::json;
 use crate::config::CliConfig;

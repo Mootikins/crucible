@@ -5,19 +5,13 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{info, warn, debug};
+use tracing::{info, debug};
 
 use super::tool_group::{
-    ToolGroup, ToolGroupRegistry, ToolGroupCacheConfig, ToolGroupMetrics,
+    ToolGroup, ToolGroupCacheConfig,
 };
-use super::system_tool_group::SystemToolGroup;
-use super::unified_registry::{
-    UnifiedToolRegistry, UnifiedRegistryMetrics, UnifiedRegistryStats,
-};
-use super::types::ToolResult;
-use crate::config::CliConfig;
+use super::unified_registry::UnifiedToolRegistry;
 
 /// Benchmark configuration
 #[derive(Debug, Clone)]

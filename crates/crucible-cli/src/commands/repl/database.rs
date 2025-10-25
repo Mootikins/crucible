@@ -12,7 +12,7 @@ use tracing::{debug, error, info, warn};
 use crate::commands::repl::formatter::{QueryResult, QueryStatus};
 use crucible_surrealdb::{SurrealClient, SurrealDbConfig};
 use std::default::Default;
-use crucible_core::{RelationalDB, SelectQuery, Record, RecordId};
+use crucible_core::{RelationalDB, SelectQuery};
 
 /// Real database connection using SurrealDB
 #[derive(Clone)]

@@ -15,10 +15,10 @@
       "desktop_enabled": true,
       "email_enabled": false,
       "levels": {
-        "info": true,
-        "warning": true,
         "error": true,
-        "critical": true
+        "critical": true,
+        "warning": true,
+        "info": true
       }
     },
     "editor": {

@@ -8,9 +8,9 @@ use crate::config::CliConfig;
 use crate::cli::MigrationCommands;
 use anyhow::Result;
 use colored::*;
-use comfy_table::{Table, Cell, Color, presets::UTF8_FULL};
+use comfy_table::{Table, presets::UTF8_FULL};
 use serde_json;
-use tracing::{debug, info};
+use tracing::debug;
 
 /// Execute migration commands
 pub async fn execute(config: CliConfig, command: MigrationCommands) -> Result<()> {
