@@ -16,6 +16,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true, features = ["fs"] }
 tempfile = { workspace = true, optional = true }
+schemars = { workspace = true }
 
 [features]
 default = ["yaml"]

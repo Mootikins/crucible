@@ -63,6 +63,7 @@ impl ProfileConfig {
             file_path: None,
             max_file_size: Some(10 * 1024 * 1024),
             max_files: Some(3),
+            ..Default::default()
         });
         profile
     }
@@ -78,6 +79,7 @@ impl ProfileConfig {
             file_path: Some("/var/log/crucible/app.log".to_string()),
             max_file_size: Some(100 * 1024 * 1024),
             max_files: Some(10),
+            ..Default::default()
         });
         profile
     }
@@ -93,6 +95,7 @@ impl ProfileConfig {
             file_path: None,
             max_file_size: None,
             max_files: None,
+            ..Default::default()
         });
         profile
     }

@@ -1,6 +1,7 @@
 //! Core configuration types and structures.
 
 use crate::{EmbeddingProviderConfig, ProfileConfig};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -293,15 +294,21 @@ impl Default for ServerConfig {
 }
 
 /// Logging configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// Consolidated from all crates to provide comprehensive logging control.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct LoggingConfig {
-    /// Logging level.
+    /// Global log level (trace, debug, info, warn, error).
     #[serde(default = "default_level")]
     pub level: String,
 
-    /// Log format (json, text).
+    /// Log format (json, text, compact).
     #[serde(default = "default_format")]
     pub format: String,
+
+    /// Enable console/stdout logging.
+    #[serde(default = "default_true")]
+    pub console: bool,
 
     /// Enable file logging.
     #[serde(default)]
@@ -310,11 +317,31 @@ pub struct LoggingConfig {
     /// Log file path.
     pub file_path: Option<String>,
 
+    /// Enable log rotation.
+    #[serde(default = "default_true")]
+    pub rotation: bool,
+
     /// Maximum log file size in bytes.
     pub max_file_size: Option<u64>,
 
     /// Number of log files to retain.
     pub max_files: Option<u32>,
+
+    /// Component/module-specific log levels (e.g., "crucible_core" => "debug").
+    #[serde(default)]
+    pub component_levels: HashMap<String, String>,
+
+    /// Include timestamps in log output.
+    #[serde(default = "default_true")]
+    pub timestamps: bool,
+
+    /// Include module/target path in log output.
+    #[serde(default = "default_true")]
+    pub target: bool,
+
+    /// Use ANSI colors in console output.
+    #[serde(default = "default_true")]
+    pub ansi: bool,
 }
 
 fn default_level() -> String {
@@ -325,15 +352,25 @@ fn default_format() -> String {
     "text".to_string()
 }
 
+fn default_true() -> bool {
+    true
+}
+
 impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
             level: default_level(),
             format: default_format(),
+            console: true,
             file: false,
             file_path: None,
+            rotation: true,
             max_file_size: Some(10 * 1024 * 1024), // 10MB
             max_files: Some(5),
+            component_levels: HashMap::new(),
+            timestamps: true,
+            target: true,
+            ansi: true,
         }
     }
 }

@@ -372,38 +372,8 @@ impl Default for WebSocketConfig {
     }
 }
 
-/// Logging configuration
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct LoggingConfig {
-    /// Log level
-    pub level: String,
-    /// Log format
-    pub format: String,
-    /// Enable file logging
-    pub file_enabled: bool,
-    /// Log file path
-    pub file_path: Option<String>,
-    /// Log rotation enabled
-    pub rotation_enabled: bool,
-    /// Maximum log file size
-    pub max_file_size: Option<u64>,
-    /// Maximum log files to keep
-    pub max_files: Option<u32>,
-}
-
-impl Default for LoggingConfig {
-    fn default() -> Self {
-        Self {
-            level: "info".to_string(),
-            format: "json".to_string(),
-            file_enabled: false,
-            file_path: None,
-            rotation_enabled: false,
-            max_file_size: Some(100 * 1024 * 1024), // 100MB
-            max_files: Some(10),
-        }
-    }
-}
+// LoggingConfig is now imported from crucible-config (canonical)
+pub use crucible_config::LoggingConfig;
 
 /// Feature configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
