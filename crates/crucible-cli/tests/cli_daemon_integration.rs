@@ -14,24 +14,17 @@
 //! variable for vault configuration. No CLI arguments should expose vault path.
 
 use anyhow::Result;
+use crucible_cli::config::CliConfig;
+use crucible_surrealdb::{vault_integration::semantic_search, SurrealClient, SurrealDbConfig};
+use crucible_tools::vault_change_detection::ChangeDetector;
 use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
-use tokio::time::timeout;
 use tokio::process::Command as AsyncCommand;
-
-use crucible_cli::{
-    config::CliConfig,
-};
-use crucible_surrealdb::{
-    vault_integration::semantic_search,
-    SurrealClient,
-    SurrealDbConfig,
-};
-use crucible_tools::vault_change_detection::ChangeDetector;
+use tokio::time::timeout;
 
 /// Test configuration constants
 const TEST_TIMEOUT_SECS: u64 = 60; // Maximum time for entire test
@@ -71,7 +64,7 @@ commonly used for tasks like classification, regression, and clustering.
 
 The field continues to evolve with deep learning and reinforcement learning
 advancing the capabilities of intelligent systems.
-"#
+"#,
     ),
     (
         "data-science-tools.md",
@@ -100,7 +93,7 @@ of tools and programming languages.
 
 Data visualization tools like Tableau and Power BI help communicate findings
 to stakeholders effectively.
-"#
+"#,
     ),
     (
         "software-engineering.md",
@@ -129,7 +122,7 @@ and maintainable code.
 
 Version control systems like Git enable collaborative development and
 track changes over time.
-"#
+"#,
     ),
 ];
 
@@ -154,7 +147,10 @@ async fn create_test_vault() -> Result<TempDir> {
     std::fs::create_dir_all(&tools_dir)?;
 
     println!("Created test vault at: {}", vault_path.display());
-    println!("Test vault contains {} markdown files", SAMPLE_MARKDOWN_CONTENTS.len());
+    println!(
+        "Test vault contains {} markdown files",
+        SAMPLE_MARKDOWN_CONTENTS.len()
+    );
 
     Ok(temp_dir)
 }
@@ -224,7 +220,10 @@ async fn check_embeddings_exist(config: &CliConfig) -> Result<bool> {
             // Try a simple search to check if embeddings exist
             match semantic_search(&client, "test query", 1).await {
                 Ok(results) => {
-                    println!("📊 Found {} embeddings (test search returned results)", results.len());
+                    println!(
+                        "📊 Found {} embeddings (test search returned results)",
+                        results.len()
+                    );
                     Ok(!results.is_empty())
                 }
                 Err(e) => {
@@ -241,7 +240,10 @@ async fn check_embeddings_exist(config: &CliConfig) -> Result<bool> {
 }
 
 /// Executes semantic search using CLI command (with auto-start behavior)
-async fn execute_semantic_search_with_metrics(config: CliConfig, query: &str) -> Result<Vec<(String, f64)>> {
+async fn execute_semantic_search_with_metrics(
+    config: CliConfig,
+    query: &str,
+) -> Result<Vec<(String, f64)>> {
     let start_time = std::time::Instant::now();
 
     println!("🔍 Executing CLI semantic search: '{}'", query);
@@ -252,8 +254,10 @@ async fn execute_semantic_search_with_metrics(config: CliConfig, query: &str) ->
         query.to_string(),
         10,
         "table".to_string(),
-        true
-    ).await {
+        true,
+    )
+    .await
+    {
         Ok(_) => {
             let elapsed = start_time.elapsed();
             println!("⏱️  CLI semantic search completed in {:?}", elapsed);
@@ -295,23 +299,27 @@ async fn spawn_test_daemon(config: &CliConfig) -> Result<tokio::process::Child> 
 
     // Find the crucible binary path
     let crate_root = env::var("CARGO_MANIFEST_DIR")?;
-    let daemon_path = PathBuf::from(&crate_root)
-        .join("../../target/debug/crucible-cli");
+    let daemon_path = PathBuf::from(&crate_root).join("../../target/debug/crucible-cli");
 
     if !daemon_path.exists() {
         // Try release build as fallback
-        let daemon_path_release = PathBuf::from(&crate_root)
-            .join("../../target/release/crucible-cli");
+        let daemon_path_release =
+            PathBuf::from(&crate_root).join("../../target/release/crucible-cli");
         if daemon_path_release.exists() {
             return spawn_daemon_from_path(&daemon_path_release, config).await;
         }
-        return Err(anyhow::anyhow!("Crucible binary not found. Run `cargo build` first."));
+        return Err(anyhow::anyhow!(
+            "Crucible binary not found. Run `cargo build` first."
+        ));
     }
 
     spawn_daemon_from_path(&daemon_path, config).await
 }
 
-async fn spawn_daemon_from_path(daemon_path: &Path, config: &CliConfig) -> Result<tokio::process::Child> {
+async fn spawn_daemon_from_path(
+    daemon_path: &Path,
+    config: &CliConfig,
+) -> Result<tokio::process::Child> {
     let child = AsyncCommand::new(daemon_path)
         .arg("daemon")
         .arg("start")
@@ -335,8 +343,9 @@ async fn test_semantic_search_auto_starts_daemon() -> Result<()> {
     // Test should complete within the overall timeout
     let test_result = timeout(
         Duration::from_secs(TEST_TIMEOUT_SECS),
-        run_auto_start_test()
-    ).await;
+        run_auto_start_test(),
+    )
+    .await;
 
     match test_result {
         Ok(result) => {
@@ -369,10 +378,8 @@ async fn run_auto_start_test() -> Result<()> {
     println!("\n🔍 Step 4: Executing semantic search to trigger auto-start");
 
     let search_start_time = std::time::Instant::now();
-    let search_results = execute_semantic_search_with_metrics(
-        config.clone(),
-        SEMANTIC_SEARCH_QUERY
-    ).await;
+    let search_results =
+        execute_semantic_search_with_metrics(config.clone(), SEMANTIC_SEARCH_QUERY).await;
 
     let search_duration = search_start_time.elapsed();
 
@@ -390,7 +397,9 @@ async fn run_auto_start_test() -> Result<()> {
                     assert!(
                         *score >= MIN_SIMILARITY_SCORE,
                         "Result {} has score {:.4}, below minimum {:.4}",
-                        i + 1, score, MIN_SIMILARITY_SCORE
+                        i + 1,
+                        score,
+                        MIN_SIMILARITY_SCORE
                     );
                 }
 
@@ -402,14 +411,23 @@ async fn run_auto_start_test() -> Result<()> {
                 );
 
                 println!("✅ Auto-start functionality working correctly!");
-                println!("   Generated {} search results in {:?}", results.len(), search_duration);
-                println!("   All results have similarity scores >= {:.4}", MIN_SIMILARITY_SCORE);
+                println!(
+                    "   Generated {} search results in {:?}",
+                    results.len(),
+                    search_duration
+                );
+                println!(
+                    "   All results have similarity scores >= {:.4}",
+                    MIN_SIMILARITY_SCORE
+                );
 
                 // This indicates the feature is already implemented
                 println!("\n🎉 FEATURE ALREADY IMPLEMENTED: Auto-start daemon is working!");
             } else {
                 // TDD BASELINE: Search succeeds but returns no results (no embeddings)
-                println!("⚠️  Step 5b: Search returned no results (auto-start not implemented yet)");
+                println!(
+                    "⚠️  Step 5b: Search returned no results (auto-start not implemented yet)"
+                );
                 println!("   Results: {}", results.len());
                 println!("   Duration: {:?}", search_duration);
 
@@ -471,10 +489,7 @@ async fn run_auto_start_test() -> Result<()> {
 
         for query in additional_queries {
             println!("   Testing query: '{}'", query);
-            let results = execute_semantic_search_with_metrics(
-                config.clone(),
-                query
-            ).await?;
+            let results = execute_semantic_search_with_metrics(config.clone(), query).await?;
 
             assert!(
                 !results.is_empty(),
@@ -518,8 +533,7 @@ async fn test_security_vault_path_not_in_cli_arguments() -> Result<()> {
 
     // Verify the configuration loaded correctly
     assert_eq!(
-        config.kiln.path,
-        vault_path,
+        config.kiln.path, vault_path,
         "Vault path should match environment variable"
     );
 
@@ -549,10 +563,7 @@ async fn test_auto_start_performance_requirements() -> Result<()> {
     let start_time = std::time::Instant::now();
 
     // This should fail initially but we measure the time
-    let _search_result = execute_semantic_search_with_metrics(
-        config,
-        "test query"
-    ).await;
+    let _search_result = execute_semantic_search_with_metrics(config, "test query").await;
 
     let elapsed = start_time.elapsed();
 
@@ -561,12 +572,16 @@ async fn test_auto_start_performance_requirements() -> Result<()> {
     assert!(
         elapsed <= max_fail_time,
         "Search failure took too long: {:?} > {:?}",
-        elapsed, max_fail_time
+        elapsed,
+        max_fail_time
     );
 
     cleanup_environment();
 
-    println!("✅ Performance requirements met: failure time {:?}", elapsed);
+    println!(
+        "✅ Performance requirements met: failure time {:?}",
+        elapsed
+    );
 
     Ok(())
 }
@@ -605,9 +620,18 @@ async fn test_secure_vault_path_configuration() -> Result<()> {
     // Test scenarios to cover all security requirements
     let test_scenarios = vec![
         ("valid_env_var", "Scenario 1: Valid environment variable"),
-        ("missing_env_var", "Scenario 2: Missing environment variable"),
-        ("invalid_path_env", "Scenario 3: Invalid path in environment variable"),
-        ("cli_flag_ignored", "Scenario 4: CLI -p flag should be ignored"),
+        (
+            "missing_env_var",
+            "Scenario 2: Missing environment variable",
+        ),
+        (
+            "invalid_path_env",
+            "Scenario 3: Invalid path in environment variable",
+        ),
+        (
+            "cli_flag_ignored",
+            "Scenario 4: CLI -p flag should be ignored",
+        ),
     ];
 
     for (scenario_name, scenario_description) in test_scenarios {
@@ -689,7 +713,10 @@ async fn test_valid_environment_variable() -> Result<()> {
             test_daemon_secure_configuration(&config).await?;
         }
         Err(e) => {
-            println!("     ❌ CLI failed to load from environment variable: {}", e);
+            println!(
+                "     ❌ CLI failed to load from environment variable: {}",
+                e
+            );
 
             // This is expected in TDD - return error to indicate failing test
             return Err(anyhow::anyhow!(
@@ -727,12 +754,17 @@ async fn test_missing_environment_variable() -> Result<()> {
             ));
         }
         Err(e) => {
-            println!("     ✅ CLI correctly failed without environment variable: {}", e);
+            println!(
+                "     ✅ CLI correctly failed without environment variable: {}",
+                e
+            );
 
             // Verify error message is appropriate and doesn't expose sensitive information
             let error_msg = e.to_string().to_lowercase();
             assert!(
-                error_msg.contains("vault") || error_msg.contains("path") || error_msg.contains("environment"),
+                error_msg.contains("vault")
+                    || error_msg.contains("path")
+                    || error_msg.contains("environment"),
                 "Error message should mention vault/path/environment: {}",
                 e
             );
@@ -754,7 +786,7 @@ async fn test_invalid_path_environment_variable() -> Result<()> {
     let invalid_paths = vec![
         "/nonexistent/path/that/does/not/exist",
         "/dev/null/invalid/vault",
-        "", // Empty path
+        "",                // Empty path
         "/root/.crucible", // Permission likely denied
     ];
 
@@ -779,7 +811,9 @@ async fn test_invalid_path_environment_variable() -> Result<()> {
                 // Verify error message is appropriate
                 let error_msg = e.to_string().to_lowercase();
                 assert!(
-                    error_msg.contains("vault") || error_msg.contains("path") || error_msg.contains("exist"),
+                    error_msg.contains("vault")
+                        || error_msg.contains("path")
+                        || error_msg.contains("exist"),
                     "Error message should mention path issue: {}",
                     e
                 );
@@ -851,7 +885,10 @@ async fn test_daemon_secure_configuration(config: &CliConfig) -> Result<()> {
             println!("     ✅ Daemon process cleaned up");
         }
         Err(e) => {
-            println!("     ❌ Daemon failed to start with environment variable: {}", e);
+            println!(
+                "     ❌ Daemon failed to start with environment variable: {}",
+                e
+            );
 
             return Err(anyhow::anyhow!(
                 "TDD SECURITY FAILURE: Daemon cannot start with environment variable configuration. \
@@ -870,8 +907,7 @@ async fn test_process_argument_security(config: &CliConfig) -> Result<()> {
 
     // Find the crucible binary path
     let crate_root = env::var("CARGO_MANIFEST_DIR")?;
-    let cli_path = PathBuf::from(&crate_root)
-        .join("../../target/debug/crucible-cli");
+    let cli_path = PathBuf::from(&crate_root).join("../../target/debug/crucible-cli");
 
     if !cli_path.exists() {
         println!("     ⚠️  Crucible binary not found for process argument testing");
@@ -905,7 +941,10 @@ async fn test_process_argument_security(config: &CliConfig) -> Result<()> {
 
 /// Inspect process arguments to ensure vault path is not exposed
 async fn inspect_process_arguments_security(pid: u32) -> Result<()> {
-    println!("       🔍 Inspecting process {} arguments for security", pid);
+    println!(
+        "       🔍 Inspecting process {} arguments for security",
+        pid
+    );
 
     // On Linux, we can read /proc/[pid]/cmdline to inspect process arguments
     let cmdline_path = format!("/proc/{}/cmdline", pid);
@@ -921,7 +960,9 @@ async fn inspect_process_arguments_security(pid: u32) -> Result<()> {
                     let cmdline_lower = cmdline.to_lowercase();
 
                     if cmdline_lower.contains(&vault_path_lower) {
-                        println!("         ❌ SECURITY VIOLATION: Vault path exposed in command line!");
+                        println!(
+                            "         ❌ SECURITY VIOLATION: Vault path exposed in command line!"
+                        );
 
                         return Err(anyhow::anyhow!(
                             "TDD SECURITY FAILURE: Vault path '{}' is exposed in process command line arguments. \
@@ -964,8 +1005,9 @@ async fn test_delta_processing_single_file_change() -> Result<()> {
     // Test should complete within the overall timeout
     let test_result = timeout(
         Duration::from_secs(TEST_TIMEOUT_SECS),
-        run_delta_processing_test()
-    ).await;
+        run_delta_processing_test(),
+    )
+    .await;
 
     match test_result {
         Ok(result) => {
@@ -973,7 +1015,10 @@ async fn test_delta_processing_single_file_change() -> Result<()> {
             result
         }
         Err(_) => {
-            panic!("⏰ Delta processing test timed out after {} seconds", TEST_TIMEOUT_SECS);
+            panic!(
+                "⏰ Delta processing test timed out after {} seconds",
+                TEST_TIMEOUT_SECS
+            );
         }
     }
 }
@@ -995,7 +1040,9 @@ async fn run_delta_processing_test() -> Result<()> {
 
     for (filename, _content) in SAMPLE_MARKDOWN_CONTENTS {
         let file_path = temp_vault.path().join(filename);
-        let hash = change_detector.calculate_file_hash(file_path.to_str().unwrap()).await?;
+        let hash = change_detector
+            .calculate_file_hash(file_path.to_str().unwrap())
+            .await?;
         println!("   {} -> {}", filename, &hash[..8]);
         initial_hashes.insert(filename.to_string(), hash);
     }
@@ -1008,20 +1055,24 @@ async fn run_delta_processing_test() -> Result<()> {
     let initial_files_count = SAMPLE_MARKDOWN_CONTENTS.len();
     let simulated_initial_time = Duration::from_secs(FULL_VAULT_PROCESSING_TIME_SECS);
 
-    println!("   Processing {} files (simulated {:?})", initial_files_count, simulated_initial_time);
+    println!(
+        "   Processing {} files (simulated {:?})",
+        initial_files_count, simulated_initial_time
+    );
     tokio::time::sleep(simulated_initial_time).await;
 
     let initial_processing_duration = initial_processing_start.elapsed();
-    println!("   ✅ Initial processing completed in {:?}", initial_processing_duration);
+    println!(
+        "   ✅ Initial processing completed in {:?}",
+        initial_processing_duration
+    );
 
     // 4. Establish baseline: Try semantic search with initial state
     println!("\n🔍 Step 4: Establishing baseline search with initial files");
 
     let baseline_search_start = Instant::now();
-    let baseline_results = execute_semantic_search_with_metrics(
-        config.clone(),
-        DELTA_PROCESSING_QUERY
-    ).await;
+    let baseline_results =
+        execute_semantic_search_with_metrics(config.clone(), DELTA_PROCESSING_QUERY).await;
 
     let baseline_duration = baseline_search_start.elapsed();
     println!("⏱️  Baseline search completed in {:?}", baseline_duration);
@@ -1031,9 +1082,14 @@ async fn run_delta_processing_test() -> Result<()> {
     let baseline_result_count = baseline_results.as_ref().map(|r| r.len()).unwrap_or(0);
 
     if baseline_success && baseline_result_count > 0 {
-        println!("✅ Baseline search returned {} results", baseline_result_count);
+        println!(
+            "✅ Baseline search returned {} results",
+            baseline_result_count
+        );
     } else {
-        println!("⚠️  Baseline search returned no results (expected for TDD - no embeddings generated)");
+        println!(
+            "⚠️  Baseline search returned no results (expected for TDD - no embeddings generated)"
+        );
     }
 
     // 5. Modify one file and verify change detection works
@@ -1061,15 +1117,19 @@ async fn run_delta_processing_test() -> Result<()> {
     println!("   ✅ File content updated");
 
     // Verify change detection identifies the modification
-    let new_hash = change_detector.calculate_file_hash(modified_file_path.to_str().unwrap()).await?;
+    let new_hash = change_detector
+        .calculate_file_hash(modified_file_path.to_str().unwrap())
+        .await?;
     println!("   New hash:      {}...", &new_hash[..8]);
 
-    let file_changed = change_detector.file_has_changed(
-        modified_file_path.to_str().unwrap(),
-        original_hash
-    ).await?;
+    let file_changed = change_detector
+        .file_has_changed(modified_file_path.to_str().unwrap(), original_hash)
+        .await?;
 
-    assert!(file_changed, "Change detector should identify file modification");
+    assert!(
+        file_changed,
+        "Change detector should identify file modification"
+    );
     println!("   ✅ Change detection working correctly");
 
     // Verify other files are unchanged
@@ -1082,8 +1142,12 @@ async fn run_delta_processing_test() -> Result<()> {
         }
 
         let file_path = temp_vault.path().join(filename);
-        let _current_hash = change_detector.calculate_file_hash(file_path.to_str().unwrap()).await?;
-        let changed = change_detector.file_has_changed(file_path.to_str().unwrap(), original_hash).await?;
+        let _current_hash = change_detector
+            .calculate_file_hash(file_path.to_str().unwrap())
+            .await?;
+        let changed = change_detector
+            .file_has_changed(file_path.to_str().unwrap(), original_hash)
+            .await?;
 
         assert!(!changed, "File {} should not have changed", filename);
         unchanged_files += 1;
@@ -1097,28 +1161,34 @@ async fn run_delta_processing_test() -> Result<()> {
     let delta_processing_start = Instant::now();
 
     // This should use delta processing (only re-process modified file)
-    let delta_results = execute_semantic_search_with_metrics(
-        config.clone(),
-        DELTA_PROCESSING_QUERY
-    ).await;
+    let delta_results =
+        execute_semantic_search_with_metrics(config.clone(), DELTA_PROCESSING_QUERY).await;
 
     let delta_processing_duration = delta_processing_start.elapsed();
-    println!("⏱️  Delta processing completed in {:?}", delta_processing_duration);
+    println!(
+        "⏱️  Delta processing completed in {:?}",
+        delta_processing_duration
+    );
 
     // PERFORMANCE REQUIREMENT: Single file change should be processed in under 1 second
     let max_delta_time = Duration::from_secs(DELTA_PROCESSING_TIMEOUT_SECS);
 
     // TDD ANALYSIS: The test should fail if processing takes too long
-    if delta_processing_duration <= max_delta_time && baseline_success && baseline_result_count > 0 {
-        println!("✅ Delta processing meets performance requirement: {:?} <= {:?}",
-                delta_processing_duration, max_delta_time);
+    if delta_processing_duration <= max_delta_time && baseline_success && baseline_result_count > 0
+    {
+        println!(
+            "✅ Delta processing meets performance requirement: {:?} <= {:?}",
+            delta_processing_duration, max_delta_time
+        );
     } else {
         // TDD FAILURE CASE: This is expected to fail initially
         println!("❌ DELTA PROCESSING NOT IMPLEMENTED EFFICIENTLY");
 
         if delta_processing_duration > max_delta_time {
-            println!("   ❌ Performance violation: {:?} > {:?} (should be sub-second)",
-                    delta_processing_duration, max_delta_time);
+            println!(
+                "   ❌ Performance violation: {:?} > {:?} (should be sub-second)",
+                delta_processing_duration, max_delta_time
+            );
         }
 
         if baseline_result_count == 0 {
@@ -1132,7 +1202,9 @@ async fn run_delta_processing_test() -> Result<()> {
             Current behavior: {} files processed (should be 1 file). \
             This indicates full vault re-processing instead of delta processing. \
             Implement delta processing with change detection to make this test pass.",
-            max_delta_time, delta_processing_duration, initial_files_count
+            max_delta_time,
+            delta_processing_duration,
+            initial_files_count
         ));
     }
 
@@ -1146,16 +1218,21 @@ async fn run_delta_processing_test() -> Result<()> {
             // Results should be different from baseline if modification was meaningful
             if baseline_success && baseline_result_count > 0 {
                 if results.len() != baseline_result_count {
-                    println!("✅ Search results changed ({} -> {}), indicating delta processing worked",
-                            baseline_result_count, results.len());
+                    println!(
+                        "✅ Search results changed ({} -> {}), indicating delta processing worked",
+                        baseline_result_count,
+                        results.len()
+                    );
                 } else {
-                    println!("⚠️  Search results count unchanged, but content may have been updated");
+                    println!(
+                        "⚠️  Search results count unchanged, but content may have been updated"
+                    );
                 }
 
                 // Verify at least one result refers to the modified file
-                let modified_file_found = results.iter().any(|(doc_id, _score)| {
-                    doc_id.contains(modified_filename)
-                });
+                let modified_file_found = results
+                    .iter()
+                    .any(|(doc_id, _score)| doc_id.contains(modified_filename));
 
                 if modified_file_found {
                     println!("✅ Modified file appears in search results");
@@ -1167,7 +1244,11 @@ async fn run_delta_processing_test() -> Result<()> {
             // Validate result quality
             for (i, (_doc_id, score)) in results.iter().enumerate() {
                 if *score < MIN_SIMILARITY_SCORE {
-                    println!("⚠️  Result {} has low similarity score: {:.4}", i + 1, score);
+                    println!(
+                        "⚠️  Result {} has low similarity score: {:.4}",
+                        i + 1,
+                        score
+                    );
                 }
             }
         }
@@ -1188,25 +1269,38 @@ async fn run_delta_processing_test() -> Result<()> {
     println!("   ✅ Change detection: WORKING (SHA256 hash-based)");
     println!("   ✅ File modification: DETECTED");
     println!("   ✅ Unchanged files: PRESERVED");
-    println!("   ✅ Initial processing: SIMULATED ({})", initial_files_count);
+    println!(
+        "   ✅ Initial processing: SIMULATED ({})",
+        initial_files_count
+    );
 
     if delta_processing_duration <= max_delta_time && baseline_result_count > 0 {
-        println!("   ✅ Performance requirement: MET ({:?})", delta_processing_duration);
+        println!(
+            "   ✅ Performance requirement: MET ({:?})",
+            delta_processing_duration
+        );
         println!("   ✅ Delta processing: IMPLEMENTED");
-        println!("   ✅ Efficiency: {}x faster than full reprocessing",
-                FULL_VAULT_PROCESSING_TIME_SECS / DELTA_PROCESSING_TIMEOUT_SECS);
+        println!(
+            "   ✅ Efficiency: {}x faster than full reprocessing",
+            FULL_VAULT_PROCESSING_TIME_SECS / DELTA_PROCESSING_TIMEOUT_SECS
+        );
 
         // If we reach here, delta processing is working!
         println!("\n🎉 DELTA PROCESSING FEATURE IS WORKING!");
     } else {
-        println!("   ❌ Performance requirement: VIOLATED ({:?} > {:?})",
-                delta_processing_duration, max_delta_time);
+        println!(
+            "   ❌ Performance requirement: VIOLATED ({:?} > {:?})",
+            delta_processing_duration, max_delta_time
+        );
         println!("   ❌ Delta processing: NOT IMPLEMENTED (TDD baseline)");
         println!("\n⚠️  TDD BASELINE CONFIRMED:");
         println!("   ❌ Change detection works, but processing is inefficient");
         println!("   ❌ Full vault re-processing instead of delta processing");
         println!("   ❌ Expected: 1 file processed in < {:?}", max_delta_time);
-        println!("   ❌ Actual: {} files processed in {:?}", initial_files_count, delta_processing_duration);
+        println!(
+            "   ❌ Actual: {} files processed in {:?}",
+            initial_files_count, delta_processing_duration
+        );
         println!("   ❌ Implementation needed to meet sub-second requirement");
 
         // This is the expected TDD baseline - return error to indicate failing test

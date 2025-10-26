@@ -4,8 +4,8 @@
 //! Implemented to make the failing tests pass with minimal functionality.
 
 use crate::vault_types::{VaultError, VaultResult};
+use sha2::{Digest, Sha256};
 use std::fs;
-use sha2::{Sha256, Digest};
 
 /// Change detector for vault files using SHA256 hashing
 #[derive(Debug, Clone)]
@@ -35,9 +35,9 @@ impl ChangeDetector {
         let file_path = file_path.to_string();
 
         // Read file content in blocking task
-        let content = tokio::task::spawn_blocking(move || {
-            fs::read_to_string(&file_path)
-        }).await.map_err(|e| VaultError::HashError(format!("Task join error: {}", e)))??;
+        let content = tokio::task::spawn_blocking(move || fs::read_to_string(&file_path))
+            .await
+            .map_err(|e| VaultError::HashError(format!("Task join error: {}", e)))??;
 
         // Calculate hash
         Ok(self.calculate_content_hash(&content))
@@ -58,7 +58,11 @@ impl ChangeDetector {
     }
 
     /// Check if file has changed by comparing hashes
-    pub async fn file_has_changed(&self, file_path: &str, previous_hash: &str) -> VaultResult<bool> {
+    pub async fn file_has_changed(
+        &self,
+        file_path: &str,
+        previous_hash: &str,
+    ) -> VaultResult<bool> {
         let current_hash = self.calculate_file_hash(file_path).await?;
         Ok(current_hash != previous_hash)
     }
@@ -83,9 +87,9 @@ impl ChangeDetector {
     pub async fn file_exists(&self, file_path: &str) -> bool {
         let file_path = file_path.to_string();
 
-        tokio::task::spawn_blocking(move || {
-            std::path::Path::new(&file_path).exists()
-        }).await.unwrap_or(false)
+        tokio::task::spawn_blocking(move || std::path::Path::new(&file_path).exists())
+            .await
+            .unwrap_or(false)
     }
 
     /// Get file size in bytes
@@ -95,18 +99,25 @@ impl ChangeDetector {
         tokio::task::spawn_blocking(move || {
             let metadata = fs::metadata(&file_path)?;
             Ok(metadata.len())
-        }).await.map_err(|e| VaultError::HashError(format!("Task join error: {}", e)))?
+        })
+        .await
+        .map_err(|e| VaultError::HashError(format!("Task join error: {}", e)))?
     }
 
     /// Get file modification time
-    pub async fn get_file_modified_time(&self, file_path: &str) -> VaultResult<chrono::DateTime<chrono::Utc>> {
+    pub async fn get_file_modified_time(
+        &self,
+        file_path: &str,
+    ) -> VaultResult<chrono::DateTime<chrono::Utc>> {
         let file_path = file_path.to_string();
 
         tokio::task::spawn_blocking(move || {
             let metadata = fs::metadata(&file_path)?;
             let modified = metadata.modified()?;
             Ok(chrono::DateTime::from(modified))
-        }).await.map_err(|e| VaultError::HashError(format!("Task join error: {}", e)))?
+        })
+        .await
+        .map_err(|e| VaultError::HashError(format!("Task join error: {}", e)))?
     }
 }
 
@@ -119,8 +130,8 @@ impl Default for ChangeDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_change_detector_creates_successfully() {
@@ -159,7 +170,10 @@ mod tests {
         let content = "Test file content for hashing";
         fs::write(&file_path, content).unwrap();
 
-        let hash = detector.calculate_file_hash(file_path.to_str().unwrap()).await.unwrap();
+        let hash = detector
+            .calculate_file_hash(file_path.to_str().unwrap())
+            .await
+            .unwrap();
 
         assert_eq!(hash.len(), 64);
         assert!(detector.is_valid_hash(&hash));
@@ -179,16 +193,25 @@ mod tests {
         fs::write(&file_path, initial_content).unwrap();
 
         // Get initial hash
-        let initial_hash = detector.calculate_file_hash(file_path.to_str().unwrap()).await.unwrap();
+        let initial_hash = detector
+            .calculate_file_hash(file_path.to_str().unwrap())
+            .await
+            .unwrap();
 
         // File should not have changed
-        assert!(!detector.file_has_changed(file_path.to_str().unwrap(), &initial_hash).await.unwrap());
+        assert!(!detector
+            .file_has_changed(file_path.to_str().unwrap(), &initial_hash)
+            .await
+            .unwrap());
 
         // Modify file
         fs::write(&file_path, "Modified content").unwrap();
 
         // File should have changed
-        assert!(detector.file_has_changed(file_path.to_str().unwrap(), &initial_hash).await.unwrap());
+        assert!(detector
+            .file_has_changed(file_path.to_str().unwrap(), &initial_hash)
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
@@ -198,7 +221,7 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            VaultError::IoError(_) => {}, // Expected
+            VaultError::IoError(_) => {} // Expected
             other => panic!("Expected IoError, got: {:?}", other),
         }
     }

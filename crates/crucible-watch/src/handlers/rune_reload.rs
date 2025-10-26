@@ -8,6 +8,7 @@ use crate::{
 use async_trait::async_trait;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 /// Handler for automatically reloading Rune tool scripts when they change.

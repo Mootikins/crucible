@@ -1,7 +1,6 @@
 /// System events for agent lifecycle and coordination
 ///
 /// Broadcast events for discovery, health, and system-level notifications.
-
 use crate::context::types::AgentId;
 use serde::{Deserialize, Serialize};
 
@@ -38,10 +37,7 @@ pub enum SystemEvent {
     },
 
     /// Emergency shutdown signal
-    Shutdown {
-        reason: String,
-        timestamp: i64,
-    },
+    Shutdown { reason: String, timestamp: i64 },
 }
 
 #[cfg(test)]
@@ -60,7 +56,11 @@ mod tests {
         let deserialized: SystemEvent = serde_json::from_str(&json).unwrap();
 
         match deserialized {
-            SystemEvent::AgentJoined { agent_id, capabilities, .. } => {
+            SystemEvent::AgentJoined {
+                agent_id,
+                capabilities,
+                ..
+            } => {
                 assert_eq!(agent_id, "agent_1");
                 assert_eq!(capabilities.len(), 2);
             }

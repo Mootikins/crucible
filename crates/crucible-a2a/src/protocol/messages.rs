@@ -1,7 +1,6 @@
 /// Typed message protocol for agent-to-agent communication
 ///
 /// Provides compile-time type safety for inter-agent messages.
-
 use crate::context::types::{AgentId, EntityId, MessageId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -243,14 +242,12 @@ mod tests {
     fn test_capability_advertisement() {
         let msg = TypedMessage::CapabilityAdvertisement {
             query_id: Some("query_1".to_string()),
-            capabilities: vec![
-                Capability {
-                    name: "code_analysis".to_string(),
-                    version: "1.0.0".to_string(),
-                    description: Some("Analyze code quality".to_string()),
-                    parameters: HashMap::new(),
-                },
-            ],
+            capabilities: vec![Capability {
+                name: "code_analysis".to_string(),
+                version: "1.0.0".to_string(),
+                description: Some("Analyze code quality".to_string()),
+                parameters: HashMap::new(),
+            }],
             load_factor: 0.3,
         };
 
@@ -261,7 +258,10 @@ mod tests {
     #[test]
     fn test_coordination_request() {
         let mut context = HashMap::new();
-        context.insert("shared_data".to_string(), serde_json::json!({"key": "value"}));
+        context.insert(
+            "shared_data".to_string(),
+            serde_json::json!({"key": "value"}),
+        );
 
         let msg = TypedMessage::CoordinationRequest {
             request_id: "coord_001".to_string(),

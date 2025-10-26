@@ -16,15 +16,6 @@
 //! 3. Test persistence of semantic search results across multiple runs
 //! 4. Drive implementation of proper semantic search with real embeddings
 
-use anyhow::Result;
-use tokio::process::Command;
-use std::path::PathBuf;
-use tempfile::TempDir;
-use std::fs;
-use serde_json::Value;
-use std::time::Duration;
-use tokio::time::sleep;
-
 /// Test helper to create a realistic test vault with diverse content
 async fn create_test_kiln() -> Result<(TempDir, PathBuf)> {
     let temp_dir = TempDir::new()?;
@@ -32,7 +23,9 @@ async fn create_test_kiln() -> Result<(TempDir, PathBuf)> {
 
     // Create diverse test markdown files with semantic content
     let test_files = vec![
-        ("machine-learning-intro.md", r#"---
+        (
+            "machine-learning-intro.md",
+            r#"---
 title: "Introduction to Machine Learning"
 tags: ["AI", "ML", "neural-networks", "algorithms"]
 ---
@@ -51,8 +44,11 @@ Machine learning is a subset of artificial intelligence that focuses on developi
 ## Applications
 
 Machine learning is used in various domains including natural language processing, computer vision, recommendation systems, and autonomous vehicles.
-"#),
-        ("rust-systems-programming.md", r#"---
+"#,
+        ),
+        (
+            "rust-systems-programming.md",
+            r#"---
 title: "Rust Systems Programming"
 tags: ["rust", "systems", "memory-safety", "performance"]
 ---
@@ -70,8 +66,11 @@ Rust is a systems programming language that guarantees memory safety without usi
 ## Performance Characteristics
 
 Rust provides performance comparable to C and C++ while offering modern language features. The compiler produces highly optimized machine code through advanced LLVM optimizations.
-"#),
-        ("database-vector-search.md", r#"---
+"#,
+        ),
+        (
+            "database-vector-search.md",
+            r#"---
 title: "Vector Database Technologies"
 tags: ["database", "vectors", "embeddings", "similarity-search"]
 ---
@@ -90,8 +89,11 @@ Vector databases are specialized database systems designed to store and query hi
 ## Use Cases
 
 Vector databases power semantic search, recommendation systems, image similarity search, and molecular similarity analysis in drug discovery.
-"#),
-        ("ai-research-transformers.md", r#"---
+"#,
+        ),
+        (
+            "ai-research-transformers.md",
+            r#"---
 title: "Transformer Models in AI Research"
 tags: ["transformers", "attention-mechanism", "NLP", "AI-research"]
 ---
@@ -110,8 +112,11 @@ Transformer models have revolutionized natural language processing and artificia
 ## Applications
 
 Transformers power large language models like GPT, BERT, and T5. They excel in machine translation, text summarization, question answering, and code generation tasks.
-"#),
-        ("semantic-search-implementation.md", r#"---
+"#,
+        ),
+        (
+            "semantic-search-implementation.md",
+            r#"---
 title: "Implementing Semantic Search Systems"
 tags: ["semantic-search", "embeddings", "vector-similarity", "search-algorithms"]
 ---
@@ -130,7 +135,8 @@ Semantic search systems use vector embeddings to understand the meaning behind q
 ## Challenges
 
 Semantic search faces challenges including computational complexity, embedding quality, domain-specific terminology, and real-time performance requirements.
-"#),
+"#,
+        ),
     ];
 
     for (filename, content) in test_files {
@@ -237,11 +243,26 @@ mod semantic_search_real_integration_tdd_tests {
 
         // Test queries that have specific mock patterns in vault_integration.rs
         let test_queries = vec![
-            ("machine learning", "Should have high similarity pattern [0.8, 0.6, 0.1, 0.2]"),
-            ("neural networks", "Should have neural pattern [0.7, 0.4, 0.2, 0.3]"),
-            ("deep learning", "Should have deep pattern [0.6, 0.7, 0.1, 0.1]"),
-            ("artificial intelligence", "Should have AI pattern [0.5, 0.5, 0.3, 0.3]"),
-            ("data science", "Should have data pattern [0.4, 0.3, 0.6, 0.2]"),
+            (
+                "machine learning",
+                "Should have high similarity pattern [0.8, 0.6, 0.1, 0.2]",
+            ),
+            (
+                "neural networks",
+                "Should have neural pattern [0.7, 0.4, 0.2, 0.3]",
+            ),
+            (
+                "deep learning",
+                "Should have deep pattern [0.6, 0.7, 0.1, 0.1]",
+            ),
+            (
+                "artificial intelligence",
+                "Should have AI pattern [0.5, 0.5, 0.3, 0.3]",
+            ),
+            (
+                "data science",
+                "Should have data pattern [0.4, 0.3, 0.6, 0.2]",
+            ),
         ];
 
         for (query, expected_pattern) in test_queries {
@@ -255,16 +276,24 @@ mod semantic_search_real_integration_tdd_tests {
                         if !results.is_empty() {
                             // Check first result's similarity score
                             if let Some(first_result) = results.first() {
-                                if let Some(score) = first_result.get("score").and_then(|s| s.as_f64()) {
+                                if let Some(score) =
+                                    first_result.get("score").and_then(|s| s.as_f64())
+                                {
                                     println!("🎯 First result score: {:.4}", score);
 
                                     // The mock implementation produces predictable scores
                                     // Real embeddings would produce variable scores based on actual semantic similarity
                                     let is_predictable_mock_score = match query {
-                                        q if q.to_lowercase().contains("machine learning") => score > 0.7,
+                                        q if q.to_lowercase().contains("machine learning") => {
+                                            score > 0.7
+                                        }
                                         q if q.to_lowercase().contains("neural") => score > 0.6,
                                         q if q.to_lowercase().contains("deep") => score > 0.5,
-                                        q if q.to_lowercase().contains("artificial") || q.to_lowercase().contains("ai") => score > 0.4,
+                                        q if q.to_lowercase().contains("artificial")
+                                            || q.to_lowercase().contains("ai") =>
+                                        {
+                                            score > 0.4
+                                        }
                                         q if q.to_lowercase().contains("data") => score > 0.3,
                                         _ => score > 0.2,
                                     };
@@ -295,7 +324,9 @@ mod semantic_search_real_integration_tdd_tests {
         println!("   Configuration should be respected for embedding model selection");
 
         // This failure drives the implementation of real embeddings
-        panic!("RED PHASE: Semantic search uses mock embeddings instead of real embedding generation");
+        panic!(
+            "RED PHASE: Semantic search uses mock embeddings instead of real embedding generation"
+        );
     }
 
     #[tokio::test]
@@ -319,39 +350,61 @@ mod semantic_search_real_integration_tdd_tests {
 
         // Test with different embedding configurations
         let test_configs = vec![
-            (Some("http://localhost:11434"), Some("nomic-embed-text-v1.5")),
+            (
+                Some("http://localhost:11434"),
+                Some("nomic-embed-text-v1.5"),
+            ),
             (Some("http://localhost:11434"), Some("all-minilm-l6-v2")),
-            (Some("https://api.openai.com"), Some("text-embedding-ada-002")),
+            (
+                Some("https://api.openai.com"),
+                Some("text-embedding-ada-002"),
+            ),
             (None, None), // Default configuration
         ];
 
         for (i, (url, model)) in test_configs.iter().enumerate() {
-            println!("\n🧪 Testing configuration {}: URL={:?}, Model={:?}", i+1, url, model);
+            println!(
+                "\n🧪 Testing configuration {}: URL={:?}, Model={:?}",
+                i + 1,
+                url,
+                model
+            );
 
-            match run_semantic_search_with_config(&kiln_path, test_query, url.as_deref(), model.as_deref()).await {
-                Ok(output) => {
-                    match serde_json::from_str::<Value>(&output) {
-                        Ok(parsed) => {
-                            if let Some(search_results) = parsed.get("results").and_then(|r| r.as_array()) {
-                                let result_count = search_results.len();
-                                let first_score = search_results.first()
-                                    .and_then(|r| r.get("score"))
-                                    .and_then(|s| s.as_f64())
-                                    .unwrap_or(0.0);
+            match run_semantic_search_with_config(
+                &kiln_path,
+                test_query,
+                url.as_deref(),
+                model.as_deref(),
+            )
+            .await
+            {
+                Ok(output) => match serde_json::from_str::<Value>(&output) {
+                    Ok(parsed) => {
+                        if let Some(search_results) =
+                            parsed.get("results").and_then(|r| r.as_array())
+                        {
+                            let result_count = search_results.len();
+                            let first_score = search_results
+                                .first()
+                                .and_then(|r| r.get("score"))
+                                .and_then(|s| s.as_f64())
+                                .unwrap_or(0.0);
 
-                                println!("📊 Results: {} items, first score: {:.4}", result_count, first_score);
-                                results.push((url.clone(), model.clone(), result_count, first_score));
-                            } else {
-                                println!("⚠️  No results found");
-                                results.push((url.clone(), model.clone(), 0, 0.0));
-                            }
-                        }
-                        Err(e) => {
-                            println!("❌ Failed to parse JSON output: {}", e);
+                            println!(
+                                "📊 Results: {} items, first score: {:.4}",
+                                result_count, first_score
+                            );
+                            results.push((url.clone(), model.clone(), result_count, first_score));
+                        } else {
+                            println!("⚠️  No results found");
                             results.push((url.clone(), model.clone(), 0, 0.0));
                         }
                     }
-                }
+                    Err(e) => {
+                        println!("❌ Failed to parse JSON output: {}", e);
+                        results.push((url.clone(), model.clone(), 0, 0.0));
+                    }
+                },
                 Err(e) => {
                     println!("❌ Search failed: {}", e);
                     results.push((url.clone(), model.clone(), 0, 0.0));
@@ -375,11 +428,19 @@ mod semantic_search_real_integration_tdd_tests {
                 println!("\n❌ CONFIGURATION IGNORED:");
                 println!("   All configurations produced identical results:");
                 for (i, (url, model, count, score)) in results.iter().enumerate() {
-                    println!("   Config {}: URL={:?}, Model={:?} -> {} results, score={:.4}",
-                             i+1, url, model, count, score);
+                    println!(
+                        "   Config {}: URL={:?}, Model={:?} -> {} results, score={:.4}",
+                        i + 1,
+                        url,
+                        model,
+                        count,
+                        score
+                    );
                 }
                 println!("\n   This indicates that CLI embedding configuration is being ignored");
-                println!("   Different models and endpoints should produce different similarity scores");
+                println!(
+                    "   Different models and endpoints should produce different similarity scores"
+                );
 
                 // This failure drives configuration integration
                 panic!("RED PHASE: CLI embedding configuration is ignored during semantic search");
@@ -434,12 +495,17 @@ mod semantic_search_real_integration_tdd_tests {
             for query in &test_queries {
                 match run_semantic_search_json(&kiln_path, query).await {
                     Ok(result) => {
-                        if let Some(search_results) = result.get("results").and_then(|r| r.as_array()) {
-                            let result_summary: Vec<String> = search_results.iter()
+                        if let Some(search_results) =
+                            result.get("results").and_then(|r| r.as_array())
+                        {
+                            let result_summary: Vec<String> = search_results
+                                .iter()
                                 .take(3) // Take top 3 for comparison
                                 .filter_map(|r| {
-                                    let id = r.get("id").and_then(|i| i.as_str()).unwrap_or("unknown");
-                                    let score = r.get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
+                                    let id =
+                                        r.get("id").and_then(|i| i.as_str()).unwrap_or("unknown");
+                                    let score =
+                                        r.get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
                                     Some(format!("{}:{:.4}", id, score))
                                 })
                                 .collect();
@@ -465,7 +531,10 @@ mod semantic_search_real_integration_tdd_tests {
         }
 
         // Check consistency across runs
-        println!("\n🔍 Analyzing consistency across {} runs", all_results.len());
+        println!(
+            "\n🔍 Analyzing consistency across {} runs",
+            all_results.len()
+        );
 
         if all_results.len() >= 2 {
             let first_run = &all_results[0];
@@ -506,7 +575,10 @@ mod semantic_search_real_integration_tdd_tests {
 
         // Check database persistence
         let database_exists_after_runs = check_database_embeddings(&kiln_path).await?;
-        println!("\n📁 Database exists after runs: {}", database_exists_after_runs);
+        println!(
+            "\n📁 Database exists after runs: {}",
+            database_exists_after_runs
+        );
 
         if !database_exists_after_runs {
             println!("❌ Database persistence issue:");
@@ -543,15 +615,40 @@ mod semantic_search_real_integration_tdd_tests {
         // Test queries that should produce semantically related results
         let semantic_test_cases = vec![
             // Related queries about machine learning
-            ("machine learning", vec!["machine-learning-intro.md", "ai-research-transformers.md"]),
-            ("neural networks", vec!["machine-learning-intro.md", "ai-research-transformers.md"]),
-            ("AI algorithms", vec!["machine-learning-intro.md", "ai-research-transformers.md"]),
-
+            (
+                "machine learning",
+                vec!["machine-learning-intro.md", "ai-research-transformers.md"],
+            ),
+            (
+                "neural networks",
+                vec!["machine-learning-intro.md", "ai-research-transformers.md"],
+            ),
+            (
+                "AI algorithms",
+                vec!["machine-learning-intro.md", "ai-research-transformers.md"],
+            ),
             // Related queries about databases
-            ("vector search", vec!["database-vector-search.md", "semantic-search-implementation.md"]),
-            ("similarity search", vec!["database-vector-search.md", "semantic-search-implementation.md"]),
-            ("embeddings", vec!["database-vector-search.md", "semantic-search-implementation.md"]),
-
+            (
+                "vector search",
+                vec![
+                    "database-vector-search.md",
+                    "semantic-search-implementation.md",
+                ],
+            ),
+            (
+                "similarity search",
+                vec![
+                    "database-vector-search.md",
+                    "semantic-search-implementation.md",
+                ],
+            ),
+            (
+                "embeddings",
+                vec![
+                    "database-vector-search.md",
+                    "semantic-search-implementation.md",
+                ],
+            ),
             // Related queries about Rust
             ("memory safety", vec!["rust-systems-programming.md"]),
             ("systems programming", vec!["rust-systems-programming.md"]),
@@ -563,14 +660,18 @@ mod semantic_search_real_integration_tdd_tests {
 
         for (query, expected_related_files) in semantic_test_cases {
             println!("\n🧪 Testing semantic relevance for query: '{}'", query);
-            println!("   Should return files related to: {:?}", expected_related_files);
+            println!(
+                "   Should return files related to: {:?}",
+                expected_related_files
+            );
 
             match run_semantic_search_json(&kiln_path, query).await {
                 Ok(result) => {
                     if let Some(search_results) = result.get("results").and_then(|r| r.as_array()) {
                         if !search_results.is_empty() {
                             // Analyze top 3 results
-                            let top_results: Vec<String> = search_results.iter()
+                            let top_results: Vec<String> = search_results
+                                .iter()
                                 .take(3)
                                 .filter_map(|r| {
                                     r.get("id")
@@ -580,7 +681,8 @@ mod semantic_search_real_integration_tdd_tests {
                                 })
                                 .collect();
 
-                            let scores: Vec<f64> = search_results.iter()
+                            let scores: Vec<f64> = search_results
+                                .iter()
                                 .take(3)
                                 .filter_map(|r| r.get("score").and_then(|s| s.as_f64()))
                                 .collect();
@@ -589,8 +691,9 @@ mod semantic_search_real_integration_tdd_tests {
                             println!("📊 Scores: {:?}", scores);
 
                             // Check if any expected files appear in results
-                            let has_related_file = expected_related_files.iter()
-                                .any(|expected| top_results.iter().any(|result| result.contains(expected)));
+                            let has_related_file = expected_related_files.iter().any(|expected| {
+                                top_results.iter().any(|result| result.contains(expected))
+                            });
 
                             if has_related_file {
                                 println!("✅ Found semantically related files");
@@ -605,7 +708,9 @@ mod semantic_search_real_integration_tdd_tests {
                             if scores.len() >= 2 {
                                 let score_diff = (scores[0] - scores[1]).abs();
                                 if score_diff < 0.01 {
-                                    println!("⚠️  Suspicious score distribution: scores are too similar");
+                                    println!(
+                                        "⚠️  Suspicious score distribution: scores are too similar"
+                                    );
                                     println!("   This may indicate mock similarity calculation");
                                 }
                             }
@@ -624,11 +729,17 @@ mod semantic_search_real_integration_tdd_tests {
 
         let meaningful_percentage = (meaningful_results as f64 / total_tests as f64) * 100.0;
         println!("\n📊 Semantic Relevance Analysis:");
-        println!("   Meaningful results: {}/{} ({:.1}%)", meaningful_results, total_tests, meaningful_percentage);
+        println!(
+            "   Meaningful results: {}/{} ({:.1}%)",
+            meaningful_results, total_tests, meaningful_percentage
+        );
 
         if meaningful_percentage < 60.0 {
             println!("\n❌ LOW SEMANTIC RELEVANCE:");
-            println!("   Only {:.1}% of queries returned semantically meaningful results", meaningful_percentage);
+            println!(
+                "   Only {:.1}% of queries returned semantically meaningful results",
+                meaningful_percentage
+            );
             println!("   This indicates that:");
             println!("   - Mock embeddings don't capture semantic relationships");
             println!("   - Similarity calculation doesn't reflect actual content meaning");
@@ -718,22 +829,46 @@ mod semantic_search_real_integration_tdd_tests {
         println!("   - Provide relevance feedback and ranking algorithms");
 
         // Summary of current state
-        let total_issues = [mock_detected, config_ignored, persistence_issue, poor_similarity].iter()
-            .map(|&issue| if issue { 1 } else { 0 })
-            .sum::<u32>();
+        let total_issues = [
+            mock_detected,
+            config_ignored,
+            persistence_issue,
+            poor_similarity,
+        ]
+        .iter()
+        .map(|&issue| if issue { 1 } else { 0 })
+        .sum::<u32>();
 
         println!("\n📊 CURRENT IMPLEMENTATION ASSESSMENT:");
         println!("   Issues detected: {}/4", total_issues);
-        println!("   Mock embeddings: {}", if mock_detected { "❌ YES" } else { "✅ NO" });
-        println!("   Configuration ignored: {}", if config_ignored { "❌ YES" } else { "✅ NO" });
-        println!("   Persistence issues: {}", if persistence_issue { "❌ YES" } else { "✅ NO" });
-        println!("   Poor similarity: {}", if poor_similarity { "❌ YES" } else { "✅ NO" });
+        println!(
+            "   Mock embeddings: {}",
+            if mock_detected { "❌ YES" } else { "✅ NO" }
+        );
+        println!(
+            "   Configuration ignored: {}",
+            if config_ignored { "❌ YES" } else { "✅ NO" }
+        );
+        println!(
+            "   Persistence issues: {}",
+            if persistence_issue {
+                "❌ YES"
+            } else {
+                "✅ NO"
+            }
+        );
+        println!(
+            "   Poor similarity: {}",
+            if poor_similarity { "❌ YES" } else { "✅ NO" }
+        );
 
         if total_issues >= 2 {
             println!("\n❌ TDD RED PHASE COMPREHENSIVE FAILURE:");
             println!("   Multiple critical issues detected in semantic search implementation");
             println!("   This provides a clear specification for required implementation work");
-            println!("   All tests should pass after implementing proper semantic search functionality");
+            println!(
+                "   All tests should pass after implementing proper semantic search functionality"
+            );
 
             panic!("RED PHASE: Semantic search requires comprehensive implementation work ({} issues detected)", total_issues);
         }
@@ -747,7 +882,11 @@ mod semantic_search_real_integration_tdd_tests {
 
 async fn check_if_uses_mock_embeddings(kiln_path: &PathBuf) -> Result<bool> {
     // Test with queries that have predictable mock patterns
-    let test_queries = vec!["machine learning", "neural networks", "artificial intelligence"];
+    let test_queries = vec![
+        "machine learning",
+        "neural networks",
+        "artificial intelligence",
+    ];
 
     for query in test_queries {
         match run_semantic_search_json(kiln_path, query).await {
@@ -759,7 +898,11 @@ async fn check_if_uses_mock_embeddings(kiln_path: &PathBuf) -> Result<bool> {
                             let expected_pattern = match query {
                                 q if q.to_lowercase().contains("machine learning") => score > 0.7,
                                 q if q.to_lowercase().contains("neural") => score > 0.6,
-                                q if q.to_lowercase().contains("artificial") || q.to_lowercase().contains("ai") => score > 0.4,
+                                q if q.to_lowercase().contains("artificial")
+                                    || q.to_lowercase().contains("ai") =>
+                                {
+                                    score > 0.4
+                                }
                                 _ => false,
                             };
 
@@ -781,19 +924,27 @@ async fn check_if_configuration_is_ignored(kiln_path: &PathBuf) -> Result<bool> 
     let test_query = "test query";
 
     // Test with different configurations
-    let result1 = run_semantic_search_with_config(kiln_path, test_query,
-                                                  Some("http://localhost:11434"),
-                                                  Some("model1")).await;
-    let result2 = run_semantic_search_with_config(kiln_path, test_query,
-                                                  Some("http://localhost:9999"),
-                                                  Some("model2")).await;
+    let result1 = run_semantic_search_with_config(
+        kiln_path,
+        test_query,
+        Some("http://localhost:11434"),
+        Some("model1"),
+    )
+    .await;
+    let result2 = run_semantic_search_with_config(
+        kiln_path,
+        test_query,
+        Some("http://localhost:9999"),
+        Some("model2"),
+    )
+    .await;
 
     match (result1, result2) {
         (Ok(r1), Ok(r2)) => {
             // If results are identical despite different configs, configuration is ignored
             Ok(r1 == r2)
         }
-        _ => Ok(false)
+        _ => Ok(false),
     }
 }
 
@@ -832,9 +983,8 @@ async fn check_poor_similarity_quality(kiln_path: &PathBuf) -> Result<bool> {
     if scores.len() >= 2 {
         // Check if scores are too similar (indicating poor similarity calculation)
         let avg_score = scores.iter().sum::<f64>() / scores.len() as f64;
-        let variance = scores.iter()
-            .map(|s| (s - avg_score).powi(2))
-            .sum::<f64>() / scores.len() as f64;
+        let variance =
+            scores.iter().map(|s| (s - avg_score).powi(2)).sum::<f64>() / scores.len() as f64;
 
         // Low variance suggests poor similarity quality
         Ok(variance < 0.01)
@@ -842,3 +992,11 @@ async fn check_poor_similarity_quality(kiln_path: &PathBuf) -> Result<bool> {
         Ok(true)
     }
 }
+use anyhow::Result;
+use serde_json::Value;
+use std::fs;
+use std::path::PathBuf;
+use std::time::Duration;
+use tempfile::TempDir;
+use tokio::process::Command;
+use tokio::time::sleep;

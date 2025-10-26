@@ -88,10 +88,10 @@ pub mod types;
 pub mod vault_tools;
 
 // Vault parsing modules - Phase 1A TDD Implementation
-pub mod vault_types;
-pub mod vault_scanner;
-pub mod vault_parser;
 pub mod vault_change_detection;
+pub mod vault_parser;
+pub mod vault_scanner;
+pub mod vault_types;
 
 // Real vault operations - Phase 1B Implementation
 pub mod vault_operations;
@@ -101,28 +101,16 @@ pub mod vault_operations;
 
 // Core types for tool composition
 pub use types::{
-    ToolDefinition,
-    ToolExecutionRequest,
-    ToolExecutionContext,
-    ToolError,
-    ToolResult,
-    ToolFunction
+    ToolDefinition, ToolError, ToolExecutionContext, ToolExecutionRequest, ToolFunction, ToolResult,
 };
 
 // Unified tool interface
 pub use types::{
-    execute_tool,
-    register_tool_function,
-    initialize_tool_registry,
-    list_registered_tools
+    execute_tool, initialize_tool_registry, list_registered_tools, register_tool_function,
 };
 
 // Tool loading utilities
-pub use types::{
-    load_all_tools,
-    tool_loader_info,
-    ToolLoaderInfo
-};
+pub use types::{load_all_tools, tool_loader_info, ToolLoaderInfo};
 
 /// Crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -153,7 +141,8 @@ pub fn library_info() -> LibraryInfo {
     LibraryInfo {
         version: VERSION.to_string(),
         name: "crucible-tools".to_string(),
-        description: "Simple async function composition for Crucible knowledge management".to_string(),
+        description: "Simple async function composition for Crucible knowledge management"
+            .to_string(),
         features: vec![
             "simple_composition".to_string(),
             "direct_async_functions".to_string(),

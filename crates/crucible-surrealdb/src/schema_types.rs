@@ -156,11 +156,7 @@ impl Note {
     }
 
     /// Set embedding
-    pub fn with_embedding(
-        mut self,
-        embedding: Vec<f32>,
-        model: impl Into<String>,
-    ) -> Self {
+    pub fn with_embedding(mut self, embedding: Vec<f32>, model: impl Into<String>) -> Self {
         self.embedding = Some(embedding);
         self.embedding_model = Some(model.into());
         self.embedding_updated_at = Some(Utc::now());
@@ -168,11 +164,7 @@ impl Note {
     }
 
     /// Add metadata property
-    pub fn with_metadata(
-        mut self,
-        key: impl Into<String>,
-        value: serde_json::Value,
-    ) -> Self {
+    pub fn with_metadata(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
         self.metadata.insert(key.into(), value);
         self
     }
@@ -634,7 +626,10 @@ mod tests {
         assert_eq!(note.path, "test.md");
         assert_eq!(note.title, Some("Test Note".to_string()));
         assert_eq!(note.tags.len(), 2);
-        assert_eq!(note.metadata.get("status").unwrap(), &serde_json::json!("draft"));
+        assert_eq!(
+            note.metadata.get("status").unwrap(),
+            &serde_json::json!("draft")
+        );
     }
 
     #[test]
@@ -686,9 +681,7 @@ mod tests {
     #[test]
     fn test_graph_traversal_builder() {
         let start = RecordId::new("notes", "start.md");
-        let query = GraphTraversalQuery::new(start)
-            .max_depth(3)
-            .backlinks();
+        let query = GraphTraversalQuery::new(start).max_depth(3).backlinks();
 
         assert_eq!(query.max_depth, 3);
         assert_eq!(query.direction, TraversalDirection::Incoming);

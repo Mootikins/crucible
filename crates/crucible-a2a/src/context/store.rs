@@ -1,7 +1,6 @@
 /// Message metadata storage and indexing
 ///
 /// Provides efficient storage and lookup for message metadata with entity tracking.
-
 use crate::context::types::{AgentId, EntityId, MessageId, MessageMetadata};
 use std::collections::HashMap;
 
@@ -77,11 +76,7 @@ impl MessageMetadataStore {
     pub fn get_by_agent(&self, agent_id: &AgentId) -> Vec<&MessageMetadata> {
         self.agent_index
             .get(agent_id)
-            .map(|ids| {
-                ids.iter()
-                    .filter_map(|id| self.messages.get(id))
-                    .collect()
-            })
+            .map(|ids| ids.iter().filter_map(|id| self.messages.get(id)).collect())
             .unwrap_or_default()
     }
 
@@ -89,11 +84,7 @@ impl MessageMetadataStore {
     pub fn get_by_entity(&self, entity_id: EntityId) -> Vec<&MessageMetadata> {
         self.entity_index
             .get(&entity_id)
-            .map(|ids| {
-                ids.iter()
-                    .filter_map(|id| self.messages.get(id))
-                    .collect()
-            })
+            .map(|ids| ids.iter().filter_map(|id| self.messages.get(id)).collect())
             .unwrap_or_default()
     }
 
@@ -155,7 +146,11 @@ impl Default for MessageMetadataStore {
 mod tests {
     use super::*;
 
-    fn create_test_metadata(message_id: MessageId, agent_id: &str, entity_ids: Vec<EntityId>) -> MessageMetadata {
+    fn create_test_metadata(
+        message_id: MessageId,
+        agent_id: &str,
+        entity_ids: Vec<EntityId>,
+    ) -> MessageMetadata {
         MessageMetadata {
             message_id,
             agent_id: agent_id.to_string(),

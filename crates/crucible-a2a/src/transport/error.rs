@@ -1,5 +1,4 @@
 /// Transport layer error types
-
 use crate::context::types::AgentId;
 use std::time::Duration;
 use thiserror::Error;

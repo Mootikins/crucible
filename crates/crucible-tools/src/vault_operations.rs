@@ -4,14 +4,14 @@
 //! It replaces the mock implementations with actual functionality that scans
 //! and processes real vault data from the test vault.
 
-use crate::vault_types::{VaultFile, VaultError, VaultResult};
-use crate::vault_scanner::VaultScanner;
 use crate::vault_parser::VaultParser;
+use crate::vault_scanner::VaultScanner;
+use crate::vault_types::{VaultError, VaultFile, VaultResult};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, debug, warn};
+use tracing::{debug, info, warn};
 
 /// Default vault path for testing
 const DEFAULT_VAULT_PATH: &str = "/home/moot/Documents/crucible-testing";
@@ -64,9 +64,10 @@ impl RealVaultOperations {
 
         // Check if vault exists
         if !self.scanner.vault_exists().await {
-            return Err(VaultError::FileNotFound(
-                format!("Vault path does not exist: {}", self.vault_path)
-            ));
+            return Err(VaultError::FileNotFound(format!(
+                "Vault path does not exist: {}",
+                self.vault_path
+            )));
         }
 
         // Scan for markdown files
@@ -95,7 +96,11 @@ impl RealVaultOperations {
         }
 
         let duration = start_time.elapsed();
-        info!("Successfully parsed {} files in {:?}", vault_files.len(), duration);
+        info!(
+            "Successfully parsed {} files in {:?}",
+            vault_files.len(),
+            duration
+        );
 
         // Update tag cache
         self.update_tag_cache(&vault_files).await;
@@ -157,9 +162,9 @@ impl RealVaultOperations {
 
             // Check if file has ALL the search tags (AND logic)
             let has_all_tags = search_tags.iter().all(|search_tag| {
-                file_tags.iter().any(|file_tag| {
-                    self.tags_match(search_tag, file_tag)
-                })
+                file_tags
+                    .iter()
+                    .any(|file_tag| self.tags_match(search_tag, file_tag))
             });
 
             if has_all_tags {
@@ -172,8 +177,15 @@ impl RealVaultOperations {
     }
 
     /// Search files in a specific folder
-    pub async fn search_by_folder(&self, folder_path: &str, recursive: bool) -> VaultResult<Vec<Value>> {
-        info!("Searching in folder: {} (recursive: {})", folder_path, recursive);
+    pub async fn search_by_folder(
+        &self,
+        folder_path: &str,
+        recursive: bool,
+    ) -> VaultResult<Vec<Value>> {
+        info!(
+            "Searching in folder: {} (recursive: {})",
+            folder_path, recursive
+        );
 
         let files = if recursive {
             self.scanner.scan_markdown_files().await?
@@ -257,8 +269,13 @@ impl RealVaultOperations {
             }
         });
 
-        info!("Vault stats: {} notes, {:.2} MB, {} folders, {} tags",
-              total_notes, total_size_mb, folders.len(), total_tags);
+        info!(
+            "Vault stats: {} notes, {:.2} MB, {} folders, {} tags",
+            total_notes,
+            total_size_mb,
+            folders.len(),
+            total_tags
+        );
 
         Ok(stats)
     }
@@ -294,7 +311,10 @@ impl RealVaultOperations {
 
         // Sort by count (descending)
         tags.sort_by(|a, b| {
-            b.get("count").unwrap().as_u64().unwrap()
+            b.get("count")
+                .unwrap()
+                .as_u64()
+                .unwrap()
                 .cmp(&a.get("count").unwrap().as_u64().unwrap())
         });
 
@@ -359,15 +379,13 @@ impl RealVaultOperations {
             (Value::Array(search_arr), Value::Array(file_arr)) => {
                 // Check if search array elements are all present in file array
                 search_arr.iter().all(|search_elem| {
-                    file_arr.iter().any(|file_elem| self.values_match(search_elem, file_elem))
+                    file_arr
+                        .iter()
+                        .any(|file_elem| self.values_match(search_elem, file_elem))
                 })
             }
-            (Value::Number(search), Value::Number(file)) => {
-                search == file
-            }
-            (Value::Bool(search), Value::Bool(file)) => {
-                search == file
-            }
+            (Value::Number(search), Value::Number(file)) => search == file,
+            (Value::Bool(search), Value::Bool(file)) => search == file,
             _ => false,
         }
     }
@@ -403,7 +421,7 @@ impl Default for RealVaultOperations {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_real_vault_operations_creation() {
         let ops = RealVaultOperations::new();
@@ -426,7 +444,9 @@ mod tests {
         assert!(!files.is_empty(), "Should find files in test vault");
 
         // Should find PRIME.md specifically
-        let has_prime = files.iter().any(|f| f.path.to_string_lossy().contains("PRIME.md"));
+        let has_prime = files
+            .iter()
+            .any(|f| f.path.to_string_lossy().contains("PRIME.md"));
         assert!(has_prime, "Should find PRIME.md in test vault");
     }
 }

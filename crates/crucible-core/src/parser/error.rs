@@ -61,10 +61,7 @@ impl ParserError {
 
     /// Check if this error is recoverable (non-fatal)
     pub fn is_recoverable(&self) -> bool {
-        matches!(
-            self,
-            Self::FrontmatterError(_) | Self::ParseFailed(_)
-        )
+        matches!(self, Self::FrontmatterError(_) | Self::ParseFailed(_))
     }
 
     /// Check if this error is fatal (should stop parsing)
@@ -83,15 +80,24 @@ mod tests {
         assert!(err.is_recoverable());
         assert!(!err.is_fatal());
 
-        let err = ParserError::FileTooLarge { size: 1000, max: 500 };
+        let err = ParserError::FileTooLarge {
+            size: 1000,
+            max: 500,
+        };
         assert!(err.is_fatal());
         assert!(!err.is_recoverable());
     }
 
     #[test]
     fn test_error_display() {
-        let err = ParserError::FileTooLarge { size: 1000, max: 500 };
-        assert_eq!(err.to_string(), "File too large: 1000 bytes (max 500 bytes)");
+        let err = ParserError::FileTooLarge {
+            size: 1000,
+            max: 500,
+        };
+        assert_eq!(
+            err.to_string(),
+            "File too large: 1000 bytes (max 500 bytes)"
+        );
 
         let err = ParserError::frontmatter("invalid syntax");
         assert_eq!(err.to_string(), "Frontmatter parse error: invalid syntax");

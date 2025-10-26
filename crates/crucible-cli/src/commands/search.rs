@@ -1,11 +1,13 @@
-use anyhow::{Context, Result};
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::io::{BufReader, Read};
+use super::secure_filesystem::{
+    PathValidator, SecureFileReader, SecureFileSystemConfig, SecureFileWalker,
+};
 use crate::config::CliConfig;
 use crate::interactive::{FuzzyPicker, SearchResultWithScore};
 use crate::output;
-use super::secure_filesystem::{SecureFileSystemConfig, SecureFileWalker, SecureFileReader, PathValidator};
+use anyhow::{Context, Result};
+use std::fs;
+use std::io::{BufReader, Read};
+use std::path::{Path, PathBuf};
 
 /// Binary file detection constants
 const NULL_BYTE: u8 = 0x00;
@@ -17,40 +19,35 @@ const BINARY_CONTENT_RATIO: f32 = 0.3; // 30% binary indicators = binary file
 const BINARY_SIGNATURES: &[&[u8]] = &[
     // Image formats
     &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A], // PNG
-    &[0xFF, 0xD8, 0xFF], // JPEG
-    &[0x47, 0x49, 0x46, 0x38, 0x39, 0x61], // GIF89a
-    &[0x42, 0x4D], // BMP
-    &[0x52, 0x49, 0x46, 0x46], // RIFF (WebP, AVI, etc.)
-
+    &[0xFF, 0xD8, 0xFF],                               // JPEG
+    &[0x47, 0x49, 0x46, 0x38, 0x39, 0x61],             // GIF89a
+    &[0x42, 0x4D],                                     // BMP
+    &[0x52, 0x49, 0x46, 0x46],                         // RIFF (WebP, AVI, etc.)
     // Archive formats
-    &[0x50, 0x4B, 0x03, 0x04], // ZIP
-    &[0x50, 0x4B, 0x05, 0x06], // ZIP (empty)
-    &[0x50, 0x4B, 0x07, 0x08], // ZIP (spanned)
-    &[0x1F, 0x8B, 0x08], // GZIP
-    &[0x42, 0x5A, 0x68], // BZIP2
+    &[0x50, 0x4B, 0x03, 0x04],             // ZIP
+    &[0x50, 0x4B, 0x05, 0x06],             // ZIP (empty)
+    &[0x50, 0x4B, 0x07, 0x08],             // ZIP (spanned)
+    &[0x1F, 0x8B, 0x08],                   // GZIP
+    &[0x42, 0x5A, 0x68],                   // BZIP2
     &[0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00], // XZ
     &[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C], // 7Z
-
     // Executable formats
     &[0x7F, 0x45, 0x4C, 0x46], // ELF
-    &[0x4D, 0x5A], // PE/DOS
+    &[0x4D, 0x5A],             // PE/DOS
     &[0xFE, 0xED, 0xFA, 0xCE], // Mach-O (32-bit)
     &[0xFE, 0xED, 0xFA, 0xCF], // Mach-O (64-bit)
     &[0xCE, 0xFA, 0xED, 0xFE], // Mach-O (reverse 32-bit)
     &[0xCF, 0xFA, 0xED, 0xFE], // Mach-O (reverse 64-bit)
-
     // Document formats
-    &[b'%', b'P', b'D', b'F'], // PDF
+    &[b'%', b'P', b'D', b'F'],                         // PDF
     &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1], // Microsoft Office
-
     // Audio/Video formats
-    &[0x49, 0x44, 0x33], // MP3
-    &[0xFF, 0xFB], // MP3 (MPEG)
-    &[0xFF, 0xF3], // MP3 (MPEG)
-    &[0xFF, 0xF2], // MP3 (MPEG)
+    &[0x49, 0x44, 0x33],       // MP3
+    &[0xFF, 0xFB],             // MP3 (MPEG)
+    &[0xFF, 0xF3],             // MP3 (MPEG)
+    &[0xFF, 0xF2],             // MP3 (MPEG)
     &[0x52, 0x49, 0x46, 0x46], // RIFF/WAV
     &[0x1A, 0x45, 0xDF, 0xA3], // Matroska/WebM
-
     // Other binary formats
     &[0x00, 0x00, 0x01, 0x00], // ICO
     &[0x00, 0x00, 0x02, 0x00], // CUR
@@ -75,9 +72,12 @@ pub fn is_binary_content(content: &[u8]) -> bool {
     }
 
     // Count non-printable ASCII bytes (excluding common whitespace)
-    let non_printable_count = sample.iter().filter(|&&b| {
-        b < 32 && b != 9 && b != 10 && b != 13 // Not tab, newline, or carriage return
-    }).count();
+    let non_printable_count = sample
+        .iter()
+        .filter(|&&b| {
+            b < 32 && b != 9 && b != 10 && b != 13 // Not tab, newline, or carriage return
+        })
+        .count();
 
     // If more than 30% of bytes are non-printable, consider it binary
     let binary_ratio = non_printable_count as f32 / sample_size as f32;
@@ -102,11 +102,12 @@ pub fn is_binary_content(content: &[u8]) -> bool {
 
 /// Read first bytes of a file for binary detection
 fn read_file_sample(file_path: &str, sample_size: usize) -> Result<Vec<u8>> {
-    let mut file = fs::File::open(file_path)
-        .with_context(|| format!("Failed to open file: {}", file_path))?;
+    let mut file =
+        fs::File::open(file_path).with_context(|| format!("Failed to open file: {}", file_path))?;
 
     let mut buffer = vec![0; sample_size];
-    let bytes_read = file.read(&mut buffer)
+    let bytes_read = file
+        .read(&mut buffer)
         .with_context(|| format!("Failed to read from file: {}", file_path))?;
 
     buffer.truncate(bytes_read);
@@ -124,7 +125,8 @@ const MIN_QUERY_LENGTH: usize = 2;
 
 /// Validate and sanitize search query using secure validator
 fn validate_search_query(query: &str, validator: &PathValidator) -> Result<String> {
-    validator.validate_search_query(query)
+    validator
+        .validate_search_query(query)
         .map_err(|e| anyhow::anyhow!("Invalid search query: {}", e))
 }
 
@@ -220,7 +222,12 @@ pub async fn execute(
 }
 
 /// Search for files containing the query string in their content
-pub fn search_files_in_kiln(kiln_path: &Path, query: &str, limit: u32, include_content: bool) -> Result<Vec<SearchResultWithScore>> {
+pub fn search_files_in_kiln(
+    kiln_path: &Path,
+    query: &str,
+    limit: u32,
+    include_content: bool,
+) -> Result<Vec<SearchResultWithScore>> {
     let secure_config = SecureFileSystemConfig::default();
     search_files_in_kiln_secure(kiln_path, query, limit, include_content, &secure_config)
 }
@@ -283,7 +290,11 @@ pub fn search_files_in_kiln_secure(
     }
 
     // Sort by score (descending)
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     Ok(results)
 }
@@ -295,7 +306,10 @@ pub fn get_markdown_files(kiln_path: &Path) -> Result<Vec<String>> {
 }
 
 /// Secure version of get_markdown_files using the secure file walker
-pub fn get_markdown_files_secure(kiln_path: &Path, config: &SecureFileSystemConfig) -> Result<Vec<String>> {
+pub fn get_markdown_files_secure(
+    kiln_path: &Path,
+    config: &SecureFileSystemConfig,
+) -> Result<Vec<String>> {
     let mut walker = SecureFileWalker::new(kiln_path, config.clone());
     walker.collect_markdown_files()
 }
@@ -389,8 +403,8 @@ fn read_file_with_utf8_recovery(file_path: &str) -> Result<String> {
         ));
     }
 
-    let file = fs::File::open(file_path)
-        .with_context(|| format!("Failed to open file: {}", file_path))?;
+    let file =
+        fs::File::open(file_path).with_context(|| format!("Failed to open file: {}", file_path))?;
     let mut reader = BufReader::new(file);
 
     let mut content = String::new();
@@ -398,7 +412,8 @@ fn read_file_with_utf8_recovery(file_path: &str) -> Result<String> {
     let mut bytes_read = 0usize;
 
     loop {
-        let bytes_read_this_time = reader.read(&mut buffer)
+        let bytes_read_this_time = reader
+            .read(&mut buffer)
             .with_context(|| format!("Failed to read from file: {}", file_path))?;
 
         if bytes_read_this_time == 0 {
@@ -425,11 +440,7 @@ fn read_file_with_utf8_recovery(file_path: &str) -> Result<String> {
 fn extract_snippet(content: &str, query: &str, include_full: bool) -> String {
     if include_full {
         // Return first few lines of content
-        content
-            .lines()
-            .take(5)
-            .collect::<Vec<_>>()
-            .join("\n")
+        content.lines().take(5).collect::<Vec<_>>().join("\n")
     } else {
         // Find first occurrence of query and extract context
         let content_lower = content.to_lowercase();
@@ -449,11 +460,7 @@ fn extract_snippet(content: &str, query: &str, include_full: bool) -> String {
             }
         } else {
             // Fallback: return first line
-            content
-                .lines()
-                .next()
-                .unwrap_or("")
-                .to_string()
+            content.lines().next().unwrap_or("").to_string()
         }
     }
 }

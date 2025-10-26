@@ -4,18 +4,20 @@
 //! performance settings, circuit breaker pattern, and comprehensive error handling.
 
 use crate::embedding_config::*;
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{Mutex, Semaphore, RwLock};
+use tokio::sync::{Mutex, RwLock, Semaphore};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
-use tracing::{debug, warn, error, info};
+use tracing::{debug, error, info, warn};
 
 // Import embedding provider functionality
-use crucible_llm::embeddings::{EmbeddingProvider, EmbeddingConfig as LlmEmbeddingConfig, create_provider};
 #[cfg(any(test, feature = "test-utils"))]
-use crucible_llm::embeddings::{mock::{MockEmbeddingProvider, FixtureBasedMockProvider}, create_mock_provider};
+use crucible_llm::embeddings::create_mock_provider;
+use crucible_llm::embeddings::{
+    create_provider, EmbeddingConfig as LlmEmbeddingConfig, EmbeddingProvider,
+};
 
 // Import crucible-config for configuration management
 use crucible_config::{EmbeddingProviderConfig as ConfigEmbeddingProvider, EmbeddingProviderType};
@@ -56,7 +58,10 @@ impl std::fmt::Debug for EmbeddingThreadPool {
             .field("metrics", &"<ThreadPoolMetrics>")
             .field("circuit_breaker", &"<CircuitBreaker>")
             .field("shutdown_signal", &self.shutdown_signal)
-            .field("embedding_provider", &self.embedding_provider.as_ref().map(|p| p.provider_name()))
+            .field(
+                "embedding_provider",
+                &self.embedding_provider.as_ref().map(|p| p.provider_name()),
+            )
             .field("use_mock_embeddings", &self.use_mock_embeddings)
             .finish()
     }
@@ -160,7 +165,6 @@ impl CircuitBreaker {
     }
 }
 
-
 impl EmbeddingThreadPool {
     /// Create a new embedding thread pool with the given configuration
     /// Note: This method maintains backward compatibility but defaults to mock embeddings
@@ -186,7 +190,10 @@ impl EmbeddingThreadPool {
         let embedding_provider = if provider_integration.use_mock {
             #[cfg(any(test, feature = "test-utils"))]
             {
-                info!("Creating mock embedding provider with model: {}", provider_integration.mock_model);
+                info!(
+                    "Creating mock embedding provider with model: {}",
+                    provider_integration.mock_model
+                );
                 Some(create_mock_provider(provider_integration.mock_dimensions))
             }
             #[cfg(not(any(test, feature = "test-utils")))]
@@ -197,10 +204,16 @@ impl EmbeddingThreadPool {
         } else {
             // Create real embedding provider from crucible-config
             if let Some(provider_config) = provider_integration.config {
-                info!("Creating embedding provider from crucible-config: {:?}", provider_config.provider_type);
+                info!(
+                    "Creating embedding provider from crucible-config: {:?}",
+                    provider_config.provider_type
+                );
                 match Self::create_provider_from_crucible_config(provider_config).await {
                     Ok(provider) => {
-                        info!("Successfully created embedding provider: {}", provider.provider_name());
+                        info!(
+                            "Successfully created embedding provider: {}",
+                            provider.provider_name()
+                        );
                         Some(provider)
                     }
                     Err(e) => {
@@ -235,8 +248,13 @@ impl EmbeddingThreadPool {
 
         info!(
             "Embedding thread pool created with {} workers, batch size {} using {}",
-            config.worker_count, config.batch_size,
-            if use_mock_embeddings { "mock embeddings" } else { "real embedding provider" }
+            config.worker_count,
+            config.batch_size,
+            if use_mock_embeddings {
+                "mock embeddings"
+            } else {
+                "real embedding provider"
+            }
         );
 
         Ok(pool)
@@ -385,9 +403,11 @@ impl EmbeddingThreadPool {
         ThreadPoolMetrics {
             total_tasks_processed: metrics.total_tasks_processed,
             active_workers: metrics.active_workers,
-            queue_size: (self.config.max_queue_size.saturating_sub(
-                self.task_semaphore.available_permits()
-            )) as u32,
+            queue_size: (self
+                .config
+                .max_queue_size
+                .saturating_sub(self.task_semaphore.available_permits()))
+                as u32,
             average_processing_time: metrics.average_processing_time,
             failed_tasks: metrics.failed_tasks,
             circuit_breaker_open: circuit_breaker.is_open,
@@ -542,7 +562,7 @@ impl EmbeddingThreadPool {
         // Acquire semaphore permit
         let _permit = timeout(
             self.config.timeout_duration(),
-            self.task_semaphore.acquire()
+            self.task_semaphore.acquire(),
         )
         .await
         .map_err(|_| anyhow!("Semaphore acquisition timeout"))?
@@ -551,7 +571,7 @@ impl EmbeddingThreadPool {
         // Generate embedding
         let embedding = timeout(
             self.config.timeout_duration(),
-            self.generate_embedding(content)
+            self.generate_embedding(content),
         )
         .await
         .map_err(|_| anyhow!("Embedding generation timeout"))??;
@@ -572,22 +592,31 @@ impl EmbeddingThreadPool {
             {
                 // Use mock provider from crucible-llm if available
                 if let Some(provider) = &self.embedding_provider {
-                    debug!("Using mock embedding provider: {} for content length: {}",
-                           provider.provider_name(), content.len());
+                    debug!(
+                        "Using mock embedding provider: {} for content length: {}",
+                        provider.provider_name(),
+                        content.len()
+                    );
                     let start_time = Instant::now();
 
-                    let response = provider.embed(content).await
+                    let response = provider
+                        .embed(content)
+                        .await
                         .map_err(|e| anyhow!("Failed to generate mock embedding: {}", e))?;
 
                     let elapsed = start_time.elapsed();
-                    debug!("Generated mock embedding in {:?} - dimensions: {}, model: {}",
-                           elapsed, response.dimensions, response.model);
+                    debug!(
+                        "Generated mock embedding in {:?} - dimensions: {}, model: {}",
+                        elapsed, response.dimensions, response.model
+                    );
 
                     // Validate embedding dimensions match our configuration
                     let expected_dims = self.config.model_type.dimensions();
                     if response.dimensions != expected_dims {
-                        warn!("Mock embedding dimension mismatch: expected {}, got {}",
-                              expected_dims, response.dimensions);
+                        warn!(
+                            "Mock embedding dimension mismatch: expected {}, got {}",
+                            expected_dims, response.dimensions
+                        );
                         // For mock embeddings, we'll adjust the size to match expectations
                         if response.dimensions > expected_dims {
                             // Truncate
@@ -613,27 +642,38 @@ impl EmbeddingThreadPool {
             }
         } else {
             // Use real embedding provider
-            let provider = self.embedding_provider.as_ref()
+            let provider = self
+                .embedding_provider
+                .as_ref()
                 .ok_or_else(|| anyhow!("No embedding provider available"))?;
 
-            debug!("Generating real embedding using provider: {} for content length: {}",
-                   provider.provider_name(), content.len());
+            debug!(
+                "Generating real embedding using provider: {} for content length: {}",
+                provider.provider_name(),
+                content.len()
+            );
 
             let start_time = Instant::now();
 
             // Call the real embedding provider
-            let response = provider.embed(content).await
+            let response = provider
+                .embed(content)
+                .await
                 .map_err(|e| anyhow!("Failed to generate embedding: {}", e))?;
 
             let elapsed = start_time.elapsed();
-            debug!("Generated real embedding in {:?} - dimensions: {}, model: {}",
-                   elapsed, response.dimensions, response.model);
+            debug!(
+                "Generated real embedding in {:?} - dimensions: {}, model: {}",
+                elapsed, response.dimensions, response.model
+            );
 
             // Validate embedding dimensions match our configuration
             let expected_dims = self.config.model_type.dimensions();
             if response.dimensions != expected_dims {
-                warn!("Embedding dimension mismatch: expected {}, got {}",
-                      expected_dims, response.dimensions);
+                warn!(
+                    "Embedding dimension mismatch: expected {}, got {}",
+                    expected_dims, response.dimensions
+                );
                 // For now, we'll accept the embedding but log the mismatch
                 // In production, you might want to return an error
             }
@@ -662,8 +702,11 @@ impl EmbeddingThreadPool {
             embedding.push(value);
         }
 
-        debug!("Generated fallback mock embedding with {} dimensions for content length: {}",
-               dimensions, content.len());
+        debug!(
+            "Generated fallback mock embedding with {} dimensions for content length: {}",
+            dimensions,
+            content.len()
+        );
         Ok(embedding)
     }
 
@@ -733,9 +776,7 @@ impl EmbeddingThreadPool {
 
         info!(
             "Batch processing complete: {} succeeded, {} failed, {:?}",
-            result.processed_count,
-            result.failed_count,
-            result.total_processing_time
+            result.processed_count, result.failed_count, result.total_processing_time
         );
 
         Ok(result)
@@ -756,56 +797,47 @@ impl EmbeddingThreadPool {
         // Convert crucible-config to LLM embedding config
         let llm_config = match config.provider_type {
             EmbeddingProviderType::OpenAI => {
-                let api_key = config.api.key.ok_or_else(|| {
-                    anyhow!("OpenAI provider requires API key")
-                })?;
+                let api_key = config
+                    .api
+                    .key
+                    .ok_or_else(|| anyhow!("OpenAI provider requires API key"))?;
 
-                LlmEmbeddingConfig::openai(
-                    api_key,
-                    Some(config.model.name.clone()),
-                )
+                LlmEmbeddingConfig::openai(api_key, Some(config.model.name.clone()))
             }
             EmbeddingProviderType::Ollama => {
-                let base_url = config.api.base_url.clone()
+                let base_url = config
+                    .api
+                    .base_url
+                    .clone()
                     .or_else(|| EmbeddingProviderType::Ollama.default_base_url())
                     .unwrap_or_else(|| "http://localhost:11434".to_string());
 
-                LlmEmbeddingConfig::ollama(
-                    Some(base_url),
-                    Some(config.model.name.clone()),
-                )
+                LlmEmbeddingConfig::ollama(Some(base_url), Some(config.model.name.clone()))
             }
             EmbeddingProviderType::Cohere => {
                 // For Cohere, we'd need to extend the LLM config to support it
                 // For now, map to OpenAI-like config
-                let api_key = config.api.key.ok_or_else(|| {
-                    anyhow!("Cohere provider requires API key")
-                })?;
+                let api_key = config
+                    .api
+                    .key
+                    .ok_or_else(|| anyhow!("Cohere provider requires API key"))?;
 
-                LlmEmbeddingConfig::openai(
-                    api_key,
-                    Some(config.model.name.clone()),
-                )
+                LlmEmbeddingConfig::openai(api_key, Some(config.model.name.clone()))
             }
             EmbeddingProviderType::VertexAI => {
                 // For Vertex AI, we'd need to extend the LLM config to support it
                 // For now, map to OpenAI-like config
-                let api_key = config.api.key.ok_or_else(|| {
-                    anyhow!("Vertex AI provider requires API key")
-                })?;
+                let api_key = config
+                    .api
+                    .key
+                    .ok_or_else(|| anyhow!("Vertex AI provider requires API key"))?;
 
-                LlmEmbeddingConfig::openai(
-                    api_key,
-                    Some(config.model.name.clone()),
-                )
+                LlmEmbeddingConfig::openai(api_key, Some(config.model.name.clone()))
             }
             EmbeddingProviderType::Candle => {
                 // For Candle, map to OpenAI-like config for now
                 // This should be replaced with proper Candle configuration
-                LlmEmbeddingConfig::openai(
-                    "dummy_key".to_string(),
-                    Some(config.model.name.clone()),
-                )
+                LlmEmbeddingConfig::openai("dummy_key".to_string(), Some(config.model.name.clone()))
             }
             EmbeddingProviderType::Custom(_) => {
                 return Err(anyhow!("Custom embedding providers are not yet supported"));
@@ -826,7 +858,8 @@ impl EmbeddingThreadPool {
         }
 
         // Create the provider
-        create_provider(final_config).await
+        create_provider(final_config)
+            .await
             .map_err(|e| anyhow!("Failed to create embedding provider: {}", e))
     }
 }
@@ -898,7 +931,8 @@ impl EmbeddingProviderIntegration {
     pub fn validate(&self) -> Result<()> {
         if !self.use_mock {
             if let Some(provider_config) = &self.config {
-                provider_config.validate()
+                provider_config
+                    .validate()
                     .map_err(|e| anyhow!("Invalid embedding provider configuration: {}", e))?;
             } else {
                 return Err(anyhow!("No embedding provider configuration provided"));
@@ -909,9 +943,7 @@ impl EmbeddingProviderIntegration {
 }
 
 /// Create an embedding thread pool with the given configuration
-pub async fn create_embedding_thread_pool(
-    config: EmbeddingConfig,
-) -> Result<EmbeddingThreadPool> {
+pub async fn create_embedding_thread_pool(config: EmbeddingConfig) -> Result<EmbeddingThreadPool> {
     EmbeddingThreadPool::new(config).await
 }
 
@@ -954,16 +986,14 @@ pub async fn create_embedding_thread_pool_with_fixture(
 }
 
 /// Validate embedding configuration
-pub async fn validate_embedding_config(
-    config: &EmbeddingConfig,
-) -> Result<()> {
+pub async fn validate_embedding_config(config: &EmbeddingConfig) -> Result<()> {
     crate::embedding_config::validate_embedding_config(config).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_config::{EmbeddingProviderConfig, EmbeddingProviderType, ApiConfig, ModelConfig};
+    use crucible_config::EmbeddingProviderConfig;
 
     #[tokio::test]
     async fn test_thread_pool_creation_default() {
@@ -987,10 +1017,8 @@ mod tests {
             Some("text-embedding-3-small".to_string()),
         );
 
-        let result = create_embedding_thread_pool_with_crucible_config(
-            pool_config,
-            provider_config,
-        ).await;
+        let result =
+            create_embedding_thread_pool_with_crucible_config(pool_config, provider_config).await;
 
         // This should fail gracefully since we don't have a real API key
         assert!(result.is_ok()); // Should fallback to mock embeddings
@@ -1008,10 +1036,8 @@ mod tests {
             "nomic-embed-text".to_string(),
         );
 
-        let result = create_embedding_thread_pool_with_crucible_config(
-            pool_config,
-            provider_config,
-        ).await;
+        let result =
+            create_embedding_thread_pool_with_crucible_config(pool_config, provider_config).await;
 
         // This should fail gracefully since Ollama might not be running
         assert!(result.is_ok()); // Should fallback to mock embeddings
@@ -1027,19 +1053,17 @@ mod tests {
         let dimensions = 768;
         let model = "test-mock-model".to_string();
 
-        let pool = create_embedding_thread_pool_with_mock(
-            pool_config,
-            dimensions,
-            model.clone(),
-        ).await.unwrap();
+        let pool = create_embedding_thread_pool_with_mock(pool_config, dimensions, model.clone())
+            .await
+            .unwrap();
 
         assert_eq!(pool.worker_count().await, num_cpus::get());
 
         // Test embedding generation
-        let result = pool.process_document_with_retry(
-            "test_doc",
-            "This is a test document for mock embeddings."
-        ).await.unwrap();
+        let result = pool
+            .process_document_with_retry("test_doc", "This is a test document for mock embeddings.")
+            .await
+            .unwrap();
 
         assert!(result.succeeded);
         assert!(result.attempt_count >= 1);
@@ -1084,10 +1108,13 @@ mod tests {
         let pool = EmbeddingThreadPool::new(config).await.unwrap();
 
         // Test that fallback mock embeddings work
-        let result = pool.process_document_with_retry(
-            "test_doc",
-            "Test content for fallback mock embedding generation."
-        ).await.unwrap();
+        let result = pool
+            .process_document_with_retry(
+                "test_doc",
+                "Test content for fallback mock embedding generation.",
+            )
+            .await
+            .unwrap();
 
         assert!(result.succeeded);
         assert!(result.attempt_count >= 1);
@@ -1114,7 +1141,9 @@ mod tests {
             pool_config,
             256, // Mini model dimensions
             "test-mock-model".to_string(),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         let documents = vec![
             ("doc1".to_string(), "First document content".to_string()),
@@ -1141,16 +1170,18 @@ mod tests {
             ..EmbeddingConfig::default()
         };
 
-        let pool = create_embedding_thread_pool_with_mock(
-            pool_config,
-            256,
-            "mini-model".to_string(),
-        ).await.unwrap();
+        let pool =
+            create_embedding_thread_pool_with_mock(pool_config, 256, "mini-model".to_string())
+                .await
+                .unwrap();
 
-        let result = pool.process_document_with_retry(
-            "test_doc",
-            "Test content for dimension consistency check."
-        ).await.unwrap();
+        let result = pool
+            .process_document_with_retry(
+                "test_doc",
+                "Test content for dimension consistency check.",
+            )
+            .await
+            .unwrap();
 
         assert!(result.succeeded);
 
@@ -1167,15 +1198,20 @@ mod tests {
         let pool = create_embedding_thread_pool_with_fixture(
             pool_config,
             "nomic-embed-text-v1.5".to_string(),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         assert_eq!(pool.worker_count().await, num_cpus::get());
 
         // Test embedding generation with fixture-based provider
-        let result = pool.process_document_with_retry(
-            "test_doc",
-            "Hello, world!" // This should use the fixture
-        ).await.unwrap();
+        let result = pool
+            .process_document_with_retry(
+                "test_doc",
+                "Hello, world!", // This should use the fixture
+            )
+            .await
+            .unwrap();
 
         assert!(result.succeeded);
         assert!(result.attempt_count >= 1);
@@ -1232,10 +1268,13 @@ mod tests {
         let config = EmbeddingConfig::default();
         let pool = EmbeddingThreadPool::new(config).await.unwrap();
 
-        let result = pool.process_document_with_retry(
-            "test_doc",
-            "This is a test document for embedding generation."
-        ).await.unwrap();
+        let result = pool
+            .process_document_with_retry(
+                "test_doc",
+                "This is a test document for embedding generation.",
+            )
+            .await
+            .unwrap();
 
         assert!(result.succeeded);
         assert!(result.attempt_count >= 1);
@@ -1291,7 +1330,9 @@ mod tests {
         assert!(!metrics.circuit_breaker_open);
 
         // Process a document
-        pool.process_document_with_retry("test", "content").await.unwrap();
+        pool.process_document_with_retry("test", "content")
+            .await
+            .unwrap();
 
         let metrics_after = pool.get_metrics().await;
         // Note: The metrics tracking may work differently with our new implementation
@@ -1325,8 +1366,12 @@ mod tests {
         let pool = EmbeddingThreadPool::new(config).await.unwrap();
 
         // Process documents successfully
-        pool.process_document_with_retry("doc1", "content1").await.unwrap();
-        pool.process_document_with_retry("doc2", "content2").await.unwrap();
+        pool.process_document_with_retry("doc1", "content1")
+            .await
+            .unwrap();
+        pool.process_document_with_retry("doc2", "content2")
+            .await
+            .unwrap();
 
         let metrics = pool.get_metrics().await;
         assert!(!metrics.circuit_breaker_open);

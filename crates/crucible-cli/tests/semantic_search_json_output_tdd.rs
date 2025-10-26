@@ -17,22 +17,17 @@
 //! 3. Test error handling in JSON format
 //! 4. Drive implementation of proper JSON response formatting
 
-use anyhow::Result;
-use tokio::process::Command;
-use std::path::PathBuf;
-use serde_json::Value;
-use tempfile::TempDir;
-use std::fs;
-
 /// Helper function to get CLI binary path
 fn cli_binary_path() -> PathBuf {
-    let base_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .unwrap_or_else(|_| std::env::current_dir().unwrap().to_string_lossy().to_string());
+    let base_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| {
+        std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string()
+    });
 
-    let debug_path = PathBuf::from(&base_dir)
-        .join("../../target/debug/cru");
-    let release_path = PathBuf::from(&base_dir)
-        .join("../../target/release/cru");
+    let debug_path = PathBuf::from(&base_dir).join("../../target/debug/cru");
+    let release_path = PathBuf::from(&base_dir).join("../../target/release/cru");
 
     if debug_path.exists() {
         debug_path
@@ -53,10 +48,7 @@ async fn run_semantic_search_json(
     let mut cmd = Command::new(binary_path);
 
     // Base command
-    cmd.arg("semantic")
-        .arg(query)
-        .arg("--format")
-        .arg("json");
+    cmd.arg("semantic").arg(query).arg("--format").arg("json");
 
     // Add additional arguments
     for arg in additional_args {
@@ -90,7 +82,9 @@ fn extract_json_from_output(output: &str) -> String {
     let lines: Vec<&str> = output.lines().collect();
 
     // Find the first line that starts with '{' (beginning of JSON object)
-    let json_start = lines.iter().position(|line| line.trim_start().starts_with('{'));
+    let json_start = lines
+        .iter()
+        .position(|line| line.trim_start().starts_with('{'));
 
     if let Some(start_idx) = json_start {
         // Extract from the JSON start to the end
@@ -112,7 +106,9 @@ async fn create_test_vault() -> Result<(TempDir, PathBuf)> {
 
     // Create test markdown files with rich semantic content
     let test_files = vec![
-        ("machine-learning-fundamentals.md", r#"# Machine Learning Fundamentals
+        (
+            "machine-learning-fundamentals.md",
+            r#"# Machine Learning Fundamentals
 
 Machine learning is a subset of artificial intelligence that focuses on algorithms that can learn from data.
 
@@ -123,8 +119,11 @@ Machine learning is a subset of artificial intelligence that focuses on algorith
 
 ## Applications
 Machine learning is used in various domains including computer vision, natural language processing, and predictive analytics.
-"#),
-        ("rust-programming-guide.md", r#"# Rust Programming Guide
+"#,
+        ),
+        (
+            "rust-programming-guide.md",
+            r#"# Rust Programming Guide
 
 Rust is a systems programming language that guarantees memory safety without using a garbage collector.
 
@@ -135,8 +134,11 @@ Rust is a systems programming language that guarantees memory safety without usi
 
 ## Use Cases
 Rust is excellent for systems programming, web assembly, and performance-critical applications.
-"#),
-        ("database-systems-overview.md", r#"# Database Systems Overview
+"#,
+        ),
+        (
+            "database-systems-overview.md",
+            r#"# Database Systems Overview
 
 Database management systems provide structured ways to store and retrieve data efficiently.
 
@@ -148,8 +150,11 @@ Database management systems provide structured ways to store and retrieve data e
 
 ## Modern Trends
 Vector databases enable efficient semantic search using embeddings and similarity algorithms.
-"#),
-        ("ai-research-papers.md", r#"# AI Research Papers
+"#,
+        ),
+        (
+            "ai-research-papers.md",
+            r#"# AI Research Papers
 
 Recent advances in artificial intelligence research have transformed multiple fields.
 
@@ -160,7 +165,8 @@ Recent advances in artificial intelligence research have transformed multiple fi
 
 ## Applications
 Natural language processing, computer vision, and reinforcement learning have seen significant improvements with modern AI techniques.
-"#),
+"#,
+        ),
     ];
 
     for (filename, content) in test_files {
@@ -249,7 +255,9 @@ mod semantic_search_json_output_tdd_tests {
         println!("📁 Using test-kiln: {}", vault_path.display());
 
         // Test semantic search that should find relevant results
-        let result = run_semantic_search_json(&vault_path, "artificial intelligence", vec!["--top-k", "5"]).await?;
+        let result =
+            run_semantic_search_json(&vault_path, "artificial intelligence", vec!["--top-k", "5"])
+                .await?;
         println!("📄 Raw output: {}", result);
 
         // First check if it's valid JSON
@@ -258,7 +266,10 @@ mod semantic_search_json_output_tdd_tests {
             Err(e) => {
                 println!("❌ TDD FAILURE: Cannot test content - output is not valid JSON");
                 println!("   JSON parsing error: {}", e);
-                panic!("RED PHASE: Cannot test JSON content if output isn't valid JSON: {}", e);
+                panic!(
+                    "RED PHASE: Cannot test JSON content if output isn't valid JSON: {}",
+                    e
+                );
             }
         };
 
@@ -286,16 +297,19 @@ mod semantic_search_json_output_tdd_tests {
 
                     // Check for error messages in results
                     let result_str = result.to_string();
-                    if result_str.to_lowercase().contains("error") ||
-                       result_str.to_lowercase().contains("failed") ||
-                       result_str.to_lowercase().contains("not found") {
+                    if result_str.to_lowercase().contains("error")
+                        || result_str.to_lowercase().contains("failed")
+                        || result_str.to_lowercase().contains("not found")
+                    {
                         has_error_messages = true;
                         println!("❌ Found error message in results: {}", result_str);
                     }
                 }
 
                 if has_error_messages {
-                    println!("❌ TDD FAILURE: JSON contains error messages instead of search results");
+                    println!(
+                        "❌ TDD FAILURE: JSON contains error messages instead of search results"
+                    );
                     panic!("RED PHASE: JSON should contain search results, not error messages");
                 }
 
@@ -328,7 +342,10 @@ mod semantic_search_json_output_tdd_tests {
         // Create .obsidian directory but no markdown files
         fs::create_dir_all(vault_path.join(".obsidian"))?;
 
-        println!("📁 Using empty vault to trigger errors: {}", vault_path.display());
+        println!(
+            "📁 Using empty vault to trigger errors: {}",
+            vault_path.display()
+        );
 
         // Test semantic search that should fail due to no content
         let result = run_semantic_search_json(&vault_path, "test query", vec![]).await?;
@@ -362,7 +379,10 @@ mod semantic_search_json_output_tdd_tests {
             }
         } else {
             println!("❌ TDD FAILURE: Error response is not formatted as JSON");
-            println!("   Error output starts with: {:?}", &result[..result.len().min(50)]);
+            println!(
+                "   Error output starts with: {:?}",
+                &result[..result.len().min(50)]
+            );
             panic!("RED PHASE: Error responses should be formatted as JSON, got plain text");
         }
 
@@ -382,7 +402,8 @@ mod semantic_search_json_output_tdd_tests {
         println!("📁 Using test-kiln: {}", vault_path.display());
 
         // Test semantic search with comprehensive output
-        let result = run_semantic_search_json(&vault_path, "database systems", vec!["--top-k", "3"]).await?;
+        let result =
+            run_semantic_search_json(&vault_path, "database systems", vec!["--top-k", "3"]).await?;
         println!("📄 Raw output length: {} characters", result.len());
 
         // Parse JSON
@@ -393,7 +414,10 @@ mod semantic_search_json_output_tdd_tests {
             }
             Err(e) => {
                 println!("❌ TDD FAILURE: Cannot validate fields - invalid JSON");
-                panic!("RED PHASE: JSON field validation requires valid JSON: {}", e);
+                panic!(
+                    "RED PHASE: JSON field validation requires valid JSON: {}",
+                    e
+                );
             }
         };
 
@@ -421,10 +445,20 @@ mod semantic_search_json_output_tdd_tests {
                     };
 
                     if actual_type == expected_type {
-                        println!("✅ Field '{}' has correct type: {}", field_name, actual_type);
+                        println!(
+                            "✅ Field '{}' has correct type: {}",
+                            field_name, actual_type
+                        );
                     } else {
-                        println!("❌ Field '{}' has wrong type: expected {}, got {}", field_name, expected_type, actual_type);
-                        wrong_types.push((field_name.to_string(), expected_type.to_string(), actual_type.to_string()));
+                        println!(
+                            "❌ Field '{}' has wrong type: expected {}, got {}",
+                            field_name, expected_type, actual_type
+                        );
+                        wrong_types.push((
+                            field_name.to_string(),
+                            expected_type.to_string(),
+                            actual_type.to_string(),
+                        ));
                     }
                 }
                 None => {
@@ -437,7 +471,10 @@ mod semantic_search_json_output_tdd_tests {
         // Validate result object structure if results array exists
         if let Some(results) = parsed_result.get("results").and_then(|r| r.as_array()) {
             if !results.is_empty() {
-                println!("📊 Validating structure of {} result objects", results.len());
+                println!(
+                    "📊 Validating structure of {} result objects",
+                    results.len()
+                );
 
                 // Expected fields in each result object
                 let result_fields = vec![
@@ -462,10 +499,20 @@ mod semantic_search_json_output_tdd_tests {
                                     };
 
                                     if actual_type == *expected_type {
-                                        println!("  ✅ Result[{}].{}: {}", i, field_name, actual_type);
+                                        println!(
+                                            "  ✅ Result[{}].{}: {}",
+                                            i, field_name, actual_type
+                                        );
                                     } else {
-                                        println!("  ❌ Result[{}].{}: expected {}, got {}", i, field_name, expected_type, actual_type);
-                                        wrong_types.push((format!("result[{}].{}", i, field_name), expected_type.to_string(), actual_type.to_string()));
+                                        println!(
+                                            "  ❌ Result[{}].{}: expected {}, got {}",
+                                            i, field_name, expected_type, actual_type
+                                        );
+                                        wrong_types.push((
+                                            format!("result[{}].{}", i, field_name),
+                                            expected_type.to_string(),
+                                            actual_type.to_string(),
+                                        ));
                                     }
                                 }
                                 None => {
@@ -476,7 +523,11 @@ mod semantic_search_json_output_tdd_tests {
                         }
                     } else {
                         println!("  ❌ Result[{}] is not an object", i);
-                        wrong_types.push((format!("result[{}]", i), "object".to_string(), "other".to_string()));
+                        wrong_types.push((
+                            format!("result[{}]", i),
+                            "object".to_string(),
+                            "other".to_string(),
+                        ));
                     }
                 }
             }
@@ -580,3 +631,9 @@ fn extract_json_structure(value: &Value) -> Value {
         Value::Null => Value::String("null".to_string()),
     }
 }
+use anyhow::Result;
+use serde_json::Value;
+use std::fs;
+use std::path::PathBuf;
+use tempfile::TempDir;
+use tokio::process::Command;

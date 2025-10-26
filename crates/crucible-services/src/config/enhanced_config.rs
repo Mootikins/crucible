@@ -4,8 +4,8 @@
 //! with the validation framework for robust configuration management.
 
 use super::validation::{
-    ConfigValidator, ValidationContext, ValidationEngine, ValidationError,
-    ValidationResult, ValidationRule, ValidationRuleType,
+    ConfigValidator, ValidationContext, ValidationEngine, ValidationError, ValidationResult,
+    ValidationRule, ValidationRuleType,
 };
 use crate::errors::ServiceResult;
 use serde::{Deserialize, Serialize};
@@ -63,10 +63,14 @@ impl EnhancedConfig {
         // Load from config file if exists
         if let Some(file_path) = std::env::var("CRUCIBLE_CONFIG_FILE").ok().or_else(|| {
             // Try default locations
-            ["./crucible.yaml", "./config/crucible.yaml", "~/.crucible/config.yaml"]
-                .iter()
-                .find(|path| std::path::Path::new(path).exists())
-                .map(|p| p.to_string())
+            [
+                "./crucible.yaml",
+                "./config/crucible.yaml",
+                "~/.crucible/config.yaml",
+            ]
+            .iter()
+            .find(|path| std::path::Path::new(path).exists())
+            .map(|p| p.to_string())
         }) {
             config = config.load_from_file(&file_path).await?;
         }
@@ -145,30 +149,30 @@ impl EnhancedConfig {
 
         match extension {
             "yaml" | "yml" => {
-                let file_config: EnhancedConfig = serde_yaml::from_str(&content)
-                    .map_err(|e| {
-                        crate::errors::ServiceError::ConfigurationError(
-                            format!("YAML parsing error: {}", e)
-                        )
-                    })?;
+                let file_config: EnhancedConfig = serde_yaml::from_str(&content).map_err(|e| {
+                    crate::errors::ServiceError::ConfigurationError(format!(
+                        "YAML parsing error: {}",
+                        e
+                    ))
+                })?;
                 self.merge_with(file_config);
             }
             "json" => {
-                let file_config: EnhancedConfig = serde_json::from_str(&content)
-                    .map_err(|e| {
-                        crate::errors::ServiceError::ConfigurationError(
-                            format!("JSON parsing error: {}", e)
-                        )
-                    })?;
+                let file_config: EnhancedConfig = serde_json::from_str(&content).map_err(|e| {
+                    crate::errors::ServiceError::ConfigurationError(format!(
+                        "JSON parsing error: {}",
+                        e
+                    ))
+                })?;
                 self.merge_with(file_config);
             }
             "toml" => {
-                let file_config: EnhancedConfig = toml::from_str(&content)
-                    .map_err(|e| {
-                        crate::errors::ServiceError::ConfigurationError(
-                            format!("TOML parsing error: {}", e)
-                        )
-                    })?;
+                let file_config: EnhancedConfig = toml::from_str(&content).map_err(|e| {
+                    crate::errors::ServiceError::ConfigurationError(format!(
+                        "TOML parsing error: {}",
+                        e
+                    ))
+                })?;
                 self.merge_with(file_config);
             }
             _ => {
@@ -188,7 +192,9 @@ impl EnhancedConfig {
         if other.logging.level != LoggingConfig::default().level {
             self.logging = other.logging;
         }
-        if other.event_routing.max_event_age_seconds != EventRoutingConfig::default().max_event_age_seconds {
+        if other.event_routing.max_event_age_seconds
+            != EventRoutingConfig::default().max_event_age_seconds
+        {
             self.event_routing = other.event_routing;
         }
         if other.database.is_some() {
@@ -213,7 +219,10 @@ impl EnhancedConfig {
             self.service.environment,
             self.logging.level,
             self.event_routing.max_concurrent_events,
-            self.database.as_ref().map(|_d| "configured").unwrap_or("none"),
+            self.database
+                .as_ref()
+                .map(|_d| "configured")
+                .unwrap_or("none"),
             self.plugins.enabled_plugins.len()
         )
     }
@@ -356,13 +365,16 @@ impl ConfigValidator for ServiceConfig {
         let mut engine = ValidationEngine::new();
 
         // Add validation rules
-        engine.add_rule("name", ValidationRule {
-            field: "name".to_string(),
-            rule_type: ValidationRuleType::NonEmpty,
-            parameters: HashMap::new(),
-            error_message: "Service name cannot be empty".to_string(),
-            required: true,
-        });
+        engine.add_rule(
+            "name",
+            ValidationRule {
+                field: "name".to_string(),
+                rule_type: ValidationRuleType::NonEmpty,
+                parameters: HashMap::new(),
+                error_message: "Service name cannot be empty".to_string(),
+                required: true,
+            },
+        );
 
         engine.add_rule("name", ValidationRule {
             field: "name".to_string(),
@@ -372,13 +384,21 @@ impl ConfigValidator for ServiceConfig {
             required: true,
         });
 
-        engine.add_rule("environment", ValidationRule {
-            field: "environment".to_string(),
-            rule_type: ValidationRuleType::Enum(vec!["development".to_string(), "staging".to_string(), "production".to_string()]),
-            parameters: HashMap::new(),
-            error_message: "Environment must be one of: development, staging, production".to_string(),
-            required: true,
-        });
+        engine.add_rule(
+            "environment",
+            ValidationRule {
+                field: "environment".to_string(),
+                rule_type: ValidationRuleType::Enum(vec![
+                    "development".to_string(),
+                    "staging".to_string(),
+                    "production".to_string(),
+                ]),
+                parameters: HashMap::new(),
+                error_message: "Environment must be one of: development, staging, production"
+                    .to_string(),
+                required: true,
+            },
+        );
 
         // Convert to JSON for validation
         let config_json = serde_json::to_value(self).unwrap_or_default();
@@ -405,7 +425,11 @@ impl ConfigValidator for ServiceConfig {
             },
             ValidationRule {
                 field: "environment".to_string(),
-                rule_type: ValidationRuleType::Enum(vec!["development".to_string(), "staging".to_string(), "production".to_string()]),
+                rule_type: ValidationRuleType::Enum(vec![
+                    "development".to_string(),
+                    "staging".to_string(),
+                    "production".to_string(),
+                ]),
                 parameters: HashMap::new(),
                 error_message: "Invalid environment".to_string(),
                 required: true,
@@ -489,40 +513,66 @@ impl ConfigValidator for LoggingConfig {
         let mut engine = ValidationEngine::new();
 
         // Add validation rules
-        engine.add_rule("level", ValidationRule {
-            field: "level".to_string(),
-            rule_type: ValidationRuleType::Enum(vec!["trace".to_string(), "debug".to_string(), "info".to_string(), "warn".to_string(), "error".to_string()]),
-            parameters: HashMap::new(),
-            error_message: "Log level must be one of: trace, debug, info, warn, error".to_string(),
-            required: true,
-        });
+        engine.add_rule(
+            "level",
+            ValidationRule {
+                field: "level".to_string(),
+                rule_type: ValidationRuleType::Enum(vec![
+                    "trace".to_string(),
+                    "debug".to_string(),
+                    "info".to_string(),
+                    "warn".to_string(),
+                    "error".to_string(),
+                ]),
+                parameters: HashMap::new(),
+                error_message: "Log level must be one of: trace, debug, info, warn, error"
+                    .to_string(),
+                required: true,
+            },
+        );
 
-        engine.add_rule("format", ValidationRule {
-            field: "format".to_string(),
-            rule_type: ValidationRuleType::Enum(vec!["json".to_string(), "text".to_string(), "compact".to_string()]),
-            parameters: HashMap::new(),
-            error_message: "Log format must be one of: json, text, compact".to_string(),
-            required: true,
-        });
+        engine.add_rule(
+            "format",
+            ValidationRule {
+                field: "format".to_string(),
+                rule_type: ValidationRuleType::Enum(vec![
+                    "json".to_string(),
+                    "text".to_string(),
+                    "compact".to_string(),
+                ]),
+                parameters: HashMap::new(),
+                error_message: "Log format must be one of: json, text, compact".to_string(),
+                required: true,
+            },
+        );
 
         if let Some(_file_size) = self.max_file_size {
-            engine.add_rule("max_file_size", ValidationRule {
-                field: "max_file_size".to_string(),
-                rule_type: ValidationRuleType::Positive,
-                parameters: HashMap::new(),
-                error_message: "Max file size must be positive".to_string(),
-                required: false,
-            });
+            engine.add_rule(
+                "max_file_size",
+                ValidationRule {
+                    field: "max_file_size".to_string(),
+                    rule_type: ValidationRuleType::Positive,
+                    parameters: HashMap::new(),
+                    error_message: "Max file size must be positive".to_string(),
+                    required: false,
+                },
+            );
         }
 
         if let Some(_max_files) = self.max_files {
-            engine.add_rule("max_files", ValidationRule {
-                field: "max_files".to_string(),
-                rule_type: ValidationRuleType::Range { min: Some(1.0), max: Some(100.0) },
-                parameters: HashMap::new(),
-                error_message: "Max files must be between 1 and 100".to_string(),
-                required: false,
-            });
+            engine.add_rule(
+                "max_files",
+                ValidationRule {
+                    field: "max_files".to_string(),
+                    rule_type: ValidationRuleType::Range {
+                        min: Some(1.0),
+                        max: Some(100.0),
+                    },
+                    parameters: HashMap::new(),
+                    error_message: "Max files must be between 1 and 100".to_string(),
+                    required: false,
+                },
+            );
         }
 
         // Convert to JSON for validation
@@ -554,7 +604,13 @@ impl ConfigValidator for LoggingConfig {
         vec![
             ValidationRule {
                 field: "level".to_string(),
-                rule_type: ValidationRuleType::Enum(vec!["trace".to_string(), "debug".to_string(), "info".to_string(), "warn".to_string(), "error".to_string()]),
+                rule_type: ValidationRuleType::Enum(vec![
+                    "trace".to_string(),
+                    "debug".to_string(),
+                    "info".to_string(),
+                    "warn".to_string(),
+                    "error".to_string(),
+                ]),
                 parameters: HashMap::new(),
                 error_message: "Invalid log level".to_string(),
                 required: true,
@@ -644,29 +700,47 @@ impl ConfigValidator for EventRoutingConfig {
         let mut engine = ValidationEngine::new();
 
         // Add validation rules
-        engine.add_rule("max_event_age_seconds", ValidationRule {
-            field: "max_event_age_seconds".to_string(),
-            rule_type: ValidationRuleType::Range { min: Some(1.0), max: Some(3600.0) },
-            parameters: HashMap::new(),
-            error_message: "Max event age must be between 1 second and 1 hour".to_string(),
-            required: true,
-        });
+        engine.add_rule(
+            "max_event_age_seconds",
+            ValidationRule {
+                field: "max_event_age_seconds".to_string(),
+                rule_type: ValidationRuleType::Range {
+                    min: Some(1.0),
+                    max: Some(3600.0),
+                },
+                parameters: HashMap::new(),
+                error_message: "Max event age must be between 1 second and 1 hour".to_string(),
+                required: true,
+            },
+        );
 
-        engine.add_rule("max_concurrent_events", ValidationRule {
-            field: "max_concurrent_events".to_string(),
-            rule_type: ValidationRuleType::Range { min: Some(1.0), max: Some(100000.0) },
-            parameters: HashMap::new(),
-            error_message: "Max concurrent events must be between 1 and 100,000".to_string(),
-            required: true,
-        });
+        engine.add_rule(
+            "max_concurrent_events",
+            ValidationRule {
+                field: "max_concurrent_events".to_string(),
+                rule_type: ValidationRuleType::Range {
+                    min: Some(1.0),
+                    max: Some(100000.0),
+                },
+                parameters: HashMap::new(),
+                error_message: "Max concurrent events must be between 1 and 100,000".to_string(),
+                required: true,
+            },
+        );
 
-        engine.add_rule("event_buffer_size", ValidationRule {
-            field: "event_buffer_size".to_string(),
-            rule_type: ValidationRuleType::Range { min: Some(100.0), max: Some(1000000.0) },
-            parameters: HashMap::new(),
-            error_message: "Event buffer size must be between 100 and 1,000,000".to_string(),
-            required: true,
-        });
+        engine.add_rule(
+            "event_buffer_size",
+            ValidationRule {
+                field: "event_buffer_size".to_string(),
+                rule_type: ValidationRuleType::Range {
+                    min: Some(100.0),
+                    max: Some(1000000.0),
+                },
+                parameters: HashMap::new(),
+                error_message: "Event buffer size must be between 100 and 1,000,000".to_string(),
+                required: true,
+            },
+        );
 
         // Convert to JSON for validation
         let config_json = serde_json::to_value(self).unwrap_or_default();
@@ -767,29 +841,45 @@ impl ConfigValidator for DatabaseConfig {
         let mut engine = ValidationEngine::new();
 
         // Add validation rules
-        engine.add_rule("url", ValidationRule {
-            field: "url".to_string(),
-            rule_type: ValidationRuleType::NonEmpty,
-            parameters: HashMap::new(),
-            error_message: "Database URL cannot be empty".to_string(),
-            required: true,
-        });
+        engine.add_rule(
+            "url",
+            ValidationRule {
+                field: "url".to_string(),
+                rule_type: ValidationRuleType::NonEmpty,
+                parameters: HashMap::new(),
+                error_message: "Database URL cannot be empty".to_string(),
+                required: true,
+            },
+        );
 
-        engine.add_rule("max_connections", ValidationRule {
-            field: "max_connections".to_string(),
-            rule_type: ValidationRuleType::Range { min: Some(1.0), max: Some(1000.0) },
-            parameters: HashMap::new(),
-            error_message: "Max connections must be between 1 and 1000".to_string(),
-            required: true,
-        });
+        engine.add_rule(
+            "max_connections",
+            ValidationRule {
+                field: "max_connections".to_string(),
+                rule_type: ValidationRuleType::Range {
+                    min: Some(1.0),
+                    max: Some(1000.0),
+                },
+                parameters: HashMap::new(),
+                error_message: "Max connections must be between 1 and 1000".to_string(),
+                required: true,
+            },
+        );
 
-        engine.add_rule("db_type", ValidationRule {
-            field: "db_type".to_string(),
-            rule_type: ValidationRuleType::Enum(vec!["sqlite".to_string(), "postgres".to_string(), "mysql".to_string()]),
-            parameters: HashMap::new(),
-            error_message: "Database type must be one of: sqlite, postgres, mysql".to_string(),
-            required: true,
-        });
+        engine.add_rule(
+            "db_type",
+            ValidationRule {
+                field: "db_type".to_string(),
+                rule_type: ValidationRuleType::Enum(vec![
+                    "sqlite".to_string(),
+                    "postgres".to_string(),
+                    "mysql".to_string(),
+                ]),
+                parameters: HashMap::new(),
+                error_message: "Database type must be one of: sqlite, postgres, mysql".to_string(),
+                required: true,
+            },
+        );
 
         // Convert to JSON for validation
         let config_json = serde_json::to_value(self).unwrap_or_default();
@@ -911,15 +1001,13 @@ impl ConfigValidator for SecurityConfig {
     }
 
     fn validation_rules(&self) -> Vec<ValidationRule> {
-        vec![
-            ValidationRule {
-                field: "token_expiration_hours".to_string(),
-                rule_type: ValidationRuleType::Positive,
-                parameters: HashMap::new(),
-                error_message: "Token expiration must be positive".to_string(),
-                required: true,
-            },
-        ]
+        vec![ValidationRule {
+            field: "token_expiration_hours".to_string(),
+            rule_type: ValidationRuleType::Positive,
+            parameters: HashMap::new(),
+            error_message: "Token expiration must be positive".to_string(),
+            required: true,
+        }]
     }
 }
 
@@ -978,21 +1066,33 @@ impl ConfigValidator for PerformanceConfig {
         let mut engine = ValidationEngine::new();
 
         // Add validation rules
-        engine.add_rule("max_memory_mb", ValidationRule {
-            field: "max_memory_mb".to_string(),
-            rule_type: ValidationRuleType::Range { min: Some(64.0), max: Some(32768.0) },
-            parameters: HashMap::new(),
-            error_message: "Max memory must be between 64MB and 32GB".to_string(),
-            required: true,
-        });
+        engine.add_rule(
+            "max_memory_mb",
+            ValidationRule {
+                field: "max_memory_mb".to_string(),
+                rule_type: ValidationRuleType::Range {
+                    min: Some(64.0),
+                    max: Some(32768.0),
+                },
+                parameters: HashMap::new(),
+                error_message: "Max memory must be between 64MB and 32GB".to_string(),
+                required: true,
+            },
+        );
 
-        engine.add_rule("cpu_threshold_percent", ValidationRule {
-            field: "cpu_threshold_percent".to_string(),
-            rule_type: ValidationRuleType::Range { min: Some(1.0), max: Some(100.0) },
-            parameters: HashMap::new(),
-            error_message: "CPU threshold must be between 1% and 100%".to_string(),
-            required: true,
-        });
+        engine.add_rule(
+            "cpu_threshold_percent",
+            ValidationRule {
+                field: "cpu_threshold_percent".to_string(),
+                rule_type: ValidationRuleType::Range {
+                    min: Some(1.0),
+                    max: Some(100.0),
+                },
+                parameters: HashMap::new(),
+                error_message: "CPU threshold must be between 1% and 100%".to_string(),
+                required: true,
+            },
+        );
 
         // Convert to JSON for validation
         let config_json = serde_json::to_value(self).unwrap_or_default();
@@ -1019,7 +1119,10 @@ impl ConfigValidator for PerformanceConfig {
             },
             ValidationRule {
                 field: "cpu_threshold_percent".to_string(),
-                rule_type: ValidationRuleType::Range { min: Some(1.0), max: Some(100.0) },
+                rule_type: ValidationRuleType::Range {
+                    min: Some(1.0),
+                    max: Some(100.0),
+                },
                 parameters: HashMap::new(),
                 error_message: "CPU threshold must be between 1% and 100%".to_string(),
                 required: true,
@@ -1089,7 +1192,10 @@ impl ConfigValidator for PluginConfig {
                     value: plugin_name.clone(),
                     reason: "Plugin is both enabled and disabled".to_string(),
                     context: context.clone(),
-                    suggested_fix: Some(format!("Remove {} from either enabled or disabled plugins list", plugin_name)),
+                    suggested_fix: Some(format!(
+                        "Remove {} from either enabled or disabled plugins list",
+                        plugin_name
+                    )),
                 });
             }
         }
@@ -1102,7 +1208,10 @@ impl ConfigValidator for PluginConfig {
                     value: path.display().to_string(),
                     reason: "Plugin search path does not exist".to_string(),
                     context: context.clone(),
-                    suggested_fix: Some(format!("Create directory {} or remove from search paths", path.display())),
+                    suggested_fix: Some(format!(
+                        "Create directory {} or remove from search paths",
+                        path.display()
+                    )),
                 });
             }
         }
@@ -1111,15 +1220,13 @@ impl ConfigValidator for PluginConfig {
     }
 
     fn validation_rules(&self) -> Vec<ValidationRule> {
-        vec![
-            ValidationRule {
-                field: "plugin_timeout_seconds".to_string(),
-                rule_type: ValidationRuleType::Positive,
-                parameters: HashMap::new(),
-                error_message: "Plugin timeout must be positive".to_string(),
-                required: true,
-            },
-        ]
+        vec![ValidationRule {
+            field: "plugin_timeout_seconds".to_string(),
+            rule_type: ValidationRuleType::Positive,
+            parameters: HashMap::new(),
+            error_message: "Plugin timeout must be positive".to_string(),
+            required: true,
+        }]
     }
 }
 

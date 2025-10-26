@@ -69,7 +69,8 @@ impl AgentCard {
             .or_else(|| content.strip_prefix("---\r\n"))
             .ok_or_else(|| anyhow::anyhow!("No frontmatter delimiter found"))?;
 
-        let end_marker_idx = yaml_section.find("\n---\n")
+        let end_marker_idx = yaml_section
+            .find("\n---\n")
             .or_else(|| yaml_section.find("\r\n---\r\n"))
             .ok_or_else(|| anyhow::anyhow!("No closing frontmatter delimiter found"))?;
 
@@ -85,8 +86,8 @@ impl AgentCard {
             .to_string();
 
         // Parse the YAML frontmatter
-        let mut card: AgentCard = serde_yaml::from_str(yaml_str)
-            .context("Failed to parse agent card frontmatter")?;
+        let mut card: AgentCard =
+            serde_yaml::from_str(yaml_str).context("Failed to parse agent card frontmatter")?;
 
         // Set the system prompt from the content after frontmatter
         card.system_prompt = system_prompt;
@@ -98,8 +99,8 @@ impl AgentCard {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn test_parse_agent_card_with_minimal_frontmatter() {
@@ -166,7 +167,10 @@ You are a comprehensive test agent with all fields specified.";
         assert_eq!(card.max_tokens, Some(4096));
         assert_eq!(card.owner, "test-user");
         assert!(!card.shareable);
-        assert_eq!(card.system_prompt, "You are a comprehensive test agent with all fields specified.");
+        assert_eq!(
+            card.system_prompt,
+            "You are a comprehensive test agent with all fields specified."
+        );
     }
 
     #[test]
@@ -197,7 +201,10 @@ You are an expert backend developer specializing in Rust.";
 
         assert_eq!(card.name, "backend-dev");
         assert_eq!(card.capabilities, vec!["rust", "api-design", "database"]);
-        assert_eq!(card.system_prompt, "You are an expert backend developer specializing in Rust.");
+        assert_eq!(
+            card.system_prompt,
+            "You are an expert backend developer specializing in Rust."
+        );
     }
 
     #[test]
@@ -220,7 +227,11 @@ You are an OpenAI-powered agent.";
         let card = AgentCard::from_str(content).unwrap();
 
         match card.backend {
-            BackendConfig::OpenAI { endpoint, api_key, model } => {
+            BackendConfig::OpenAI {
+                endpoint,
+                api_key,
+                model,
+            } => {
                 assert_eq!(endpoint, "https://api.openai.com/v1");
                 assert_eq!(api_key, Some("sk-test123".to_string()));
                 assert_eq!(model, "gpt-4");

@@ -61,10 +61,7 @@ pub async fn execute_query(db: &Surreal<Db>, query: &str) -> Result<Vec<Value>> 
     }
 
     // Execute the query
-    let mut response = db
-        .query(query)
-        .await
-        .context("Failed to execute query")?;
+    let mut response = db.query(query).await.context("Failed to execute query")?;
 
     // Try deserializing as Vec<DynRecord>
     let records_result: std::result::Result<Vec<DynRecord>, _> = response.take(0);
@@ -173,10 +170,7 @@ pub fn format_results(results: &[Value]) -> Result<String> {
     let column_names: Vec<String> = columns.keys().cloned().collect();
 
     // Add header row
-    let header_cells: Vec<Cell> = column_names
-        .iter()
-        .map(|name| Cell::new(name))
-        .collect();
+    let header_cells: Vec<Cell> = column_names.iter().map(|name| Cell::new(name)).collect();
     table.set_header(header_cells);
 
     // Add data rows
@@ -408,10 +402,7 @@ mod tests {
         // Verify result structure
         let first = &results[0];
         assert!(first.is_object(), "Result should be a JSON object");
-        assert!(
-            first.get("path").is_some(),
-            "Note should have 'path' field"
-        );
+        assert!(first.get("path").is_some(), "Note should have 'path' field");
         assert!(
             first.get("content").is_some(),
             "Note should have 'content' field"
@@ -449,10 +440,7 @@ mod tests {
             .unwrap();
 
         // Verify filtering worked
-        assert!(
-            !results.is_empty(),
-            "Should find notes tagged with 'rust'"
-        );
+        assert!(!results.is_empty(), "Should find notes tagged with 'rust'");
 
         // Verify all results have the expected tag
         for result in &results {
@@ -499,10 +487,7 @@ mod tests {
         let result = execute_query(&db, "SELECT * FORM notes WHERE invalid syntax").await;
 
         // Should return error
-        assert!(
-            result.is_err(),
-            "Malformed query should return an error"
-        );
+        assert!(result.is_err(), "Malformed query should return an error");
 
         cleanup_test_db(&db).await.unwrap();
     }
@@ -789,10 +774,7 @@ mod tests {
         let formatted = format_results(&results).unwrap();
 
         // Should handle large datasets efficiently
-        assert!(
-            !formatted.is_empty(),
-            "Should format large result set"
-        );
+        assert!(!formatted.is_empty(), "Should format large result set");
 
         // Should contain first and last entries (or be paginated)
         assert!(
@@ -822,8 +804,7 @@ mod tests {
         if !results.is_empty() {
             let first = &results[0];
             assert!(
-                first.get("upper_title").is_some()
-                    || first.get("UPPER_TITLE").is_some(),
+                first.get("upper_title").is_some() || first.get("UPPER_TITLE").is_some(),
                 "Should have computed field"
             );
         }
@@ -883,10 +864,7 @@ mod tests {
 
         // Should handle varying columns across rows
         // Either show all columns with nulls, or show per-row columns
-        assert!(
-            !formatted.is_empty(),
-            "Should format sparse data"
-        );
+        assert!(!formatted.is_empty(), "Should format sparse data");
     }
 
     #[tokio::test]

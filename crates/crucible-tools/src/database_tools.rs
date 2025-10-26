@@ -7,37 +7,40 @@
 //!
 //! Semantic search now uses integrated crucible-surrealdb functionality instead of mock data.
 
-use crate::types::{ToolResult, ToolError, ToolFunction};
+use crate::types::{ToolError, ToolFunction, ToolResult};
 use serde_json::{json, Value};
-use tracing::info;
 use std::env;
 use std::path::PathBuf;
+use tracing::info;
 
 /// Semantic search using embeddings - Phase 2.1 ToolFunction
 ///
 /// This function implements the ToolFunction signature for unified execution.
 /// Now uses integrated crucible-surrealdb functionality for real semantic search.
 pub fn semantic_search() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
             // Extract parameters
-            let query = parameters.get("query")
+            let query = parameters
+                .get("query")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| ToolError::Other("Missing 'query' parameter".to_string()))?;
 
-            let top_k = parameters.get("top_k")
+            let top_k = parameters
+                .get("top_k")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(10);
 
-            info!("Performing integrated semantic search: {} (top_k: {})", query, top_k);
+            info!(
+                "Performing integrated semantic search: {} (top_k: {})",
+                query, top_k
+            );
 
             // Use integrated crucible-surrealdb semantic search functionality
-            let search_results = perform_integrated_semantic_search(query, top_k as usize).await
+            let search_results = perform_integrated_semantic_search(query, top_k as usize)
+                .await
                 .map_err(|e| ToolError::Other(format!("Semantic search failed: {}", e)))?;
 
             let result_data = json!({
@@ -58,9 +61,12 @@ pub fn semantic_search() -> ToolFunction {
 }
 
 /// Perform integrated semantic search using crucible-surrealdb
-async fn perform_integrated_semantic_search(query: &str, top_k: usize) -> Result<Vec<Value>, anyhow::Error> {
+async fn perform_integrated_semantic_search(
+    query: &str,
+    top_k: usize,
+) -> Result<Vec<Value>, anyhow::Error> {
     use crucible_surrealdb::{
-        vault_integration::{semantic_search, retrieve_parsed_document},
+        vault_integration::{retrieve_parsed_document, semantic_search},
         SurrealClient, SurrealDbConfig,
     };
 
@@ -72,7 +78,10 @@ async fn perform_integrated_semantic_search(query: &str, top_k: usize) -> Result
 
     // Validate vault path exists
     if !vault_path.exists() {
-        return Err(anyhow::anyhow!("Vault path '{}' does not exist", vault_path.display()));
+        return Err(anyhow::anyhow!(
+            "Vault path '{}' does not exist",
+            vault_path.display()
+        ));
     }
 
     // Initialize database connection
@@ -84,7 +93,8 @@ async fn perform_integrated_semantic_search(query: &str, top_k: usize) -> Result
         timeout_seconds: Some(30),
     };
 
-    let client = SurrealClient::new(db_config).await
+    let client = SurrealClient::new(db_config)
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to connect to database: {}", e))?;
 
     // Check if embeddings exist, process vault if needed
@@ -96,7 +106,8 @@ async fn perform_integrated_semantic_search(query: &str, top_k: usize) -> Result
     }
 
     // Perform semantic search
-    let search_results = semantic_search(&client, query, top_k).await
+    let search_results = semantic_search(&client, query, top_k)
+        .await
         .map_err(|e| anyhow::anyhow!("Semantic search failed: {}", e))?;
 
     // Convert search results to tool format
@@ -105,10 +116,13 @@ async fn perform_integrated_semantic_search(query: &str, top_k: usize) -> Result
     for (document_id, similarity_score) in search_results {
         match retrieve_parsed_document(&client, &document_id).await {
             Ok(parsed_document) => {
-                let title = parsed_document.frontmatter
+                let title = parsed_document
+                    .frontmatter
                     .and_then(|fm| fm.get_string("title"))
                     .unwrap_or_else(|| {
-                        parsed_document.content.plain_text
+                        parsed_document
+                            .content
+                            .plain_text
                             .lines()
                             .next()
                             .unwrap_or("Untitled Document")
@@ -147,14 +161,18 @@ async fn perform_integrated_semantic_search(query: &str, top_k: usize) -> Result
     tool_results.sort_by(|a, b| {
         let score_a = a.get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
         let score_b = b.get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
-        score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        score_b
+            .partial_cmp(&score_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     Ok(tool_results)
 }
 
 /// Check if embeddings exist in the database
-async fn check_embeddings_exist_integrated(client: &crucible_surrealdb::SurrealClient) -> Result<bool, anyhow::Error> {
+async fn check_embeddings_exist_integrated(
+    client: &crucible_surrealdb::SurrealClient,
+) -> Result<bool, anyhow::Error> {
     use crucible_surrealdb::vault_integration::get_database_stats;
 
     match get_database_stats(client).await {
@@ -162,10 +180,14 @@ async fn check_embeddings_exist_integrated(client: &crucible_surrealdb::SurrealC
         Err(_) => {
             // Fallback to direct query
             let embeddings_sql = "SELECT count() as total FROM embeddings LIMIT 1";
-            let result = client.query(embeddings_sql, &[]).await
+            let result = client
+                .query(embeddings_sql, &[])
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to query embeddings: {}", e))?;
 
-            let embeddings_count = result.records.first()
+            let embeddings_count = result
+                .records
+                .first()
                 .and_then(|r| r.data.get("total"))
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0);
@@ -197,29 +219,25 @@ async fn process_vault_if_needed(
 
 /// Full-text search in note contents - Phase 2.1 ToolFunction
 pub fn search_by_content() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let query = parameters.get("query")
+            let query = parameters
+                .get("query")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| ToolError::Other("Missing 'query' parameter".to_string()))?;
 
             info!("Performing content search: {}", query);
 
-            let mock_results = vec![
-                json!({
-                    "file_path": "notes/database-design.md",
-                    "content": "This document discusses database design patterns and best practices...",
-                    "metadata": {
-                        "title": "Database Design",
-                        "tags": ["database", "design"]
-                    }
-                }),
-            ];
+            let mock_results = vec![json!({
+                "file_path": "notes/database-design.md",
+                "content": "This document discusses database design patterns and best practices...",
+                "metadata": {
+                    "title": "Database Design",
+                    "tags": ["database", "design"]
+                }
+            })];
 
             let result_data = json!({
                 "results": mock_results,
@@ -239,14 +257,12 @@ pub fn search_by_content() -> ToolFunction {
 
 /// Search notes by filename pattern - Phase 2.1 ToolFunction
 pub fn search_by_filename() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let pattern = parameters.get("pattern")
+            let pattern = parameters
+                .get("pattern")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| ToolError::Other("Missing 'pattern' parameter".to_string()))?;
 
@@ -276,20 +292,16 @@ pub fn search_by_filename() -> ToolFunction {
 
 /// Update frontmatter properties of a note - Phase 2.1 ToolFunction
 pub fn update_note_properties() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let path = parameters.get("path")
+            let path = parameters
+                .get("path")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| ToolError::Other("Missing 'path' parameter".to_string()))?;
 
-            let properties = parameters.get("properties")
-                .cloned()
-                .unwrap_or(json!({}));
+            let properties = parameters.get("properties").cloned().unwrap_or(json!({}));
 
             info!("Updating properties for {}: {:?}", path, properties);
 
@@ -312,14 +324,12 @@ pub fn update_note_properties() -> ToolFunction {
 
 /// Index a specific document for search - Phase 2.1 ToolFunction
 pub fn index_document() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let document = parameters.get("document")
+            let document = parameters
+                .get("document")
                 .cloned()
                 .ok_or_else(|| ToolError::Other("Missing 'document' parameter".to_string()))?;
 
@@ -349,10 +359,7 @@ pub fn index_document() -> ToolFunction {
 
 /// Get document statistics from the database - Phase 2.1 ToolFunction
 pub fn get_document_stats() -> ToolFunction {
-    |tool_name: String,
-     _parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -360,7 +367,7 @@ pub fn get_document_stats() -> ToolFunction {
 
             let stats = json!({
                 "total_documents": 1250,
-                "database_type": "duckdb",
+                "database_type": "surrealdb",
                 "embedding_dimension": 1536,
                 "index_type": "cosine_similarity",
                 "user_id": user_id,
@@ -378,14 +385,12 @@ pub fn get_document_stats() -> ToolFunction {
 
 /// Sync metadata from external source to database - Phase 2.1 ToolFunction
 pub fn sync_metadata() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let source = parameters.get("source")
+            let source = parameters
+                .get("source")
                 .and_then(|v| v.as_str())
                 .unwrap_or("obsidian");
 
@@ -429,7 +434,9 @@ mod tests {
             parameters,
             Some("test_user".to_string()),
             Some("test_session".to_string()),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -452,7 +459,9 @@ mod tests {
             parameters,
             Some("test_user".to_string()),
             Some("test_session".to_string()),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -463,12 +472,9 @@ mod tests {
         let tool_fn = get_document_stats();
         let parameters = json!({});
 
-        let result = tool_fn(
-            "get_document_stats".to_string(),
-            parameters,
-            None,
-            None,
-        ).await.unwrap();
+        let result = tool_fn("get_document_stats".to_string(), parameters, None, None)
+            .await
+            .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -479,12 +485,7 @@ mod tests {
         let tool_fn = semantic_search();
         let parameters = json!({}); // Missing required 'query' parameter
 
-        let result = tool_fn(
-            "semantic_search".to_string(),
-            parameters,
-            None,
-            None,
-        ).await;
+        let result = tool_fn("semantic_search".to_string(), parameters, None, None).await;
 
         assert!(result.is_err());
         match result.unwrap_err() {

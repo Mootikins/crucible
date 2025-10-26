@@ -1,5 +1,5 @@
 //! Embedding provider abstraction for semantic search and vector operations
-//! 
+//!
 //! This module provides a unified interface for generating text embeddings
 //! from multiple providers (Ollama, OpenAI, etc.) with built-in resilience
 //! patterns including retry logic, circuit breakers, and timeout management.
@@ -26,17 +26,19 @@ pub mod provider;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod mock;
 
+pub use candle::CandleProvider;
 pub use config::{EmbeddingConfig, ProviderType};
 pub use error::{EmbeddingError, EmbeddingResult};
 pub use ollama::OllamaProvider;
 pub use openai::OpenAIProvider;
-pub use candle::CandleProvider;
 pub use provider::{EmbeddingProvider, EmbeddingResponse};
 
 use std::sync::Arc;
 
 /// Create an embedding provider from configuration
-pub async fn create_provider(config: EmbeddingConfig) -> EmbeddingResult<Arc<dyn EmbeddingProvider>> {
+pub async fn create_provider(
+    config: EmbeddingConfig,
+) -> EmbeddingResult<Arc<dyn EmbeddingProvider>> {
     // Validate configuration before creating provider
     config.validate()?;
 
@@ -78,7 +80,7 @@ mod tests {
             max_retries: 3,
             batch_size: 10,
         };
-        
+
         assert_eq!(config.provider, ProviderType::Ollama);
         assert_eq!(config.model, "nomic-embed-text");
     }

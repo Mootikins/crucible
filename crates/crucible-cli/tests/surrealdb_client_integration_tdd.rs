@@ -23,21 +23,16 @@
 //! 5. File system verification of database file creation
 
 use anyhow::Result;
-use std::path::{Path, PathBuf};
-use std::fs;
-use tempfile::TempDir;
-use serde_json::Value;
-use tokio::process::Command;
-use std::time::Instant;
-use std::collections::HashMap;
-
-// Import the crates we need to test
-use crucible_surrealdb::{
-    SurrealClient,
-    SurrealDbConfig,
-    vault_integration::get_database_stats,
-};
 use crucible_cli::config::{CliConfig, KilnConfig};
+// Import the crates we need to test
+use crucible_surrealdb::{vault_integration::get_database_stats, SurrealClient, SurrealDbConfig};
+use serde_json::Value;
+use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::Instant;
+use tempfile::TempDir;
+use tokio::process::Command;
 
 /// Test context for SurrealDB client integration tests
 struct SurrealDbTestContext {
@@ -108,7 +103,10 @@ async fn create_test_context() -> Result<SurrealDbTestContext> {
 
 /// Helper to check if database files exist on disk
 fn database_files_exist(db_path: &Path) -> bool {
-    println!("🔍 Checking for database files at: {}", db_path.parent().unwrap_or(db_path).display());
+    println!(
+        "🔍 Checking for database files at: {}",
+        db_path.parent().unwrap_or(db_path).display()
+    );
 
     // Check for various database file patterns SurrealDB might create
     let potential_files = vec![
@@ -116,8 +114,8 @@ fn database_files_exist(db_path: &Path) -> bool {
         db_path.with_extension("db"),
         db_path.with_extension("sql"),
         db_path.with_extension("data"),
-        db_path.with_extension("wal"), // Write-ahead log
-        db_path.join("data"),         // Data directory
+        db_path.with_extension("wal"),          // Write-ahead log
+        db_path.join("data"),                   // Data directory
         db_path.parent().unwrap().join("data"), // Data in parent directory
     ];
 
@@ -183,7 +181,10 @@ async fn run_cli_semantic_search_with_database(
 
     if !output.status.success() {
         println!("CLI stderr: {}", stderr);
-        return Err(anyhow::anyhow!("CLI command failed with status: {}", output.status));
+        return Err(anyhow::anyhow!(
+            "CLI command failed with status: {}",
+            output.status
+        ));
     }
 
     Ok(stdout)
@@ -203,7 +204,9 @@ mod surrealdb_client_integration_tdd_tests {
     /// 2. Database files are created on disk during operations
     /// 3. Configuration flows correctly from CLI to database client
     async fn test_semantic_search_creates_persistent_database() -> Result<()> {
-        let ctx = create_test_context().await.expect("Failed to create test context");
+        let ctx = create_test_context()
+            .await
+            .expect("Failed to create test context");
 
         println!("🎯 TDD RED Phase: Testing persistent database creation");
         println!("📁 Database path: {}", ctx.db_config.path);
@@ -212,7 +215,10 @@ mod surrealdb_client_integration_tdd_tests {
         // Check initial state - no database files should exist
         let db_path = Path::new(&ctx.db_config.path);
         let initial_files_exist = database_files_exist(db_path);
-        assert!(!initial_files_exist, "Database files should not exist initially");
+        assert!(
+            !initial_files_exist,
+            "Database files should not exist initially"
+        );
 
         println!("\n🔧 Creating SurrealDB client with persistent configuration...");
 
@@ -274,7 +280,9 @@ mod surrealdb_client_integration_tdd_tests {
     /// 2. Custom database locations are used instead of defaults
     /// 3. Namespace and database names are configurable
     async fn test_database_uses_cli_configuration() -> Result<()> {
-        let ctx = create_test_context().await.expect("Failed to create test context");
+        let ctx = create_test_context()
+            .await
+            .expect("Failed to create test context");
 
         println!("🎯 TDD RED Phase: Testing CLI configuration integration");
         println!("📁 CLI database path: {:?}", ctx.cli_config.database_path());
@@ -313,7 +321,10 @@ mod surrealdb_client_integration_tdd_tests {
 
         if !custom_files_exist {
             println!("❌ TDD FAILURE: Custom database configuration not respected");
-            println!("   Expected: Database files at {}", custom_db_path.display());
+            println!(
+                "   Expected: Database files at {}",
+                custom_db_path.display()
+            );
             println!("   Actual: No files found at custom path");
             println!("   This suggests CLI configuration is not flowing to database client");
 
@@ -340,7 +351,9 @@ mod surrealdb_client_integration_tdd_tests {
     /// 2. Database files maintain state between executions
     /// 3. Schema initialization is persistent
     async fn test_database_persists_across_cli_runs() -> Result<()> {
-        let ctx = create_test_context().await.expect("Failed to create test context");
+        let ctx = create_test_context()
+            .await
+            .expect("Failed to create test context");
 
         println!("🎯 TDD RED Phase: Testing database persistence across CLI runs");
         println!("📁 Database path: {}", ctx.db_config.path);
@@ -355,8 +368,9 @@ mod surrealdb_client_integration_tdd_tests {
         let first_result = run_cli_semantic_search_with_database(
             &ctx.kiln_path,
             db_path,
-            "artificial intelligence"
-        ).await;
+            "artificial intelligence",
+        )
+        .await;
         let first_duration = start_time.elapsed();
 
         match first_result {
@@ -397,17 +411,18 @@ mod surrealdb_client_integration_tdd_tests {
 
         // Get file info after first run
         let file_info_after_first = get_database_file_info(db_path);
-        println!("📊 Database file sizes after first run: {:?}", file_info_after_first);
+        println!(
+            "📊 Database file sizes after first run: {:?}",
+            file_info_after_first
+        );
 
         // Second CLI run - should use existing database
         println!("\n🔄 Second CLI run - should use existing database...");
 
         let start_time = Instant::now();
-        let second_result = run_cli_semantic_search_with_database(
-            &ctx.kiln_path,
-            db_path,
-            "rust performance"
-        ).await;
+        let second_result =
+            run_cli_semantic_search_with_database(&ctx.kiln_path, db_path, "rust performance")
+                .await;
         let second_duration = start_time.elapsed();
 
         match second_result {
@@ -418,7 +433,10 @@ mod surrealdb_client_integration_tdd_tests {
                 // RED Phase: Second run should be faster if database persists
                 // This will fail with in-memory implementation
                 if second_duration >= first_duration {
-                    println!("⚠️  Second run was not faster ({:?} vs {:?})", second_duration, first_duration);
+                    println!(
+                        "⚠️  Second run was not faster ({:?} vs {:?})",
+                        second_duration, first_duration
+                    );
                     println!("   This may indicate database is not persisting between runs");
                 }
             }
@@ -437,7 +455,10 @@ mod surrealdb_client_integration_tdd_tests {
         }
 
         let file_info_after_second = get_database_file_info(db_path);
-        println!("📊 Database file sizes after second run: {:?}", file_info_after_second);
+        println!(
+            "📊 Database file sizes after second run: {:?}",
+            file_info_after_second
+        );
 
         // RED Phase: Verify database files grew or stayed the same
         // This indicates data is being stored persistently
@@ -446,11 +467,15 @@ mod surrealdb_client_integration_tdd_tests {
             if let Some(size_after_second) = file_info_after_second.get(file_path) {
                 if *size_after_second >= *size_after_first {
                     data_persisted = true;
-                    println!("✅ Data persisted in file: {} ({} -> {} bytes)",
-                           file_path, size_after_first, size_after_second);
+                    println!(
+                        "✅ Data persisted in file: {} ({} -> {} bytes)",
+                        file_path, size_after_first, size_after_second
+                    );
                 } else {
-                    println!("⚠️  File size decreased: {} ({} -> {} bytes)",
-                           file_path, size_after_first, size_after_second);
+                    println!(
+                        "⚠️  File size decreased: {} ({} -> {} bytes)",
+                        file_path, size_after_first, size_after_second
+                    );
                 }
             }
         }
@@ -475,7 +500,9 @@ mod surrealdb_client_integration_tdd_tests {
     /// This test provides a clear specification of the current problem
     /// and expected behavior for the implementation phase.
     async fn test_persistent_database_specification() -> Result<()> {
-        let ctx = create_test_context().await.expect("Failed to create test context");
+        let ctx = create_test_context()
+            .await
+            .expect("Failed to create test context");
 
         println!("🎯 TDD RED Phase: Persistent Database Specification");
         println!("📁 Database path: {}", ctx.db_config.path);
@@ -541,7 +568,10 @@ mod surrealdb_client_integration_tdd_tests {
             let files_exist = database_files_exist(Path::new(&config.path));
 
             config_results.push((path, client_created, files_exist));
-            println!("   Config {}: client_ok={}, files_exist={}", path, client_created, files_exist);
+            println!(
+                "   Config {}: client_ok={}, files_exist={}",
+                path, client_created, files_exist
+            );
         }
 
         // Check if any configuration actually resulted in persistent files
@@ -578,7 +608,9 @@ mod surrealdb_client_integration_tdd_tests {
     /// 2. Tables and indexes are created correctly
     /// 3. Schema persists across database connections
     async fn test_database_schema_initialization() -> Result<()> {
-        let ctx = create_test_context().await.expect("Failed to create test context");
+        let ctx = create_test_context()
+            .await
+            .expect("Failed to create test context");
 
         println!("🎯 TDD RED Phase: Testing database schema initialization");
         println!("📁 Database path: {}", ctx.db_config.path);
@@ -587,7 +619,8 @@ mod surrealdb_client_integration_tdd_tests {
 
         // Create first client connection
         println!("\n🔧 Creating first database connection...");
-        let client1 = SurrealClient::new(ctx.db_config.clone()).await
+        let client1 = SurrealClient::new(ctx.db_config.clone())
+            .await
             .expect("First client creation should succeed");
 
         println!("✅ First client created");
@@ -606,7 +639,9 @@ mod surrealdb_client_integration_tdd_tests {
         println!("\n🧪 Testing database operations with schema...");
 
         // Try to query embeddings table (should exist or be created)
-        let query_result = client1.query("SELECT count() as count FROM embeddings", &[]).await;
+        let query_result = client1
+            .query("SELECT count() as count FROM embeddings", &[])
+            .await;
 
         match query_result {
             Ok(result) => {
@@ -620,13 +655,16 @@ mod surrealdb_client_integration_tdd_tests {
 
         // Create second client connection to test schema persistence
         println!("\n🔄 Creating second database connection...");
-        let client2 = SurrealClient::new(ctx.db_config.clone()).await
+        let client2 = SurrealClient::new(ctx.db_config.clone())
+            .await
             .expect("Second client creation should succeed");
 
         println!("✅ Second client created");
 
         // Test that schema persists between connections
-        let query_result2 = client2.query("SELECT count() as count FROM embeddings", &[]).await;
+        let query_result2 = client2
+            .query("SELECT count() as count FROM embeddings", &[])
+            .await;
 
         match query_result2 {
             Ok(result) => {

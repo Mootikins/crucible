@@ -3,22 +3,18 @@
 //! These tests are written TDD-style - they should fail first,
 //! then drive the implementation to make them pass.
 
-use anyhow::Result;
-use tokio::process::Command;
-use std::path::PathBuf;
-use tempfile::TempDir;
-use tokio::time::{timeout, Duration};
-
 /// Helper function to get CLI binary path
 fn cli_binary_path() -> PathBuf {
     // Look for CLI binary in target directory
-    let base_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .unwrap_or_else(|_| std::env::current_dir().unwrap().to_string_lossy().to_string());
+    let base_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| {
+        std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .to_string()
+    });
 
-    let debug_path = PathBuf::from(&base_dir)
-        .join("../../target/debug/cru");
-    let release_path = PathBuf::from(&base_dir)
-        .join("../../target/release/cru");
+    let debug_path = PathBuf::from(&base_dir).join("../../target/debug/cru");
+    let release_path = PathBuf::from(&base_dir).join("../../target/release/cru");
 
     if debug_path.exists() {
         debug_path
@@ -43,7 +39,8 @@ async fn run_cli_command(args: Vec<&str>, env_vars: Vec<(&str, &str)>) -> Result
         cmd.arg(arg);
     }
 
-    let output_result = timeout(Duration::from_secs(30), cmd.output()).await
+    let output_result = timeout(Duration::from_secs(30), cmd.output())
+        .await
         .map_err(|_| anyhow::anyhow!("Command timed out"))?;
 
     let output = output_result.map_err(|e| anyhow::anyhow!("Command execution failed: {}", e))?;
@@ -75,11 +72,20 @@ async fn create_test_vault() -> Result<TempDir> {
 
     // Create sample markdown files
     let test_files = vec![
-        ("Getting Started.md", "# Getting Started\n\nThis is a getting started guide for the vault."),
-        ("Project Architecture.md", "# Project Architecture\n\nThis document describes the architecture."),
+        (
+            "Getting Started.md",
+            "# Getting Started\n\nThis is a getting started guide for the vault.",
+        ),
+        (
+            "Project Architecture.md",
+            "# Project Architecture\n\nThis document describes the architecture.",
+        ),
         ("Testing Notes.md", "# Testing\n\nSome testing notes here."),
         ("README.md", "# README\n\nThis is the main README file."),
-        ("Development.md", "# Development\n\nDevelopment documentation."),
+        (
+            "Development.md",
+            "# Development\n\nDevelopment documentation.",
+        ),
     ];
 
     for (filename, content) in test_files {
@@ -98,8 +104,12 @@ async fn test_basic_search_works_immediately() -> Result<()> {
     // WHEN: User performs basic search
     let result = run_cli_command(
         vec!["search", "getting"],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // THEN: Should return immediate basic results without daemon
     assert!(result.contains("Getting Started.md") || result.contains("basic"));
@@ -113,8 +123,9 @@ async fn test_search_without_vault_gives_helpful_error() -> Result<()> {
     // GIVEN: No vault path set (set to invalid path)
     let result = run_cli_command(
         vec!["search", "test"],
-        vec![("OBSIDIAN_VAULT_PATH", "/nonexistent/path")]
-    ).await;
+        vec![("OBSIDIAN_VAULT_PATH", "/nonexistent/path")],
+    )
+    .await;
 
     // WHEN: Search is attempted without vault
     // THEN: Should give helpful error message
@@ -141,8 +152,12 @@ async fn test_basic_search_with_options() -> Result<()> {
     // WHEN: User searches with limit option
     let result = run_cli_command(
         vec!["search", "development", "--limit", "2"],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // THEN: Should respect limit and find relevant files
     assert!(result.contains("Development.md"));
@@ -159,8 +174,12 @@ async fn test_search_json_output_format() -> Result<()> {
     // WHEN: User requests JSON output
     let result = run_cli_command(
         vec!["search", "test", "--format", "json"],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // THEN: Should return JSON formatted results
     let trimmed = result.trim_start();
@@ -178,8 +197,12 @@ async fn test_fuzzy_search_without_daemon() -> Result<()> {
     // WHEN: User performs fuzzy search
     let result = run_cli_command(
         vec!["fuzzy", "arch"],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // THEN: Should find relevant files using basic fuzzy matching
     assert!(result.contains("Project Architecture.md") || result.contains("matches"));
@@ -195,8 +218,12 @@ async fn test_stats_command_works_immediately() -> Result<()> {
     // WHEN: User requests vault statistics
     let result = run_cli_command(
         vec!["stats"],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // THEN: Should show kiln statistics immediately
     assert!(result.contains("total_documents") || result.contains("files"));
@@ -248,11 +275,19 @@ async fn test_invalid_command_gives_helpful_error() -> Result<()> {
     // THEN: Should give helpful error message
     match result {
         Ok(output) => {
-            assert!(output.contains("error") || output.contains("usage") || output.contains("unrecognized"));
+            assert!(
+                output.contains("error")
+                    || output.contains("usage")
+                    || output.contains("unrecognized")
+            );
         }
         Err(e) => {
             let error_msg = e.to_string();
-            assert!(error_msg.contains("error") || error_msg.contains("usage") || error_msg.contains("unrecognized"));
+            assert!(
+                error_msg.contains("error")
+                    || error_msg.contains("usage")
+                    || error_msg.contains("unrecognized")
+            );
         }
     }
 
@@ -267,8 +302,12 @@ async fn test_search_empty_query_shows_help() -> Result<()> {
     // WHEN: User searches with empty query
     let result = run_cli_command_allow_failure(
         vec!["search", ""],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // THEN: Should show validation error about empty query
     assert!(result.contains("empty") || result.contains("query") || result.contains("help"));
@@ -277,7 +316,10 @@ async fn test_search_empty_query_shows_help() -> Result<()> {
 }
 
 /// Helper to run CLI command and allow failure (captures error output)
-async fn run_cli_command_allow_failure(args: Vec<&str>, env_vars: Vec<(&str, &str)>) -> Result<String> {
+async fn run_cli_command_allow_failure(
+    args: Vec<&str>,
+    env_vars: Vec<(&str, &str)>,
+) -> Result<String> {
     let binary_path = cli_binary_path();
     let mut cmd = Command::new(binary_path);
 
@@ -290,7 +332,8 @@ async fn run_cli_command_allow_failure(args: Vec<&str>, env_vars: Vec<(&str, &st
         cmd.arg(arg);
     }
 
-    let output_result = timeout(Duration::from_secs(30), cmd.output()).await
+    let output_result = timeout(Duration::from_secs(30), cmd.output())
+        .await
         .map_err(|_| anyhow::anyhow!("Command timed out"))?;
 
     let output = output_result.map_err(|e| anyhow::anyhow!("Command execution failed: {}", e))?;
@@ -315,14 +358,19 @@ async fn test_search_with_unicode_content() -> Result<()> {
 
     // Create file with unicode content
     let unicode_file = vault_dir.path().join("unicode-test.md");
-    let unicode_content = "# Unicode Test\n\nTest with emoji 🚀 and special chars: café, résumé, naïve";
+    let unicode_content =
+        "# Unicode Test\n\nTest with emoji 🚀 and special chars: café, résumé, naïve";
     std::fs::write(&unicode_file, unicode_content)?;
 
     // WHEN: User searches for unicode terms
     let result = run_cli_command(
         vec!["search", "café"],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // THEN: Should find unicode content
     assert!(result.contains("unicode-test.md") || result.contains("matches"));
@@ -342,8 +390,12 @@ async fn test_search_query_too_short_1_character_fails() -> Result<()> {
     // WHEN: User searches with 1-character query (below MIN_QUERY_LENGTH of 2)
     let result = run_cli_command_allow_failure(
         vec!["search", "a"],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // THEN: Should fail with specific error message about query being too short
     assert!(result.contains("Search query too short") || result.contains("too short"));
@@ -365,11 +417,19 @@ async fn test_search_query_at_minimum_length_2_characters_passes() -> Result<()>
     // WHEN: User searches with 2-character query (at MIN_QUERY_LENGTH)
     let result = run_cli_command(
         vec!["search", "ab"],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // THEN: Should pass and find the content
-    assert!(result.contains("boundary-test.md") || result.contains("Found") || result.contains("matches"));
+    assert!(
+        result.contains("boundary-test.md")
+            || result.contains("Found")
+            || result.contains("matches")
+    );
 
     Ok(())
 }
@@ -382,16 +442,27 @@ async fn test_search_query_near_max_length_999_characters_passes() -> Result<()>
     // Create a file with a long unique string
     let long_query = "x".repeat(999); // 999 characters (below MAX_QUERY_LENGTH of 1000)
     let test_file = vault_dir.path().join("long-query-test.md");
-    std::fs::write(&test_file, format!("# Long Query Test\n\nThis file contains: {}", long_query))?;
+    std::fs::write(
+        &test_file,
+        format!("# Long Query Test\n\nThis file contains: {}", long_query),
+    )?;
 
     // WHEN: User searches with 999-character query
     let result = run_cli_command(
         vec!["search", &long_query],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // THEN: Should pass and find the content
-    assert!(result.contains("long-query-test.md") || result.contains("Found") || result.contains("matches"));
+    assert!(
+        result.contains("long-query-test.md")
+            || result.contains("Found")
+            || result.contains("matches")
+    );
 
     Ok(())
 }
@@ -404,16 +475,27 @@ async fn test_search_query_at_max_length_1000_characters_passes() -> Result<()> 
     // Create a file with a very long unique string
     let max_query = "y".repeat(1000); // 1000 characters (at MAX_QUERY_LENGTH)
     let test_file = vault_dir.path().join("max-query-test.md");
-    std::fs::write(&test_file, format!("# Max Query Test\n\nThis file contains: {}", max_query))?;
+    std::fs::write(
+        &test_file,
+        format!("# Max Query Test\n\nThis file contains: {}", max_query),
+    )?;
 
     // WHEN: User searches with 1000-character query
     let result = run_cli_command(
         vec!["search", &max_query],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // THEN: Should pass and find the content
-    assert!(result.contains("max-query-test.md") || result.contains("Found") || result.contains("matches"));
+    assert!(
+        result.contains("max-query-test.md")
+            || result.contains("Found")
+            || result.contains("matches")
+    );
 
     Ok(())
 }
@@ -427,8 +509,12 @@ async fn test_search_query_too_long_1001_characters_fails() -> Result<()> {
     let too_long_query = "z".repeat(1001); // 1001 characters (above MAX_QUERY_LENGTH)
     let result = run_cli_command_allow_failure(
         vec!["search", &too_long_query],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // THEN: Should fail with specific error message about query being too long
     assert!(result.contains("Search query too long") || result.contains("too long"));
@@ -449,9 +535,20 @@ async fn test_semantic_search_model_specific_filtering() -> Result<()> {
 
     // WHEN: User performs semantic search with specific model filtering
     let result = run_cli_command_allow_failure(
-        vec!["semantic", "machine learning", "--embedding-model", "local-standard", "--top-k", "5"],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![
+            "semantic",
+            "machine learning",
+            "--embedding-model",
+            "local-standard",
+            "--top-k",
+            "5",
+        ],
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // Print actual result for debugging
     println!("ACTUAL RESULT: {}", result);
@@ -476,9 +573,18 @@ async fn test_semantic_search_with_invalid_model_fails() -> Result<()> {
 
     // WHEN: User performs semantic search with invalid embedding model
     let result = run_cli_command_allow_failure(
-        vec!["semantic", "test query", "--embedding-model", "invalid-model-name"],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![
+            "semantic",
+            "test query",
+            "--embedding-model",
+            "invalid-model-name",
+        ],
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // THEN: Should fail with specific error about invalid model
     // This test FAILS because model validation is not implemented
@@ -501,9 +607,18 @@ async fn test_semantic_search_query_embedding_generation() -> Result<()> {
 
     // WHEN: User performs semantic search with query that should match semantically
     let result = run_cli_command_allow_failure(
-        vec!["semantic", "neural networks and AI", "--embedding-model", "local-standard"],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![
+            "semantic",
+            "neural networks and AI",
+            "--embedding-model",
+            "local-standard",
+        ],
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // THEN: Should find semantically related content, not just keyword matches
     // This test FAILS because real query embedding generation is not implemented
@@ -525,7 +640,8 @@ async fn test_semantic_search_mixed_model_handling() -> Result<()> {
 
     // Create multiple files with different content types
     let ai_file = vault_dir.path().join("ai-research.md");
-    let ai_content = "# AI Research\n\nMachine learning algorithms and neural network architectures.";
+    let ai_content =
+        "# AI Research\n\nMachine learning algorithms and neural network architectures.";
     std::fs::write(&ai_file, ai_content)?;
 
     let simple_file = vault_dir.path().join("simple-notes.md");
@@ -535,21 +651,31 @@ async fn test_semantic_search_mixed_model_handling() -> Result<()> {
     // WHEN: User performs semantic search when documents have different embedding models
     let result = run_cli_command_allow_failure(
         vec!["semantic", "machine learning algorithms", "--top-k", "10"],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // Print actual result for debugging
     println!("MIXED MODEL TEST RESULT: {}", result);
 
     // THEN: Should handle mixed embedding models gracefully
     // This test FAILS because mixed model handling is not implemented
-    assert!(result.contains("model") || result.contains("embedding") || result.contains("semantic"),
-           "Expected to see model or embedding information in mixed model search, but got: {}", result);
+    assert!(
+        result.contains("model") || result.contains("embedding") || result.contains("semantic"),
+        "Expected to see model or embedding information in mixed model search, but got: {}",
+        result
+    );
 
     // Should find AI-research.md with higher semantic similarity than simple-notes.md
     if result.contains("ai-research.md") {
-        assert!(result.contains("similarity") || result.contains("score"),
-               "Expected to see similarity scores for AI-research.md, but got: {}", result);
+        assert!(
+            result.contains("similarity") || result.contains("score"),
+            "Expected to see similarity scores for AI-research.md, but got: {}",
+            result
+        );
     }
 
     Ok(())
@@ -567,14 +693,36 @@ async fn test_semantic_search_embedding_model_consistency() -> Result<()> {
 
     // WHEN: User searches with same model type twice, should get consistent results
     let result1 = run_cli_command_allow_failure(
-        vec!["semantic", "supervised learning algorithms", "--embedding-model", "local-standard", "--format", "json"],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![
+            "semantic",
+            "supervised learning algorithms",
+            "--embedding-model",
+            "local-standard",
+            "--format",
+            "json",
+        ],
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     let result2 = run_cli_command_allow_failure(
-        vec!["semantic", "supervised learning algorithms", "--embedding-model", "local-standard", "--format", "json"],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![
+            "semantic",
+            "supervised learning algorithms",
+            "--embedding-model",
+            "local-standard",
+            "--format",
+            "json",
+        ],
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // Print actual results for debugging
     println!("CONSISTENCY TEST RESULT 1: {}", result1);
@@ -584,15 +732,23 @@ async fn test_semantic_search_embedding_model_consistency() -> Result<()> {
     // This test FAILS because embedding model consistency is not implemented
     // Since both requests fail with the same error, the test passes incorrectly
     // Let's strengthen this to actually require successful results
-    assert!(result1.contains("machine-learning.md") || result1.contains("error"),
-           "Expected result1 to contain machine-learning.md or error info, but got: {}", result1);
-    assert!(result2.contains("machine-learning.md") || result2.contains("error"),
-           "Expected result2 to contain machine-learning.md or error info, but got: {}", result2);
+    assert!(
+        result1.contains("machine-learning.md") || result1.contains("error"),
+        "Expected result1 to contain machine-learning.md or error info, but got: {}",
+        result1
+    );
+    assert!(
+        result2.contains("machine-learning.md") || result2.contains("error"),
+        "Expected result2 to contain machine-learning.md or error info, but got: {}",
+        result2
+    );
 
     // If we get actual results (not errors), they should have scores
     if !result1.contains("error") && !result2.contains("error") {
-        assert!(result1.contains("score") && result2.contains("score"),
-               "Expected both successful results to contain similarity scores");
+        assert!(
+            result1.contains("score") && result2.contains("score"),
+            "Expected both successful results to contain similarity scores"
+        );
     }
 
     Ok(())
@@ -606,8 +762,12 @@ async fn test_semantic_search_model_dimension_mismatch_handling() -> Result<()> 
     // WHEN: User searches with a model that has different dimensions than stored embeddings
     let result = run_cli_command_allow_failure(
         vec!["semantic", "test query", "--embedding-model", "local-mini"], // 256 dimensions
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // THEN: Should handle dimension mismatch gracefully or convert appropriately
     // This test FAILS because dimension mismatch handling is not implemented
@@ -617,7 +777,9 @@ async fn test_semantic_search_model_dimension_mismatch_handling() -> Result<()> 
     // 3. Only search embeddings with matching dimensions
 
     if result.contains("error") || result.contains("failed") {
-        assert!(result.contains("dimension") || result.contains("size") || result.contains("mismatch"));
+        assert!(
+            result.contains("dimension") || result.contains("size") || result.contains("mismatch")
+        );
     } else {
         // If it succeeds, should have handled the dimension issue
         assert!(result.contains("semantic") || result.contains("results"));
@@ -642,9 +804,20 @@ async fn test_semantic_search_real_embedding_integration() -> Result<()> {
 
     // WHEN: User performs semantic search with conceptually related but keyword-different query
     let result = run_cli_command_allow_failure(
-        vec!["semantic", "AI and neural network models", "--embedding-model", "local-standard", "--top-k", "5"],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![
+            "semantic",
+            "AI and neural network models",
+            "--embedding-model",
+            "local-standard",
+            "--top-k",
+            "5",
+        ],
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     // Print actual result for debugging
     println!("REAL EMBEDDING TEST RESULT: {}", result);
@@ -657,12 +830,18 @@ async fn test_semantic_search_real_embedding_integration() -> Result<()> {
     let found_tutorial = result.contains("tutorial.md");
 
     // Should show similarity scores indicating semantic relevance
-    assert!(result.contains("similarity") || result.contains("score"),
-           "Expected semantic search to show similarity scores, but got: {}", result);
+    assert!(
+        result.contains("similarity") || result.contains("score"),
+        "Expected semantic search to show similarity scores, but got: {}",
+        result
+    );
 
     // Should find semantically related documents
-    assert!(found_research || found_tutorial,
-           "Expected to find research-paper.md or tutorial.md, but got: {}", result);
+    assert!(
+        found_research || found_tutorial,
+        "Expected to find research-paper.md or tutorial.md, but got: {}",
+        result
+    );
 
     Ok(())
 }
@@ -675,7 +854,10 @@ async fn test_semantic_search_performance_validation() -> Result<()> {
     // Create several documents to test search performance
     for i in 1..=5 {
         let file_path = vault_dir.path().join(format!("doc-{}.md", i));
-        let content = format!("# Document {}\n\nContent for document number {} with various topics and information.", i, i);
+        let content = format!(
+            "# Document {}\n\nContent for document number {} with various topics and information.",
+            i, i
+        );
         std::fs::write(&file_path, content)?;
     }
 
@@ -683,27 +865,52 @@ async fn test_semantic_search_performance_validation() -> Result<()> {
     let start_time = std::time::Instant::now();
 
     let result = run_cli_command_allow_failure(
-        vec!["semantic", "find documents", "--embedding-model", "local-standard"],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())]
-    ).await?;
+        vec![
+            "semantic",
+            "find documents",
+            "--embedding-model",
+            "local-standard",
+        ],
+        vec![(
+            "OBSIDIAN_VAULT_PATH",
+            vault_dir.path().to_string_lossy().as_ref(),
+        )],
+    )
+    .await?;
 
     let duration = start_time.elapsed();
 
     // THEN: Search should complete in reasonable time (< 10 seconds)
     // This test FAILS if semantic search is too slow or not implemented
-    assert!(duration.as_secs() < 10, "Semantic search took too long: {:?} seconds", duration);
+    assert!(
+        duration.as_secs() < 10,
+        "Semantic search took too long: {:?} seconds",
+        duration
+    );
 
     // Print actual result for debugging
     println!("PERFORMANCE TEST RESULT: {}", result);
 
     // Should complete successfully and show results
     if result.contains("results") || result.contains("found") {
-        assert!(duration.as_secs() < 5, "Even with results, semantic search should be fast: {:?} seconds", duration);
+        assert!(
+            duration.as_secs() < 5,
+            "Even with results, semantic search should be fast: {:?} seconds",
+            duration
+        );
     } else {
         // If no results found, still should have completed in reasonable time
-        assert!(duration.as_secs() < 10, "Search completed but found no results: {}", result);
+        assert!(
+            duration.as_secs() < 10,
+            "Search completed but found no results: {}",
+            result
+        );
         // Should NOT fail with configuration errors - that would indicate missing functionality
-        assert!(!result.contains("Configuration error"), "Search should not fail with config errors, but got: {}", result);
+        assert!(
+            !result.contains("Configuration error"),
+            "Search should not fail with config errors, but got: {}",
+            result
+        );
     }
 
     Ok(())
@@ -715,10 +922,7 @@ async fn test_semantic_search_model_feature_availability() -> Result<()> {
     let vault_dir = create_test_vault().await?;
 
     // WHEN: User requests help for semantic search to see available models
-    let result = run_cli_command_allow_failure(
-        vec!["semantic", "--help"],
-        vec![]
-    ).await?;
+    let result = run_cli_command_allow_failure(vec!["semantic", "--help"], vec![]).await?;
 
     // THEN: Should show available embedding models and model-related options
     // This test FAILS because model feature documentation is not implemented
@@ -727,8 +931,17 @@ async fn test_semantic_search_model_feature_availability() -> Result<()> {
 
     // Should show model-specific options
     if result.contains("--model") {
-        assert!(result.contains("local-mini") || result.contains("local-standard") || result.contains("local-large"));
+        assert!(
+            result.contains("local-mini")
+                || result.contains("local-standard")
+                || result.contains("local-large")
+        );
     }
 
     Ok(())
 }
+use anyhow::Result;
+use std::path::PathBuf;
+use tempfile::TempDir;
+use tokio::process::Command;
+use tokio::time::{timeout, Duration};

@@ -10,7 +10,7 @@ use tokio::sync::RwLock;
 use tracing::info;
 
 // Import local types from coordinator
-use super::coordinator::{ServiceStatus, ServiceHealth};
+use super::coordinator::{ServiceHealth, ServiceStatus};
 
 /// Simplified service manager for coordinating data layer services
 #[derive(Clone)]
@@ -37,7 +37,10 @@ impl ServiceManager {
         info!("Registering service: {}", name);
 
         let mut services = self.services.write().await;
-        services.insert(name.to_string(), service.clone() as Arc<dyn std::any::Any + Send + Sync>);
+        services.insert(
+            name.to_string(),
+            service.clone() as Arc<dyn std::any::Any + Send + Sync>,
+        );
 
         Ok(())
     }
@@ -48,9 +51,9 @@ impl ServiceManager {
         T: Send + Sync + 'static,
     {
         let services = self.services.read().await;
-        services.get(name).and_then(|s| {
-            s.clone().downcast::<T>().ok()
-        })
+        services
+            .get(name)
+            .and_then(|s| s.clone().downcast::<T>().ok())
     }
 
     /// List all registered services
@@ -77,12 +80,15 @@ impl ServiceManager {
         let mut health_map = HashMap::new();
 
         for service_name in services.keys() {
-            health_map.insert(service_name.clone(), ServiceHealth {
-                status: ServiceStatus::Healthy,
-                message: Some("Service is running".to_string()),
-                last_check: chrono::Utc::now(),
-                details: HashMap::new(),
-            });
+            health_map.insert(
+                service_name.clone(),
+                ServiceHealth {
+                    status: ServiceStatus::Healthy,
+                    message: Some("Service is running".to_string()),
+                    last_check: chrono::Utc::now(),
+                    details: HashMap::new(),
+                },
+            );
         }
 
         Ok(health_map)
@@ -142,12 +148,16 @@ impl SimpleFileService {
 impl FileService for SimpleFileService {
     async fn read_file(&self, path: &str) -> Result<String> {
         let full_path = self.base_path.join(path);
-        tokio::fs::read_to_string(full_path).await.map_err(Into::into)
+        tokio::fs::read_to_string(full_path)
+            .await
+            .map_err(Into::into)
     }
 
     async fn write_file(&self, path: &str, content: &str) -> Result<()> {
         let full_path = self.base_path.join(path);
-        tokio::fs::write(full_path, content).await.map_err(Into::into)
+        tokio::fs::write(full_path, content)
+            .await
+            .map_err(Into::into)
     }
 
     async fn delete_file(&self, path: &str) -> Result<()> {
@@ -219,10 +229,16 @@ impl EventService for SimpleEventService {
 
     async fn subscribe(&self, pattern: &str) -> Result<String> {
         let subscription_id = uuid::Uuid::new_v4().to_string();
-        info!("Subscribing to pattern '{}' with ID: {}", pattern, subscription_id);
+        info!(
+            "Subscribing to pattern '{}' with ID: {}",
+            pattern, subscription_id
+        );
 
         let mut subscribers = self.subscribers.write().await;
-        subscribers.entry(pattern.to_string()).or_insert_with(Vec::new).push(subscription_id.clone());
+        subscribers
+            .entry(pattern.to_string())
+            .or_insert_with(Vec::new)
+            .push(subscription_id.clone());
 
         Ok(subscription_id)
     }

@@ -126,7 +126,7 @@ SELECT title, tags FROM notes WHERE tags CONTAINS '#project';
 
 - **Core**: Rust + Tauri + ScriptEngine Services
 - **Frontend**: Svelte 5 + TypeScript
-- **Database**: SurrealDB + DuckDB with vector extensions
+- **Database**: SurrealDB with vector extensions
 - **Scripting**: Rune with security sandboxing
 - **CRDT**: Yrs for real-time collaboration
 - **CLI**: Clap-based with interactive REPL

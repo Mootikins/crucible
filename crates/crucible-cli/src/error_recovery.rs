@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-use crucible_llm::embeddings::error::EmbeddingError;
 use crate::config::CliConfig;
+use crucible_llm::embeddings::error::EmbeddingError;
 
 /// Circuit breaker state for preventing cascading failures
 #[derive(Debug, Clone, PartialEq)]
@@ -125,7 +125,10 @@ impl CircuitBreaker {
                     drop(state);
                     *self.state.write().await = CircuitState::Open;
                     *self.last_failure_time.write().await = Some(Instant::now());
-                    warn!("Circuit breaker opened after {} consecutive failures", *failure_count);
+                    warn!(
+                        "Circuit breaker opened after {} consecutive failures",
+                        *failure_count
+                    );
                 }
             }
             CircuitState::HalfOpen => {
@@ -250,8 +253,14 @@ impl ServiceHealthMonitor {
 
     pub async fn update_health(&self, service: &str, health: ServiceHealth) {
         debug!("Updating health for service '{}': {:?}", service, health);
-        self.health_status.write().await.insert(service.to_string(), health);
-        self.last_check.write().await.insert(service.to_string(), Instant::now());
+        self.health_status
+            .write()
+            .await
+            .insert(service.to_string(), health);
+        self.last_check
+            .write()
+            .await
+            .insert(service.to_string(), Instant::now());
     }
 
     pub async fn get_health(&self, service: &str) -> ServiceHealth {
@@ -264,7 +273,10 @@ impl ServiceHealthMonitor {
     }
 
     pub async fn is_healthy(&self, service: &str) -> bool {
-        matches!(self.get_health(service).await, ServiceHealth::Healthy | ServiceHealth::Degraded)
+        matches!(
+            self.get_health(service).await,
+            ServiceHealth::Healthy | ServiceHealth::Degraded
+        )
     }
 
     pub async fn get_all_health(&self) -> HashMap<String, ServiceHealth> {
@@ -320,10 +332,7 @@ impl Default for SearchFallbackConfig {
 }
 
 impl SearchFallbackManager {
-    pub fn new(
-        config: SearchFallbackConfig,
-        health_monitor: Arc<ServiceHealthMonitor>,
-    ) -> Self {
+    pub fn new(config: SearchFallbackConfig, health_monitor: Arc<ServiceHealthMonitor>) -> Self {
         Self {
             config,
             health_monitor,
@@ -348,11 +357,15 @@ impl SearchFallbackManager {
         search_fn: F,
     ) -> Result<(T, SearchStrategy)>
     where
-        F: Fn(SearchStrategy) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T>> + Send>>,
+        F: Fn(
+            SearchStrategy,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T>> + Send>>,
     {
         if !self.config.enabled {
             // Fallback disabled, try the first strategy only
-            return search_fn(strategies[0].clone()).await.map(|result| (result, strategies[0].clone()));
+            return search_fn(strategies[0].clone())
+                .await
+                .map(|result| (result, strategies[0].clone()));
         }
 
         let mut last_error = None;
@@ -371,13 +384,19 @@ impl SearchFallbackManager {
 
             // Check circuit breaker
             if !circuit_breaker.is_request_allowed().await {
-                warn!("Circuit breaker is open for service '{}', skipping strategy: {:?}", service_name, strategy);
+                warn!(
+                    "Circuit breaker is open for service '{}', skipping strategy: {:?}",
+                    service_name, strategy
+                );
                 continue;
             }
 
             // Check service health
             if !self.health_monitor.is_healthy(&service_name).await {
-                warn!("Service '{}' is unhealthy, skipping strategy: {:?}", service_name, strategy);
+                warn!(
+                    "Service '{}' is unhealthy, skipping strategy: {:?}",
+                    service_name, strategy
+                );
                 continue;
             }
 
@@ -385,7 +404,9 @@ impl SearchFallbackManager {
                 Ok(result) => {
                     info!("Search succeeded with strategy: {:?}", strategy);
                     circuit_breaker.record_success().await;
-                    self.health_monitor.update_health(&service_name, ServiceHealth::Healthy).await;
+                    self.health_monitor
+                        .update_health(&service_name, ServiceHealth::Healthy)
+                        .await;
                     return Ok((result, strategy.clone()));
                 }
                 Err(error) => {
@@ -396,9 +417,13 @@ impl SearchFallbackManager {
 
                     // Update service health based on error type
                     if is_temporary {
-                        self.health_monitor.update_health(&service_name, ServiceHealth::Degraded).await;
+                        self.health_monitor
+                            .update_health(&service_name, ServiceHealth::Degraded)
+                            .await;
                     } else {
-                        self.health_monitor.update_health(&service_name, ServiceHealth::Unhealthy).await;
+                        self.health_monitor
+                            .update_health(&service_name, ServiceHealth::Unhealthy)
+                            .await;
                     }
                 }
             }
@@ -439,8 +464,10 @@ impl SearchFallbackManager {
             let circuit_allowed = circuit_breaker.is_request_allowed().await;
 
             // For unknown health, assume healthy (conservative approach)
-            let service_healthy = !matches!(self.health_monitor.get_health(&service_name).await,
-                                         ServiceHealth::Unhealthy);
+            let service_healthy = !matches!(
+                self.health_monitor.get_health(&service_name).await,
+                ServiceHealth::Unhealthy
+            );
 
             if circuit_allowed && service_healthy {
                 available.push(strategy.clone());
@@ -511,8 +538,13 @@ pub fn is_embedding_error_retryable(error: &EmbeddingError) -> bool {
         EmbeddingError::RateLimitExceeded { .. } => true,
         EmbeddingError::HttpError(http_err) => {
             // Network errors and 5xx server errors are retryable
-            http_err.is_timeout() || http_err.is_connect() || http_err.is_request()
-                || http_err.status().map(|s| s.is_server_error()).unwrap_or(false)
+            http_err.is_timeout()
+                || http_err.is_connect()
+                || http_err.is_request()
+                || http_err
+                    .status()
+                    .map(|s| s.is_server_error())
+                    .unwrap_or(false)
         }
         _ => false,
     }
@@ -577,15 +609,28 @@ mod tests {
     async fn test_service_health_monitor() {
         let monitor = ServiceHealthMonitor::new();
 
-        assert_eq!(monitor.get_health("test_service").await, ServiceHealth::Unknown);
+        assert_eq!(
+            monitor.get_health("test_service").await,
+            ServiceHealth::Unknown
+        );
         assert!(!monitor.is_healthy("test_service").await);
 
-        monitor.update_health("test_service", ServiceHealth::Healthy).await;
-        assert_eq!(monitor.get_health("test_service").await, ServiceHealth::Healthy);
+        monitor
+            .update_health("test_service", ServiceHealth::Healthy)
+            .await;
+        assert_eq!(
+            monitor.get_health("test_service").await,
+            ServiceHealth::Healthy
+        );
         assert!(monitor.is_healthy("test_service").await);
 
-        monitor.update_health("test_service", ServiceHealth::Unhealthy).await;
-        assert_eq!(monitor.get_health("test_service").await, ServiceHealth::Unhealthy);
+        monitor
+            .update_health("test_service", ServiceHealth::Unhealthy)
+            .await;
+        assert_eq!(
+            monitor.get_health("test_service").await,
+            ServiceHealth::Unhealthy
+        );
         assert!(!monitor.is_healthy("test_service").await);
     }
 
@@ -600,7 +645,9 @@ mod tests {
         assert!(!available.is_empty());
 
         // Mark embedding service as unhealthy
-        health_monitor.update_health("embedding_service", ServiceHealth::Unhealthy).await;
+        health_monitor
+            .update_health("embedding_service", ServiceHealth::Unhealthy)
+            .await;
         let available = fallback_manager.get_available_strategies().await;
 
         // Should still have other strategies available
@@ -612,7 +659,9 @@ mod tests {
     fn test_embedding_error_retryable() {
         let retryable_errors = vec![
             EmbeddingError::Timeout { timeout_secs: 30 },
-            EmbeddingError::RateLimitExceeded { retry_after_secs: 60 },
+            EmbeddingError::RateLimitExceeded {
+                retry_after_secs: 60,
+            },
         ];
 
         let non_retryable_errors = vec![
@@ -622,15 +671,29 @@ mod tests {
         ];
 
         for error in retryable_errors {
-            assert!(is_embedding_error_retryable(&error), "Error should be retryable: {:?}", error);
-            assert!(get_embedding_error_retry_delay(&error).is_some(),
-                   "Retryable error should have delay: {:?}", error);
+            assert!(
+                is_embedding_error_retryable(&error),
+                "Error should be retryable: {:?}",
+                error
+            );
+            assert!(
+                get_embedding_error_retry_delay(&error).is_some(),
+                "Retryable error should have delay: {:?}",
+                error
+            );
         }
 
         for error in non_retryable_errors {
-            assert!(!is_embedding_error_retryable(&error), "Error should not be retryable: {:?}", error);
-            assert!(get_embedding_error_retry_delay(&error).is_none(),
-                   "Non-retryable error should not have delay: {:?}", error);
+            assert!(
+                !is_embedding_error_retryable(&error),
+                "Error should not be retryable: {:?}",
+                error
+            );
+            assert!(
+                get_embedding_error_retry_delay(&error).is_none(),
+                "Non-retryable error should not have delay: {:?}",
+                error
+            );
         }
     }
 }

@@ -1,17 +1,17 @@
-pub mod search;
+pub mod chat;
+pub mod config;
+pub mod daemon;
 pub mod fuzzy;
-pub mod semantic;
+pub mod migration;
 pub mod note;
+pub mod repl;
+pub mod rune;
+pub mod search;
+pub mod secure_filesystem;
+pub mod semantic;
+pub mod service;
 pub mod stats;
 pub mod test_tools;
-pub mod rune;
-pub mod config;
-pub mod chat;
-pub mod repl;
-pub mod service;
-pub mod daemon;
-pub mod migration;
-pub mod secure_filesystem;
 // pub mod enhanced_chat; // Temporarily disabled due to compilation issues
 // pub mod enhanced_chat_session; // Temporarily disabled due to compilation issues
 // pub mod performance_tracker; // Temporarily disabled due to compilation issues

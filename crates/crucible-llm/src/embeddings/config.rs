@@ -73,22 +73,22 @@ impl ProviderType {
 pub struct EmbeddingConfig {
     /// Provider type (ollama, openai)
     pub provider: ProviderType,
-    
+
     /// API endpoint URL
     pub endpoint: String,
-    
+
     /// API key (optional, required for some providers)
     pub api_key: Option<String>,
-    
+
     /// Model name to use for embeddings
     pub model: String,
-    
+
     /// Request timeout in seconds
     pub timeout_secs: u64,
-    
+
     /// Maximum number of retry attempts
     pub max_retries: u32,
-    
+
     /// Batch size for bulk embedding operations
     pub batch_size: usize,
 }
@@ -96,8 +96,7 @@ pub struct EmbeddingConfig {
 impl EmbeddingConfig {
     /// Create configuration from environment variables
     pub fn from_env() -> EmbeddingResult<Self> {
-        let provider_str = env::var("EMBEDDING_PROVIDER")
-            .unwrap_or_else(|_| "ollama".to_string());
+        let provider_str = env::var("EMBEDDING_PROVIDER").unwrap_or_else(|_| "ollama".to_string());
 
         let provider = ProviderType::from_str(&provider_str)?;
 
@@ -106,24 +105,24 @@ impl EmbeddingConfig {
 
         let api_key = env::var("EMBEDDING_API_KEY").ok();
 
-        let model = env::var("EMBEDDING_MODEL")
-            .unwrap_or_else(|_| provider.default_model().to_string());
-        
+        let model =
+            env::var("EMBEDDING_MODEL").unwrap_or_else(|_| provider.default_model().to_string());
+
         let timeout_secs = env::var("EMBEDDING_TIMEOUT_SECS")
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(30);
-        
+
         let max_retries = env::var("EMBEDDING_MAX_RETRIES")
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(3);
-        
+
         let batch_size = env::var("EMBEDDING_BATCH_SIZE")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(1);  // Default to 1 to avoid Ollama batch size issues
-        
+            .unwrap_or(1); // Default to 1 to avoid Ollama batch size issues
+
         let config = Self {
             provider,
             endpoint,
@@ -133,7 +132,7 @@ impl EmbeddingConfig {
             max_retries,
             batch_size,
         };
-        
+
         config.validate()?;
         Ok(config)
     }
@@ -147,7 +146,7 @@ impl EmbeddingConfig {
             model: model.unwrap_or_else(|| "nomic-embed-text".to_string()),
             timeout_secs: 30,
             max_retries: 3,
-            batch_size: 1,  // Process one file at a time to avoid Ollama batch size issues
+            batch_size: 1, // Process one file at a time to avoid Ollama batch size issues
         }
     }
 
@@ -171,9 +170,9 @@ impl EmbeddingConfig {
             endpoint: "local".to_string(),
             api_key: None,
             model: model.unwrap_or_else(|| "nomic-embed-text-v1.5".to_string()),
-            timeout_secs: 120,  // Longer timeout for local processing
-            max_retries: 1,     // Fewer retries for local processing
-            batch_size: 1,      // Conservative batch size for local processing
+            timeout_secs: 120, // Longer timeout for local processing
+            max_retries: 1,    // Fewer retries for local processing
+            batch_size: 1,     // Conservative batch size for local processing
         }
     }
 
@@ -194,28 +193,28 @@ impl EmbeddingConfig {
         // Validate endpoint URL
         if self.endpoint.is_empty() {
             return Err(EmbeddingError::ConfigError(
-                "Endpoint URL cannot be empty".to_string()
+                "Endpoint URL cannot be empty".to_string(),
             ));
         }
 
         // Validate model name
         if self.model.is_empty() {
             return Err(EmbeddingError::ConfigError(
-                "Model name cannot be empty".to_string()
+                "Model name cannot be empty".to_string(),
             ));
         }
 
         // Validate timeout
         if self.timeout_secs == 0 {
             return Err(EmbeddingError::ConfigError(
-                "Timeout must be greater than 0".to_string()
+                "Timeout must be greater than 0".to_string(),
             ));
         }
 
         // Validate batch size
         if self.batch_size == 0 {
             return Err(EmbeddingError::ConfigError(
-                "Batch size must be greater than 0".to_string()
+                "Batch size must be greater than 0".to_string(),
             ));
         }
 
@@ -257,27 +256,57 @@ mod tests {
 
     #[test]
     fn test_provider_type_from_str() {
-        assert_eq!(ProviderType::from_str("ollama").unwrap(), ProviderType::Ollama);
-        assert_eq!(ProviderType::from_str("Ollama").unwrap(), ProviderType::Ollama);
-        assert_eq!(ProviderType::from_str("OLLAMA").unwrap(), ProviderType::Ollama);
+        assert_eq!(
+            ProviderType::from_str("ollama").unwrap(),
+            ProviderType::Ollama
+        );
+        assert_eq!(
+            ProviderType::from_str("Ollama").unwrap(),
+            ProviderType::Ollama
+        );
+        assert_eq!(
+            ProviderType::from_str("OLLAMA").unwrap(),
+            ProviderType::Ollama
+        );
 
-        assert_eq!(ProviderType::from_str("openai").unwrap(), ProviderType::OpenAI);
-        assert_eq!(ProviderType::from_str("OpenAI").unwrap(), ProviderType::OpenAI);
-        assert_eq!(ProviderType::from_str("OPENAI").unwrap(), ProviderType::OpenAI);
+        assert_eq!(
+            ProviderType::from_str("openai").unwrap(),
+            ProviderType::OpenAI
+        );
+        assert_eq!(
+            ProviderType::from_str("OpenAI").unwrap(),
+            ProviderType::OpenAI
+        );
+        assert_eq!(
+            ProviderType::from_str("OPENAI").unwrap(),
+            ProviderType::OpenAI
+        );
 
         assert!(ProviderType::from_str("unknown").is_err());
         assert!(ProviderType::from_str("").is_err());
 
         // GREEN Phase: Test for Candle provider (should now pass)
-        assert_eq!(ProviderType::from_str("candle").unwrap(), ProviderType::Candle);
-        assert_eq!(ProviderType::from_str("Candle").unwrap(), ProviderType::Candle);
-        assert_eq!(ProviderType::from_str("CANDLE").unwrap(), ProviderType::Candle);
+        assert_eq!(
+            ProviderType::from_str("candle").unwrap(),
+            ProviderType::Candle
+        );
+        assert_eq!(
+            ProviderType::from_str("Candle").unwrap(),
+            ProviderType::Candle
+        );
+        assert_eq!(
+            ProviderType::from_str("CANDLE").unwrap(),
+            ProviderType::Candle
+        );
     }
 
     #[test]
     fn test_provider_defaults() {
         let ollama = ProviderType::Ollama;
-        assert_eq!(ollama.default_endpoint(), "https://llama.terminal.krohnos.io");
+        assert_eq!(
+            ollama.default_endpoint(),
+            "https://llama.terminal.krohnos.io"
+        );
         assert_eq!(ollama.default_model(), "nomic-embed-text");
         assert_eq!(ollama.default_dimensions(), 768);
         assert!(!ollama.requires_api_key());
@@ -408,10 +437,8 @@ mod tests {
         );
         assert_eq!(config.expected_dimensions(), 1536);
 
-        let config = EmbeddingConfig::openai(
-            "test-key".to_string(),
-            Some("unknown-model".to_string()),
-        );
+        let config =
+            EmbeddingConfig::openai("test-key".to_string(), Some("unknown-model".to_string()));
         assert_eq!(config.expected_dimensions(), 1536); // Default for OpenAI
     }
 
@@ -446,9 +473,18 @@ mod tests {
     // RED Phase: Candle-specific tests (will fail until implementation)
     #[test]
     fn test_candle_provider_from_str() {
-        assert_eq!(ProviderType::from_str("candle").unwrap(), ProviderType::Candle);
-        assert_eq!(ProviderType::from_str("Candle").unwrap(), ProviderType::Candle);
-        assert_eq!(ProviderType::from_str("CANDLE").unwrap(), ProviderType::Candle);
+        assert_eq!(
+            ProviderType::from_str("candle").unwrap(),
+            ProviderType::Candle
+        );
+        assert_eq!(
+            ProviderType::from_str("Candle").unwrap(),
+            ProviderType::Candle
+        );
+        assert_eq!(
+            ProviderType::from_str("CANDLE").unwrap(),
+            ProviderType::Candle
+        );
     }
 
     #[test]
@@ -495,7 +531,13 @@ mod tests {
 
         for (model, expected_dims) in models {
             let config = EmbeddingConfig::candle(None, Some(model.to_string()));
-            assert_eq!(config.expected_dimensions(), expected_dims, "Model {} should have {} dimensions", model, expected_dims);
+            assert_eq!(
+                config.expected_dimensions(),
+                expected_dims,
+                "Model {} should have {} dimensions",
+                model,
+                expected_dims
+            );
         }
 
         // Test unknown model defaults to 768

@@ -11,14 +11,14 @@ pub enum ProviderError {
     #[error("Unsupported provider type: {provider_type}")]
     UnsupportedType {
         /// The unsupported provider type that was requested
-        provider_type: String
+        provider_type: String,
     },
 
     /// Missing required configuration field.
     #[error("Missing required field: {field}")]
     MissingField {
         /// The name of the missing configuration field
-        field: String
+        field: String,
     },
 
     /// Invalid API key format.
@@ -29,7 +29,7 @@ pub enum ProviderError {
     #[error("Invalid model name: {model}")]
     InvalidModel {
         /// The invalid model name that was provided
-        model: String
+        model: String,
     },
 }
 
@@ -93,13 +93,24 @@ impl EmbeddingProviderConfig {
     }
 
     /// Create a new Candle embedding provider configuration.
-    pub fn candle(model: Option<String>, cache_dir: Option<String>, memory_mb: Option<u32>, device: Option<String>) -> Self {
+    pub fn candle(
+        model: Option<String>,
+        cache_dir: Option<String>,
+        memory_mb: Option<u32>,
+        device: Option<String>,
+    ) -> Self {
         let mut options = HashMap::new();
         if let Some(cache_dir) = cache_dir {
-            options.insert("model_cache_dir".to_string(), serde_json::Value::String(cache_dir));
+            options.insert(
+                "model_cache_dir".to_string(),
+                serde_json::Value::String(cache_dir),
+            );
         }
         if let Some(memory_mb) = memory_mb {
-            options.insert("memory_limit_mb".to_string(), serde_json::Value::Number(memory_mb.into()));
+            options.insert(
+                "memory_limit_mb".to_string(),
+                serde_json::Value::Number(memory_mb.into()),
+            );
         }
         if let Some(device) = device {
             options.insert("device".to_string(), serde_json::Value::String(device));

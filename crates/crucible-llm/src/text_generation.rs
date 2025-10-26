@@ -22,21 +22,27 @@ pub trait TextGenerationProvider: Send + Sync {
     type Config: Clone + Send + Sync;
 
     /// Generate a text completion
-    async fn generate_completion(&self, request: CompletionRequest) -> EmbeddingResult<CompletionResponse>;
+    async fn generate_completion(
+        &self,
+        request: CompletionRequest,
+    ) -> EmbeddingResult<CompletionResponse>;
 
     /// Generate a streaming text completion
     async fn generate_completion_stream(
         &self,
-        request: CompletionRequest
+        request: CompletionRequest,
     ) -> EmbeddingResult<tokio::sync::mpsc::UnboundedReceiver<CompletionChunk>>;
 
     /// Generate a chat completion
-    async fn generate_chat_completion(&self, request: ChatCompletionRequest) -> EmbeddingResult<ChatCompletionResponse>;
+    async fn generate_chat_completion(
+        &self,
+        request: ChatCompletionRequest,
+    ) -> EmbeddingResult<ChatCompletionResponse>;
 
     /// Generate a streaming chat completion
     async fn generate_chat_completion_stream(
         &self,
-        request: ChatCompletionRequest
+        request: ChatCompletionRequest,
     ) -> EmbeddingResult<tokio::sync::mpsc::UnboundedReceiver<ChatCompletionChunk>>;
 
     /// Get the provider name
@@ -512,7 +518,7 @@ pub enum ToolChoice {
         /// Tool type (typically "function")
         r#type: String,
         /// Function definition to use
-        function: FunctionDefinition
+        function: FunctionDefinition,
     },
 }
 
@@ -627,8 +633,12 @@ impl OpenAITextProvider {
             Self {
                 client: reqwest::Client::new(),
                 api_key: openai_config.api_key,
-                base_url: openai_config.base_url.unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
-                default_model: openai_config.default_model.unwrap_or_else(|| "gpt-3.5-turbo".to_string()),
+                base_url: openai_config
+                    .base_url
+                    .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
+                default_model: openai_config
+                    .default_model
+                    .unwrap_or_else(|| "gpt-3.5-turbo".to_string()),
                 timeout: Duration::from_secs(openai_config.timeout_secs.unwrap_or(60)),
             }
         } else {
@@ -641,27 +651,33 @@ impl OpenAITextProvider {
 impl TextGenerationProvider for OpenAITextProvider {
     type Config = TextProviderConfig;
 
-    async fn generate_completion(&self, _request: CompletionRequest) -> EmbeddingResult<CompletionResponse> {
+    async fn generate_completion(
+        &self,
+        _request: CompletionRequest,
+    ) -> EmbeddingResult<CompletionResponse> {
         // Implementation would go here
         todo!("OpenAI completion implementation")
     }
 
     async fn generate_completion_stream(
         &self,
-        _request: CompletionRequest
+        _request: CompletionRequest,
     ) -> EmbeddingResult<tokio::sync::mpsc::UnboundedReceiver<CompletionChunk>> {
         // Implementation would go here
         todo!("OpenAI streaming completion implementation")
     }
 
-    async fn generate_chat_completion(&self, _request: ChatCompletionRequest) -> EmbeddingResult<ChatCompletionResponse> {
+    async fn generate_chat_completion(
+        &self,
+        _request: ChatCompletionRequest,
+    ) -> EmbeddingResult<ChatCompletionResponse> {
         // Implementation would go here
         todo!("OpenAI chat completion implementation")
     }
 
     async fn generate_chat_completion_stream(
         &self,
-        _request: ChatCompletionRequest
+        _request: ChatCompletionRequest,
     ) -> EmbeddingResult<tokio::sync::mpsc::UnboundedReceiver<ChatCompletionChunk>> {
         // Implementation would go here
         todo!("OpenAI streaming chat completion implementation")
@@ -739,7 +755,9 @@ impl OllamaTextProvider {
             Self {
                 client: reqwest::Client::new(),
                 base_url: ollama_config.base_url,
-                default_model: ollama_config.default_model.unwrap_or_else(|| "llama2".to_string()),
+                default_model: ollama_config
+                    .default_model
+                    .unwrap_or_else(|| "llama2".to_string()),
                 timeout: Duration::from_secs(ollama_config.timeout_secs.unwrap_or(120)),
             }
         } else {
@@ -752,27 +770,33 @@ impl OllamaTextProvider {
 impl TextGenerationProvider for OllamaTextProvider {
     type Config = TextProviderConfig;
 
-    async fn generate_completion(&self, _request: CompletionRequest) -> EmbeddingResult<CompletionResponse> {
+    async fn generate_completion(
+        &self,
+        _request: CompletionRequest,
+    ) -> EmbeddingResult<CompletionResponse> {
         // Implementation would go here
         todo!("Ollama completion implementation")
     }
 
     async fn generate_completion_stream(
         &self,
-        _request: CompletionRequest
+        _request: CompletionRequest,
     ) -> EmbeddingResult<tokio::sync::mpsc::UnboundedReceiver<CompletionChunk>> {
         // Implementation would go here
         todo!("Ollama streaming completion implementation")
     }
 
-    async fn generate_chat_completion(&self, _request: ChatCompletionRequest) -> EmbeddingResult<ChatCompletionResponse> {
+    async fn generate_chat_completion(
+        &self,
+        _request: ChatCompletionRequest,
+    ) -> EmbeddingResult<ChatCompletionResponse> {
         // Implementation would go here
         todo!("Ollama chat completion implementation")
     }
 
     async fn generate_chat_completion_stream(
         &self,
-        _request: ChatCompletionRequest
+        _request: ChatCompletionRequest,
     ) -> EmbeddingResult<tokio::sync::mpsc::UnboundedReceiver<ChatCompletionChunk>> {
         // Implementation would go here
         todo!("Ollama streaming chat completion implementation")
@@ -826,14 +850,18 @@ pub struct OllamaConfig {
 }
 
 /// Factory function to create a text generation provider from configuration
-pub async fn create_text_provider(config: TextProviderConfig) -> EmbeddingResult<Box<dyn TextGenerationProvider<Config = TextProviderConfig>>> {
+pub async fn create_text_provider(
+    config: TextProviderConfig,
+) -> EmbeddingResult<Box<dyn TextGenerationProvider<Config = TextProviderConfig>>> {
     match config {
         TextProviderConfig::OpenAI(openai_config) => {
-            let provider = OpenAITextProvider::new(TextProviderConfig::OpenAI(openai_config.clone()));
+            let provider =
+                OpenAITextProvider::new(TextProviderConfig::OpenAI(openai_config.clone()));
             Ok(Box::new(provider))
         }
         TextProviderConfig::Ollama(ollama_config) => {
-            let provider = OllamaTextProvider::new(TextProviderConfig::Ollama(ollama_config.clone()));
+            let provider =
+                OllamaTextProvider::new(TextProviderConfig::Ollama(ollama_config.clone()));
             Ok(Box::new(provider))
         }
     }

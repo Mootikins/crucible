@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-
 /// Daemon configuration for data layer coordination
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaemonConfig {
@@ -465,7 +464,6 @@ pub enum BackupStorageType {
     GCS,
 }
 
-
 /// Performance configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerformanceConfig {
@@ -843,7 +841,11 @@ impl Default for MetadataExtractionConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            fields: vec!["size".to_string(), "modified".to_string(), "created".to_string()],
+            fields: vec![
+                "size".to_string(),
+                "modified".to_string(),
+                "created".to_string(),
+            ],
             calculate_checksums: false,
             checksum_algorithm: ChecksumAlgorithm::SHA256,
         }
@@ -948,7 +950,6 @@ impl Default for BackupStorageConfig {
         }
     }
 }
-
 
 impl Default for PerformanceConfig {
     fn default() -> Self {
@@ -1112,15 +1113,13 @@ impl DaemonConfig {
             let vault_path = std::path::PathBuf::from(vault_path);
 
             // Set up filesystem watching for the vault
-            config.filesystem.watch_paths.push(
-                WatchPath {
-                    path: vault_path.clone(),
-                    recursive: true,
-                    mode: WatchMode::All,
-                    filters: None,
-                    events: None,
-                }
-            );
+            config.filesystem.watch_paths.push(WatchPath {
+                path: vault_path.clone(),
+                recursive: true,
+                mode: WatchMode::All,
+                filters: None,
+                events: None,
+            });
 
             // Set database connection to use vault's .crucible directory
             // Use the same database path, namespace, and database as the CLI for consistency
@@ -1128,7 +1127,6 @@ impl DaemonConfig {
                 "file://{}/.crucible/embeddings.db/crucible/vault",
                 vault_path.display()
             );
-
         } else {
             // SECURITY: Require OBSIDIAN_VAULT_PATH to be set
             return Err(ConfigError::InvalidValue {
@@ -1140,7 +1138,10 @@ impl DaemonConfig {
         // Additional environment variables can be read here
         if let Ok(timeout) = std::env::var("CRUCIBLE_DAEMON_TIMEOUT") {
             if let Ok(timeout_secs) = timeout.parse::<u64>() {
-                config.health.checks.iter_mut()
+                config
+                    .health
+                    .checks
+                    .iter_mut()
                     .for_each(|check| check.timeout_seconds = timeout_secs);
             }
         }
@@ -1170,9 +1171,9 @@ impl DaemonConfig {
         if let Some(max_memory) = self.performance.limits.max_memory_bytes {
             if max_memory == 0 {
                 return Err(ConfigError::InvalidValue {
-                field: "max_memory_bytes".to_string(),
-                value: "0".to_string(),
-            });
+                    field: "max_memory_bytes".to_string(),
+                    value: "0".to_string(),
+                });
             }
         }
 

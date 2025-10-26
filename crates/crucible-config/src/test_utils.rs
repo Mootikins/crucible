@@ -1,8 +1,8 @@
 //! Test utilities for configuration testing.
 
 use crate::{
-    Config, ConfigLoader, DatabaseConfig,
-    EmbeddingProviderConfig, LoggingConfig, ProfileConfig, ServerConfig, Environment,
+    Config, ConfigLoader, DatabaseConfig, EmbeddingProviderConfig, Environment, LoggingConfig,
+    ProfileConfig, ServerConfig,
 };
 use std::collections::HashMap;
 use std::io::Write;
@@ -71,7 +71,7 @@ impl TestConfigBuilder {
 
     /// Add an in-memory SQLite database for testing.
     pub fn memory_database(self) -> Self {
-        use crate::{DatabaseType, DatabaseConfig};
+        use crate::{DatabaseConfig, DatabaseType};
         self.database(DatabaseConfig {
             db_type: DatabaseType::Sqlite,
             url: ":memory:".to_string(),
@@ -83,7 +83,7 @@ impl TestConfigBuilder {
 
     /// Add a file-based SQLite database for testing.
     pub fn file_database<S: Into<String>>(self, path: S) -> Self {
-        use crate::{DatabaseType, DatabaseConfig};
+        use crate::{DatabaseConfig, DatabaseType};
         self.database(DatabaseConfig {
             db_type: DatabaseType::Sqlite,
             url: path.into(),
@@ -156,7 +156,8 @@ impl TestConfig {
     /// Create a minimal test configuration.
     pub fn minimal() -> Config {
         let test_profile = ProfileConfig::new("test".to_string(), Environment::Test)
-            .setting("cache_enabled".to_string(), false).unwrap();
+            .setting("cache_enabled".to_string(), false)
+            .unwrap();
 
         TestConfigBuilder::new()
             .profile("test")
@@ -278,7 +279,10 @@ impl TestEnv {
     pub fn set_test_vars() -> HashMap<String, String> {
         let mut vars = HashMap::new();
         vars.insert("CRUCIBLE_PROFILE".to_string(), "test".to_string());
-        vars.insert("CRUCIBLE_EMBEDDING_API_KEY".to_string(), "test-key".to_string());
+        vars.insert(
+            "CRUCIBLE_EMBEDDING_API_KEY".to_string(),
+            "test-key".to_string(),
+        );
         vars.insert("CRUCIBLE_DATABASE_URL".to_string(), ":memory:".to_string());
         vars.insert("CRUCIBLE_SERVER_HOST".to_string(), "127.0.0.1".to_string());
         vars.insert("CRUCIBLE_SERVER_PORT".to_string(), "3000".to_string());
@@ -326,16 +330,19 @@ impl ConfigValidation {
         assert_eq!(config.profile, loaded_config.profile);
 
         // Compare embedding providers if they exist
-        match (config.embedding_provider(), loaded_config.embedding_provider()) {
+        match (
+            config.embedding_provider(),
+            loaded_config.embedding_provider(),
+        ) {
             (Ok(provider1), Ok(provider2)) => assert_eq!(provider1, provider2),
-            (Err(_), Err(_)) => {}, // Both errors - that's fine for comparison
+            (Err(_), Err(_)) => {} // Both errors - that's fine for comparison
             _ => panic!("Embedding provider comparison failed"),
         }
 
         // Compare databases if they exist
         match (config.database(), loaded_config.database()) {
             (Ok(db1), Ok(db2)) => assert_eq!(db1, db2),
-            (Err(_), Err(_)) => {}, // Both errors - that's fine for comparison
+            (Err(_), Err(_)) => {} // Both errors - that's fine for comparison
             _ => panic!("Database comparison failed"),
         }
 
@@ -386,11 +393,13 @@ mod tests {
     #[test]
     fn test_temp_config_file() {
         let config = TestConfig::minimal();
-        let (_temp_file, path) = TempConfig::create_temp_file_with_format(&config, crate::ConfigFormat::Yaml);
+        let (_temp_file, path) =
+            TempConfig::create_temp_file_with_format(&config, crate::ConfigFormat::Yaml);
 
         // Load using YAML format detection from content
         let content = std::fs::read_to_string(&path).unwrap();
-        let loaded_config = ConfigLoader::load_from_str(&content, crate::ConfigFormat::Yaml).unwrap();
+        let loaded_config =
+            ConfigLoader::load_from_str(&content, crate::ConfigFormat::Yaml).unwrap();
         assert_eq!(config.profile, loaded_config.profile);
     }
 

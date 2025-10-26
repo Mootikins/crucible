@@ -4,10 +4,6 @@
 //! that can work around compilation issues in the broader codebase.
 //! These tests focus specifically on the tool system integration.
 
-use anyhow::Result;
-use std::path::PathBuf;
-use tempfile::TempDir;
-
 /// Simple test to verify UnifiedToolRegistry works independently
 #[tokio::test]
 async fn test_unified_tool_registry_standalone() -> Result<()> {
@@ -40,7 +36,11 @@ async fn test_unified_tool_registry_standalone() -> Result<()> {
 
     for expected_path in expected_paths {
         let full_path = cli_root.join(expected_path);
-        assert!(full_path.exists(), "Expected file should exist: {:?}", full_path);
+        assert!(
+            full_path.exists(),
+            "Expected file should exist: {:?}",
+            full_path
+        );
     }
 
     println!("✅ All expected REPL module files exist");
@@ -66,9 +66,15 @@ async fn test_expected_system_tools_available() -> Result<()> {
 
     // For now, just verify these are reasonable tool names
     // In a full test, we'd verify these are actually available from the registry
-    assert!(!expected_system_tools.is_empty(), "Should have expected system tools defined");
+    assert!(
+        !expected_system_tools.is_empty(),
+        "Should have expected system tools defined"
+    );
 
-    println!("✅ Expected system tools defined: {}", expected_system_tools.len());
+    println!(
+        "✅ Expected system tools defined: {}",
+        expected_system_tools.len()
+    );
     for tool in &expected_system_tools {
         println!("  🔧 {}", tool);
     }
@@ -92,13 +98,25 @@ async fn test_repl_command_patterns() -> Result<()> {
     ];
 
     for cmd in valid_commands {
-        assert!(cmd.starts_with(':'), "Command should start with ':' : {}", cmd);
-        assert!(!cmd.trim().is_empty(), "Command should not be empty: {}", cmd);
+        assert!(
+            cmd.starts_with(':'),
+            "Command should start with ':' : {}",
+            cmd
+        );
+        assert!(
+            !cmd.trim().is_empty(),
+            "Command should not be empty: {}",
+            cmd
+        );
 
         // For :run commands, verify they have a tool name
         if cmd.starts_with(":run ") {
             let parts: Vec<&str> = cmd.split_whitespace().collect();
-            assert!(parts.len() >= 2, "Run command should have tool name: {}", cmd);
+            assert!(
+                parts.len() >= 2,
+                "Run command should have tool name: {}",
+                cmd
+            );
         }
     }
 
@@ -111,20 +129,18 @@ async fn test_repl_command_patterns() -> Result<()> {
 async fn test_tool_output_format_expectations() -> Result<()> {
     // Test that we expect certain output formats from tools
 
-    let expected_json_outputs = vec![
-        "system_info",
-        "get_environment",
-        "get_vault_stats",
-    ];
+    let expected_json_outputs = vec!["system_info", "get_environment", "get_vault_stats"];
 
-    let expected_text_outputs = vec![
-        "list_files",
-        "read_file",
-        "search_documents",
-    ];
+    let expected_text_outputs = vec!["list_files", "read_file", "search_documents"];
 
-    assert!(!expected_json_outputs.is_empty(), "Should have JSON output tools");
-    assert!(!expected_text_outputs.is_empty(), "Should have text output tools");
+    assert!(
+        !expected_json_outputs.is_empty(),
+        "Should have JSON output tools"
+    );
+    assert!(
+        !expected_text_outputs.is_empty(),
+        "Should have text output tools"
+    );
 
     println!("✅ Expected output formats defined");
     println!("📊 JSON output tools: {}", expected_json_outputs.len());
@@ -145,9 +161,15 @@ async fn test_error_handling_scenarios() -> Result<()> {
         ("malformed_json", "Invalid output format"),
     ];
 
-    assert!(!error_scenarios.is_empty(), "Should have error scenarios defined");
+    assert!(
+        !error_scenarios.is_empty(),
+        "Should have error scenarios defined"
+    );
 
-    println!("✅ Error handling scenarios defined: {}", error_scenarios.len());
+    println!(
+        "✅ Error handling scenarios defined: {}",
+        error_scenarios.len()
+    );
     for (scenario, expected_error) in error_scenarios {
         println!("  ❌ {}: {}", scenario, expected_error);
     }
@@ -197,7 +219,10 @@ async fn test_codebase_structure_understanding() -> Result<()> {
         ("Input", "Raw input parser"),
     ];
 
-    assert!(!key_components.is_empty(), "Should have key components defined");
+    assert!(
+        !key_components.is_empty(),
+        "Should have key components defined"
+    );
 
     println!("✅ Key components understood:");
     for (component, description) in key_components {
@@ -219,3 +244,6 @@ async fn test_codebase_structure_understanding() -> Result<()> {
 
     Ok(())
 }
+use anyhow::Result;
+use std::path::PathBuf;
+use tempfile::TempDir;

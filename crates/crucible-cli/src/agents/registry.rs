@@ -1,8 +1,8 @@
 use crate::agents::card::AgentCard;
+use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use anyhow::{Result, Context};
 
 #[derive(Debug, Clone)]
 pub struct AgentRegistry {
@@ -27,7 +27,11 @@ impl AgentRegistry {
 
         for vault_path in &self.vault_paths.clone() {
             if let Err(e) = self.load_agents_from_path(vault_path) {
-                eprintln!("Warning: Failed to load agents from {}: {}", vault_path.display(), e);
+                eprintln!(
+                    "Warning: Failed to load agents from {}: {}",
+                    vault_path.display(),
+                    e
+                );
             }
         }
 
@@ -101,9 +105,9 @@ impl Default for AgentRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::card::{AgentCard, BackendConfig};
     use std::fs;
     use tempfile::TempDir;
-    use crate::agents::card::{AgentCard, BackendConfig};
 
     fn create_test_agent_card(name: &str, system_prompt: &str) -> AgentCard {
         AgentCard {
@@ -170,7 +174,10 @@ mod tests {
 
         let retrieved_agent = registry.get_agent("test-agent-1").unwrap();
         assert_eq!(retrieved_agent.name, "test-agent-1");
-        assert_eq!(retrieved_agent.system_prompt, "You are a helpful assistant.");
+        assert_eq!(
+            retrieved_agent.system_prompt,
+            "You are a helpful assistant."
+        );
 
         Ok(())
     }
@@ -203,7 +210,10 @@ mod tests {
         registry.add_vault_path(temp_dir.path());
 
         let invalid_file = temp_dir.path().join("invalid.md");
-        fs::write(&invalid_file, "---\ninvalid: yaml: content: [\n---\nContent")?;
+        fs::write(
+            &invalid_file,
+            "---\ninvalid: yaml: content: [\n---\nContent",
+        )?;
 
         let valid_agent = create_test_agent_card("valid-agent", "You are valid.");
         create_test_markdown_file(&temp_dir.path().join("valid.md"), &valid_agent)?;

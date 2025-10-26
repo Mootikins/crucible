@@ -216,7 +216,10 @@ impl ConfigMigrator {
     /// Migrate from legacy configuration file.
     pub fn migrate_from_legacy_file(&self, legacy_path: &str) -> MigrationResult {
         let mut result = MigrationResult::new();
-        result.add_info(format!("Starting migration from legacy file: {}", legacy_path));
+        result.add_info(format!(
+            "Starting migration from legacy file: {}",
+            legacy_path
+        ));
 
         // Read legacy configuration
         let legacy_content = match std::fs::read_to_string(legacy_path) {
@@ -274,15 +277,17 @@ impl ConfigMigrator {
     }
 
     /// Migrate embedding provider from environment variables.
-    fn migrate_embedding_provider_from_env(&self, config: &mut Config, result: &mut MigrationResult) {
+    fn migrate_embedding_provider_from_env(
+        &self,
+        config: &mut Config,
+        result: &mut MigrationResult,
+    ) {
         let mut provider_config = None;
 
         // Check for OpenAI configuration
         if let Ok(api_key) = std::env::var("OPENAI_API_KEY") {
-            let mut provider = EmbeddingProviderConfig::openai(
-                api_key,
-                std::env::var("OPENAI_MODEL").ok(),
-            );
+            let mut provider =
+                EmbeddingProviderConfig::openai(api_key, std::env::var("OPENAI_MODEL").ok());
 
             if let Ok(base_url) = std::env::var("OPENAI_BASE_URL") {
                 provider.api.base_url = Some(base_url);
@@ -294,8 +299,8 @@ impl ConfigMigrator {
 
         // Check for Ollama configuration
         if let Ok(ollama_url) = std::env::var("OLLAMA_BASE_URL") {
-            let model = std::env::var("OLLAMA_MODEL")
-                .unwrap_or_else(|_| "nomic-embed-text".to_string());
+            let model =
+                std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text".to_string());
 
             provider_config = Some(EmbeddingProviderConfig::ollama(ollama_url, model));
             result.add_info("Migrated Ollama embedding provider from environment");
@@ -319,7 +324,10 @@ impl ConfigMigrator {
                     provider_config = Some(EmbeddingProviderConfig::ollama(base_url, model));
                 }
                 _ => {
-                    result.add_warning(format!("Unknown embedding provider type: {}", provider_type));
+                    result.add_warning(format!(
+                        "Unknown embedding provider type: {}",
+                        provider_type
+                    ));
                 }
             }
 
@@ -338,7 +346,9 @@ impl ConfigMigrator {
 
             let db_type = if database_url.starts_with("sqlite:") {
                 DatabaseType::Sqlite
-            } else if database_url.starts_with("postgresql:") || database_url.starts_with("postgres:") {
+            } else if database_url.starts_with("postgresql:")
+                || database_url.starts_with("postgres:")
+            {
                 DatabaseType::Postgres
             } else if database_url.starts_with("mysql:") {
                 DatabaseType::Mysql
@@ -418,7 +428,8 @@ impl ConfigMigrator {
 
         // Migrate embedding provider
         if let Some(legacy_provider) = legacy.embedding_provider {
-            config.embedding_provider = self.migrate_legacy_embedding_provider(legacy_provider, result);
+            config.embedding_provider =
+                self.migrate_legacy_embedding_provider(legacy_provider, result);
         }
 
         // Migrate database
@@ -443,7 +454,7 @@ impl ConfigMigrator {
         legacy: LegacyEmbeddingProviderConfig,
         result: &mut MigrationResult,
     ) -> Option<EmbeddingProviderConfig> {
-        use crate::{EmbeddingProviderType, ApiConfig, ModelConfig};
+        use crate::{ApiConfig, EmbeddingProviderType, ModelConfig};
 
         let provider_type = match legacy.provider.as_deref() {
             Some("openai") => EmbeddingProviderType::OpenAI,

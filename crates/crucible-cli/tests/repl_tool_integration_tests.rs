@@ -4,11 +4,6 @@
 //! both system tools (crucible-tools) and rune tools are properly discovered,
 //! listed, and executed through the REPL interface.
 
-use anyhow::Result;
-use std::path::PathBuf;
-use tempfile::TempDir;
-use crucible_cli::config::CliConfig;
-
 /// Test context for tool system tests
 struct ToolTestContext {
     temp_dir: TempDir,
@@ -37,28 +32,40 @@ async fn test_crucible_tools_baseline() -> Result<()> {
     let tools = crucible_tools::list_registered_tools().await;
 
     // Should have multiple tools
-    assert!(!tools.is_empty(), "crucible-tools should register tools, got empty list");
+    assert!(
+        !tools.is_empty(),
+        "crucible-tools should register tools, got empty list"
+    );
 
     // Should contain expected core tools
     let expected_tools = vec![
         "search_documents",
         "get_vault_stats",
         "system_info",
-        "list_files"
+        "list_files",
     ];
 
     for expected_tool in expected_tools {
-        assert!(tools.contains(&expected_tool.to_string()),
-               "crucible-tools should contain '{}'. Available tools: {:?}",
-               expected_tool, tools);
+        assert!(
+            tools.contains(&expected_tool.to_string()),
+            "crucible-tools should contain '{}'. Available tools: {:?}",
+            expected_tool,
+            tools
+        );
     }
 
     // Should have at least 20+ tools (from the 4 categories)
-    assert!(tools.len() >= 20,
-           "Expected at least 20 tools, got {}. Available: {:?}",
-           tools.len(), tools);
+    assert!(
+        tools.len() >= 20,
+        "Expected at least 20 tools, got {}. Available: {:?}",
+        tools.len(),
+        tools
+    );
 
-    println!("✅ crucible-tools baseline verified: {} tools available", tools.len());
+    println!(
+        "✅ crucible-tools baseline verified: {} tools available",
+        tools.len()
+    );
     println!("📋 Available tools: {:?}", tools);
 
     Ok(())
@@ -71,14 +78,20 @@ async fn test_crucible_tools_baseline() -> Result<()> {
 /// implementations yet, but the trait should be properly defined.
 #[tokio::test]
 async fn test_tool_group_registration_basic() -> Result<()> {
-    use crucible_cli::commands::repl::tools::{ToolGroupRegistry, ToolGroup, ToolGroupError};
+    use crucible_cli::commands::repl::tools::{ToolGroup, ToolGroupError, ToolGroupRegistry};
 
     // Create a registry
     let mut registry = ToolGroupRegistry::new();
 
     // Initially should have no groups and no tools
-    assert!(registry.list_groups().await.is_empty(), "New registry should have no groups");
-    assert!(registry.list_all_tools().await.is_empty(), "New registry should have no tools");
+    assert!(
+        registry.list_groups().await.is_empty(),
+        "New registry should have no groups"
+    );
+    assert!(
+        registry.list_all_tools().await.is_empty(),
+        "New registry should have no tools"
+    );
 
     // Mock tool group for testing the interface
     #[derive(Debug)]
@@ -98,7 +111,9 @@ async fn test_tool_group_registration_basic() -> Result<()> {
             "Mock tool group for testing"
         }
 
-        async fn discover_tools(&mut self) -> crucible_cli::commands::repl::tools::ToolGroupResult<Vec<String>> {
+        async fn discover_tools(
+            &mut self,
+        ) -> crucible_cli::commands::repl::tools::ToolGroupResult<Vec<String>> {
             Ok(self.tools.clone())
         }
 
@@ -106,7 +121,12 @@ async fn test_tool_group_registration_basic() -> Result<()> {
             self.tools.clone()
         }
 
-        async fn get_tool_schema(&self, tool_name: &str) -> crucible_cli::commands::repl::tools::ToolGroupResult<Option<crucible_cli::commands::repl::tools::ToolSchema>> {
+        async fn get_tool_schema(
+            &self,
+            tool_name: &str,
+        ) -> crucible_cli::commands::repl::tools::ToolGroupResult<
+            Option<crucible_cli::commands::repl::tools::ToolSchema>,
+        > {
             if self.tools.contains(&tool_name.to_string()) {
                 Ok(Some(crucible_cli::commands::repl::tools::ToolSchema {
                     name: tool_name.to_string(),
@@ -119,11 +139,23 @@ async fn test_tool_group_registration_basic() -> Result<()> {
             }
         }
 
-        async fn execute_tool(&self, tool_name: &str, _args: &[String]) -> crucible_cli::commands::repl::tools::ToolGroupResult<crucible_cli::commands::repl::tools::ToolResult> {
+        async fn execute_tool(
+            &self,
+            tool_name: &str,
+            _args: &[String],
+        ) -> crucible_cli::commands::repl::tools::ToolGroupResult<
+            crucible_cli::commands::repl::tools::ToolResult,
+        > {
             if self.tools.contains(&tool_name.to_string()) {
-                Ok(crucible_cli::commands::repl::tools::ToolResult::success(format!("Mock execution of {}", tool_name)))
+                Ok(crucible_cli::commands::repl::tools::ToolResult::success(
+                    format!("Mock execution of {}", tool_name),
+                ))
             } else {
-                Err(crucible_cli::commands::repl::tools::ToolGroupError::ToolNotFound(tool_name.to_string()))
+                Err(
+                    crucible_cli::commands::repl::tools::ToolGroupError::ToolNotFound(
+                        tool_name.to_string(),
+                    ),
+                )
             }
         }
 
@@ -134,6 +166,31 @@ async fn test_tool_group_registration_basic() -> Result<()> {
         async fn initialize(&mut self) -> crucible_cli::commands::repl::tools::ToolGroupResult<()> {
             self.initialized = true;
             Ok(())
+        }
+
+        async fn refresh_cache(
+            &mut self,
+        ) -> crucible_cli::commands::repl::tools::ToolGroupResult<()> {
+            // Mock refresh - just return success
+            Ok(())
+        }
+
+        fn get_metrics(&self) -> crucible_cli::commands::repl::tools::ToolGroupMetrics {
+            crucible_cli::commands::repl::tools::ToolGroupMetrics {
+                tools_count: self.tools.len(),
+                cache_size: 0,
+                last_refresh: std::time::SystemTime::now(),
+            }
+        }
+
+        fn get_cache_config(&self) -> &crucible_cli::commands::repl::tools::ToolGroupCacheConfig {
+            static MOCK_CACHE_CONFIG: crucible_cli::commands::repl::tools::ToolGroupCacheConfig =
+                crucible_cli::commands::repl::tools::ToolGroupCacheConfig {
+                    enabled: false,
+                    ttl_seconds: 0,
+                    max_size: 0,
+                };
+            &MOCK_CACHE_CONFIG
         }
     }
 
@@ -147,33 +204,58 @@ async fn test_tool_group_registration_basic() -> Result<()> {
     let group_box: Box<dyn ToolGroup> = Box::new(mock_group);
 
     // Register the group
-    registry.register_group(group_box).await
+    registry
+        .register_group(group_box)
+        .await
         .expect("Should be able to register mock tool group");
 
     // Should now have one group
-    assert_eq!(registry.list_groups().await.len(), 1, "Should have one registered group");
-    assert!(registry.list_groups().await.contains(&"mock".to_string()), "Should contain mock group");
+    assert_eq!(
+        registry.list_groups().await.len(),
+        1,
+        "Should have one registered group"
+    );
+    assert!(
+        registry.list_groups().await.contains(&"mock".to_string()),
+        "Should contain mock group"
+    );
 
     // Should have tools from the mock group
     let all_tools = registry.list_all_tools().await;
     assert_eq!(all_tools.len(), 2, "Should have two tools from mock group");
-    assert!(all_tools.contains(&"test_tool1".to_string()), "Should contain test_tool1");
-    assert!(all_tools.contains(&"test_tool2".to_string()), "Should contain test_tool2");
+    assert!(
+        all_tools.contains(&"test_tool1".to_string()),
+        "Should contain test_tool1"
+    );
+    assert!(
+        all_tools.contains(&"test_tool2".to_string()),
+        "Should contain test_tool2"
+    );
 
     // Should be able to execute tools
-    let result = registry.execute_tool("test_tool1", &["arg1".to_string()]).await
+    let result = registry
+        .execute_tool("test_tool1", &["arg1".to_string()])
+        .await
         .expect("Should be able to execute test_tool1");
     assert!(result.is_success(), "Tool execution should succeed");
-    assert!(result.output.contains("test_tool1"), "Output should mention tool name");
+    assert!(
+        result.output.contains("test_tool1"),
+        "Output should mention tool name"
+    );
 
     // Should get proper group assignment
-    let group_name = registry.get_tool_group("test_tool1").await
+    let group_name = registry
+        .get_tool_group("test_tool1")
+        .await
         .expect("Should find group for test_tool1");
     assert_eq!(group_name, "mock", "test_tool1 should belong to mock group");
 
     // Should handle missing tools gracefully
     let missing_result = registry.execute_tool("nonexistent_tool", &[]).await;
-    assert!(missing_result.is_err(), "Should fail when trying to execute nonexistent tool");
+    assert!(
+        missing_result.is_err(),
+        "Should fail when trying to execute nonexistent tool"
+    );
     match missing_result.unwrap_err() {
         crucible_cli::commands::repl::tools::ToolGroupError::ToolNotFound(_) => {
             // Expected error type
@@ -191,80 +273,145 @@ async fn test_tool_group_registration_basic() -> Result<()> {
 /// and provides them through the ToolGroup interface.
 #[tokio::test]
 async fn test_system_tool_group_basic() -> Result<()> {
-    use crucible_cli::commands::repl::tools::{SystemToolGroup, ToolGroup, ToolGroupRegistry, ParameterConverter};
+    use crucible_cli::commands::repl::tools::{
+        ParameterConverter, SystemToolGroup, ToolGroup, ToolGroupRegistry,
+    };
 
     // Create a SystemToolGroup
     let mut system_group = SystemToolGroup::new();
 
     // Should not be initialized initially
-    assert!(!system_group.is_initialized(), "New SystemToolGroup should not be initialized");
-    assert_eq!(system_group.group_name(), "system", "Group name should be 'system'");
-    assert!(!system_group.group_description().is_empty(), "Should have description");
+    assert!(
+        !system_group.is_initialized(),
+        "New SystemToolGroup should not be initialized"
+    );
+    assert_eq!(
+        system_group.group_name(),
+        "system",
+        "Group name should be 'system'"
+    );
+    assert!(
+        !system_group.group_description().is_empty(),
+        "Should have description"
+    );
 
     // Initialize the group
-    system_group.initialize().await
+    system_group
+        .initialize()
+        .await
         .expect("Should be able to initialize SystemToolGroup");
 
     // Should now be initialized
-    assert!(system_group.is_initialized(), "SystemToolGroup should be initialized after initialize()");
+    assert!(
+        system_group.is_initialized(),
+        "SystemToolGroup should be initialized after initialize()"
+    );
 
     // Should have tools available
-    let tools = system_group.list_tools().await;
-    assert!(!tools.is_empty(), "SystemToolGroup should have tools after initialization");
+    let tools = system_group
+        .list_tools()
+        .await
+        .expect("SystemToolGroup should list tools successfully");
+    assert!(
+        !tools.is_empty(),
+        "SystemToolGroup should have tools after initialization"
+    );
     println!("✅ SystemToolGroup initialized with {} tools", tools.len());
 
     // Should contain expected tools
     let expected_tools = vec![
         "search_documents",
-        "get_vault_stats",
+        "get_kiln_stats",
         "system_info",
-        "list_files"
+        "list_files",
     ];
 
     for expected_tool in expected_tools {
-        assert!(tools.contains(&expected_tool.to_string()),
-               "SystemToolGroup should contain '{}'. Available: {:?}", expected_tool, tools);
+        assert!(
+            tools.contains(&expected_tool.to_string()),
+            "SystemToolGroup should contain '{}'. Available: {:?}",
+            expected_tool,
+            tools
+        );
     }
 
     // Test parameter conversion for different tools
     let no_args_result = system_group.convert_args_to_params("system_info", &[]);
-    assert!(no_args_result.is_ok(), "system_info should accept no arguments");
+    assert!(
+        no_args_result.is_ok(),
+        "system_info should accept no arguments"
+    );
 
-    let single_arg_result = system_group.convert_args_to_params("list_files", &["/tmp".to_string()]);
-    assert!(single_arg_result.is_ok(), "list_files should accept single path argument");
+    let single_arg_result =
+        system_group.convert_args_to_params("list_files", &["/tmp".to_string()]);
+    assert!(
+        single_arg_result.is_ok(),
+        "list_files should accept single path argument"
+    );
 
-    let multi_arg_result = system_group.convert_args_to_params("search_by_tags", &["tag1".to_string(), "tag2".to_string()]);
-    assert!(multi_arg_result.is_ok(), "search_by_tags should accept multiple tag arguments");
+    let multi_arg_result = system_group
+        .convert_args_to_params("search_by_tags", &["tag1".to_string(), "tag2".to_string()]);
+    assert!(
+        multi_arg_result.is_ok(),
+        "search_by_tags should accept multiple tag arguments"
+    );
 
     // Test registering with ToolGroupRegistry
     let mut registry = ToolGroupRegistry::new();
-    registry.register_group(Box::new(system_group)).await
+    registry
+        .register_group(Box::new(system_group))
+        .await
         .expect("Should be able to register SystemToolGroup");
 
     // Should have system group
     let groups = registry.list_groups().await;
-    assert!(groups.contains(&"system".to_string()), "Registry should contain 'system' group");
+    assert!(
+        groups.contains(&"system".to_string()),
+        "Registry should contain 'system' group"
+    );
 
     // Should have system tools in registry
     let all_tools = registry.list_all_tools().await;
-    assert!(!all_tools.is_empty(), "Registry should have tools from SystemToolGroup");
-    assert!(all_tools.contains(&"search_documents".to_string()), "Should have search_documents");
+    assert!(
+        !all_tools.is_empty(),
+        "Registry should have tools from SystemToolGroup"
+    );
+    assert!(
+        all_tools.contains(&"search_documents".to_string()),
+        "Should have search_documents"
+    );
 
     // Test tool execution
     let result = registry.execute_tool("system_info", &[]).await;
     assert!(result.is_ok(), "Should be able to execute system_info tool");
 
     let tool_result = result.unwrap();
-    assert!(tool_result.is_success(), "system_info execution should succeed");
-    println!("✅ SystemToolGroup tool execution works: {}", tool_result.output);
+    assert!(
+        tool_result.is_success(),
+        "system_info execution should succeed"
+    );
+    println!(
+        "✅ SystemToolGroup tool execution works: {}",
+        tool_result.output
+    );
 
     // Test error cases
     let missing_tool_result = registry.execute_tool("nonexistent_tool", &[]).await;
-    assert!(missing_tool_result.is_err(), "Should fail when executing nonexistent tool");
+    assert!(
+        missing_tool_result.is_err(),
+        "Should fail when executing nonexistent tool"
+    );
 
     let bad_args_result = registry.execute_tool("list_files", &[]).await;
-    assert!(bad_args_result.is_err(), "Should fail when list_files gets no arguments");
+    assert!(
+        bad_args_result.is_err(),
+        "Should fail when list_files gets no arguments"
+    );
 
     println!("✅ SystemToolGroup implementation working correctly");
     Ok(())
 }
+use anyhow::Result;
+use crucible_cli::config::CliConfig;
+use std::path::PathBuf;
+use tempfile::TempDir;

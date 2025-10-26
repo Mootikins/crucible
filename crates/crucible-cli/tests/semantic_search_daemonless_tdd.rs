@@ -16,14 +16,6 @@
 //! 3. Provide clear specification for daemonless semantic search
 //! 4. Drive implementation of integrated semantic search across all entry points
 
-use anyhow::Result;
-use tokio::process::Command;
-use std::path::PathBuf;
-use tempfile::TempDir;
-use std::fs;
-use serde_json::Value;
-use std::pin::Pin;
-
 /// Test helper to create a minimal test vault with sample content
 async fn create_test_vault() -> Result<(TempDir, PathBuf)> {
     let temp_dir = TempDir::new()?;
@@ -64,10 +56,8 @@ async fn run_cli_semantic_search(vault_path: &PathBuf, query: &str) -> Result<St
 /// Helper to check if crucible-daemon binary exists
 fn daemon_binary_exists() -> bool {
     let crate_root = env!("CARGO_MANIFEST_DIR");
-    let daemon_debug = PathBuf::from(crate_root)
-        .join("../../target/debug/crucible-daemon");
-    let daemon_release = PathBuf::from(crate_root)
-        .join("../../target/release/crucible-daemon");
+    let daemon_debug = PathBuf::from(crate_root).join("../../target/debug/crucible-daemon");
+    let daemon_release = PathBuf::from(crate_root).join("../../target/release/crucible-daemon");
 
     daemon_debug.exists() || daemon_release.exists()
 }
@@ -136,8 +126,10 @@ mod semantic_search_daemonless_tdd_tests {
                 println!("   - Same functionality, different behavior and results");
 
                 // This assertion should fail to highlight the inconsistency
-                panic!("Semantic search behavior is inconsistent between CLI and REPL entry points. \
-                       CLI uses real vector search while REPL uses mock implementation.");
+                panic!(
+                    "Semantic search behavior is inconsistent between CLI and REPL entry points. \
+                       CLI uses real vector search while REPL uses mock implementation."
+                );
             }
             Err(e) => {
                 println!("❌ REPL semantic_search tool failed: {}", e);
@@ -188,7 +180,9 @@ mod semantic_search_daemonless_tdd_tests {
                 // Check result for signs of daemon dependency
                 if result.contains("crucible-daemon") {
                     println!("❌ Daemon dependency detected in CLI output");
-                    println!("   This indicates the semantic search is trying to spawn daemon process");
+                    println!(
+                        "   This indicates the semantic search is trying to spawn daemon process"
+                    );
 
                     // This should fail to demonstrate the daemon dependency issue
                     panic!("CLI shows daemon dependency in output: {}", result);
@@ -213,7 +207,9 @@ mod semantic_search_daemonless_tdd_tests {
 
         // Test Mock REPL Tool
         println!("\n🔧 Testing entry point: Mock REPL Tool");
-        let repl_result = test_repl_semantic_search_tool().await.map(|r| format!("{:?}", r));
+        let repl_result = test_repl_semantic_search_tool()
+            .await
+            .map(|r| format!("{:?}", r));
 
         match repl_result {
             Ok(result) => {
@@ -223,7 +219,9 @@ mod semantic_search_daemonless_tdd_tests {
                 // Check result for signs of daemon dependency
                 if result.contains("crucible-daemon") {
                     println!("❌ Daemon dependency detected in REPL output");
-                    println!("   This indicates the semantic search is trying to spawn daemon process");
+                    println!(
+                        "   This indicates the semantic search is trying to spawn daemon process"
+                    );
 
                     // This should fail to demonstrate the daemon dependency issue
                     panic!("REPL shows daemon dependency in output: {}", result);
@@ -288,7 +286,8 @@ mod semantic_search_daemonless_tdd_tests {
                         .map_err(|e| anyhow::anyhow!("Failed to parse CLI JSON: {}", e))?;
 
                     let empty_vec = vec![];
-                    let cli_results = cli_parsed.get("results")
+                    let cli_results = cli_parsed
+                        .get("results")
                         .and_then(|r| r.as_array())
                         .unwrap_or(&empty_vec);
 
@@ -302,13 +301,18 @@ mod semantic_search_daemonless_tdd_tests {
                         println!("   REPL: {} results", repl_output.len());
 
                         // This should fail to highlight the inconsistency
-                        panic!("Result count mismatch for query '{}': CLI={}, REPL={}",
-                               query, cli_results.len(), repl_output.len());
+                        panic!(
+                            "Result count mismatch for query '{}': CLI={}, REPL={}",
+                            query,
+                            cli_results.len(),
+                            repl_output.len()
+                        );
                     }
 
                     // Check if results are fundamentally different
                     let cli_has_real_files = cli_results.iter().any(|result| {
-                        result.get("id")
+                        result
+                            .get("id")
                             .and_then(|id| id.as_str())
                             .map(|id| id.contains(".md"))
                             .unwrap_or(false)
@@ -322,8 +326,8 @@ mod semantic_search_daemonless_tdd_tests {
 
                     // Mock results typically have hardcoded file paths
                     let repl_uses_mock = repl_output.iter().any(|result| {
-                        result.to_string().contains("docs/ai-research.md") ||
-                        result.to_string().contains("projects/ml-project.md")
+                        result.to_string().contains("docs/ai-research.md")
+                            || result.to_string().contains("projects/ml-project.md")
                     });
 
                     if repl_uses_mock {
@@ -331,7 +335,9 @@ mod semantic_search_daemonless_tdd_tests {
                         println!("   This demonstrates the need for integrated semantic search");
 
                         // This should fail to drive implementation
-                        panic!("REPL semantic_search uses mock implementation instead of real search");
+                        panic!(
+                            "REPL semantic_search uses mock implementation instead of real search"
+                        );
                     }
                 }
                 (Ok(_), Err(repl_err)) => {
@@ -356,8 +362,10 @@ mod semantic_search_daemonless_tdd_tests {
                     let repl_daemon = repl_err.to_string().contains("crucible-daemon");
 
                     if cli_daemon || repl_daemon {
-                        panic!("Daemon dependencies detected - CLI: {}, REPL: {}",
-                               cli_daemon, repl_daemon);
+                        panic!(
+                            "Daemon dependencies detected - CLI: {}, REPL: {}",
+                            cli_daemon, repl_daemon
+                        );
                     }
                 }
             }
@@ -448,7 +456,8 @@ async fn test_repl_semantic_search_tool() -> Result<Vec<Value>> {
         }),
         Some("test_user".to_string()),
         Some("test_session".to_string()),
-    ).await?;
+    )
+    .await?;
 
     if result.success {
         if let Some(data) = result.data {
@@ -458,7 +467,10 @@ async fn test_repl_semantic_search_tool() -> Result<Vec<Value>> {
         }
     }
 
-    Err(anyhow::anyhow!("Mock semantic search tool failed: {:?}", result.error))
+    Err(anyhow::anyhow!(
+        "Mock semantic search tool failed: {:?}",
+        result.error
+    ))
 }
 
 /// Helper function to test REPL semantic search with specific query
@@ -475,7 +487,8 @@ async fn test_repl_semantic_search_tool_with_query(query: &str) -> Result<Vec<Va
         }),
         Some("test_user".to_string()),
         Some("test_session".to_string()),
-    ).await?;
+    )
+    .await?;
 
     if result.success {
         if let Some(data) = result.data {
@@ -485,7 +498,10 @@ async fn test_repl_semantic_search_tool_with_query(query: &str) -> Result<Vec<Va
         }
     }
 
-    Err(anyhow::anyhow!("Mock semantic search failed: {:?}", result.error))
+    Err(anyhow::anyhow!(
+        "Mock semantic search failed: {:?}",
+        result.error
+    ))
 }
 
 /// Helper to test if REPL uses mock implementation
@@ -501,9 +517,9 @@ async fn test_repl_uses_mock_implementation() -> Result<bool> {
             ];
 
             let results_str = format!("{:?}", results);
-            let uses_mock = mock_indicators.iter().any(|indicator| {
-                results_str.contains(indicator)
-            });
+            let uses_mock = mock_indicators
+                .iter()
+                .any(|indicator| results_str.contains(indicator));
 
             Ok(uses_mock)
         }
@@ -525,6 +541,15 @@ async fn test_cli_semantic_search_works(vault_path: &PathBuf) -> Result<()> {
         println!("✅ CLI semantic search returned results");
         Ok(())
     } else {
-        Err(anyhow::anyhow!("CLI semantic search didn't return expected results format"))
+        Err(anyhow::anyhow!(
+            "CLI semantic search didn't return expected results format"
+        ))
     }
 }
+use anyhow::Result;
+use serde_json::Value;
+use std::fs;
+use std::path::PathBuf;
+use std::pin::Pin;
+use tempfile::TempDir;
+use tokio::process::Command;

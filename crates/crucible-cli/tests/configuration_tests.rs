@@ -8,16 +8,6 @@
 //! - Default value handling
 //! - Configuration serialization/deserialization
 
-use anyhow::Result;
-use std::collections::HashMap;
-use std::env;
-use std::path::PathBuf;
-use std::time::Duration;
-use tempfile::TempDir;
-use serde_json;
-use crate::test_utilities::*;
-use crucible_cli::config::CliConfig;
-
 /// Test configuration loading from defaults
 #[test]
 fn test_configuration_default_values() -> Result<()> {
@@ -107,7 +97,10 @@ max_cache_size = 100
     assert_eq!(config.services.script_engine.security_level, "development");
     assert_eq!(config.services.script_engine.max_source_size, 2048000);
     assert!(!config.services.discovery.enabled);
-    assert_eq!(config.services.discovery.endpoints, vec!["test-endpoint:1234".to_string()]);
+    assert_eq!(
+        config.services.discovery.endpoints,
+        vec!["test-endpoint:1234".to_string()]
+    );
     assert!(!config.services.health.enabled);
     assert_eq!(config.services.health.check_interval_secs, 30);
 
@@ -153,7 +146,10 @@ fn test_environment_variable_overrides() -> Result<()> {
     assert_eq!(config.max_tokens(), 4096);
     assert_eq!(config.ollama_endpoint(), "https://env-ollama.com");
     assert_eq!(config.openai_api_key(), Some("sk-env-test".to_string()));
-    assert_eq!(config.anthropic_api_key(), Some("sk-ant-env-test".to_string()));
+    assert_eq!(
+        config.anthropic_api_key(),
+        Some("sk-ant-env-test".to_string())
+    );
     assert_eq!(config.timeout(), 60);
 
     // Restore original environment variables
@@ -266,7 +262,10 @@ default_security_level = "safe"
     std::fs::write(&config_path, valid_config)?;
 
     let result = CliConfig::from_file_or_default(Some(config_path));
-    assert!(result.is_ok(), "Valid configuration should load successfully");
+    assert!(
+        result.is_ok(),
+        "Valid configuration should load successfully"
+    );
 
     // Test invalid TOML
     let invalid_toml = r#"
@@ -302,7 +301,10 @@ fn test_service_configuration_defaults() -> Result<()> {
 
     // Test discovery defaults
     assert!(config.services.discovery.enabled);
-    assert_eq!(config.services.discovery.endpoints, vec!["localhost:8080".to_string()]);
+    assert_eq!(
+        config.services.discovery.endpoints,
+        vec!["localhost:8080".to_string()]
+    );
     assert_eq!(config.services.discovery.timeout_secs, 5);
     assert_eq!(config.services.discovery.refresh_interval_secs, 30);
 
@@ -335,7 +337,10 @@ fn test_migration_configuration_defaults() -> Result<()> {
     assert!(!config.migration.validation.strict);
     assert!(config.migration.validation.validate_functionality);
     assert!(!config.migration.validation.validate_performance);
-    assert_eq!(config.migration.validation.max_performance_degradation, 20.0);
+    assert_eq!(
+        config.migration.validation.max_performance_degradation,
+        20.0
+    );
 
     Ok(())
 }
@@ -395,11 +400,7 @@ fn test_path_derivation() -> Result<()> {
     // Set required environment variable for security
     env::set_var("OBSIDIAN_VAULT_PATH", &vault_path);
 
-    let config = CliConfig::load(
-        None,
-        None,
-        None,
-    )?;
+    let config = CliConfig::load(None, None, None)?;
 
     // Test database path derivation
     let expected_db = vault_path.join(".crucible/embeddings.db");
@@ -423,11 +424,25 @@ fn test_embedding_config_conversion() -> Result<()> {
 
     let embedding_config = config.to_embedding_config()?;
 
-    assert!(matches!(embedding_config.provider, crate::config::ProviderType::Ollama));
+    assert!(matches!(
+        embedding_config.provider,
+        crucible_cli::config::ProviderType::Ollama
+    ));
     assert_eq!(embedding_config.endpoint, config.kiln.embedding_url);
-    assert_eq!(embedding_config.model, config.kiln.embedding_model);
+    assert_eq!(
+        embedding_config.model,
+        config
+            .kiln
+            .embedding_model
+            .as_ref()
+            .unwrap_or(&String::new())
+            .as_str()
+    );
     assert_eq!(embedding_config.timeout_secs, config.timeout());
-    assert_eq!(embedding_config.max_retries, config.network.max_retries.unwrap_or(3));
+    assert_eq!(
+        embedding_config.max_retries,
+        config.network.max_retries.unwrap_or(3)
+    );
     assert_eq!(embedding_config.batch_size, 1);
 
     Ok(())
@@ -444,7 +459,10 @@ fn test_llm_configuration_helpers() -> Result<()> {
     assert_eq!(config.max_tokens(), 2048);
     assert!(config.streaming());
     assert_eq!(config.system_prompt(), "You are a helpful assistant.");
-    assert_eq!(config.ollama_endpoint(), "https://llama.terminal.krohnos.io");
+    assert_eq!(
+        config.ollama_endpoint(),
+        "https://llama.terminal.krohnos.io"
+    );
     assert_eq!(config.timeout(), 30);
 
     // Test with custom values
@@ -480,15 +498,24 @@ fn test_api_key_handling() -> Result<()> {
     config.llm.backends.openai.api_key = Some("sk-config-openai".to_string());
     config.llm.backends.anthropic.api_key = Some("sk-ant-config-anthropic".to_string());
 
-    assert_eq!(config.openai_api_key(), Some("sk-config-openai".to_string()));
-    assert_eq!(config.anthropic_api_key(), Some("sk-ant-config-anthropic".to_string()));
+    assert_eq!(
+        config.openai_api_key(),
+        Some("sk-config-openai".to_string())
+    );
+    assert_eq!(
+        config.anthropic_api_key(),
+        Some("sk-ant-config-anthropic".to_string())
+    );
 
     // Test environment variable override
     env::set_var("OPENAI_API_KEY", "sk-env-openai");
     env::set_var("ANTHROPIC_API_KEY", "sk-env-anthropic");
 
     assert_eq!(config.openai_api_key(), Some("sk-env-openai".to_string()));
-    assert_eq!(config.anthropic_api_key(), Some("sk-env-anthropic".to_string()));
+    assert_eq!(
+        config.anthropic_api_key(),
+        Some("sk-env-anthropic".to_string())
+    );
 
     // Clean up
     env::remove_var("OPENAI_API_KEY");
@@ -503,14 +530,17 @@ fn test_configuration_error_handling() -> Result<()> {
     // Test with non-existent config file
     let non_existent_path = PathBuf::from("/non/existent/path/config.toml");
     let config = CliConfig::from_file_or_default(Some(non_existent_path));
-    assert!(config.is_ok(), "Should default to default config when file doesn't exist");
+    assert!(
+        config.is_ok(),
+        "Should default to default config when file doesn't exist"
+    );
 
     // Test with invalid path for string conversion
     let invalid_config = CliConfig {
-        kiln: crate::config::KilnConfig {
+        kiln: crucible_cli::config::KilnConfig {
             path: PathBuf::from("\0\0\0"), // Invalid UTF-8
             embedding_url: "http://localhost:11434".to_string(),
-            embedding_model: "test-model".to_string(),
+            embedding_model: Some("test-model".to_string()),
         },
         llm: Default::default(),
         network: Default::default(),
@@ -622,9 +652,18 @@ max_performance_degradation = 10.0
     let config = CliConfig::from_file_or_default(Some(config_path))?;
 
     // Verify complex values were parsed correctly
-    assert_eq!(config.kiln.path.to_string_lossy(), "/complex/path with spaces");
-    assert_eq!(config.kiln.embedding_url, "https://complex-endpoint.com:8443/v1");
-    assert_eq!(config.kiln.embedding_model, Some("complex-model-v1.2.3".to_string()));
+    assert_eq!(
+        config.kiln.path.to_string_lossy(),
+        "/complex/path with spaces"
+    );
+    assert_eq!(
+        config.kiln.embedding_url,
+        "https://complex-endpoint.com:8443/v1"
+    );
+    assert_eq!(
+        config.kiln.embedding_model,
+        Some("complex-model-v1.2.3".to_string())
+    );
 
     assert_eq!(config.temperature(), 1.5);
     assert_eq!(config.max_tokens(), 8192);
@@ -652,7 +691,10 @@ max_performance_degradation = 10.0
 
     assert!(config.migration.validation.strict);
     assert!(config.migration.validation.validate_performance);
-    assert_eq!(config.migration.validation.max_performance_degradation, 10.0);
+    assert_eq!(
+        config.migration.validation.max_performance_degradation,
+        10.0
+    );
 
     Ok(())
 }
@@ -689,14 +731,28 @@ fn test_configuration_performance() -> Result<()> {
     let load_duration = start.elapsed();
 
     assert!(config.services.discovery.endpoints.len() == 100);
-    assert!(load_duration < Duration::from_millis(100), "Configuration loading should be fast");
+    assert!(
+        load_duration < Duration::from_millis(100),
+        "Configuration loading should be fast"
+    );
 
     // Test serialization performance
     let start = std::time::Instant::now();
     let _toml_str = config.display_as_toml()?;
     let serialize_duration = start.elapsed();
 
-    assert!(serialize_duration < Duration::from_millis(100), "Configuration serialization should be fast");
+    assert!(
+        serialize_duration < Duration::from_millis(100),
+        "Configuration serialization should be fast"
+    );
 
     Ok(())
 }
+use anyhow::Result;
+use crucible_cli::config::CliConfig;
+use serde_json;
+use std::collections::HashMap;
+use std::env;
+use std::path::PathBuf;
+use std::time::Duration;
+use tempfile::TempDir;

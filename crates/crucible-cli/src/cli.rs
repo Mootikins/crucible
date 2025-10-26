@@ -22,7 +22,6 @@ pub struct Cli {
     #[arg(short = 'C', long, global = true)]
     pub config: Option<PathBuf>,
 
-  
     /// Embedding service URL (overrides config file)
     #[arg(long, global = true)]
     pub embedding_url: Option<String>,
@@ -173,8 +172,6 @@ pub enum Commands {
         #[arg(long)]
         history: Option<PathBuf>,
     },
-
-  
     // /// Enhanced chat mode with intelligent agent management // Temporarily disabled
     // EnhancedChat {
     //     /// Agent name to use for conversation

@@ -96,8 +96,7 @@ pub struct LlmConfig {
 }
 
 /// Backend-specific configurations
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BackendConfigs {
     /// Ollama configuration
     #[serde(default)]
@@ -285,7 +284,6 @@ impl Default for LlmConfig {
     }
 }
 
-
 impl Default for OllamaConfig {
     fn default() -> Self {
         Self {
@@ -392,7 +390,6 @@ impl Default for MigrationValidationConfig {
 fn default_embedding_url() -> String {
     "http://localhost:11434".to_string()
 }
-
 
 impl CliConfig {
     /// Load configuration with precedence: defaults < file < env
@@ -675,8 +672,7 @@ max_performance_degradation = 20.0
 
         // Create parent directory if it doesn't exist
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .context("Failed to create config directory")?;
+            std::fs::create_dir_all(parent).context("Failed to create config directory")?;
         }
 
         std::fs::write(path, example).context("Failed to write config file")?;
@@ -719,13 +715,14 @@ max_performance_degradation = 20.0
     /// Convert to EmbeddingConfig for use with create_provider
     pub fn to_embedding_config(&self) -> Result<EmbeddingConfig> {
         // Validate that embedding model is configured
-        let model = self.kiln.embedding_model.as_ref()
-            .ok_or_else(|| anyhow::anyhow!(
+        let model = self.kiln.embedding_model.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
                 "Embedding model is not configured. Please set it via:\n\
                 - Environment variable: EMBEDDING_MODEL\n\
                 - CLI argument: --embedding-model <model>\n\
                 - Config file: embedding_model = \"<model>\""
-            ))?;
+            )
+        })?;
 
         // For now, we default to Ollama provider
         // In the future, we could add provider selection to the config
@@ -742,7 +739,9 @@ max_performance_degradation = 20.0
 
     /// Get resolved chat model (from config or default)
     pub fn chat_model(&self) -> String {
-        self.llm.chat_model.clone()
+        self.llm
+            .chat_model
+            .clone()
             .unwrap_or_else(|| "llama3.2".to_string())
     }
 
@@ -763,13 +762,19 @@ max_performance_degradation = 20.0
 
     /// Get resolved system prompt (from config or default)
     pub fn system_prompt(&self) -> String {
-        self.llm.system_prompt.clone()
+        self.llm
+            .system_prompt
+            .clone()
             .unwrap_or_else(|| "You are a helpful assistant.".to_string())
     }
 
     /// Get resolved Ollama endpoint (from config or default)
     pub fn ollama_endpoint(&self) -> String {
-        self.llm.backends.ollama.endpoint.clone()
+        self.llm
+            .backends
+            .ollama
+            .endpoint
+            .clone()
             .unwrap_or_else(|| "https://llama.terminal.krohnos.io".to_string())
     }
 
@@ -780,13 +785,21 @@ max_performance_degradation = 20.0
 
     /// Get resolved OpenAI API key (from config or environment)
     pub fn openai_api_key(&self) -> Option<String> {
-        self.llm.backends.openai.api_key.clone()
+        self.llm
+            .backends
+            .openai
+            .api_key
+            .clone()
             .or_else(|| std::env::var("OPENAI_API_KEY").ok())
     }
 
     /// Get resolved Anthropic API key (from config or environment)
     pub fn anthropic_api_key(&self) -> Option<String> {
-        self.llm.backends.anthropic.api_key.clone()
+        self.llm
+            .backends
+            .anthropic
+            .api_key
+            .clone()
             .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
     }
 }
@@ -829,7 +842,10 @@ mod tests {
         assert_eq!(config.kiln.embedding_model, None);
 
         // Should have default Ollama endpoint
-        assert_eq!(config.ollama_endpoint(), "https://llama.terminal.krohnos.io");
+        assert_eq!(
+            config.ollama_endpoint(),
+            "https://llama.terminal.krohnos.io"
+        );
 
         // Restore original environment variables
         std::env::remove_var("CRUCIBLE_TEST_MODE");
@@ -861,7 +877,10 @@ mod tests {
         let config = result.unwrap();
 
         // Should use current directory as default when no env var is set
-        assert!(config.kiln.path.is_absolute() || config.kiln.path.as_path() == std::path::Path::new("."));
+        assert!(
+            config.kiln.path.is_absolute()
+                || config.kiln.path.as_path() == std::path::Path::new(".")
+        );
     }
 
     #[test]
@@ -869,12 +888,7 @@ mod tests {
         // Set the required environment variable
         std::env::set_var("OBSIDIAN_KILN_PATH", "/tmp/test");
 
-        let config = CliConfig::load(
-            None,
-            Some("https://example.com".to_string()),
-            None,
-        )
-        .unwrap();
+        let config = CliConfig::load(None, Some("https://example.com".to_string()), None).unwrap();
 
         assert_eq!(config.kiln.embedding_url, "https://example.com");
 
@@ -901,7 +915,10 @@ mod tests {
         let expected_db = vault_path.join(".crucible/embeddings.db");
 
         // The config should use the same path we set in the environment
-        assert_eq!(config_kiln_path, &vault_path, "Config kiln path should match environment variable");
+        assert_eq!(
+            config_kiln_path, &vault_path,
+            "Config kiln path should match environment variable"
+        );
         assert_eq!(config.database_path(), expected_db);
 
         // Clean up
@@ -927,7 +944,10 @@ mod tests {
         let expected_tools = vault_path.join("tools");
 
         // The config should use the same path we set in the environment
-        assert_eq!(config_kiln_path, &vault_path, "Config kiln path should match environment variable");
+        assert_eq!(
+            config_kiln_path, &vault_path,
+            "Config kiln path should match environment variable"
+        );
         assert_eq!(config.tools_path(), expected_tools);
 
         // Clean up
@@ -986,7 +1006,10 @@ mod tests {
         assert_eq!(config.max_tokens(), 2048);
         assert!(config.streaming());
         assert_eq!(config.system_prompt(), "You are a helpful assistant.");
-        assert_eq!(config.ollama_endpoint(), "https://llama.terminal.krohnos.io");
+        assert_eq!(
+            config.ollama_endpoint(),
+            "https://llama.terminal.krohnos.io"
+        );
         assert_eq!(config.timeout(), 30);
     }
 
@@ -1032,7 +1055,10 @@ timeout_secs = 60
         assert_eq!(config.max_tokens(), 1024);
         assert!(!config.streaming());
         assert_eq!(config.system_prompt(), "Custom prompt");
-        assert_eq!(config.ollama_endpoint(), "https://custom-ollama.example.com");
+        assert_eq!(
+            config.ollama_endpoint(),
+            "https://custom-ollama.example.com"
+        );
         assert_eq!(config.timeout(), 60);
 
         // Restore original environment variables
@@ -1099,7 +1125,10 @@ timeout_secs = 60
         let config = CliConfig::load(None, None, None).unwrap();
 
         assert_eq!(config.openai_api_key(), Some("sk-test-openai".to_string()));
-        assert_eq!(config.anthropic_api_key(), Some("sk-ant-test-anthropic".to_string()));
+        assert_eq!(
+            config.anthropic_api_key(),
+            Some("sk-ant-test-anthropic".to_string())
+        );
 
         // Clean up
         std::env::remove_var("OBSIDIAN_KILN_PATH");

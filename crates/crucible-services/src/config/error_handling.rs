@@ -3,7 +3,7 @@
 //! This module provides enhanced error handling capabilities including error recovery,
 //! error reporting, and integration with the existing service error systems.
 
-use super::validation::{ValidationError, ValidationResult, ValidationContext, ValidationSeverity};
+use super::validation::{ValidationContext, ValidationError, ValidationResult, ValidationSeverity};
 use crate::errors::{ServiceError, ServiceResult};
 use std::collections::HashMap;
 use tracing::{debug, error, info, warn};
@@ -49,7 +49,10 @@ impl ConfigErrorHandler {
         self.record_error(record.clone());
 
         // Determine if recovery is possible
-        if let Some(strategy) = self.recovery_strategies.get(error.field().unwrap_or("unknown")) {
+        if let Some(strategy) = self
+            .recovery_strategies
+            .get(error.field().unwrap_or("unknown"))
+        {
             match strategy.attempt_recovery(&error) {
                 Ok(recovery_result) => {
                     info!(
@@ -171,7 +174,8 @@ impl ConfigErrorHandler {
 
         // Trim history if needed
         if self.error_history.len() > self.max_history_size {
-            self.error_history.drain(0..self.error_history.len() - self.max_history_size);
+            self.error_history
+                .drain(0..self.error_history.len() - self.max_history_size);
         }
 
         // Send error report if configured
@@ -326,7 +330,10 @@ pub enum ErrorHandlingResult {
 impl ErrorHandlingResult {
     /// Check if the result is successful (no critical errors)
     pub fn is_success(&self) -> bool {
-        matches!(self, Self::Success | Self::Recovered(_) | Self::Info(_) | Self::Warning(_))
+        matches!(
+            self,
+            Self::Success | Self::Recovered(_) | Self::Info(_) | Self::Warning(_)
+        )
     }
 
     /// Check if the result has errors
@@ -339,16 +346,20 @@ impl ErrorHandlingResult {
         match self {
             Self::Success | Self::Recovered(_) | Self::Info(_) | Self::Warning(_) => Ok(()),
             Self::Failed(error) => Err(ServiceError::ValidationError(error.to_string())),
-            Self::Critical(error) => Err(ServiceError::ValidationError(format!("CRITICAL: {}", error))),
+            Self::Critical(error) => Err(ServiceError::ValidationError(format!(
+                "CRITICAL: {}",
+                error
+            ))),
         }
     }
 
     /// Get error message if any
     pub fn error_message(&self) -> Option<String> {
         match self {
-            Self::Failed(error) | Self::Critical(error) | Self::Warning(error) | Self::Info(error) => {
-                Some(error.to_string())
-            }
+            Self::Failed(error)
+            | Self::Critical(error)
+            | Self::Warning(error)
+            | Self::Info(error) => Some(error.to_string()),
             Self::Recovered(result) => Some(format!("Recovered: {}", result.description)),
             Self::Success => None,
         }
@@ -374,55 +385,42 @@ impl RecoveryStrategy {
     /// Attempt to recover from error
     pub fn attempt_recovery(&self, error: &ValidationError) -> ServiceResult<RecoveryResult> {
         match self {
-            Self::DefaultValue(default_value) => {
-                Ok(RecoveryResult {
+            Self::DefaultValue(default_value) => Ok(RecoveryResult {
+                strategy: self.name(),
+                original_value: error.field().map(|f| f.to_string()),
+                recovered_value: default_value.clone(),
+                description: format!("Applied default value: {}", default_value),
+            }),
+            Self::EnvironmentVariable(env_var) => match std::env::var(env_var) {
+                Ok(value) => Ok(RecoveryResult {
                     strategy: self.name(),
                     original_value: error.field().map(|f| f.to_string()),
-                    recovered_value: default_value.clone(),
-                    description: format!("Applied default value: {}", default_value),
-                })
-            }
-            Self::EnvironmentVariable(env_var) => {
-                match std::env::var(env_var) {
-                    Ok(value) => {
-                        Ok(RecoveryResult {
-                            strategy: self.name(),
-                            original_value: error.field().map(|f| f.to_string()),
-                            recovered_value: value.clone(),
-                            description: format!("Applied environment variable {} = {}", env_var, value),
-                        })
-                    }
-                    Err(_) => {
-                        Err(ServiceError::ValidationError(
-                            format!("Environment variable {} not found for recovery", env_var)
-                        ))
-                    }
-                }
-            }
-            Self::ComputedValue(computation) => {
-                Ok(RecoveryResult {
-                    strategy: self.name(),
-                    original_value: error.field().map(|f| f.to_string()),
-                    recovered_value: computation.clone(),
-                    description: format!("Applied computed value: {}", computation),
-                })
-            }
-            Self::SkipField => {
-                Ok(RecoveryResult {
-                    strategy: self.name(),
-                    original_value: error.field().map(|f| f.to_string()),
-                    recovered_value: "[SKIPPED]".to_string(),
-                    description: "Field skipped - not required".to_string(),
-                })
-            }
-            Self::Custom(description) => {
-                Ok(RecoveryResult {
-                    strategy: self.name(),
-                    original_value: error.field().map(|f| f.to_string()),
-                    recovered_value: "[CUSTOM]".to_string(),
-                    description: description.clone(),
-                })
-            }
+                    recovered_value: value.clone(),
+                    description: format!("Applied environment variable {} = {}", env_var, value),
+                }),
+                Err(_) => Err(ServiceError::ValidationError(format!(
+                    "Environment variable {} not found for recovery",
+                    env_var
+                ))),
+            },
+            Self::ComputedValue(computation) => Ok(RecoveryResult {
+                strategy: self.name(),
+                original_value: error.field().map(|f| f.to_string()),
+                recovered_value: computation.clone(),
+                description: format!("Applied computed value: {}", computation),
+            }),
+            Self::SkipField => Ok(RecoveryResult {
+                strategy: self.name(),
+                original_value: error.field().map(|f| f.to_string()),
+                recovered_value: "[SKIPPED]".to_string(),
+                description: "Field skipped - not required".to_string(),
+            }),
+            Self::Custom(description) => Ok(RecoveryResult {
+                strategy: self.name(),
+                original_value: error.field().map(|f| f.to_string()),
+                recovered_value: "[CUSTOM]".to_string(),
+                description: description.clone(),
+            }),
         }
     }
 
@@ -567,7 +565,8 @@ impl ErrorStatistics {
     pub fn most_problematic_fields(&self, limit: usize) -> Vec<(String, u64)> {
         let mut fields: Vec<_> = self.field_error_counts.iter().collect();
         fields.sort_by(|a, b| b.1.cmp(a.1));
-        fields.into_iter()
+        fields
+            .into_iter()
             .take(limit)
             .map(|(field, count)| (field.clone(), *count))
             .collect()
@@ -582,7 +581,11 @@ impl ErrorStatistics {
     pub fn summary(&self) -> String {
         format!(
             "Errors: {} total ({} critical, {} errors, {} warnings, {} info)",
-            self.total_errors, self.critical_errors, self.error_errors, self.warnings, self.info_messages
+            self.total_errors,
+            self.critical_errors,
+            self.error_errors,
+            self.warnings,
+            self.info_messages
         )
     }
 }
@@ -594,7 +597,10 @@ pub mod utils {
     /// Create error context from current environment
     pub fn create_error_context(source: &str) -> ValidationContext {
         ValidationContext::new(source)
-            .with_metadata("hostname", hostname::get().unwrap_or_default().to_string_lossy())
+            .with_metadata(
+                "hostname",
+                hostname::get().unwrap_or_default().to_string_lossy(),
+            )
             .with_metadata("process_id", std::process::id().to_string())
             .with_metadata("timestamp", chrono::Utc::now().to_rfc3339())
     }
@@ -605,7 +611,11 @@ pub mod utils {
 
         if include_context {
             if let Some(context) = error.context() {
-                formatted.push_str(&format!(" (source: {}, field: {})", context.source, context.full_field_path()));
+                formatted.push_str(&format!(
+                    " (source: {}, field: {})",
+                    context.source,
+                    context.full_field_path()
+                ));
             }
         }
 
@@ -618,23 +628,28 @@ pub mod utils {
             ValidationError::MissingField { field, .. } => {
                 format!("The required configuration field '{}' is missing. Please add it to your configuration file.", field)
             }
-            ValidationError::InvalidValue { field, suggested_fix: Some(fix), .. } => {
+            ValidationError::InvalidValue {
+                field,
+                suggested_fix: Some(fix),
+                ..
+            } => {
                 format!("The value for '{}' is invalid. {}", field, fix)
             }
             ValidationError::ConstraintViolation { field, details, .. } => {
-                format!("The value for '{}' violates a constraint: {}", field, details)
+                format!(
+                    "The value for '{}' violates a constraint: {}",
+                    field, details
+                )
             }
-            _ => {
-                error.description()
-            }
+            _ => error.description(),
         }
     }
 
     /// Check if error should be escalated
     pub fn should_escalate_error(error: &ValidationError) -> bool {
-        matches!(error.severity(), ValidationSeverity::Critical) ||
-        matches!(error, ValidationError::DependencyViolation { .. }) ||
-        matches!(error, ValidationError::ParseError { .. })
+        matches!(error.severity(), ValidationSeverity::Critical)
+            || matches!(error, ValidationError::DependencyViolation { .. })
+            || matches!(error, ValidationError::ParseError { .. })
     }
 
     /// Generate error report

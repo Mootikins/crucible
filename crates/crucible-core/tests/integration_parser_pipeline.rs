@@ -4,12 +4,11 @@
 //! and drive the implementation of block extraction and database storage.
 
 use anyhow::Result;
-use std::path::PathBuf;
 use tempfile::TempDir;
 use tokio::fs;
 
 // Remove crucible_surrealdb import - will test parser integration first
-use crucible_core::parser::{PulldownParser, MarkdownParser};
+use crucible_core::parser::{MarkdownParser, PulldownParser};
 
 /// Test document with complex block structure
 const TEST_MARKDOWN: &str = r#"---
@@ -69,8 +68,14 @@ async fn test_complete_file_parsing_pipeline() -> Result<()> {
     assert!(parsed_doc.file_size > 0);
 
     // Verify block extraction (this will fail initially)
-    assert!(!parsed_doc.content.headings.is_empty(), "Should extract headings");
-    assert!(!parsed_doc.content.code_blocks.is_empty(), "Should extract code blocks");
+    assert!(
+        !parsed_doc.content.headings.is_empty(),
+        "Should extract headings"
+    );
+    assert!(
+        !parsed_doc.content.code_blocks.is_empty(),
+        "Should extract code blocks"
+    );
 
     // Verify heading structure
     let headings = &parsed_doc.content.headings;
@@ -92,12 +97,18 @@ async fn test_complete_file_parsing_pipeline() -> Result<()> {
     assert_eq!(parsed_doc.wikilinks.len(), 3, "Should extract 3 wikilinks");
     assert_eq!(parsed_doc.wikilinks[0].target, "wikilink");
     assert_eq!(parsed_doc.wikilinks[1].target, "target");
-    assert_eq!(parsed_doc.wikilinks[1].alias.as_deref(), Some("aliased link"));
+    assert_eq!(
+        parsed_doc.wikilinks[1].alias.as_deref(),
+        Some("aliased link")
+    );
     assert_eq!(parsed_doc.wikilinks[2].target, "embed");
     assert!(parsed_doc.wikilinks[2].is_embed);
 
     // Verify tag extraction
-    assert!(!parsed_doc.tags.is_empty(), "Should extract at least one tag");
+    assert!(
+        !parsed_doc.tags.is_empty(),
+        "Should extract at least one tag"
+    );
 
     // Check that the #tag is extracted (position doesn't matter for this test)
     let tag_found = parsed_doc.tags.iter().any(|t| t.name == "tag");
@@ -121,8 +132,14 @@ async fn test_database_storage_of_parsed_document() -> Result<()> {
     let parsed_doc = parser.parse_file(&file_path).await?;
 
     // Verify document structure (will fail when enhanced parser is implemented)
-    assert!(!parsed_doc.content.headings.is_empty(), "Should extract headings");
-    assert!(!parsed_doc.content.code_blocks.is_empty(), "Should extract code blocks");
+    assert!(
+        !parsed_doc.content.headings.is_empty(),
+        "Should extract headings"
+    );
+    assert!(
+        !parsed_doc.content.code_blocks.is_empty(),
+        "Should extract code blocks"
+    );
 
     // TODO: Add SurrealDB storage verification when implemented
     // This will test that blocks are stored as separate records for better search
@@ -181,55 +198,104 @@ def hello():
     let parsed_doc = parser.parse_file(&file_path).await?;
 
     // Verify comprehensive block extraction
-    assert!(!parsed_doc.content.headings.is_empty(), "Should extract headings");
-    assert!(!parsed_doc.content.code_blocks.is_empty(), "Should extract code blocks");
-    assert!(!parsed_doc.content.paragraphs.is_empty(), "Should extract paragraphs");
+    assert!(
+        !parsed_doc.content.headings.is_empty(),
+        "Should extract headings"
+    );
+    assert!(
+        !parsed_doc.content.code_blocks.is_empty(),
+        "Should extract code blocks"
+    );
+    assert!(
+        !parsed_doc.content.paragraphs.is_empty(),
+        "Should extract paragraphs"
+    );
     assert!(!parsed_doc.content.lists.is_empty(), "Should extract lists");
 
     // Verify heading hierarchy
-    assert!(parsed_doc.content.headings.len() >= 4, "Should extract at least 4 headings, got {}", parsed_doc.content.headings.len());
+    assert!(
+        parsed_doc.content.headings.len() >= 4,
+        "Should extract at least 4 headings, got {}",
+        parsed_doc.content.headings.len()
+    );
 
     // Check for expected headings (order may vary)
-    let heading_texts: Vec<&str> = parsed_doc.content.headings.iter().map(|h| h.text.as_str()).collect();
-    assert!(heading_texts.contains(&"Introduction"), "Should contain 'Introduction' heading");
-    assert!(heading_texts.contains(&"Section with Multiple Blocks"), "Should contain 'Section with Multiple Blocks' heading");
-    assert!(heading_texts.contains(&"Task List Example"), "Should contain 'Task List Example' heading");
-    assert!(heading_texts.contains(&"Subsection"), "Should contain 'Subsection' heading");
+    let heading_texts: Vec<&str> = parsed_doc
+        .content
+        .headings
+        .iter()
+        .map(|h| h.text.as_str())
+        .collect();
+    assert!(
+        heading_texts.contains(&"Introduction"),
+        "Should contain 'Introduction' heading"
+    );
+    assert!(
+        heading_texts.contains(&"Section with Multiple Blocks"),
+        "Should contain 'Section with Multiple Blocks' heading"
+    );
+    assert!(
+        heading_texts.contains(&"Task List Example"),
+        "Should contain 'Task List Example' heading"
+    );
+    assert!(
+        heading_texts.contains(&"Subsection"),
+        "Should contain 'Subsection' heading"
+    );
 
     // Verify paragraph extraction
-    assert!(parsed_doc.content.paragraphs.len() >= 1, "Should extract at least 1 paragraph, got {}", parsed_doc.content.paragraphs.len());
+    assert!(
+        parsed_doc.content.paragraphs.len() >= 1,
+        "Should extract at least 1 paragraph, got {}",
+        parsed_doc.content.paragraphs.len()
+    );
     let intro_paragraph = &parsed_doc.content.paragraphs[0];
     assert!(intro_paragraph.content.contains("first paragraph"));
     assert_eq!(intro_paragraph.word_count, 5);
 
     // Verify code block extraction with language detection
-    assert!(parsed_doc.content.code_blocks.len() >= 2, "Should extract 2 code blocks");
-    let python_block = parsed_doc.content.code_blocks.iter()
+    assert!(
+        parsed_doc.content.code_blocks.len() >= 2,
+        "Should extract 2 code blocks"
+    );
+    let python_block = parsed_doc
+        .content
+        .code_blocks
+        .iter()
         .find(|cb| cb.language.as_deref() == Some("python"));
     assert!(python_block.is_some(), "Should detect Python language");
     assert!(python_block.unwrap().content.contains("def hello"));
 
     // Verify list extraction
-    let lists: Vec<_> = parsed_doc.content.lists.iter()
-        .filter(|l| !l.items.is_empty()).collect();
+    let lists: Vec<_> = parsed_doc
+        .content
+        .lists
+        .iter()
+        .filter(|l| !l.items.is_empty())
+        .collect();
     assert!(lists.len() >= 2, "Should extract at least 2 lists");
 
     // Verify task list extraction
-    let task_list = lists.iter().find(|l|
-        l.items.iter().any(|item| item.task_status.is_some())
-    );
+    let task_list = lists
+        .iter()
+        .find(|l| l.items.iter().any(|item| item.task_status.is_some()));
     assert!(task_list.is_some(), "Should extract task list");
 
-    let tasks_with_status: Vec<_> = task_list.unwrap().items.iter()
+    let tasks_with_status: Vec<_> = task_list
+        .unwrap()
+        .items
+        .iter()
         .filter(|item| item.task_status.is_some())
         .collect();
     assert_eq!(tasks_with_status.len(), 3, "Should extract 3 task items");
 
     // Verify task status detection
-    let completed_tasks: Vec<_> = tasks_with_status.iter()
+    let completed_tasks: Vec<_> = tasks_with_status
+        .iter()
         .filter(|item| item.task_status == Some(crucible_core::parser::TaskStatus::Completed))
         .collect();
-    let pending_tasks: Vec<_> = tasks_with_status.iter()
+    let pending_tasks: Vec<_> = tasks_with_status
+        .iter()
         .filter(|item| item.task_status == Some(crucible_core::parser::TaskStatus::Pending))
         .collect();
     assert_eq!(completed_tasks.len(), 1, "Should have 1 completed task");
@@ -334,7 +400,8 @@ Paragraph with **bold**, *italic*, and `inline code`.
 
 Last content with [external link](https://example.com).
 
-"#.to_string()
+"#
+    .to_string()
 }
 
 #[test]
@@ -359,21 +426,31 @@ fn test_edge_case_block_extraction() {
     let edge_cases = vec![
         // Empty code block
         ("# Title\n\n```\n\n```", "Should handle empty code blocks"),
-
         // Multiple consecutive headings
-        ("# H1\n\n## H2\n\n### H3", "Should handle consecutive headings"),
-
+        (
+            "# H1\n\n## H2\n\n### H3",
+            "Should handle consecutive headings",
+        ),
         // Mixed list types
-        ("- Item 1\n1. Numbered\n2. Numbered\n- Bullet", "Should handle mixed list types"),
-
+        (
+            "- Item 1\n1. Numbered\n2. Numbered\n- Bullet",
+            "Should handle mixed list types",
+        ),
         // Links in various contexts
-        ("[[link]] in text and ![[embed]] as embed", "Should handle different link types"),
-
+        (
+            "[[link]] in text and ![[embed]] as embed",
+            "Should handle different link types",
+        ),
         // Frontmatter only
-        ("---\ntitle: Frontmatter Only\n---", "Should handle frontmatter-only documents"),
-
+        (
+            "---\ntitle: Frontmatter Only\n---",
+            "Should handle frontmatter-only documents",
+        ),
         // No frontmatter
-        ("# No Frontmatter\n\nJust content", "Should handle documents without frontmatter"),
+        (
+            "# No Frontmatter\n\nJust content",
+            "Should handle documents without frontmatter",
+        ),
     ];
 
     for (content, description) in edge_cases {

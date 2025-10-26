@@ -26,10 +26,7 @@ async fn init(path: Option<PathBuf>, force: bool) -> Result<()> {
             "Error:".red().bold(),
             config_path.display()
         );
-        println!(
-            "Use {} to overwrite",
-            "--force".yellow()
-        );
+        println!("Use {} to overwrite", "--force".yellow());
         return Ok(());
     }
 
@@ -41,7 +38,10 @@ async fn init(path: Option<PathBuf>, force: bool) -> Result<()> {
         "Success:".green().bold(),
         config_path.display()
     );
-    println!("\n{}", "Edit this file to configure your kiln settings.".dimmed());
+    println!(
+        "\n{}",
+        "Edit this file to configure your kiln settings.".dimmed()
+    );
     println!(
         "{}",
         "Default values will be used until you customize the config.".dimmed()

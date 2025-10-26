@@ -1,6 +1,5 @@
 //! Type definitions for the SurrealDB backend implementation.
-//! These types mirror the interface used by the DuckDB backend to ensure
-//! compatibility while providing SurrealDB-specific optimizations.
+//! These types provide SurrealDB-specific optimizations for embeddings and metadata.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

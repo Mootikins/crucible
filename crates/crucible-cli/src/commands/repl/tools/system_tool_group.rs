@@ -3,17 +3,17 @@
 //! This module implements the SystemToolGroup that wraps crucible-tools
 //! and provides them through the ToolGroup trait interface.
 
+use super::tool_group::{
+    ParameterConverter, ResultConverter, SchemaCacheEntry, ToolCacheEntry, ToolGroup,
+    ToolGroupCacheConfig, ToolGroupError, ToolGroupMetrics, ToolGroupResult, ToolSchema,
+};
+use super::types::ToolResult;
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use tokio::sync::RwLock as AsyncRwLock;
-use super::tool_group::{
-    ToolGroup, ToolGroupResult, ToolGroupError, ToolSchema, ParameterConverter, ResultConverter,
-    ToolGroupMetrics, ToolGroupCacheConfig, ToolCacheEntry, SchemaCacheEntry
-};
-use super::types::ToolResult;
 
 /// System Tool Group that wraps crucible-tools functionality
 ///
@@ -73,39 +73,45 @@ impl SystemToolGroup {
         let mut schemas = HashMap::new();
 
         // System tools
-        schemas.insert("system_info".to_string(), ToolSchema {
-            name: "system_info".to_string(),
-            description: "Get system information (OS, memory, disk usage)".to_string(),
-            input_schema: serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-            output_schema: Some(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "os": {"type": "string"},
-                    "memory": {"type": "object"},
-                    "disk": {"type": "object"}
-                }
-            })),
-        });
+        schemas.insert(
+            "system_info".to_string(),
+            ToolSchema {
+                name: "system_info".to_string(),
+                description: "Get system information (OS, memory, disk usage)".to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }),
+                output_schema: Some(serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "os": {"type": "string"},
+                        "memory": {"type": "object"},
+                        "disk": {"type": "object"}
+                    }
+                })),
+            },
+        );
 
-        schemas.insert("list_files".to_string(), ToolSchema {
-            name: "list_files".to_string(),
-            description: "List files in a directory".to_string(),
-            input_schema: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Directory path to list"}
-                },
-                "required": ["path"]
-            }),
-            output_schema: Some(serde_json::json!({
-                "type": "array",
-                "items": {"type": "string"}
-            })),
-        });
+        schemas.insert(
+            "list_files".to_string(),
+            ToolSchema {
+                name: "list_files".to_string(),
+                description: "List files in a directory".to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Directory path to list"}
+                    },
+                    "required": ["path"]
+                }),
+                output_schema: Some(serde_json::json!({
+                    "type": "array",
+                    "items": {"type": "string"}
+                })),
+            },
+        );
 
         schemas.insert("execute_command".to_string(), ToolSchema {
             name: "execute_command".to_string(),
@@ -128,36 +134,42 @@ impl SystemToolGroup {
             })),
         });
 
-        schemas.insert("read_file".to_string(), ToolSchema {
-            name: "read_file".to_string(),
-            description: "Read contents of a file".to_string(),
-            input_schema: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "File path to read"}
-                },
-                "required": ["path"]
-            }),
-            output_schema: Some(serde_json::json!({
-                "type": "string"
-            })),
-        });
+        schemas.insert(
+            "read_file".to_string(),
+            ToolSchema {
+                name: "read_file".to_string(),
+                description: "Read contents of a file".to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "File path to read"}
+                    },
+                    "required": ["path"]
+                }),
+                output_schema: Some(serde_json::json!({
+                    "type": "string"
+                })),
+            },
+        );
 
-        schemas.insert("get_environment".to_string(), ToolSchema {
-            name: "get_environment".to_string(),
-            description: "Get environment variables".to_string(),
-            input_schema: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "filter": {"type": "string", "description": "Optional filter pattern"}
-                },
-                "required": []
-            }),
-            output_schema: Some(serde_json::json!({
-                "type": "object",
-                "additionalProperties": {"type": "string"}
-            })),
-        });
+        schemas.insert(
+            "get_environment".to_string(),
+            ToolSchema {
+                name: "get_environment".to_string(),
+                description: "Get environment variables".to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "filter": {"type": "string", "description": "Optional filter pattern"}
+                    },
+                    "required": []
+                }),
+                output_schema: Some(serde_json::json!({
+                    "type": "object",
+                    "additionalProperties": {"type": "string"}
+                })),
+            },
+        );
 
         // Vault tools
         schemas.insert("search_by_properties".to_string(), ToolSchema {
@@ -194,23 +206,26 @@ impl SystemToolGroup {
             })),
         });
 
-        schemas.insert("get_kiln_stats".to_string(), ToolSchema {
-            name: "get_kiln_stats".to_string(),
-            description: "Get kiln statistics".to_string(),
-            input_schema: serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-            output_schema: Some(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "total_notes": {"type": "integer"},
-                    "total_size": {"type": "integer"},
-                    "tags": {"type": "array", "items": {"type": "string"}}
-                }
-            })),
-        });
+        schemas.insert(
+            "get_kiln_stats".to_string(),
+            ToolSchema {
+                name: "get_kiln_stats".to_string(),
+                description: "Get kiln statistics".to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }),
+                output_schema: Some(serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "total_notes": {"type": "integer"},
+                        "total_size": {"type": "integer"},
+                        "tags": {"type": "array", "items": {"type": "string"}}
+                    }
+                })),
+            },
+        );
 
         schemas.insert("create_note".to_string(), ToolSchema {
             name: "create_note".to_string(),
@@ -235,22 +250,25 @@ impl SystemToolGroup {
         });
 
         // Database tools
-        schemas.insert("semantic_search".to_string(), ToolSchema {
-            name: "semantic_search".to_string(),
-            description: "Perform semantic search on kiln content".to_string(),
-            input_schema: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "limit": {"type": "integer", "description": "Maximum results"}
-                },
-                "required": ["query"]
-            }),
-            output_schema: Some(serde_json::json!({
-                "type": "array",
-                "items": {"type": "object"}
-            })),
-        });
+        schemas.insert(
+            "semantic_search".to_string(),
+            ToolSchema {
+                name: "semantic_search".to_string(),
+                description: "Perform semantic search on kiln content".to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query"},
+                        "limit": {"type": "integer", "description": "Maximum results"}
+                    },
+                    "required": ["query"]
+                }),
+                output_schema: Some(serde_json::json!({
+                    "type": "array",
+                    "items": {"type": "object"}
+                })),
+            },
+        );
 
         schemas.insert("search_by_content".to_string(), ToolSchema {
             name: "search_by_content".to_string(),
@@ -270,58 +288,67 @@ impl SystemToolGroup {
             })),
         });
 
-        schemas.insert("search_documents".to_string(), ToolSchema {
-            name: "search_documents".to_string(),
-            description: "Search documents using various criteria".to_string(),
-            input_schema: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "top_k": {"type": "integer", "description": "Number of results to return"},
-                    "filters": {"type": "object", "description": "Search filters"}
-                },
-                "required": ["query"]
-            }),
-            output_schema: Some(serde_json::json!({
-                "type": "array",
-                "items": {"type": "object"}
-            })),
-        });
+        schemas.insert(
+            "search_documents".to_string(),
+            ToolSchema {
+                name: "search_documents".to_string(),
+                description: "Search documents using various criteria".to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query"},
+                        "top_k": {"type": "integer", "description": "Number of results to return"},
+                        "filters": {"type": "object", "description": "Search filters"}
+                    },
+                    "required": ["query"]
+                }),
+                output_schema: Some(serde_json::json!({
+                    "type": "array",
+                    "items": {"type": "object"}
+                })),
+            },
+        );
 
         // Search tools
-        schemas.insert("rebuild_index".to_string(), ToolSchema {
-            name: "rebuild_index".to_string(),
-            description: "Rebuild the search index".to_string(),
-            input_schema: serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-            output_schema: Some(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "status": {"type": "string"},
-                    "documents_indexed": {"type": "integer"}
-                }
-            })),
-        });
+        schemas.insert(
+            "rebuild_index".to_string(),
+            ToolSchema {
+                name: "rebuild_index".to_string(),
+                description: "Rebuild the search index".to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }),
+                output_schema: Some(serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "status": {"type": "string"},
+                        "documents_indexed": {"type": "integer"}
+                    }
+                })),
+            },
+        );
 
-        schemas.insert("get_index_stats".to_string(), ToolSchema {
-            name: "get_index_stats".to_string(),
-            description: "Get search index statistics".to_string(),
-            input_schema: serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-            output_schema: Some(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "total_documents": {"type": "integer"},
-                    "index_size": {"type": "integer"}
-                }
-            })),
-        });
+        schemas.insert(
+            "get_index_stats".to_string(),
+            ToolSchema {
+                name: "get_index_stats".to_string(),
+                description: "Get search index statistics".to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }),
+                output_schema: Some(serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "total_documents": {"type": "integer"},
+                        "index_size": {"type": "integer"}
+                    }
+                })),
+            },
+        );
 
         schemas
     }
@@ -379,7 +406,11 @@ impl ToolGroup for SystemToolGroup {
         let duration = start_time.elapsed();
         self.metrics.write().unwrap().add_discovery_time(duration);
 
-        tracing::info!("Discovered {} system tools in {}ms", tools.len(), duration.as_millis());
+        tracing::info!(
+            "Discovered {} system tools in {}ms",
+            tools.len(),
+            duration.as_millis()
+        );
         Ok(tools)
     }
 
@@ -441,17 +472,13 @@ impl ToolGroup for SystemToolGroup {
         Ok(schema)
     }
 
-    async fn execute_tool(
-        &self,
-        tool_name: &str,
-        args: &[String],
-    ) -> ToolGroupResult<ToolResult> {
+    async fn execute_tool(&self, tool_name: &str, args: &[String]) -> ToolGroupResult<ToolResult> {
         let start_time = Instant::now();
 
         // Initialize if needed (this should be ensured by the registry)
         if !self.is_initialized() {
             return Err(ToolGroupError::InitializationFailed(
-                "SystemToolGroup not initialized".to_string()
+                "SystemToolGroup not initialized".to_string(),
             ));
         }
 
@@ -464,7 +491,9 @@ impl ToolGroup for SystemToolGroup {
             params,
             Some("repl_user".to_string()),
             Some("repl_session".to_string()),
-        ).await.map_err(|e| ToolGroupError::ExecutionFailed(format!("crucible-tools error: {}", e)))?;
+        )
+        .await
+        .map_err(|e| ToolGroupError::ExecutionFailed(format!("crucible-tools error: {}", e)))?;
 
         // Update metrics
         let duration = start_time.elapsed();
@@ -490,10 +519,9 @@ impl ToolGroup for SystemToolGroup {
         crucible_tools::init();
 
         // Load all tools
-        crucible_tools::load_all_tools().await
-            .map_err(|e| ToolGroupError::InitializationFailed(
-                format!("Failed to load crucible-tools: {}", e)
-            ))?;
+        crucible_tools::load_all_tools().await.map_err(|e| {
+            ToolGroupError::InitializationFailed(format!("Failed to load crucible-tools: {}", e))
+        })?;
 
         // Discover available tools
         let tools = crucible_tools::list_registered_tools().await;
@@ -505,7 +533,11 @@ impl ToolGroup for SystemToolGroup {
         let duration = start_time.elapsed();
         self.metrics.write().unwrap().initialization_time_ms = Some(duration.as_millis() as u64);
 
-        tracing::info!("SystemToolGroup initialized with {} tools in {}ms", tools.len(), duration.as_millis());
+        tracing::info!(
+            "SystemToolGroup initialized with {} tools in {}ms",
+            tools.len(),
+            duration.as_millis()
+        );
         Ok(())
     }
 
@@ -549,7 +581,10 @@ impl ToolGroup for SystemToolGroup {
         metadata.insert("initialized".to_string(), self.initialized.to_string());
         metadata.insert("backend".to_string(), "crucible-tools".to_string());
         metadata.insert("version".to_string(), crucible_tools::VERSION.to_string());
-        metadata.insert("caching_enabled".to_string(), self.cache_config.caching_enabled.to_string());
+        metadata.insert(
+            "caching_enabled".to_string(),
+            self.cache_config.caching_enabled.to_string(),
+        );
         metadata
     }
 
@@ -566,7 +601,10 @@ impl ToolGroup for SystemToolGroup {
     }
 
     /// Internal method: Perform actual schema retrieval
-    async fn perform_schema_retrieval(&self, tool_name: &str) -> ToolGroupResult<Option<ToolSchema>> {
+    async fn perform_schema_retrieval(
+        &self,
+        tool_name: &str,
+    ) -> ToolGroupResult<Option<ToolSchema>> {
         // Check our static schemas first
         if let Some(schema) = self.static_schemas.get(tool_name) {
             return Ok(Some(schema.clone()));
@@ -584,19 +622,24 @@ impl ParameterConverter for SystemToolGroup {
             // Tools that take no arguments
             "system_info" | "get_kiln_stats" | "get_index_stats" | "get_environment" => {
                 if !args.is_empty() {
-                    return Err(ToolGroupError::ParameterConversionFailed(
-                        format!("{} takes no arguments, got {}", tool_name, args.len())
-                    ));
+                    return Err(ToolGroupError::ParameterConversionFailed(format!(
+                        "{} takes no arguments, got {}",
+                        tool_name,
+                        args.len()
+                    )));
                 }
                 Ok(Value::Object(serde_json::Map::new()))
             }
 
             // Tools that take a single string argument
-            "list_files" | "read_file" | "semantic_search" | "search_by_content" | "search_documents" => {
+            "list_files" | "read_file" | "semantic_search" | "search_by_content"
+            | "search_documents" => {
                 if args.len() != 1 {
-                    return Err(ToolGroupError::ParameterConversionFailed(
-                        format!("{} requires exactly 1 argument, got {}", tool_name, args.len())
-                    ));
+                    return Err(ToolGroupError::ParameterConversionFailed(format!(
+                        "{} requires exactly 1 argument, got {}",
+                        tool_name,
+                        args.len()
+                    )));
                 }
                 let mut params = serde_json::Map::new();
                 match tool_name {
@@ -615,7 +658,7 @@ impl ParameterConverter for SystemToolGroup {
             "search_by_tags" => {
                 if args.is_empty() {
                     return Err(ToolGroupError::ParameterConversionFailed(
-                        "search_by_tags requires at least 1 argument (tag list)".to_string()
+                        "search_by_tags requires at least 1 argument (tag list)".to_string(),
                     ));
                 }
                 let mut params = serde_json::Map::new();
@@ -628,13 +671,14 @@ impl ParameterConverter for SystemToolGroup {
             "execute_command" => {
                 if args.is_empty() {
                     return Err(ToolGroupError::ParameterConversionFailed(
-                        "execute_command requires at least a command".to_string()
+                        "execute_command requires at least a command".to_string(),
                     ));
                 }
                 let mut params = serde_json::Map::new();
                 params.insert("command".to_string(), Value::String(args[0].clone()));
                 if args.len() > 1 {
-                    let cmd_args: Vec<Value> = args[1..].iter().map(|s| Value::String(s.clone())).collect();
+                    let cmd_args: Vec<Value> =
+                        args[1..].iter().map(|s| Value::String(s.clone())).collect();
                     params.insert("args".to_string(), Value::Array(cmd_args));
                 }
                 Ok(Value::Object(params))
@@ -644,7 +688,8 @@ impl ParameterConverter for SystemToolGroup {
             "create_note" => {
                 if args.len() < 3 {
                     return Err(ToolGroupError::ParameterConversionFailed(
-                        "create_note requires at least 3 arguments: path, title, content".to_string()
+                        "create_note requires at least 3 arguments: path, title, content"
+                            .to_string(),
                     ));
                 }
                 let mut params = serde_json::Map::new();
@@ -652,7 +697,8 @@ impl ParameterConverter for SystemToolGroup {
                 params.insert("title".to_string(), Value::String(args[1].clone()));
                 params.insert("content".to_string(), Value::String(args[2].clone()));
                 if args.len() > 3 {
-                    let tags: Vec<Value> = args[3..].iter().map(|s| Value::String(s.clone())).collect();
+                    let tags: Vec<Value> =
+                        args[3..].iter().map(|s| Value::String(s.clone())).collect();
                     params.insert("tags".to_string(), Value::Array(tags));
                 }
                 Ok(Value::Object(params))
@@ -674,7 +720,11 @@ impl ParameterConverter for SystemToolGroup {
 
 impl SystemToolGroup {
     /// Convert crucible_tools ToolResult to REPL ToolResult
-    fn convert_crucible_result_to_tool_result(&self, tool_name: &str, result: crucible_tools::ToolResult) -> ToolGroupResult<ToolResult> {
+    fn convert_crucible_result_to_tool_result(
+        &self,
+        tool_name: &str,
+        result: crucible_tools::ToolResult,
+    ) -> ToolGroupResult<ToolResult> {
         // Convert to REPL ToolResult format
         if result.success {
             let output = match result.data {
@@ -694,11 +744,15 @@ impl SystemToolGroup {
 }
 
 impl ResultConverter for SystemToolGroup {
-    fn convert_to_tool_result(&self, _tool_name: &str, _raw_result: Value) -> ToolGroupResult<ToolResult> {
+    fn convert_to_tool_result(
+        &self,
+        _tool_name: &str,
+        _raw_result: Value,
+    ) -> ToolGroupResult<ToolResult> {
         // This method is required by the trait but not used in SystemToolGroup
         // since we handle crucible_tools::ToolResult directly
         Err(ToolGroupError::ResultConversionFailed(
-            "SystemToolGroup uses direct crucible_tools::ToolResult conversion".to_string()
+            "SystemToolGroup uses direct crucible_tools::ToolResult conversion".to_string(),
         ))
     }
 }
