@@ -54,12 +54,6 @@ impl Default for ServiceMetrics {
     }
 }
 
-/// Script engine configuration (placeholder)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScriptEngineConfig {
-    pub enabled: bool,
-}
-
 /// ============================================================================
 /// SERVICE TRAITS (Unused - for future compatibility)
 /// ============================================================================
