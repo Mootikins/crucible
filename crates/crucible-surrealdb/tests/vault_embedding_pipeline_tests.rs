@@ -9,29 +9,36 @@
 //! **Phase 2.1 Input Required**: (document_id: String, content: String) for embedding thread pool
 //! **Goal**: End-to-end pipeline: ParsedDocument → transform → embed → store → search
 
+use crucible_core::parser::types::*;
+use crucible_core::parser::ParsedDocument;
+use crucible_surrealdb::embedding_config::*;
+use crucible_surrealdb::embedding_pool::*;
+use crucible_surrealdb::multi_client::SurrealClient;
 use crucible_surrealdb::vault_pipeline_connector::*;
 use crucible_surrealdb::vault_scanner::*;
-use crucible_surrealdb::embedding_pool::*;
-use crucible_surrealdb::embedding_config::*;
-use crucible_surrealdb::multi_client::SurrealClient;
-use crucible_core::parser::ParsedDocument;
-use crucible_core::parser::types::*;
 use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::fs;
 
 /// Create test ParsedDocument with realistic content
-async fn create_test_parsed_document(file_path: PathBuf, title: &str, content: &str) -> ParsedDocument {
+async fn create_test_parsed_document(
+    file_path: PathBuf,
+    title: &str,
+    content: &str,
+) -> ParsedDocument {
     let mut document = ParsedDocument::new(file_path.clone());
 
     // Set up frontmatter
-    let frontmatter_raw = format!(r#"---
+    let frontmatter_raw = format!(
+        r#"---
 title: {}
 tags: [test, example]
 created: 2024-01-01
 ---
-"#, title);
+"#,
+        title
+    );
 
     document.frontmatter = Some(Frontmatter::new(frontmatter_raw, FrontmatterFormat::Yaml));
 
@@ -84,18 +91,21 @@ async fn create_test_document_batch() -> Vec<ParsedDocument> {
         create_test_parsed_document(
             base_path.join("doc1.md"),
             "First Document",
-            "This is the first test document with some content for embedding generation."
-        ).await,
+            "This is the first test document with some content for embedding generation.",
+        )
+        .await,
         create_test_parsed_document(
             base_path.join("doc2.md"),
             "Second Document",
-            "This is the second test document with different content for testing batch processing."
-        ).await,
+            "This is the second test document with different content for testing batch processing.",
+        )
+        .await,
         create_test_parsed_document(
             base_path.join("nested/doc3.md"),
             "Nested Document",
-            "This document is in a subdirectory to test path normalization and ID generation."
-        ).await,
+            "This document is in a subdirectory to test path normalization and ID generation.",
+        )
+        .await,
     ]
 }
 
@@ -118,14 +128,22 @@ mod tdd_vault_embedding_pipeline_tests {
 
         // Act & Assert (This should fail initially)
         let connector = VaultPipelineConnector::new(thread_pool.clone());
-        let result = connector.process_document_to_embedding(&client, &test_doc).await;
+        let result = connector
+            .process_document_to_embedding(&client, &test_doc)
+            .await;
 
         // TDD: This should fail because no pipeline connection exists yet
         assert!(result.is_ok(), "Pipeline connector should be implemented");
 
         let processing_result = result.unwrap();
-        assert_eq!(processing_result.document_id, generate_document_id_from_path(&test_doc.path));
-        assert!(processing_result.embeddings_generated > 0, "Should generate embeddings");
+        assert_eq!(
+            processing_result.document_id,
+            generate_document_id_from_path(&test_doc.path)
+        );
+        assert!(
+            processing_result.embeddings_generated > 0,
+            "Should generate embeddings"
+        );
         assert!(processing_result.processing_time > Duration::from_secs(0));
 
         thread_pool.shutdown().await.unwrap();
@@ -145,7 +163,9 @@ mod tdd_vault_embedding_pipeline_tests {
 
         // Act & Assert (This should fail initially)
         let connector = VaultPipelineConnector::new(thread_pool.clone());
-        let result = connector.process_documents_to_embeddings(&client, &test_documents).await;
+        let result = connector
+            .process_documents_to_embeddings(&client, &test_documents)
+            .await;
 
         // TDD: This should fail because no batch processing exists yet
         assert!(result.is_ok(), "Batch processing should be implemented");
@@ -178,13 +198,25 @@ mod tdd_vault_embedding_pipeline_tests {
 
             // TDD: This should fail because no ID generation exists yet
             assert!(!document_id.is_empty(), "Document ID should not be empty");
-            assert!(!document_id.contains('/'), "Document ID should not contain path separators");
-            assert!(!document_id.contains('\\'), "Document ID should not contain backslashes");
-            assert!(document_id.len() <= 255, "Document ID should be reasonably short");
+            assert!(
+                !document_id.contains('/'),
+                "Document ID should not contain path separators"
+            );
+            assert!(
+                !document_id.contains('\\'),
+                "Document ID should not contain backslashes"
+            );
+            assert!(
+                document_id.len() <= 255,
+                "Document ID should be reasonably short"
+            );
 
             // Test consistency
             let id2 = generate_document_id_from_path(path);
-            assert_eq!(document_id, id2, "Document ID generation should be consistent");
+            assert_eq!(
+                document_id, id2,
+                "Document ID generation should be consistent"
+            );
         }
     }
 
@@ -201,12 +233,22 @@ mod tdd_vault_embedding_pipeline_tests {
         let embedding_inputs = transform_parsed_document_to_embedding_inputs(&test_doc, &config);
 
         // TDD: This should fail because no transformation exists yet
-        assert!(!embedding_inputs.is_empty(), "Should generate at least one embedding input");
+        assert!(
+            !embedding_inputs.is_empty(),
+            "Should generate at least one embedding input"
+        );
 
         for (document_id, content) in &embedding_inputs {
-            assert_eq!(document_id, &generate_document_id_from_path(&test_doc.path), "Document ID should match");
+            assert_eq!(
+                document_id,
+                &generate_document_id_from_path(&test_doc.path),
+                "Document ID should match"
+            );
             assert!(!content.is_empty(), "Content should not be empty");
-            assert!(content.len() <= 8000, "Content chunks should be reasonably sized");
+            assert!(
+                content.len() <= 8000,
+                "Content chunks should be reasonably sized"
+            );
         }
     }
 
@@ -224,21 +266,32 @@ mod tdd_vault_embedding_pipeline_tests {
         let connector = VaultPipelineConnector::new(thread_pool.clone());
 
         // Act: Initial processing
-        let initial_result = connector.process_document_to_embedding(&client, &test_doc).await;
+        let initial_result = connector
+            .process_document_to_embedding(&client, &test_doc)
+            .await;
         assert!(initial_result.is_ok(), "Initial processing should work");
 
         // Simulate document change
         test_doc.content_hash = "changed_hash_12345".to_string();
-        test_doc.content.plain_text = "Updated content with new information for embedding.".to_string();
+        test_doc.content.plain_text =
+            "Updated content with new information for embedding.".to_string();
 
         // Act & Assert (This should fail initially)
-        let update_result = connector.process_document_to_embedding(&client, &test_doc).await;
+        let update_result = connector
+            .process_document_to_embedding(&client, &test_doc)
+            .await;
 
         // TDD: This should fail because no change detection integration exists yet
-        assert!(update_result.is_ok(), "Update processing should be implemented");
+        assert!(
+            update_result.is_ok(),
+            "Update processing should be implemented"
+        );
 
         let update_processing_result = update_result.unwrap();
-        assert!(update_processing_result.embeddings_generated > 0, "Should generate new embeddings");
+        assert!(
+            update_processing_result.embeddings_generated > 0,
+            "Should generate new embeddings"
+        );
         assert!(update_processing_result.processing_time > Duration::from_secs(0));
 
         thread_pool.shutdown().await.unwrap();
@@ -256,25 +309,27 @@ mod tdd_vault_embedding_pipeline_tests {
 
         // Create a problematic document (empty content)
         let temp_dir = TempDir::new().unwrap();
-        let problematic_doc = create_test_parsed_document(
-            temp_dir.path().join("empty.md"),
-            "Empty Document",
-            ""
-        ).await;
+        let problematic_doc =
+            create_test_parsed_document(temp_dir.path().join("empty.md"), "Empty Document", "")
+                .await;
 
         let connector = VaultPipelineConnector::new(thread_pool.clone());
 
         // Act & Assert (This should fail initially)
-        let result = connector.process_document_to_embedding(&client, &problematic_doc).await;
+        let result = connector
+            .process_document_to_embedding(&client, &problematic_doc)
+            .await;
 
         // TDD: This should fail because no error handling exists yet
         // Should handle empty content gracefully
         match result {
-            Ok(_) => {}, // Should handle empty content successfully
+            Ok(_) => {} // Should handle empty content successfully
             Err(e) => {
                 // Or return a specific error for empty content
-                assert!(e.to_string().contains("empty") || e.to_string().contains("content"),
-                       "Error should mention content issue");
+                assert!(
+                    e.to_string().contains("empty") || e.to_string().contains("content"),
+                    "Error should mention content issue"
+                );
             }
         }
 
@@ -296,7 +351,8 @@ mod tdd_vault_embedding_pipeline_tests {
         let mut test_documents = Vec::new();
 
         for i in 0..10 {
-            let content = format!(r#"Document {}:
+            let content = format!(
+                r#"Document {}:
 
 This is a longer test document with multiple paragraphs and sections.
 It contains enough content to test realistic embedding generation performance.
@@ -314,13 +370,17 @@ This paragraph adds additional length to the document.
 ## Conclusion
 
 Final section with concluding remarks for document {}.
-"#, i + 1, i + 1);
+"#,
+                i + 1,
+                i + 1
+            );
 
             let doc = create_test_parsed_document(
                 temp_dir.path().join(format!("document_{}.md", i + 1)),
                 &format!("Document {}", i + 1),
-                &content
-            ).await;
+                &content,
+            )
+            .await;
 
             test_documents.push(doc);
         }
@@ -329,7 +389,9 @@ Final section with concluding remarks for document {}.
         let start_time = std::time::Instant::now();
 
         // Act & Assert (This should fail initially)
-        let result = connector.process_documents_to_embeddings(&client, &test_documents).await;
+        let result = connector
+            .process_documents_to_embeddings(&client, &test_documents)
+            .await;
 
         let total_time = start_time.elapsed();
 
@@ -341,12 +403,18 @@ Final section with concluding remarks for document {}.
         assert!(batch_result.total_embeddings_generated > 0);
 
         // Performance assertions (adjust based on requirements)
-        assert!(total_time < Duration::from_secs(30), "Processing should complete within reasonable time");
+        assert!(
+            total_time < Duration::from_secs(30),
+            "Processing should complete within reasonable time"
+        );
         assert!(batch_result.total_processing_time < Duration::from_secs(30));
 
         // Should process documents efficiently
         let avg_time_per_doc = batch_result.total_processing_time / test_documents.len() as u32;
-        assert!(avg_time_per_doc < Duration::from_secs(5), "Average time per document should be reasonable");
+        assert!(
+            avg_time_per_doc < Duration::from_secs(5),
+            "Average time per document should be reasonable"
+        );
 
         thread_pool.shutdown().await.unwrap();
     }
@@ -361,13 +429,19 @@ Final section with concluding remarks for document {}.
         let vault_path = temp_dir.path().to_path_buf();
 
         // Create test files
-        fs::write(vault_path.join("doc1.md"), "# Doc 1\nContent 1").await.unwrap();
-        fs::write(vault_path.join("doc2.md"), "# Doc 2\nContent 2").await.unwrap();
+        fs::write(vault_path.join("doc1.md"), "# Doc 1\nContent 1")
+            .await
+            .unwrap();
+        fs::write(vault_path.join("doc2.md"), "# Doc 2\nContent 2")
+            .await
+            .unwrap();
 
         // Create subdirectory
         let subdir = vault_path.join("subdir");
         fs::create_dir(&subdir).await.unwrap();
-        fs::write(subdir.join("doc3.md"), "# Doc 3\nContent 3").await.unwrap();
+        fs::write(subdir.join("doc3.md"), "# Doc 3\nContent 3")
+            .await
+            .unwrap();
 
         // Set up components
         let config = EmbeddingConfig::optimize_for_resources();
@@ -377,22 +451,36 @@ Final section with concluding remarks for document {}.
 
         // Scan vault
         let scanner_config = VaultScannerConfig::default();
-        let mut scanner = create_vault_scanner_with_embeddings(scanner_config, &client, &thread_pool).await.unwrap();
+        let mut scanner =
+            create_vault_scanner_with_embeddings(scanner_config, &client, &thread_pool)
+                .await
+                .unwrap();
         let scan_result = scanner.scan_vault_directory(&vault_path).await.unwrap();
 
         // Act & Assert (This should fail initially)
         // Get the actual parsed documents (this would need to be implemented)
         let parsed_documents = get_parsed_documents_from_scan(&client, &scan_result).await;
-        assert!(parsed_documents.len() > 0, "Should have parsed at least one document");
+        assert!(
+            parsed_documents.len() > 0,
+            "Should have parsed at least one document"
+        );
 
         // Process through embedding pipeline
-        let embedding_result = connector.process_documents_to_embeddings(&client, &parsed_documents).await;
+        let embedding_result = connector
+            .process_documents_to_embeddings(&client, &parsed_documents)
+            .await;
 
         // TDD: This should fail because no integration exists yet
-        assert!(embedding_result.is_ok(), "Vault scanner integration should be implemented");
+        assert!(
+            embedding_result.is_ok(),
+            "Vault scanner integration should be implemented"
+        );
 
         let embedding_batch_result = embedding_result.unwrap();
-        assert_eq!(embedding_batch_result.total_documents, parsed_documents.len());
+        assert_eq!(
+            embedding_batch_result.total_documents,
+            parsed_documents.len()
+        );
         assert!(embedding_batch_result.successfully_processed > 0);
         assert!(embedding_batch_result.total_embeddings_generated > 0);
 
@@ -449,19 +537,43 @@ Final section with concluding remarks for document {}.
             let document_id = generate_document_id_from_path(path);
 
             // TDD: This should fail because no robust ID generation exists yet
-            assert!(!document_id.is_empty(), "ID should not be empty for path: {:?}", path);
-            assert!(document_id.len() <= 255, "ID should be reasonable length for path: {:?}", path);
+            assert!(
+                !document_id.is_empty(),
+                "ID should not be empty for path: {:?}",
+                path
+            );
+            assert!(
+                document_id.len() <= 255,
+                "ID should be reasonable length for path: {:?}",
+                path
+            );
 
             // Should not contain filesystem path separators
-            assert!(!document_id.contains('/'), "ID should not contain '/' for path: {:?}", path);
-            assert!(!document_id.contains('\\'), "ID should not contain '\\' for path: {:?}", path);
+            assert!(
+                !document_id.contains('/'),
+                "ID should not contain '/' for path: {:?}",
+                path
+            );
+            assert!(
+                !document_id.contains('\\'),
+                "ID should not contain '\\' for path: {:?}",
+                path
+            );
 
             // Should be consistent
             let id2 = generate_document_id_from_path(path);
-            assert_eq!(document_id, id2, "ID generation should be consistent for path: {:?}", path);
+            assert_eq!(
+                document_id, id2,
+                "ID generation should be consistent for path: {:?}",
+                path
+            );
 
             // Should be URL-safe (basic check)
-            assert!(document_id.is_ascii(), "ID should be ASCII for URL safety: {:?}", path);
+            assert!(
+                document_id.is_ascii(),
+                "ID should be ASCII for URL safety: {:?}",
+                path
+            );
         }
     }
 

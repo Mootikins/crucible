@@ -1,18 +1,18 @@
 //! Main watch manager that coordinates all file watching activities.
 
 use crate::{
-    traits::{FileWatcher, WatchConfig, WatchHandle, EventHandler},
     backends::{ExtendedBackendRegistry, WatcherRequirements},
-    handlers::{HandlerRegistry, create_default_handlers},
     config::WatchManagerConfig,
     error::{Error, Result},
     events::FileEvent,
+    handlers::{create_default_handlers, HandlerRegistry},
+    traits::{EventHandler, FileWatcher, WatchConfig, WatchHandle},
     utils::{Debouncer, EventQueue, PerformanceMonitor, PerformanceStats, QueueStats},
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
@@ -145,13 +145,18 @@ impl WatchManager {
         }
 
         // Get the event sender to pass to the watcher
-        let event_sender = self.event_sender.as_ref()
+        let event_sender = self
+            .event_sender
+            .as_ref()
             .ok_or_else(|| Error::Internal("Event sender not available".to_string()))?
             .clone();
 
         // Select appropriate backend
         let requirements = WatcherRequirements::high_performance(); // Could be configurable
-        let mut watcher_arc = self.backend_registry.create_optimal_watcher(&requirements).await?;
+        let mut watcher_arc = self
+            .backend_registry
+            .create_optimal_watcher(&requirements)
+            .await?;
 
         // Try to get mutable access to the watcher to call watch()
         // This works if this is the only Arc reference (which it should be since we just created it)
@@ -170,7 +175,9 @@ impl WatchManager {
             Ok(handle)
         } else {
             // If we can't get mutable access, return an error
-            Err(Error::Internal("Cannot get mutable access to watcher".to_string()))
+            Err(Error::Internal(
+                "Cannot get mutable access to watcher".to_string(),
+            ))
         }
     }
 
@@ -246,7 +253,9 @@ impl WatchManager {
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
         self.shutdown_tx = Some(shutdown_tx);
 
-        let event_receiver = self.event_receiver.take()
+        let event_receiver = self
+            .event_receiver
+            .take()
             .ok_or_else(|| Error::Internal("Event receiver not available".to_string()))?;
 
         let handlers = Arc::clone(&self.handlers);
@@ -337,16 +346,14 @@ impl WatchManager {
             // Wait for all handlers to complete
             for task in handler_tasks {
                 match task.await {
-                    Ok((handler_name, result, duration)) => {
-                        match result {
-                            Ok(()) => {
-                                debug!("Handler '{}' completed in {:?}", handler_name, duration);
-                            }
-                            Err(e) => {
-                                error!("Handler '{}' failed in {:?}: {}", handler_name, duration, e);
-                            }
+                    Ok((handler_name, result, duration)) => match result {
+                        Ok(()) => {
+                            debug!("Handler '{}' completed in {:?}", handler_name, duration);
                         }
-                    }
+                        Err(e) => {
+                            error!("Handler '{}' failed in {:?}: {}", handler_name, duration, e);
+                        }
+                    },
                     Err(e) => {
                         error!("Handler task panicked: {}", e);
                     }
@@ -380,7 +387,7 @@ pub struct ManagerStatus {
 mod tests {
     use super::*;
     use crate::handlers::composite::CompositeHandler;
-    use crate::traits::{WatchConfig, DebounceConfig};
+    use crate::traits::{DebounceConfig, WatchConfig};
 
     #[tokio::test]
     async fn test_watch_manager_lifecycle() {
@@ -402,10 +409,13 @@ mod tests {
         let manager = WatchManager::new(config).await.unwrap();
 
         let composite_handler = Arc::new(CompositeHandler::new(
-            crate::handlers::composite::CoordinationStrategy::Sequential
+            crate::handlers::composite::CoordinationStrategy::Sequential,
         ));
 
-        assert!(manager.register_handler(composite_handler.clone()).await.is_ok());
+        assert!(manager
+            .register_handler(composite_handler.clone())
+            .await
+            .is_ok());
         assert!(manager.unregister_handler(composite_handler.name()).await);
         assert!(!manager.unregister_handler("nonexistent").await);
     }

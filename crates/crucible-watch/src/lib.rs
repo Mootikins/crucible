@@ -57,31 +57,30 @@
 #![warn(clippy::all)]
 #![deny(unsafe_code)]
 
-mod error;
-mod events;
-mod traits;
 mod backends;
-mod manager;
 mod config;
-mod handlers;
-mod utils;
 mod embedding_events;
+mod error;
 mod event_driven_embedding_processor;
+mod events;
+mod handlers;
+mod manager;
 mod message_channel_infrastructure;
+mod traits;
+mod utils;
 
-pub use error::*;
-pub use events::*;
-pub use traits::{
-    FileWatcher, EventHandler, WatchHandle, BackendCapabilities,
-    DebounceConfig, WatchMode
-};
 pub use backends::*;
-pub use manager::*;
 pub use config::*;
-pub use handlers::*;
 pub use embedding_events::*;
+pub use error::*;
 pub use event_driven_embedding_processor::*;
+pub use events::*;
+pub use handlers::*;
+pub use manager::*;
 pub use message_channel_infrastructure::*;
+pub use traits::{
+    BackendCapabilities, DebounceConfig, EventHandler, FileWatcher, WatchHandle, WatchMode,
+};
 
 /// Available file watching backends.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
@@ -97,22 +96,27 @@ pub enum WatchBackend {
 /// Re-export common types for convenience
 pub mod prelude {
     pub use crate::{
-        FileWatcher, FileEvent, FileEventKind, WatchManager,
-        WatchBackend, EventHandler, Error, Result,
+        embedding_events::{
+            create_embedding_metadata, determine_content_type, determine_event_priority,
+            generate_document_id, EmbeddingEvent, EmbeddingEventMetadata, EmbeddingEventPriority,
+            EmbeddingEventResult, EventDrivenEmbeddingConfig,
+        },
         // Event-driven embedding components
         event_driven_embedding_processor::{
-            EventDrivenEmbeddingProcessor, EmbeddingEventHandler, EventProcessorMetrics,
+            EmbeddingEventHandler, EventDrivenEmbeddingProcessor, EventProcessorMetrics,
         },
-        embedding_events::{
-            EmbeddingEvent, EmbeddingEventResult, EmbeddingEventMetadata,
-            EmbeddingEventPriority, EventDrivenEmbeddingConfig,
-            generate_document_id, determine_content_type, determine_event_priority,
-            create_embedding_metadata,
-        },
+        Error,
+        EventHandler,
+        FileEvent,
+        FileEventKind,
+        FileWatcher,
+        Result,
+        WatchBackend,
+        WatchManager,
     };
     // Re-export both WatchConfig types with clear names
-    pub use crate::traits::WatchConfig as TraitWatchConfig;
     pub use crate::config::WatchConfig as ConfigWatchConfig;
+    pub use crate::traits::WatchConfig as TraitWatchConfig;
 }
 
 #[cfg(test)]

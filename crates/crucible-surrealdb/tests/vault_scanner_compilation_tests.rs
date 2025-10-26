@@ -2,13 +2,13 @@
 //!
 //! Minimal tests to verify vault scanner compiles and basic functionality works
 
-use crucible_core::{
-    parser::{ParsedDocument, Frontmatter, FrontmatterFormat, Tag, DocumentContent, Heading},
+use crucible_core::parser::{
+    DocumentContent, Frontmatter, FrontmatterFormat, Heading, ParsedDocument, Tag,
 };
-use crucible_surrealdb::{vault_scanner};
-use vault_scanner::{VaultScannerConfig, create_vault_scanner};
+use crucible_surrealdb::vault_scanner;
 use std::path::PathBuf;
 use tempfile::TempDir;
+use vault_scanner::{create_vault_scanner, VaultScannerConfig};
 
 #[tokio::test]
 async fn test_vault_scanner_compilation() {
@@ -33,8 +33,15 @@ async fn test_vault_scanner_basic_scan() {
     let test_path = temp_dir.path().to_path_buf();
 
     // Create test markdown files
-    tokio::fs::write(test_path.join("test1.md"), "# Test Document\n\nContent here.").await.unwrap();
-    tokio::fs::write(test_path.join("test2.txt"), "Not a markdown file").await.unwrap();
+    tokio::fs::write(
+        test_path.join("test1.md"),
+        "# Test Document\n\nContent here.",
+    )
+    .await
+    .unwrap();
+    tokio::fs::write(test_path.join("test2.txt"), "Not a markdown file")
+        .await
+        .unwrap();
 
     // Test scanning
     let config = VaultScannerConfig::default();
@@ -56,7 +63,10 @@ async fn test_vault_scanner_configuration() {
     assert_eq!(config.max_recursion_depth, 10);
     assert!(config.recursive_scan);
     assert!(!config.include_hidden_files);
-    assert_eq!(config.file_extensions, vec!["md".to_string(), "markdown".to_string()]);
+    assert_eq!(
+        config.file_extensions,
+        vec!["md".to_string(), "markdown".to_string()]
+    );
     assert!(config.enable_embeddings);
     assert!(config.process_embeds);
     assert!(config.process_wikilinks);
@@ -107,8 +117,9 @@ fn create_test_parsed_document() -> ParsedDocument {
         r#"title: "Test Document"
 tags: [rust, programming]
 author: "Test Author"
-created: "2024-01-01"#.to_string(),
-        FrontmatterFormat::Yaml
+created: "2024-01-01"#
+            .to_string(),
+        FrontmatterFormat::Yaml,
     );
     doc.frontmatter = Some(frontmatter);
 

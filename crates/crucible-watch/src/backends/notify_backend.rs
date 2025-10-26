@@ -1,15 +1,15 @@
 //! Notify-based file watching backend.
 
 use crate::{
-    traits::{FileWatcher, WatchConfig, WatchHandle, BackendCapabilities},
     error::{Error, Result},
-    events::{FileEvent, FileEventKind, EventMetadata},
+    events::{EventMetadata, FileEvent, FileEventKind},
+    traits::{BackendCapabilities, FileWatcher, WatchConfig, WatchHandle},
 };
 
 // Import the WatcherFactory trait
 use async_trait::async_trait;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode};
-use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, DebouncedEvent};
+use notify_debouncer_full::{new_debouncer, DebounceEventResult, DebouncedEvent, Debouncer};
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -45,31 +45,30 @@ impl NotifyWatcher {
         // Create debounced watcher
         let debouncer = new_debouncer(
             Duration::from_millis(100), // Default debounce time
-            None, // No file ID map for now
-            move |result: DebounceEventResult| {
-                match result {
-                    Ok(events) => {
-                        for event in events {
-                            match Self::convert_notify_event(event) {
-                                Ok(file_event) => {
-                                    if let Err(e) = sender.send(file_event) {
-                                        error!("Failed to send file event: {}", e);
-                                    }
+            None,                       // No file ID map for now
+            move |result: DebounceEventResult| match result {
+                Ok(events) => {
+                    for event in events {
+                        match Self::convert_notify_event(event) {
+                            Ok(file_event) => {
+                                if let Err(e) = sender.send(file_event) {
+                                    error!("Failed to send file event: {}", e);
                                 }
-                                Err(e) => {
-                                    error!("Failed to convert notify event: {}", e);
-                                }
+                            }
+                            Err(e) => {
+                                error!("Failed to convert notify event: {}", e);
                             }
                         }
                     }
-                    Err(errors) => {
-                        for error in errors {
-                            error!("Notify error: {:?}", error);
-                        }
+                }
+                Err(errors) => {
+                    for error in errors {
+                        error!("Notify error: {:?}", error);
                     }
                 }
             },
-        ).map_err(|e| Error::Watch(format!("Failed to create notify watcher: {}", e)))?;
+        )
+        .map_err(|e| Error::Watch(format!("Failed to create notify watcher: {}", e)))?;
 
         // NoCache doesn't have add_root, so we skip it
 
@@ -88,7 +87,8 @@ impl NotifyWatcher {
             EventKind::Remove(_) => FileEventKind::Deleted,
             EventKind::Other => {
                 // Check if this is a move event
-                if let (Some(from), Some(to)) = (event.event.paths.get(0), event.event.paths.get(1)) {
+                if let (Some(from), Some(to)) = (event.event.paths.get(0), event.event.paths.get(1))
+                {
                     FileEventKind::Moved {
                         from: from.clone(),
                         to: to.clone(),
@@ -105,32 +105,36 @@ impl NotifyWatcher {
             // Create a batch event
             let mut batch_events = Vec::new();
             for path in &event.event.paths {
-                let metadata = EventMetadata::new(
-                    "notify".to_string(),
-                    "default".to_string(),
-                );
+                let metadata = EventMetadata::new("notify".to_string(), "default".to_string());
                 batch_events.push(FileEvent::with_metadata(
                     kind.clone(),
                     path.clone(),
                     metadata,
                 ));
             }
-            return Ok(FileEvent::new(FileEventKind::Batch(batch_events), PathBuf::new()));
+            return Ok(FileEvent::new(
+                FileEventKind::Batch(batch_events),
+                PathBuf::new(),
+            ));
         }
 
-        let path = event.event.paths.into_iter().next()
+        let path = event
+            .event
+            .paths
+            .into_iter()
+            .next()
             .ok_or_else(|| Error::Watch("Event has no path".to_string()))?;
 
-        let metadata = EventMetadata::new(
-            "notify".to_string(),
-            "default".to_string(),
-        );
+        let metadata = EventMetadata::new("notify".to_string(), "default".to_string());
 
         Ok(FileEvent::with_metadata(kind, path, metadata))
     }
 
     /// Update debounce configuration.
-    pub fn update_debounce_config(&mut self, _debounce_config: &crate::traits::DebounceConfig) -> Result<()> {
+    pub fn update_debounce_config(
+        &mut self,
+        _debounce_config: &crate::traits::DebounceConfig,
+    ) -> Result<()> {
         // Note: notify-debouncer-full doesn't support runtime reconfiguration
         // This would require recreating the debouncer
         warn!("Runtime debounce reconfiguration not supported by notify backend");
@@ -153,8 +157,9 @@ impl FileWatcher for NotifyWatcher {
 
         // Initialize if not already done
         if self.debouncer.is_none() {
-            let sender = self.event_sender.clone()
-                .ok_or_else(|| Error::Internal("Event sender not set before calling watch".to_string()))?;
+            let sender = self.event_sender.clone().ok_or_else(|| {
+                Error::Internal("Event sender not set before calling watch".to_string())
+            })?;
             self.initialize(sender).await?;
         }
 
@@ -267,7 +272,7 @@ impl super::WatcherFactory for NotifyFactory {
 mod tests {
     use super::*;
     use crate::backends::WatcherFactory;
-    use crate::traits::{WatchConfig, DebounceConfig};
+    use crate::traits::{DebounceConfig, WatchConfig};
     use tempfile::TempDir;
 
     #[tokio::test]

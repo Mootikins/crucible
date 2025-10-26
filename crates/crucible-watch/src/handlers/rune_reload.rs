@@ -1,10 +1,13 @@
 //! Integration handler for hot-reloading Rune tool scripts.
 
-use crate::{events::FileEvent, traits::EventHandler, error::{Error, Result}};
+use crate::{
+    error::{Error, Result},
+    events::FileEvent,
+    traits::EventHandler,
+};
 use async_trait::async_trait;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 /// Handler for automatically reloading Rune tool scripts when they change.
@@ -81,7 +84,8 @@ impl RuneReloadHandler {
     }
 
     async fn get_registry(&self) -> Result<Arc<dyn RuneRegistry>> {
-        self.registry.as_ref()
+        self.registry
+            .as_ref()
             .cloned()
             .ok_or_else(|| Error::Config("Rune registry not configured".to_string()))
     }
@@ -99,18 +103,26 @@ impl RuneReloadHandler {
                     debug!("Script validation passed: {}", path.display());
                 }
                 Ok(false) => {
-                    warn!("Script validation failed, skipping reload: {}", path.display());
+                    warn!(
+                        "Script validation failed, skipping reload: {}",
+                        path.display()
+                    );
                     return Ok(());
                 }
                 Err(e) => {
-                    warn!("Script validation error: {}, skipping reload: {}", e, path.display());
+                    warn!(
+                        "Script validation error: {}, skipping reload: {}",
+                        e,
+                        path.display()
+                    );
                     return Ok(());
                 }
             }
         }
 
         // Perform the reload
-        registry.reload_script(path)
+        registry
+            .reload_script(path)
             .await
             .map_err(|e| Error::Handler(format!("Failed to reload Rune script: {}", e)))?;
 
@@ -143,23 +155,39 @@ impl EventHandler for RuneReloadHandler {
         match event.kind {
             crate::events::FileEventKind::Created | crate::events::FileEventKind::Modified => {
                 if let Err(e) = self.reload_script(&event.path).await {
-                    error!("Failed to reload Rune script {}: {}", event.path.display(), e);
+                    error!(
+                        "Failed to reload Rune script {}: {}",
+                        event.path.display(),
+                        e
+                    );
                     return Err(e);
                 }
             }
             crate::events::FileEventKind::Deleted => {
                 if let Err(e) = self.handle_script_deletion(&event.path).await {
-                    error!("Failed to handle Rune script deletion {}: {}", event.path.display(), e);
+                    error!(
+                        "Failed to handle Rune script deletion {}: {}",
+                        event.path.display(),
+                        e
+                    );
                     return Err(e);
                 }
             }
             crate::events::FileEventKind::Moved { from, to } => {
                 // Handle script move
-                debug!("Rune script moved from {} to {}", from.display(), to.display());
+                debug!(
+                    "Rune script moved from {} to {}",
+                    from.display(),
+                    to.display()
+                );
 
                 // Remove old script
                 if let Err(e) = self.handle_script_deletion(&from).await {
-                    warn!("Failed to handle moved Rune script removal {}: {}", from.display(), e);
+                    warn!(
+                        "Failed to handle moved Rune script removal {}: {}",
+                        from.display(),
+                        e
+                    );
                 }
 
                 // Load new script
@@ -246,7 +274,7 @@ impl RuneRegistry for MockRuneRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::{FileEvent, FileEventKind};
+    use crate::{FileEvent, FileEventKind};
     use std::path::PathBuf;
 
     #[tokio::test]

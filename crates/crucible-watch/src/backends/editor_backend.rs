@@ -1,9 +1,9 @@
 //! Editor integration backend for low-frequency inode watching.
 
 use crate::{
-    traits::{FileWatcher, WatchConfig, WatchHandle, BackendCapabilities},
     error::{Error, Result},
-    events::{FileEvent, FileEventKind, EventMetadata},
+    events::{EventMetadata, FileEvent, FileEventKind},
+    traits::{BackendCapabilities, FileWatcher, WatchConfig, WatchHandle},
 };
 
 // Import the WatcherFactory trait
@@ -32,8 +32,8 @@ pub struct EditorConfig {
 }
 
 mod duration_serde {
-    use std::time::Duration;
     use serde::{Deserialize, Deserializer, Serializer};
+    use std::time::Duration;
 
     pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -112,11 +112,15 @@ impl EditorWatcher {
             monitor_task: None,
             shutdown_tx: None,
             capabilities: BackendCapabilities {
-                recursive: false, // Editor watching is typically non-recursive
+                recursive: false,          // Editor watching is typically non-recursive
                 fine_grained_events: true, // Can detect specific editor events
                 multiple_paths: true,
                 hot_reconfig: true,
-                platforms: vec!["linux".to_string(), "macos".to_string(), "windows".to_string()],
+                platforms: vec![
+                    "linux".to_string(),
+                    "macos".to_string(),
+                    "windows".to_string(),
+                ],
             },
         }
     }
@@ -132,7 +136,9 @@ impl EditorWatcher {
     /// Start the background monitoring task.
     async fn start_monitoring_task(&mut self) -> Result<()> {
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
-        let _event_sender = self.event_sender.clone()
+        let _event_sender = self
+            .event_sender
+            .clone()
             .ok_or_else(|| Error::Internal("Event sender not initialized".to_string()))?;
 
         let task = tokio::spawn(async move {
@@ -178,8 +184,7 @@ impl EditorWatcher {
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
-            let metadata = std::fs::metadata(path)
-                .map_err(|e| Error::Io(e))?;
+            let metadata = std::fs::metadata(path).map_err(|e| Error::Io(e))?;
             Ok(Some(metadata.ino()))
         }
 
@@ -193,8 +198,7 @@ impl EditorWatcher {
 
     /// Update inode-based file state.
     async fn update_inode_state(&self, path: &PathBuf, state: &mut InodeState) -> Result<bool> {
-        let metadata = std::fs::metadata(path)
-            .map_err(|e| Error::Io(e))?;
+        let metadata = std::fs::metadata(path).map_err(|e| Error::Io(e))?;
 
         let modified_time = metadata.modified().ok();
         let size = Some(metadata.len());
@@ -225,17 +229,21 @@ impl EditorWatcher {
     async fn monitor_watch(&mut self, watch_id: &str) -> Result<()> {
         // Clone what we need to avoid borrow conflicts
         let (detect_inode_changes, _editor_type) = {
-            let watch_state = self.watches.get(watch_id)
+            let watch_state = self
+                .watches
+                .get(watch_id)
                 .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
             (
                 watch_state.editor_config.detect_inode_changes,
-                watch_state.editor_config.editor_type.clone()
+                watch_state.editor_config.editor_type.clone(),
             )
         };
 
         // Update last check time
         {
-            let watch_state = self.watches.get_mut(watch_id)
+            let watch_state = self
+                .watches
+                .get_mut(watch_id)
                 .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
             watch_state.last_check = Instant::now();
         }
@@ -255,9 +263,14 @@ impl EditorWatcher {
     async fn check_inode_changes_for_watch(&mut self, watch_id: &str) -> Result<()> {
         // Extract what we need to avoid multiple mutable borrows
         let (watch_path, detect_inode) = {
-            let watch_state = self.watches.get(watch_id)
+            let watch_state = self
+                .watches
+                .get(watch_id)
                 .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
-            (PathBuf::from(&watch_state.config.id), watch_state.editor_config.detect_inode_changes)
+            (
+                PathBuf::from(&watch_state.config.id),
+                watch_state.editor_config.detect_inode_changes,
+            )
         };
 
         if !detect_inode {
@@ -268,7 +281,9 @@ impl EditorWatcher {
         let mut events_to_send = Vec::new();
 
         if !watch_path.exists() {
-            let watch_state = self.watches.get_mut(watch_id)
+            let watch_state = self
+                .watches
+                .get_mut(watch_id)
                 .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
             if let Some(prev_state) = watch_state.file_states.get(&watch_path) {
                 if prev_state.inode.is_some() {
@@ -277,11 +292,14 @@ impl EditorWatcher {
                 }
             }
         } else {
-            let watch_state = self.watches.get_mut(watch_id)
+            let watch_state = self
+                .watches
+                .get_mut(watch_id)
                 .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
 
             // Update or create inode state
-            let mut file_state = watch_state.file_states
+            let mut file_state = watch_state
+                .file_states
                 .entry(watch_path.clone())
                 .or_insert_with(|| InodeState {
                     inode: None,
@@ -311,9 +329,11 @@ impl EditorWatcher {
     }
 
     /// Static helper to update inode state without self borrow.
-    async fn update_inode_state_static(watch_path: &PathBuf, file_state: &mut InodeState) -> Result<bool> {
-        let metadata = std::fs::metadata(watch_path)
-            .map_err(|e| Error::Io(e))?;
+    async fn update_inode_state_static(
+        watch_path: &PathBuf,
+        file_state: &mut InodeState,
+    ) -> Result<bool> {
+        let metadata = std::fs::metadata(watch_path).map_err(|e| Error::Io(e))?;
 
         let new_modified = metadata.modified().ok();
         let new_size = Some(metadata.len());
@@ -360,7 +380,8 @@ impl EditorWatcher {
             // Check if file was deleted
             if let Some(prev_state) = watch_state.file_states.get(&watch_path) {
                 if prev_state.inode.is_some() {
-                    self.send_event(FileEventKind::Deleted, watch_path.clone()).await;
+                    self.send_event(FileEventKind::Deleted, watch_path.clone())
+                        .await;
                     watch_state.file_states.remove(&watch_path);
                 }
             }
@@ -368,7 +389,8 @@ impl EditorWatcher {
         }
 
         // Update or create inode state
-        let mut file_state = watch_state.file_states
+        let mut file_state = watch_state
+            .file_states
             .entry(watch_path.clone())
             .or_insert_with(|| InodeState {
                 inode: None,
@@ -378,15 +400,19 @@ impl EditorWatcher {
             });
 
         let previous_inode = file_state.inode;
-        let changed = self.update_inode_state(&watch_path, &mut file_state).await?;
+        let changed = self
+            .update_inode_state(&watch_path, &mut file_state)
+            .await?;
 
         if changed {
             if previous_inode.is_none() {
                 // File was created
-                self.send_event(FileEventKind::Created, watch_path.clone()).await;
+                self.send_event(FileEventKind::Created, watch_path.clone())
+                    .await;
             } else {
                 // File was modified
-                self.send_event(FileEventKind::Modified, watch_path.clone()).await;
+                self.send_event(FileEventKind::Modified, watch_path.clone())
+                    .await;
             }
         }
 
@@ -407,7 +433,10 @@ impl EditorWatcher {
             "vim" => self.check_vim_changes(watch_state).await,
             "emacs" => self.check_emacs_changes(watch_state).await,
             _ => {
-                debug!("No specific monitoring for editor type: {}", watch_state.editor_config.editor_type);
+                debug!(
+                    "No specific monitoring for editor type: {}",
+                    watch_state.editor_config.editor_type
+                );
                 Ok(())
             }
         }
@@ -440,10 +469,7 @@ impl EditorWatcher {
     /// Send a file event.
     async fn send_event(&self, kind: FileEventKind, path: PathBuf) {
         if let Some(ref sender) = self.event_sender {
-            let metadata = EventMetadata::new(
-                "editor".to_string(),
-                "default".to_string(),
-            );
+            let metadata = EventMetadata::new("editor".to_string(), "default".to_string());
 
             let event = FileEvent::with_metadata(kind, path, metadata);
             if let Err(e) = sender.send(event) {
@@ -479,8 +505,9 @@ impl FileWatcher for EditorWatcher {
 
         // Initialize if not already done
         if self.monitor_task.is_none() {
-            let sender = self.event_sender.clone()
-                .ok_or_else(|| Error::Internal("Event sender not set before calling watch".to_string()))?;
+            let sender = self.event_sender.clone().ok_or_else(|| {
+                Error::Internal("Event sender not set before calling watch".to_string())
+            })?;
             self.initialize(sender).await?;
         }
 
@@ -491,7 +518,9 @@ impl FileWatcher for EditorWatcher {
         };
 
         // Extract editor configuration from backend options
-        let editor_config = config.backend_options.get("editor_config")
+        let editor_config = config
+            .backend_options
+            .get("editor_config")
             .and_then(|v| serde_json::from_value::<EditorConfig>(v.clone()).ok())
             .unwrap_or_else(|| EditorConfig {
                 editor_type: "generic".to_string(),
@@ -542,7 +571,8 @@ impl FileWatcher for EditorWatcher {
     }
 
     fn active_watches(&self) -> Vec<WatchHandle> {
-        self.watches.iter()
+        self.watches
+            .iter()
             .map(|(id, state)| WatchHandle {
                 id: id.clone(),
                 path: state.watched_path.clone(),
@@ -575,7 +605,11 @@ impl EditorFactory {
                 fine_grained_events: true,
                 multiple_paths: true,
                 hot_reconfig: true,
-                platforms: vec!["linux".to_string(), "macos".to_string(), "windows".to_string()],
+                platforms: vec![
+                    "linux".to_string(),
+                    "macos".to_string(),
+                    "windows".to_string(),
+                ],
             },
         }
     }
@@ -605,7 +639,7 @@ impl super::WatcherFactory for EditorFactory {
 mod tests {
     use super::*;
     use crate::backends::WatcherFactory;
-    use crate::traits::{WatchConfig, DebounceConfig};
+    use crate::traits::{DebounceConfig, WatchConfig};
     use std::collections::HashMap;
     use tempfile::TempDir;
 

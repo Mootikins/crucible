@@ -4,90 +4,25 @@
 //! These tests verify that embedding vectors are actually stored and retrieved from SurrealDB.
 //! Tests should initially fail if storage functions are stubbed, then pass after implementation.
 
-use crucible_surrealdb::{
-    SurrealClient,
-    vault_integration,
-    embedding_config::{DocumentEmbedding, EmbeddingModel},
-};
-use crucible_core::RelationalDB;
+use crucible_surrealdb::{embedding_config::EmbeddingModel, vault_integration, SurrealClient};
 use vault_integration::{
-    store_document_embedding, get_document_embeddings, clear_document_embeddings,
-    update_document_processed_timestamp, initialize_vault_schema
+    clear_document_embeddings, get_document_embeddings, initialize_vault_schema,
+    store_document_embedding, update_document_processed_timestamp,
 };
+
+// Import consolidated test utilities
+mod common;
 use chrono::Utc;
+use common::{EmbeddingAssertions, EmbeddingTestUtils};
 
 // =============================================================================
-// TEST DATA GENERATION HELPERS
+// NOTE: Test data generation helpers moved to common::EmbeddingTestUtils
 // =============================================================================
 
-/// Create a test document embedding with mock vector data
-fn create_test_document_embedding(document_id: &str, dimensions: usize) -> DocumentEmbedding {
-    let vector: Vec<f32> = (0..dimensions)
-        .map(|i| ((i as f32 * 0.1) % 1.0).cos())
-        .collect();
-
-    DocumentEmbedding::new(
-        document_id.to_string(),
-        vector,
-        "test-model".to_string(),
-    )
-}
-
-/// Create a test chunked document embedding
-fn create_test_chunk_embedding(document_id: &str, chunk_id: &str, position: usize, dimensions: usize) -> DocumentEmbedding {
-    let vector: Vec<f32> = (0..dimensions)
-        .map(|i| ((i as f32 * 0.2 + position as f32) % 1.0).sin())
-        .collect();
-
-    DocumentEmbedding::new(
-        document_id.to_string(),
-        vector,
-        "test-model-chunked".to_string(),
-    ).with_chunk_info(
-        chunk_id.to_string(),
-        500, // chunk_size
-        position,
-    )
-}
-
-/// Create a batch of test embeddings for performance testing
-fn create_test_embedding_batch(document_ids: &[&str], embeddings_per_doc: usize, dimensions: usize) -> Vec<DocumentEmbedding> {
-    let mut embeddings = Vec::new();
-
-    for &doc_id in document_ids {
-        // Add main document embedding
-        embeddings.push(create_test_document_embedding(doc_id, dimensions));
-
-        // Add chunked embeddings
-        for i in 0..embeddings_per_doc {
-            let chunk_id = format!("{}-chunk-{}", doc_id, i);
-            embeddings.push(create_test_chunk_embedding(doc_id, &chunk_id, i, dimensions));
-        }
-    }
-
-    embeddings
-}
-
-/// Verify two embeddings are approximately equal (within tolerance)
-fn assert_embeddings_approx_eq(embedding1: &DocumentEmbedding, embedding2: &DocumentEmbedding, tolerance: f32) {
-    assert_eq!(embedding1.document_id, embedding2.document_id);
-    assert_eq!(embedding1.chunk_id, embedding2.chunk_id);
-    assert_eq!(embedding1.embedding_model, embedding2.embedding_model);
-    assert_eq!(embedding1.dimensions(), embedding2.dimensions());
-    assert_eq!(embedding1.chunk_size, embedding2.chunk_size);
-    assert_eq!(embedding1.chunk_position, embedding2.chunk_position);
-
-    // Compare vector values with tolerance
-    assert_eq!(embedding1.vector.len(), embedding2.vector.len());
-    for (i, (v1, v2)) in embedding1.vector.iter().zip(embedding2.vector.iter()).enumerate() {
-        let diff = (v1 - v2).abs();
-        assert!(
-            diff <= tolerance,
-            "Vector value mismatch at index {}: {} vs {} (diff: {} > tolerance: {})",
-            i, v1, v2, diff, tolerance
-        );
-    }
-}
+// NOTE: All test data generation helpers moved to common module
+// - EmbeddingTestUtils::create_chunk_embedding -> common::EmbeddingTestUtils::create_chunk_embedding
+// - EmbeddingTestUtils::create_embedding_batch -> common::EmbeddingTestUtils::create_embedding_batch
+// - EmbeddingAssertions::assert_embeddings_approx_eq -> common::EmbeddingAssertions::EmbeddingAssertions::assert_embeddings_approx_eq
 
 // =============================================================================
 // PHASE 1: BASIC STORAGE OPERATIONS
@@ -102,20 +37,26 @@ async fn test_store_single_document_embedding() {
     initialize_vault_schema(&client).await.unwrap();
 
     let document_id = "test-doc-1";
-    let test_embedding = create_test_document_embedding(document_id, 768);
+    let test_embedding = EmbeddingTestUtils::create_document_embedding(document_id, 768);
 
     // Store the embedding
-    store_document_embedding(&client, &test_embedding).await.unwrap();
+    store_document_embedding(&client, &test_embedding)
+        .await
+        .unwrap();
 
     // Retrieve and verify
     let retrieved_embeddings = get_document_embeddings(&client, document_id).await.unwrap();
 
     // Should have exactly one embedding
-    assert_eq!(retrieved_embeddings.len(), 1, "Should retrieve exactly one embedding");
+    assert_eq!(
+        retrieved_embeddings.len(),
+        1,
+        "Should retrieve exactly one embedding"
+    );
 
     // Verify embedding data integrity
     let retrieved = &retrieved_embeddings[0];
-    assert_embeddings_approx_eq(&test_embedding, retrieved, 1e-6);
+    EmbeddingAssertions::assert_embeddings_approx_eq(&test_embedding, retrieved, 1e-6);
 
     // Verify metadata
     assert_eq!(retrieved.document_id, document_id);
@@ -139,8 +80,11 @@ async fn test_store_chunked_embeddings() {
     let mut stored_embeddings = Vec::new();
     for i in 0..chunk_count {
         let chunk_id = format!("{}-chunk-{}", document_id, i);
-        let chunk_embedding = create_test_chunk_embedding(document_id, &chunk_id, i, dimensions);
-        store_document_embedding(&client, &chunk_embedding).await.unwrap();
+        let chunk_embedding =
+            EmbeddingTestUtils::create_chunk_embedding(document_id, &chunk_id, i, dimensions);
+        store_document_embedding(&client, &chunk_embedding)
+            .await
+            .unwrap();
         stored_embeddings.push(chunk_embedding);
     }
 
@@ -148,17 +92,25 @@ async fn test_store_chunked_embeddings() {
     let retrieved_embeddings = get_document_embeddings(&client, document_id).await.unwrap();
 
     // Should have all chunked embeddings
-    assert_eq!(retrieved_embeddings.len(), chunk_count, "Should retrieve all chunked embeddings");
+    assert_eq!(
+        retrieved_embeddings.len(),
+        chunk_count,
+        "Should retrieve all chunked embeddings"
+    );
 
     // Verify each chunk embedding
     for (i, stored_embedding) in stored_embeddings.iter().enumerate() {
         let found = retrieved_embeddings.iter().find(|e| {
-            e.chunk_id.as_ref() == stored_embedding.chunk_id.as_ref() &&
-            e.chunk_position == stored_embedding.chunk_position
+            e.chunk_id.as_ref() == stored_embedding.chunk_id.as_ref()
+                && e.chunk_position == stored_embedding.chunk_position
         });
 
-        assert!(found.is_some(), "Should find chunk {} in retrieved embeddings", i);
-        assert_embeddings_approx_eq(stored_embedding, found.unwrap(), 1e-6);
+        assert!(
+            found.is_some(),
+            "Should find chunk {} in retrieved embeddings",
+            i
+        );
+        EmbeddingAssertions::assert_embeddings_approx_eq(stored_embedding, found.unwrap(), 1e-6);
     }
 }
 
@@ -172,31 +124,54 @@ async fn test_store_mixed_embeddings() {
     let document_id = "test-doc-mixed";
 
     // Store main document embedding
-    let main_embedding = create_test_document_embedding(document_id, 768);
-    store_document_embedding(&client, &main_embedding).await.unwrap();
+    let main_embedding = EmbeddingTestUtils::create_document_embedding(document_id, 768);
+    store_document_embedding(&client, &main_embedding)
+        .await
+        .unwrap();
 
     // Store chunked embeddings
     let chunk_count = 3;
     for i in 0..chunk_count {
         let chunk_id = format!("{}-chunk-{}", document_id, i);
-        let chunk_embedding = create_test_chunk_embedding(document_id, &chunk_id, i, 768);
-        store_document_embedding(&client, &chunk_embedding).await.unwrap();
+        let chunk_embedding =
+            EmbeddingTestUtils::create_chunk_embedding(document_id, &chunk_id, i, 768);
+        store_document_embedding(&client, &chunk_embedding)
+            .await
+            .unwrap();
     }
 
     // Retrieve all embeddings
     let retrieved_embeddings = get_document_embeddings(&client, document_id).await.unwrap();
 
     // Should have main embedding + chunks
-    assert_eq!(retrieved_embeddings.len(), chunk_count + 1, "Should have main embedding plus chunks");
+    assert_eq!(
+        retrieved_embeddings.len(),
+        chunk_count + 1,
+        "Should have main embedding plus chunks"
+    );
 
     // Verify main embedding exists
     let main_retrieved = retrieved_embeddings.iter().find(|e| !e.is_chunked());
-    assert!(main_retrieved.is_some(), "Should find main document embedding");
-    assert_embeddings_approx_eq(&main_embedding, main_retrieved.unwrap(), 1e-6);
+    assert!(
+        main_retrieved.is_some(),
+        "Should find main document embedding"
+    );
+    EmbeddingAssertions::assert_embeddings_approx_eq(
+        &main_embedding,
+        main_retrieved.unwrap(),
+        1e-6,
+    );
 
     // Verify all chunk embeddings exist
-    let chunk_retrieved: Vec<_> = retrieved_embeddings.iter().filter(|e| e.is_chunked()).collect();
-    assert_eq!(chunk_retrieved.len(), chunk_count, "Should find all chunk embeddings");
+    let chunk_retrieved: Vec<_> = retrieved_embeddings
+        .iter()
+        .filter(|e| e.is_chunked())
+        .collect();
+    assert_eq!(
+        chunk_retrieved.len(),
+        chunk_count,
+        "Should find all chunk embeddings"
+    );
 }
 
 // =============================================================================
@@ -215,7 +190,8 @@ async fn test_store_multiple_document_embeddings() {
     let dimensions = 512;
 
     // Store embeddings for all documents
-    let all_embeddings = create_test_embedding_batch(&document_ids, embeddings_per_doc, dimensions);
+    let all_embeddings =
+        EmbeddingTestUtils::create_embedding_batch(&document_ids, embeddings_per_doc, dimensions);
     for embedding in &all_embeddings {
         store_document_embedding(&client, embedding).await.unwrap();
     }
@@ -225,12 +201,21 @@ async fn test_store_multiple_document_embeddings() {
         let retrieved = get_document_embeddings(&client, doc_id).await.unwrap();
         let expected_count = embeddings_per_doc + 1; // main + chunks
 
-        assert_eq!(retrieved.len(), expected_count,
-                  "Document {} should have {} embeddings", doc_id, expected_count);
+        assert_eq!(
+            retrieved.len(),
+            expected_count,
+            "Document {} should have {} embeddings",
+            doc_id,
+            expected_count
+        );
 
         // Verify main embedding exists
         let main_embedding = retrieved.iter().find(|e| !e.is_chunked());
-        assert!(main_embedding.is_some(), "Document {} should have main embedding", doc_id);
+        assert!(
+            main_embedding.is_some(),
+            "Document {} should have main embedding",
+            doc_id
+        );
         assert_eq!(main_embedding.unwrap().document_id, doc_id);
     }
 }
@@ -253,7 +238,11 @@ async fn test_batch_embedding_performance() {
     let document_id_refs: Vec<&str> = document_ids.iter().map(|s| s.as_str()).collect();
 
     // Create test embeddings
-    let all_embeddings = create_test_embedding_batch(&document_id_refs, embeddings_per_doc, dimensions);
+    let all_embeddings = EmbeddingTestUtils::create_embedding_batch(
+        &document_id_refs,
+        embeddings_per_doc,
+        dimensions,
+    );
 
     // Measure storage performance
     let start_time = std::time::Instant::now();
@@ -273,16 +262,30 @@ async fn test_batch_embedding_performance() {
 
     // Verify results
     let expected_total = document_count * (embeddings_per_doc + 1);
-    assert_eq!(total_retrieved, expected_total, "Should retrieve all stored embeddings");
+    assert_eq!(
+        total_retrieved, expected_total,
+        "Should retrieve all stored embeddings"
+    );
 
     // Performance assertions (adjust these based on requirements)
-    assert!(storage_duration.as_millis() < 5000,
-           "Storage should complete within 5 seconds, took {:?}", storage_duration);
-    assert!(retrieval_duration.as_millis() < 1000,
-           "Retrieval should complete within 1 second, took {:?}", retrieval_duration);
+    assert!(
+        storage_duration.as_millis() < 5000,
+        "Storage should complete within 5 seconds, took {:?}",
+        storage_duration
+    );
+    assert!(
+        retrieval_duration.as_millis() < 1000,
+        "Retrieval should complete within 1 second, took {:?}",
+        retrieval_duration
+    );
 
-    println!("Performance: Stored {} embeddings in {:?}, retrieved {} in {:?}",
-             all_embeddings.len(), storage_duration, total_retrieved, retrieval_duration);
+    println!(
+        "Performance: Stored {} embeddings in {:?}, retrieved {} in {:?}",
+        all_embeddings.len(),
+        storage_duration,
+        total_retrieved,
+        retrieval_duration
+    );
 }
 
 // =============================================================================
@@ -299,22 +302,37 @@ async fn test_clear_document_embeddings() {
     let document_id = "test-doc-clear";
 
     // Store multiple embeddings
-    let main_embedding = create_test_document_embedding(document_id, 256);
-    store_document_embedding(&client, &main_embedding).await.unwrap();
+    let main_embedding = EmbeddingTestUtils::create_document_embedding(document_id, 256);
+    store_document_embedding(&client, &main_embedding)
+        .await
+        .unwrap();
 
-    let chunk_embedding = create_test_chunk_embedding(document_id, "chunk-1", 0, 256);
-    store_document_embedding(&client, &chunk_embedding).await.unwrap();
+    let chunk_embedding =
+        EmbeddingTestUtils::create_chunk_embedding(document_id, "chunk-1", 0, 256);
+    store_document_embedding(&client, &chunk_embedding)
+        .await
+        .unwrap();
 
     // Verify embeddings exist
     let before_clear = get_document_embeddings(&client, document_id).await.unwrap();
-    assert_eq!(before_clear.len(), 2, "Should have 2 embeddings before clear");
+    assert_eq!(
+        before_clear.len(),
+        2,
+        "Should have 2 embeddings before clear"
+    );
 
     // Clear embeddings
-    clear_document_embeddings(&client, document_id).await.unwrap();
+    clear_document_embeddings(&client, document_id)
+        .await
+        .unwrap();
 
     // Verify embeddings are cleared
     let after_clear = get_document_embeddings(&client, document_id).await.unwrap();
-    assert_eq!(after_clear.len(), 0, "Should have no embeddings after clear");
+    assert_eq!(
+        after_clear.len(),
+        0,
+        "Should have no embeddings after clear"
+    );
 }
 
 /// Test: Update document processed timestamp
@@ -326,10 +344,14 @@ async fn test_update_document_processed_timestamp() {
 
     // First, we need to store a document in the notes table
     let test_doc = create_test_parsed_document();
-    let doc_id = vault_integration::store_parsed_document(&client, &test_doc).await.unwrap();
+    let doc_id = vault_integration::store_parsed_document(&client, &test_doc)
+        .await
+        .unwrap();
 
     // Update processed timestamp
-    update_document_processed_timestamp(&client, &doc_id).await.unwrap();
+    update_document_processed_timestamp(&client, &doc_id)
+        .await
+        .unwrap();
 
     // Verify the timestamp was updated (this would require additional query implementation)
     // For now, just ensure the operation doesn't fail
@@ -346,28 +368,44 @@ async fn test_document_update_workflow() {
     let document_id = "test-doc-update";
 
     // Store initial embeddings
-    let initial_main = create_test_document_embedding(document_id, 512);
-    store_document_embedding(&client, &initial_main).await.unwrap();
+    let initial_main = EmbeddingTestUtils::create_document_embedding(document_id, 512);
+    store_document_embedding(&client, &initial_main)
+        .await
+        .unwrap();
 
-    let initial_chunk = create_test_chunk_embedding(document_id, "chunk-1", 0, 512);
-    store_document_embedding(&client, &initial_chunk).await.unwrap();
+    let initial_chunk = EmbeddingTestUtils::create_chunk_embedding(document_id, "chunk-1", 0, 512);
+    store_document_embedding(&client, &initial_chunk)
+        .await
+        .unwrap();
 
     // Verify initial state
     let initial_retrieved = get_document_embeddings(&client, document_id).await.unwrap();
-    assert_eq!(initial_retrieved.len(), 2, "Should have 2 initial embeddings");
+    assert_eq!(
+        initial_retrieved.len(),
+        2,
+        "Should have 2 initial embeddings"
+    );
 
     // Clear old embeddings (document update)
-    clear_document_embeddings(&client, document_id).await.unwrap();
+    clear_document_embeddings(&client, document_id)
+        .await
+        .unwrap();
 
     // Store new embeddings (with different vector data to represent updated content)
-    let updated_main = create_test_document_embedding(document_id, 768); // Different dimensions
-    store_document_embedding(&client, &updated_main).await.unwrap();
+    let updated_main = EmbeddingTestUtils::create_document_embedding(document_id, 768); // Different dimensions
+    store_document_embedding(&client, &updated_main)
+        .await
+        .unwrap();
 
-    let updated_chunk = create_test_chunk_embedding(document_id, "chunk-1", 0, 768);
-    store_document_embedding(&client, &updated_chunk).await.unwrap();
+    let updated_chunk = EmbeddingTestUtils::create_chunk_embedding(document_id, "chunk-1", 0, 768);
+    store_document_embedding(&client, &updated_chunk)
+        .await
+        .unwrap();
 
-    let updated_chunk2 = create_test_chunk_embedding(document_id, "chunk-2", 1, 768);
-    store_document_embedding(&client, &updated_chunk2).await.unwrap();
+    let updated_chunk2 = EmbeddingTestUtils::create_chunk_embedding(document_id, "chunk-2", 1, 768);
+    store_document_embedding(&client, &updated_chunk2)
+        .await
+        .unwrap();
 
     // Verify updated state
     let final_retrieved = get_document_embeddings(&client, document_id).await.unwrap();
@@ -375,7 +413,11 @@ async fn test_document_update_workflow() {
 
     // Verify embeddings have new dimensions
     for embedding in &final_retrieved {
-        assert_eq!(embedding.dimensions(), 768, "Updated embeddings should have new dimensions");
+        assert_eq!(
+            embedding.dimensions(),
+            768,
+            "Updated embeddings should have new dimensions"
+        );
     }
 }
 
@@ -393,8 +435,14 @@ async fn test_get_embeddings_nonexistent_document() {
     let non_existent_id = "non-existent-document";
 
     // Should return empty result, not error
-    let result = get_document_embeddings(&client, non_existent_id).await.unwrap();
-    assert_eq!(result.len(), 0, "Non-existent document should return empty embeddings");
+    let result = get_document_embeddings(&client, non_existent_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        result.len(),
+        0,
+        "Non-existent document should return empty embeddings"
+    );
 }
 
 /// Test: Store embedding with invalid data (should fail gracefully)
@@ -405,7 +453,7 @@ async fn test_store_invalid_embedding() {
     initialize_vault_schema(&client).await.unwrap();
 
     // Create embedding with empty vector (should be invalid)
-    let mut invalid_embedding = create_test_document_embedding("invalid-doc", 256);
+    let mut invalid_embedding = EmbeddingTestUtils::create_document_embedding("invalid-doc", 256);
     invalid_embedding.vector = vec![]; // Empty vector
 
     // This should either fail or be handled gracefully
@@ -416,8 +464,13 @@ async fn test_store_invalid_embedding() {
     match result {
         Ok(_) => {
             // If it succeeded, verify we can retrieve it
-            let retrieved = get_document_embeddings(&client, "invalid-doc").await.unwrap();
-            assert!(!retrieved.is_empty(), "Should be able to retrieve stored embedding");
+            let retrieved = get_document_embeddings(&client, "invalid-doc")
+                .await
+                .unwrap();
+            assert!(
+                !retrieved.is_empty(),
+                "Should be able to retrieve stored embedding"
+            );
         }
         Err(_) => {
             // If it failed, that's also acceptable
@@ -436,18 +489,25 @@ async fn test_large_embedding_storage() {
     let document_id = "large-embedding-doc";
     let large_dimensions = 4096; // Very large embedding
 
-    let large_embedding = create_test_document_embedding(document_id, large_dimensions);
+    let large_embedding =
+        EmbeddingTestUtils::create_document_embedding(document_id, large_dimensions);
 
     // Store large embedding
-    store_document_embedding(&client, &large_embedding).await.unwrap();
+    store_document_embedding(&client, &large_embedding)
+        .await
+        .unwrap();
 
     // Retrieve and verify
     let retrieved = get_document_embeddings(&client, document_id).await.unwrap();
     assert_eq!(retrieved.len(), 1, "Should retrieve large embedding");
-    assert_eq!(retrieved[0].dimensions(), large_dimensions, "Should preserve large dimensions");
+    assert_eq!(
+        retrieved[0].dimensions(),
+        large_dimensions,
+        "Should preserve large dimensions"
+    );
 
     // Verify vector integrity
-    assert_embeddings_approx_eq(&large_embedding, &retrieved[0], 1e-6);
+    EmbeddingAssertions::assert_embeddings_approx_eq(&large_embedding, &retrieved[0], 1e-6);
 }
 
 /// Test: Concurrent embedding storage
@@ -469,14 +529,19 @@ async fn test_concurrent_embedding_storage() {
 
         let task = tokio::spawn(async move {
             // Store main embedding
-            let main_embedding = create_test_document_embedding(&doc_id, 256);
-            store_document_embedding(&client_clone, &main_embedding).await.unwrap();
+            let main_embedding = EmbeddingTestUtils::create_document_embedding(&doc_id, 256);
+            store_document_embedding(&client_clone, &main_embedding)
+                .await
+                .unwrap();
 
             // Store chunked embeddings
             for j in 0..embeddings_per_doc {
                 let chunk_id = format!("{}-chunk-{}", doc_id, j);
-                let chunk_embedding = create_test_chunk_embedding(&doc_id, &chunk_id, j, 256);
-                store_document_embedding(&client_clone, &chunk_embedding).await.unwrap();
+                let chunk_embedding =
+                    EmbeddingTestUtils::create_chunk_embedding(&doc_id, &chunk_id, j, 256);
+                store_document_embedding(&client_clone, &chunk_embedding)
+                    .await
+                    .unwrap();
             }
 
             doc_id
@@ -495,8 +560,12 @@ async fn test_concurrent_embedding_storage() {
     // Verify all embeddings were stored correctly
     for doc_id in completed_docs {
         let retrieved = get_document_embeddings(&client, &doc_id).await.unwrap();
-        assert_eq!(retrieved.len(), embeddings_per_doc + 1,
-                  "Concurrent document {} should have all embeddings", doc_id);
+        assert_eq!(
+            retrieved.len(),
+            embeddings_per_doc + 1,
+            "Concurrent document {} should have all embeddings",
+            doc_id
+        );
     }
 }
 
@@ -518,16 +587,27 @@ async fn test_vector_indexing_dimensions() {
     ];
 
     for (doc_id, model, dimensions) in test_cases {
-        let embedding = create_test_document_embedding(doc_id, dimensions);
+        let embedding = EmbeddingTestUtils::create_document_embedding(doc_id, dimensions);
         let mut model_embedding = embedding;
         model_embedding.embedding_model = model.model_name().to_string();
 
-        store_document_embedding(&client, &model_embedding).await.unwrap();
+        store_document_embedding(&client, &model_embedding)
+            .await
+            .unwrap();
 
         let retrieved = get_document_embeddings(&client, doc_id).await.unwrap();
         assert_eq!(retrieved.len(), 1, "Should retrieve {} embedding", doc_id);
-        assert_eq!(retrieved[0].dimensions(), dimensions, "Should preserve {} dimensions", doc_id);
-        assert_eq!(retrieved[0].embedding_model, model.model_name(), "Should preserve model name");
+        assert_eq!(
+            retrieved[0].dimensions(),
+            dimensions,
+            "Should preserve {} dimensions",
+            doc_id
+        );
+        assert_eq!(
+            retrieved[0].embedding_model,
+            model.model_name(),
+            "Should preserve model name"
+        );
     }
 }
 
@@ -539,26 +619,40 @@ async fn test_semantic_search_functionality() {
 
     // Store documents with different content themes
     let documents = vec![
-        ("rust-doc", "Rust programming language systems programming memory safety"),
-        ("ai-doc", "Artificial intelligence machine learning neural networks"),
+        (
+            "rust-doc",
+            "Rust programming language systems programming memory safety",
+        ),
+        (
+            "ai-doc",
+            "Artificial intelligence machine learning neural networks",
+        ),
         ("db-doc", "Database systems SQL NoSQL vector embeddings"),
     ];
 
     for (doc_id, _content) in &documents {
-        let embedding = create_test_document_embedding(doc_id, 768);
+        let embedding = EmbeddingTestUtils::create_document_embedding(doc_id, 768);
         store_document_embedding(&client, &embedding).await.unwrap();
     }
 
     // Test semantic search (this uses the current mock implementation)
-    let search_results = vault_integration::semantic_search(&client, "rust programming", 5).await.unwrap();
+    let search_results = vault_integration::semantic_search(&client, "rust programming", 5)
+        .await
+        .unwrap();
 
     // Should return some results (mock implementation)
-    assert!(!search_results.is_empty(), "Semantic search should return results");
+    assert!(
+        !search_results.is_empty(),
+        "Semantic search should return results"
+    );
 
     // Results should be tuples of (document_path, similarity_score)
     for (path, score) in search_results {
         assert!(!path.is_empty(), "Document path should not be empty");
-        assert!(score >= 0.0 && score <= 1.0, "Similarity score should be between 0 and 1");
+        assert!(
+            score >= 0.0 && score <= 1.0,
+            "Similarity score should be between 0 and 1"
+        );
     }
 }
 
@@ -569,9 +663,17 @@ async fn test_database_statistics() {
     initialize_vault_schema(&client).await.unwrap();
 
     // Get initial statistics
-    let initial_stats = vault_integration::get_database_stats(&client).await.unwrap();
-    assert_eq!(initial_stats.total_documents, 0, "Should start with 0 documents");
-    assert_eq!(initial_stats.total_embeddings, 0, "Should start with 0 embeddings");
+    let initial_stats = vault_integration::get_database_stats(&client)
+        .await
+        .unwrap();
+    assert_eq!(
+        initial_stats.total_documents, 0,
+        "Should start with 0 documents"
+    );
+    assert_eq!(
+        initial_stats.total_embeddings, 0,
+        "Should start with 0 embeddings"
+    );
 
     // Store some documents and embeddings
     let doc_count = 5;
@@ -580,33 +682,46 @@ async fn test_database_statistics() {
     for i in 0..doc_count {
         let doc_id = format!("stats-doc-{}", i);
         let doc = create_test_parsed_document();
-        let _stored_id = vault_integration::store_parsed_document(&client, &doc).await.unwrap();
+        let _stored_id = vault_integration::store_parsed_document(&client, &doc)
+            .await
+            .unwrap();
 
         // Store embeddings
-        let main_embedding = create_test_document_embedding(&doc_id, 256);
-        store_document_embedding(&client, &main_embedding).await.unwrap();
+        let main_embedding = EmbeddingTestUtils::create_document_embedding(&doc_id, 256);
+        store_document_embedding(&client, &main_embedding)
+            .await
+            .unwrap();
 
         for j in 0..embeddings_per_doc {
             let chunk_id = format!("{}-chunk-{}", doc_id, j);
-            let chunk_embedding = create_test_chunk_embedding(&doc_id, &chunk_id, j, 256);
-            store_document_embedding(&client, &chunk_embedding).await.unwrap();
+            let chunk_embedding =
+                EmbeddingTestUtils::create_chunk_embedding(&doc_id, &chunk_id, j, 256);
+            store_document_embedding(&client, &chunk_embedding)
+                .await
+                .unwrap();
         }
     }
 
     // Check updated statistics
-    let final_stats = vault_integration::get_database_stats(&client).await.unwrap();
-    assert_eq!(final_stats.total_documents, doc_count, "Should count all documents");
-    assert_eq!(final_stats.total_embeddings, (doc_count as u64 * (embeddings_per_doc + 1) as u64),
-              "Should count all embeddings including main embeddings");
+    let final_stats = vault_integration::get_database_stats(&client)
+        .await
+        .unwrap();
+    assert_eq!(
+        final_stats.total_documents, doc_count,
+        "Should count all documents"
+    );
+    assert_eq!(
+        final_stats.total_embeddings,
+        (doc_count as u64 * (embeddings_per_doc + 1) as u64),
+        "Should count all embeddings including main embeddings"
+    );
 }
 
 // =============================================================================
 // HELPER FUNCTIONS FOR TEST DATA
 // =============================================================================
 
-use crucible_core::{
-    parser::{ParsedDocument, Tag},
-};
+use crucible_core::parser::{ParsedDocument, Tag};
 
 /// Create a test ParsedDocument for testing
 fn create_test_parsed_document() -> ParsedDocument {
@@ -635,10 +750,16 @@ async fn test_embedding_storage_initialization() {
 
     // Initialize schema should not fail
     let result = initialize_vault_schema(&client).await;
-    assert!(result.is_ok(), "Schema initialization should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Schema initialization should succeed: {:?}",
+        result.err()
+    );
 
     // Database should be ready for embedding operations
-    let stats = vault_integration::get_database_stats(&client).await.unwrap();
+    let stats = vault_integration::get_database_stats(&client)
+        .await
+        .unwrap();
     assert_eq!(stats.total_documents, 0, "Should start with empty database");
     assert_eq!(stats.total_embeddings, 0, "Should start with no embeddings");
 }

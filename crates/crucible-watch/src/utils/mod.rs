@@ -1,18 +1,18 @@
 //! Utility components for performance and scalability.
 
-mod debouncer;
-mod queue;
-mod monitor;
 mod batcher;
+mod debouncer;
 mod filter;
+mod monitor;
+mod queue;
 
 pub use debouncer::*;
-pub use queue::*;
 pub use monitor::*;
+pub use queue::*;
 
-use crate::events::FileEvent;
-use std::hash::{Hash, Hasher};
+use crate::FileEvent;
 use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 /// Utility functions for file event processing.
 pub struct EventUtils;
@@ -95,15 +95,17 @@ impl EventUtils {
     pub fn estimate_event_size(event: &FileEvent) -> usize {
         let base_size = std::mem::size_of::<FileEvent>();
         let path_size = event.path.as_os_str().len();
-        let metadata_size = event.metadata.as_ref()
+        let metadata_size = event
+            .metadata
+            .as_ref()
             .map(|m| {
-                std::mem::size_of::<crate::events::EventMetadata>() +
-                m.size.map_or(0, |_| 8) +
-                m.permissions.map_or(0, |_| 4) +
-                m.mime_type.as_ref().map_or(0, |s| s.len()) +
-                m.content_hash.as_ref().map_or(0, |s| s.len()) +
-                m.backend.len() +
-                m.watch_id.len()
+                std::mem::size_of::<crate::events::EventMetadata>()
+                    + m.size.map_or(0, |_| 8)
+                    + m.permissions.map_or(0, |_| 4)
+                    + m.mime_type.as_ref().map_or(0, |s| s.len())
+                    + m.content_hash.as_ref().map_or(0, |s| s.len())
+                    + m.backend.len()
+                    + m.watch_id.len()
             })
             .unwrap_or(0);
 
@@ -114,12 +116,17 @@ impl EventUtils {
     pub fn is_high_priority(event: &FileEvent) -> bool {
         match &event.kind {
             // Deletions and moves are typically high priority
-            crate::events::FileEventKind::Deleted | crate::events::FileEventKind::Moved { .. } => true,
+            crate::events::FileEventKind::Deleted | crate::events::FileEventKind::Moved { .. } => {
+                true
+            }
 
             // Creation/modification of important file types
             crate::events::FileEventKind::Created | crate::events::FileEventKind::Modified => {
                 if let Some(ext) = event.extension() {
-                    matches!(ext.as_str(), "md" | "txt" | "json" | "yaml" | "toml" | "rune")
+                    matches!(
+                        ext.as_str(),
+                        "md" | "txt" | "json" | "yaml" | "toml" | "rune"
+                    )
                 } else {
                     false
                 }
@@ -130,11 +137,16 @@ impl EventUtils {
     }
 
     /// Group events by directory.
-    pub fn group_by_directory(events: &[FileEvent]) -> std::collections::HashMap<std::path::PathBuf, Vec<&FileEvent>> {
-        let mut groups: std::collections::HashMap<std::path::PathBuf, Vec<&FileEvent>> = std::collections::HashMap::new();
+    pub fn group_by_directory(
+        events: &[FileEvent],
+    ) -> std::collections::HashMap<std::path::PathBuf, Vec<&FileEvent>> {
+        let mut groups: std::collections::HashMap<std::path::PathBuf, Vec<&FileEvent>> =
+            std::collections::HashMap::new();
 
         for event in events {
-            let parent = event.parent().unwrap_or_else(|| std::path::PathBuf::from("/"));
+            let parent = event
+                .parent()
+                .unwrap_or_else(|| std::path::PathBuf::from("/"));
             groups.entry(parent).or_default().push(event);
         }
 
@@ -142,8 +154,13 @@ impl EventUtils {
     }
 
     /// Filter events by time window.
-    pub fn filter_by_time_window(events: &[FileEvent], start: chrono::DateTime<chrono::Utc>, end: chrono::DateTime<chrono::Utc>) -> Vec<&FileEvent> {
-        events.iter()
+    pub fn filter_by_time_window(
+        events: &[FileEvent],
+        start: chrono::DateTime<chrono::Utc>,
+        end: chrono::DateTime<chrono::Utc>,
+    ) -> Vec<&FileEvent> {
+        events
+            .iter()
             .filter(|event| event.timestamp >= start && event.timestamp <= end)
             .collect()
     }
@@ -229,9 +246,9 @@ impl EventSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::{FileEvent, FileEventKind};
-    use std::path::PathBuf;
+    use crate::{FileEvent, FileEventKind};
     use chrono::Utc;
+    use std::path::PathBuf;
 
     #[test]
     fn test_event_hash() {
@@ -239,8 +256,14 @@ mod tests {
         let event2 = FileEvent::new(FileEventKind::Created, PathBuf::from("test.txt"));
         let event3 = FileEvent::new(FileEventKind::Modified, PathBuf::from("test.txt"));
 
-        assert_eq!(EventUtils::event_hash(&event1), EventUtils::event_hash(&event2));
-        assert_ne!(EventUtils::event_hash(&event1), EventUtils::event_hash(&event3));
+        assert_eq!(
+            EventUtils::event_hash(&event1),
+            EventUtils::event_hash(&event2)
+        );
+        assert_ne!(
+            EventUtils::event_hash(&event1),
+            EventUtils::event_hash(&event3)
+        );
     }
 
     #[test]

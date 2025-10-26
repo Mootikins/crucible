@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use crate::events::FileEvent;
+use crate::FileEvent;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tracing::{debug, trace};
@@ -115,13 +115,14 @@ impl EventBatcher {
         let now = Instant::now();
 
         // Add to existing batch or create new one
-        let batch_group = self.current_batch.entry(batch_key.clone()).or_insert_with(|| {
-            BatchGroup {
+        let batch_group = self
+            .current_batch
+            .entry(batch_key.clone())
+            .or_insert_with(|| BatchGroup {
                 events: Vec::new(),
                 created_at: now,
                 last_updated: now,
-            }
-        });
+            });
 
         batch_group.events.push(event.clone());
         batch_group.last_updated = now;
@@ -162,7 +163,8 @@ impl EventBatcher {
     fn create_batch_key(&self, event: &FileEvent) -> BatchKey {
         match &self.strategy {
             BatchStrategy::ByDirectory => {
-                let directory = event.parent()
+                let directory = event
+                    .parent()
                     .unwrap_or_else(|| std::path::PathBuf::from("/"))
                     .to_string_lossy()
                     .to_string();
@@ -173,8 +175,7 @@ impl EventBatcher {
                 }
             }
             BatchStrategy::ByFileType => {
-                let file_type = event.extension()
-                    .unwrap_or_else(|| "unknown".to_string());
+                let file_type = event.extension().unwrap_or_else(|| "unknown".to_string());
 
                 BatchKey {
                     group_id: file_type,
@@ -244,9 +245,7 @@ impl EventBatcher {
     pub fn get_stats(&self) -> BatcherStats {
         BatcherStats {
             current_batches: self.current_batch.len(),
-            total_queued_events: self.current_batch.values()
-                .map(|g| g.events.len())
-                .sum(),
+            total_queued_events: self.current_batch.values().map(|g| g.events.len()).sum(),
             max_batch_size: self.max_batch_size,
             max_batch_delay_ms: self.max_batch_delay.as_millis(),
             strategy: format!("{:?}", self.strategy),
@@ -320,7 +319,8 @@ impl BatchAnalyzer {
 
         if analysis.total_events > 100 {
             recommendations.push(
-                "Large batch detected (>100 events). Consider breaking into smaller batches.".to_string()
+                "Large batch detected (>100 events). Consider breaking into smaller batches."
+                    .to_string(),
             );
         }
 
@@ -332,14 +332,14 @@ impl BatchAnalyzer {
 
         if analysis.files_count > analysis.directories_count * 10 {
             recommendations.push(
-                "File-heavy batch detected. Consider file-specific optimizations.".to_string()
+                "File-heavy batch detected. Consider file-specific optimizations.".to_string(),
             );
         }
 
         let max_file_type_count = analysis.file_types.values().max().unwrap_or(&0);
         if *max_file_type_count > analysis.total_events / 2 {
             recommendations.push(
-                "Dominant file type detected. Consider file type-specific handlers.".to_string()
+                "Dominant file type detected. Consider file type-specific handlers.".to_string(),
             );
         }
 
@@ -383,7 +383,7 @@ pub struct BatchAnalysis {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::{FileEvent, FileEventKind};
+    use crate::{FileEvent, FileEventKind};
     use std::path::PathBuf;
 
     #[test]

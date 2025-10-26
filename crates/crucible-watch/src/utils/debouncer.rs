@@ -1,6 +1,6 @@
 //! Event debouncing for reducing event spam.
 
-use crate::events::FileEvent;
+use crate::FileEvent;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tracing::{debug, trace};
@@ -72,7 +72,11 @@ impl Debouncer {
             crate::utils::EventUtils::deduplication_key(&event)
         } else {
             // Use unique key if deduplication is disabled
-            format!("{}:{}", event.path.display(), event.timestamp.timestamp_nanos_opt().unwrap_or(0))
+            format!(
+                "{}:{}",
+                event.path.display(),
+                event.timestamp.timestamp_nanos_opt().unwrap_or(0)
+            )
         };
 
         let now = Instant::now();
@@ -85,7 +89,10 @@ impl Debouncer {
                 pending.emit_time = emit_time;
                 pending.update_count += 1;
 
-                debug!("Updated pending event: {} (updates: {})", key, pending.update_count);
+                debug!(
+                    "Updated pending event: {} (updates: {})",
+                    key, pending.update_count
+                );
                 None
             }
             None => {
@@ -137,7 +144,10 @@ impl Debouncer {
     }
 
     /// Emit a batch of events as a single batch event.
-    async fn emit_batched_events(&mut self, events: Vec<(String, PendingEvent)>) -> Option<FileEvent> {
+    async fn emit_batched_events(
+        &mut self,
+        events: Vec<(String, PendingEvent)>,
+    ) -> Option<FileEvent> {
         let mut batch_events = Vec::new();
 
         for (_key, pending) in events {
@@ -163,9 +173,8 @@ impl Debouncer {
 
         // Remove events that are older than 5x the debounce delay
         let max_age = self.delay * 5;
-        self.pending_events.retain(|_key, pending| {
-            now.duration_since(pending.first_seen) < max_age
-        });
+        self.pending_events
+            .retain(|_key, pending| now.duration_since(pending.first_seen) < max_age);
 
         let removed = initial_count - self.pending_events.len();
         if removed > 0 {
@@ -223,7 +232,7 @@ pub struct DebouncerStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::{FileEvent, FileEventKind};
+    use crate::{FileEvent, FileEventKind};
     use std::path::PathBuf;
     use tokio::time::sleep;
 
