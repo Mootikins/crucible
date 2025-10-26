@@ -1645,7 +1645,6 @@ dependencies = [
  "chrono",
  "config",
  "crucible-config",
- "crucible-services",
  "md5",
  "notify",
  "pulldown-cmark 0.11.3",
@@ -1703,6 +1702,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "crucible-config",
  "mockito",
  "reqwest",
  "serde",
@@ -1737,31 +1737,6 @@ dependencies = [
  "syn 2.0.107",
  "tokio",
  "trybuild",
-]
-
-[[package]]
-name = "crucible-services"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "crucible-llm",
- "futures",
- "hostname",
- "regex",
- "rune",
- "rune-modules",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "thiserror 2.0.17",
- "tokio",
- "toml 0.8.23",
- "tracing",
- "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]
@@ -3424,17 +3399,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
 dependencies = [
  "digest",
-]
-
-[[package]]
-name = "hostname"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a56f203cd1c76362b69e3863fd987520ac36cf70a8c92627449b2f64a8cf7d65"
-dependencies = [
- "cfg-if 1.0.4",
- "libc",
- "windows-link 0.1.3",
 ]
 
 [[package]]

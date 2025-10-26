@@ -16,6 +16,9 @@ path = "src/lib.rs"
 test-utils = []
 
 [dependencies]
+# Config
+crucible-config = { path = "../crucible-config" }
+
 # Async
 tokio = { workspace = true, features = ["time"] }
 async-trait = { workspace = true }

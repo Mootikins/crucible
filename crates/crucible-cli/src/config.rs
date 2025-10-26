@@ -2,26 +2,9 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Compatibility embedding configuration for service layer
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EmbeddingConfig {
-    pub provider: ProviderType,
-    pub endpoint: String,
-    pub api_key: Option<String>,
-    pub model: String,
-    pub timeout_secs: u64,
-    pub max_retries: u32,
-    pub batch_size: u32,
-}
-
-/// Embedding provider types
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ProviderType {
-    OpenAI,
-    Ollama,
-    Anthropic,
-    Custom(String),
-}
+// Re-export canonical embedding config types for compatibility
+pub use crucible_config::EmbeddingProviderConfig as EmbeddingConfig;
+pub use crucible_config::EmbeddingProviderType as ProviderType;
 
 /// CLI configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -687,15 +670,10 @@ max_performance_degradation = 20.0
 
         // For now, we default to Ollama provider
         // In the future, we could add provider selection to the config
-        Ok(EmbeddingConfig {
-            provider: ProviderType::Ollama,
-            endpoint: self.kiln.embedding_url.clone(),
-            api_key: None, // Not needed for Ollama
-            model: model.clone(),
-            timeout_secs: self.network.timeout_secs.unwrap_or(30),
-            max_retries: self.network.max_retries.unwrap_or(3),
-            batch_size: 1,
-        })
+        Ok(EmbeddingConfig::ollama(
+            Some(self.kiln.embedding_url.clone()),
+            Some(model.clone()),
+        ))
     }
 
     /// Get resolved chat model (from config or default)
