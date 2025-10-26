@@ -14,7 +14,7 @@ pub struct DaemonConfig {
     /// Filesystem watching configuration
     pub filesystem: FilesystemConfig,
     /// Database synchronization configuration
-    pub database: DatabaseConfig,
+    pub database: DaemonDatabaseConfig,
     /// Performance configuration
     pub performance: PerformanceConfig,
     /// Health monitoring configuration
@@ -208,9 +208,13 @@ pub enum AnalysisType {
     TopicModeling,
 }
 
-/// Database synchronization configuration
+/// Daemon-specific database synchronization configuration
+///
+/// This is distinct from crucible-config::DatabaseConfig which is used for
+/// simple profile-based configuration. This config adds daemon-specific
+/// features like sync strategies, transactions, indexing, and backup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DatabaseConfig {
+pub struct DaemonDatabaseConfig {
     /// Database connection settings
     pub connection: DatabaseConnectionConfig,
     /// Sync strategies
@@ -779,7 +783,7 @@ impl Default for DaemonConfig {
     fn default() -> Self {
         Self {
             filesystem: FilesystemConfig::default(),
-            database: DatabaseConfig::default(),
+            database: DaemonDatabaseConfig::default(),
             performance: PerformanceConfig::default(),
             health: HealthConfig::default(),
             services: ServicesConfig::default(),
@@ -840,7 +844,7 @@ impl Default for ContentAnalysisConfig {
     }
 }
 
-impl Default for DatabaseConfig {
+impl Default for DaemonDatabaseConfig {
     fn default() -> Self {
         Self {
             connection: DatabaseConnectionConfig::default(),
