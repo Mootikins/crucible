@@ -21,6 +21,8 @@ pub struct SecureFileSystemConfig {
     pub max_symlink_depth: usize,
     /// Maximum file size to process (bytes)
     pub max_file_size: u64,
+    /// Maximum content length to keep in memory (bytes)
+    pub max_content_length: usize,
     /// Maximum directory depth to traverse
     pub max_directory_depth: usize,
     /// Timeout for filesystem operations
@@ -34,6 +36,7 @@ impl Default for SecureFileSystemConfig {
         Self {
             max_symlink_depth: 10,
             max_file_size: 10 * 1024 * 1024, // 10MB
+            max_content_length: 1024 * 1024, // 1MB
             max_directory_depth: 50,
             operation_timeout: Duration::from_secs(30),
             continue_on_permission_error: true,
@@ -581,14 +584,34 @@ impl SecureFileReader {
                 Ok(n) => {
                     total_read += n;
 
-                    // Check if we're exceeding memory limits
+                    // Check if we're exceeding file size limits
                     if total_read > self.config.max_file_size as usize {
                         return Err(anyhow!("File size limit exceeded"));
                     }
 
+                    // Check if we're exceeding content length limits
+                    if content.len() >= self.config.max_content_length {
+                        // Truncate and stop reading
+                        break;
+                    }
+
                     // Convert buffer to string with UTF-8 error recovery
                     let chunk = String::from_utf8_lossy(&buffer[..n]);
-                    content.push_str(&chunk);
+
+                    // Only add what we can within the content limit
+                    let remaining = self.config.max_content_length.saturating_sub(content.len());
+                    if remaining > 0 {
+                        let chunk_str = chunk.as_ref();
+                        if chunk_str.len() <= remaining {
+                            content.push_str(chunk_str);
+                        } else {
+                            // Truncate the chunk to fit within limit
+                            content.push_str(&chunk_str[..remaining]);
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
                 }
                 Err(e) => {
                     return Err(anyhow!(
@@ -605,6 +628,51 @@ impl SecureFileReader {
 
     /// Detect if content is binary
     fn is_binary_content(&self, content: &[u8]) -> bool {
+        // Define common binary file signatures
+        const BINARY_SIGNATURES: &[&[u8]] = &[
+            // Image formats
+            &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A], // PNG
+            &[0xFF, 0xD8, 0xFF],                               // JPEG
+            &[0x47, 0x49, 0x46, 0x38, 0x39, 0x61],             // GIF89a
+            &[0x42, 0x4D],                                     // BMP
+            &[0x52, 0x49, 0x46, 0x46],                         // RIFF (WebP, AVI, etc.)
+            // Archive formats
+            &[0x50, 0x4B, 0x03, 0x04],             // ZIP
+            &[0x50, 0x4B, 0x05, 0x06],             // ZIP (empty)
+            &[0x50, 0x4B, 0x07, 0x08],             // ZIP (spanned)
+            &[0x1F, 0x8B, 0x08],                   // GZIP
+            &[0x42, 0x5A, 0x68],                   // BZIP2
+            &[0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00], // XZ
+            &[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C], // 7Z
+            // Executable formats
+            &[0x7F, 0x45, 0x4C, 0x46], // ELF
+            &[0x4D, 0x5A],             // PE/DOS
+            &[0xFE, 0xED, 0xFA, 0xCE], // Mach-O (32-bit)
+            &[0xFE, 0xED, 0xFA, 0xCF], // Mach-O (64-bit)
+            &[0xCE, 0xFA, 0xED, 0xFE], // Mach-O (reverse 32-bit)
+            &[0xCF, 0xFA, 0xED, 0xFE], // Mach-O (reverse 64-bit)
+            // Document formats
+            &[b'%', b'P', b'D', b'F'],                         // PDF
+            &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1], // Microsoft Office
+            // Audio/Video formats
+            &[0x49, 0x44, 0x33],       // MP3
+            &[0xFF, 0xFB],             // MP3 (MPEG)
+            &[0xFF, 0xF3],             // MP3 (MPEG)
+            &[0xFF, 0xF2],             // MP3 (MPEG)
+            &[0x52, 0x49, 0x46, 0x46], // RIFF/WAV
+            &[0x1A, 0x45, 0xDF, 0xA3], // Matroska/WebM
+            // Other binary formats
+            &[0x00, 0x00, 0x01, 0x00], // ICO
+            &[0x00, 0x00, 0x02, 0x00], // CUR
+        ];
+
+        // Check for known binary signatures
+        for signature in BINARY_SIGNATURES {
+            if content.starts_with(signature) {
+                return true;
+            }
+        }
+
         // Check for null bytes
         let null_byte_count = content.iter().filter(|&&b| b == 0).count();
         if null_byte_count > 3 {
