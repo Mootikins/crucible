@@ -180,7 +180,10 @@ impl std::fmt::Debug for EventFilter {
             .field("exclude_dirs", &self.exclude_dirs)
             .field("min_size", &self.min_size)
             .field("max_size", &self.max_size)
-            .field("custom_filter", &self.custom_filter.as_ref().map(|_| "<function>"))
+            .field(
+                "custom_filter",
+                &self.custom_filter.as_ref().map(|_| "<function>"),
+            )
             .finish()
     }
 }
@@ -262,7 +265,9 @@ impl EventFilter {
 
         // Check directory filters
         if let Some(parent) = event.parent() {
-            if !self.include_dirs.is_empty() && !self.include_dirs.iter().any(|d| parent.starts_with(d)) {
+            if !self.include_dirs.is_empty()
+                && !self.include_dirs.iter().any(|d| parent.starts_with(d))
+            {
                 return false;
             }
             if self.exclude_dirs.iter().any(|d| parent.starts_with(d)) {

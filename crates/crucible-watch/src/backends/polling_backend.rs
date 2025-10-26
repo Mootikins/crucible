@@ -1,9 +1,9 @@
 //! Polling-based file watching backend.
 
 use crate::{
-    traits::{FileWatcher, WatchConfig, WatchHandle, BackendCapabilities},
     error::{Error, Result},
-    events::{FileEvent, FileEventKind, EventMetadata},
+    events::{EventMetadata, FileEvent, FileEventKind},
+    traits::{BackendCapabilities, FileWatcher, WatchConfig, WatchHandle},
 };
 
 // Import the WatcherFactory trait
@@ -78,14 +78,19 @@ impl PollingWatcher {
     async fn initialize(&mut self, event_sender: mpsc::UnboundedSender<FileEvent>) -> Result<()> {
         self.event_sender = Some(event_sender);
         self.start_polling_task().await?;
-        info!("Polling watcher initialized with interval: {:?}", self.poll_interval);
+        info!(
+            "Polling watcher initialized with interval: {:?}",
+            self.poll_interval
+        );
         Ok(())
     }
 
     /// Start the background polling task.
     async fn start_polling_task(&mut self) -> Result<()> {
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
-        let _event_sender = self.event_sender.clone()
+        let _event_sender = self
+            .event_sender
+            .clone()
             .ok_or_else(|| Error::Internal("Event sender not initialized".to_string()))?;
 
         let poll_interval = self.poll_interval;
@@ -132,7 +137,9 @@ impl PollingWatcher {
     async fn update_watch_states(&mut self, watch_id: &str) -> Result<()> {
         // Get path before borrowing watch_state mutably
         let (path_buf, exists) = {
-            let watch_state = self.watches.get(watch_id)
+            let watch_state = self
+                .watches
+                .get(watch_id)
                 .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
             let path = &watch_state.config.id;
             let path_buf = PathBuf::from(path);
@@ -156,10 +163,16 @@ impl PollingWatcher {
     }
 
     /// Collect events for path changes without sending them.
-    async fn collect_path_change_events(&mut self, path: &PathBuf, watch_id: &str) -> Result<Vec<(FileEventKind, PathBuf)>> {
+    async fn collect_path_change_events(
+        &mut self,
+        path: &PathBuf,
+        watch_id: &str,
+    ) -> Result<Vec<(FileEventKind, PathBuf)>> {
         let mut events = Vec::new();
 
-        let watch_state = self.watches.get_mut(watch_id)
+        let watch_state = self
+            .watches
+            .get_mut(watch_id)
             .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
 
         watch_state.last_check = Instant::now();
@@ -196,10 +209,16 @@ impl PollingWatcher {
     }
 
     /// Collect events for path deletion without sending them.
-    async fn collect_deletion_events(&mut self, path: &PathBuf, watch_id: &str) -> Result<Vec<(FileEventKind, PathBuf)>> {
+    async fn collect_deletion_events(
+        &mut self,
+        path: &PathBuf,
+        watch_id: &str,
+    ) -> Result<Vec<(FileEventKind, PathBuf)>> {
         let mut events = Vec::new();
 
-        let watch_state = self.watches.get_mut(watch_id)
+        let watch_state = self
+            .watches
+            .get_mut(watch_id)
             .ok_or_else(|| Error::WatchNotFound(watch_id.to_string()))?;
 
         watch_state.last_check = Instant::now();
@@ -210,19 +229,21 @@ impl PollingWatcher {
             }
         }
 
-        watch_state.file_states.insert(path.clone(), FileState {
-            modified_time: None,
-            size: None,
-            existed: false,
-        });
+        watch_state.file_states.insert(
+            path.clone(),
+            FileState {
+                modified_time: None,
+                size: None,
+                existed: false,
+            },
+        );
 
         Ok(events)
     }
 
     /// Check for changes in a specific path.
     async fn check_path_changes(&self, path: &PathBuf, watch_state: &mut WatchState) -> Result<()> {
-        let metadata = std::fs::metadata(path)
-            .map_err(|e| Error::Io(e))?;
+        let metadata = std::fs::metadata(path).map_err(|e| Error::Io(e))?;
 
         let modified_time = metadata.modified().ok();
         let size = Some(metadata.len());
@@ -254,7 +275,11 @@ impl PollingWatcher {
     }
 
     /// Handle deletion of a path.
-    async fn handle_path_deletion(&self, path: &PathBuf, watch_state: &mut WatchState) -> Result<()> {
+    async fn handle_path_deletion(
+        &self,
+        path: &PathBuf,
+        watch_state: &mut WatchState,
+    ) -> Result<()> {
         if let Some(prev_state) = watch_state.file_states.get(path) {
             if prev_state.existed {
                 self.send_event(FileEventKind::Deleted, path.clone()).await;
@@ -269,10 +294,7 @@ impl PollingWatcher {
     /// Send a file event.
     async fn send_event(&self, kind: FileEventKind, path: PathBuf) {
         if let Some(ref sender) = self.event_sender {
-            let metadata = EventMetadata::new(
-                "polling".to_string(),
-                "default".to_string(),
-            );
+            let metadata = EventMetadata::new("polling".to_string(), "default".to_string());
 
             let event = FileEvent::with_metadata(kind, path, metadata);
             if let Err(e) = sender.send(event) {
@@ -282,18 +304,19 @@ impl PollingWatcher {
     }
 
     /// Scan a directory recursively if configured.
-    fn scan_directory<'a>(&'a self, dir: &'a PathBuf, watch_state: &'a mut WatchState) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
+    fn scan_directory<'a>(
+        &'a self,
+        dir: &'a PathBuf,
+        watch_state: &'a mut WatchState,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'a>> {
         Box::pin(async move {
             if !watch_state.config.recursive {
                 return Ok(());
             }
 
-            let mut entries = tokio::fs::read_dir(dir).await
-                .map_err(|e| Error::Io(e))?;
+            let mut entries = tokio::fs::read_dir(dir).await.map_err(|e| Error::Io(e))?;
 
-            while let Some(entry) = entries.next_entry().await
-                .map_err(|e| Error::Io(e))? {
-
+            while let Some(entry) = entries.next_entry().await.map_err(|e| Error::Io(e))? {
                 let path = entry.path();
 
                 if path.is_dir() {
@@ -337,8 +360,9 @@ impl FileWatcher for PollingWatcher {
 
         // Initialize if not already done
         if self.poll_task.is_none() {
-            let sender = self.event_sender.clone()
-                .ok_or_else(|| Error::Internal("Event sender not set before calling watch".to_string()))?;
+            let sender = self.event_sender.clone().ok_or_else(|| {
+                Error::Internal("Event sender not set before calling watch".to_string())
+            })?;
             self.initialize(sender).await?;
         }
 
@@ -397,7 +421,8 @@ impl FileWatcher for PollingWatcher {
     }
 
     fn active_watches(&self) -> Vec<WatchHandle> {
-        self.watches.iter()
+        self.watches
+            .iter()
             .map(|(id, state)| WatchHandle {
                 id: id.clone(),
                 path: state.watched_path.clone(),
@@ -467,7 +492,7 @@ impl super::WatcherFactory for PollingFactory {
 mod tests {
     use super::*;
     use crate::backends::WatcherFactory;
-    use crate::traits::{WatchConfig, DebounceConfig};
+    use crate::traits::{DebounceConfig, WatchConfig};
     use tempfile::TempDir;
 
     #[tokio::test]

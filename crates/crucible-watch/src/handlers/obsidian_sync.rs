@@ -1,6 +1,10 @@
 //! Integration handler for Obsidian synchronization and API changes.
 
-use crate::{events::FileEvent, traits::EventHandler, error::{Error, Result}};
+use crate::{
+    error::{Error, Result},
+    events::FileEvent,
+    traits::EventHandler,
+};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -129,7 +133,8 @@ impl ObsidianSyncHandler {
 
     async fn get_vault_config(&self) -> Result<ObsidianVaultConfig> {
         let vault_config = self.vault_config.read().await;
-        vault_config.as_ref()
+        vault_config
+            .as_ref()
             .cloned()
             .ok_or_else(|| Error::Config("Obsidian vault configuration not set".to_string()))
     }
@@ -157,10 +162,12 @@ impl ObsidianSyncHandler {
 
         match &event.kind {
             crate::events::FileEventKind::Created | crate::events::FileEventKind::Modified => {
-                self.handle_file_modification(&event.path, &vault_config).await?;
+                self.handle_file_modification(&event.path, &vault_config)
+                    .await?;
             }
             crate::events::FileEventKind::Deleted => {
-                self.handle_file_deletion(&event.path, &vault_config).await?;
+                self.handle_file_deletion(&event.path, &vault_config)
+                    .await?;
             }
             crate::events::FileEventKind::Moved { from, to } => {
                 self.handle_file_move(from, to, &vault_config).await?;
@@ -173,7 +180,11 @@ impl ObsidianSyncHandler {
         Ok(())
     }
 
-    async fn handle_file_modification(&self, path: &PathBuf, config: &ObsidianVaultConfig) -> Result<()> {
+    async fn handle_file_modification(
+        &self,
+        path: &PathBuf,
+        config: &ObsidianVaultConfig,
+    ) -> Result<()> {
         debug!("Handling file modification: {}", path.display());
 
         if config.use_local_api {
@@ -187,14 +198,19 @@ impl ObsidianSyncHandler {
 
     async fn sync_via_api(&self, path: &PathBuf, config: &ObsidianVaultConfig) -> Result<()> {
         // Implementation for Obsidian local API sync
-        let api_port = config.api_port.ok_or_else(|| {
-            Error::Config("Obsidian API port not configured".to_string())
-        })?;
+        let api_port = config
+            .api_port
+            .ok_or_else(|| Error::Config("Obsidian API port not configured".to_string()))?;
 
-        let relative_path = path.strip_prefix(&config.vault_path)
+        let relative_path = path
+            .strip_prefix(&config.vault_path)
             .map_err(|e| Error::Internal(format!("Failed to get relative path: {}", e)))?;
 
-        let url = format!("http://localhost:{}/api/vault/{}", api_port, relative_path.display());
+        let url = format!(
+            "http://localhost:{}/api/vault/{}",
+            api_port,
+            relative_path.display()
+        );
 
         // TODO: Implement actual API call to notify Obsidian
         debug!("Would notify Obsidian API at: {}", url);
@@ -202,7 +218,11 @@ impl ObsidianSyncHandler {
         Ok(())
     }
 
-    async fn sync_via_file_system(&self, path: &PathBuf, _config: &ObsidianVaultConfig) -> Result<()> {
+    async fn sync_via_file_system(
+        &self,
+        path: &PathBuf,
+        _config: &ObsidianVaultConfig,
+    ) -> Result<()> {
         // Implementation for file system based sync
         // This could involve updating Obsidian's internal cache files
         debug!("File system sync for: {}", path.display());
@@ -213,21 +233,36 @@ impl ObsidianSyncHandler {
         Ok(())
     }
 
-    async fn handle_file_deletion(&self, path: &PathBuf, config: &ObsidianVaultConfig) -> Result<()> {
+    async fn handle_file_deletion(
+        &self,
+        path: &PathBuf,
+        config: &ObsidianVaultConfig,
+    ) -> Result<()> {
         debug!("Handling file deletion: {}", path.display());
 
         if config.use_local_api {
             // Notify API about deletion
-            debug!("Would notify Obsidian API about file deletion: {}", path.display());
+            debug!(
+                "Would notify Obsidian API about file deletion: {}",
+                path.display()
+            );
         } else {
             // Update file system cache
-            debug!("Would update file system cache for deletion: {}", path.display());
+            debug!(
+                "Would update file system cache for deletion: {}",
+                path.display()
+            );
         }
 
         Ok(())
     }
 
-    async fn handle_file_move(&self, from: &PathBuf, to: &PathBuf, config: &ObsidianVaultConfig) -> Result<()> {
+    async fn handle_file_move(
+        &self,
+        from: &PathBuf,
+        to: &PathBuf,
+        config: &ObsidianVaultConfig,
+    ) -> Result<()> {
         debug!("Handling file move: {} -> {}", from.display(), to.display());
 
         if config.use_local_api {
@@ -250,9 +285,9 @@ impl ObsidianSyncHandler {
         debug!("Triggering Obsidian reindex");
 
         if config.use_local_api {
-            let api_port = config.api_port.ok_or_else(|| {
-                Error::Config("Obsidian API port not configured".to_string())
-            })?;
+            let api_port = config
+                .api_port
+                .ok_or_else(|| Error::Config("Obsidian API port not configured".to_string()))?;
 
             let url = format!("http://localhost:{}/api/reindex", api_port);
             // TODO: Implement actual API call
@@ -278,12 +313,10 @@ impl EventHandler for ObsidianSyncHandler {
         }
 
         let result = match event.kind {
-            crate::events::FileEventKind::Created |
-            crate::events::FileEventKind::Modified |
-            crate::events::FileEventKind::Deleted |
-            crate::events::FileEventKind::Moved { .. } => {
-                self.sync_file_change(&event).await
-            }
+            crate::events::FileEventKind::Created
+            | crate::events::FileEventKind::Modified
+            | crate::events::FileEventKind::Deleted
+            | crate::events::FileEventKind::Moved { .. } => self.sync_file_change(&event).await,
             crate::events::FileEventKind::Batch(events) => {
                 // Handle batch events
                 for e in &events {
@@ -346,7 +379,7 @@ impl Default for SyncConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::{FileEvent, FileEventKind};
+    use crate::{FileEvent, FileEventKind};
     use std::path::PathBuf;
 
     #[tokio::test]

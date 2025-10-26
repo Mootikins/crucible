@@ -1,6 +1,10 @@
 //! Composite handler that manages multiple handlers with coordination.
 
-use crate::{events::FileEvent, traits::EventHandler, error::{Error, Result}};
+use crate::{
+    error::{Error, Result},
+    events::FileEvent,
+    traits::EventHandler,
+};
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -83,13 +87,16 @@ impl CompositeHandler {
         // Initialize handler state
         {
             let mut states = self.handler_states.write().await;
-            states.insert(name.clone(), HandlerState {
-                name,
-                success_count: 0,
-                error_count: 0,
-                last_execution: None,
-                enabled: true,
-            });
+            states.insert(
+                name.clone(),
+                HandlerState {
+                    name,
+                    success_count: 0,
+                    error_count: 0,
+                    last_execution: None,
+                    enabled: true,
+                },
+            );
         }
 
         handlers.push(handler);
@@ -121,7 +128,11 @@ impl CompositeHandler {
         let mut states = self.handler_states.write().await;
         if let Some(state) = states.get_mut(name) {
             state.enabled = enabled;
-            info!("Handler '{}' {}", name, if enabled { "enabled" } else { "disabled" });
+            info!(
+                "Handler '{}' {}",
+                name,
+                if enabled { "enabled" } else { "disabled" }
+            );
             Ok(())
         } else {
             Err(Error::Handler(format!("Handler '{}' not found", name)))
@@ -138,7 +149,11 @@ impl CompositeHandler {
         self.handlers.read().await.len()
     }
 
-    async fn execute_handler(&self, handler: &Arc<dyn EventHandler>, event: &FileEvent) -> Result<()> {
+    async fn execute_handler(
+        &self,
+        handler: &Arc<dyn EventHandler>,
+        event: &FileEvent,
+    ) -> Result<()> {
         let handler_name = handler.name();
         let start_time = std::time::Instant::now();
 
@@ -203,7 +218,9 @@ impl CompositeHandler {
                 let composite = self.clone();
 
                 let task = tokio::spawn(async move {
-                    composite.execute_handler(&handler_clone, &event_clone).await
+                    composite
+                        .execute_handler(&handler_clone, &event_clone)
+                        .await
                 });
 
                 tasks.push(task);
@@ -237,7 +254,10 @@ impl CompositeHandler {
 
             if handler.can_handle(event) {
                 let priority = handler.priority();
-                priority_groups.entry(priority).or_default().push(handler.clone());
+                priority_groups
+                    .entry(priority)
+                    .or_default()
+                    .push(handler.clone());
             }
         }
 
@@ -257,7 +277,9 @@ impl CompositeHandler {
                     let composite = self.clone();
 
                     let task = tokio::spawn(async move {
-                        composite.execute_handler(&handler_clone, &event_clone).await
+                        composite
+                            .execute_handler(&handler_clone, &event_clone)
+                            .await
                     });
 
                     tasks.push(task);
@@ -292,15 +314,9 @@ impl EventHandler for CompositeHandler {
         debug!("Composite handler processing event: {:?}", event.kind);
 
         match &self.strategy {
-            CoordinationStrategy::Sequential => {
-                self.execute_sequential(&event).await
-            }
-            CoordinationStrategy::Concurrent => {
-                self.execute_concurrent(&event).await
-            }
-            CoordinationStrategy::PriorityGroups => {
-                self.execute_priority_groups(&event).await
-            }
+            CoordinationStrategy::Sequential => self.execute_sequential(&event).await,
+            CoordinationStrategy::Concurrent => self.execute_concurrent(&event).await,
+            CoordinationStrategy::PriorityGroups => self.execute_priority_groups(&event).await,
             CoordinationStrategy::Custom(strategy_func) => {
                 let handlers = self.handlers.read().await;
                 let states = self.handler_states.read().await;
@@ -361,7 +377,7 @@ impl EventHandler for CompositeHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::{FileEvent, FileEventKind};
+    use crate::{FileEvent, FileEventKind};
     use std::path::PathBuf;
 
     struct MockHandler {
@@ -447,7 +463,10 @@ mod tests {
         assert!(state.enabled);
 
         // Disable the handler
-        composite.set_handler_enabled("test_handler", false).await.unwrap();
+        composite
+            .set_handler_enabled("test_handler", false)
+            .await
+            .unwrap();
 
         let states = composite.get_handler_states().await;
         let state = states.get("test_handler").unwrap();

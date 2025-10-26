@@ -1,7 +1,10 @@
 //! Factory implementations for creating file watcher backends.
 
 use super::BackendRegistry;
-use crate::{WatchBackend, error::{Error, Result}};
+use crate::{
+    error::{Error, Result},
+    WatchBackend,
+};
 use std::sync::Arc;
 
 /// Extended factory registry with additional factory methods.
@@ -23,17 +26,24 @@ impl ExtendedBackendRegistry {
     }
 
     /// Create a watcher with automatic backend selection.
-    pub async fn create_optimal_watcher(&self, requirements: &WatcherRequirements) -> Result<Arc<dyn crate::traits::FileWatcher>> {
+    pub async fn create_optimal_watcher(
+        &self,
+        requirements: &WatcherRequirements,
+    ) -> Result<Arc<dyn crate::traits::FileWatcher>> {
         let backend = self.select_optimal_backend(requirements)?;
         self.inner.create_watcher(backend).await.map(Arc::from)
     }
 
     /// Select the optimal backend based on requirements.
-    pub fn select_optimal_backend(&self, requirements: &WatcherRequirements) -> Result<WatchBackend> {
+    pub fn select_optimal_backend(
+        &self,
+        requirements: &WatcherRequirements,
+    ) -> Result<WatchBackend> {
         let available_backends = self.inner.available_backends();
 
         // Filter backends based on requirements
-        let suitable_backends: Vec<_> = available_backends.into_iter()
+        let suitable_backends: Vec<_> = available_backends
+            .into_iter()
             .filter(|backend| {
                 if let Some(capabilities) = self.inner.get_capabilities(*backend) {
                     self.meets_requirements(&capabilities, requirements)
@@ -45,7 +55,7 @@ impl ExtendedBackendRegistry {
 
         if suitable_backends.is_empty() {
             return Err(Error::BackendUnavailable(
-                "No available backend meets requirements".to_string()
+                "No available backend meets requirements".to_string(),
             ));
         }
 
@@ -56,7 +66,11 @@ impl ExtendedBackendRegistry {
     }
 
     /// Check if backend capabilities meet requirements.
-    fn meets_requirements(&self, capabilities: &crate::traits::BackendCapabilities, requirements: &WatcherRequirements) -> bool {
+    fn meets_requirements(
+        &self,
+        capabilities: &crate::traits::BackendCapabilities,
+        requirements: &WatcherRequirements,
+    ) -> bool {
         // Check recursive requirement
         if requirements.recursive && !capabilities.recursive {
             return false;
@@ -115,13 +129,17 @@ impl ExtendedBackendRegistry {
     fn platform_compatible(&self, platforms: &[String]) -> bool {
         let current_platform = std::env::consts::OS;
 
-        platforms.iter().any(|platform| {
-            platform == "all" || platform == current_platform
-        })
+        platforms
+            .iter()
+            .any(|platform| platform == "all" || platform == current_platform)
     }
 
     /// Rank backends by suitability for given requirements.
-    fn rank_backends(&self, backends: &[WatchBackend], requirements: &WatcherRequirements) -> WatchBackend {
+    fn rank_backends(
+        &self,
+        backends: &[WatchBackend],
+        requirements: &WatcherRequirements,
+    ) -> WatchBackend {
         // Define priority order based on typical use cases
         let priority_order = match requirements.use_case {
             WatcherUseCase::HighPerformance => vec![
@@ -153,8 +171,7 @@ impl ExtendedBackendRegistry {
         }
 
         // Fallback to first available backend
-        backends.first().copied()
-            .unwrap_or(WatchBackend::Polling)
+        backends.first().copied().unwrap_or(WatchBackend::Polling)
     }
 }
 

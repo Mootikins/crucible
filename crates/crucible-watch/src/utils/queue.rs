@@ -1,6 +1,6 @@
 //! Event queue for managing file events with backpressure handling.
 
-use crate::{events::FileEvent, error::Result};
+use crate::{error::Result, events::FileEvent};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use tracing::{debug, warn};
@@ -79,7 +79,10 @@ impl EventQueue {
             }
             BackpressureStrategy::DropOldest => {
                 if let Some(removed) = self.queue.pop_front() {
-                    debug!("Dropping oldest event due to queue overflow: {:?}", removed.kind);
+                    debug!(
+                        "Dropping oldest event due to queue overflow: {:?}",
+                        removed.kind
+                    );
                     self.queue.push_back(event);
                     // Size remains the same
                     self.dropped_events.fetch_add(1, Ordering::Relaxed);
@@ -163,7 +166,8 @@ impl EventQueue {
         let events: Vec<FileEvent> = self.queue.drain(..).collect();
         let count = events.len();
         self.size.fetch_sub(count, Ordering::Relaxed);
-        self.processed_events.fetch_add(count as u64, Ordering::Relaxed);
+        self.processed_events
+            .fetch_add(count as u64, Ordering::Relaxed);
         events
     }
 
@@ -258,7 +262,7 @@ impl Default for BackpressureStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::{FileEvent, FileEventKind};
+    use crate::{FileEvent, FileEventKind};
     use std::path::PathBuf;
 
     #[tokio::test]
@@ -281,8 +285,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_queue_overflow_drop_oldest() {
-        let mut queue = EventQueue::new(2)
-            .with_backpressure_strategy(BackpressureStrategy::DropOldest);
+        let mut queue =
+            EventQueue::new(2).with_backpressure_strategy(BackpressureStrategy::DropOldest);
 
         let event1 = FileEvent::new(FileEventKind::Created, PathBuf::from("test1.txt"));
         let event2 = FileEvent::new(FileEventKind::Created, PathBuf::from("test2.txt"));
@@ -306,8 +310,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_queue_overflow_drop_new() {
-        let mut queue = EventQueue::new(2)
-            .with_backpressure_strategy(BackpressureStrategy::DropNew);
+        let mut queue =
+            EventQueue::new(2).with_backpressure_strategy(BackpressureStrategy::DropNew);
 
         let event1 = FileEvent::new(FileEventKind::Created, PathBuf::from("test1.txt"));
         let event2 = FileEvent::new(FileEventKind::Created, PathBuf::from("test2.txt"));
@@ -329,7 +333,10 @@ mod tests {
         let mut queue = EventQueue::new(5);
 
         for i in 1..=3 {
-            let event = FileEvent::new(FileEventKind::Created, PathBuf::from(format!("test{}.txt", i)));
+            let event = FileEvent::new(
+                FileEventKind::Created,
+                PathBuf::from(format!("test{}.txt", i)),
+            );
             queue.push(event).await.unwrap();
         }
 
@@ -342,8 +349,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_priority_dropping() {
-        let mut queue = EventQueue::new(2)
-            .with_backpressure_strategy(BackpressureStrategy::DropLowPriority);
+        let mut queue =
+            EventQueue::new(2).with_backpressure_strategy(BackpressureStrategy::DropLowPriority);
 
         // Add low priority event
         let low_event = FileEvent::new(FileEventKind::Modified, PathBuf::from("test.exe"));

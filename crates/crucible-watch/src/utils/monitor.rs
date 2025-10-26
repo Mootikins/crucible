@@ -1,8 +1,8 @@
 //! Performance monitoring for the file watching system.
 
 use std::collections::VecDeque;
-use std::time::{Duration, Instant};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 /// Performance monitor for tracking file watching metrics.
 pub struct PerformanceMonitor {
@@ -55,7 +55,8 @@ impl PerformanceMonitor {
     pub fn record_event_processed(&mut self, processing_time: Duration) {
         let processing_time_nanos = processing_time.as_nanos() as u64;
         self.total_events.fetch_add(1, Ordering::Relaxed);
-        self.total_processing_time.fetch_add(processing_time_nanos, Ordering::Relaxed);
+        self.total_processing_time
+            .fetch_add(processing_time_nanos, Ordering::Relaxed);
 
         // Add to history
         self.processing_times.push_back(processing_time);
@@ -85,11 +86,13 @@ impl PerformanceMonitor {
     fn update_memory_usage(&mut self, processing_time: Duration) {
         // Simple heuristic: processing time correlates with memory usage
         let estimated_usage = (processing_time.as_millis() as usize) * 1024; // 1KB per ms
-        self.current_memory_usage.store(estimated_usage, Ordering::Relaxed);
+        self.current_memory_usage
+            .store(estimated_usage, Ordering::Relaxed);
 
         let current_max = self.max_memory_usage.load(Ordering::Relaxed);
         if estimated_usage > current_max {
-            self.max_memory_usage.store(estimated_usage, Ordering::Relaxed);
+            self.max_memory_usage
+                .store(estimated_usage, Ordering::Relaxed);
         }
     }
 
@@ -127,7 +130,8 @@ impl PerformanceMonitor {
             return (0.0, 0.0, 0.0);
         }
 
-        let mut times: Vec<f64> = self.processing_times
+        let mut times: Vec<f64> = self
+            .processing_times
             .iter()
             .map(|d| d.as_millis() as f64)
             .collect();
@@ -167,9 +171,9 @@ impl PerformanceMonitor {
         // - Average processing time > 100ms
         // - Events per second < 10
         // - P95 processing time > 500ms
-        stats.avg_processing_time_ms > 100.0 ||
-        stats.events_per_second < 10 ||
-        stats.p95_processing_time_ms > 500.0
+        stats.avg_processing_time_ms > 100.0
+            || stats.events_per_second < 10
+            || stats.p95_processing_time_ms > 500.0
     }
 
     /// Get performance recommendations.
@@ -196,7 +200,8 @@ impl PerformanceMonitor {
             );
         }
 
-        if stats.current_memory_usage_bytes > 100 * 1024 * 1024 { // 100MB
+        if stats.current_memory_usage_bytes > 100 * 1024 * 1024 {
+            // 100MB
             recommendations.push(
                 "High memory usage detected. Consider reducing queue sizes or increasing processing frequency.".to_string()
             );
@@ -234,10 +239,10 @@ pub struct PerformanceStats {
 impl PerformanceStats {
     /// Check if the statistics indicate good performance.
     pub fn is_good_performance(&self) -> bool {
-        self.avg_processing_time_ms < 50.0 &&
-        self.events_per_second > 50 &&
-        self.p95_processing_time_ms < 200.0 &&
-        self.current_memory_usage_bytes < 50 * 1024 * 1024 // 50MB
+        self.avg_processing_time_ms < 50.0
+            && self.events_per_second > 50
+            && self.p95_processing_time_ms < 200.0
+            && self.current_memory_usage_bytes < 50 * 1024 * 1024 // 50MB
     }
 
     /// Get a performance score (0-100).
