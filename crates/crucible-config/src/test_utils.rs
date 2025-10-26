@@ -127,6 +127,7 @@ impl TestConfigBuilder {
             file_path: None,
             max_file_size: None,
             max_files: None,
+            ..Default::default()
         })
     }
 
@@ -218,6 +219,7 @@ impl TestConfig {
                 file_path: Some("test.log".to_string()),
                 max_file_size: Some(100 * 1024 * 1024),
                 max_files: Some(10),
+                ..Default::default()
             })
             .build()
     }
