@@ -16,7 +16,7 @@ pub struct DaemonConfig {
     /// Database synchronization configuration
     pub database: DaemonDatabaseConfig,
     /// Performance configuration
-    pub performance: PerformanceConfig,
+    pub performance: DaemonPerformanceConfig,
     /// Health monitoring configuration
     pub health: HealthConfig,
     /// Service integration configuration
@@ -468,9 +468,11 @@ pub enum BackupStorageType {
     GCS,
 }
 
-/// Performance configuration
+/// Daemon-specific performance configuration for data layer coordination.
+///
+/// This configures worker pools, caching, and resource limits for the daemon process.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PerformanceConfig {
+pub struct DaemonPerformanceConfig {
     /// Worker pool configuration
     pub workers: WorkerPoolConfig,
     /// Cache configuration
@@ -784,7 +786,7 @@ impl Default for DaemonConfig {
         Self {
             filesystem: FilesystemConfig::default(),
             database: DaemonDatabaseConfig::default(),
-            performance: PerformanceConfig::default(),
+            performance: DaemonPerformanceConfig::default(),
             health: HealthConfig::default(),
             services: ServicesConfig::default(),
         }
@@ -932,7 +934,7 @@ impl Default for BackupStorageConfig {
     }
 }
 
-impl Default for PerformanceConfig {
+impl Default for DaemonPerformanceConfig {
     fn default() -> Self {
         Self {
             workers: WorkerPoolConfig::default(),
