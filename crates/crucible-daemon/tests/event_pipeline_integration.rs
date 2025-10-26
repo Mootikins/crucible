@@ -19,7 +19,7 @@ use crucible_daemon::config::DaemonConfig;
 use crucible_watch::{WatchManager, WatchManagerConfig, EventDrivenEmbeddingProcessor, EmbeddingEventHandler};
 use crucible_surrealdb::embedding_pool::EmbeddingThreadPool;
 use crucible_surrealdb::embedding_config::EmbeddingConfig;
-use crucible_watch::embedding_events::{EventDrivenEmbeddingConfig, EmbeddingEvent};
+use crucible_watch::{EventDrivenEmbeddingConfig, EmbeddingEvent};
 use tokio::sync::mpsc;
 
 /// Test the complete event pipeline end-to-end

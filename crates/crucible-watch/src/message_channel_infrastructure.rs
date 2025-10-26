@@ -7,12 +7,11 @@
 use crate::{
     embedding_events::{EmbeddingEvent, EmbeddingEventResult, EventDrivenEmbeddingConfig},
     error::Result,
-    events::FileEventKind,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, RwLock, broadcast};
+use tokio::sync::{broadcast, mpsc, RwLock};
 use tracing::{debug, error, info, warn};
 
 /// Message channel infrastructure for event-driven embedding
@@ -132,14 +131,17 @@ impl MessageChannelInfrastructure {
                 }
 
                 // Check for batch timeout and process if needed
-                Self::check_and_process_batch_timeout(&state, &config, &mut embedding_result_tx).await;
+                Self::check_and_process_batch_timeout(&state, &config, &mut embedding_result_tx)
+                    .await;
 
                 // Small delay to prevent busy-waiting
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
 
             // Process any remaining batch before shutdown
-            if let Err(e) = Self::process_remaining_batch(&state, &config, &mut embedding_result_tx).await {
+            if let Err(e) =
+                Self::process_remaining_batch(&state, &config, &mut embedding_result_tx).await
+            {
                 error!("Error processing remaining batch during shutdown: {}", e);
             }
 
@@ -166,7 +168,9 @@ impl MessageChannelInfrastructure {
     }
 
     /// Get a receiver for embedding results
-    pub async fn get_embedding_result_receiver(&self) -> Option<mpsc::UnboundedReceiver<EmbeddingEventResult>> {
+    pub async fn get_embedding_result_receiver(
+        &self,
+    ) -> Option<mpsc::UnboundedReceiver<EmbeddingEventResult>> {
         self.embedding_result_rx.write().await.take()
     }
 
@@ -196,7 +200,10 @@ impl MessageChannelInfrastructure {
             };
 
             if should_deduplicate {
-                debug!("Deduplicating embedding event for: {}", event.file_path.display());
+                debug!(
+                    "Deduplicating embedding event for: {}",
+                    event.file_path.display()
+                );
                 {
                     let mut state = self.state.write().await;
                     state.metrics.deduplicated_events += 1;
@@ -208,10 +215,16 @@ impl MessageChannelInfrastructure {
         // Send the event
         match self.embedding_event_tx.send(event.clone()) {
             Ok(_) => {
-                debug!("Successfully sent embedding event for: {}", event.file_path.display());
+                debug!(
+                    "Successfully sent embedding event for: {}",
+                    event.file_path.display()
+                );
             }
             Err(broadcast::error::SendError(_)) => {
-                warn!("No subscribers for embedding event: {}", event.file_path.display());
+                warn!(
+                    "No subscribers for embedding event: {}",
+                    event.file_path.display()
+                );
             }
         }
 
@@ -222,7 +235,8 @@ impl MessageChannelInfrastructure {
             state.recent_events.insert(event_key, Instant::now());
 
             // Clean up old events
-            let cutoff = Instant::now() - Duration::from_millis(self.config.deduplication_window_ms * 2);
+            let cutoff =
+                Instant::now() - Duration::from_millis(self.config.deduplication_window_ms * 2);
             state.recent_events.retain(|_, &mut time| time > cutoff);
         }
 
@@ -239,7 +253,8 @@ impl MessageChannelInfrastructure {
         // Create new batch if needed
         if state.current_batch.is_empty() {
             state.current_batch_id = Some(uuid::Uuid::new_v4());
-            state.batch_deadline = Some(Instant::now() + Duration::from_millis(self.config.batch_timeout_ms));
+            state.batch_deadline =
+                Some(Instant::now() + Duration::from_millis(self.config.batch_timeout_ms));
         }
 
         // Mark event as batched
@@ -287,7 +302,10 @@ impl MessageChannelInfrastructure {
             let (batch, batch_id) = {
                 let mut state = state.write().await;
                 if !state.current_batch.is_empty() {
-                    debug!("Processing batch due to timeout (size: {})", state.current_batch.len());
+                    debug!(
+                        "Processing batch due to timeout (size: {})",
+                        state.current_batch.len()
+                    );
 
                     let batch = std::mem::take(&mut state.current_batch);
                     let batch_id = state.current_batch_id.take();
@@ -304,7 +322,7 @@ impl MessageChannelInfrastructure {
                     let result = EmbeddingEventResult::success(
                         event.id,
                         Duration::from_millis(50), // Simulated processing time
-                        256, // Mock dimensions
+                        256,                       // Mock dimensions
                     );
 
                     if let Err(_) = embedding_result_tx.send(result) {
@@ -338,15 +356,15 @@ impl MessageChannelInfrastructure {
         };
 
         if !batch.is_empty() {
-            info!("Processing remaining batch of {} events during shutdown", batch.len());
+            info!(
+                "Processing remaining batch of {} events during shutdown",
+                batch.len()
+            );
 
             // Send completion results for remaining events
             for event in &batch {
-                let result = EmbeddingEventResult::success(
-                    event.id,
-                    Duration::from_millis(50),
-                    256,
-                );
+                let result =
+                    EmbeddingEventResult::success(event.id, Duration::from_millis(50), 256);
 
                 if let Err(_) = embedding_result_tx.send(result) {
                     debug!("Failed to send remaining batch result");
@@ -366,8 +384,16 @@ impl MessageChannelInfrastructure {
     }
 
     /// Send batch completion results
-    async fn send_batch_result(&self, batch: Vec<EmbeddingEvent>, batch_id: uuid::Uuid) -> Result<()> {
-        debug!("Sending batch result for batch {} with {} events", batch_id, batch.len());
+    async fn send_batch_result(
+        &self,
+        batch: Vec<EmbeddingEvent>,
+        batch_id: uuid::Uuid,
+    ) -> Result<()> {
+        debug!(
+            "Sending batch result for batch {} with {} events",
+            batch_id,
+            batch.len()
+        );
 
         // Update metrics
         {
@@ -379,7 +405,8 @@ impl MessageChannelInfrastructure {
             let batch_size = batch.len() as f64;
             let total_batches = state.metrics.total_batches_processed as f64;
             state.metrics.average_batch_size =
-                (state.metrics.average_batch_size * (total_batches - 1.0) + batch_size) / total_batches;
+                (state.metrics.average_batch_size * (total_batches - 1.0) + batch_size)
+                    / total_batches;
         }
 
         // Send completion results for each event in the batch
@@ -387,7 +414,7 @@ impl MessageChannelInfrastructure {
             let result = EmbeddingEventResult::success(
                 event.id,
                 Duration::from_millis(50), // Simulated processing time
-                256, // Mock dimensions
+                256,                       // Mock dimensions
             );
 
             if let Err(_) = self.embedding_result_tx.send(result) {
@@ -502,6 +529,7 @@ impl MessageChannelInfrastructure {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{FileEvent, FileEventKind};
     use tempfile::TempDir;
 
     #[tokio::test]
