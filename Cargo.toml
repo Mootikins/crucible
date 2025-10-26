@@ -12,7 +12,6 @@ members = [
     "crates/crucible-a2a",
     "crates/crucible-daemon",
     "crates/crucible-llm",
-    "crates/crucible-services",
     "crates/crucible-rune-macros",
     "crates/crucible-tools",
 ]
@@ -145,7 +144,6 @@ nucleo-matcher = "0.3"
 # Internal workspace crates
 crucible-core = { path = "crates/crucible-core" }
 crucible-config = { path = "crates/crucible-config" }
-crucible-services = { path = "crates/crucible-services" }
 crucible-rune-macros = { path = "crates/crucible-rune-macros" }
 crucible-tools = { path = "crates/crucible-tools" }
 crucible-llm = { path = "crates/crucible-llm" }

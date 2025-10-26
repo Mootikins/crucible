@@ -26,9 +26,7 @@ md5 = { workspace = true }
 # Enhanced async runtime
 tokio = { workspace = true, features = ["full", "tracing"] }
 
-# Service layer dependencies
-crucible-services = { workspace = true }
-# crucible-tools = { path = "../crucible-tools" } # Temporarily disabled
+# Configuration dependencies
 crucible-config = { workspace = true }
 
 # Configuration management
