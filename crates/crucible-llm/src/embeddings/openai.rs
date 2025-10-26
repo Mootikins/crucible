@@ -93,23 +93,25 @@ impl OpenAIProvider {
         // Validate configuration
         config.validate()?;
 
-        // Get API key
+        // Get API key using helper method
         let api_key = config
-            .api_key
-            .clone()
-            .ok_or_else(|| EmbeddingError::ConfigError("OpenAI requires an API key".to_string()))?;
+            .api_key()
+            .ok_or_else(|| EmbeddingError::ConfigError("OpenAI requires an API key".to_string()))?
+            .to_string();
 
         // Build HTTP client with timeout
         let client = Client::builder()
-            .timeout(Duration::from_secs(config.timeout_secs))
+            .timeout(Duration::from_secs(config.timeout_secs()))
             .build()
             .map_err(|e| {
                 EmbeddingError::ConfigError(format!("Failed to create HTTP client: {}", e))
             })?;
 
+        let endpoint = config.endpoint();
+
         Ok(Self {
             client,
-            endpoint: config.endpoint.clone(),
+            endpoint,
             config,
             api_key,
         })
@@ -121,7 +123,7 @@ impl EmbeddingProvider for OpenAIProvider {
     async fn embed(&self, text: &str) -> EmbeddingResult<EmbeddingResponse> {
         // Build request
         let request = OpenAIEmbeddingRequest {
-            model: self.config.model.clone(),
+            model: self.config.model_name().to_string(),
             input: EmbeddingInput::Single(text.to_string()),
             encoding_format: None,
         };
@@ -174,7 +176,7 @@ impl EmbeddingProvider for OpenAIProvider {
 
         // Build request
         let request = OpenAIEmbeddingRequest {
-            model: self.config.model.clone(),
+            model: self.config.model_name().to_string(),
             input: EmbeddingInput::Batch(texts),
             encoding_format: None,
         };
@@ -231,11 +233,14 @@ impl EmbeddingProvider for OpenAIProvider {
     }
 
     fn model_name(&self) -> &str {
-        &self.config.model
+        self.config.model_name()
     }
 
     fn dimensions(&self) -> usize {
-        self.config.expected_dimensions()
+        super::config::expected_dimensions_for_model(
+            &self.config.provider_type,
+            self.config.model_name(),
+        )
     }
 
     async fn list_models(&self) -> EmbeddingResult<Vec<super::provider::ModelInfo>> {
@@ -316,7 +321,7 @@ mod tests {
     #[test]
     fn test_provider_creation_with_invalid_config() {
         let mut config = create_test_config();
-        config.timeout_secs = 0; // Invalid timeout
+        config.model.name = String::new(); // Invalid model name
 
         let provider = OpenAIProvider::new(config);
         assert!(provider.is_err());
@@ -325,7 +330,7 @@ mod tests {
     #[test]
     fn test_provider_creation_without_api_key() {
         let mut config = create_test_config();
-        config.api_key = None; // OpenAI requires API key
+        config.api.key = None; // OpenAI requires API key
 
         let provider = OpenAIProvider::new(config);
         assert!(provider.is_err());

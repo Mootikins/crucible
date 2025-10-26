@@ -58,8 +58,8 @@ impl TestConfigBuilder {
     /// Add a mock Ollama embedding provider.
     pub fn mock_ollama_embedding(self) -> Self {
         self.embedding_provider(EmbeddingProviderConfig::ollama(
-            "http://localhost:11434".to_string(),
-            "nomic-embed-text".to_string(),
+            Some("http://localhost:11434".to_string()),
+            Some("nomic-embed-text".to_string()),
         ))
     }
 

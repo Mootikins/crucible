@@ -302,7 +302,7 @@ impl ConfigMigrator {
             let model =
                 std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text".to_string());
 
-            provider_config = Some(EmbeddingProviderConfig::ollama(ollama_url, model));
+            provider_config = Some(EmbeddingProviderConfig::ollama(Some(ollama_url), Some(model)));
             result.add_info("Migrated Ollama embedding provider from environment");
         }
 
@@ -319,9 +319,8 @@ impl ConfigMigrator {
                     provider_config = Some(EmbeddingProviderConfig::openai(api_key, Some(model)));
                 }
                 "ollama" => {
-                    let base_url = std::env::var("CRUCIBLE_EMBEDDING_BASE_URL")
-                        .unwrap_or_else(|_| "http://localhost:11434".to_string());
-                    provider_config = Some(EmbeddingProviderConfig::ollama(base_url, model));
+                    let base_url = std::env::var("CRUCIBLE_EMBEDDING_BASE_URL").ok();
+                    provider_config = Some(EmbeddingProviderConfig::ollama(base_url, Some(model)));
                 }
                 _ => {
                     result.add_warning(format!(

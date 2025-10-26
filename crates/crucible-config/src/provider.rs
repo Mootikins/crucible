@@ -58,7 +58,7 @@ impl EmbeddingProviderConfig {
             provider_type: EmbeddingProviderType::OpenAI,
             api: ApiConfig {
                 key: Some(api_key),
-                base_url: None,
+                base_url: Some("https://api.openai.com/v1".to_string()),
                 timeout_seconds: Some(30),
                 retry_attempts: Some(3),
                 headers: HashMap::new(),
@@ -73,18 +73,18 @@ impl EmbeddingProviderConfig {
     }
 
     /// Create a new Ollama embedding provider configuration.
-    pub fn ollama(base_url: String, model: String) -> Self {
+    pub fn ollama(base_url: Option<String>, model: Option<String>) -> Self {
         Self {
             provider_type: EmbeddingProviderType::Ollama,
             api: ApiConfig {
                 key: None,
-                base_url: Some(base_url),
+                base_url: Some(base_url.unwrap_or_else(|| "http://localhost:11434".to_string())),
                 timeout_seconds: Some(60),
                 retry_attempts: Some(2),
                 headers: HashMap::new(),
             },
             model: ModelConfig {
-                name: model,
+                name: model.unwrap_or_else(|| "nomic-embed-text".to_string()),
                 dimensions: None,
                 max_tokens: Some(2048),
             },
@@ -132,6 +132,33 @@ impl EmbeddingProviderConfig {
             },
             options,
         }
+    }
+
+    /// Get the endpoint URL for this provider.
+    pub fn endpoint(&self) -> String {
+        self.api.base_url.clone()
+            .or_else(|| self.provider_type.default_base_url())
+            .unwrap_or_else(|| "http://localhost:11434".to_string())
+    }
+
+    /// Get the model name.
+    pub fn model_name(&self) -> &str {
+        &self.model.name
+    }
+
+    /// Get the API key if present.
+    pub fn api_key(&self) -> Option<&str> {
+        self.api.key.as_deref()
+    }
+
+    /// Get timeout in seconds.
+    pub fn timeout_secs(&self) -> u64 {
+        self.api.timeout_seconds.unwrap_or(30)
+    }
+
+    /// Get max retry attempts.
+    pub fn max_retries(&self) -> u32 {
+        self.api.retry_attempts.unwrap_or(3)
     }
 
     /// Validate the configuration.
