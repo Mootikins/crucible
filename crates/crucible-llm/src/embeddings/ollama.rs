@@ -79,14 +79,17 @@ impl OllamaProvider {
         // Validate configuration
         config.validate()?;
 
+        let timeout_secs = config.timeout_secs();
+
         // Build HTTP client with timeout
-        let mut client_builder =
-            Client::builder().timeout(Duration::from_secs(config.timeout_secs));
+        let mut client_builder = Client::builder().timeout(Duration::from_secs(timeout_secs));
+
+        let endpoint = config.endpoint();
 
         // Accept self-signed certificates for local development servers
-        if config.endpoint.contains("localhost")
-            || config.endpoint.contains("127.0.0.1")
-            || config.endpoint.contains(".terminal.")
+        if endpoint.contains("localhost")
+            || endpoint.contains("127.0.0.1")
+            || endpoint.contains(".terminal.")
         {
             client_builder = client_builder.danger_accept_invalid_certs(true);
         }
@@ -95,16 +98,27 @@ impl OllamaProvider {
             EmbeddingError::ConfigError(format!("Failed to create HTTP client: {}", e))
         })?;
 
-        let expected_dimensions = config.expected_dimensions();
+        // Get expected dimensions based on provider and model
+        let expected_dimensions = super::config::expected_dimensions_for_model(
+            &config.provider_type,
+            config.model_name(),
+        );
+
+        // Get batch_size from options or use default of 1
+        let batch_size = config
+            .options
+            .get("batch_size")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(1) as usize;
 
         Ok(Self {
             client,
-            endpoint: config.endpoint,
-            model: config.model,
+            endpoint,
+            model: config.model_name().to_string(),
             expected_dimensions,
-            timeout_secs: config.timeout_secs,
-            max_retries: config.max_retries,
-            batch_size: config.batch_size,
+            timeout_secs,
+            max_retries: config.max_retries(),
+            batch_size,
         })
     }
 
@@ -373,7 +387,7 @@ mod tests {
     #[test]
     fn test_provider_creation_with_invalid_config() {
         let mut config = create_test_config();
-        config.timeout_secs = 0; // Invalid timeout
+        config.model.name = String::new(); // Invalid model name
 
         let provider = OllamaProvider::new(config);
         assert!(provider.is_err());
@@ -561,7 +575,7 @@ mod tests {
         }
 
         // Check if we got nomic-embed-text (common model)
-        let has_nomic = models.iter().any(|m| m.name.contains("nomic-embed-text"));
+        let _has_nomic = models.iter().any(|m| m.name.contains("nomic-embed-text"));
         println!(
             "Available models: {:?}",
             models.iter().map(|m| &m.name).collect::<Vec<_>>()

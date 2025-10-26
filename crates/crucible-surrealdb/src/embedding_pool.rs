@@ -849,12 +849,12 @@ impl EmbeddingThreadPool {
 
         // Apply timeout if specified
         if let Some(timeout_seconds) = config.api.timeout_seconds {
-            final_config.timeout_secs = timeout_seconds;
+            final_config.api.timeout_seconds = Some(timeout_seconds);
         }
 
         // Apply retry attempts if specified
         if let Some(retry_attempts) = config.api.retry_attempts {
-            final_config.max_retries = retry_attempts;
+            final_config.api.retry_attempts = Some(retry_attempts);
         }
 
         // Create the provider

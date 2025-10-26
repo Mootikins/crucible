@@ -27,7 +27,7 @@ pub mod provider;
 pub mod mock;
 
 pub use candle::CandleProvider;
-pub use config::{EmbeddingConfig, ProviderType};
+pub use config::{EmbeddingConfig, EmbeddingProviderType, ProviderType};
 pub use error::{EmbeddingError, EmbeddingResult};
 pub use ollama::OllamaProvider;
 pub use openai::OpenAIProvider;
@@ -42,19 +42,23 @@ pub async fn create_provider(
     // Validate configuration before creating provider
     config.validate()?;
 
-    match config.provider {
-        ProviderType::Ollama => {
+    match config.provider_type {
+        EmbeddingProviderType::Ollama => {
             let provider = ollama::OllamaProvider::new(config)?;
             Ok(Arc::new(provider))
         }
-        ProviderType::OpenAI => {
+        EmbeddingProviderType::OpenAI => {
             let provider = openai::OpenAIProvider::new(config)?;
             Ok(Arc::new(provider))
         }
-        ProviderType::Candle => {
+        EmbeddingProviderType::Candle => {
             let provider = candle::CandleProvider::new(config)?;
             Ok(Arc::new(provider))
         }
+        _ => Err(EmbeddingError::ConfigError(format!(
+            "Unsupported provider type: {:?}",
+            config.provider_type
+        ))),
     }
 }
 
@@ -70,18 +74,13 @@ mod tests {
 
     #[test]
     fn test_provider_creation_requires_valid_config() {
-        // Test that we can create basic configs
-        let config = EmbeddingConfig {
-            provider: ProviderType::Ollama,
-            endpoint: "https://llama.terminal.krohnos.io".to_string(),
-            api_key: None,
-            model: "nomic-embed-text".to_string(),
-            timeout_secs: 30,
-            max_retries: 3,
-            batch_size: 10,
-        };
+        // Test that we can create basic configs using the canonical API
+        let config = EmbeddingConfig::ollama(
+            Some("https://llama.terminal.krohnos.io".to_string()),
+            Some("nomic-embed-text".to_string()),
+        );
 
-        assert_eq!(config.provider, ProviderType::Ollama);
-        assert_eq!(config.model, "nomic-embed-text");
+        assert_eq!(config.provider_type, EmbeddingProviderType::Ollama);
+        assert_eq!(config.model_name(), "nomic-embed-text");
     }
 }
