@@ -2,6 +2,7 @@
 
 **Status:** Planning Document
 **Created:** 2025-10-26
+**Updated:** 2025-10-26 (Added env var removal)
 **Purpose:** Eliminate config fragmentation across Crucible codebase
 **Prerequisites:** Phase 1 (test cleanup) must be complete
 
@@ -9,13 +10,20 @@
 
 ## Executive Summary
 
-Crucible currently has **150 config structs** across 8 crates with **18 duplicate names**. This creates:
+Crucible currently has **150 config structs** across 8 crates with **18 duplicate names**. Additionally, **environment variable configuration** causes test flakiness and configuration complexity.
+
+**Problems:**
 - Type confusion (which `EmbeddingConfig` to use?)
 - Maintenance burden (changes require updates in 3-4 places)
 - Architectural ambiguity (no single source of truth)
 - Test brittleness (configs drift, tests break)
+- **Environment variable pollution** (tests interfere, hard to debug)
 
-**Goal:** Consolidate to ~50 config structs with zero duplicates, establishing `crucible-config` as the canonical source.
+**Goals:**
+1. Consolidate to ~50 config structs with zero duplicates
+2. **Eliminate ALL environment variable configuration**
+3. Establish `crucible-config` as the canonical source
+4. Use **file-based config only** (YAML/TOML)
 
 ---
 
@@ -127,9 +135,10 @@ crucible-surrealdb: 4 config structs
 
 1. **Single Source of Truth:** `crucible-config` owns all shared configs
 2. **Composition Over Duplication:** Use nested configs, not copies
-3. **Backwards Compatibility:** Provide migration helpers where needed
-4. **Type Safety:** Use newtypes to distinguish contexts
-5. **Testability:** Configs should have good defaults and builders
+3. **File-Based Config Only:** No environment variable configuration
+4. **Backwards Compatibility:** Provide migration helpers where needed
+5. **Type Safety:** Use newtypes to distinguish contexts
+6. **Testability:** Configs should have good defaults and builders
 
 ### Target Architecture
 
@@ -152,6 +161,222 @@ crucible-config/
 ---
 
 ## Detailed Consolidation Steps
+
+### Step 0: Remove Environment Variable Configuration ⭐ NEW
+
+**Current Problem:**
+- 4 failing tests due to env var pollution
+- Tests interfere with each other in parallel execution
+- Hard to debug: `OBSIDIAN_KILN_PATH`, `CRUCIBLE_CHAT_MODEL`, `OLLAMA_ENDPOINT`, etc.
+- Configuration is split between files and env vars (confusing)
+
+**Current Env Var Usage:**
+```bash
+# Find all env var reads
+rg "std::env::var|env::var|std::env::set_var" --type rust crates/
+```
+
+**Common Env Vars to Remove:**
+- `OBSIDIAN_KILN_PATH` → Config file only
+- `OBSIDIAN_VAULT_PATH` → Deprecated, use KILN
+- `CRUCIBLE_CHAT_MODEL` → Config file only
+- `CRUCIBLE_TEMPERATURE` → Config file only
+- `OLLAMA_ENDPOINT` → Config file only
+- `EMBEDDING_ENDPOINT` → Config file only
+- `EMBEDDING_MODEL` → Config file only
+- `CRUCIBLE_TEST_MODE` → Use cfg(test) instead
+- `RUST_LOG` → Keep (standard tracing convention)
+
+**Migration Strategy:**
+
+1. **Audit all env var usage**
+   ```bash
+   # Find all environment variable reads
+   rg "env::var\(\"([^\"]+)\"\)" --type rust -o | sort | uniq
+   ```
+
+2. **Update CliConfig::load() to ONLY load from files**
+   ```rust
+   // OLD (REMOVE):
+   pub fn load(...) -> Result<Self> {
+       // Load from file
+       let mut config = load_from_file()?;
+
+       // Override with env vars ❌ REMOVE THIS
+       if let Ok(path) = env::var("OBSIDIAN_KILN_PATH") {
+           config.kiln.path = PathBuf::from(path);
+       }
+       if let Ok(model) = env::var("CRUCIBLE_CHAT_MODEL") {
+           config.llm.chat_model = model;
+       }
+       // ... more overrides ...
+   }
+
+   // NEW (FILE ONLY):
+   pub fn load(config_path: Option<PathBuf>) -> Result<Self> {
+       let config_path = config_path
+           .or_else(|| Self::default_config_path())
+           .ok_or(ConfigError::NoConfigFound)?;
+
+       let config = Self::from_file(&config_path)?;
+       config.validate()?;
+       Ok(config)
+   }
+   ```
+
+3. **Update tests to use builders/test helpers**
+   ```rust
+   // OLD (env var pollution):
+   #[test]
+   fn test_config() {
+       env::set_var("OBSIDIAN_KILN_PATH", "/tmp/test"); // ❌ Pollutes parallel tests
+       let config = CliConfig::load(None, None, None).unwrap();
+       assert_eq!(config.kiln.path, PathBuf::from("/tmp/test"));
+       env::remove_var("OBSIDIAN_KILN_PATH"); // ❌ May not run if test panics
+   }
+
+   // NEW (explicit config):
+   #[test]
+   fn test_config() {
+       let config = CliConfig::builder()
+           .kiln_path("/tmp/test")
+           .build()
+           .unwrap();
+       assert_eq!(config.kiln.path, PathBuf::from("/tmp/test"));
+   } // ✅ No cleanup needed, no pollution
+   ```
+
+4. **Add config builder pattern**
+   ```rust
+   // crates/crucible-config/src/config.rs
+   impl Config {
+       pub fn builder() -> ConfigBuilder {
+           ConfigBuilder::default()
+       }
+   }
+
+   #[derive(Default)]
+   pub struct ConfigBuilder {
+       kiln_path: Option<PathBuf>,
+       embedding_provider: Option<EmbeddingProviderConfig>,
+       database: Option<DatabaseConfig>,
+       // ... other fields
+   }
+
+   impl ConfigBuilder {
+       pub fn kiln_path(mut self, path: impl Into<PathBuf>) -> Self {
+           self.kiln_path = Some(path.into());
+           self
+       }
+
+       pub fn build(self) -> Result<Config> {
+           Ok(Config {
+               kiln: KilnConfig {
+                   path: self.kiln_path.ok_or(ConfigError::MissingKilnPath)?,
+               },
+               // ... populate from self with defaults
+           })
+       }
+   }
+   ```
+
+5. **Update CLI argument parsing**
+   ```rust
+   // OLD: Mix of file + env vars
+   // NEW: File path OR inline overrides via CLI args
+
+   #[derive(Parser)]
+   struct Cli {
+       /// Path to config file
+       #[arg(long)]
+       config: Option<PathBuf>,
+
+       /// Override kiln path
+       #[arg(long)]
+       kiln_path: Option<PathBuf>,
+
+       /// Override chat model
+       #[arg(long)]
+       chat_model: Option<String>,
+   }
+
+   fn main() {
+       let cli = Cli::parse();
+       let mut config = CliConfig::load(cli.config)?;
+
+       // Apply CLI overrides (explicit, not env vars)
+       if let Some(path) = cli.kiln_path {
+           config.kiln.path = path;
+       }
+       if let Some(model) = cli.chat_model {
+           config.llm.chat_model = model;
+       }
+   }
+   ```
+
+**Benefits:**
+- ✅ No more test pollution
+- ✅ Explicit configuration (easier to debug)
+- ✅ All config in one place (file)
+- ✅ CLI args can still override (explicit)
+- ✅ No env var cleanup needed in tests
+
+**Breaking Changes:**
+- Users must migrate env vars to config files
+- Provide migration tool: `cru config migrate-env-vars`
+
+**Migration Tool:**
+```rust
+// crates/crucible-cli/src/commands/config.rs
+
+pub async fn migrate_env_vars() -> Result<()> {
+    println!("Checking for environment variables to migrate...");
+
+    let mut config = Config::default();
+    let mut found_vars = Vec::new();
+
+    if let Ok(path) = env::var("OBSIDIAN_KILN_PATH") {
+        config.kiln.path = PathBuf::from(path);
+        found_vars.push(("OBSIDIAN_KILN_PATH", path));
+    }
+
+    if let Ok(model) = env::var("CRUCIBLE_CHAT_MODEL") {
+        config.llm.chat_model = model.clone();
+        found_vars.push(("CRUCIBLE_CHAT_MODEL", model));
+    }
+
+    // ... check all env vars
+
+    if found_vars.is_empty() {
+        println!("No environment variables found to migrate.");
+        return Ok(());
+    }
+
+    println!("\nFound {} environment variables:", found_vars.len());
+    for (key, value) in &found_vars {
+        println!("  {} = {}", key, value);
+    }
+
+    let config_path = Config::default_config_path()
+        .unwrap_or_else(|| PathBuf::from("~/.config/crucible/config.yaml"));
+
+    println!("\nSaving to: {}", config_path.display());
+    config.save(&config_path)?;
+
+    println!("\n✅ Migration complete!");
+    println!("\nYou can now remove these environment variables:");
+    for (key, _) in &found_vars {
+        println!("  unset {}", key);
+    }
+
+    Ok(())
+}
+```
+
+**Estimated Effort:** 4-6 hours
+**Impact:** Fixes 4 test failures, improves testability
+
+---
 
 ### Step 1: EmbeddingConfig Consolidation
 
