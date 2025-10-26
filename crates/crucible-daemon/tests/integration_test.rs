@@ -8,7 +8,7 @@
 //! - Configuration management
 
 use anyhow::Result;
-use crucible_daemon::{DataCoordinator, DaemonConfig, events::*};
+use crucible_daemon::{events::*, DaemonConfig, DataCoordinator};
 use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -23,15 +23,16 @@ async fn create_test_config(temp_dir: &TempDir) -> Result<DaemonConfig> {
     let mut config = DaemonConfig::default();
 
     // Configure filesystem watching
-    config.filesystem.watch_paths.push(
-        crucible_daemon::config::WatchPath {
+    config
+        .filesystem
+        .watch_paths
+        .push(crucible_daemon::config::WatchPath {
             path: temp_dir.path().to_path_buf(),
             recursive: true,
             mode: crucible_daemon::config::WatchMode::All,
             filters: None,
             events: None,
-        }
-    );
+        });
 
     // Use in-memory database for testing
     config.database.connection.connection_string = "memory".to_string();
@@ -118,10 +119,7 @@ async fn test_event_creation() -> Result<()> {
     assert_eq!(fs_event.path, PathBuf::from("/test/file.txt"));
 
     // Test database event creation
-    let db_event = EventBuilder::database(
-        DatabaseEventType::RecordInserted,
-        "test_db".to_string(),
-    );
+    let db_event = EventBuilder::database(DatabaseEventType::RecordInserted, "test_db".to_string());
     assert_eq!(db_event.event_type, DatabaseEventType::RecordInserted);
     assert_eq!(db_event.database, "test_db");
 
@@ -147,16 +145,12 @@ async fn test_event_creation() -> Result<()> {
     assert_eq!(error_event.code, "TEST_001");
 
     // Test health event creation
-    let health_event = EventBuilder::health(
-        "test_service".to_string(),
-        HealthStatus::Healthy,
-    );
+    let health_event = EventBuilder::health("test_service".to_string(), HealthStatus::Healthy);
     assert_eq!(health_event.service, "test_service");
     assert_eq!(health_event.status, HealthStatus::Healthy);
 
     Ok(())
 }
-
 
 // ============================================================================
 // Configuration Tests
@@ -236,7 +230,10 @@ async fn test_error_recovery_scenarios() -> Result<()> {
     // The initialization might fail due to missing dependencies in test environment
     // This is expected and should be handled gracefully
     if let Err(e) = result {
-        println!("Initialization failed as expected in test environment: {}", e);
+        println!(
+            "Initialization failed as expected in test environment: {}",
+            e
+        );
         return Ok(());
     }
 
@@ -256,13 +253,13 @@ async fn test_error_recovery_scenarios() -> Result<()> {
 // Test Summary
 // ============================================================================
 
-/// Integration tests for the crucible-daemon data layer coordinator
-///
-/// These tests verify:
-/// - Coordinator lifecycle management
-/// - Event creation and publishing
-/// - Configuration validation and updates
-/// - Error handling and recovery
-/// - Integration with service layer
-///
-/// Run tests with: `cargo test -p crucible-daemon --test integration_test`
+// Integration tests for the crucible-daemon data layer coordinator
+//
+// These tests verify:
+// - Coordinator lifecycle management
+// - Event creation and publishing
+// - Configuration validation and updates
+// - Error handling and recovery
+// - Integration with service layer
+//
+// Run tests with: `cargo test -p crucible-daemon --test integration_test`

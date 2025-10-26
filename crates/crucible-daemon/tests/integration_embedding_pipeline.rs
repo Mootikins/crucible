@@ -5,14 +5,14 @@
 //! 2. Embedding processor generates embeddings
 //! 3. SurrealDB stores the embeddings properly
 
+use anyhow::Result;
+use crucible_daemon::config::{FilterAction, FilterRule, WatchMode, WatchPath};
+use crucible_daemon::services::DatabaseService;
+use crucible_daemon::{DaemonConfig, DataCoordinator};
+use crucible_surrealdb::SurrealDbConfig;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::time::sleep;
-use crucible_daemon::{DataCoordinator, DaemonConfig};
-use crucible_daemon::config::{WatchPath, FilterRule, FilterAction, WatchMode};
-use crucible_daemon::services::DatabaseService;
-use crucible_surrealdb::SurrealDbConfig;
-use anyhow::Result;
 
 /// Test the complete embedding pipeline integration
 #[tokio::test]
@@ -131,7 +131,10 @@ The system should be able to process this updated content and update the embeddi
     sleep(Duration::from_millis(1000)).await;
 
     // Get database service and verify embeddings were stored
-    let db_service = coordinator.service_manager().get_service::<crucible_daemon::surrealdb_service::SurrealDBService>("database_service").await;
+    let db_service = coordinator
+        .service_manager()
+        .get_service::<crucible_daemon::surrealdb_service::SurrealDBService>("database_service")
+        .await;
 
     if let Some(db_service) = db_service {
         // Test 1: Check database connection
@@ -144,7 +147,9 @@ The system should be able to process this updated content and update the embeddi
 
         // Test 3: Verify documents are stored
         let doc1 = db_service.get_document_by_path("test_document.md").await?;
-        let doc2 = db_service.get_document_by_path("second_document.md").await?;
+        let doc2 = db_service
+            .get_document_by_path("second_document.md")
+            .await?;
 
         // Note: With the current mock implementation, these might return None
         // In a real implementation with actual SurrealDB, these would return actual records
@@ -195,39 +200,54 @@ async fn test_surrealdb_service_standalone() -> Result<()> {
 
     // Test embedding storage
     let embedding = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
-    let record_id = service.store_embedding(
-        "test/path/document.md",
-        Some("Test Document"),
-        "# Test Document\n\nThis is a test document for embedding storage.",
-        embedding.clone(),
-        "test-model",
-    ).await?;
+    let record_id = service
+        .store_embedding(
+            "test/path/document.md",
+            Some("Test Document"),
+            "# Test Document\n\nThis is a test document for embedding storage.",
+            embedding.clone(),
+            "test-model",
+        )
+        .await?;
 
     assert!(!record_id.is_empty(), "Record ID should not be empty");
 
     // Test document retrieval
-    let document = service.get_document_by_path("test/path/document.md").await?;
+    let document = service
+        .get_document_by_path("test/path/document.md")
+        .await?;
     // With mock implementation, this returns None, which is expected
     println!("Retrieved document: {:?}", document.is_some());
     // We don't assert that document exists since this is a mock implementation
 
     // Test embedding update (may not work with mock implementation)
-    match service.update_embedding(
-        "test/path/document.md",
-        vec![0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1],
-        "updated-model",
-    ).await {
+    match service
+        .update_embedding(
+            "test/path/document.md",
+            vec![0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1],
+            "updated-model",
+        )
+        .await
+    {
         Ok(_) => println!("Embedding update succeeded"),
         Err(e) => println!("Embedding update failed (expected with mock): {}", e),
     }
 
     // Test similarity search
     let search_results = service.search_similar(&embedding, Some(3)).await?;
-    println!("Similarity search returned {} results", search_results.len());
+    println!(
+        "Similarity search returned {} results",
+        search_results.len()
+    );
 
     // Test database service interface
-    let query_result = service.execute_query("SELECT * FROM notes LIMIT 10").await?;
-    assert!(query_result.get("result").is_some(), "Query should return results");
+    let query_result = service
+        .execute_query("SELECT * FROM notes LIMIT 10")
+        .await?;
+    assert!(
+        query_result.get("result").is_some(),
+        "Query should return results"
+    );
 
     Ok(())
 }
@@ -248,19 +268,28 @@ async fn test_daemon_config_validation() -> Result<()> {
 
     // Test default configuration
     let validation_result = config.validate();
-    assert!(validation_result.is_ok(), "Default config with watch path should be valid");
+    assert!(
+        validation_result.is_ok(),
+        "Default config with watch path should be valid"
+    );
 
     // Test database configuration
     config.database.connection.connection_string = "ws://localhost:8000".to_string();
     config.database.connection.database_type = crucible_daemon::config::DatabaseType::SurrealDB;
 
     let validation_result = config.validate();
-    assert!(validation_result.is_ok(), "Config with SurrealDB should be valid");
+    assert!(
+        validation_result.is_ok(),
+        "Config with SurrealDB should be valid"
+    );
 
     // Test invalid connection string
     config.database.connection.connection_string = "".to_string();
     let validation_result = config.validate();
-    assert!(validation_result.is_err(), "Empty connection string should be invalid");
+    assert!(
+        validation_result.is_err(),
+        "Empty connection string should be invalid"
+    );
 
     Ok(())
 }
@@ -318,15 +347,24 @@ async fn test_file_watching_configuration() -> Result<()> {
     sleep(Duration::from_millis(200)).await;
 
     // Verify coordinator is running
-    assert!(coordinator.is_running().await, "Coordinator should be running");
+    assert!(
+        coordinator.is_running().await,
+        "Coordinator should be running"
+    );
 
     // Get daemon health
     let health = coordinator.get_daemon_health().await;
-    assert_eq!(health.status, crucible_daemon::coordinator::ServiceStatus::Healthy);
+    assert_eq!(
+        health.status,
+        crucible_daemon::coordinator::ServiceStatus::Healthy
+    );
 
     // Stop coordinator
     coordinator.stop().await?;
-    assert!(!coordinator.is_running().await, "Coordinator should be stopped");
+    assert!(
+        !coordinator.is_running().await,
+        "Coordinator should be stopped"
+    );
 
     Ok(())
 }
@@ -341,7 +379,7 @@ async fn test_event_system_integration() -> Result<()> {
     let mut receiver = coordinator.subscribe();
 
     // Publish test events
-    use crucible_daemon::events::{EventBuilder, DaemonEvent};
+    use crucible_daemon::events::{DaemonEvent, EventBuilder};
 
     let service_event = DaemonEvent::Service(EventBuilder::service(
         crucible_daemon::events::ServiceEventType::Started,
