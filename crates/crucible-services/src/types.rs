@@ -148,26 +148,7 @@ pub struct CompilationResult {
     pub duration_ms: u64,
 }
 
-/// Cache configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CacheConfig {
-    /// Enable caching
-    pub enabled: bool,
-    /// Maximum cache size
-    pub max_size: u32,
-    /// Cache TTL in seconds
-    pub ttl_seconds: u64,
-}
-
-impl Default for CacheConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            max_size: 100,
-            ttl_seconds: 3600, // 1 hour
-        }
-    }
-}
+// CacheConfig removed - unused dead code. Use crucible_config::CacheConfig if needed.
 
 /// Script information
 #[derive(Debug, Clone, Serialize, Deserialize)]
