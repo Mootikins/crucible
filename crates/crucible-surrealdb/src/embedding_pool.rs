@@ -1032,8 +1032,8 @@ mod tests {
     async fn test_thread_pool_with_crucible_config_ollama() {
         let pool_config = EmbeddingConfig::default();
         let provider_config = EmbeddingProviderConfig::ollama(
-            "http://localhost:11434".to_string(),
-            "nomic-embed-text".to_string(),
+            Some("http://localhost:11434".to_string()),
+            Some("nomic-embed-text".to_string()),
         );
 
         let result =

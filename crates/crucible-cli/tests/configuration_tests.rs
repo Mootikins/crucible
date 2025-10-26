@@ -425,12 +425,12 @@ fn test_embedding_config_conversion() -> Result<()> {
     let embedding_config = config.to_embedding_config()?;
 
     assert!(matches!(
-        embedding_config.provider,
-        crucible_cli::config::ProviderType::Ollama
+        embedding_config.provider_type,
+        crucible_config::EmbeddingProviderType::Ollama
     ));
-    assert_eq!(embedding_config.endpoint, config.kiln.embedding_url);
+    assert_eq!(embedding_config.endpoint(), config.kiln.embedding_url);
     assert_eq!(
-        embedding_config.model,
+        embedding_config.model.name,
         config
             .kiln
             .embedding_model
@@ -438,12 +438,13 @@ fn test_embedding_config_conversion() -> Result<()> {
             .unwrap_or(&String::new())
             .as_str()
     );
-    assert_eq!(embedding_config.timeout_secs, config.timeout());
+    assert_eq!(embedding_config.api.timeout_seconds, Some(config.timeout()));
     assert_eq!(
-        embedding_config.max_retries,
-        config.network.max_retries.unwrap_or(3)
+        embedding_config.api.retry_attempts,
+        Some(config.network.max_retries.unwrap_or(3))
     );
-    assert_eq!(embedding_config.batch_size, 1);
+    // batch_size no longer exists in EmbeddingProviderConfig
+    // assert_eq!(embedding_config.batch_size, 1);
 
     Ok(())
 }
