@@ -13,9 +13,23 @@ use tempfile::TempDir;
 use tokio::time::sleep;
 use uuid::Uuid;
 
+/// Set up test environment variables for embedding configuration
+fn setup_test_env() {
+    // Set embedding model if not already set (for CI/test environments)
+    if std::env::var("EMBEDDING_MODEL").is_err() {
+        std::env::set_var("EMBEDDING_MODEL", "nomic-embed-text");
+    }
+    if std::env::var("EMBEDDING_ENDPOINT").is_err() {
+        std::env::set_var("EMBEDDING_ENDPOINT", "http://localhost:11434");
+    }
+}
+
 /// Test the unified event flow from filesystem event to embedding processing
 #[tokio::test]
 async fn test_unified_event_flow_integration() -> Result<()> {
+    // Setup test environment
+    setup_test_env();
+
     // Create temporary test directory
     let temp_dir = TempDir::new()?;
     let vault_path = temp_dir.path();
@@ -92,6 +106,9 @@ Some content here to test embedding generation.
 /// Test that the unified flow works with multiple files
 #[tokio::test]
 async fn test_multiple_files_unified_flow() -> Result<()> {
+    // Setup test environment
+    setup_test_env();
+
     // Create temporary test directory
     let temp_dir = TempDir::new()?;
     let vault_path = temp_dir.path();
@@ -152,6 +169,9 @@ async fn test_multiple_files_unified_flow() -> Result<()> {
 /// Test that the unified flow gracefully handles non-existent files
 #[tokio::test]
 async fn test_nonexistent_file_handling() -> Result<()> {
+    // Setup test environment
+    setup_test_env();
+
     // Create temporary test directory
     let temp_dir = TempDir::new()?;
     let vault_path = temp_dir.path();
