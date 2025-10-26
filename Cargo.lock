@@ -1624,6 +1624,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "futures",
+ "schemars 1.0.4",
  "serde",
  "serde_json",
  "serde_yaml",

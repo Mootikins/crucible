@@ -256,6 +256,7 @@ impl ConfigLoader {
                     file_path: None,
                     max_file_size: None,
                     max_files: None,
+                    ..Default::default()
                 });
             } else if let Some(ref mut logging) = config.logging {
                 logging.level = level;
