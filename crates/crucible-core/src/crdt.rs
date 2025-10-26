@@ -63,10 +63,12 @@ mod tests {
         let text = manager.get_text("test_text");
 
         // Verify we can use the text
-        manager.transact(|txn| {
-            text.insert(txn, 0, "Hello");
-            Ok(())
-        }).unwrap();
+        manager
+            .transact(|txn| {
+                text.insert(txn, 0, "Hello");
+                Ok(())
+            })
+            .unwrap();
     }
 
     #[test]
@@ -75,10 +77,12 @@ mod tests {
         let map = manager.get_map("test_map");
 
         // Verify we can use the map
-        manager.transact(|txn| {
-            map.insert(txn, "key", "value");
-            Ok(())
-        }).unwrap();
+        manager
+            .transact(|txn| {
+                map.insert(txn, "key", "value");
+                Ok(())
+            })
+            .unwrap();
     }
 
     #[test]
@@ -87,10 +91,12 @@ mod tests {
         let array = manager.get_array("test_array");
 
         // Verify we can use the array
-        manager.transact(|txn| {
-            array.insert(txn, 0, "item1");
-            Ok(())
-        }).unwrap();
+        manager
+            .transact(|txn| {
+                array.insert(txn, 0, "item1");
+                Ok(())
+            })
+            .unwrap();
     }
 
     #[test]
@@ -113,17 +119,21 @@ mod tests {
         let map = manager.get_map("metadata");
 
         // Perform multiple operations
-        manager.transact(|txn| {
-            text.insert(txn, 0, "Hello");
-            map.insert(txn, "author", "test");
-            Ok(())
-        }).unwrap();
+        manager
+            .transact(|txn| {
+                text.insert(txn, 0, "Hello");
+                map.insert(txn, "author", "test");
+                Ok(())
+            })
+            .unwrap();
 
-        manager.transact(|txn| {
-            text.insert(txn, 5, " World");
-            map.insert(txn, "version", 1);
-            Ok(())
-        }).unwrap();
+        manager
+            .transact(|txn| {
+                text.insert(txn, 5, " World");
+                map.insert(txn, "version", 1);
+                Ok(())
+            })
+            .unwrap();
 
         // Verify operations completed without error
         assert!(true);

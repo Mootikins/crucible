@@ -21,28 +21,59 @@
 
 use crate::types::SurrealDbConfig;
 use crucible_core::{
-    DbResult, DbError,
-    // Relational types
-    RelationalDB, TableSchema, Record, RecordId, QueryResult, SelectQuery, FilterClause,
-    OrderClause, UpdateClause, JoinQuery, AggregateQuery, TransactionId, ColumnDefinition,
-    DataType, IndexType,
-    // Graph types
-    GraphDB, NodeId, Node, EdgeId, Edge, NodeProperties, EdgeProperties, Direction,
-    TraversalPattern, TraversalResult, Path, GraphAnalysis, AnalyticsResult,
+    AggregateQuery,
+    AggregationPipeline,
+    AggregationResult,
+    AnalyticsResult,
+    BatchResult,
+    ColumnDefinition,
+    DataType,
+    DbError,
+    DbResult,
+    Direction,
+    Document,
     // Document types
-    DocumentDB, DocumentId, Document, DocumentQuery, DocumentFilter,
-    DocumentUpdates, SearchResult, AggregationPipeline, AggregationResult, BatchResult,
+    DocumentDB,
+    DocumentFilter,
+    DocumentId,
+    DocumentQuery,
+    DocumentUpdates,
+    Edge,
+    EdgeId,
+    EdgeProperties,
+    FilterClause,
+    GraphAnalysis,
+    // Graph types
+    GraphDB,
+    IndexType,
+    JoinQuery,
+    Node,
+    NodeId,
+    NodeProperties,
+    OrderClause,
+    Path,
+    QueryResult,
+    Record,
+    RecordId,
+    // Relational types
+    RelationalDB,
+    SearchResult,
+    SelectQuery,
+    TableSchema,
+    TransactionId,
+    TraversalPattern,
+    TraversalResult,
+    UpdateClause,
 };
 
+use async_trait::async_trait;
 use crucible_core::database::{
-    OrderDirection, EdgeFilter, DocumentSchema,
-    DocumentFieldType, SearchOptions, SearchIndexOptions, DocumentSort,
-    AggregationStage, SubgraphPattern, Subgraph,
+    AggregationStage, DocumentFieldType, DocumentSchema, DocumentSort, EdgeFilter, OrderDirection,
+    SearchIndexOptions, SearchOptions, Subgraph, SubgraphPattern,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use async_trait::async_trait;
-use serde::{Serialize, Deserialize};
 
 /// Unified Multi-Model SurrealDB Client
 ///
@@ -125,18 +156,64 @@ struct TransactionData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
 enum TransactionOperation {
-    InsertRecord { table: String, record_id: RecordId, record: Record },
-    UpdateRecord { table: String, record_id: RecordId, old_record: Record, new_record: Record },
-    DeleteRecord { table: String, record_id: RecordId, record: Record },
-    CreateNode { node_id: NodeId, node: Node },
-    UpdateNode { node_id: NodeId, old_node: Node, new_node: Node },
-    DeleteNode { node_id: NodeId, node: Node },
-    CreateEdge { edge_id: EdgeId, edge: Edge },
-    UpdateEdge { edge_id: EdgeId, old_edge: Edge, new_edge: Edge },
-    DeleteEdge { edge_id: EdgeId, edge: Edge },
-    CreateDocument { collection: String, document_id: DocumentId, document: Document },
-    UpdateDocument { collection: String, document_id: DocumentId, old_document: Document, new_document: Document },
-    DeleteDocument { collection: String, document_id: DocumentId, document: Document },
+    InsertRecord {
+        table: String,
+        record_id: RecordId,
+        record: Record,
+    },
+    UpdateRecord {
+        table: String,
+        record_id: RecordId,
+        old_record: Record,
+        new_record: Record,
+    },
+    DeleteRecord {
+        table: String,
+        record_id: RecordId,
+        record: Record,
+    },
+    CreateNode {
+        node_id: NodeId,
+        node: Node,
+    },
+    UpdateNode {
+        node_id: NodeId,
+        old_node: Node,
+        new_node: Node,
+    },
+    DeleteNode {
+        node_id: NodeId,
+        node: Node,
+    },
+    CreateEdge {
+        edge_id: EdgeId,
+        edge: Edge,
+    },
+    UpdateEdge {
+        edge_id: EdgeId,
+        old_edge: Edge,
+        new_edge: Edge,
+    },
+    DeleteEdge {
+        edge_id: EdgeId,
+        edge: Edge,
+    },
+    CreateDocument {
+        collection: String,
+        document_id: DocumentId,
+        document: Document,
+    },
+    UpdateDocument {
+        collection: String,
+        document_id: DocumentId,
+        old_document: Document,
+        new_document: Document,
+    },
+    DeleteDocument {
+        collection: String,
+        document_id: DocumentId,
+        document: Document,
+    },
 }
 
 impl Default for SurrealStorage {
@@ -160,8 +237,9 @@ impl SurrealStorage {
     pub async fn load_or_create(db_path: &str) -> DbResult<Self> {
         // Ensure parent directory exists
         if let Some(parent) = std::path::Path::new(db_path).parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| DbError::Connection(format!("Failed to create database directory: {}", e)))?;
+            std::fs::create_dir_all(parent).map_err(|e| {
+                DbError::Connection(format!("Failed to create database directory: {}", e))
+            })?;
         }
 
         // Try to load existing database
@@ -172,7 +250,10 @@ impl SurrealStorage {
                     return Ok(storage);
                 }
                 Err(e) => {
-                    println!("⚠️  Failed to load existing database ({}), creating new one", e);
+                    println!(
+                        "⚠️  Failed to load existing database ({}), creating new one",
+                        e
+                    );
                     // Continue to create new database
                 }
             }
@@ -207,8 +288,9 @@ impl SurrealStorage {
             let content = serde_json::to_string_pretty(self)
                 .map_err(|e| DbError::Connection(format!("Failed to serialize database: {}", e)))?;
 
-            std::fs::write(db_path, content)
-                .map_err(|e| DbError::Connection(format!("Failed to write database file: {}", e)))?;
+            std::fs::write(db_path, content).map_err(|e| {
+                DbError::Connection(format!("Failed to write database file: {}", e))
+            })?;
         }
         Ok(())
     }
@@ -252,83 +334,93 @@ impl SurrealClient {
         let mut storage = self.storage.write().await;
 
         // Create default schemas for common Crucible data structures
-        storage.tables.insert("notes".to_string(), TableData {
-            schema: Some(TableSchema {
-                name: "notes".to_string(),
-                columns: vec![
-                    ColumnDefinition {
-                        name: "id".to_string(),
-                        data_type: DataType::String,
-                        nullable: false,
-                        default_value: None,
-                        unique: true,
-                    },
-                    ColumnDefinition {
-                        name: "title".to_string(),
-                        data_type: DataType::String,
-                        nullable: true,
-                        default_value: None,
-                        unique: false,
-                    },
-                    ColumnDefinition {
-                        name: "content".to_string(),
-                        data_type: DataType::Text,
-                        nullable: false,
-                        default_value: None,
-                        unique: false,
-                    },
-                    ColumnDefinition {
-                        name: "folder".to_string(),
-                        data_type: DataType::String,
-                        nullable: false,
-                        default_value: Some(serde_json::Value::String("".to_string())),
-                        unique: false,
-                    },
-                    ColumnDefinition {
-                        name: "created_at".to_string(),
-                        data_type: DataType::DateTime,
-                        nullable: false,
-                        default_value: None,
-                        unique: false,
-                    },
-                ],
-                primary_key: Some("id".to_string()),
-                foreign_keys: vec![],
-                indexes: vec![],
-            }),
-            records: HashMap::new(),
-            indexes: HashMap::new(),
-        });
+        storage.tables.insert(
+            "notes".to_string(),
+            TableData {
+                schema: Some(TableSchema {
+                    name: "notes".to_string(),
+                    columns: vec![
+                        ColumnDefinition {
+                            name: "id".to_string(),
+                            data_type: DataType::String,
+                            nullable: false,
+                            default_value: None,
+                            unique: true,
+                        },
+                        ColumnDefinition {
+                            name: "title".to_string(),
+                            data_type: DataType::String,
+                            nullable: true,
+                            default_value: None,
+                            unique: false,
+                        },
+                        ColumnDefinition {
+                            name: "content".to_string(),
+                            data_type: DataType::Text,
+                            nullable: false,
+                            default_value: None,
+                            unique: false,
+                        },
+                        ColumnDefinition {
+                            name: "folder".to_string(),
+                            data_type: DataType::String,
+                            nullable: false,
+                            default_value: Some(serde_json::Value::String("".to_string())),
+                            unique: false,
+                        },
+                        ColumnDefinition {
+                            name: "created_at".to_string(),
+                            data_type: DataType::DateTime,
+                            nullable: false,
+                            default_value: None,
+                            unique: false,
+                        },
+                    ],
+                    primary_key: Some("id".to_string()),
+                    foreign_keys: vec![],
+                    indexes: vec![],
+                }),
+                records: HashMap::new(),
+                indexes: HashMap::new(),
+            },
+        );
 
-        storage.tables.insert("tags".to_string(), TableData {
-            schema: Some(TableSchema {
-                name: "tags".to_string(),
-                columns: vec![
-                    ColumnDefinition {
-                        name: "id".to_string(),
-                        data_type: DataType::String,
-                        nullable: false,
-                        default_value: None,
-                        unique: true,
-                    },
-                    ColumnDefinition {
-                        name: "name".to_string(),
-                        data_type: DataType::String,
-                        nullable: false,
-                        default_value: None,
-                        unique: true,
-                    },
-                ],
-                primary_key: Some("id".to_string()),
-                foreign_keys: vec![],
-                indexes: vec![],
-            }),
-            records: HashMap::new(),
-            indexes: HashMap::new(),
-        });
+        storage.tables.insert(
+            "tags".to_string(),
+            TableData {
+                schema: Some(TableSchema {
+                    name: "tags".to_string(),
+                    columns: vec![
+                        ColumnDefinition {
+                            name: "id".to_string(),
+                            data_type: DataType::String,
+                            nullable: false,
+                            default_value: None,
+                            unique: true,
+                        },
+                        ColumnDefinition {
+                            name: "name".to_string(),
+                            data_type: DataType::String,
+                            nullable: false,
+                            default_value: None,
+                            unique: true,
+                        },
+                    ],
+                    primary_key: Some("id".to_string()),
+                    foreign_keys: vec![],
+                    indexes: vec![],
+                }),
+                records: HashMap::new(),
+                indexes: HashMap::new(),
+            },
+        );
 
-        storage.collections.insert("documents".to_string(), HashMap::new());
-        storage.collections.insert("embeddings".to_string(), HashMap::new());
+        storage
+            .collections
+            .insert("documents".to_string(), HashMap::new());
+        storage
+            .collections
+            .insert("embeddings".to_string(), HashMap::new());
 
         Ok(())
     }
@@ -340,7 +432,9 @@ impl SurrealClient {
 
     /// Helper method to generate transaction IDs
     fn generate_transaction_id(&self) -> TransactionId {
-        let id = self.transaction_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let id = self
+            .transaction_counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         TransactionId(format!("tx_{}", id))
     }
 
@@ -357,48 +451,57 @@ impl SurrealClient {
             FilterClause::And(clauses) => clauses.iter().all(|c| self.evaluate_filter(c, record)),
             FilterClause::Or(clauses) => clauses.iter().any(|c| self.evaluate_filter(c, record)),
             FilterClause::Not(clause) => !self.evaluate_filter(clause, record),
-            FilterClause::Equals { column, value } => {
-                record.data.get(column) == Some(value)
-            },
-            FilterClause::NotEquals { column, value } => {
-                record.data.get(column) != Some(value)
-            },
+            FilterClause::Equals { column, value } => record.data.get(column) == Some(value),
+            FilterClause::NotEquals { column, value } => record.data.get(column) != Some(value),
             FilterClause::GreaterThan { column, value } => {
                 // Simplified comparison for numeric values
-                record.data.get(column).and_then(|v| v.as_f64())
-                    .map(|record_val| value.as_f64().is_some_and(|filter_val| record_val > filter_val))
-                    .unwrap_or(false)
-            },
-            FilterClause::LessThan { column, value } => {
-                record.data.get(column).and_then(|v| v.as_f64())
-                    .map(|record_val| value.as_f64().is_some_and(|filter_val| record_val < filter_val))
-                    .unwrap_or(false)
-            },
-            FilterClause::Like { column, pattern } => {
-                record.data.get(column).and_then(|v| v.as_str())
-                    .map(|s| self.simple_pattern_match(pattern, s))
-                    .unwrap_or(false)
-            },
-            FilterClause::In { column, values } => {
-                record.data.get(column).is_some_and(|v| values.contains(v))
-            },
-            FilterClause::IsNull { column } => !record.data.contains_key(column),
-            FilterClause::IsNotNull { column } => record.data.contains_key(column),
-            FilterClause::Between { column, start, end } => {
-                record.data.get(column).and_then(|v| v.as_f64())
+                record
+                    .data
+                    .get(column)
+                    .and_then(|v| v.as_f64())
                     .map(|record_val| {
-                        start.as_f64().is_some_and(|start_val| {
-                            end.as_f64().is_some_and(|end_val| {
-                                record_val >= start_val && record_val <= end_val
-                            })
-                        })
+                        value
+                            .as_f64()
+                            .is_some_and(|filter_val| record_val > filter_val)
                     })
                     .unwrap_or(false)
-            },
+            }
+            FilterClause::LessThan { column, value } => record
+                .data
+                .get(column)
+                .and_then(|v| v.as_f64())
+                .map(|record_val| {
+                    value
+                        .as_f64()
+                        .is_some_and(|filter_val| record_val < filter_val)
+                })
+                .unwrap_or(false),
+            FilterClause::Like { column, pattern } => record
+                .data
+                .get(column)
+                .and_then(|v| v.as_str())
+                .map(|s| self.simple_pattern_match(pattern, s))
+                .unwrap_or(false),
+            FilterClause::In { column, values } => {
+                record.data.get(column).is_some_and(|v| values.contains(v))
+            }
+            FilterClause::IsNull { column } => !record.data.contains_key(column),
+            FilterClause::IsNotNull { column } => record.data.contains_key(column),
+            FilterClause::Between { column, start, end } => record
+                .data
+                .get(column)
+                .and_then(|v| v.as_f64())
+                .map(|record_val| {
+                    start.as_f64().is_some_and(|start_val| {
+                        end.as_f64()
+                            .is_some_and(|end_val| record_val >= start_val && record_val <= end_val)
+                    })
+                })
+                .unwrap_or(false),
             FilterClause::GreaterThanOrEqual { .. } | FilterClause::LessThanOrEqual { .. } => {
                 // Simplified implementation - in production would handle all cases
                 true
-            },
+            }
         }
     }
 
@@ -409,7 +512,7 @@ impl SurrealClient {
             return true;
         }
         if pattern.starts_with('%') && pattern.ends_with('%') {
-            let inner = &pattern[1..pattern.len()-1];
+            let inner = &pattern[1..pattern.len() - 1];
             return text.contains(inner);
         }
         if let Some(suffix) = pattern.strip_prefix('%') {
@@ -439,7 +542,7 @@ impl SurrealClient {
                             (Some(a_num), Some(b_num)) => a_num.partial_cmp(&b_num),
                             _ => a.as_str().partial_cmp(&b.as_str()),
                         }
-                    },
+                    }
                     (Some(_), None) => Some(std::cmp::Ordering::Greater),
                     (None, Some(_)) => Some(std::cmp::Ordering::Less),
                     (None, None) => Some(std::cmp::Ordering::Equal),
@@ -469,7 +572,7 @@ impl SurrealClient {
                 } else {
                     DataType::Float
                 }
-            },
+            }
             serde_json::Value::Bool(_) => DataType::Boolean,
             serde_json::Value::Array(_) => DataType::Array(Box::new(DataType::String)), // Simplified
             serde_json::Value::Object(_) => DataType::Json,
@@ -488,14 +591,20 @@ impl RelationalDB for SurrealClient {
         let mut storage = self.storage.write().await;
 
         if storage.tables.contains_key(name) {
-            return Err(DbError::InvalidOperation(format!("Table '{}' already exists", name)));
+            return Err(DbError::InvalidOperation(format!(
+                "Table '{}' already exists",
+                name
+            )));
         }
 
-        storage.tables.insert(name.to_string(), TableData {
-            schema: Some(schema),
-            records: HashMap::new(),
-            indexes: HashMap::new(),
-        });
+        storage.tables.insert(
+            name.to_string(),
+            TableData {
+                schema: Some(schema),
+                records: HashMap::new(),
+                indexes: HashMap::new(),
+            },
+        );
 
         Ok(())
     }
@@ -504,7 +613,10 @@ impl RelationalDB for SurrealClient {
         let mut storage = self.storage.write().await;
 
         if !storage.tables.contains_key(name) {
-            return Err(DbError::NotFound(format!("Table '{}' does not exist", name)));
+            return Err(DbError::NotFound(format!(
+                "Table '{}' does not exist",
+                name
+            )));
         }
 
         storage.tables.remove(name);
@@ -524,20 +636,27 @@ impl RelationalDB for SurrealClient {
     async fn insert(&self, table: &str, record: Record) -> DbResult<QueryResult> {
         let mut storage = self.storage.write().await;
 
-        let table_data = storage.tables.get_mut(table)
+        let table_data = storage
+            .tables
+            .get_mut(table)
             .ok_or_else(|| DbError::NotFound(format!("Table '{}' does not exist", table)))?;
 
-        let record_id = record.id.clone()
+        let record_id = record
+            .id
+            .clone()
             .unwrap_or_else(|| RecordId(self.generate_id(table)));
 
         let mut new_record = record;
         new_record.id = Some(record_id.clone());
 
-        table_data.records.insert(record_id.clone(), new_record.clone());
+        table_data
+            .records
+            .insert(record_id.clone(), new_record.clone());
 
         // Update indexes if they exist
         for (columns, index) in &mut table_data.indexes {
-            let key_values: Vec<String> = columns.iter()
+            let key_values: Vec<String> = columns
+                .iter()
                 .filter_map(|col| new_record.data.get(col))
                 .filter_map(|v| v.as_str())
                 .map(|s| s.to_lowercase())
@@ -545,7 +664,10 @@ impl RelationalDB for SurrealClient {
 
             if !key_values.is_empty() {
                 let index_key = key_values.join("|");
-                index.entry(serde_json::Value::String(index_key)).or_insert_with(Vec::new).push(record_id.clone());
+                index
+                    .entry(serde_json::Value::String(index_key))
+                    .or_insert_with(Vec::new)
+                    .push(record_id.clone());
             }
         }
 
@@ -582,7 +704,9 @@ impl RelationalDB for SurrealClient {
     async fn select(&self, query: SelectQuery) -> DbResult<QueryResult> {
         let storage = self.storage.read().await;
 
-        let table_data = storage.tables.get(&query.table)
+        let table_data = storage
+            .tables
+            .get(&query.table)
             .ok_or_else(|| DbError::NotFound(format!("Table '{}' does not exist", query.table)))?;
 
         let mut records: Vec<Record> = table_data.records.values().cloned().collect();
@@ -630,10 +754,17 @@ impl RelationalDB for SurrealClient {
         })
     }
 
-    async fn update(&self, table: &str, filter: FilterClause, updates: UpdateClause) -> DbResult<QueryResult> {
+    async fn update(
+        &self,
+        table: &str,
+        filter: FilterClause,
+        updates: UpdateClause,
+    ) -> DbResult<QueryResult> {
         let mut storage = self.storage.write().await;
 
-        let table_data = storage.tables.get_mut(table)
+        let table_data = storage
+            .tables
+            .get_mut(table)
             .ok_or_else(|| DbError::NotFound(format!("Table '{}' does not exist", table)))?;
 
         let mut updated_records = Vec::new();
@@ -647,8 +778,10 @@ impl RelationalDB for SurrealClient {
 
                 // Update timestamp if field exists
                 if record.data.contains_key("updated_at") {
-                    record.data.insert("updated_at".to_string(),
-                        serde_json::Value::String(chrono::Utc::now().to_rfc3339()));
+                    record.data.insert(
+                        "updated_at".to_string(),
+                        serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
+                    );
                 }
 
                 updated_records.push(record.clone());
@@ -667,7 +800,9 @@ impl RelationalDB for SurrealClient {
     async fn delete(&self, table: &str, filter: FilterClause) -> DbResult<QueryResult> {
         let mut storage = self.storage.write().await;
 
-        let table_data = storage.tables.get_mut(table)
+        let table_data = storage
+            .tables
+            .get_mut(table)
             .ok_or_else(|| DbError::NotFound(format!("Table '{}' does not exist", table)))?;
 
         let mut deleted_records = Vec::new();
@@ -691,15 +826,17 @@ impl RelationalDB for SurrealClient {
 
     async fn join_tables(&self, query: JoinQuery) -> DbResult<QueryResult> {
         // Simplified join implementation - in production would handle complex joins
-        let base_records = self.select(SelectQuery {
-            table: query.base_table.clone(),
-            columns: None,
-            filter: query.filter.clone(),
-            order_by: query.order_by.clone(),
-            limit: query.limit,
-            offset: query.offset,
-            joins: None,
-        }).await?;
+        let base_records = self
+            .select(SelectQuery {
+                table: query.base_table.clone(),
+                columns: None,
+                filter: query.filter.clone(),
+                order_by: query.order_by.clone(),
+                limit: query.limit,
+                offset: query.offset,
+                joins: None,
+            })
+            .await?;
 
         // For now, just return base records (simplified join logic)
         Ok(base_records)
@@ -725,8 +862,16 @@ impl RelationalDB for SurrealClient {
 
             let mut aggregated_data = HashMap::new();
             aggregated_data.insert(
-                aggregate_func.alias.as_ref().unwrap_or(&format!("{}_{}", aggregate_func.function.to_string().to_lowercase(), aggregate_func.column)).clone(),
-                serde_json::Value::Number(serde_json::Number::from(count))
+                aggregate_func
+                    .alias
+                    .as_ref()
+                    .unwrap_or(&format!(
+                        "{}_{}",
+                        aggregate_func.function.to_string().to_lowercase(),
+                        aggregate_func.column
+                    ))
+                    .clone(),
+                serde_json::Value::Number(serde_json::Number::from(count)),
             );
 
             aggregated_records.push(Record {
@@ -744,10 +889,17 @@ impl RelationalDB for SurrealClient {
         })
     }
 
-    async fn create_index(&self, table: &str, columns: Vec<String>, _index_type: IndexType) -> DbResult<()> {
+    async fn create_index(
+        &self,
+        table: &str,
+        columns: Vec<String>,
+        _index_type: IndexType,
+    ) -> DbResult<()> {
         let mut storage = self.storage.write().await;
 
-        let table_data = storage.tables.get_mut(table)
+        let table_data = storage
+            .tables
+            .get_mut(table)
             .ok_or_else(|| DbError::NotFound(format!("Table '{}' does not exist", table)))?;
 
         // Create index data structure
@@ -758,7 +910,9 @@ impl RelationalDB for SurrealClient {
     async fn drop_index(&self, table: &str, columns: Vec<String>) -> DbResult<()> {
         let mut storage = self.storage.write().await;
 
-        let table_data = storage.tables.get_mut(table)
+        let table_data = storage
+            .tables
+            .get_mut(table)
             .ok_or_else(|| DbError::NotFound(format!("Table '{}' does not exist", table)))?;
 
         table_data.indexes.remove(&columns);
@@ -769,10 +923,13 @@ impl RelationalDB for SurrealClient {
         let transaction_id = self.generate_transaction_id();
         let mut storage = self.storage.write().await;
 
-        storage.transactions.insert(transaction_id.clone(), TransactionData {
-            operations: Vec::new(),
-            timestamp: chrono::Utc::now(),
-        });
+        storage.transactions.insert(
+            transaction_id.clone(),
+            TransactionData {
+                operations: Vec::new(),
+                timestamp: chrono::Utc::now(),
+            },
+        );
 
         Ok(transaction_id)
     }
@@ -841,7 +998,9 @@ impl GraphDB for SurrealClient {
         storage.nodes.remove(node_id);
 
         // Remove all edges connected to this node
-        let edges_to_remove: Vec<EdgeId> = storage.edges.iter()
+        let edges_to_remove: Vec<EdgeId> = storage
+            .edges
+            .iter()
             .filter(|(_, edge)| edge.from_node == *node_id || edge.to_node == *node_id)
             .map(|(id, _)| id.clone())
             .collect();
@@ -854,7 +1013,9 @@ impl GraphDB for SurrealClient {
         storage.adjacency_list.remove(node_id);
 
         // Remove edges from other nodes' adjacency lists
-        let edges_to_remove_from_adjacency: Vec<EdgeId> = storage.edges.iter()
+        let edges_to_remove_from_adjacency: Vec<EdgeId> = storage
+            .edges
+            .iter()
             .filter(|(_, edge)| edge.from_node == *node_id || edge.to_node == *node_id)
             .map(|(id, _)| id.clone())
             .collect();
@@ -866,12 +1027,20 @@ impl GraphDB for SurrealClient {
         Ok(())
     }
 
-    async fn create_edge(&self, from: &NodeId, to: &NodeId, label: &str, properties: EdgeProperties) -> DbResult<EdgeId> {
+    async fn create_edge(
+        &self,
+        from: &NodeId,
+        to: &NodeId,
+        label: &str,
+        properties: EdgeProperties,
+    ) -> DbResult<EdgeId> {
         let mut storage = self.storage.write().await;
 
         // Verify both nodes exist
         if !storage.nodes.contains_key(from) || !storage.nodes.contains_key(to) {
-            return Err(DbError::InvalidOperation("Both nodes must exist to create an edge".to_string()));
+            return Err(DbError::InvalidOperation(
+                "Both nodes must exist to create an edge".to_string(),
+            ));
         }
 
         let edge_id = EdgeId(self.generate_id("edge"));
@@ -890,7 +1059,9 @@ impl GraphDB for SurrealClient {
         storage.edges.insert(edge_id.clone(), edge.clone());
 
         // Update adjacency list
-        storage.adjacency_list.entry(from.clone())
+        storage
+            .adjacency_list
+            .entry(from.clone())
             .or_insert_with(Vec::new)
             .push(edge_id.clone());
 
@@ -932,7 +1103,12 @@ impl GraphDB for SurrealClient {
         }
     }
 
-    async fn get_neighbors(&self, node_id: &NodeId, direction: Direction, edge_filter: Option<EdgeFilter>) -> DbResult<Vec<Node>> {
+    async fn get_neighbors(
+        &self,
+        node_id: &NodeId,
+        direction: Direction,
+        edge_filter: Option<EdgeFilter>,
+    ) -> DbResult<Vec<Node>> {
         let storage = self.storage.read().await;
 
         let mut neighbor_nodes = Vec::new();
@@ -973,7 +1149,7 @@ impl GraphDB for SurrealClient {
                         } else {
                             &edge.from_node
                         }
-                    },
+                    }
                 };
 
                 if neighbor_id != node_id {
@@ -987,20 +1163,24 @@ impl GraphDB for SurrealClient {
         Ok(neighbor_nodes)
     }
 
-    async fn traverse(&self, start: &NodeId, pattern: TraversalPattern, max_depth: Option<u32>) -> DbResult<TraversalResult> {
+    async fn traverse(
+        &self,
+        start: &NodeId,
+        pattern: TraversalPattern,
+        max_depth: Option<u32>,
+    ) -> DbResult<TraversalResult> {
         let mut paths = Vec::new();
         let _max_depth = max_depth.unwrap_or(5);
 
         // Simplified traversal - just follow first step pattern
         if let Some(step) = pattern.steps.first() {
-            let neighbors = self.get_neighbors(start, step.direction, step.edge_filter.clone()).await?;
+            let neighbors = self
+                .get_neighbors(start, step.direction, step.edge_filter.clone())
+                .await?;
 
             for neighbor in neighbors {
                 let path = Path {
-                    nodes: vec![
-                        self.get_node(start).await?.unwrap(),
-                        neighbor.clone(),
-                    ],
+                    nodes: vec![self.get_node(start).await?.unwrap(), neighbor.clone()],
                     edges: vec![], // Simplified - would collect actual edges
                     weight: None,
                 };
@@ -1016,7 +1196,12 @@ impl GraphDB for SurrealClient {
         })
     }
 
-    async fn find_paths(&self, from: &NodeId, to: &NodeId, max_depth: Option<u32>) -> DbResult<Vec<Path>> {
+    async fn find_paths(
+        &self,
+        from: &NodeId,
+        to: &NodeId,
+        max_depth: Option<u32>,
+    ) -> DbResult<Vec<Path>> {
         let mut paths = Vec::new();
         let _max_depth = max_depth.unwrap_or(5);
 
@@ -1026,10 +1211,7 @@ impl GraphDB for SurrealClient {
         for neighbor in neighbors {
             if neighbor.id == *to {
                 let path = Path {
-                    nodes: vec![
-                        self.get_node(from).await?.unwrap(),
-                        neighbor,
-                    ],
+                    nodes: vec![self.get_node(from).await?.unwrap(), neighbor],
                     edges: vec![],
                     weight: None,
                 };
@@ -1045,7 +1227,11 @@ impl GraphDB for SurrealClient {
         Ok(paths.into_iter().next())
     }
 
-    async fn graph_analytics(&self, nodes: Option<Vec<NodeId>>, analysis: GraphAnalysis) -> DbResult<AnalyticsResult> {
+    async fn graph_analytics(
+        &self,
+        nodes: Option<Vec<NodeId>>,
+        analysis: GraphAnalysis,
+    ) -> DbResult<AnalyticsResult> {
         let storage = self.storage.read().await;
         let nodes_to_analyze = match nodes {
             Some(node_ids) => node_ids,
@@ -1060,16 +1246,21 @@ impl GraphDB for SurrealClient {
                     let neighbors = self.get_neighbors(node_id, direction, None).await?;
                     results.insert(node_id.clone(), neighbors.len() as f64);
                 }
-            },
-            GraphAnalysis::PageRank { damping_factor: _, iterations: _ } => {
+            }
+            GraphAnalysis::PageRank {
+                damping_factor: _,
+                iterations: _,
+            } => {
                 // Simplified PageRank - just use degree centrality
                 for node_id in &nodes_to_analyze {
                     let neighbors = self.get_neighbors(node_id, Direction::Both, None).await?;
                     results.insert(node_id.clone(), neighbors.len() as f64);
                 }
-            },
+            }
             _ => {
-                return Err(DbError::InvalidOperation("Analytics type not yet implemented".to_string()));
+                return Err(DbError::InvalidOperation(
+                    "Analytics type not yet implemented".to_string(),
+                ));
             }
         }
 
@@ -1091,7 +1282,9 @@ impl GraphDB for SurrealClient {
 
                 // Check labels
                 if let Some(ref required_labels) = node_pattern.labels {
-                    matches &= required_labels.iter().any(|label| node.labels.contains(label));
+                    matches &= required_labels
+                        .iter()
+                        .any(|label| node.labels.contains(label));
                 }
 
                 // Check properties
@@ -1135,7 +1328,10 @@ impl DocumentDB for SurrealClient {
         let mut storage = self.storage.write().await;
 
         if storage.collections.contains_key(name) {
-            return Err(DbError::InvalidOperation(format!("Collection '{}' already exists", name)));
+            return Err(DbError::InvalidOperation(format!(
+                "Collection '{}' already exists",
+                name
+            )));
         }
 
         storage.collections.insert(name.to_string(), HashMap::new());
@@ -1146,7 +1342,10 @@ impl DocumentDB for SurrealClient {
         let mut storage = self.storage.write().await;
 
         if !storage.collections.contains_key(name) {
-            return Err(DbError::NotFound(format!("Collection '{}' does not exist", name)));
+            return Err(DbError::NotFound(format!(
+                "Collection '{}' does not exist",
+                name
+            )));
         }
 
         storage.collections.remove(name);
@@ -1161,10 +1360,13 @@ impl DocumentDB for SurrealClient {
     async fn create_document(&self, collection: &str, document: Document) -> DbResult<DocumentId> {
         let mut storage = self.storage.write().await;
 
-        let collection_data = storage.collections.get_mut(collection)
-            .ok_or_else(|| DbError::NotFound(format!("Collection '{}' does not exist", collection)))?;
+        let collection_data = storage.collections.get_mut(collection).ok_or_else(|| {
+            DbError::NotFound(format!("Collection '{}' does not exist", collection))
+        })?;
 
-        let document_id = document.id.clone()
+        let document_id = document
+            .id
+            .clone()
             .unwrap_or_else(|| DocumentId(self.generate_id("doc")));
 
         let mut new_document = document;
@@ -1175,7 +1377,12 @@ impl DocumentDB for SurrealClient {
 
         // Update search indexes if they exist
         if storage.search_indexes.contains_key(collection) {
-            self.update_search_index(&mut storage.search_indexes, collection, &document_id, &document_clone);
+            self.update_search_index(
+                &mut storage.search_indexes,
+                collection,
+                &document_id,
+                &document_clone,
+            );
         }
 
         // Auto-save after document creation
@@ -1188,19 +1395,27 @@ impl DocumentDB for SurrealClient {
     async fn get_document(&self, collection: &str, id: &DocumentId) -> DbResult<Option<Document>> {
         let storage = self.storage.read().await;
 
-        let collection_data = storage.collections.get(collection)
-            .ok_or_else(|| DbError::NotFound(format!("Collection '{}' does not exist", collection)))?;
+        let collection_data = storage.collections.get(collection).ok_or_else(|| {
+            DbError::NotFound(format!("Collection '{}' does not exist", collection))
+        })?;
 
         Ok(collection_data.get(id).cloned())
     }
 
-    async fn update_document(&self, collection: &str, id: &DocumentId, updates: DocumentUpdates) -> DbResult<()> {
+    async fn update_document(
+        &self,
+        collection: &str,
+        id: &DocumentId,
+        updates: DocumentUpdates,
+    ) -> DbResult<()> {
         let mut storage = self.storage.write().await;
 
-        let collection_data = storage.collections.get_mut(collection)
-            .ok_or_else(|| DbError::NotFound(format!("Collection '{}' does not exist", collection)))?;
+        let collection_data = storage.collections.get_mut(collection).ok_or_else(|| {
+            DbError::NotFound(format!("Collection '{}' does not exist", collection))
+        })?;
 
-        let document = collection_data.get_mut(id)
+        let document = collection_data
+            .get_mut(id)
             .ok_or_else(|| DbError::NotFound(format!("Document {:?} not found", id)))?;
 
         // Apply updates
@@ -1233,11 +1448,17 @@ impl DocumentDB for SurrealClient {
         Ok(())
     }
 
-    async fn replace_document(&self, collection: &str, id: &DocumentId, document: Document) -> DbResult<()> {
+    async fn replace_document(
+        &self,
+        collection: &str,
+        id: &DocumentId,
+        document: Document,
+    ) -> DbResult<()> {
         let mut storage = self.storage.write().await;
 
-        let collection_data = storage.collections.get_mut(collection)
-            .ok_or_else(|| DbError::NotFound(format!("Collection '{}' does not exist", collection)))?;
+        let collection_data = storage.collections.get_mut(collection).ok_or_else(|| {
+            DbError::NotFound(format!("Collection '{}' does not exist", collection))
+        })?;
 
         if !collection_data.contains_key(id) {
             return Err(DbError::NotFound(format!("Document {:?} not found", id)));
@@ -1254,18 +1475,24 @@ impl DocumentDB for SurrealClient {
     async fn delete_document(&self, collection: &str, id: &DocumentId) -> DbResult<()> {
         let mut storage = self.storage.write().await;
 
-        let collection_data = storage.collections.get_mut(collection)
-            .ok_or_else(|| DbError::NotFound(format!("Collection '{}' does not exist", collection)))?;
+        let collection_data = storage.collections.get_mut(collection).ok_or_else(|| {
+            DbError::NotFound(format!("Collection '{}' does not exist", collection))
+        })?;
 
         collection_data.remove(id);
         Ok(())
     }
 
-    async fn query_documents(&self, collection: &str, query: DocumentQuery) -> DbResult<QueryResult> {
+    async fn query_documents(
+        &self,
+        collection: &str,
+        query: DocumentQuery,
+    ) -> DbResult<QueryResult> {
         let storage = self.storage.read().await;
 
-        let collection_data = storage.collections.get(collection)
-            .ok_or_else(|| DbError::NotFound(format!("Collection '{}' does not exist", collection)))?;
+        let collection_data = storage.collections.get(collection).ok_or_else(|| {
+            DbError::NotFound(format!("Collection '{}' does not exist", collection))
+        })?;
 
         let mut documents: Vec<Document> = collection_data.values().cloned().collect();
 
@@ -1298,19 +1525,22 @@ impl DocumentDB for SurrealClient {
         };
 
         // Convert documents to records
-        let records: Vec<Record> = paginated_documents.into_iter().map(|doc| {
-            let content_map = if let serde_json::Value::Object(map) = doc.content {
-                map
-            } else {
-                let mut new_map = serde_json::Map::new();
-                new_map.insert("content".to_string(), doc.content);
-                new_map
-            };
-            Record {
-                id: doc.id.map(|id| RecordId(id.0)),
-                data: content_map.into_iter().collect(),
-            }
-        }).collect();
+        let records: Vec<Record> = paginated_documents
+            .into_iter()
+            .map(|doc| {
+                let content_map = if let serde_json::Value::Object(map) = doc.content {
+                    map
+                } else {
+                    let mut new_map = serde_json::Map::new();
+                    new_map.insert("content".to_string(), doc.content);
+                    new_map
+                };
+                Record {
+                    id: doc.id.map(|id| RecordId(id.0)),
+                    data: content_map.into_iter().collect(),
+                }
+            })
+            .collect();
 
         let records_count = records.len();
         Ok(QueryResult {
@@ -1321,14 +1551,21 @@ impl DocumentDB for SurrealClient {
         })
     }
 
-    async fn full_text_search(&self, collection: &str, text: &str, options: SearchOptions) -> DbResult<Vec<SearchResult>> {
+    async fn full_text_search(
+        &self,
+        collection: &str,
+        text: &str,
+        options: SearchOptions,
+    ) -> DbResult<Vec<SearchResult>> {
         let storage = self.storage.read().await;
 
-        let collection_data = storage.collections.get(collection)
-            .ok_or_else(|| DbError::NotFound(format!("Collection '{}' does not exist", collection)))?;
+        let collection_data = storage.collections.get(collection).ok_or_else(|| {
+            DbError::NotFound(format!("Collection '{}' does not exist", collection))
+        })?;
 
         let mut results = Vec::new();
-        let search_terms: Vec<String> = text.to_lowercase()
+        let search_terms: Vec<String> = text
+            .to_lowercase()
             .split_whitespace()
             .map(|s| s.to_string())
             .collect();
@@ -1355,14 +1592,22 @@ impl DocumentDB for SurrealClient {
                 results.push(SearchResult {
                     document_id: document_id.clone(),
                     score,
-                    highlights: if options.highlight.unwrap_or(false) { Some(matched_fields) } else { None },
+                    highlights: if options.highlight.unwrap_or(false) {
+                        Some(matched_fields)
+                    } else {
+                        None
+                    },
                     snippet: Some(snippet),
                 });
             }
         }
 
         // Sort by score (highest first)
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Apply limit
         if let Some(limit) = options.limit {
@@ -1372,11 +1617,16 @@ impl DocumentDB for SurrealClient {
         Ok(results)
     }
 
-    async fn aggregate_documents(&self, collection: &str, pipeline: AggregationPipeline) -> DbResult<AggregationResult> {
+    async fn aggregate_documents(
+        &self,
+        collection: &str,
+        pipeline: AggregationPipeline,
+    ) -> DbResult<AggregationResult> {
         let storage = self.storage.read().await;
 
-        let collection_data = storage.collections.get(collection)
-            .ok_or_else(|| DbError::NotFound(format!("Collection '{}' does not exist", collection)))?;
+        let collection_data = storage.collections.get(collection).ok_or_else(|| {
+            DbError::NotFound(format!("Collection '{}' does not exist", collection))
+        })?;
 
         let mut documents: Vec<Document> = collection_data.values().cloned().collect();
 
@@ -1385,13 +1635,13 @@ impl DocumentDB for SurrealClient {
             match stage {
                 AggregationStage::Match { filter } => {
                     documents.retain(|doc| self.evaluate_document_filter(filter, &doc.content));
-                },
+                }
                 AggregationStage::Sort { sort } => {
                     self.sort_documents(&mut documents, sort);
-                },
+                }
                 AggregationStage::Limit { limit } => {
                     documents.truncate(*limit as usize);
-                },
+                }
                 AggregationStage::Skip { skip } => {
                     let skip = *skip as usize;
                     if documents.len() > skip {
@@ -1399,19 +1649,22 @@ impl DocumentDB for SurrealClient {
                     } else {
                         documents.clear();
                     }
-                },
+                }
                 AggregationStage::Group { .. } => {
-                    return Err(DbError::InvalidOperation("Group stage not yet implemented".to_string()));
-                },
+                    return Err(DbError::InvalidOperation(
+                        "Group stage not yet implemented".to_string(),
+                    ));
+                }
                 _ => {
-                    return Err(DbError::InvalidOperation("Pipeline stage not yet implemented".to_string()));
+                    return Err(DbError::InvalidOperation(
+                        "Pipeline stage not yet implemented".to_string(),
+                    ));
                 }
             }
         }
 
-        let results: Vec<serde_json::Value> = documents.into_iter()
-            .map(|doc| doc.content)
-            .collect();
+        let results: Vec<serde_json::Value> =
+            documents.into_iter().map(|doc| doc.content).collect();
 
         let total_count = results.len() as u64;
         Ok(AggregationResult {
@@ -1421,11 +1674,19 @@ impl DocumentDB for SurrealClient {
         })
     }
 
-    async fn create_search_index(&self, collection: &str, fields: Vec<String>, options: SearchIndexOptions) -> DbResult<()> {
+    async fn create_search_index(
+        &self,
+        collection: &str,
+        fields: Vec<String>,
+        options: SearchIndexOptions,
+    ) -> DbResult<()> {
         let mut storage = self.storage.write().await;
 
         if !storage.collections.contains_key(collection) {
-            return Err(DbError::NotFound(format!("Collection '{}' does not exist", collection)));
+            return Err(DbError::NotFound(format!(
+                "Collection '{}' does not exist",
+                collection
+            )));
         }
 
         let index_data = SearchIndexData {
@@ -1434,11 +1695,17 @@ impl DocumentDB for SurrealClient {
             index: HashMap::new(),
         };
 
-        storage.search_indexes.insert(collection.to_string(), index_data);
+        storage
+            .search_indexes
+            .insert(collection.to_string(), index_data);
         Ok(())
     }
 
-    async fn insert_documents(&self, collection: &str, documents: Vec<Document>) -> DbResult<BatchResult> {
+    async fn insert_documents(
+        &self,
+        collection: &str,
+        documents: Vec<Document>,
+    ) -> DbResult<BatchResult> {
         let mut successful = 0;
         let mut failed = 0;
         let mut errors = Vec::new();
@@ -1460,14 +1727,20 @@ impl DocumentDB for SurrealClient {
         })
     }
 
-    async fn count_documents(&self, collection: &str, filter: Option<DocumentFilter>) -> DbResult<u64> {
+    async fn count_documents(
+        &self,
+        collection: &str,
+        filter: Option<DocumentFilter>,
+    ) -> DbResult<u64> {
         let storage = self.storage.read().await;
 
-        let collection_data = storage.collections.get(collection)
-            .ok_or_else(|| DbError::NotFound(format!("Collection '{}' does not exist", collection)))?;
+        let collection_data = storage.collections.get(collection).ok_or_else(|| {
+            DbError::NotFound(format!("Collection '{}' does not exist", collection))
+        })?;
 
         if let Some(filter) = filter {
-            let count = collection_data.values()
+            let count = collection_data
+                .values()
                 .filter(|doc| self.evaluate_document_filter(&filter, &doc.content))
                 .count() as u64;
             Ok(count)
@@ -1483,17 +1756,25 @@ impl DocumentDB for SurrealClient {
 
 impl SurrealClient {
     /// Evaluate a document filter against document content
-    fn evaluate_document_filter(&self, filter: &DocumentFilter, content: &serde_json::Value) -> bool {
+    fn evaluate_document_filter(
+        &self,
+        filter: &DocumentFilter,
+        content: &serde_json::Value,
+    ) -> bool {
         match filter {
-            DocumentFilter::And(clauses) => clauses.iter().all(|c| self.evaluate_document_filter(c, content)),
-            DocumentFilter::Or(clauses) => clauses.iter().any(|c| self.evaluate_document_filter(c, content)),
+            DocumentFilter::And(clauses) => clauses
+                .iter()
+                .all(|c| self.evaluate_document_filter(c, content)),
+            DocumentFilter::Or(clauses) => clauses
+                .iter()
+                .any(|c| self.evaluate_document_filter(c, content)),
             DocumentFilter::Not(clause) => !self.evaluate_document_filter(clause, content),
-            DocumentFilter::Equals { field, value } => {
-                self.get_nested_field(content, field).is_some_and(|v| &v == value)
-            },
-            DocumentFilter::NotEquals { field, value } => {
-                self.get_nested_field(content, field).is_none_or(|v| v != *value)
-            },
+            DocumentFilter::Equals { field, value } => self
+                .get_nested_field(content, field)
+                .is_some_and(|v| &v == value),
+            DocumentFilter::NotEquals { field, value } => self
+                .get_nested_field(content, field)
+                .is_none_or(|v| v != *value),
             DocumentFilter::Contains { field, value } => {
                 if let Some(field_value) = self.get_nested_field(content, field) {
                     if let Some(field_str) = field_value.as_str() {
@@ -1503,17 +1784,17 @@ impl SurrealClient {
                     }
                 }
                 false
-            },
-            DocumentFilter::In { field, values } => {
-                self.get_nested_field(content, field).is_some_and(|v| values.contains(&v))
-            },
-            DocumentFilter::Exists { field } => {
-                self.get_nested_field(content, field).is_some()
-            },
-            DocumentFilter::GreaterThan { field, value } | DocumentFilter::LessThan { field, value } => {
+            }
+            DocumentFilter::In { field, values } => self
+                .get_nested_field(content, field)
+                .is_some_and(|v| values.contains(&v)),
+            DocumentFilter::Exists { field } => self.get_nested_field(content, field).is_some(),
+            DocumentFilter::GreaterThan { field, value }
+            | DocumentFilter::LessThan { field, value } => {
                 // Simplified numeric comparison
                 if let Some(field_val) = self.get_nested_field(content, field) {
-                    if let (Some(field_num), Some(value_num)) = (field_val.as_f64(), value.as_f64()) {
+                    if let (Some(field_num), Some(value_num)) = (field_val.as_f64(), value.as_f64())
+                    {
                         match filter {
                             DocumentFilter::GreaterThan { .. } => field_num > value_num,
                             DocumentFilter::LessThan { .. } => field_num < value_num,
@@ -1525,12 +1806,15 @@ impl SurrealClient {
                 } else {
                     false
                 }
-            },
+            }
             DocumentFilter::GreaterThanOrEqual { .. } | DocumentFilter::LessThanOrEqual { .. } => {
                 // Simplified implementation
                 true
-            },
-            DocumentFilter::ElementType { field, element_type } => {
+            }
+            DocumentFilter::ElementType {
+                field,
+                element_type,
+            } => {
                 // Check if field matches expected element type
                 if let Some(field_value) = self.get_nested_field(content, field) {
                     match element_type {
@@ -1546,7 +1830,7 @@ impl SurrealClient {
                 } else {
                     false
                 }
-            },
+            }
         }
     }
 
@@ -1559,14 +1843,14 @@ impl SurrealClient {
             match current {
                 serde_json::Value::Object(map) => {
                     current = map.get(part)?;
-                },
+                }
                 serde_json::Value::Array(arr) => {
                     if let Ok(index) = part.parse::<usize>() {
                         current = arr.get(index)?;
                     } else {
                         return None;
                     }
-                },
+                }
                 _ => return None,
             }
         }
@@ -1575,7 +1859,12 @@ impl SurrealClient {
     }
 
     /// Set a nested field in JSON value using dot notation
-    fn set_nested_field(&self, value: &mut serde_json::Value, path: &str, new_value: serde_json::Value) {
+    fn set_nested_field(
+        &self,
+        value: &mut serde_json::Value,
+        path: &str,
+        new_value: serde_json::Value,
+    ) {
         let parts: Vec<&str> = path.split('.').collect();
 
         if parts.is_empty() {
@@ -1587,35 +1876,35 @@ impl SurrealClient {
             match value {
                 serde_json::Value::Object(map) => {
                     map.insert(parts[0].to_string(), new_value);
-                },
+                }
                 serde_json::Value::Array(arr) => {
                     if let Ok(index) = parts[0].parse::<usize>() {
                         if index < arr.len() {
                             arr[index] = new_value;
                         }
                     }
-                },
+                }
                 _ => {}
             }
             return;
         }
 
         // Complex case - need to navigate to the parent
-        let parent_path = &parts[..parts.len()-1].join(".");
+        let parent_path = &parts[..parts.len() - 1].join(".");
         let field_name = parts.last().unwrap();
 
         if let Some(parent) = self.get_nested_field_mut(value, parent_path) {
             match parent {
                 serde_json::Value::Object(map) => {
                     map.insert(field_name.to_string(), new_value);
-                },
+                }
                 serde_json::Value::Array(arr) => {
                     if let Ok(index) = field_name.parse::<usize>() {
                         if index < arr.len() {
                             arr[index] = new_value;
                         }
                     }
-                },
+                }
                 _ => {}
             }
         }
@@ -1637,7 +1926,7 @@ impl SurrealClient {
         }
 
         // For nested paths, we need to navigate to the parent
-        let parent_path = &parts[..parts.len()-1].join(".");
+        let parent_path = &parts[..parts.len() - 1].join(".");
         let field_name = *parts.last().unwrap();
 
         if let Some(parent) = self.get_nested_field_mut(value, parent_path) {
@@ -1660,7 +1949,9 @@ impl SurrealClient {
             if let serde_json::Value::Object(map) = value {
                 map.remove(parts[0]);
             }
-        } else if let Some(parent) = self.get_nested_field_mut(value, &parts[..parts.len()-1].join(".")) {
+        } else if let Some(parent) =
+            self.get_nested_field_mut(value, &parts[..parts.len() - 1].join("."))
+        {
             if let serde_json::Value::Object(map) = parent {
                 map.remove(*parts.last().unwrap());
             }
@@ -1668,7 +1959,11 @@ impl SurrealClient {
     }
 
     /// Get mutable reference to nested field
-    fn get_nested_field_mut<'a>(&self, value: &'a mut serde_json::Value, path: &str) -> Option<&'a mut serde_json::Value> {
+    fn get_nested_field_mut<'a>(
+        &self,
+        value: &'a mut serde_json::Value,
+        path: &str,
+    ) -> Option<&'a mut serde_json::Value> {
         let parts: Vec<&str> = path.split('.').collect();
         let mut current = value;
 
@@ -1681,7 +1976,7 @@ impl SurrealClient {
                     } else {
                         return None;
                     }
-                },
+                }
                 _ => return None,
             };
         }
@@ -1710,11 +2005,9 @@ impl SurrealClient {
                 let b_val = self.get_nested_field(&b.content, &sort_field.field);
 
                 let ordering = match (a_val, b_val) {
-                    (Some(a), Some(b)) => {
-                        match (a.as_f64(), b.as_f64()) {
-                            (Some(a_num), Some(b_num)) => a_num.partial_cmp(&b_num),
-                            _ => a.as_str().partial_cmp(&b.as_str()),
-                        }
+                    (Some(a), Some(b)) => match (a.as_f64(), b.as_f64()) {
+                        (Some(a_num), Some(b_num)) => a_num.partial_cmp(&b_num),
+                        _ => a.as_str().partial_cmp(&b.as_str()),
                     },
                     (Some(_), None) => Some(std::cmp::Ordering::Greater),
                     (None, Some(_)) => Some(std::cmp::Ordering::Less),
@@ -1735,8 +2028,13 @@ impl SurrealClient {
     }
 
     /// Update search index for a document
-    fn update_search_index(&self, search_indexes: &mut HashMap<String, SearchIndexData>,
-                          collection: &str, document_id: &DocumentId, document: &Document) {
+    fn update_search_index(
+        &self,
+        search_indexes: &mut HashMap<String, SearchIndexData>,
+        collection: &str,
+        document_id: &DocumentId,
+        document: &Document,
+    ) {
         if let Some(index_data) = search_indexes.get_mut(collection) {
             // Clear existing index entries for this document
             for doc_ids in index_data.index.values_mut() {
@@ -1747,13 +2045,18 @@ impl SurrealClient {
             for field in &index_data.fields {
                 if let Some(field_value) = self.get_nested_field(&document.content, field) {
                     if let Some(text) = field_value.as_str() {
-                        let words: Vec<String> = text.to_lowercase()
+                        let words: Vec<String> = text
+                            .to_lowercase()
                             .split_whitespace()
                             .map(|s| s.to_string())
                             .collect();
 
                         for word in words {
-                            index_data.index.entry(word).or_insert_with(Vec::new).push(document_id.clone());
+                            index_data
+                                .index
+                                .entry(word)
+                                .or_insert_with(Vec::new)
+                                .push(document_id.clone());
                         }
                     }
                 }
@@ -1798,8 +2101,11 @@ impl SurrealClient {
         let sql_trimmed = sql_lower.trim();
 
         // Handle CREATE TABLE and DEFINE statements (schema creation)
-        if sql_trimmed.contains("define table") || sql_trimmed.contains("define field") ||
-           sql_trimmed.contains("define index") || sql_trimmed.contains("define analyzer") {
+        if sql_trimmed.contains("define table")
+            || sql_trimmed.contains("define field")
+            || sql_trimmed.contains("define index")
+            || sql_trimmed.contains("define analyzer")
+        {
             // For DEFINE TABLE statements, actually create the table in storage
             if sql_trimmed.contains("define table") {
                 // Extract table name from DEFINE TABLE statement
@@ -1813,11 +2119,14 @@ impl SurrealClient {
                 // Create the table in storage if it doesn't exist
                 let mut storage = self.storage.write().await;
                 if !storage.tables.contains_key(table_name) {
-                    storage.tables.insert(table_name.to_string(), TableData {
-                        records: HashMap::new(),
-                        indexes: HashMap::new(),
-                        schema: None,
-                    });
+                    storage.tables.insert(
+                        table_name.to_string(),
+                        TableData {
+                            records: HashMap::new(),
+                            indexes: HashMap::new(),
+                            schema: None,
+                        },
+                    );
                     // Auto-save after table creation
                     drop(storage); // Release the lock before calling auto_save
                     self.auto_save().await?;
@@ -1866,7 +2175,11 @@ impl SurrealClient {
                 // Extract the ID from the query (basic parsing)
                 let id_part = sql.split("WHERE id =").nth(1).unwrap_or("").trim();
                 // Remove any trailing characters like semicolons or whitespace
-                let id = id_part.split(';').next().unwrap_or(id_part).trim_matches(|c| c == '\'' || c == '"' || c == ';');
+                let id = id_part
+                    .split(';')
+                    .next()
+                    .unwrap_or(id_part)
+                    .trim_matches(|c| c == '\'' || c == '"' || c == ';');
 
                 // Actually read from storage
                 let storage = self.storage.read().await;
@@ -1913,11 +2226,19 @@ impl SurrealClient {
 
                     // Extract the title from the WHERE clause
                     let title = if let Some(where_part) = sql.split("WHERE title =").nth(1) {
-                        where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
+                        where_part
+                            .trim()
+                            .trim_matches(|c| c == '\'' || c == '"' || c == ';')
+                            .to_string()
                     } else if let Some(where_part) = sql.split("where title =").nth(1) {
-                        where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
+                        where_part
+                            .trim()
+                            .trim_matches(|c| c == '\'' || c == '"' || c == ';')
+                            .to_string()
                     } else {
-                        return Err(DbError::InvalidOperation("Invalid WHERE title query format".to_string()));
+                        return Err(DbError::InvalidOperation(
+                            "Invalid WHERE title query format".to_string(),
+                        ));
                     };
 
                     println!("🔍 Looking for documents with title: '{}'", title);
@@ -1928,16 +2249,26 @@ impl SurrealClient {
 
                         // Debug: print all document titles
                         for (id, record) in &table_data.records {
-                            if let Some(stored_title) = record.data.get("title").and_then(|v| v.as_str()) {
+                            if let Some(stored_title) =
+                                record.data.get("title").and_then(|v| v.as_str())
+                            {
                                 println!("📄 Document {}: title='{}'", id, stored_title);
                             }
                         }
 
-                        let records: Vec<Record> = table_data.records.values()
+                        let records: Vec<Record> = table_data
+                            .records
+                            .values()
                             .filter(|record| {
-                                if let Some(stored_title) = record.data.get("title").and_then(|v| v.as_str()) {
-                                    let matches = stored_title.to_lowercase() == title.to_lowercase();
-                                    println!("🔍 Comparing '{}' == '{}': {}", stored_title, title, matches);
+                                if let Some(stored_title) =
+                                    record.data.get("title").and_then(|v| v.as_str())
+                                {
+                                    let matches =
+                                        stored_title.to_lowercase() == title.to_lowercase();
+                                    println!(
+                                        "🔍 Comparing '{}' == '{}': {}",
+                                        stored_title, title, matches
+                                    );
                                     matches
                                 } else {
                                     println!("⚠️ Document has no title field");
@@ -1961,24 +2292,39 @@ impl SurrealClient {
             }
 
             // Handle WHERE document_id = queries
-            if sql_trimmed.contains("where document_id =") || sql_trimmed.contains("WHERE document_id =") {
+            if sql_trimmed.contains("where document_id =")
+                || sql_trimmed.contains("WHERE document_id =")
+            {
                 if let Some(from_part) = sql_trimmed.split("from").nth(1) {
                     let table_name = from_part.split_whitespace().next().unwrap_or("embeddings");
 
                     // Extract the document_id from the WHERE clause
-                    let document_id = if let Some(where_part) = sql.split("WHERE document_id =").nth(1) {
-                        where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
-                    } else if let Some(where_part) = sql.split("where document_id =").nth(1) {
-                        where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
-                    } else {
-                        return Err(DbError::InvalidOperation("Invalid WHERE document_id query format".to_string()));
-                    };
+                    let document_id =
+                        if let Some(where_part) = sql.split("WHERE document_id =").nth(1) {
+                            where_part
+                                .trim()
+                                .trim_matches(|c| c == '\'' || c == '"' || c == ';')
+                                .to_string()
+                        } else if let Some(where_part) = sql.split("where document_id =").nth(1) {
+                            where_part
+                                .trim()
+                                .trim_matches(|c| c == '\'' || c == '"' || c == ';')
+                                .to_string()
+                        } else {
+                            return Err(DbError::InvalidOperation(
+                                "Invalid WHERE document_id query format".to_string(),
+                            ));
+                        };
 
                     let storage = self.storage.read().await;
                     if let Some(table_data) = storage.tables.get(table_name) {
-                        let records: Vec<Record> = table_data.records.values()
+                        let records: Vec<Record> = table_data
+                            .records
+                            .values()
                             .filter(|record| {
-                                if let Some(stored_document_id) = record.data.get("document_id").and_then(|v| v.as_str()) {
+                                if let Some(stored_document_id) =
+                                    record.data.get("document_id").and_then(|v| v.as_str())
+                                {
                                     stored_document_id == document_id
                                 } else {
                                     false
@@ -2020,12 +2366,23 @@ impl SurrealClient {
                     if !sql_trimmed.contains("where") && !sql_trimmed.contains("WHERE") {
                         println!("DEBUG: No WHERE clause detected, using simple SELECT handler for table '{}'", table_name);
                         let storage = self.storage.read().await;
-                        println!("DEBUG: Available tables: {:?}", storage.tables.keys().collect::<Vec<_>>());
+                        println!(
+                            "DEBUG: Available tables: {:?}",
+                            storage.tables.keys().collect::<Vec<_>>()
+                        );
                         if let Some(table_data) = storage.tables.get(table_name) {
-                            println!("DEBUG: Table '{}' has {} records", table_name, table_data.records.len());
-                            let records: Vec<Record> = table_data.records.values().cloned().collect();
+                            println!(
+                                "DEBUG: Table '{}' has {} records",
+                                table_name,
+                                table_data.records.len()
+                            );
+                            let records: Vec<Record> =
+                                table_data.records.values().cloned().collect();
                             let count = records.len() as u64;
-                            println!("DEBUG: Returning {} records from table '{}'", count, table_name);
+                            println!(
+                                "DEBUG: Returning {} records from table '{}'",
+                                count, table_name
+                            );
                             return Ok(QueryResult {
                                 records,
                                 total_count: Some(count),
@@ -2042,7 +2399,10 @@ impl SurrealClient {
                     println!("DEBUG: Could not extract table name from query");
                 }
             } else {
-                println!("DEBUG: Query does not start with 'select * from', pattern: '{}'", &sql_trimmed[..sql_trimmed.len().min(20)]);
+                println!(
+                    "DEBUG: Query does not start with 'select * from', pattern: '{}'",
+                    &sql_trimmed[..sql_trimmed.len().min(20)]
+                );
             }
 
             // Return empty result for other SELECT queries
@@ -2063,20 +2423,34 @@ impl SurrealClient {
                 // Handle DELETE with WHERE clause
                 if sql_trimmed.contains("where") {
                     // Handle WHERE document_id = queries for DELETE
-                    if sql_trimmed.contains("where document_id =") || sql_trimmed.contains("WHERE document_id =") {
-                        let document_id = if let Some(where_part) = sql.split("WHERE document_id =").nth(1) {
-                            where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
+                    if sql_trimmed.contains("where document_id =")
+                        || sql_trimmed.contains("WHERE document_id =")
+                    {
+                        let document_id = if let Some(where_part) =
+                            sql.split("WHERE document_id =").nth(1)
+                        {
+                            where_part
+                                .trim()
+                                .trim_matches(|c| c == '\'' || c == '"' || c == ';')
+                                .to_string()
                         } else if let Some(where_part) = sql.split("where document_id =").nth(1) {
-                            where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
+                            where_part
+                                .trim()
+                                .trim_matches(|c| c == '\'' || c == '"' || c == ';')
+                                .to_string()
                         } else {
-                            return Err(DbError::InvalidOperation("Invalid WHERE document_id query format".to_string()));
+                            return Err(DbError::InvalidOperation(
+                                "Invalid WHERE document_id query format".to_string(),
+                            ));
                         };
 
                         let mut storage = self.storage.write().await;
                         if let Some(table_data) = storage.tables.get_mut(table_name) {
                             let initial_count = table_data.records.len();
                             table_data.records.retain(|_, record| {
-                                if let Some(stored_document_id) = record.data.get("document_id").and_then(|v| v.as_str()) {
+                                if let Some(stored_document_id) =
+                                    record.data.get("document_id").and_then(|v| v.as_str())
+                                {
                                     stored_document_id != document_id
                                 } else {
                                     true // Keep records without document_id field
@@ -2146,13 +2520,17 @@ impl SurrealClient {
         let relate_pattern = if let Some(relate_part) = sql.split("RELATE").nth(1) {
             relate_part.trim()
         } else {
-            return Err(DbError::InvalidOperation("Invalid RELATE statement format".to_string()));
+            return Err(DbError::InvalidOperation(
+                "Invalid RELATE statement format".to_string(),
+            ));
         };
 
         // Split by "->" to get the three parts
         let parts: Vec<&str> = relate_pattern.split("->").collect();
         if parts.len() < 3 {
-            return Err(DbError::InvalidOperation("Invalid RELATE statement format".to_string()));
+            return Err(DbError::InvalidOperation(
+                "Invalid RELATE statement format".to_string(),
+            ));
         }
 
         let from = parts[0].trim().to_string();
@@ -2171,10 +2549,13 @@ impl SurrealClient {
         if let Some(content_start) = relate_pattern.find("CONTENT") {
             let content_part = &relate_pattern[content_start..];
             if let Some(start_brace) = content_part.find('{') {
-                if let Some(end_brace) = content_part.rfind('}') { // Use rfind to get the last }
+                if let Some(end_brace) = content_part.rfind('}') {
+                    // Use rfind to get the last }
                     let json_str = &content_part[start_brace..=end_brace];
 
-                    if let Ok(parsed) = serde_json::from_str::<HashMap<String, serde_json::Value>>(json_str) {
+                    if let Ok(parsed) =
+                        serde_json::from_str::<HashMap<String, serde_json::Value>>(json_str)
+                    {
                         properties = parsed;
                     }
                 }
@@ -2192,7 +2573,10 @@ impl SurrealClient {
         };
 
         // Store the relationship
-        let relationships = storage.relationships.entry(relationship.relation_type.clone()).or_insert_with(Vec::new);
+        let relationships = storage
+            .relationships
+            .entry(relationship.relation_type.clone())
+            .or_insert_with(Vec::new);
         relationships.push(relationship.clone());
 
         Ok(QueryResult {
@@ -2210,9 +2594,14 @@ impl SurrealClient {
 
         // Extract the document ID from the WHERE clause
         let doc_id = if let Some(where_part) = sql.split("WHERE from =").nth(1) {
-            where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
+            where_part
+                .trim()
+                .trim_matches(|c| c == '\'' || c == '"' || c == ';')
+                .to_string()
         } else {
-            return Err(DbError::InvalidOperation("Invalid wikilink query format".to_string()));
+            return Err(DbError::InvalidOperation(
+                "Invalid wikilink query format".to_string(),
+            ));
         };
 
         // Find all wikilink relationships from this document
@@ -2227,9 +2616,16 @@ impl SurrealClient {
                         if let Some(target_record) = table_data.records.get(&target_record_id) {
                             // Create a record with the target data nested under "target"
                             let mut result_data = HashMap::new();
-                            result_data.insert("target".to_string(), serde_json::Value::Object(
-                                target_record.data.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-                            ));
+                            result_data.insert(
+                                "target".to_string(),
+                                serde_json::Value::Object(
+                                    target_record
+                                        .data
+                                        .iter()
+                                        .map(|(k, v)| (k.clone(), v.clone()))
+                                        .collect(),
+                                ),
+                            );
 
                             linked_records.push(Record {
                                 id: None,
@@ -2257,9 +2653,14 @@ impl SurrealClient {
 
         // Extract the document ID from the WHERE clause
         let doc_id = if let Some(where_part) = sql.split("WHERE from =").nth(1) {
-            where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
+            where_part
+                .trim()
+                .trim_matches(|c| c == '\'' || c == '"' || c == ';')
+                .to_string()
         } else {
-            return Err(DbError::InvalidOperation("Invalid embed query format".to_string()));
+            return Err(DbError::InvalidOperation(
+                "Invalid embed query format".to_string(),
+            ));
         };
 
         // Find all embed relationships from this document
@@ -2274,9 +2675,16 @@ impl SurrealClient {
                         if let Some(target_record) = table_data.records.get(&target_record_id) {
                             // Create a record with the target data nested under "target"
                             let mut result_data = HashMap::new();
-                            result_data.insert("target".to_string(), serde_json::Value::Object(
-                                target_record.data.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-                            ));
+                            result_data.insert(
+                                "target".to_string(),
+                                serde_json::Value::Object(
+                                    target_record
+                                        .data
+                                        .iter()
+                                        .map(|(k, v)| (k.clone(), v.clone()))
+                                        .collect(),
+                                ),
+                            );
 
                             embedded_records.push(Record {
                                 id: None,
@@ -2304,12 +2712,16 @@ impl SurrealClient {
 
         // Extract the document ID from the WHERE clause
         let doc_id = if let Some(where_part) = sql.split("WHERE from =").nth(1) {
-            where_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';').to_string()
+            where_part
+                .trim()
+                .trim_matches(|c| c == '\'' || c == '"' || c == ';')
+                .to_string()
         } else {
-            return Err(DbError::InvalidOperation("Invalid embed metadata query format".to_string()));
+            return Err(DbError::InvalidOperation(
+                "Invalid embed metadata query format".to_string(),
+            ));
         };
 
-        
         // Find all embed relationships from this document
         let mut embed_records = Vec::new();
 
@@ -2329,9 +2741,16 @@ impl SurrealClient {
                             }
 
                             // Add target document data nested under "target"
-                            result_data.insert("target".to_string(), serde_json::Value::Object(
-                                target_record.data.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-                            ));
+                            result_data.insert(
+                                "target".to_string(),
+                                serde_json::Value::Object(
+                                    target_record
+                                        .data
+                                        .iter()
+                                        .map(|(k, v)| (k.clone(), v.clone()))
+                                        .collect(),
+                                ),
+                            );
                             embed_records.push(Record {
                                 id: Some(RecordId(relationship.id.clone())),
                                 data: result_data,
@@ -2360,7 +2779,9 @@ impl SurrealClient {
         let table_name = if let Some(update_part) = sql.split("UPDATE").nth(1) {
             update_part.split_whitespace().next().unwrap_or("notes")
         } else {
-            return Err(DbError::InvalidOperation("Invalid UPDATE statement format".to_string()));
+            return Err(DbError::InvalidOperation(
+                "Invalid UPDATE statement format".to_string(),
+            ));
         };
 
         // Find the table
@@ -2369,7 +2790,9 @@ impl SurrealClient {
             if let Some(where_part) = sql.split("WHERE").nth(1) {
                 // Simple parsing for "id = record_id"
                 if let Some(id_part) = where_part.split("id =").nth(1) {
-                    let record_id_str = id_part.trim().trim_matches(|c| c == '\'' || c == '"' || c == ';');
+                    let record_id_str = id_part
+                        .trim()
+                        .trim_matches(|c| c == '\'' || c == '"' || c == ';');
                     let record_id = RecordId(record_id_str.to_string());
 
                     if let Some(record) = table_data.records.get_mut(&record_id) {
@@ -2381,10 +2804,14 @@ impl SurrealClient {
                                 if let Some(eq_pos) = set_clause_content.find('=') {
                                     let field = set_clause_content[..eq_pos].trim();
                                     let value_part = &set_clause_content[eq_pos + 1..].trim();
-                                    let value_str = value_part.trim_matches(|c| c == '\'' || c == '"');
+                                    let value_str =
+                                        value_part.trim_matches(|c| c == '\'' || c == '"');
 
                                     // Update the record
-                                    record.data.insert(field.to_string(), serde_json::Value::String(value_str.to_string()));
+                                    record.data.insert(
+                                        field.to_string(),
+                                        serde_json::Value::String(value_str.to_string()),
+                                    );
                                 }
                             }
                         }
@@ -2430,14 +2857,21 @@ impl SurrealClient {
 
             // Extract alias name if present (e.g., "as total")
             let alias = if let Some(as_part) = sql_lower.split("as").nth(1) {
-                as_part.split_whitespace().next().unwrap_or("total").to_string()
+                as_part
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("total")
+                    .to_string()
             } else {
                 "total".to_string()
             };
 
             // Create a result record with the count
             let mut count_data = HashMap::new();
-            count_data.insert(alias, serde_json::Value::Number(serde_json::Number::from(count)));
+            count_data.insert(
+                alias,
+                serde_json::Value::Number(serde_json::Number::from(count)),
+            );
 
             let count_record = Record {
                 id: None,
@@ -2453,7 +2887,10 @@ impl SurrealClient {
         } else {
             // Table doesn't exist, return count of 0
             let mut count_data = HashMap::new();
-            count_data.insert("total".to_string(), serde_json::Value::Number(serde_json::Number::from(0)));
+            count_data.insert(
+                "total".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(0)),
+            );
 
             let count_record = Record {
                 id: None,
@@ -2478,10 +2915,14 @@ impl SurrealClient {
             if let Some(from_pos) = select_part.find("from") {
                 &select_part[..from_pos]
             } else {
-                return Err(DbError::InvalidOperation("Invalid SELECT query format".to_string()));
+                return Err(DbError::InvalidOperation(
+                    "Invalid SELECT query format".to_string(),
+                ));
             }
         } else {
-            return Err(DbError::InvalidOperation("Invalid SELECT query format".to_string()));
+            return Err(DbError::InvalidOperation(
+                "Invalid SELECT query format".to_string(),
+            ));
         };
 
         // Parse the fields (comma-separated)
@@ -2508,45 +2949,55 @@ impl SurrealClient {
             let mut records = Vec::new();
 
             // Handle WHERE clause if present
-            let filtered_records: Vec<&Record> = if sql_lower.contains("where") || sql_lower.contains("WHERE") {
+            let filtered_records: Vec<&Record> = if sql_lower.contains("where")
+                || sql_lower.contains("WHERE")
+            {
                 // For the semantic search test, we need to handle CONTAINS queries
                 if sql_lower.contains("contains") {
                     // Extract the search term from CONTAINS 'term'
-                    let search_term = if let Some(contains_part) = sql_lower.split("contains").nth(1) {
-                        contains_part.trim()
-                            .trim_matches(|c| c == '\'' || c == '"' || c == ';')
-                            .to_lowercase()
-                    } else {
-                        String::new()
-                    };
+                    let search_term =
+                        if let Some(contains_part) = sql_lower.split("contains").nth(1) {
+                            contains_part
+                                .trim()
+                                .trim_matches(|c| c == '\'' || c == '"' || c == ';')
+                                .to_lowercase()
+                        } else {
+                            String::new()
+                        };
 
                     // Filter records that contain the search term in content or title
-                    table_data.records.values().filter(|record| {
-                        let mut matches = false;
+                    table_data
+                        .records
+                        .values()
+                        .filter(|record| {
+                            let mut matches = false;
 
-                        // Check content field
-                        if let Some(content) = record.data.get("content").and_then(|v| v.as_str()) {
-                            if content.to_lowercase().contains(&search_term) {
-                                matches = true;
+                            // Check content field
+                            if let Some(content) =
+                                record.data.get("content").and_then(|v| v.as_str())
+                            {
+                                if content.to_lowercase().contains(&search_term) {
+                                    matches = true;
+                                }
                             }
-                        }
 
-                        // Check title field
-                        if let Some(title) = record.data.get("title").and_then(|v| v.as_str()) {
-                            if title.to_lowercase().contains(&search_term) {
-                                matches = true;
+                            // Check title field
+                            if let Some(title) = record.data.get("title").and_then(|v| v.as_str()) {
+                                if title.to_lowercase().contains(&search_term) {
+                                    matches = true;
+                                }
                             }
-                        }
 
-                        // Check path field (for semantic search)
-                        if let Some(path) = record.data.get("path").and_then(|v| v.as_str()) {
-                            if path.to_lowercase().contains(&search_term) {
-                                matches = true;
+                            // Check path field (for semantic search)
+                            if let Some(path) = record.data.get("path").and_then(|v| v.as_str()) {
+                                if path.to_lowercase().contains(&search_term) {
+                                    matches = true;
+                                }
                             }
-                        }
 
-                        matches
-                    }).collect()
+                            matches
+                        })
+                        .collect()
                 } else {
                     // Other WHERE clauses - for now return all records
                     table_data.records.values().collect()
@@ -2576,7 +3027,13 @@ impl SurrealClient {
 
             // Handle LIMIT clause if present
             if let Some(limit_part) = sql_lower.split("limit").nth(1) {
-                if let Ok(limit) = limit_part.trim().split_whitespace().next().unwrap_or("10").parse::<usize>() {
+                if let Ok(limit) = limit_part
+                    .trim()
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("10")
+                    .parse::<usize>()
+                {
                     records.truncate(limit);
                 }
             }
@@ -2652,7 +3109,10 @@ mod tests {
             id: None,
             data: {
                 let mut map = HashMap::new();
-                map.insert("name".to_string(), serde_json::Value::String("test".to_string()));
+                map.insert(
+                    "name".to_string(),
+                    serde_json::Value::String("test".to_string()),
+                );
                 map
             },
         };
@@ -2668,7 +3128,10 @@ mod tests {
 
         // Test node creation
         let mut properties = HashMap::new();
-        properties.insert("title".to_string(), serde_json::Value::String("Test Node".to_string()));
+        properties.insert(
+            "title".to_string(),
+            serde_json::Value::String("Test Node".to_string()),
+        );
 
         let node_id = client.create_node("test_node", properties).await.unwrap();
 
@@ -2684,7 +3147,10 @@ mod tests {
         client.initialize().await.unwrap();
 
         // Test collection creation
-        client.create_collection("test_collection", None).await.unwrap();
+        client
+            .create_collection("test_collection", None)
+            .await
+            .unwrap();
 
         // Test document creation
         let document = Document {
@@ -2703,10 +3169,16 @@ mod tests {
             },
         };
 
-        let doc_id = client.create_document("test_collection", document).await.unwrap();
+        let doc_id = client
+            .create_document("test_collection", document)
+            .await
+            .unwrap();
 
         // Test document retrieval
-        let retrieved = client.get_document("test_collection", &doc_id).await.unwrap();
+        let retrieved = client
+            .get_document("test_collection", &doc_id)
+            .await
+            .unwrap();
         assert!(retrieved.is_some());
     }
 
@@ -2745,7 +3217,10 @@ mod tests {
             foreign_keys: vec![],
             indexes: vec![],
         };
-        client.create_table("document_metadata", metadata_schema).await.unwrap();
+        client
+            .create_table("document_metadata", metadata_schema)
+            .await
+            .unwrap();
 
         // Create a document
         client.create_collection("notes", None).await.unwrap();
@@ -2770,16 +3245,31 @@ mod tests {
 
         // Create a graph node representing the same document
         let mut node_props = HashMap::new();
-        node_props.insert("document_id".to_string(), serde_json::Value::String(doc_id.0.clone()));
-        node_props.insert("title".to_string(), serde_json::Value::String("Project Overview".to_string()));
+        node_props.insert(
+            "document_id".to_string(),
+            serde_json::Value::String(doc_id.0.clone()),
+        );
+        node_props.insert(
+            "title".to_string(),
+            serde_json::Value::String("Project Overview".to_string()),
+        );
 
         let node_id = client.create_node("document", node_props).await.unwrap();
 
         // Create relational metadata
         let mut record_data = HashMap::new();
-        record_data.insert("document_id".to_string(), serde_json::Value::String(doc_id.0.clone()));
-        record_data.insert("node_id".to_string(), serde_json::Value::String(node_id.0.clone()));
-        record_data.insert("type".to_string(), serde_json::Value::String("note".to_string()));
+        record_data.insert(
+            "document_id".to_string(),
+            serde_json::Value::String(doc_id.0.clone()),
+        );
+        record_data.insert(
+            "node_id".to_string(),
+            serde_json::Value::String(node_id.0.clone()),
+        );
+        record_data.insert(
+            "type".to_string(),
+            serde_json::Value::String("note".to_string()),
+        );
 
         let record = Record {
             id: None,

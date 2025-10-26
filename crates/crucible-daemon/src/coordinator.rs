@@ -4,21 +4,19 @@
 //! Eliminates complex service event routing in favor of direct channel communication.
 
 use crate::config::DaemonConfig;
-use crate::events::{DaemonEvent, EventBus, EventBuilder};
+use crate::events::{DaemonEvent, EventBuilder, EventBus};
 use crate::handlers::EventLogger;
 use crate::services::{ServiceManager, SimpleEventService, SimpleFileService, SimpleSyncService};
-use crate::surrealdb_service::{SurrealDBService, create_surrealdb_from_config};
+use crate::surrealdb_service::{create_surrealdb_from_config, SurrealDBService};
 use anyhow::Result;
-use crucible_watch::{
-    EventDrivenEmbeddingProcessor, EmbeddingEventHandler, EmbeddingEvent,
-};
 use crucible_surrealdb::embedding_pool::EmbeddingThreadPool;
 use crucible_surrealdb::{vault_processor, vault_scanner::VaultScannerConfig};
-use tokio::sync::mpsc;
+use crucible_watch::{EmbeddingEvent, EmbeddingEventHandler, EventDrivenEmbeddingProcessor};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{RwLock, watch, broadcast};
+use tokio::sync::mpsc;
+use tokio::sync::{broadcast, watch, RwLock};
 use tokio::time::{interval, Duration};
 use tracing::{debug, error, info, trace, warn};
 
@@ -97,7 +95,10 @@ impl DaemonEventHandler {
     }
 
     /// Set the embedding event sender
-    pub fn with_embedding_event_tx(mut self, embedding_event_tx: tokio::sync::mpsc::UnboundedSender<EmbeddingEvent>) -> Self {
+    pub fn with_embedding_event_tx(
+        mut self,
+        embedding_event_tx: tokio::sync::mpsc::UnboundedSender<EmbeddingEvent>,
+    ) -> Self {
         self.embedding_event_tx = Some(embedding_event_tx);
         self
     }
@@ -130,7 +131,10 @@ impl DaemonEventHandler {
     async fn handle_service_event(&self, event: &crate::events::ServiceEvent) -> Result<()> {
         match &event.event_type {
             crate::events::ServiceEventType::Started => {
-                info!("Service started: {} ({})", event.service_id, event.service_type);
+                info!(
+                    "Service started: {} ({})",
+                    event.service_id, event.service_type
+                );
                 let mut state = self.coordinator_state.write().await;
                 state.insert(
                     format!("service:{}", event.service_id),
@@ -138,22 +142,31 @@ impl DaemonEventHandler {
                         "type": event.service_type,
                         "status": "started",
                         "started_at": chrono::Utc::now().to_rfc3339()
-                    })
+                    }),
                 );
             }
             crate::events::ServiceEventType::Stopped => {
                 info!("Service stopped: {}", event.service_id);
                 let mut state = self.coordinator_state.write().await;
-                if let Some(service_info) = state.get_mut(&format!("service:{}", event.service_id)) {
+                if let Some(service_info) = state.get_mut(&format!("service:{}", event.service_id))
+                {
                     if let Some(obj) = service_info.as_object_mut() {
-                        obj.insert("status".to_string(), serde_json::Value::String("stopped".to_string()));
-                        obj.insert("stopped_at".to_string(),
-                                 serde_json::Value::String(chrono::Utc::now().to_rfc3339()));
+                        obj.insert(
+                            "status".to_string(),
+                            serde_json::Value::String("stopped".to_string()),
+                        );
+                        obj.insert(
+                            "stopped_at".to_string(),
+                            serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
+                        );
                     }
                 }
             }
             crate::events::ServiceEventType::Registered => {
-                info!("Service registered: {} ({})", event.service_id, event.service_type);
+                info!(
+                    "Service registered: {} ({})",
+                    event.service_id, event.service_type
+                );
             }
             crate::events::ServiceEventType::Unregistered => {
                 info!("Service unregistered: {}", event.service_id);
@@ -182,18 +195,22 @@ impl DaemonEventHandler {
                 "status": format!("{:?}", event.status),
                 "message": event.message,
                 "last_check": chrono::Utc::now().to_rfc3339()
-            })
+            }),
         );
         Ok(())
     }
 
     async fn handle_error_event(&self, event: &crate::events::ErrorEvent) -> Result<()> {
-        error!("Error event [{}]: {} - {}", event.code, event.category, event.message);
+        error!(
+            "Error event [{}]: {} - {}",
+            event.code, event.category, event.message
+        );
 
         // Store error in state for monitoring
         let mut state = self.coordinator_state.write().await;
         let error_key = format!("error:{}:{}", event.category, event.code);
-        let error_list = state.entry(error_key.clone())
+        let error_list = state
+            .entry(error_key.clone())
             .or_insert_with(|| serde_json::Value::Array(Vec::new()));
 
         if let Some(array) = error_list.as_array_mut() {
@@ -213,7 +230,11 @@ impl DaemonEventHandler {
     }
 
     async fn handle_filesystem_event(&self, event: &crate::events::FilesystemEvent) -> Result<()> {
-        debug!("Filesystem event: {:?} on {}", event.event_type, event.path.display());
+        debug!(
+            "Filesystem event: {:?} on {}",
+            event.event_type,
+            event.path.display()
+        );
 
         // Only process markdown files for embeddings
         if !event.path.extension().map_or(false, |ext| ext == "md") {
@@ -225,7 +246,11 @@ impl DaemonEventHandler {
         let content = match std::fs::read_to_string(&event.path) {
             Ok(content) => content,
             Err(e) => {
-                warn!("Failed to read file {} for embedding: {}", event.path.display(), e);
+                warn!(
+                    "Failed to read file {} for embedding: {}",
+                    event.path.display(),
+                    e
+                );
                 return Ok(());
             }
         };
@@ -239,10 +264,13 @@ impl DaemonEventHandler {
                 // For renamed events, treat as modification since the content may have changed
                 crucible_watch::FileEventKind::Modified
             }
-            crate::events::FilesystemEventType::DirectoryCreated |
-            crate::events::FilesystemEventType::DirectoryDeleted => {
+            crate::events::FilesystemEventType::DirectoryCreated
+            | crate::events::FilesystemEventType::DirectoryDeleted => {
                 // Skip directory events for embedding processing
-                debug!("Skipping directory event for embedding: {}", event.path.display());
+                debug!(
+                    "Skipping directory event for embedding: {}",
+                    event.path.display()
+                );
                 return Ok(());
             }
         };
@@ -258,20 +286,34 @@ impl DaemonEventHandler {
         // Send to embedding processor
         if let Some(ref tx) = self.embedding_event_tx {
             if let Err(e) = tx.send(embedding_event) {
-                warn!("Failed to send embedding event for {}: {}", event.path.display(), e);
+                warn!(
+                    "Failed to send embedding event for {}: {}",
+                    event.path.display(),
+                    e
+                );
             } else {
-                debug!("Successfully queued embedding event for: {}", event.path.display());
+                debug!(
+                    "Successfully queued embedding event for: {}",
+                    event.path.display()
+                );
             }
         } else {
-            warn!("Embedding event sender not configured for: {}", event.path.display());
+            warn!(
+                "Embedding event sender not configured for: {}",
+                event.path.display()
+            );
         }
 
         Ok(())
     }
 
     async fn handle_database_event(&self, event: &crate::events::DatabaseEvent) -> Result<()> {
-        debug!("Database event: {:?} on {}.{}", event.event_type, event.database,
-               event.table.as_deref().unwrap_or("N/A"));
+        debug!(
+            "Database event: {:?} on {}.{}",
+            event.event_type,
+            event.database,
+            event.table.as_deref().unwrap_or("N/A")
+        );
 
         // Track database operations
         let mut state = self.coordinator_state.write().await;
@@ -283,13 +325,16 @@ impl DaemonEventHandler {
                 "table": event.table,
                 "record_id": event.record_id,
                 "timestamp": event.timestamp.to_rfc3339()
-            })
+            }),
         );
         Ok(())
     }
 
     async fn handle_sync_event(&self, event: &crate::events::SyncEvent) -> Result<()> {
-        debug!("Sync event: {:?} from {} to {}", event.event_type, event.source, event.target);
+        debug!(
+            "Sync event: {:?} from {} to {}",
+            event.event_type, event.source, event.target
+        );
 
         // Track sync operations
         let mut state = self.coordinator_state.write().await;
@@ -300,7 +345,7 @@ impl DaemonEventHandler {
                 "event_type": format!("{:?}", event.event_type),
                 "progress": event.progress,
                 "timestamp": event.timestamp.to_rfc3339()
-            })
+            }),
         );
         Ok(())
     }
@@ -476,7 +521,7 @@ impl DataCoordinator {
             serde_json::json!({
                 "config_reloaded": true,
                 "config_hash": format!("{:x}", md5::compute(format!("{:?}", new_config)))
-            })
+            }),
         ));
 
         if let Err(e) = self.event_bus.publish(config_event).await {
@@ -489,7 +534,10 @@ impl DataCoordinator {
 
     /// Publish an event to the event bus
     pub async fn publish_event(&self, event: DaemonEvent) -> Result<()> {
-        let receiver_count = self.event_bus.publish(event.clone()).await
+        let receiver_count = self
+            .event_bus
+            .publish(event.clone())
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to publish event: {}", e))?;
 
         // Update statistics
@@ -577,8 +625,10 @@ impl DataCoordinator {
             process_wikilinks: true,
             enable_incremental: true,
             track_file_changes: true,
-            change_detection_method: crucible_surrealdb::vault_scanner::ChangeDetectionMethod::ContentHash,
-            error_handling_mode: crucible_surrealdb::vault_scanner::ErrorHandlingMode::ContinueOnError,
+            change_detection_method:
+                crucible_surrealdb::vault_scanner::ChangeDetectionMethod::ContentHash,
+            error_handling_mode:
+                crucible_surrealdb::vault_scanner::ErrorHandlingMode::ContinueOnError,
             max_error_count: 100,
             error_retry_attempts: 3,
             error_retry_delay_ms: 1000,
@@ -591,16 +641,17 @@ impl DataCoordinator {
 
         // Scan the vault for files
         info!("Scanning vault for files...");
-        let discovered_files = match vault_processor::scan_vault_directory(&vault_path, &scan_config).await {
-            Ok(files) => {
-                info!("Discovered {} files in vault", files.len());
-                files
-            }
-            Err(e) => {
-                error!("Failed to scan vault directory: {}", e);
-                return Err(anyhow::anyhow!("Vault scanning failed: {}", e));
-            }
-        };
+        let discovered_files =
+            match vault_processor::scan_vault_directory(&vault_path, &scan_config).await {
+                Ok(files) => {
+                    info!("Discovered {} files in vault", files.len());
+                    files
+                }
+                Err(e) => {
+                    error!("Failed to scan vault directory: {}", e);
+                    return Err(anyhow::anyhow!("Vault scanning failed: {}", e));
+                }
+            };
 
         if discovered_files.is_empty() {
             warn!("No files found to process in vault");
@@ -622,20 +673,32 @@ impl DataCoordinator {
                 debug!("Processing file: {}", file_info.path.display());
 
                 // Create a filesystem event to trigger processing
-                debug!("Creating filesystem event for file: {}", file_info.path.display());
+                debug!(
+                    "Creating filesystem event for file: {}",
+                    file_info.path.display()
+                );
                 let fs_event = DaemonEvent::Filesystem(EventBuilder::filesystem(
                     crate::events::FilesystemEventType::Modified,
                     file_info.path.clone(),
                 ));
 
                 // Publish the event
-                debug!("Publishing filesystem event for: {}", file_info.path.display());
+                debug!(
+                    "Publishing filesystem event for: {}",
+                    file_info.path.display()
+                );
                 if let Err(e) = self.publish_event(fs_event).await {
-                    error!("Failed to publish processing event for {}: {}",
-                          file_info.path.display(), e);
+                    error!(
+                        "Failed to publish processing event for {}: {}",
+                        file_info.path.display(),
+                        e
+                    );
                     failed_count += 1;
                 } else {
-                    debug!("Successfully published filesystem event for: {}", file_info.path.display());
+                    debug!(
+                        "Successfully published filesystem event for: {}",
+                        file_info.path.display()
+                    );
                     processed_count += 1;
                 }
 
@@ -644,8 +707,10 @@ impl DataCoordinator {
             }
         }
 
-        info!("One-shot vault processing completed: {} files queued for processing, {} failed",
-              processed_count, failed_count);
+        info!(
+            "One-shot vault processing completed: {} files queued for processing, {} failed",
+            processed_count, failed_count
+        );
 
         // Wait a bit for processing to complete
         info!("Waiting for processing to complete...");
@@ -661,7 +726,7 @@ impl DataCoordinator {
                 "files_processed": processed_count,
                 "files_failed": failed_count,
                 "completion_time": chrono::Utc::now().to_rfc3339()
-            })
+            }),
         ));
 
         if let Err(e) = self.publish_event(completion_event).await {
@@ -698,7 +763,8 @@ impl DataCoordinator {
         // Create embedding provider integration from environment
         let provider_integration = create_embedding_provider_integration_from_env()?;
         let embedding_pool = Arc::new(
-            EmbeddingThreadPool::new_with_provider_config(embedding_config, provider_integration).await?
+            EmbeddingThreadPool::new_with_provider_config(embedding_config, provider_integration)
+                .await?,
         );
 
         // Create embedding event channel
@@ -710,7 +776,7 @@ impl DataCoordinator {
             EventDrivenEmbeddingProcessor::new(embedding_config, embedding_pool.clone())
                 .await?
                 .with_embedding_event_receiver(embedding_rx)
-                .await
+                .await,
         );
 
         // Start the embedding processor
@@ -719,7 +785,7 @@ impl DataCoordinator {
         // Update event handler to include embedding event sender
         self.event_handler = Arc::new(
             DaemonEventHandler::new(self.event_bus.clone())
-                .with_embedding_event_tx(embedding_tx.clone())
+                .with_embedding_event_tx(embedding_tx.clone()),
         );
 
         // Store components
@@ -738,19 +804,29 @@ impl DataCoordinator {
 
         // Create event service
         let event_service = Arc::new(SimpleEventService::new());
-        self.service_manager.register_service("event_service", event_service).await?;
+        self.service_manager
+            .register_service("event_service", event_service)
+            .await?;
 
         // Create file service
-        let file_service = Arc::new(SimpleFileService::new(std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))));
-        self.service_manager.register_service("file_service", file_service).await?;
+        let file_service = Arc::new(SimpleFileService::new(
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+        ));
+        self.service_manager
+            .register_service("file_service", file_service)
+            .await?;
 
         // Create database service
         let database_service = self.create_database_service().await?;
-        self.service_manager.register_service("database_service", database_service).await?;
+        self.service_manager
+            .register_service("database_service", database_service)
+            .await?;
 
         // Create sync service
         let sync_service = Arc::new(SimpleSyncService::new());
-        self.service_manager.register_service("sync_service", sync_service).await?;
+        self.service_manager
+            .register_service("sync_service", sync_service)
+            .await?;
 
         info!("Services initialized successfully");
         Ok(())
@@ -801,7 +877,8 @@ impl DataCoordinator {
         // Create embedding provider integration from environment
         let provider_integration = create_embedding_provider_integration_from_env()?;
         let embedding_pool = Arc::new(
-            EmbeddingThreadPool::new_with_provider_config(embedding_config, provider_integration).await?
+            EmbeddingThreadPool::new_with_provider_config(embedding_config, provider_integration)
+                .await?,
         );
 
         // Create embedding event channel
@@ -813,7 +890,7 @@ impl DataCoordinator {
             EventDrivenEmbeddingProcessor::new(embedding_config, embedding_pool.clone())
                 .await?
                 .with_embedding_event_receiver(embedding_rx)
-                .await
+                .await,
         );
 
         // Register embedding event handler
@@ -879,7 +956,7 @@ impl DataCoordinator {
                 "version": env!("CARGO_PKG_VERSION"),
                 "startup_time": chrono::Utc::now().to_rfc3339(),
                 "features": vec!["simplified_events", "tokio_broadcast"]
-            })
+            }),
         ));
 
         self.publish_event(startup_event).await?;
@@ -896,7 +973,7 @@ impl DataCoordinator {
             serde_json::json!({
                 "shutdown_time": chrono::Utc::now().to_rfc3339(),
                 "reason": "coordinator_stop_called"
-            })
+            }),
         ));
 
         self.publish_event(shutdown_event).await?;
@@ -906,7 +983,9 @@ impl DataCoordinator {
 
     /// Start health monitoring task
     #[allow(dead_code)]
-    async fn start_health_monitoring(&self) -> Result<impl std::future::Future<Output = Result<()>>> {
+    async fn start_health_monitoring(
+        &self,
+    ) -> Result<impl std::future::Future<Output = Result<()>>> {
         let service_manager = self.service_manager.clone();
         let event_bus = self.event_bus.clone();
         let mut shutdown_rx = self.shutdown_rx.clone();
@@ -970,7 +1049,9 @@ impl DataCoordinator {
 
     /// Start metrics collection task
     #[allow(dead_code)]
-    async fn start_metrics_collection(&self) -> Result<impl std::future::Future<Output = Result<()>>> {
+    async fn start_metrics_collection(
+        &self,
+    ) -> Result<impl std::future::Future<Output = Result<()>>> {
         let event_bus = self.event_bus.clone();
         let daemon_health = self.daemon_health.clone();
         let mut shutdown_rx = self.shutdown_rx.clone();
@@ -1022,7 +1103,9 @@ impl DataCoordinator {
 
     /// Start service discovery task
     #[allow(dead_code)]
-    async fn start_service_discovery(&self) -> Result<impl std::future::Future<Output = Result<()>>> {
+    async fn start_service_discovery(
+        &self,
+    ) -> Result<impl std::future::Future<Output = Result<()>>> {
         let service_discovery = self.service_discovery.clone();
         let event_bus = self.event_bus.clone();
         let mut shutdown_rx = self.shutdown_rx.clone();
@@ -1077,7 +1160,9 @@ impl DataCoordinator {
 
     /// Start event statistics task
     #[allow(dead_code)]
-    async fn start_event_statistics(&self) -> Result<impl std::future::Future<Output = Result<()>>> {
+    async fn start_event_statistics(
+        &self,
+    ) -> Result<impl std::future::Future<Output = Result<()>>> {
         let event_stats = self.event_stats.clone();
         let event_bus = self.event_bus.clone();
         let mut shutdown_rx = self.shutdown_rx.clone();
@@ -1143,21 +1228,21 @@ impl DataCoordinator {
     }
 }
 
-
 /// Create embedding provider integration from environment variables
 fn create_embedding_provider_integration_from_env(
 ) -> Result<crucible_surrealdb::embedding_pool::EmbeddingProviderIntegration> {
-    use crucible_surrealdb::embedding_pool::EmbeddingProviderIntegration;
     use crucible_config::{EmbeddingProviderConfig, EmbeddingProviderType};
+    use crucible_surrealdb::embedding_pool::EmbeddingProviderIntegration;
 
     // Read embedding configuration from environment variables
     let embedding_endpoint = std::env::var("EMBEDDING_ENDPOINT")
         .unwrap_or_else(|_| "http://localhost:11434".to_string());
-    let embedding_model = std::env::var("EMBEDDING_MODEL")
-        .map_err(|_| anyhow::anyhow!(
+    let embedding_model = std::env::var("EMBEDDING_MODEL").map_err(|_| {
+        anyhow::anyhow!(
             "EMBEDDING_MODEL environment variable is required. \
             Please set it to your embedding model name, e.g., 'nomic-embed-text-v1.5-q8_0'"
-        ))?;
+        )
+    })?;
 
     // Create real embedding provider configuration
     use std::collections::HashMap;
@@ -1185,8 +1270,10 @@ fn create_embedding_provider_integration_from_env(
         mock_dimensions: 768,
     };
 
-    info!("Created embedding provider integration: endpoint={}, model={}",
-          embedding_endpoint, embedding_model);
+    info!(
+        "Created embedding provider integration: endpoint={}, model={}",
+        embedding_endpoint, embedding_model
+    );
 
     Ok(provider_integration)
 }
@@ -1200,11 +1287,12 @@ fn create_embedding_config_from_env(
     // Read embedding configuration from environment variables
     let embedding_endpoint = std::env::var("EMBEDDING_ENDPOINT")
         .unwrap_or_else(|_| "http://localhost:11434".to_string());
-    let embedding_model = std::env::var("EMBEDDING_MODEL")
-        .map_err(|_| anyhow::anyhow!(
+    let embedding_model = std::env::var("EMBEDDING_MODEL").map_err(|_| {
+        anyhow::anyhow!(
             "EMBEDDING_MODEL environment variable is required. \
             Please set it to your embedding model name, e.g., 'nomic-embed-text-v1.5-q8_0'"
-        ))?;
+        )
+    })?;
 
     // Create embedding configuration based on environment
     let (model_type, privacy_mode) = if embedding_endpoint.starts_with("http://localhost:11434") {
@@ -1212,7 +1300,10 @@ fn create_embedding_config_from_env(
         (EmbeddingModel::LocalStandard, PrivacyMode::StrictLocal)
     } else if embedding_endpoint.starts_with("http") {
         // Remote embedding service - allow external fallback
-        (EmbeddingModel::LocalStandard, PrivacyMode::AllowExternalFallback)
+        (
+            EmbeddingModel::LocalStandard,
+            PrivacyMode::AllowExternalFallback,
+        )
     } else {
         // Default to local standard
         (EmbeddingModel::LocalStandard, PrivacyMode::StrictLocal)
@@ -1231,8 +1322,10 @@ fn create_embedding_config_from_env(
         circuit_breaker_timeout_ms: 60000,
     };
 
-    info!("Created embedding config: endpoint={}, model={}, workers={}",
-          embedding_endpoint, embedding_model, embedding_config.worker_count);
+    info!(
+        "Created embedding config: endpoint={}, model={}, workers={}",
+        embedding_endpoint, embedding_model, embedding_config.worker_count
+    );
 
     Ok(embedding_config)
 }

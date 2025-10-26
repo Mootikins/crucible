@@ -2,8 +2,8 @@
 //!
 //! This module contains core type definitions for the simplified Crucible services.
 
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 /// ============================================================================
 /// BASIC SERVICE TYPES

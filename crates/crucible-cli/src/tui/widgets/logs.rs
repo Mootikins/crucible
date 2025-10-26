@@ -61,8 +61,7 @@ pub fn render_logs(app: &App, frame: &mut Frame, area: Rect) {
         format!(" Logs ({} buffered) ", total_logs)
     };
 
-    let logs_list =
-        List::new(log_items).block(Block::default().borders(Borders::TOP).title(title));
+    let logs_list = List::new(log_items).block(Block::default().borders(Borders::TOP).title(title));
 
     frame.render_widget(logs_list, area);
 }

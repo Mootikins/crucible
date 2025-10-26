@@ -80,19 +80,20 @@ impl OllamaProvider {
         config.validate()?;
 
         // Build HTTP client with timeout
-        let mut client_builder = Client::builder()
-            .timeout(Duration::from_secs(config.timeout_secs));
+        let mut client_builder =
+            Client::builder().timeout(Duration::from_secs(config.timeout_secs));
 
         // Accept self-signed certificates for local development servers
-        if config.endpoint.contains("localhost") ||
-           config.endpoint.contains("127.0.0.1") ||
-           config.endpoint.contains(".terminal.") {
+        if config.endpoint.contains("localhost")
+            || config.endpoint.contains("127.0.0.1")
+            || config.endpoint.contains(".terminal.")
+        {
             client_builder = client_builder.danger_accept_invalid_certs(true);
         }
 
-        let client = client_builder
-            .build()
-            .map_err(|e| EmbeddingError::ConfigError(format!("Failed to create HTTP client: {}", e)))?;
+        let client = client_builder.build().map_err(|e| {
+            EmbeddingError::ConfigError(format!("Failed to create HTTP client: {}", e))
+        })?;
 
         let expected_dimensions = config.expected_dimensions();
 
@@ -146,9 +147,8 @@ impl OllamaProvider {
         }
 
         // All retries exhausted
-        Err(last_error.unwrap_or_else(|| {
-            EmbeddingError::Other("All retry attempts failed".to_string())
-        }))
+        Err(last_error
+            .unwrap_or_else(|| EmbeddingError::Other("All retry attempts failed".to_string())))
     }
 
     /// Make a single embedding request without retry
@@ -166,14 +166,17 @@ impl OllamaProvider {
             text.len()
         );
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .json(&request)
             .send()
             .await
             .map_err(|e| {
                 if e.is_timeout() {
-                    EmbeddingError::Timeout { timeout_secs: self.timeout_secs }
+                    EmbeddingError::Timeout {
+                        timeout_secs: self.timeout_secs,
+                    }
                 } else {
                     EmbeddingError::HttpError(e)
                 }
@@ -182,7 +185,10 @@ impl OllamaProvider {
         // Check response status
         let status = response.status();
         if !status.is_success() {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(EmbeddingError::ProviderError {
                 provider: "Ollama".to_string(),
                 message: format!("HTTP {}: {}", status, error_text),
@@ -211,7 +217,7 @@ impl EmbeddingProvider for OllamaProvider {
     async fn embed(&self, text: &str) -> EmbeddingResult<EmbeddingResponse> {
         if text.is_empty() {
             return Err(EmbeddingError::InvalidResponse(
-                "Cannot embed empty text".to_string()
+                "Cannot embed empty text".to_string(),
             ));
         }
 
@@ -275,7 +281,8 @@ impl EmbeddingProvider for OllamaProvider {
         // Query Ollama's /api/tags endpoint
         let url = format!("{}/api/tags", self.endpoint);
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .timeout(Duration::from_secs(self.timeout_secs))
             .send()
@@ -291,46 +298,50 @@ impl EmbeddingProvider for OllamaProvider {
         let tags_response: OllamaTagsResponse = response.json().await?;
 
         // Convert Ollama model info to our ModelInfo format
-        let models = tags_response.models.into_iter().map(|model| {
-            let mut builder = ModelInfo::builder().name(model.name);
+        let models = tags_response
+            .models
+            .into_iter()
+            .map(|model| {
+                let mut builder = ModelInfo::builder().name(model.name);
 
-            if let Some(size) = model.size {
-                builder = builder.size_bytes(size);
-            }
-
-            if let Some(digest) = model.digest {
-                builder = builder.digest(digest);
-            }
-
-            if let Some(modified_at_str) = model.modified_at {
-                // Try to parse the timestamp
-                if let Ok(dt) = DateTime::parse_from_rfc3339(&modified_at_str) {
-                    builder = builder.modified_at(dt.with_timezone(&chrono::Utc));
-                }
-            }
-
-            if let Some(details) = model.details {
-                if let Some(family_str) = details.family {
-                    builder = builder.family(ModelFamily::from_str(&family_str));
+                if let Some(size) = model.size {
+                    builder = builder.size_bytes(size);
                 }
 
-                if let Some(param_size_str) = details.parameter_size {
-                    if let Some(param_size) = ParameterSize::from_str(&param_size_str) {
-                        builder = builder.parameter_size(param_size);
+                if let Some(digest) = model.digest {
+                    builder = builder.digest(digest);
+                }
+
+                if let Some(modified_at_str) = model.modified_at {
+                    // Try to parse the timestamp
+                    if let Ok(dt) = DateTime::parse_from_rfc3339(&modified_at_str) {
+                        builder = builder.modified_at(dt.with_timezone(&chrono::Utc));
                     }
                 }
 
-                if let Some(quant) = details.quantization_level {
-                    builder = builder.quantization(quant);
+                if let Some(details) = model.details {
+                    if let Some(family_str) = details.family {
+                        builder = builder.family(ModelFamily::from_str(&family_str));
+                    }
+
+                    if let Some(param_size_str) = details.parameter_size {
+                        if let Some(param_size) = ParameterSize::from_str(&param_size_str) {
+                            builder = builder.parameter_size(param_size);
+                        }
+                    }
+
+                    if let Some(quant) = details.quantization_level {
+                        builder = builder.quantization(quant);
+                    }
+
+                    if let Some(format) = details.format {
+                        builder = builder.format(format);
+                    }
                 }
 
-                if let Some(format) = details.format {
-                    builder = builder.format(format);
-                }
-            }
-
-            builder.build()
-        }).collect();
+                builder.build()
+            })
+            .collect();
 
         Ok(models)
     }
@@ -459,7 +470,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_models_response_deserialization() {
-        use crate::embeddings::provider::{ModelInfo, ModelFamily, ParameterSize};
+        use crate::embeddings::provider::{ModelFamily, ModelInfo, ParameterSize};
 
         // Test Ollama /api/tags response parsing
         let json = r#"{
@@ -508,14 +519,17 @@ mod tests {
             .size_bytes(first_model["size"].as_u64().unwrap())
             .digest(first_model["digest"].as_str().unwrap())
             .family(ModelFamily::from_str(
-                first_model["details"]["family"].as_str().unwrap()
+                first_model["details"]["family"].as_str().unwrap(),
             ))
             .parameter_size(
-                ParameterSize::from_str(
-                    first_model["details"]["parameter_size"].as_str().unwrap()
-                ).unwrap()
+                ParameterSize::from_str(first_model["details"]["parameter_size"].as_str().unwrap())
+                    .unwrap(),
             )
-            .quantization(first_model["details"]["quantization_level"].as_str().unwrap())
+            .quantization(
+                first_model["details"]["quantization_level"]
+                    .as_str()
+                    .unwrap(),
+            )
             .format(first_model["details"]["format"].as_str().unwrap())
             .build();
 
@@ -548,7 +562,10 @@ mod tests {
 
         // Check if we got nomic-embed-text (common model)
         let has_nomic = models.iter().any(|m| m.name.contains("nomic-embed-text"));
-        println!("Available models: {:?}", models.iter().map(|m| &m.name).collect::<Vec<_>>());
+        println!(
+            "Available models: {:?}",
+            models.iter().map(|m| &m.name).collect::<Vec<_>>()
+        );
 
         // Don't assert on specific models since endpoint might have different models
         // Just verify we got valid data
@@ -579,14 +596,17 @@ mod tests {
         assert_eq!(ModelFamily::from_str("bert"), ModelFamily::Bert);
         assert_eq!(ModelFamily::from_str("BERT"), ModelFamily::Bert);
         assert_eq!(ModelFamily::from_str("gpt"), ModelFamily::Gpt);
-        assert!(matches!(ModelFamily::from_str("custom"), ModelFamily::Other(_)));
+        assert!(matches!(
+            ModelFamily::from_str("custom"),
+            ModelFamily::Other(_)
+        ));
 
         assert_eq!(ModelFamily::Bert.as_str(), "bert");
     }
 
     #[test]
     fn test_model_info_builder() {
-        use crate::embeddings::provider::{ModelInfo, ModelFamily, ParameterSize};
+        use crate::embeddings::provider::{ModelFamily, ModelInfo};
 
         let model = ModelInfo::builder()
             .name("test-model")
@@ -606,10 +626,7 @@ mod tests {
     fn test_model_info_compatibility() {
         use crate::embeddings::provider::ModelInfo;
 
-        let model = ModelInfo::builder()
-            .name("test")
-            .dimensions(768)
-            .build();
+        let model = ModelInfo::builder().name("test").dimensions(768).build();
 
         assert!(model.is_compatible_dimensions(768));
         assert!(!model.is_compatible_dimensions(1536));

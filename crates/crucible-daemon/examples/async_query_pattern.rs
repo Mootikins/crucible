@@ -3,10 +3,10 @@
 // This example demonstrates the pattern used in the REPL for non-blocking
 // query execution with user cancellation support.
 
-use tokio::sync::oneshot;
-use tokio::time::{sleep, Duration, timeout};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use tokio::sync::oneshot;
+use tokio::time::{sleep, timeout, Duration};
 
 /// Simulated database query
 async fn execute_long_query(query: &str, cancelled: Arc<AtomicBool>) -> Result<String, String> {
@@ -38,7 +38,12 @@ async fn repl_execute_query(query: &str) -> Result<String, String> {
     let query_str = query.to_string();
     let query_task = tokio::spawn(async move {
         // Execute with timeout (5 seconds for demo)
-        match timeout(Duration::from_secs(5), execute_long_query(&query_str, cancelled_clone)).await {
+        match timeout(
+            Duration::from_secs(5),
+            execute_long_query(&query_str, cancelled_clone),
+        )
+        .await
+        {
             Ok(result) => result,
             Err(_) => Err("Query timeout".to_string()),
         }
@@ -110,7 +115,11 @@ async fn main() {
     let cancelled_clone = cancelled.clone();
 
     let query_task = tokio::spawn(async move {
-        execute_long_query("SELECT * FROM notes WHERE complex_condition", cancelled_clone).await
+        execute_long_query(
+            "SELECT * FROM notes WHERE complex_condition",
+            cancelled_clone,
+        )
+        .await
     });
 
     // Progress indicator task

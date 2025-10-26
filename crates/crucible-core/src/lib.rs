@@ -5,46 +5,100 @@ pub mod crdt;
 pub mod crucible_core;
 pub mod database;
 pub mod document;
-pub mod properties;
 pub mod parser;
+pub mod properties;
 pub mod sink;
 // pub mod task_router; // Temporarily disabled due to compilation issues
 
-pub use agent::{AgentDefinition, AgentLoader, AgentMatch, AgentQuery, AgentRegistry, CapabilityMatcher};
+pub use agent::{
+    AgentDefinition, AgentLoader, AgentMatch, AgentQuery, AgentRegistry, CapabilityMatcher,
+};
 pub use canvas::{CanvasEdge, CanvasNode};
 pub use config::{
-    ConfigManager, CrucibleConfig, ServiceConfig, DatabaseConfig, NetworkConfig,
-    LoggingConfig, FeatureConfig, PerformanceConfig, ConfigChange,
+    ConfigChange, ConfigManager, CrucibleConfig, DatabaseConfig, FeatureConfig, LoggingConfig,
+    NetworkConfig, PerformanceConfig, ServiceConfig,
 };
 pub use crucible_core::CrucibleCore;
 pub use database::{
-    RelationalDB, GraphDB, DocumentDB,
+    AggregateFunction,
+    AggregateQuery,
+    AggregateType,
+    AggregationPipeline,
+    AggregationResult,
+    AggregationStage,
+    AnalyticsResult,
+    BatchResult,
+    ColumnDefinition,
+    CommunityAlgorithm,
+    DataType,
+    DbError,
     // Core types
-    DbResult, DbError,
-    // Relational types
-    TableSchema, Record, RecordId, QueryResult, SelectQuery, FilterClause, OrderClause, UpdateClause,
-    JoinQuery, AggregateQuery, TransactionId, ColumnDefinition, DataType, ForeignKey, IndexType,
-    OrderDirection, AggregateType, ReferentialAction, IndexDefinition, JoinType, JoinClause, AggregateFunction,
-    // Graph types
-    NodeId, Node, EdgeId, Edge, NodeProperties, EdgeProperties, Direction, TraversalPattern,
-    TraversalResult, Path, GraphAnalysis, AnalyticsResult, EdgeFilter, Subgraph, SubgraphPattern,
-    NodePattern, EdgePattern, TraversalStep, CommunityAlgorithm,
+    DbResult,
+    Direction,
+    Document,
+    DocumentDB,
+    DocumentFieldType,
+    DocumentFilter,
     // Document types
-    DocumentId, Document, DocumentMetadata, DocumentQuery, DocumentFilter, DocumentUpdates,
-    SearchResult, AggregationPipeline, AggregationResult, BatchResult, DocumentSchema,
-    FieldDefinition, DocumentFieldType, ValidationRules, DocumentSort, SearchOptions,
-    SearchIndexOptions, AggregationStage, GroupOperation,
+    DocumentId,
+    DocumentMetadata,
+    DocumentQuery,
+    DocumentSchema,
+    DocumentSort,
+    DocumentUpdates,
+    Edge,
+    EdgeFilter,
+    EdgeId,
+    EdgePattern,
+    EdgeProperties,
+    FieldDefinition,
+    FilterClause,
+    ForeignKey,
+    GraphAnalysis,
+    GraphDB,
+    GroupOperation,
+    IndexDefinition,
+    IndexType,
+    JoinClause,
+    JoinQuery,
+    JoinType,
+    Node,
+    // Graph types
+    NodeId,
+    NodePattern,
+    NodeProperties,
+    OrderClause,
+    OrderDirection,
+    Path,
+    QueryResult,
+    Record,
+    RecordId,
+    ReferentialAction,
+    RelationalDB,
+    SearchIndexOptions,
+    SearchOptions,
+    SearchResult,
+    SelectQuery,
+    Subgraph,
+    SubgraphPattern,
+    // Relational types
+    TableSchema,
+    TransactionId,
+    TraversalPattern,
+    TraversalResult,
+    TraversalStep,
+    UpdateClause,
+    ValidationRules,
 };
 pub use document::{DocumentNode, ViewportState};
-pub use properties::{PropertyMap, PropertyValue};
 pub use parser::{
-    ParsedDocument, Frontmatter, FrontmatterFormat, Wikilink, Tag,
-    DocumentContent, Heading, CodeBlock, MarkdownParser, ParserCapabilities,
-    ParserError, ParserResult,
+    CodeBlock, DocumentContent, Frontmatter, FrontmatterFormat, Heading, MarkdownParser,
+    ParsedDocument, ParserCapabilities, ParserError, ParserResult, Tag, Wikilink,
 };
+pub use properties::{PropertyMap, PropertyValue};
 pub use sink::{
-    OutputSink, SinkHealth, SinkError, SinkResult,
-    CircuitBreaker, CircuitState, CircuitBreakerConfig,
+    CircuitBreaker, CircuitBreakerConfig, CircuitState, OutputSink, SinkError, SinkHealth,
+    SinkResult,
 };
 // pub use task_router::{
 //     TaskRouter, TaskAnalyzer, IntelligentRouter, TaskQueueManager, ExecutionEngine,

@@ -7,33 +7,33 @@
 // - Command history and autocomplete
 
 use anyhow::Result;
-use reedline::{Reedline, Signal, DefaultPrompt, DefaultPromptSegment};
-use tokio::sync::{watch, oneshot};
-use tracing::{debug, error, info, warn};
+use reedline::{DefaultPrompt, DefaultPromptSegment, Reedline, Signal};
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::{oneshot, watch};
+use tracing::{debug, error, info, warn};
 
 pub mod command;
-pub mod input;
+pub mod completer;
+pub mod database;
+pub mod error;
 pub mod formatter;
 pub mod highlighter;
-pub mod completer;
 pub mod history;
-pub mod error;
+pub mod input;
 pub mod tools;
-pub mod database;
 
-use tools::UnifiedToolRegistry;
 use crate::config::CliConfig;
+use tools::UnifiedToolRegistry;
 
 use command::Command;
-use input::Input;
-use formatter::{OutputFormatter, TableFormatter, JsonFormatter, CsvFormatter};
-use highlighter::SurrealQLHighlighter;
 use completer::ReplCompleter;
-use history::CommandHistory;
-use error::ReplError;
 use database::ReplDatabase;
+use error::ReplError;
+use formatter::{CsvFormatter, JsonFormatter, OutputFormatter, TableFormatter};
+use highlighter::SurrealQLHighlighter;
+use history::CommandHistory;
+use input::Input;
 
 /// REPL state and configuration
 pub struct Repl {
@@ -92,7 +92,10 @@ impl Repl {
                 db
             }
             Err(e) => {
-                warn!("Failed to connect to database at {}: {}, falling back to in-memory", db_path, e);
+                warn!(
+                    "Failed to connect to database at {}: {}, falling back to in-memory",
+                    db_path, e
+                );
                 ReplDatabase::new_memory().await?
             }
         };
@@ -211,9 +214,7 @@ impl Repl {
                 self.list_tools().await;
                 Ok(())
             }
-            Command::RunTool { tool_name, args } => {
-                self.run_tool(&tool_name, args).await
-            }
+            Command::RunTool { tool_name, args } => self.run_tool(&tool_name, args).await,
             Command::RunRune { script_path, args } => {
                 // :rune can run arbitrary .rn files, not just registered tools
                 // Extract filename without extension as tool name
@@ -267,7 +268,7 @@ impl Repl {
         pb.set_style(
             ProgressStyle::default_spinner()
                 .template("{spinner:.cyan} {msg}")
-                .unwrap()
+                .unwrap(),
         );
         pb.set_message("Executing query...");
 
@@ -278,9 +279,7 @@ impl Repl {
         // Spawn query in background
         let db = self.db.clone();
         let query = query.to_string();
-        let query_task = tokio::spawn(async move {
-            db.query(&query).await
-        });
+        let query_task = tokio::spawn(async move { db.query(&query).await });
 
         // Tick progress bar in background
         let pb_clone = pb.clone();
@@ -312,14 +311,15 @@ impl Repl {
         // Format and display results
         match result {
             Ok(query_result) => {
-                let formatted = self.formatter.format(query_result).await
+                let formatted = self
+                    .formatter
+                    .format(query_result)
+                    .await
                     .map_err(|e| ReplError::Formatting(e.to_string()))?;
                 println!("{}", formatted);
                 Ok(())
             }
-            Err(e) => {
-                Err(ReplError::Query(e))
-            }
+            Err(e) => Err(ReplError::Query(e)),
         }
     }
 
@@ -338,14 +338,20 @@ impl Repl {
         let grouped_tools = self.tools.list_tools_by_group().await;
 
         if grouped_tools.is_empty() {
-            println!("\n{} No tools found. Add .rn files to {}\n",
-                     "ℹ".blue(),
-                     self.config.tool_dir.display());
+            println!(
+                "\n{} No tools found. Add .rn files to {}\n",
+                "ℹ".blue(),
+                self.config.tool_dir.display()
+            );
             return;
         }
 
         let total_tools: usize = grouped_tools.values().map(|v| v.len()).sum();
-        println!("\n{} Available Tools ({}) - Grouped by Source:\n", "📦".green(), total_tools);
+        println!(
+            "\n{} Available Tools ({}) - Grouped by Source:\n",
+            "📦".green(),
+            total_tools
+        );
 
         for (group_name, tools) in grouped_tools {
             let group_color = match group_name.as_str() {
@@ -354,14 +360,15 @@ impl Repl {
                 _ => colored::Color::White,
             };
 
-            println!("  {} ({}) [{} tools]:",
-                     group_name.to_uppercase().color(group_color),
-                     match group_name.as_str() {
-                         "system" => "crucible-tools",
-                         "rune" => "scripted tools",
-                         _ => "external tools"
-                     },
-                     tools.len()
+            println!(
+                "  {} ({}) [{} tools]:",
+                group_name.to_uppercase().color(group_color),
+                match group_name.as_str() {
+                    "system" => "crucible-tools",
+                    "rune" => "scripted tools",
+                    _ => "external tools",
+                },
+                tools.len()
             );
 
             for tool in &tools {
@@ -370,7 +377,10 @@ impl Repl {
             println!();
         }
 
-        println!("{} :run <tool> [args...] | Example: :run system_info", "Tip:".yellow());
+        println!(
+            "{} :run <tool> [args...] | Example: :run system_info",
+            "Tip:".yellow()
+        );
         println!();
     }
 
@@ -381,7 +391,10 @@ impl Repl {
         info!("Running tool: {} with args: {:?}", tool_name, args);
 
         // Execute the tool
-        let result = self.tools.execute_tool(tool_name, &args).await
+        let result = self
+            .tools
+            .execute_tool(tool_name, &args)
+            .await
             .map_err(|e| ReplError::Tool(e.to_string()))?;
 
         // Display result based on status
@@ -407,7 +420,10 @@ impl Repl {
         println!("  Queries executed:  {}", self.stats.query_count);
         println!("  Avg query time:    {:?}", self.stats.avg_query_time());
         println!("  History size:      {}", self.history.len());
-        println!("  Tools loaded:      {}", self.tools.list_tools().await.len());
+        println!(
+            "  Tools loaded:      {}",
+            self.tools.list_tools().await.len()
+        );
         println!();
     }
 
@@ -499,11 +515,27 @@ impl Repl {
     fn print_welcome(&self) {
         use colored::Colorize;
 
-        println!("\n{}", "╔═══════════════════════════════════════════════════╗".cyan());
-        println!("{}", "║        Crucible CLI REPL v0.1.0                   ║".cyan());
-        println!("{}", "║   Real SurrealDB-Backed Knowledge Management     ║".cyan());
-        println!("{}", "╚═══════════════════════════════════════════════════╝".cyan());
-        println!("\nType {} for available commands or {} to exit.", ":help".green(), ":quit".red());
+        println!(
+            "\n{}",
+            "╔═══════════════════════════════════════════════════╗".cyan()
+        );
+        println!(
+            "{}",
+            "║        Crucible CLI REPL v0.1.0                   ║".cyan()
+        );
+        println!(
+            "{}",
+            "║   Real SurrealDB-Backed Knowledge Management     ║".cyan()
+        );
+        println!(
+            "{}",
+            "╚═══════════════════════════════════════════════════╝".cyan()
+        );
+        println!(
+            "\nType {} for available commands or {} to exit.",
+            ":help".green(),
+            ":quit".red()
+        );
         println!("Connected to real SurrealDB - execute actual queries!\n");
     }
 
@@ -540,9 +572,13 @@ impl ReplConfig {
 
         Ok(Self {
             kiln_path,
-            db_path: db_path.map(|p| p.into()).unwrap_or_else(|| config_dir.join("embeddings.db")),
+            db_path: db_path
+                .map(|p| p.into())
+                .unwrap_or_else(|| config_dir.join("embeddings.db")),
             history_file: config_dir.join("repl_history"),
-            tool_dir: tool_dir.map(|p| p.into()).unwrap_or_else(|| config_dir.join("tools")),
+            tool_dir: tool_dir
+                .map(|p| p.into())
+                .unwrap_or_else(|| config_dir.join("tools")),
             default_format: format,
             query_timeout_secs: 300,
             max_column_width: 50,

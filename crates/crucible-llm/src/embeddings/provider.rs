@@ -133,8 +133,8 @@ pub struct ParameterSize {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 enum ParameterUnit {
-    Million,  // M
-    Billion,  // B
+    Million, // M
+    Billion, // B
 }
 
 impl ParameterSize {
@@ -142,7 +142,11 @@ impl ParameterSize {
     pub fn new(value: u32, millions: bool) -> Self {
         Self {
             value,
-            unit: if millions { ParameterUnit::Million } else { ParameterUnit::Billion },
+            unit: if millions {
+                ParameterUnit::Million
+            } else {
+                ParameterUnit::Billion
+            },
         }
     }
 
@@ -849,8 +853,7 @@ mod tests {
     #[test]
     fn test_embedding_response_with_tokens() {
         let embedding = vec![0.1, 0.2, 0.3];
-        let response = EmbeddingResponse::new(embedding, "test-model".to_string())
-            .with_tokens(10);
+        let response = EmbeddingResponse::new(embedding, "test-model".to_string()).with_tokens(10);
 
         assert_eq!(response.tokens, Some(10));
         assert_eq!(response.dimensions, 3);
@@ -881,7 +884,11 @@ mod tests {
         let embedding2 = EmbeddingResponse::new(vec![1.0, 0.0, 0.0], "test".to_string());
 
         let similarity = embedding1.cosine_similarity(&embedding2);
-        assert!((similarity - 1.0).abs() < 1e-6, "Expected 1.0, got {}", similarity);
+        assert!(
+            (similarity - 1.0).abs() < 1e-6,
+            "Expected 1.0, got {}",
+            similarity
+        );
     }
 
     #[test]
@@ -899,11 +906,17 @@ mod tests {
         let embedding2 = EmbeddingResponse::new(vec![-1.0, 0.0, 0.0], "test".to_string());
 
         let similarity = embedding1.cosine_similarity(&embedding2);
-        assert!((similarity + 1.0).abs() < 1e-6, "Expected -1.0, got {}", similarity);
+        assert!(
+            (similarity + 1.0).abs() < 1e-6,
+            "Expected -1.0, got {}",
+            similarity
+        );
     }
 
     #[test]
-    #[should_panic(expected = "Cannot calculate cosine similarity for embeddings with different dimensions")]
+    #[should_panic(
+        expected = "Cannot calculate cosine similarity for embeddings with different dimensions"
+    )]
     fn test_cosine_similarity_different_dimensions() {
         let embedding1 = EmbeddingResponse::new(vec![1.0, 0.0], "test".to_string());
         let embedding2 = EmbeddingResponse::new(vec![1.0, 0.0, 0.0], "test".to_string());

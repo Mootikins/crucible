@@ -3,8 +3,8 @@
 //! This module provides comprehensive debugging tools for event flow analysis,
 //! performance monitoring, and system diagnostics with minimal overhead.
 
-use super::event_routing::{Event, EventRouter};
 use super::errors::ServiceResult;
+use super::event_routing::{Event, EventRouter};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -300,23 +300,13 @@ impl EventFlowDebugger {
     /// Get recent performance snapshots
     pub async fn get_recent_performance_snapshots(&self, count: usize) -> Vec<PerformanceSnapshot> {
         let snapshots = self.performance_snapshots.read().await;
-        snapshots
-            .iter()
-            .rev()
-            .take(count)
-            .cloned()
-            .collect()
+        snapshots.iter().rev().take(count).cloned().collect()
     }
 
     /// Get recent errors
     pub async fn get_recent_errors(&self, count: usize) -> Vec<ErrorSnapshot> {
         let errors = self.error_snapshots.read().await;
-        errors
-            .iter()
-            .rev()
-            .take(count)
-            .cloned()
-            .collect()
+        errors.iter().rev().take(count).cloned().collect()
     }
 
     /// Estimate memory usage
@@ -348,7 +338,11 @@ impl EventFlowDebugger {
         for (i, event) in related_events.iter().enumerate() {
             stages.push(event.stage.clone());
             if i > 0 {
-                total_duration += event.captured_at.signed_duration_since(related_events[i-1].captured_at).to_std().unwrap_or_default();
+                total_duration += event
+                    .captured_at
+                    .signed_duration_since(related_events[i - 1].captured_at)
+                    .to_std()
+                    .unwrap_or_default();
             }
         }
 
@@ -356,10 +350,12 @@ impl EventFlowDebugger {
             event_id: event_id.to_string(),
             stages,
             total_duration_ms: total_duration.as_millis() as u64,
-            completed: related_events.last()
+            completed: related_events
+                .last()
                 .map(|e| matches!(e.stage, ProcessingStage::Completed))
                 .unwrap_or(false),
-            errors: related_events.iter()
+            errors: related_events
+                .iter()
                 .filter(|e| matches!(e.stage, ProcessingStage::Failed))
                 .count(),
         })
@@ -441,14 +437,17 @@ impl SystemDiagnosticsCollector {
         };
 
         let recent_snapshots = self.debugger.get_recent_performance_snapshots(10).await;
-        let performance = recent_snapshots.first().unwrap_or(&PerformanceSnapshot {
-            timestamp: chrono::Utc::now(),
-            events_per_second: 0.0,
-            avg_processing_time_ms: 0.0,
-            active_events: 0,
-            memory_usage_bytes: 0,
-            error_rate_percent: 0.0,
-        }).clone();
+        let performance = recent_snapshots
+            .first()
+            .unwrap_or(&PerformanceSnapshot {
+                timestamp: chrono::Utc::now(),
+                events_per_second: 0.0,
+                avg_processing_time_ms: 0.0,
+                active_events: 0,
+                memory_usage_bytes: 0,
+                error_rate_percent: 0.0,
+            })
+            .clone();
 
         let recent_errors = self.debugger.get_recent_errors(50).await;
 
@@ -457,13 +456,27 @@ impl SystemDiagnosticsCollector {
             self.component_name.clone(),
             ComponentHealth {
                 name: self.component_name.clone(),
-                status: if router_status.is_healthy { HealthStatus::Healthy } else { HealthStatus::Unhealthy },
+                status: if router_status.is_healthy {
+                    HealthStatus::Healthy
+                } else {
+                    HealthStatus::Unhealthy
+                },
                 last_check: chrono::Utc::now(),
                 response_time_ms: Some(100), // Mock response time
                 metrics: {
                     let mut map = std::collections::HashMap::new();
-                    map.insert("active_events".to_string(), serde_json::Value::Number(serde_json::Number::from(router_status.active_events as i64)));
-                    map.insert("total_processed".to_string(), serde_json::Value::Number(serde_json::Number::from(router_status.total_events_processed as i64)));
+                    map.insert(
+                        "active_events".to_string(),
+                        serde_json::Value::Number(serde_json::Number::from(
+                            router_status.active_events as i64,
+                        )),
+                    );
+                    map.insert(
+                        "total_processed".to_string(),
+                        serde_json::Value::Number(serde_json::Number::from(
+                            router_status.total_events_processed as i64,
+                        )),
+                    );
                     map
                 },
             },
@@ -491,7 +504,8 @@ impl SystemDiagnosticsCollector {
     /// Save diagnostics report to file
     pub async fn save_report(&self, file_path: &str) -> ServiceResult<()> {
         let report = self.generate_report().await?;
-        tokio::fs::write(file_path, report).await
+        tokio::fs::write(file_path, report)
+            .await
             .map_err(|e| super::errors::ServiceError::IoError(e))?;
 
         info!(component = %self.component_name, file_path = %file_path, "Diagnostics report saved");
@@ -502,7 +516,7 @@ impl SystemDiagnosticsCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event_routing::{EventType, EventPriority};
+    use crate::event_routing::EventType;
 
     #[tokio::test]
     async fn test_event_flow_debugger() {
@@ -515,11 +529,9 @@ mod tests {
             serde_json::json!({"test": "data"}),
         );
 
-        debugger.capture_event(
-            &event,
-            ProcessingStage::Received,
-            HashMap::new(),
-        ).await;
+        debugger
+            .capture_event(&event, ProcessingStage::Received, HashMap::new())
+            .await;
 
         let analysis = debugger.analyze_event_flow(&event.id).await;
         assert!(analysis.is_some());
@@ -533,12 +545,9 @@ mod tests {
         std::env::set_var("CRUCIBLE_DEBUG_FLOW", "true");
         let debugger = EventFlowDebugger::new("test_component", 100);
 
-        debugger.record_performance_snapshot(
-            10.5,
-            25.7,
-            5,
-            2.1,
-        ).await;
+        debugger
+            .record_performance_snapshot(10.5, 25.7, 5, 2.1)
+            .await;
 
         let snapshots = debugger.get_recent_performance_snapshots(1).await;
         assert_eq!(snapshots.len(), 1);

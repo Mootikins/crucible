@@ -3,9 +3,9 @@
 //! This module contains essential type definitions for service traits,
 //! focusing on core functionality without over-engineering.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use chrono::{DateTime, Utc};
 
 /// ============================================================================
 /// ESSENTIAL SERVICE TYPES

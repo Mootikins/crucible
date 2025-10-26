@@ -6,11 +6,11 @@
 use crate::embedding_config::*;
 use crate::embedding_pool::EmbeddingThreadPool;
 use crate::multi_client::SurrealClient;
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use crucible_core::parser::ParsedDocument;
 use std::collections::HashMap;
 use std::time::Instant;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 
 /// Default chunk size for document processing (characters)
 const DEFAULT_CHUNK_SIZE: usize = 1000;
@@ -52,7 +52,9 @@ impl EmbeddingPipeline {
         }
 
         if chunk_overlap >= chunk_size {
-            return Err(anyhow::anyhow!("Chunk overlap must be less than chunk size"));
+            return Err(anyhow::anyhow!(
+                "Chunk overlap must be less than chunk size"
+            ));
         }
 
         if chunk_size > MAX_CHUNK_SIZE {
@@ -75,7 +77,10 @@ impl EmbeddingPipeline {
         let start_time = Instant::now();
         let mut result = EmbeddingProcessingResult::new();
 
-        info!("Starting bulk embedding processing for {} documents", document_ids.len());
+        info!(
+            "Starting bulk embedding processing for {} documents",
+            document_ids.len()
+        );
 
         // Retrieve documents from database
         let documents = self.retrieve_documents(client, document_ids).await?;
@@ -156,7 +161,10 @@ impl EmbeddingPipeline {
     ) -> Result<IncrementalProcessingResult> {
         let start_time = Instant::now();
 
-        info!("Starting incremental processing for document {}", document_id);
+        info!(
+            "Starting incremental processing for document {}",
+            document_id
+        );
 
         // Retrieve document from database
         let document = self.retrieve_document(client, document_id).await?;
@@ -199,7 +207,11 @@ impl EmbeddingPipeline {
         for (chunk_index, chunk_content) in chunks.iter().enumerate() {
             let chunk_id = format!("{}_{}", document_id, chunk_index);
 
-            match self.thread_pool.process_document_with_retry(&chunk_id, chunk_content).await {
+            match self
+                .thread_pool
+                .process_document_with_retry(&chunk_id, chunk_content)
+                .await
+            {
                 Ok(retry_result) => {
                     if retry_result.succeeded {
                         // Store the embedding
@@ -231,9 +243,7 @@ impl EmbeddingPipeline {
                     } else {
                         warn!(
                             "Failed to process chunk {} after {} attempts: {:?}",
-                            chunk_id,
-                            retry_result.attempt_count,
-                            retry_result.final_error
+                            chunk_id, retry_result.attempt_count, retry_result.final_error
                         );
                     }
                 }
@@ -244,15 +254,14 @@ impl EmbeddingPipeline {
         }
 
         // Update document's last processed timestamp
-        self.update_document_processed_timestamp(client, document_id).await?;
+        self.update_document_processed_timestamp(client, document_id)
+            .await?;
 
         let processing_time = start_time.elapsed();
 
         info!(
             "Incremental processing complete for document {}: {} embeddings created in {:?}",
-            document_id,
-            embeddings_created,
-            processing_time
+            document_id, embeddings_created, processing_time
         );
 
         Ok(IncrementalProcessingResult::processed(
@@ -272,7 +281,10 @@ impl EmbeddingPipeline {
         let start_time = Instant::now();
         let mut result = BatchIncrementalResult::new();
 
-        info!("Starting batch incremental processing for {} documents", document_ids.len());
+        info!(
+            "Starting batch incremental processing for {} documents",
+            document_ids.len()
+        );
 
         for document_id in document_ids {
             match self.process_document_incremental(client, document_id).await {
@@ -286,7 +298,10 @@ impl EmbeddingPipeline {
                     }
                 }
                 Err(e) => {
-                    error!("Failed to process document {} incrementally: {}", document_id, e);
+                    error!(
+                        "Failed to process document {} incrementally: {}",
+                        document_id, e
+                    );
                     // In batch processing, we might want to continue with other documents
                     // rather than failing the entire batch
                 }
@@ -297,9 +312,7 @@ impl EmbeddingPipeline {
 
         info!(
             "Batch incremental processing complete: {} processed, {} skipped in {:?}",
-            result.processed_count,
-            result.skipped_count,
-            result.total_processing_time
+            result.processed_count, result.skipped_count, result.total_processing_time
         );
 
         Ok(result)
@@ -403,7 +416,11 @@ impl EmbeddingPipeline {
     }
 
     /// Chunk document content for processing
-    fn chunk_document(&self, document: &ParsedDocument, _model_type: &EmbeddingModel) -> Vec<String> {
+    fn chunk_document(
+        &self,
+        document: &ParsedDocument,
+        _model_type: &EmbeddingModel,
+    ) -> Vec<String> {
         let content = &document.content.plain_text;
 
         // For empty content, return no chunks
@@ -448,7 +465,6 @@ impl EmbeddingPipeline {
             }
         }
 
-        
         debug!(
             "Document {} chunked into {} parts (chunk size: {}, overlap: {})",
             document.path.display(),
@@ -483,7 +499,11 @@ impl EmbeddingPipeline {
                     EmbeddingErrorType::ProcessingError,
                     e.to_string(),
                 );
-                Ok(RetryProcessingResult::failure(1, start_time.elapsed(), error))
+                Ok(RetryProcessingResult::failure(
+                    1,
+                    start_time.elapsed(),
+                    error,
+                ))
             }
         }
     }
@@ -496,7 +516,9 @@ pub async fn process_documents_with_embeddings(
     document_ids: &[String],
 ) -> Result<EmbeddingProcessingResult> {
     let pipeline = EmbeddingPipeline::new(thread_pool.clone());
-    pipeline.process_documents_with_embeddings(client, document_ids).await
+    pipeline
+        .process_documents_with_embeddings(client, document_ids)
+        .await
 }
 
 /// Process a single document incrementally
@@ -506,7 +528,9 @@ pub async fn process_document_incremental(
     document_id: &str,
 ) -> Result<IncrementalProcessingResult> {
     let pipeline = EmbeddingPipeline::new(thread_pool.clone());
-    pipeline.process_document_incremental(client, document_id).await
+    pipeline
+        .process_document_incremental(client, document_id)
+        .await
 }
 
 /// Process multiple documents incrementally
@@ -516,7 +540,9 @@ pub async fn process_documents_incremental(
     document_ids: &[String],
 ) -> Result<BatchIncrementalResult> {
     let pipeline = EmbeddingPipeline::new(thread_pool.clone());
-    pipeline.process_documents_incremental(client, document_ids).await
+    pipeline
+        .process_documents_incremental(client, document_ids)
+        .await
 }
 
 /// Process a document with retry logic
@@ -526,7 +552,9 @@ pub async fn process_document_with_retry(
     document_id: &str,
 ) -> Result<RetryProcessingResult> {
     let pipeline = EmbeddingPipeline::new(thread_pool.clone());
-    pipeline.process_document_with_retry(client, document_id).await
+    pipeline
+        .process_document_with_retry(client, document_id)
+        .await
 }
 
 /// Update document content in database
@@ -571,30 +599,14 @@ mod tests {
         let thread_pool = EmbeddingThreadPool::new(config).await.unwrap();
 
         // Valid chunking configuration
-        let pipeline = EmbeddingPipeline::with_chunking(
-            thread_pool.clone(),
-            500,
-            100,
-        ).unwrap();
+        let pipeline = EmbeddingPipeline::with_chunking(thread_pool.clone(), 500, 100).unwrap();
 
         // Invalid chunking configurations
-        assert!(EmbeddingPipeline::with_chunking(
-            thread_pool.clone(),
-            0,
-            100,
-        ).is_err());
+        assert!(EmbeddingPipeline::with_chunking(thread_pool.clone(), 0, 100,).is_err());
 
-        assert!(EmbeddingPipeline::with_chunking(
-            thread_pool.clone(),
-            500,
-            500,
-        ).is_err());
+        assert!(EmbeddingPipeline::with_chunking(thread_pool.clone(), 500, 500,).is_err());
 
-        assert!(EmbeddingPipeline::with_chunking(
-            thread_pool,
-            10000,
-            100,
-        ).is_err());
+        assert!(EmbeddingPipeline::with_chunking(thread_pool, 10000, 100,).is_err());
     }
 
     #[tokio::test]
@@ -649,7 +661,9 @@ mod tests {
         let client = SurrealClient::new_memory().await.unwrap();
         let document_ids = vec!["doc1".to_string(), "doc2".to_string()];
 
-        let result = pipeline.process_documents_with_embeddings(&client, &document_ids).await;
+        let result = pipeline
+            .process_documents_with_embeddings(&client, &document_ids)
+            .await;
 
         // Should fail because documents don't exist, but structure should be correct
         assert!(result.is_ok());
@@ -670,7 +684,9 @@ mod tests {
         // Test with mock client
         let client = SurrealClient::new_memory().await.unwrap();
 
-        let result = pipeline.process_document_incremental(&client, "nonexistent_doc").await;
+        let result = pipeline
+            .process_document_incremental(&client, "nonexistent_doc")
+            .await;
 
         // Should fail because document doesn't exist
         assert!(result.is_err());
@@ -687,7 +703,9 @@ mod tests {
         // Test with mock client
         let client = SurrealClient::new_memory().await.unwrap();
 
-        let result = pipeline.process_document_with_retry(&client, "nonexistent_doc").await;
+        let result = pipeline
+            .process_document_with_retry(&client, "nonexistent_doc")
+            .await;
 
         // Should return a retry result with failure
         assert!(result.is_ok());
@@ -708,7 +726,9 @@ mod tests {
         let client = SurrealClient::new_memory().await.unwrap();
         let document_ids = vec!["doc1".to_string(), "doc2".to_string(), "doc3".to_string()];
 
-        let result = pipeline.process_documents_incremental(&client, &document_ids).await;
+        let result = pipeline
+            .process_documents_incremental(&client, &document_ids)
+            .await;
 
         // Should succeed but with no processing (documents don't exist)
         assert!(result.is_ok());

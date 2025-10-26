@@ -131,27 +131,20 @@ impl Frontmatter {
     /// Parse properties based on format
     fn parse_properties(&self) -> HashMap<String, serde_json::Value> {
         match self.format {
-            FrontmatterFormat::Yaml => {
-                serde_yaml::from_str(&self.raw).unwrap_or_default()
-            }
-            FrontmatterFormat::Toml => {
-                toml::from_str(&self.raw)
-                    .ok()
-                    .and_then(|v: toml::Value| serde_json::to_value(v).ok())
-                    .and_then(|v| v.as_object().cloned())
-                    .map(|obj| obj.into_iter().collect())
-                    .unwrap_or_default()
-            }
+            FrontmatterFormat::Yaml => serde_yaml::from_str(&self.raw).unwrap_or_default(),
+            FrontmatterFormat::Toml => toml::from_str(&self.raw)
+                .ok()
+                .and_then(|v: toml::Value| serde_json::to_value(v).ok())
+                .and_then(|v| v.as_object().cloned())
+                .map(|obj| obj.into_iter().collect())
+                .unwrap_or_default(),
             FrontmatterFormat::None => HashMap::new(),
         }
     }
 
     /// Get a string property
     pub fn get_string(&self, key: &str) -> Option<String> {
-        self.properties()
-            .get(key)?
-            .as_str()
-            .map(|s| s.to_string())
+        self.properties().get(key)?.as_str().map(|s| s.to_string())
     }
 
     /// Get an array property
@@ -268,15 +261,16 @@ impl Wikilink {
             (text, None)
         };
 
-        let (target, heading_ref, block_ref) = if let Some((t, ref_part)) = target_part.split_once('#') {
-            if ref_part.starts_with('^') {
-                (t.to_string(), None, Some(ref_part[1..].to_string()))
+        let (target, heading_ref, block_ref) =
+            if let Some((t, ref_part)) = target_part.split_once('#') {
+                if ref_part.starts_with('^') {
+                    (t.to_string(), None, Some(ref_part[1..].to_string()))
+                } else {
+                    (t.to_string(), Some(ref_part.to_string()), None)
+                }
             } else {
-                (t.to_string(), Some(ref_part.to_string()), None)
-            }
-        } else {
-            (target_part.to_string(), None, None)
-        };
+                (target_part.to_string(), None, None)
+            };
 
         Self {
             target,
@@ -397,9 +391,10 @@ impl DocumentContent {
 
     /// Get document outline (headings only)
     pub fn outline(&self) -> Vec<String> {
-        self.headings.iter().map(|h| {
-            format!("{}{}", "  ".repeat((h.level - 1) as usize), h.text)
-        }).collect()
+        self.headings
+            .iter()
+            .map(|h| format!("{}{}", "  ".repeat((h.level - 1) as usize), h.text))
+            .collect()
     }
 }
 
@@ -575,7 +570,11 @@ impl ListItem {
         Self {
             content,
             level,
-            task_status: Some(if completed { TaskStatus::Completed } else { TaskStatus::Pending }),
+            task_status: Some(if completed {
+                TaskStatus::Completed
+            } else {
+                TaskStatus::Pending
+            }),
         }
     }
 }

@@ -8,8 +8,8 @@
 //! - Better performance than JSON-based storage
 
 use crate::types::{
-    BatchOperation, BatchOperationType, BatchResult, DatabaseStats, EmbeddingData, EmbeddingMetadata,
-    SearchResultWithScore, SearchQuery, SurrealDbConfig,
+    BatchOperation, BatchOperationType, BatchResult, DatabaseStats, EmbeddingData,
+    EmbeddingMetadata, SearchQuery, SearchResultWithScore, SurrealDbConfig,
 };
 use anyhow::Result;
 use serde_json;
@@ -33,7 +33,11 @@ impl SurrealEmbeddingDatabase {
         let config = SurrealDbConfig::default();
         let storage = Arc::new(Mutex::new(HashMap::new()));
         let relations = Arc::new(Mutex::new(Vec::new()));
-        Self { storage, relations, config }
+        Self {
+            storage,
+            relations,
+            config,
+        }
     }
 
     /// Create a new database connection with default configuration
@@ -51,7 +55,11 @@ impl SurrealEmbeddingDatabase {
         let storage = Arc::new(Mutex::new(HashMap::new()));
         let relations = Arc::new(Mutex::new(Vec::new()));
 
-        Ok(Self { storage, relations, config })
+        Ok(Self {
+            storage,
+            relations,
+            config,
+        })
     }
 
     /// Initialize database schema and indexes
@@ -161,7 +169,10 @@ impl SurrealEmbeddingDatabase {
             if similarity > 0.0 {
                 results.push(SearchResultWithScore {
                     id: file_path.clone(),
-                    title: embedding_data.metadata.title.clone()
+                    title: embedding_data
+                        .metadata
+                        .title
+                        .clone()
                         .unwrap_or_else(|| file_path.clone()),
                     content: embedding_data.content.clone(),
                     score: similarity,
@@ -171,7 +182,8 @@ impl SurrealEmbeddingDatabase {
 
         // Sort by similarity (highest first), then by file path for deterministic results
         results.sort_by(|a, b| {
-            b.score.partial_cmp(&a.score)
+            b.score
+                .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| a.id.cmp(&b.id))
         });
@@ -189,7 +201,10 @@ impl SurrealEmbeddingDatabase {
             // Check if the document has ALL the requested tags
             let document_tags = &embedding_data.metadata.tags;
 
-            if tags.iter().all(|required_tag| document_tags.contains(required_tag)) {
+            if tags
+                .iter()
+                .all(|required_tag| document_tags.contains(required_tag))
+            {
                 results.push(file_path.clone());
             }
         }
@@ -236,7 +251,10 @@ impl SurrealEmbeddingDatabase {
     }
 
     /// Search with filters (alias for search method)
-    pub async fn search_with_filters(&self, query: &SearchQuery) -> Result<Vec<SearchResultWithScore>> {
+    pub async fn search_with_filters(
+        &self,
+        query: &SearchQuery,
+    ) -> Result<Vec<SearchResultWithScore>> {
         let storage = self.storage.lock().unwrap();
         let mut results = Vec::new();
 
@@ -245,7 +263,10 @@ impl SurrealEmbeddingDatabase {
             if let Some(filters) = &query.filters {
                 // Check tags filter
                 if let Some(required_tags) = &filters.tags {
-                    if !required_tags.iter().all(|tag| embedding_data.metadata.tags.contains(tag)) {
+                    if !required_tags
+                        .iter()
+                        .all(|tag| embedding_data.metadata.tags.contains(tag))
+                    {
                         continue;
                     }
                 }
@@ -292,10 +313,14 @@ impl SurrealEmbeddingDatabase {
             }
 
             // Simple text search in content and title for the query
-            let content_matches = embedding_data.content.to_lowercase().contains(&query.query.to_lowercase());
-            let title_matches = embedding_data.metadata.title
-                .as_ref()
-                .is_some_and(|title| title.to_lowercase().contains(&query.query.to_lowercase()));
+            let content_matches = embedding_data
+                .content
+                .to_lowercase()
+                .contains(&query.query.to_lowercase());
+            let title_matches =
+                embedding_data.metadata.title.as_ref().is_some_and(|title| {
+                    title.to_lowercase().contains(&query.query.to_lowercase())
+                });
 
             if content_matches || title_matches {
                 // If we have embeddings, calculate similarity with a simple placeholder
@@ -306,7 +331,8 @@ impl SurrealEmbeddingDatabase {
                     let query_lower = query.query.to_lowercase();
                     let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
                     let content_lower = embedding_data.content.to_lowercase();
-                    let matches = query_terms.iter()
+                    let matches = query_terms
+                        .iter()
                         .map(|term| content_lower.matches(term).count() as f64)
                         .sum::<f64>();
                     (matches / query_terms.len() as f64).min(1.0)
@@ -314,7 +340,10 @@ impl SurrealEmbeddingDatabase {
 
                 results.push(SearchResultWithScore {
                     id: file_path.clone(),
-                    title: embedding_data.metadata.title.clone()
+                    title: embedding_data
+                        .metadata
+                        .title
+                        .clone()
                         .unwrap_or_else(|| file_path.clone()),
                     content: embedding_data.content.clone(),
                     score,
@@ -324,7 +353,8 @@ impl SurrealEmbeddingDatabase {
 
         // Sort by score (highest first), then by file path for deterministic results
         results.sort_by(|a, b| {
-            b.score.partial_cmp(&a.score)
+            b.score
+                .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| a.id.cmp(&b.id))
         });
@@ -374,12 +404,16 @@ impl SurrealEmbeddingDatabase {
                         &document.file_path,
                         &document.content,
                         &document.embedding,
-                        &embedding_data.metadata
-                    ).await.map(|_| ())
+                        &embedding_data.metadata,
+                    )
+                    .await
+                    .map(|_| ())
                 }
                 BatchOperationType::Update => {
                     let embedding_data = EmbeddingData::from(document.clone());
-                    self.update_metadata(&document.file_path, &embedding_data.metadata).await.map(|_| ())
+                    self.update_metadata(&document.file_path, &embedding_data.metadata)
+                        .await
+                        .map(|_| ())
                 }
                 BatchOperationType::Delete => {
                     self.delete_file(&document.file_path).await.map(|_| ())
@@ -407,19 +441,22 @@ impl SurrealEmbeddingDatabase {
         let storage = self.storage.lock().unwrap();
 
         let total_documents = storage.len() as i64;
-        let total_embeddings = storage.values()
+        let total_embeddings = storage
+            .values()
             .filter(|data| !data.embedding.is_empty())
             .count() as i64;
 
         // Calculate approximate storage size (rough estimate)
         let storage_size_bytes = Some(
-            storage.iter()
+            storage
+                .iter()
                 .map(|(path, data)| {
-                    path.len() + data.content.len() +
-                    (data.embedding.len() * std::mem::size_of::<f32>()) +
-                    format!("{:?}", data.metadata).len()
+                    path.len()
+                        + data.content.len()
+                        + (data.embedding.len() * std::mem::size_of::<f32>())
+                        + format!("{:?}", data.metadata).len()
                 })
-                .sum::<usize>() as i64
+                .sum::<usize>() as i64,
         );
 
         Ok(DatabaseStats {
@@ -447,7 +484,10 @@ impl SurrealEmbeddingDatabase {
             properties.unwrap_or_default(),
         ));
 
-        println!("Created relation: {} -> {} ({})", from_file, to_file, relation_type);
+        println!(
+            "Created relation: {} -> {} ({})",
+            from_file, to_file, relation_type
+        );
         Ok(())
     }
 
@@ -474,7 +514,10 @@ impl SurrealEmbeddingDatabase {
             properties,
         ));
 
-        println!("Added relation: {} -> {} ({})", from_file, to_file, relation_type);
+        println!(
+            "Added relation: {} -> {} ({})",
+            from_file, to_file, relation_type
+        );
         Ok(true)
     }
 
@@ -494,13 +537,20 @@ impl SurrealEmbeddingDatabase {
 
         let removed = relations.len() < initial_len;
         if removed {
-            println!("Removed relation: {} -> {} ({})", from_file, to_file, relation_type);
+            println!(
+                "Removed relation: {} -> {} ({})",
+                from_file, to_file, relation_type
+            );
         }
         Ok(removed)
     }
 
     /// Get related documents
-    pub async fn get_related(&self, file_path: &str, relation_type: Option<&str>) -> Result<Vec<String>> {
+    pub async fn get_related(
+        &self,
+        file_path: &str,
+        relation_type: Option<&str>,
+    ) -> Result<Vec<String>> {
         let relations = self.relations.lock().unwrap();
         let mut related_files = Vec::new();
 
@@ -589,7 +639,10 @@ mod tests {
 
         // This should now work with our implementation
         let result = SurrealEmbeddingDatabase::with_config(config).await;
-        assert!(result.is_ok(), "Database creation with config should succeed");
+        assert!(
+            result.is_ok(),
+            "Database creation with config should succeed"
+        );
     }
 
     #[tokio::test]
@@ -597,7 +650,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .unwrap();
 
         // This should now work with our implementation
         let result = db.initialize().await;
@@ -610,7 +665,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .unwrap();
         db.initialize().await.unwrap();
 
         let embedding = vec![0.1f32; 384]; // Typical embedding size
@@ -622,7 +679,10 @@ mod tests {
         println!("Metadata created successfully");
 
         // This should now work with our implementation
-        match db.store_embedding("test.md", "Test content", &embedding, &metadata).await {
+        match db
+            .store_embedding("test.md", "Test content", &embedding, &metadata)
+            .await
+        {
             Ok(_) => println!("Store embedding succeeded"),
             Err(e) => {
                 println!("Store embedding failed: {:?}", e);
@@ -657,7 +717,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .unwrap();
         db.initialize().await.unwrap();
 
         // This should now work
@@ -671,7 +733,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .unwrap();
         db.initialize().await.unwrap();
 
         // Add some test documents
@@ -683,13 +747,22 @@ mod tests {
         let metadata2 = create_test_metadata("doc2.md");
         let metadata3 = create_test_metadata("doc3.md");
 
-        db.store_embedding("doc1.md", "Content about cats", &embedding1, &metadata1).await.unwrap();
-        db.store_embedding("doc2.md", "Content about dogs", &embedding2, &metadata2).await.unwrap();
-        db.store_embedding("doc3.md", "Content about felines", &embedding3, &metadata3).await.unwrap();
+        db.store_embedding("doc1.md", "Content about cats", &embedding1, &metadata1)
+            .await
+            .unwrap();
+        db.store_embedding("doc2.md", "Content about dogs", &embedding2, &metadata2)
+            .await
+            .unwrap();
+        db.store_embedding("doc3.md", "Content about felines", &embedding3, &metadata3)
+            .await
+            .unwrap();
 
         // Search for documents similar to embedding1
         let query_embedding = vec![1.0f32, 0.0f32, 0.0f32];
-        let results = db.search_similar("test", &query_embedding, 3).await.unwrap();
+        let results = db
+            .search_similar("test", &query_embedding, 3)
+            .await
+            .unwrap();
 
         // Should find doc1 and doc3 (perfect match), doc2 (no match) should be excluded
         assert_eq!(results.len(), 2);
@@ -705,7 +778,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .unwrap();
         db.initialize().await.unwrap();
 
         // Add some test documents with different tags
@@ -720,11 +795,26 @@ mod tests {
         metadata2.tags = vec!["rust".to_string(), "web".to_string()];
 
         let mut metadata3 = create_test_metadata("doc3.md");
-        metadata3.tags = vec!["rust".to_string(), "database".to_string(), "advanced".to_string()];
+        metadata3.tags = vec![
+            "rust".to_string(),
+            "database".to_string(),
+            "advanced".to_string(),
+        ];
 
-        db.store_embedding("doc1.md", "Rust database content", &embedding1, &metadata1).await.unwrap();
-        db.store_embedding("doc2.md", "Rust web content", &embedding2, &metadata2).await.unwrap();
-        db.store_embedding("doc3.md", "Advanced Rust database content", &embedding3, &metadata3).await.unwrap();
+        db.store_embedding("doc1.md", "Rust database content", &embedding1, &metadata1)
+            .await
+            .unwrap();
+        db.store_embedding("doc2.md", "Rust web content", &embedding2, &metadata2)
+            .await
+            .unwrap();
+        db.store_embedding(
+            "doc3.md",
+            "Advanced Rust database content",
+            &embedding3,
+            &metadata3,
+        )
+        .await
+        .unwrap();
 
         // Search for documents with "rust" AND "database" tags
         let tags = vec!["rust".to_string(), "database".to_string()];
@@ -742,7 +832,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .unwrap();
         db.initialize().await.unwrap();
 
         // Add some test documents with different properties
@@ -751,18 +843,32 @@ mod tests {
         let embedding3 = vec![1.0f32, 0.0f32, 0.0f32];
 
         let mut metadata1 = create_test_metadata("doc1.md");
-        metadata1.properties.insert("status".to_string(), serde_json::json!("published"));
+        metadata1
+            .properties
+            .insert("status".to_string(), serde_json::json!("published"));
 
         let mut metadata2 = create_test_metadata("doc2.md");
-        metadata2.properties.insert("status".to_string(), serde_json::json!("draft"));
+        metadata2
+            .properties
+            .insert("status".to_string(), serde_json::json!("draft"));
 
         let mut metadata3 = create_test_metadata("doc3.md");
-        metadata3.properties.insert("status".to_string(), serde_json::json!("published"));
-        metadata3.properties.insert("author".to_string(), serde_json::json!("john"));
+        metadata3
+            .properties
+            .insert("status".to_string(), serde_json::json!("published"));
+        metadata3
+            .properties
+            .insert("author".to_string(), serde_json::json!("john"));
 
-        db.store_embedding("doc1.md", "Published content 1", &embedding1, &metadata1).await.unwrap();
-        db.store_embedding("doc2.md", "Draft content", &embedding2, &metadata2).await.unwrap();
-        db.store_embedding("doc3.md", "Published content 2", &embedding3, &metadata3).await.unwrap();
+        db.store_embedding("doc1.md", "Published content 1", &embedding1, &metadata1)
+            .await
+            .unwrap();
+        db.store_embedding("doc2.md", "Draft content", &embedding2, &metadata2)
+            .await
+            .unwrap();
+        db.store_embedding("doc3.md", "Published content 2", &embedding3, &metadata3)
+            .await
+            .unwrap();
 
         // Search for documents with status = "published"
         let mut properties = HashMap::new();
@@ -789,7 +895,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .unwrap();
         db.initialize().await.unwrap();
 
         let search_query = SearchQuery {
@@ -809,7 +917,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .unwrap();
         db.initialize().await.unwrap();
 
         // This should now work with our implementation
@@ -822,7 +932,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .unwrap();
         db.initialize().await.unwrap();
 
         // This should now work with our implementation
@@ -836,7 +948,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .unwrap();
         db.initialize().await.unwrap();
 
         let operation = BatchOperation {
@@ -854,7 +968,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .unwrap();
         db.initialize().await.unwrap();
 
         // This should now work with our implementation
@@ -867,7 +983,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .unwrap();
         db.initialize().await.unwrap();
 
         let metadata = create_test_metadata("test.md");
@@ -875,7 +993,10 @@ mod tests {
         // This should now work with our implementation
         let result = db.update_metadata("test.md", &metadata).await;
         // This should fail since the file doesn't exist, but the method should work
-        assert!(result.is_err(), "Updating metadata for nonexistent file should fail");
+        assert!(
+            result.is_err(),
+            "Updating metadata for nonexistent file should fail"
+        );
     }
 
     #[tokio::test]
@@ -883,13 +1004,18 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .unwrap();
         db.initialize().await.unwrap();
 
         // This should now work
         let result = db.get_embedding("nonexistent.md").await;
         assert!(result.is_ok(), "Get embedding should succeed");
-        assert!(result.unwrap().is_none(), "Nonexistent file should return None");
+        assert!(
+            result.unwrap().is_none(),
+            "Nonexistent file should return None"
+        );
     }
 
     #[tokio::test]
@@ -897,11 +1023,15 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .unwrap();
         db.initialize().await.unwrap();
 
         // This should now work with our implementation
-        let result = db.create_relation("doc1.md", "doc2.md", "links_to", None).await;
+        let result = db
+            .create_relation("doc1.md", "doc2.md", "links_to", None)
+            .await;
         assert!(result.is_ok(), "Create relation should succeed");
     }
 
@@ -910,7 +1040,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.db");
 
-        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap()).await.unwrap();
+        let db = SurrealEmbeddingDatabase::new(db_path.to_str().unwrap())
+            .await
+            .unwrap();
         db.initialize().await.unwrap();
 
         // This should now work with our implementation

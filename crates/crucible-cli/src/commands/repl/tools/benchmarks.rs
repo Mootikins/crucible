@@ -6,11 +6,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
-use tracing::{info, debug};
+use tracing::{debug, info};
 
-use super::tool_group::{
-    ToolGroupCacheConfig,
-};
+use super::tool_group::ToolGroupCacheConfig;
 use super::unified_registry::UnifiedToolRegistry;
 
 /// Benchmark configuration
@@ -87,8 +85,13 @@ impl PerformanceBenchmarks {
     }
 
     /// Run all benchmarks
-    pub async fn run_all_benchmarks(&mut self) -> Result<BenchmarkResults, Box<dyn std::error::Error>> {
-        info!("Starting performance benchmarks with {} iterations", self.config.iterations);
+    pub async fn run_all_benchmarks(
+        &mut self,
+    ) -> Result<BenchmarkResults, Box<dyn std::error::Error>> {
+        info!(
+            "Starting performance benchmarks with {} iterations",
+            self.config.iterations
+        );
 
         let start_time = Instant::now();
         let mut results = BenchmarkResults {
@@ -140,13 +143,19 @@ impl PerformanceBenchmarks {
             let start_time = Instant::now();
 
             let tool_dir = PathBuf::from("/tmp/test_tools");
-            let registry = UnifiedToolRegistry::with_cache_config(tool_dir, self.config.cache_config.clone()).await?;
+            let registry =
+                UnifiedToolRegistry::with_cache_config(tool_dir, self.config.cache_config.clone())
+                    .await?;
 
             let duration = start_time.elapsed().as_millis() as u64;
 
             if i >= self.config.warmup_iterations {
                 times.push(duration);
-                debug!("Initialization iteration {}: {}ms", i - self.config.warmup_iterations + 1, duration);
+                debug!(
+                    "Initialization iteration {}: {}ms",
+                    i - self.config.warmup_iterations + 1,
+                    duration
+                );
             }
 
             // Cleanup
@@ -164,7 +173,9 @@ impl PerformanceBenchmarks {
         info!("Benchmarking tool discovery...");
 
         let tool_dir = PathBuf::from("/tmp/test_tools");
-        let registry = UnifiedToolRegistry::with_cache_config(tool_dir, self.config.cache_config.clone()).await?;
+        let registry =
+            UnifiedToolRegistry::with_cache_config(tool_dir, self.config.cache_config.clone())
+                .await?;
 
         let mut times = Vec::new();
 
@@ -197,15 +208,14 @@ impl PerformanceBenchmarks {
         info!("Benchmarking tool execution...");
 
         let tool_dir = PathBuf::from("/tmp/test_tools");
-        let registry = UnifiedToolRegistry::with_cache_config(tool_dir, self.config.cache_config.clone()).await?;
+        let registry =
+            UnifiedToolRegistry::with_cache_config(tool_dir, self.config.cache_config.clone())
+                .await?;
 
         let mut times = Vec::new();
 
         // Test tools that should be available
-        let test_tools = vec![
-            ("system_info", vec![]),
-            ("get_vault_stats", vec![]),
-        ];
+        let test_tools = vec![("system_info", vec![]), ("get_vault_stats", vec![])];
 
         // Warmup
         for _ in 0..self.config.warmup_iterations {
@@ -222,7 +232,12 @@ impl PerformanceBenchmarks {
                 let duration = start_time.elapsed().as_millis() as u64;
 
                 times.push(duration);
-                debug!("Execution iteration {} ({}): {}ms", i + 1, tool_name, duration);
+                debug!(
+                    "Execution iteration {} ({}): {}ms",
+                    i + 1,
+                    tool_name,
+                    duration
+                );
             }
 
             // Small delay between iterations
@@ -236,11 +251,15 @@ impl PerformanceBenchmarks {
     }
 
     /// Benchmark cache performance
-    async fn benchmark_cache_performance(&mut self) -> Result<Vec<f64>, Box<dyn std::error::Error>> {
+    async fn benchmark_cache_performance(
+        &mut self,
+    ) -> Result<Vec<f64>, Box<dyn std::error::Error>> {
         info!("Benchmarking cache performance...");
 
         let tool_dir = PathBuf::from("/tmp/test_tools");
-        let registry = UnifiedToolRegistry::with_cache_config(tool_dir, self.config.cache_config.clone()).await?;
+        let registry =
+            UnifiedToolRegistry::with_cache_config(tool_dir, self.config.cache_config.clone())
+                .await?;
 
         let mut hit_rates = Vec::new();
 
@@ -254,10 +273,10 @@ impl PerformanceBenchmarks {
 
             // Get metrics to calculate hit rate
             let metrics = registry.get_performance_metrics().await;
-            let total_hits: u64 = metrics.group_metrics.values()
-                .map(|m| m.cache_hits)
-                .sum();
-            let total_requests: u64 = metrics.group_metrics.values()
+            let total_hits: u64 = metrics.group_metrics.values().map(|m| m.cache_hits).sum();
+            let total_requests: u64 = metrics
+                .group_metrics
+                .values()
                 .map(|m| m.cache_hits + m.cache_misses)
                 .sum();
 
@@ -268,25 +287,37 @@ impl PerformanceBenchmarks {
             };
 
             hit_rates.push(hit_rate);
-            debug!("Cache iteration {}: {:.2}% hit rate", i + 1, hit_rate * 100.0);
+            debug!(
+                "Cache iteration {}: {:.2}% hit rate",
+                i + 1,
+                hit_rate * 100.0
+            );
 
             // Wait a moment between iterations
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
 
         let avg_hit_rate = hit_rates.iter().sum::<f64>() / hit_rates.len() as f64;
-        info!("Cache performance: {:.2}% average hit rate", avg_hit_rate * 100.0);
+        info!(
+            "Cache performance: {:.2}% average hit rate",
+            avg_hit_rate * 100.0
+        );
 
         Ok(hit_rates)
     }
 
     /// Calculate summary statistics
-    fn calculate_summary(&self, results: &BenchmarkResults, total_duration: Duration) -> BenchmarkSummary {
+    fn calculate_summary(
+        &self,
+        results: &BenchmarkResults,
+        total_duration: Duration,
+    ) -> BenchmarkSummary {
         let mut sorted_times = results.discovery_times_ms.clone();
         sorted_times.sort_unstable();
 
         let avg_discovery = if !results.discovery_times_ms.is_empty() {
-            results.discovery_times_ms.iter().sum::<u64>() as f64 / results.discovery_times_ms.len() as f64
+            results.discovery_times_ms.iter().sum::<u64>() as f64
+                / results.discovery_times_ms.len() as f64
         } else {
             0.0
         };
@@ -303,7 +334,8 @@ impl PerformanceBenchmarks {
         };
 
         let p95_discovery = if !sorted_times.is_empty() {
-            let p95_index = ((sorted_times.len() as f64 * 0.95) as usize).min(sorted_times.len() - 1);
+            let p95_index =
+                ((sorted_times.len() as f64 * 0.95) as usize).min(sorted_times.len() - 1);
             sorted_times[p95_index] as f64
         } else {
             0.0
@@ -313,7 +345,8 @@ impl PerformanceBenchmarks {
         sorted_exec_times.sort_unstable();
 
         let avg_execution = if !results.execution_times_ms.is_empty() {
-            results.execution_times_ms.iter().sum::<u64>() as f64 / results.execution_times_ms.len() as f64
+            results.execution_times_ms.iter().sum::<u64>() as f64
+                / results.execution_times_ms.len() as f64
         } else {
             0.0
         };
@@ -330,7 +363,8 @@ impl PerformanceBenchmarks {
         };
 
         let p95_execution = if !sorted_exec_times.is_empty() {
-            let p95_index = ((sorted_exec_times.len() as f64 * 0.95) as usize).min(sorted_exec_times.len() - 1);
+            let p95_index =
+                ((sorted_exec_times.len() as f64 * 0.95) as usize).min(sorted_exec_times.len() - 1);
             sorted_exec_times[p95_index] as f64
         } else {
             0.0
@@ -355,7 +389,9 @@ impl PerformanceBenchmarks {
     }
 
     /// Compare performance between different cache configurations
-    pub async fn compare_cache_configurations(&mut self) -> Result<HashMap<String, BenchmarkResults>, Box<dyn std::error::Error>> {
+    pub async fn compare_cache_configurations(
+        &mut self,
+    ) -> Result<HashMap<String, BenchmarkResults>, Box<dyn std::error::Error>> {
         info!("Comparing different cache configurations...");
 
         let configs = vec![
@@ -394,18 +430,27 @@ pub fn print_benchmark_results(results: &BenchmarkResults) {
 
     println!("Tool Discovery Performance:");
     println!("  Average: {:.2}ms", results.summary.avg_discovery_time_ms);
-    println!("  Median:  {:.2}ms", results.summary.median_discovery_time_ms);
+    println!(
+        "  Median:  {:.2}ms",
+        results.summary.median_discovery_time_ms
+    );
     println!("  P95:     {:.2}ms", results.summary.p95_discovery_time_ms);
     println!();
 
     println!("Tool Execution Performance:");
     println!("  Average: {:.2}ms", results.summary.avg_execution_time_ms);
-    println!("  Median:  {:.2}ms", results.summary.median_execution_time_ms);
+    println!(
+        "  Median:  {:.2}ms",
+        results.summary.median_execution_time_ms
+    );
     println!("  P95:     {:.2}ms", results.summary.p95_execution_time_ms);
     println!();
 
     println!("Cache Performance:");
-    println!("  Hit Rate: {:.2}%", results.summary.avg_cache_hit_rate * 100.0);
+    println!(
+        "  Hit Rate: {:.2}%",
+        results.summary.avg_cache_hit_rate * 100.0
+    );
     println!();
 }
 
@@ -415,10 +460,22 @@ pub fn print_comparison_results(results: &HashMap<String, BenchmarkResults>) {
 
     for (config_name, benchmark_results) in results {
         println!("Configuration: {}", config_name);
-        println!("  Initialization: {}ms", benchmark_results.initialization_time_ms);
-        println!("  Discovery Avg:  {:.2}ms", benchmark_results.summary.avg_discovery_time_ms);
-        println!("  Execution Avg:  {:.2}ms", benchmark_results.summary.avg_execution_time_ms);
-        println!("  Cache Hit Rate: {:.2}%", benchmark_results.summary.avg_cache_hit_rate * 100.0);
+        println!(
+            "  Initialization: {}ms",
+            benchmark_results.initialization_time_ms
+        );
+        println!(
+            "  Discovery Avg:  {:.2}ms",
+            benchmark_results.summary.avg_discovery_time_ms
+        );
+        println!(
+            "  Execution Avg:  {:.2}ms",
+            benchmark_results.summary.avg_execution_time_ms
+        );
+        println!(
+            "  Cache Hit Rate: {:.2}%",
+            benchmark_results.summary.avg_cache_hit_rate * 100.0
+        );
         println!();
     }
 }

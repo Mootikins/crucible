@@ -4,11 +4,11 @@
 //! Complex migration architecture has been removed in Phase 1.1 dead code elimination.
 //! Now provides basic status and information functionality only.
 
-use crate::config::CliConfig;
 use crate::cli::MigrationCommands;
+use crate::config::CliConfig;
 use anyhow::Result;
 use colored::*;
-use comfy_table::{Table, presets::UTF8_FULL};
+use comfy_table::{presets::UTF8_FULL, Table};
 use serde_json;
 use tracing::debug;
 
@@ -17,18 +17,32 @@ pub async fn execute(config: CliConfig, command: MigrationCommands) -> Result<()
     debug!("Executing migration command: {:?}", command);
 
     match command {
-        MigrationCommands::Status { detailed, format: _, validate: _ } => {
-            execute_status_command(config, detailed).await
-        }
-        MigrationCommands::List { format, active: _, inactive: _, metadata: _ } => {
-            execute_list_command(config, format).await
-        }
-        MigrationCommands::Validate { tool, auto_fix: _, format: _ } => {
-            execute_validate_command(config, tool).await
-        }
+        MigrationCommands::Status {
+            detailed,
+            format: _,
+            validate: _,
+        } => execute_status_command(config, detailed).await,
+        MigrationCommands::List {
+            format,
+            active: _,
+            inactive: _,
+            metadata: _,
+        } => execute_list_command(config, format).await,
+        MigrationCommands::Validate {
+            tool,
+            auto_fix: _,
+            format: _,
+        } => execute_validate_command(config, tool).await,
         _ => {
-            println!("{}", "❌ Migration command not supported in simplified mode".red());
-            println!("{}", "💡 Phase 1.1 Simplification: Complex migration features have been removed.".yellow());
+            println!(
+                "{}",
+                "❌ Migration command not supported in simplified mode".red()
+            );
+            println!(
+                "{}",
+                "💡 Phase 1.1 Simplification: Complex migration features have been removed."
+                    .yellow()
+            );
             Ok(())
         }
     }
@@ -43,12 +57,29 @@ async fn execute_status_command(config: CliConfig, detailed: bool) -> Result<()>
         println!("{} {}", "✅ Migration:".green(), "Enabled".green());
 
         if detailed {
-            println!("{} {}", "📊 Caching:".yellow(),
-                if config.migration.enable_caching { "Enabled" } else { "Disabled" });
-            println!("{} {}", "💾 Cache Size:".yellow(),
-                format!("{} MB", config.migration.max_cache_size));
-            println!("{} {}", "🔒 Tool IDs:".yellow(),
-                if config.migration.preserve_tool_ids { "Preserved" } else { "Not Preserved" });
+            println!(
+                "{} {}",
+                "📊 Caching:".yellow(),
+                if config.migration.enable_caching {
+                    "Enabled"
+                } else {
+                    "Disabled"
+                }
+            );
+            println!(
+                "{} {}",
+                "💾 Cache Size:".yellow(),
+                format!("{} MB", config.migration.max_cache_size)
+            );
+            println!(
+                "{} {}",
+                "🔒 Tool IDs:".yellow(),
+                if config.migration.preserve_tool_ids {
+                    "Preserved"
+                } else {
+                    "Not Preserved"
+                }
+            );
         }
     } else {
         println!("{} {}", "❌ Migration:".red(), "Disabled".red());
@@ -73,13 +104,11 @@ async fn execute_list_command(config: CliConfig, format: String) -> Result<()> {
     match format.as_str() {
         "table" => {
             let mut table = Table::new();
-            table
-                .load_preset(UTF8_FULL)
-                .set_header(vec![
-                    "Component".bold(),
-                    "Status".bold(),
-                    "Phase 1.1 Status".bold(),
-                ]);
+            table.load_preset(UTF8_FULL).set_header(vec![
+                "Component".bold(),
+                "Status".bold(),
+                "Phase 1.1 Status".bold(),
+            ]);
 
             table.add_row(vec![
                 "Migration Bridge",
@@ -145,18 +174,31 @@ async fn execute_validate_command(config: CliConfig, tool: Option<String>) -> Re
 
     if let Some(tool_name) = tool {
         println!("Validating specific tool: {}", tool_name.bright_white());
-        println!("{}", "⚠️  Complex validation has been simplified in Phase 1.1".yellow());
+        println!(
+            "{}",
+            "⚠️  Complex validation has been simplified in Phase 1.1".yellow()
+        );
         println!("{}", "   Only basic name validation is available.".yellow());
 
-        if !tool_name.is_empty() && tool_name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+        if !tool_name.is_empty()
+            && tool_name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        {
             println!("{} {}", "✅ Tool name:".green(), "Valid format".green());
         } else {
             println!("{} {}", "❌ Tool name:".red(), "Invalid format".red());
         }
     } else {
         println!("{}", "🔍 Global Validation".bright_white());
-        println!("{}", "⚠️  Complex validation features have been removed in Phase 1.1".yellow());
-        println!("{}", "   Migration system is now in simplified mode.".yellow());
+        println!(
+            "{}",
+            "⚠️  Complex validation features have been removed in Phase 1.1".yellow()
+        );
+        println!(
+            "{}",
+            "   Migration system is now in simplified mode.".yellow()
+        );
     }
 
     println!();

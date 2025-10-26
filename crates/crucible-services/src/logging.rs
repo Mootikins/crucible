@@ -61,7 +61,10 @@ pub fn init_logging(config: LoggingConfig) -> ServiceResult<()> {
         subscriber.init();
     });
 
-    info!("Logging system initialized with level: {:?}", config.default_level);
+    info!(
+        "Logging system initialized with level: {:?}",
+        config.default_level
+    );
     Ok(())
 }
 
@@ -107,7 +110,12 @@ impl EventTracer {
     }
 
     /// Trace event start
-    pub fn trace_event_start(&self, event_id: &str, event_type: &str, metadata: Option<&serde_json::Value>) {
+    pub fn trace_event_start(
+        &self,
+        event_id: &str,
+        event_type: &str,
+        metadata: Option<&serde_json::Value>,
+    ) {
         if !self.enabled {
             return;
         }

@@ -60,9 +60,7 @@ impl Command {
         }
 
         // Remove ':' prefix and split into parts
-        let parts: Vec<&str> = input[1..]
-            .split_whitespace()
-            .collect();
+        let parts: Vec<&str> = input[1..].split_whitespace().collect();
 
         if parts.is_empty() {
             return Err(CommandParseError::EmptyCommand);
@@ -274,7 +272,7 @@ EXAMPLES:
 
 SEE ALSO:
   :run, :rune
-                "#
+                "#,
             ),
 
             ":run" | "run" => Some(
@@ -300,7 +298,7 @@ EXAMPLES:
 
 SEE ALSO:
   :tools, :rune
-                "#
+                "#,
             ),
 
             ":rune" | "rune" => Some(
@@ -325,7 +323,7 @@ EXAMPLES:
 
 SEE ALSO:
   :run, :tools
-                "#
+                "#,
             ),
 
             ":log" | "log" => Some(
@@ -354,7 +352,7 @@ EXAMPLES:
 
 NOTE:
   Log level persists for the current session only.
-                "#
+                "#,
             ),
 
             ":format" | ":fmt" | "format" | "fmt" => Some(
@@ -381,7 +379,7 @@ EXAMPLES:
 
 NOTE:
   Format persists for the current session.
-                "#
+                "#,
             ),
 
             ":stats" | "stats" => Some(
@@ -401,7 +399,7 @@ DESCRIPTION:
 
 EXAMPLES:
   :stats
-                "#
+                "#,
             ),
 
             ":config" | "config" => Some(
@@ -425,7 +423,7 @@ EXAMPLES:
 
 SEE ALSO:
   Configuration file: ~/.crucible/config.yaml
-                "#
+                "#,
             ),
 
             _ => None,
@@ -446,16 +444,10 @@ pub enum CommandParseError {
     UnknownCommand(String),
 
     #[error("Command '{command}' requires argument: {expected}")]
-    MissingArgument {
-        command: String,
-        expected: String,
-    },
+    MissingArgument { command: String, expected: String },
 
     #[error("Command '{command}' does not accept arguments: {}", .args.join(", "))]
-    UnexpectedArguments {
-        command: String,
-        args: Vec<String>,
-    },
+    UnexpectedArguments { command: String, args: Vec<String> },
 
     #[error("Invalid argument '{argument}': expected {expected_type}")]
     InvalidArgument {

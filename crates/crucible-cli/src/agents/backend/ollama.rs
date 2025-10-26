@@ -127,7 +127,10 @@ impl Backend for OllamaBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::{matchers::{method, path}, Mock, MockServer, ResponseTemplate};
+    use wiremock::{
+        matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
 
     #[tokio::test]
     async fn test_list_models_returns_available_models() {

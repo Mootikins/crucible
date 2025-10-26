@@ -475,7 +475,11 @@ impl EventBuilder {
     }
 
     /// Create a new health event with message
-    pub fn health_with_message(service: String, status: HealthStatus, message: String) -> HealthEvent {
+    pub fn health_with_message(
+        service: String,
+        status: HealthStatus,
+        message: String,
+    ) -> HealthEvent {
         HealthEvent {
             event_id: Uuid::new_v4(),
             timestamp: Utc::now(),
@@ -520,7 +524,9 @@ impl EventBuilder {
 }
 
 /// Convert crucible-watch FileEvent to DaemonEvent
-pub fn convert_watch_event_to_daemon_event(event: crucible_watch::FileEvent) -> Result<DaemonEvent, String> {
+pub fn convert_watch_event_to_daemon_event(
+    event: crucible_watch::FileEvent,
+) -> Result<DaemonEvent, String> {
     let event_type = match event.kind {
         crucible_watch::FileEventKind::Created => FilesystemEventType::Created,
         crucible_watch::FileEventKind::Modified => FilesystemEventType::Modified,
@@ -633,7 +639,10 @@ mod tests {
         );
         assert_eq!(rename_event.event_type, FilesystemEventType::Renamed);
         assert_eq!(rename_event.path, PathBuf::from("/test/new.txt"));
-        assert_eq!(rename_event.source_path, Some(PathBuf::from("/test/old.txt")));
+        assert_eq!(
+            rename_event.source_path,
+            Some(PathBuf::from("/test/old.txt"))
+        );
 
         let db_event = EventBuilder::database_record(
             DatabaseEventType::RecordInserted,
@@ -646,11 +655,8 @@ mod tests {
         assert_eq!(db_event.table, Some("test_table".to_string()));
         assert_eq!(db_event.record_id, Some("record_123".to_string()));
 
-        let sync_event = EventBuilder::sync_progress(
-            "source".to_string(),
-            "target".to_string(),
-            0.75,
-        );
+        let sync_event =
+            EventBuilder::sync_progress("source".to_string(), "target".to_string(), 0.75);
         assert_eq!(sync_event.event_type, SyncEventType::Progress);
         assert_eq!(sync_event.progress, Some(0.75));
 
@@ -663,7 +669,10 @@ mod tests {
         );
         assert_eq!(error_event.severity, ErrorSeverity::Error);
         assert_eq!(error_event.category, ErrorCategory::Database);
-        assert_eq!(error_event.details, Some("Connection timeout after 30 seconds".to_string()));
+        assert_eq!(
+            error_event.details,
+            Some("Connection timeout after 30 seconds".to_string())
+        );
 
         let health_event = EventBuilder::health_with_message(
             "api-service".to_string(),
@@ -672,7 +681,10 @@ mod tests {
         );
         assert_eq!(health_event.service, "api-service");
         assert_eq!(health_event.status, HealthStatus::Degraded);
-        assert_eq!(health_event.message, Some("High latency detected".to_string()));
+        assert_eq!(
+            health_event.message,
+            Some("High latency detected".to_string())
+        );
 
         let service_event = EventBuilder::service_with_data(
             ServiceEventType::StatusChanged,

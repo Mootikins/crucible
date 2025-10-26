@@ -5,7 +5,7 @@
 
 use crate::vault_types::{VaultError, VaultResult};
 use std::path::PathBuf;
-use walkdir::{WalkDir, DirEntry};
+use walkdir::{DirEntry, WalkDir};
 
 /// Scanner for discovering markdown files in vault directories
 #[derive(Debug, Clone)]
@@ -26,27 +26,25 @@ impl VaultScanner {
     pub async fn scan_markdown_files(&self) -> VaultResult<Vec<PathBuf>> {
         let vault_path = self.vault_path.clone();
 
-        tokio::task::spawn_blocking(move || {
-            Self::_scan_markdown_files_recursive(&vault_path)
-        }).await.map_err(|e| VaultError::HashError(format!("Task join error: {}", e)))?
+        tokio::task::spawn_blocking(move || Self::_scan_markdown_files_recursive(&vault_path))
+            .await
+            .map_err(|e| VaultError::HashError(format!("Task join error: {}", e)))?
     }
 
     /// Scan for markdown files non-recursively (root only)
     pub async fn scan_markdown_files_non_recursive(&self) -> VaultResult<Vec<PathBuf>> {
         let vault_path = self.vault_path.clone();
 
-        tokio::task::spawn_blocking(move || {
-            Self::_scan_markdown_files_non_recursive(&vault_path)
-        }).await.map_err(|e| VaultError::HashError(format!("Task join error: {}", e)))?
+        tokio::task::spawn_blocking(move || Self::_scan_markdown_files_non_recursive(&vault_path))
+            .await
+            .map_err(|e| VaultError::HashError(format!("Task join error: {}", e)))?
     }
 
     /// Internal recursive implementation (runs in blocking thread)
     fn _scan_markdown_files_recursive(vault_path: &str) -> VaultResult<Vec<PathBuf>> {
         let mut markdown_files = Vec::new();
 
-        let walk_dir = WalkDir::new(vault_path)
-            .follow_links(false)
-            .max_depth(10); // Reasonable depth limit
+        let walk_dir = WalkDir::new(vault_path).follow_links(false).max_depth(10); // Reasonable depth limit
 
         for entry in walk_dir.into_iter().filter_map(|e| e.ok()) {
             if Self::is_markdown_file(&entry) {
@@ -65,9 +63,7 @@ impl VaultScanner {
     fn _scan_markdown_files_non_recursive(vault_path: &str) -> VaultResult<Vec<PathBuf>> {
         let mut markdown_files = Vec::new();
 
-        let walk_dir = WalkDir::new(vault_path)
-            .follow_links(false)
-            .max_depth(1); // Root directory only
+        let walk_dir = WalkDir::new(vault_path).follow_links(false).max_depth(1); // Root directory only
 
         for entry in walk_dir.into_iter().filter_map(|e| e.ok()) {
             if Self::is_markdown_file(&entry) {
@@ -88,7 +84,8 @@ impl VaultScanner {
             return false;
         }
 
-        entry.path()
+        entry
+            .path()
             .extension()
             .map(|ext| ext.to_string_lossy().to_lowercase() == "md")
             .unwrap_or(false)
@@ -103,9 +100,9 @@ impl VaultScanner {
     pub async fn vault_exists(&self) -> bool {
         let vault_path = self.vault_path.clone();
 
-        tokio::task::spawn_blocking(move || {
-            std::path::Path::new(&vault_path).exists()
-        }).await.unwrap_or(false)
+        tokio::task::spawn_blocking(move || std::path::Path::new(&vault_path).exists())
+            .await
+            .unwrap_or(false)
     }
 
     /// Get absolute file paths from relative paths
@@ -117,8 +114,8 @@ impl VaultScanner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_scanner_creates_successfully() {
@@ -141,8 +138,12 @@ mod tests {
         let files = scanner.scan_markdown_files().await.unwrap();
 
         assert_eq!(files.len(), 2);
-        assert!(files.iter().any(|p| p.to_string_lossy().contains("test.md")));
-        assert!(files.iter().any(|p| p.to_string_lossy().contains("notes.MD")));
+        assert!(files
+            .iter()
+            .any(|p| p.to_string_lossy().contains("test.md")));
+        assert!(files
+            .iter()
+            .any(|p| p.to_string_lossy().contains("notes.MD")));
     }
 
     #[tokio::test]
@@ -153,7 +154,11 @@ mod tests {
         // Create directory structure
         fs::create_dir_all(temp_dir.path().join("subdir")).unwrap();
         fs::write(temp_dir.path().join("root.md"), "# Root\nContent").unwrap();
-        fs::write(temp_dir.path().join("subdir/nested.md"), "# Nested\nContent").unwrap();
+        fs::write(
+            temp_dir.path().join("subdir/nested.md"),
+            "# Nested\nContent",
+        )
+        .unwrap();
 
         let scanner = VaultScanner::new(&vault_path);
 

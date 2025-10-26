@@ -9,12 +9,6 @@
 //! file size limits. This creates potential security and stability risks when
 //! processing binary files that may masquerade as text files.
 
-use std::fs;
-use std::path::{Path, PathBuf};
-use anyhow::Result;
-use tempfile::TempDir;
-use crucible_cli::commands::search::{get_file_content, search_files_in_kiln};
-
 /// Test harness for binary safety TDD tests
 pub struct BinarySafetyTestHarness {
     pub temp_dir: TempDir,
@@ -83,7 +77,8 @@ mod binary_detection_tests {
         let png_header = vec![
             0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
             0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR chunk start
-            b'#', b' ', b'T', b'e', b's', b't', b' ', b'I', b'm', b'a', b'g', b'e', b'\n', // Fake markdown content
+            b'#', b' ', b'T', b'e', b's', b't', b' ', b'I', b'm', b'a', b'g', b'e',
+            b'\n', // Fake markdown content
         ];
 
         let file_path = harness.create_binary_file("test_image.md", &png_header)?;
@@ -93,12 +88,17 @@ mod binary_detection_tests {
 
         // Expected behavior: Should detect binary and return an error
         // Current behavior: Will try to process as text and either fail or return garbage
-        assert!(result.is_err(), "Should detect PNG binary content even with .md extension");
+        assert!(
+            result.is_err(),
+            "Should detect PNG binary content even with .md extension"
+        );
 
         if let Err(e) = result {
             let error_msg = e.to_string().to_lowercase();
             assert!(
-                error_msg.contains("binary") || error_msg.contains("invalid") || error_msg.contains("utf-8"),
+                error_msg.contains("binary")
+                    || error_msg.contains("invalid")
+                    || error_msg.contains("utf-8"),
                 "Error should mention binary/invalid content: {}",
                 error_msg
             );
@@ -116,13 +116,17 @@ mod binary_detection_tests {
         let jpeg_header = vec![
             0xFF, 0xD8, 0xFF, 0xE0, // JPEG signature
             0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, // JFIF identifier
-            b'#', b' ', b'F', b'a', b'k', b'e', b' ', b'D', b'o', b'c', b'\n', // Fake markdown
+            b'#', b' ', b'F', b'a', b'k', b'e', b' ', b'D', b'o', b'c',
+            b'\n', // Fake markdown
         ];
 
         let file_path = harness.create_binary_file("document.md", &jpeg_header)?;
 
         let result = get_file_content(&file_path);
-        assert!(result.is_err(), "Should detect JPEG binary content even with .md extension");
+        assert!(
+            result.is_err(),
+            "Should detect JPEG binary content even with .md extension"
+        );
 
         Ok(())
     }
@@ -137,13 +141,17 @@ mod binary_detection_tests {
             b'M', b'Z', // DOS header
             0x90, 0x00, 0x03, 0x00, 0x00, 0x00, 0x04, 0x00, // More DOS header
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Zeros
-            b'#', b' ', b'B', b'i', b'n', b'a', b'r', b'y', b' ', b'E', b'x', b'e', b'\n', // Fake text
+            b'#', b' ', b'B', b'i', b'n', b'a', b'r', b'y', b' ', b'E', b'x', b'e',
+            b'\n', // Fake text
         ];
 
         let file_path = harness.create_binary_file("readme.txt", &pe_header)?;
 
         let result = get_file_content(&file_path);
-        assert!(result.is_err(), "Should detect executable binary content even with .txt extension");
+        assert!(
+            result.is_err(),
+            "Should detect executable binary content even with .txt extension"
+        );
 
         Ok(())
     }
@@ -158,7 +166,8 @@ mod binary_detection_tests {
             0x7F, b'E', b'L', b'F', // ELF magic number
             0x02, 0x01, 0x01, 0x00, // 64-bit, little endian, current version
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Padding
-            b'#', b' ', b'L', b'i', b'n', b'u', b'x', b' ', b'B', b'i', b'n', b'\n', // Fake markdown
+            b'#', b' ', b'L', b'i', b'n', b'u', b'x', b' ', b'B', b'i', b'n',
+            b'\n', // Fake markdown
         ];
 
         let file_path = harness.create_binary_file("linux_binary.md", &elf_header)?;
@@ -180,12 +189,17 @@ mod binary_detection_tests {
         let file_path = harness.create_binary_file("mixed_content.md", content_with_nulls)?;
 
         let result = get_file_content(&file_path);
-        assert!(result.is_err(), "Should detect null bytes and reject as binary");
+        assert!(
+            result.is_err(),
+            "Should detect null bytes and reject as binary"
+        );
 
         if let Err(e) = result {
             let error_msg = e.to_string().to_lowercase();
             assert!(
-                error_msg.contains("null") || error_msg.contains("binary") || error_msg.contains("invalid"),
+                error_msg.contains("null")
+                    || error_msg.contains("binary")
+                    || error_msg.contains("invalid"),
                 "Error should mention null bytes or binary content: {}",
                 error_msg
             );
@@ -204,7 +218,8 @@ mod binary_detection_tests {
             b'P', b'K', 0x03, 0x04, // Local file header signature
             0x14, 0x00, 0x00, 0x00, // Version
             0x08, 0x00, 0x00, 0x00, // Flags and compression
-            b'#', b' ', b'Z', b'i', b'p', b' ', b'A', b'r', b'c', b'h', b'i', b'v', b'e', b'\n', // Fake content
+            b'#', b' ', b'Z', b'i', b'p', b' ', b'A', b'r', b'c', b'h', b'i', b'v', b'e',
+            b'\n', // Fake content
         ];
 
         let file_path = harness.create_binary_file("archive.md", &zip_header)?;
@@ -221,7 +236,8 @@ mod binary_detection_tests {
         let harness = BinarySafetyTestHarness::new()?;
 
         // PDF header (%PDF-)
-        let pdf_header = b"%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n>>\nendobj\n# Fake markdown content\n";
+        let pdf_header =
+            b"%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n>>\nendobj\n# Fake markdown content\n";
 
         let file_path = harness.create_binary_file("document.md", pdf_header)?;
 
@@ -242,7 +258,10 @@ mod binary_detection_tests {
         let file_path = harness.create_binary_file("mixed.md", mixed_content)?;
 
         let result = get_file_content(&file_path);
-        assert!(result.is_err(), "Should detect binary content mixed with text");
+        assert!(
+            result.is_err(),
+            "Should detect binary content mixed with text"
+        );
 
         Ok(())
     }
@@ -253,7 +272,10 @@ mod binary_detection_tests {
         let harness = BinarySafetyTestHarness::new()?;
 
         // Create legitimate markdown file
-        harness.create_text_file("legitimate.md", "# Legitimate Document\nThis contains searchable content.")?;
+        harness.create_text_file(
+            "legitimate.md",
+            "# Legitimate Document\nThis contains searchable content.",
+        )?;
 
         // Create binary file with .md extension
         let png_header = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
@@ -266,7 +288,10 @@ mod binary_detection_tests {
 
         // Verify all results are from legitimate text files
         for result in results {
-            assert!(!result.id.contains("binary.md"), "Should not include binary files in results");
+            assert!(
+                !result.id.contains("binary.md"),
+                "Should not include binary files in results"
+            );
         }
 
         Ok(())
@@ -307,13 +332,18 @@ mod memory_protection_tests {
         match result {
             Ok(content) => {
                 // If it succeeds, content should be truncated to memory limit
-                assert!(content.len() <= 1024 * 1024, "Content should be truncated to 1MB memory limit");
+                assert!(
+                    content.len() <= 1024 * 1024,
+                    "Content should be truncated to 1MB memory limit"
+                );
             }
             Err(e) => {
                 // If it fails, error should be informative
                 let error_msg = e.to_string().to_lowercase();
                 assert!(
-                    error_msg.contains("large") || error_msg.contains("memory") || error_msg.contains("limit"),
+                    error_msg.contains("large")
+                        || error_msg.contains("memory")
+                        || error_msg.contains("limit"),
                     "Error should mention size/memory limit: {}",
                     error_msg
                 );
@@ -346,7 +376,9 @@ mod memory_protection_tests {
         if let Err(e) = result {
             let error_msg = e.to_string().to_lowercase();
             assert!(
-                error_msg.contains("large") || error_msg.contains("size") || error_msg.contains("limit"),
+                error_msg.contains("large")
+                    || error_msg.contains("size")
+                    || error_msg.contains("limit"),
                 "Error should mention file size limit: {}",
                 error_msg
             );
@@ -366,12 +398,17 @@ mod memory_protection_tests {
         let file_path = harness.create_binary_file("large_binary.md", &large_binary_content)?;
 
         let result = get_file_content(&file_path);
-        assert!(result.is_err(), "Should reject large binary content to protect memory");
+        assert!(
+            result.is_err(),
+            "Should reject large binary content to protect memory"
+        );
 
         if let Err(e) = result {
             let error_msg = e.to_string().to_lowercase();
             assert!(
-                error_msg.contains("binary") || error_msg.contains("invalid") || error_msg.contains("utf-8"),
+                error_msg.contains("binary")
+                    || error_msg.contains("invalid")
+                    || error_msg.contains("utf-8"),
                 "Error should mention binary/invalid content: {}",
                 error_msg
             );
@@ -409,8 +446,14 @@ mod file_size_boundary_tests {
         let result = get_file_content(&file_path)?;
 
         // Content should be truncated to prevent memory issues
-        assert!(result.len() <= 1024 * 1024, "Content should be truncated to 1MB or less");
-        assert!(!result.is_empty(), "Content should not be empty after truncation");
+        assert!(
+            result.len() <= 1024 * 1024,
+            "Content should be truncated to 1MB or less"
+        );
+        assert!(
+            !result.is_empty(),
+            "Content should not be empty after truncation"
+        );
 
         Ok(())
     }
@@ -435,8 +478,16 @@ mod file_size_boundary_tests {
         // Check file size
         let metadata = fs::metadata(&file_path)?;
         let file_size = metadata.len();
-        assert!(file_size <= 10 * 1024 * 1024, "File should be at most 10MB, but was {} bytes", file_size);
-        assert!(file_size > 9 * 1024 * 1024, "File should be close to 10MB, but was {} bytes", file_size);
+        assert!(
+            file_size <= 10 * 1024 * 1024,
+            "File should be at most 10MB, but was {} bytes",
+            file_size
+        );
+        assert!(
+            file_size > 9 * 1024 * 1024,
+            "File should be close to 10MB, but was {} bytes",
+            file_size
+        );
 
         let result = get_file_content(&file_path);
 
@@ -534,11 +585,18 @@ mod integration_tests {
         assert_eq!(beta_results.len(), 1, "Should find 1 file with 'beta'");
 
         // Verify no binary files in results
-        let all_paths: Vec<String> = alpha_results.iter().chain(beta_results.iter())
-            .map(|r| r.id.clone()).collect();
+        let all_paths: Vec<String> = alpha_results
+            .iter()
+            .chain(beta_results.iter())
+            .map(|r| r.id.clone())
+            .collect();
 
         for path in all_paths {
-            assert!(!path.contains("binary"), "Results should not include binary files: {}", path);
+            assert!(
+                !path.contains("binary"),
+                "Results should not include binary files: {}",
+                path
+            );
         }
 
         Ok(())
@@ -554,7 +612,10 @@ mod integration_tests {
 
         // Create text files after
         harness.create_text_file("after_binary1.md", "# After Binary 1\nSearchable content")?;
-        harness.create_text_file("after_binary2.md", "# After Binary 2\nMore searchable content")?;
+        harness.create_text_file(
+            "after_binary2.md",
+            "# After Binary 2\nMore searchable content",
+        )?;
 
         // Another binary file
         harness.create_binary_file("second_binary.md", &[0xFF, 0xD8, 0xFF, 0xE0])?;
@@ -565,8 +626,17 @@ mod integration_tests {
         // Search should process all text files despite binary files
         let results = search_files_in_kiln(harness.vault_path(), "searchable", 10, false)?;
 
-        assert_eq!(results.len(), 3, "Should find all 3 text files with searchable content");
+        assert_eq!(
+            results.len(),
+            3,
+            "Should find all 3 text files with searchable content"
+        );
 
         Ok(())
     }
 }
+use anyhow::Result;
+use crucible_cli::commands::search::{get_file_content, search_files_in_kiln};
+use std::fs;
+use std::path::{Path, PathBuf};
+use tempfile::TempDir;

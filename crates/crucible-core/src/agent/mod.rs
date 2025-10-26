@@ -95,9 +95,7 @@ impl AgentRegistry {
     pub fn get_agents_requiring_tools(&self, tools: &[String]) -> Vec<&AgentDefinition> {
         self.agents
             .values()
-            .filter(|agent| {
-                tools.iter().any(|tool| agent.required_tools.contains(tool))
-            })
+            .filter(|agent| tools.iter().any(|tool| agent.required_tools.contains(tool)))
             .collect()
     }
 

@@ -46,8 +46,8 @@ pub use embeddings::{
 };
 
 pub use text_generation::{
-    TextGenerationProvider, create_text_provider, TextProviderConfig,
-    CompletionRequest, CompletionResponse, ChatCompletionRequest, ChatCompletionResponse,
-    ChatMessage, CompletionChunk, ChatCompletionChunk, TokenUsage,
-    OpenAITextProvider, OllamaTextProvider, OpenAIConfig, OllamaConfig,
+    create_text_provider, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
+    ChatMessage, CompletionChunk, CompletionRequest, CompletionResponse, OllamaConfig,
+    OllamaTextProvider, OpenAIConfig, OpenAITextProvider, TextGenerationProvider,
+    TextProviderConfig, TokenUsage,
 };

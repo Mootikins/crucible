@@ -2,8 +2,8 @@
 //!
 //! These commands help test and debug the tool loading system
 
-use anyhow::Result;
 use crate::config::CliConfig;
+use anyhow::Result;
 
 /// Test tool loading and execution
 pub async fn execute(_config: CliConfig) -> Result<()> {
@@ -33,12 +33,17 @@ pub async fn execute(_config: CliConfig) -> Result<()> {
                     serde_json::json!({}),
                     Some("test_user".to_string()),
                     Some("test_session".to_string()),
-                ).await {
+                )
+                .await
+                {
                     Ok(result) => {
                         if result.success {
                             println!("✅ system_info tool executed successfully");
                             if let Some(data) = result.data {
-                                println!("📊 System info: {}", serde_json::to_string_pretty(&data)?);
+                                println!(
+                                    "📊 System info: {}",
+                                    serde_json::to_string_pretty(&data)?
+                                );
                             }
                         } else {
                             println!("❌ system_info tool failed: {:?}", result.error);
@@ -58,12 +63,17 @@ pub async fn execute(_config: CliConfig) -> Result<()> {
                     serde_json::json!({}),
                     Some("test_user".to_string()),
                     Some("test_session".to_string()),
-                ).await {
+                )
+                .await
+                {
                     Ok(result) => {
                         if result.success {
                             println!("✅ get_environment tool executed successfully");
                             if let Some(data) = result.data {
-                                println!("📊 Environment info: {}", serde_json::to_string_pretty(&data)?);
+                                println!(
+                                    "📊 Environment info: {}",
+                                    serde_json::to_string_pretty(&data)?
+                                );
                             }
                         } else {
                             println!("❌ get_environment tool failed: {:?}", result.error);
@@ -74,7 +84,6 @@ pub async fn execute(_config: CliConfig) -> Result<()> {
                     }
                 }
             }
-
         }
         Err(e) => {
             println!("❌ Failed to load tools: {}", e);

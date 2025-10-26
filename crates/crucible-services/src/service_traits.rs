@@ -6,8 +6,10 @@
 
 use super::{
     errors::ServiceResult,
-    types::{ToolDefinition, ToolExecutionRequest, ToolExecutionResult, ServiceHealth},
-    service_types::{ScriptTool, ScriptExecutionStats, ExecutionContext, CompiledScript, ExecutionResult},
+    service_types::{
+        CompiledScript, ExecutionContext, ExecutionResult, ScriptExecutionStats, ScriptTool,
+    },
+    types::{ServiceHealth, ToolDefinition, ToolExecutionRequest, ToolExecutionResult},
 };
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -50,7 +52,11 @@ pub trait ScriptEngine: ServiceLifecycle + HealthCheck {
     async fn compile_script(&mut self, source: &str) -> ServiceResult<CompiledScript>;
 
     /// Execute a compiled script
-    async fn execute_script(&self, script_id: &str, context: ExecutionContext) -> ServiceResult<ExecutionResult>;
+    async fn execute_script(
+        &self,
+        script_id: &str,
+        context: ExecutionContext,
+    ) -> ServiceResult<ExecutionResult>;
 
     /// Register a tool with the script engine
     async fn register_tool(&mut self, tool: ScriptTool) -> ServiceResult<()>;
@@ -76,7 +82,10 @@ pub trait ToolService: Send + Sync {
     async fn get_tool(&self, name: &str) -> ServiceResult<Option<ToolDefinition>>;
 
     /// Execute a tool
-    async fn execute_tool(&self, request: ToolExecutionRequest) -> ServiceResult<ToolExecutionResult>;
+    async fn execute_tool(
+        &self,
+        request: ToolExecutionRequest,
+    ) -> ServiceResult<ToolExecutionResult>;
 
     /// Get service health and status
     async fn service_health(&self) -> ServiceResult<ServiceHealth>;
@@ -90,10 +99,17 @@ pub trait ToolService: Send + Sync {
 #[async_trait]
 pub trait ServiceRegistry: Send + Sync {
     /// Register a service
-    async fn register_service(&mut self, service_name: String, service: Arc<dyn ServiceLifecycle>) -> ServiceResult<()>;
+    async fn register_service(
+        &mut self,
+        service_name: String,
+        service: Arc<dyn ServiceLifecycle>,
+    ) -> ServiceResult<()>;
 
     /// Get a service by name
-    async fn get_service(&self, service_name: &str) -> ServiceResult<Option<Arc<dyn ServiceLifecycle>>>;
+    async fn get_service(
+        &self,
+        service_name: &str,
+    ) -> ServiceResult<Option<Arc<dyn ServiceLifecycle>>>;
 
     /// List all registered services
     async fn list_services(&self) -> ServiceResult<Vec<String>>;

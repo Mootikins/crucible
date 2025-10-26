@@ -69,7 +69,10 @@ mod tests {
     #[test]
     fn test_property_map_set_and_get() {
         let mut map = PropertyMap::new();
-        map.set("name".to_string(), PropertyValue::String("Test".to_string()));
+        map.set(
+            "name".to_string(),
+            PropertyValue::String("Test".to_string()),
+        );
 
         assert_eq!(map.len(), 1);
         assert!(!map.is_empty());
@@ -85,7 +88,10 @@ mod tests {
         let mut map = PropertyMap::new();
 
         // String
-        map.set("string".to_string(), PropertyValue::String("value".to_string()));
+        map.set(
+            "string".to_string(),
+            PropertyValue::String("value".to_string()),
+        );
 
         // Number
         map.set("number".to_string(), PropertyValue::Number(42.5));
@@ -97,10 +103,10 @@ mod tests {
         map.set("null".to_string(), PropertyValue::Null);
 
         // Array
-        map.set("array".to_string(), PropertyValue::Array(vec![
-            PropertyValue::Number(1.0),
-            PropertyValue::Number(2.0),
-        ]));
+        map.set(
+            "array".to_string(),
+            PropertyValue::Array(vec![PropertyValue::Number(1.0), PropertyValue::Number(2.0)]),
+        );
 
         // Object
         let mut obj = HashMap::new();
@@ -113,7 +119,10 @@ mod tests {
     #[test]
     fn test_property_map_remove() {
         let mut map = PropertyMap::new();
-        map.set("key".to_string(), PropertyValue::String("value".to_string()));
+        map.set(
+            "key".to_string(),
+            PropertyValue::String("value".to_string()),
+        );
 
         assert_eq!(map.len(), 1);
 
@@ -162,7 +171,10 @@ mod tests {
     #[test]
     fn test_property_value_serialization() {
         let mut map = PropertyMap::new();
-        map.set("test".to_string(), PropertyValue::String("value".to_string()));
+        map.set(
+            "test".to_string(),
+            PropertyValue::String("value".to_string()),
+        );
 
         // Test that serialization works
         let json = serde_json::to_string(&map).unwrap();
@@ -183,12 +195,10 @@ mod tests {
         map.set("outer".to_string(), PropertyValue::Object(inner_map));
 
         match map.get("outer") {
-            Some(PropertyValue::Object(obj)) => {
-                match obj.get("nested") {
-                    Some(PropertyValue::Number(n)) => assert_eq!(*n, 123.0),
-                    _ => panic!("Expected nested number"),
-                }
-            }
+            Some(PropertyValue::Object(obj)) => match obj.get("nested") {
+                Some(PropertyValue::Number(n)) => assert_eq!(*n, 123.0),
+                _ => panic!("Expected nested number"),
+            },
             _ => panic!("Expected object"),
         }
     }

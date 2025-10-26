@@ -3,10 +3,10 @@
 //! This module provides CLI commands for managing the crucible-daemon process,
 //! including starting, stopping, and checking status.
 
-use anyhow::Result;
-use crate::config::CliConfig;
 use crate::common::DaemonManager;
-use tracing::{info, error};
+use crate::config::CliConfig;
+use anyhow::Result;
+use tracing::{error, info};
 
 /// Execute daemon commands
 pub async fn execute(config: CliConfig, command: DaemonCommands) -> Result<()> {
@@ -16,12 +16,8 @@ pub async fn execute(config: CliConfig, command: DaemonCommands) -> Result<()> {
         DaemonCommands::Start { wait, background } => {
             execute_start_command(config, wait, background).await
         }
-        DaemonCommands::Stop { force } => {
-            execute_stop_command(config, force).await
-        }
-        DaemonCommands::Status => {
-            execute_status_command(config).await
-        }
+        DaemonCommands::Stop { force } => execute_stop_command(config, force).await,
+        DaemonCommands::Status => execute_status_command(config).await,
         DaemonCommands::Restart { wait, force } => {
             execute_restart_command(config, wait, force).await
         }
@@ -29,11 +25,7 @@ pub async fn execute(config: CliConfig, command: DaemonCommands) -> Result<()> {
 }
 
 /// Execute start command
-async fn execute_start_command(
-    config: CliConfig,
-    wait: bool,
-    background: bool,
-) -> Result<()> {
+async fn execute_start_command(config: CliConfig, wait: bool, background: bool) -> Result<()> {
     info!("Starting daemon for kiln: {}", config.kiln.path.display());
 
     println!("🚀 Starting crucible-daemon...");
@@ -45,7 +37,10 @@ async fn execute_start_command(
         println!("🔄 Starting daemon in background mode...");
         // For now, we'll use the existing spawn_daemon_for_processing method
         // In the future, this could start a persistent background daemon
-        match daemon_manager.spawn_daemon_for_processing(&config.kiln.path).await {
+        match daemon_manager
+            .spawn_daemon_for_processing(&config.kiln.path)
+            .await
+        {
             Ok(result) => {
                 println!("✅ {}", result.status_message());
                 println!("📊 {}", result.processing_info());
@@ -57,7 +52,10 @@ async fn execute_start_command(
         }
     } else {
         println!("🔄 Starting daemon in one-shot mode...");
-        match daemon_manager.spawn_daemon_for_processing(&config.kiln.path).await {
+        match daemon_manager
+            .spawn_daemon_for_processing(&config.kiln.path)
+            .await
+        {
             Ok(result) => {
                 println!("✅ {}", result.status_message());
                 println!("📊 {}", result.processing_info());
@@ -99,7 +97,10 @@ async fn execute_stop_command(_config: CliConfig, force: bool) -> Result<()> {
 
 /// Execute status command
 async fn execute_status_command(config: CliConfig) -> Result<()> {
-    info!("Checking daemon status for kiln: {}", config.kiln.path.display());
+    info!(
+        "Checking daemon status for kiln: {}",
+        config.kiln.path.display()
+    );
 
     println!("🔍 Checking daemon status...");
     println!("📁 Kiln path: {}", config.kiln.path.display());
@@ -117,21 +118,19 @@ async fn execute_status_command(config: CliConfig) -> Result<()> {
     };
 
     match crucible_surrealdb::SurrealClient::new(db_config).await {
-        Ok(client) => {
-            match daemon_manager.check_embeddings_exist(&client).await {
-                Ok(true) => {
-                    println!("✅ Daemon has processed this kiln");
-                    println!("📊 Embeddings are available for semantic search");
-                }
-                Ok(false) => {
-                    println!("❌ No embeddings found");
-                    println!("💡 Run 'crucible daemon start' to process the kiln");
-                }
-                Err(e) => {
-                    println!("⚠️  Could not check embeddings: {}", e);
-                }
+        Ok(client) => match daemon_manager.check_embeddings_exist(&client).await {
+            Ok(true) => {
+                println!("✅ Daemon has processed this kiln");
+                println!("📊 Embeddings are available for semantic search");
             }
-        }
+            Ok(false) => {
+                println!("❌ No embeddings found");
+                println!("💡 Run 'crucible daemon start' to process the kiln");
+            }
+            Err(e) => {
+                println!("⚠️  Could not check embeddings: {}", e);
+            }
+        },
         Err(e) => {
             println!("❌ Could not connect to database: {}", e);
             println!("💡 Make sure the daemon has run at least once");
@@ -142,11 +141,7 @@ async fn execute_status_command(config: CliConfig) -> Result<()> {
 }
 
 /// Execute restart command
-async fn execute_restart_command(
-    config: CliConfig,
-    wait: bool,
-    force: bool,
-) -> Result<()> {
+async fn execute_restart_command(config: CliConfig, wait: bool, force: bool) -> Result<()> {
     info!("Restarting daemon (wait: {}, force: {})", wait, force);
 
     println!("🔄 Restarting crucible-daemon...");

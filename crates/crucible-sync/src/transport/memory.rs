@@ -3,7 +3,7 @@
 //! This module provides a simple in-memory transport that's useful
 //! for testing and for scenarios where instances are in the same process.
 
-use crate::transport::{Transport, traits::TransportError};
+use crate::transport::{traits::TransportError, Transport};
 use async_trait::async_trait;
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -76,9 +76,10 @@ impl Transport for MemoryTransport {
             self.endpoint = Some(endpoint.to_string());
             Ok(())
         } else {
-            Err(TransportError::ConnectionFailed(
-                format!("Invalid memory endpoint: {}", endpoint)
-            ))
+            Err(TransportError::ConnectionFailed(format!(
+                "Invalid memory endpoint: {}",
+                endpoint
+            )))
         }
     }
 

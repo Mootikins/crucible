@@ -138,8 +138,8 @@ impl Default for TableFormatter {
 #[async_trait]
 impl OutputFormatter for TableFormatter {
     async fn format(&self, result: QueryResult) -> Result<String> {
-        use comfy_table::{Table, Cell, presets::UTF8_FULL};
         use colored::Colorize;
+        use comfy_table::{presets::UTF8_FULL, Cell, Table};
 
         if result.is_empty() {
             return Ok(format!(
@@ -154,17 +154,18 @@ impl OutputFormatter for TableFormatter {
 
         // Add headers
         let headers: Vec<String> = result.column_names();
-        let header_cells: Vec<Cell> = headers.iter()
+        let header_cells: Vec<Cell> = headers
+            .iter()
             .map(|h| Cell::new(h).fg(comfy_table::Color::Cyan))
             .collect();
         table.set_header(header_cells);
 
         // Add rows
         for row_data in &result.rows {
-            let cells: Vec<Cell> = headers.iter()
+            let cells: Vec<Cell> = headers
+                .iter()
                 .map(|col_name| {
-                    let value = row_data.get(col_name)
-                        .unwrap_or(&serde_json::Value::Null);
+                    let value = row_data.get(col_name).unwrap_or(&serde_json::Value::Null);
                     Cell::new(self.format_value(value))
                 })
                 .collect();
@@ -262,12 +263,8 @@ impl CsvFormatter {
             serde_json::Value::Bool(b) => b.to_string(),
             serde_json::Value::Number(n) => n.to_string(),
             serde_json::Value::String(s) => s.clone(),
-            serde_json::Value::Array(arr) => {
-                serde_json::to_string(arr).unwrap_or_default()
-            }
-            serde_json::Value::Object(obj) => {
-                serde_json::to_string(obj).unwrap_or_default()
-            }
+            serde_json::Value::Array(arr) => serde_json::to_string(arr).unwrap_or_default(),
+            serde_json::Value::Object(obj) => serde_json::to_string(obj).unwrap_or_default(),
         }
     }
 }
@@ -295,10 +292,10 @@ impl OutputFormatter for CsvFormatter {
 
         // Write rows
         for row_data in &result.rows {
-            let values: Vec<String> = headers.iter()
+            let values: Vec<String> = headers
+                .iter()
                 .map(|col_name| {
-                    let value = row_data.get(col_name)
-                        .unwrap_or(&serde_json::Value::Null);
+                    let value = row_data.get(col_name).unwrap_or(&serde_json::Value::Null);
                     self.format_value(value)
                 })
                 .collect();

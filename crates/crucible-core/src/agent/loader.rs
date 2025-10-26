@@ -1,9 +1,9 @@
 use crate::agent::types::*;
 use anyhow::{anyhow, Result};
 use regex::Regex;
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::collections::HashMap;
 
 /// Loader for agent definitions from markdown files with YAML frontmatter
 #[derive(Debug)]
@@ -68,7 +68,10 @@ impl AgentLoader {
         let parts: Vec<&str> = content.splitn(3, "---").collect();
 
         if parts.len() < 3 {
-            return Err(anyhow!("Invalid agent file format: missing YAML frontmatter in {}", file_path));
+            return Err(anyhow!(
+                "Invalid agent file format: missing YAML frontmatter in {}",
+                file_path
+            ));
         }
 
         let frontmatter_str = parts[1].trim();
@@ -87,12 +90,16 @@ impl AgentLoader {
             name: frontmatter.name.clone(),
             version: frontmatter.version,
             description: frontmatter.description,
-            capabilities: frontmatter.capabilities.into_iter().map(|cap| Capability {
-                name: cap.name,
-                description: cap.description,
-                skill_level: cap.skill_level,
-                required_tools: cap.required_tools.unwrap_or_default(),
-            }).collect(),
+            capabilities: frontmatter
+                .capabilities
+                .into_iter()
+                .map(|cap| Capability {
+                    name: cap.name,
+                    description: cap.description,
+                    skill_level: cap.skill_level,
+                    required_tools: cap.required_tools.unwrap_or_default(),
+                })
+                .collect(),
             required_tools: frontmatter.required_tools,
             optional_tools: frontmatter.optional_tools.unwrap_or_default(),
             tags: frontmatter.tags,
@@ -104,13 +111,17 @@ impl AgentLoader {
                 preferences: frontmatter.personality.preferences.unwrap_or_default(),
             },
             system_prompt: self.extract_system_prompt(markdown_content)?,
-            skills: frontmatter.skills.into_iter().map(|skill| Skill {
-                name: skill.name,
-                category: skill.category,
-                proficiency: skill.proficiency,
-                experience_years: skill.experience_years.unwrap_or(0.0),
-                certifications: skill.certifications.unwrap_or_default(),
-            }).collect(),
+            skills: frontmatter
+                .skills
+                .into_iter()
+                .map(|skill| Skill {
+                    name: skill.name,
+                    category: skill.category,
+                    proficiency: skill.proficiency,
+                    experience_years: skill.experience_years.unwrap_or(0.0),
+                    certifications: skill.certifications.unwrap_or_default(),
+                })
+                .collect(),
             config: frontmatter.config.unwrap_or_default(),
             dependencies: frontmatter.dependencies.unwrap_or_default(),
             created_at: now,
@@ -180,8 +191,11 @@ impl AgentLoader {
         // Validate skill proficiency (1-10)
         for skill in &agent.skills {
             if skill.proficiency == 0 || skill.proficiency > 10 {
-                return Err(anyhow!("Skill proficiency must be between 1 and 10: {} = {}",
-                                  skill.name, skill.proficiency));
+                return Err(anyhow!(
+                    "Skill proficiency must be between 1 and 10: {} = {}",
+                    skill.name,
+                    skill.proficiency
+                ));
             }
         }
 
@@ -190,7 +204,8 @@ impl AgentLoader {
 
     /// Check if a string is a valid semantic version
     fn is_valid_semver(&self, version: &str) -> bool {
-        let semver_regex = Regex::new(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9\-\.]+)?(\+[a-zA-Z0-9\-\.]+)?$").unwrap();
+        let semver_regex =
+            Regex::new(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9\-\.]+)?(\+[a-zA-Z0-9\-\.]+)?$").unwrap();
         semver_regex.is_match(version)
     }
 

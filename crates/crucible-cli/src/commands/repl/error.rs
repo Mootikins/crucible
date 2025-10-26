@@ -1,7 +1,7 @@
 // Error types for REPL operations
 
-use thiserror::Error;
 use colored::Colorize;
+use thiserror::Error;
 
 use super::command::CommandParseError;
 
@@ -89,11 +89,7 @@ impl ReplError {
             }
 
             ReplError::Formatting(msg) => {
-                format!(
-                    "{} Output Formatting Error: {}",
-                    "❌".red(),
-                    msg.red()
-                )
+                format!("{} Output Formatting Error: {}", "❌".red(), msg.red())
             }
 
             ReplError::Database(msg) => {
@@ -174,9 +170,8 @@ mod tests {
 
     #[test]
     fn test_command_parse_error_display() {
-        let error = ReplError::CommandParse(
-            CommandParseError::UnknownCommand("invalid".to_string())
-        );
+        let error =
+            ReplError::CommandParse(CommandParseError::UnknownCommand("invalid".to_string()));
         let display = error.display_pretty();
         assert!(display.contains("Command Error"));
         assert!(display.contains(":help"));

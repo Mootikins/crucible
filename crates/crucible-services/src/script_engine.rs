@@ -6,10 +6,10 @@
 
 use super::{
     errors::{ServiceError, ServiceResult},
-    logging::{EventTracer, EventMetrics},
-    service_traits::{ScriptEngine, ServiceLifecycle, HealthCheck},
+    logging::{EventMetrics, EventTracer},
+    service_traits::{HealthCheck, ScriptEngine, ServiceLifecycle},
     service_types::*,
-    types::{ServiceStatus, ExecutionStatus, ServiceHealth},
+    types::{ExecutionStatus, ServiceHealth, ServiceStatus},
 };
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -154,8 +154,8 @@ impl CrucibleScriptEngine {
         let before_count = executions.len();
 
         executions.retain(|execution_id, state| {
-            let keep = matches!(state.status, ExecutionStatus::Running) &&
-                      state.started_at.elapsed() < Duration::from_secs(300); // 5 minute max lifetime
+            let keep = matches!(state.status, ExecutionStatus::Running)
+                && state.started_at.elapsed() < Duration::from_secs(300); // 5 minute max lifetime
 
             if !keep {
                 debug!(
@@ -210,7 +210,11 @@ impl CrucibleScriptEngine {
         }
 
         SecurityValidationResult {
-            security_level: if valid { SecurityLevel::Safe } else { SecurityLevel::Untrusted },
+            security_level: if valid {
+                SecurityLevel::Safe
+            } else {
+                SecurityLevel::Untrusted
+            },
             valid,
             issues: issues.clone(),
             recommendations: if issues.is_empty() {
@@ -222,7 +226,11 @@ impl CrucibleScriptEngine {
     }
 
     /// Execute script in isolated VM
-    async fn execute_in_vm(&self, script: &CompiledScript, context: ExecutionContext) -> ExecutionResult {
+    async fn execute_in_vm(
+        &self,
+        script: &CompiledScript,
+        context: ExecutionContext,
+    ) -> ExecutionResult {
         let start_time = Instant::now();
         let execution_id = &context.execution_id;
 
@@ -240,7 +248,7 @@ impl CrucibleScriptEngine {
                 "script_id": script.script_id,
                 "script_name": script.script_name,
                 "parameters": context.parameters
-            }))
+            })),
         );
 
         // TODO: Implement actual script execution with Rune VM
@@ -271,7 +279,8 @@ impl CrucibleScriptEngine {
                 metrics.successful_executions += 1;
             }
             metrics.total_execution_time += duration;
-        }).await;
+        })
+        .await;
 
         // Update event metrics
         {
@@ -288,14 +297,15 @@ impl CrucibleScriptEngine {
             "Script execution completed"
         );
 
-        self.event_tracer.trace_event_complete(execution_id, duration_ms, execution_result.success);
+        self.event_tracer
+            .trace_event_complete(execution_id, duration_ms, execution_result.success);
 
         // Log routing decision (script execution to result processing)
         self.event_tracer.trace_routing(
             execution_id,
             "script_engine",
             "result_processor",
-            "execution_completed"
+            "execution_completed",
         );
 
         trace!(
@@ -406,7 +416,9 @@ impl HealthCheck for CrucibleScriptEngine {
 
         let status = match *state {
             ServiceLifecycleState::Running => ServiceStatus::Healthy,
-            ServiceLifecycleState::Starting | ServiceLifecycleState::Stopping => ServiceStatus::Degraded,
+            ServiceLifecycleState::Starting | ServiceLifecycleState::Stopping => {
+                ServiceStatus::Degraded
+            }
             ServiceLifecycleState::Stopped => ServiceStatus::Unhealthy,
             ServiceLifecycleState::Uninitialized => ServiceStatus::Unhealthy,
         };
@@ -459,7 +471,8 @@ impl ScriptEngine for CrucibleScriptEngine {
             if let Some(cached_script) = cache.get(&script_hash) {
                 self.update_metrics(|metrics| {
                     metrics.cache_hits += 1;
-                }).await;
+                })
+                .await;
 
                 debug!(
                     script_hash = %script_hash,
@@ -472,7 +485,8 @@ impl ScriptEngine for CrucibleScriptEngine {
 
         self.update_metrics(|metrics| {
             metrics.cache_misses += 1;
-        }).await;
+        })
+        .await;
 
         debug!(
             script_hash = %script_hash,
@@ -510,7 +524,8 @@ impl ScriptEngine for CrucibleScriptEngine {
             metrics.total_compilations += 1;
             metrics.successful_compilations += 1;
             metrics.total_compilation_time += compilation_time;
-        }).await;
+        })
+        .await;
 
         info!(
             script_id = %script_id,
@@ -522,7 +537,11 @@ impl ScriptEngine for CrucibleScriptEngine {
         Ok(compiled_script)
     }
 
-    async fn execute_script(&self, script_id: &str, context: ExecutionContext) -> ServiceResult<ExecutionResult> {
+    async fn execute_script(
+        &self,
+        script_id: &str,
+        context: ExecutionContext,
+    ) -> ServiceResult<ExecutionResult> {
         let execution_id = context.execution_id.clone();
 
         debug!(
@@ -534,7 +553,8 @@ impl ScriptEngine for CrucibleScriptEngine {
         // Find the compiled script
         let compiled_script = {
             let cache = self.script_cache.read().await;
-            cache.values()
+            cache
+                .values()
                 .find(|script| script.script_id == script_id)
                 .cloned()
                 .ok_or_else(|| {
@@ -577,7 +597,7 @@ impl ScriptEngine for CrucibleScriptEngine {
             &execution_id,
             "execution_request",
             "script_engine",
-            "script_found"
+            "script_found",
         );
 
         // Execute the script
@@ -636,8 +656,7 @@ impl ScriptEngine for CrucibleScriptEngine {
             last_updated: chrono::Utc::now(),
         })
     }
-
-    }
+}
 
 /// Default security policy
 impl Default for SecurityPolicy {

@@ -1,7 +1,6 @@
 /// Message bus middleware integrating transport and context tracking
 ///
 /// Provides unified message routing with automatic metadata extraction and storage.
-
 use crate::bus::EntityExtractor;
 use crate::context::{AgentId, MessageMetadata, MessageMetadataStore};
 use crate::protocol::{MessageEnvelope, SystemEvent, TypedMessage};
@@ -133,9 +132,7 @@ impl MessageBus {
         match message {
             TypedMessage::TaskAssignment { description, .. } => description.clone(),
 
-            TypedMessage::StatusUpdate { message, .. } => {
-                message.clone().unwrap_or_default()
-            }
+            TypedMessage::StatusUpdate { message, .. } => message.clone().unwrap_or_default(),
 
             TypedMessage::CoordinationRequest { context, .. } => {
                 // Extract text from context values
@@ -146,21 +143,18 @@ impl MessageBus {
                 serde_json::to_string(response_data).unwrap_or_default()
             }
 
-            TypedMessage::ContextShare { summary, .. } => {
-                summary.clone().unwrap_or_default()
-            }
+            TypedMessage::ContextShare { summary, .. } => summary.clone().unwrap_or_default(),
 
             TypedMessage::PruneRequest { strategy_hint, .. } => {
                 strategy_hint.clone().unwrap_or_default()
             }
 
-            TypedMessage::PruneComplete { summary, .. } => {
-                summary.clone().unwrap_or_default()
-            }
+            TypedMessage::PruneComplete { summary, .. } => summary.clone().unwrap_or_default(),
 
             // These messages don't have extractable text content
-            TypedMessage::CapabilityQuery { .. }
-            | TypedMessage::CapabilityAdvertisement { .. } => String::new(),
+            TypedMessage::CapabilityQuery { .. } | TypedMessage::CapabilityAdvertisement { .. } => {
+                String::new()
+            }
         }
     }
 }
@@ -211,10 +205,8 @@ mod tests {
         bus.register_agent("agent_1".to_string()).unwrap();
         bus.register_agent("agent_2".to_string()).unwrap();
 
-        let content = create_task_assignment(
-            "task_001",
-            "Work on #project-alpha using src/main.rs",
-        );
+        let content =
+            create_task_assignment("task_001", "Work on #project-alpha using src/main.rs");
         let envelope = create_envelope(1, "agent_1", Some("agent_2"), content);
 
         bus.send(&"agent_2".to_string(), envelope).await.unwrap();

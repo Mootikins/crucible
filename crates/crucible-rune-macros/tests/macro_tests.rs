@@ -79,7 +79,11 @@ pub async fn process_data_async(data: String, delay_ms: Option<u64>) -> Result<S
     category = "file",
     tags = ["note", "create", "optional"]
 )]
-pub fn create_note(title: String, _content: String, folder: Option<String>) -> Result<String, String> {
+pub fn create_note(
+    title: String,
+    _content: String,
+    folder: Option<String>,
+) -> Result<String, String> {
     let location = folder.unwrap_or_else(|| "notes".to_string());
     Ok(format!("Created note '{}' in folder '{}'", title, location))
 }
@@ -127,7 +131,10 @@ pub fn process_strings(strings: Vec<String>) -> Result<serde_json::Value, String
     category = "analysis",
     tags = ["analysis", "nested", "complex"]
 )]
-pub fn analyze_data(data: serde_json::Value, options: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
+pub fn analyze_data(
+    data: serde_json::Value,
+    options: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
     Ok(json!({
         "data_type": match data {
             serde_json::Value::Null => "null",
@@ -194,16 +201,13 @@ mod tests {
         let result1 = create_note(
             "Test".to_string(),
             "Content".to_string(),
-            Some("work".to_string())
-        ).unwrap();
+            Some("work".to_string()),
+        )
+        .unwrap();
         assert!(result1.contains("work"));
 
         // Test without folder
-        let result2 = create_note(
-            "Test".to_string(),
-            "Content".to_string(),
-            None
-        ).unwrap();
+        let result2 = create_note("Test".to_string(), "Content".to_string(), None).unwrap();
         assert!(result2.contains("notes"));
 
         // Test search with pagination
@@ -218,7 +222,7 @@ mod tests {
         let result = process_strings(strings).unwrap();
 
         assert_eq!(result["count"], 3);
-          assert_eq!(result["total_characters"], 14);
+        assert_eq!(result["total_characters"], 14);
         assert_eq!(result["average_length"], 14.0 / 3.0);
 
         let data = json!({"key": "value"});
@@ -232,7 +236,9 @@ mod tests {
         let result = read_file_async("test.txt".to_string()).await.unwrap();
         assert!(result.contains("test.txt"));
 
-        let processed = process_data_async("test".to_string(), Some(50)).await.unwrap();
+        let processed = process_data_async("test".to_string(), Some(50))
+            .await
+            .unwrap();
         assert!(processed.contains("test"));
     }
 

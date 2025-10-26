@@ -29,9 +29,9 @@
 
 mod config;
 mod loader;
-mod provider;
-mod profile;
 mod migration;
+mod profile;
+mod provider;
 
 // Include test_utils when test-utils feature is enabled
 #[cfg(feature = "test-utils")]
@@ -39,9 +39,9 @@ mod test_utils;
 
 pub use config::*;
 pub use loader::*;
-pub use provider::*;
-pub use profile::*;
 pub use migration::*;
+pub use profile::*;
+pub use provider::*;
 
 // Export test utilities when feature is enabled
 #[cfg(feature = "test-utils")]

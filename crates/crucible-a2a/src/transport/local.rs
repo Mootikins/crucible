@@ -1,7 +1,6 @@
 /// Local agent communication via Tokio channels
 ///
 /// Provides in-process message passing between agents with zero network overhead.
-
 use crate::context::types::AgentId;
 use crate::protocol::{MessageEnvelope, SystemEvent};
 use crate::transport::{Result, TransportError};
@@ -74,10 +73,7 @@ impl LocalAgentBus {
         }
 
         let (tx, rx) = mpsc::unbounded_channel();
-        let mailbox = AgentMailbox {
-            rx,
-            tx: tx.clone(),
-        };
+        let mailbox = AgentMailbox { rx, tx: tx.clone() };
 
         self.agents.insert(agent_id.clone(), mailbox);
 
@@ -162,9 +158,12 @@ impl LocalAgentBus {
 
     /// Get a handle for an agent (if registered)
     pub fn get_handle(&self, agent_id: &AgentId) -> Result<AgentHandle> {
-        let mailbox = self.agents.get(agent_id).ok_or(TransportError::AgentNotFound {
-            agent_id: agent_id.clone(),
-        })?;
+        let mailbox = self
+            .agents
+            .get(agent_id)
+            .ok_or(TransportError::AgentNotFound {
+                agent_id: agent_id.clone(),
+            })?;
 
         Ok(AgentHandle {
             agent_id: agent_id.clone(),
@@ -194,11 +193,7 @@ mod tests {
     use super::*;
     use crate::protocol::TypedMessage;
 
-    fn create_test_envelope(
-        from: &str,
-        to: Option<&str>,
-        message_id: u64,
-    ) -> MessageEnvelope {
+    fn create_test_envelope(from: &str, to: Option<&str>, message_id: u64) -> MessageEnvelope {
         MessageEnvelope {
             message_id,
             from: from.to_string(),
@@ -289,7 +284,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_broadcast_event() {
-        let mut bus = LocalAgentBus::new();
+        let bus = LocalAgentBus::new();
         let mut rx1 = bus.subscribe_events();
         let mut rx2 = bus.subscribe_events();
 

@@ -3,8 +3,8 @@
 use reedline::{Completer, Span, Suggestion};
 use std::sync::Arc;
 
-use super::tools::UnifiedToolRegistry;
 use super::database::ReplDatabase;
+use super::tools::UnifiedToolRegistry;
 
 /// REPL autocompleter
 pub struct ReplCompleter {
@@ -31,7 +31,12 @@ impl ReplCompleter {
     pub fn new(db: ReplDatabase, tools: Arc<UnifiedToolRegistry>) -> Self {
         let commands = Self::build_command_list();
         let cached_tools = std::sync::Arc::new(std::sync::RwLock::new(Vec::new()));
-        Self { db, tools, cached_tools, commands }
+        Self {
+            db,
+            tools,
+            cached_tools,
+            commands,
+        }
     }
 
     /// Update cached tool list (call this periodically)
@@ -107,7 +112,12 @@ impl ReplCompleter {
     }
 
     /// Complete tool names for `:run` command
-    fn complete_tool_names(&self, prefix: &str, start_pos: usize, end_pos: usize) -> Vec<Suggestion> {
+    fn complete_tool_names(
+        &self,
+        prefix: &str,
+        start_pos: usize,
+        end_pos: usize,
+    ) -> Vec<Suggestion> {
         let tools = self.cached_tools.read().unwrap();
 
         tools
@@ -125,7 +135,12 @@ impl ReplCompleter {
     }
 
     /// Complete log levels for `:log` command
-    fn complete_log_levels(&self, prefix: &str, start_pos: usize, end_pos: usize) -> Vec<Suggestion> {
+    fn complete_log_levels(
+        &self,
+        prefix: &str,
+        start_pos: usize,
+        end_pos: usize,
+    ) -> Vec<Suggestion> {
         let levels = vec![
             ("trace", "Most verbose logging"),
             ("debug", "Debug information"),
@@ -174,11 +189,9 @@ impl ReplCompleter {
     /// Complete SurrealQL keywords
     fn complete_keywords(&self, prefix: &str, start_pos: usize, end_pos: usize) -> Vec<Suggestion> {
         let keywords = vec![
-            "SELECT", "FROM", "WHERE", "ORDER", "BY", "LIMIT",
-            "CREATE", "UPDATE", "DELETE", "INSERT", "INTO",
-            "SET", "UNSET", "MERGE", "CONTENT",
-            "AND", "OR", "NOT", "IN", "CONTAINS",
-            "BEGIN", "COMMIT", "CANCEL",
+            "SELECT", "FROM", "WHERE", "ORDER", "BY", "LIMIT", "CREATE", "UPDATE", "DELETE",
+            "INSERT", "INTO", "SET", "UNSET", "MERGE", "CONTENT", "AND", "OR", "NOT", "IN",
+            "CONTAINS", "BEGIN", "COMMIT", "CANCEL",
         ];
 
         keywords
@@ -196,7 +209,12 @@ impl ReplCompleter {
     }
 
     /// Complete table names after FROM keyword using real database introspection
-    fn complete_table_names(&self, prefix: &str, start_pos: usize, end_pos: usize) -> Vec<Suggestion> {
+    fn complete_table_names(
+        &self,
+        prefix: &str,
+        start_pos: usize,
+        end_pos: usize,
+    ) -> Vec<Suggestion> {
         // Try to query real table names from database
         // If no runtime is available (e.g., in tests), use fallback
         let tables = if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -285,15 +303,19 @@ impl Completer for ReplCompleter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::repl::tools::UnifiedToolRegistry;
     use tempfile::TempDir;
-    use crate::commands::repl::tools::{ToolRegistry, UnifiedToolRegistry};
 
     fn create_test_completer() -> ReplCompleter {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let db = ReplDatabase::new_memory().await.unwrap();
             let temp_dir = TempDir::new().unwrap();
-            let tools = Arc::new(UnifiedToolRegistry::new(temp_dir.path().to_path_buf()).await.unwrap());
+            let tools = Arc::new(
+                UnifiedToolRegistry::new(temp_dir.path().to_path_buf())
+                    .await
+                    .unwrap(),
+            );
             ReplCompleter::new(db, tools)
         })
     }
@@ -370,7 +392,11 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let (db, tools) = rt.block_on(async {
             let db = ReplDatabase::new_memory().await.unwrap();
-            let tools = Arc::new(UnifiedToolRegistry::new(temp_dir.path().to_path_buf()).await.unwrap());
+            let tools = Arc::new(
+                UnifiedToolRegistry::new(temp_dir.path().to_path_buf())
+                    .await
+                    .unwrap(),
+            );
             (db, tools)
         });
 

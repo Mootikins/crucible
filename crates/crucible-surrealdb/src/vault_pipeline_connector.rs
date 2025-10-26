@@ -14,16 +14,16 @@
 //! - Provide end-to-end pipeline: ParsedDocument → embed → store → search
 
 use anyhow::Result;
-use std::path::{Path, PathBuf};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-use tracing::{debug, info, warn, error};
-use sha2::{Sha256, Digest};
+use tracing::{debug, error, info, warn};
 
 use crate::embedding_pool::EmbeddingThreadPool;
 use crate::multi_client::SurrealClient;
-use crucible_core::parser::ParsedDocument;
 use crate::vault_scanner::VaultScanResult;
+use crucible_core::parser::ParsedDocument;
 
 /// Configuration for vault pipeline connector
 #[derive(Debug, Clone)]
@@ -135,10 +135,14 @@ impl VaultPipelineConnector {
         let document_id = generate_document_id_from_path(&document.path);
 
         // Transform ParsedDocument to embedding inputs
-        let embedding_inputs = transform_parsed_document_to_embedding_inputs(document, &self.config);
+        let embedding_inputs =
+            transform_parsed_document_to_embedding_inputs(document, &self.config);
 
         if embedding_inputs.is_empty() {
-            warn!("No embedding inputs generated for document: {}", document_id);
+            warn!(
+                "No embedding inputs generated for document: {}",
+                document_id
+            );
             return Ok(DocumentProcessingResult {
                 document_id,
                 embeddings_generated: 0,
@@ -154,13 +158,24 @@ impl VaultPipelineConnector {
         let mut errors = Vec::new();
 
         for (chunk_id, chunk_content) in embedding_inputs {
-            match self.thread_pool.process_document_with_retry(&chunk_id, &chunk_content).await {
+            match self
+                .thread_pool
+                .process_document_with_retry(&chunk_id, &chunk_content)
+                .await
+            {
                 Ok(_) => {
                     embeddings_generated += 1;
                     debug!("Successfully processed chunk: {}", chunk_id);
 
                     // Store embedding in database
-                    if let Err(e) = store_embedding_in_database(client, &chunk_id, &document_id, &document.content_hash).await {
+                    if let Err(e) = store_embedding_in_database(
+                        client,
+                        &chunk_id,
+                        &document_id,
+                        &document.content_hash,
+                    )
+                    .await
+                    {
                         warn!("Failed to store embedding for chunk {}: {}", chunk_id, e);
                         errors.push(format!("Storage error for {}: {}", chunk_id, e));
                     }
@@ -176,10 +191,16 @@ impl VaultPipelineConnector {
         let success = errors.is_empty();
 
         if !success {
-            error!("Document processing completed with {} errors: {}", errors.len(), errors.join("; "));
+            error!(
+                "Document processing completed with {} errors: {}",
+                errors.len(),
+                errors.join("; ")
+            );
         } else {
-            info!("Successfully processed document {} with {} embeddings in {:?}",
-                  document_id, embeddings_generated, processing_time);
+            info!(
+                "Successfully processed document {} with {} embeddings in {:?}",
+                document_id, embeddings_generated, processing_time
+            );
         }
 
         Ok(DocumentProcessingResult {
@@ -187,7 +208,11 @@ impl VaultPipelineConnector {
             embeddings_generated,
             processing_time,
             success,
-            error_message: if errors.is_empty() { None } else { Some(errors.join("; ")) },
+            error_message: if errors.is_empty() {
+                None
+            } else {
+                Some(errors.join("; "))
+            },
             content_hash: document.content_hash.clone(),
         })
     }
@@ -221,7 +246,9 @@ impl VaultPipelineConnector {
                 let document = document.clone();
 
                 let task = tokio::spawn(async move {
-                    connector.process_document_to_embedding(&client, &document).await
+                    connector
+                        .process_document_to_embedding(&client, &document)
+                        .await
                 });
                 batch_tasks.push(task);
             }
@@ -258,8 +285,10 @@ impl VaultPipelineConnector {
             Duration::from_secs(0)
         };
 
-        info!("Batch processing complete: {} successful, {} failed, {} embeddings in {:?}",
-              successfully_processed, failed_documents, total_embeddings, total_time);
+        info!(
+            "Batch processing complete: {} successful, {} failed, {} embeddings in {:?}",
+            successfully_processed, failed_documents, total_embeddings, total_time
+        );
 
         Ok(BatchProcessingResult {
             total_documents: documents.len(),
@@ -282,10 +311,15 @@ impl VaultPipelineConnector {
         documents: &[ParsedDocument],
     ) -> Result<BatchProcessingResult> {
         if !self.config.enable_change_detection {
-            return self.process_documents_to_embeddings(client, documents).await;
+            return self
+                .process_documents_to_embeddings(client, documents)
+                .await;
         }
 
-        info!("Processing {} documents with change detection", documents.len());
+        info!(
+            "Processing {} documents with change detection",
+            documents.len()
+        );
 
         let mut documents_to_process = Vec::new();
         let mut skipped_documents = 0;
@@ -294,7 +328,9 @@ impl VaultPipelineConnector {
             let document_id = generate_document_id_from_path(&document.path);
 
             // Check if document needs processing based on content hash
-            match check_document_needs_processing(client, &document_id, &document.content_hash).await {
+            match check_document_needs_processing(client, &document_id, &document.content_hash)
+                .await
+            {
                 Ok(needs_processing) => {
                     if needs_processing {
                         documents_to_process.push(document.clone());
@@ -304,14 +340,20 @@ impl VaultPipelineConnector {
                     }
                 }
                 Err(e) => {
-                    warn!("Error checking document {} for changes: {}, will process", document_id, e);
+                    warn!(
+                        "Error checking document {} for changes: {}, will process",
+                        document_id, e
+                    );
                     documents_to_process.push(document.clone());
                 }
             }
         }
 
-        info!("Change detection: {} documents to process, {} skipped",
-              documents_to_process.len(), skipped_documents);
+        info!(
+            "Change detection: {} documents to process, {} skipped",
+            documents_to_process.len(),
+            skipped_documents
+        );
 
         if documents_to_process.is_empty() {
             return Ok(BatchProcessingResult {
@@ -330,12 +372,16 @@ impl VaultPipelineConnector {
         for document in &documents_to_process {
             let document_id = generate_document_id_from_path(&document.path);
             if let Err(e) = clear_document_embeddings(client, &document_id).await {
-                warn!("Failed to clear embeddings for document {}: {}", document_id, e);
+                warn!(
+                    "Failed to clear embeddings for document {}: {}",
+                    document_id, e
+                );
             }
         }
 
         // Process the documents that need updating
-        self.process_documents_to_embeddings(client, &documents_to_process).await
+        self.process_documents_to_embeddings(client, &documents_to_process)
+            .await
     }
 }
 
@@ -372,25 +418,28 @@ pub fn generate_document_id_from_path(path: &Path) -> String {
 
     // Sanitize: replace problematic characters with underscores
     // Convert Unicode characters to ASCII-safe equivalents first
-    let ascii_safe = normalized.chars().map(|c| {
-        match c {
-            // Special Unicode characters to ASCII equivalents
-            'ä' | 'Ä' => 'a',
-            'ö' | 'Ö' => 'o',
-            'ü' | 'Ü' => 'u',
-            'ß' => 's',
-            'é' | 'è' | 'ê' | 'ë' | 'É' | 'È' | 'Ê' | 'Ë' => 'e',
-            'á' | 'à' | 'â' | 'ã' | 'å' | 'Á' | 'À' | 'Â' | 'Ã' | 'Å' => 'a',
-            'í' | 'ì' | 'î' | 'ï' | 'Í' | 'Ì' | 'Î' | 'Ï' => 'i',
-            'ó' | 'ò' | 'ô' | 'õ' | 'ø' | 'Ó' | 'Ò' | 'Ô' | 'Õ' | 'Ø' => 'o',
-            'ú' | 'ù' | 'û' | 'Ú' | 'Ù' | 'Û' => 'u',
-            'ñ' | 'Ñ' => 'n',
-            'ç' | 'Ç' => 'c',
-            // For other non-ASCII characters, convert to underscore
-            c if !c.is_ascii() => '_',
-            c => c,
-        }
-    }).collect::<String>();
+    let ascii_safe = normalized
+        .chars()
+        .map(|c| {
+            match c {
+                // Special Unicode characters to ASCII equivalents
+                'ä' | 'Ä' => 'a',
+                'ö' | 'Ö' => 'o',
+                'ü' | 'Ü' => 'u',
+                'ß' => 's',
+                'é' | 'è' | 'ê' | 'ë' | 'É' | 'È' | 'Ê' | 'Ë' => 'e',
+                'á' | 'à' | 'â' | 'ã' | 'å' | 'Á' | 'À' | 'Â' | 'Ã' | 'Å' => 'a',
+                'í' | 'ì' | 'î' | 'ï' | 'Í' | 'Ì' | 'Î' | 'Ï' => 'i',
+                'ó' | 'ò' | 'ô' | 'õ' | 'ø' | 'Ó' | 'Ò' | 'Ô' | 'Õ' | 'Ø' => 'o',
+                'ú' | 'ù' | 'û' | 'Ú' | 'Ù' | 'Û' => 'u',
+                'ñ' | 'Ñ' => 'n',
+                'ç' | 'Ç' => 'c',
+                // For other non-ASCII characters, convert to underscore
+                c if !c.is_ascii() => '_',
+                c => c,
+            }
+        })
+        .collect::<String>();
 
     let sanitized = ascii_safe
         .chars()
@@ -421,7 +470,8 @@ pub fn generate_document_id_from_path(path: &Path) -> String {
                 acc.push(c);
                 (acc, false)
             }
-        }).0;
+        })
+        .0;
 
     // Remove leading/trailing underscores and limit length
     let trimmed = collapsed.trim_matches('_');
@@ -436,7 +486,7 @@ pub fn generate_document_id_from_path(path: &Path) -> String {
         let mut hasher = Sha256::new();
         hasher.update(path_str.as_bytes());
         let hash = format!("{:x}", hasher.finalize());
-        format!("{}_{}", &trimmed[..200-8], &hash[..8])
+        format!("{}_{}", &trimmed[..200 - 8], &hash[..8])
     } else {
         trimmed.to_string()
     }
@@ -446,7 +496,7 @@ pub fn generate_document_id_from_path(path: &Path) -> String {
 #[allow(dead_code)]
 fn generate_document_id_from_path_cached(
     path: &Path,
-    cache: &mut HashMap<PathBuf, String>
+    cache: &mut HashMap<PathBuf, String>,
 ) -> String {
     if let Some(cached_id) = cache.get(path) {
         return cached_id.clone();
@@ -485,7 +535,9 @@ pub fn transform_parsed_document_to_embedding_inputs(
 
         // Add tags
         if !document.tags.is_empty() {
-            let tags_str = document.tags.iter()
+            let tags_str = document
+                .tags
+                .iter()
                 .map(|t| t.name.clone())
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -494,7 +546,9 @@ pub fn transform_parsed_document_to_embedding_inputs(
 
         // Add wikilinks as context
         if !document.wikilinks.is_empty() {
-            let links_str = document.wikilinks.iter()
+            let links_str = document
+                .wikilinks
+                .iter()
                 .map(|w| w.target.clone())
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -534,7 +588,8 @@ pub fn transform_parsed_document_to_embedding_inputs(
             }
 
             // Move to next chunk with overlap
-            start = if start + config.max_chunk_size - config.chunk_overlap < enhanced_content.len() {
+            start = if start + config.max_chunk_size - config.chunk_overlap < enhanced_content.len()
+            {
                 start + config.max_chunk_size - config.chunk_overlap
             } else {
                 chunk_end
@@ -564,10 +619,7 @@ async fn check_document_needs_processing(
 }
 
 /// Clear existing embeddings for a document
-async fn clear_document_embeddings(
-    _client: &SurrealClient,
-    _document_id: &str,
-) -> Result<()> {
+async fn clear_document_embeddings(_client: &SurrealClient, _document_id: &str) -> Result<()> {
     // For TDD purposes, this is a no-op
     // In a real implementation, this would delete existing embeddings
     // from the database for the given document
@@ -585,15 +637,20 @@ async fn store_embedding_in_database(
     // For TDD purposes, this is a no-op that just logs the operation
     // In a real implementation, this would store the embedding
     // vector and metadata in the database
-    debug!("Storing embedding for chunk {} (document: {}, hash: {})",
-           chunk_id, document_id, content_hash);
+    debug!(
+        "Storing embedding for chunk {} (document: {}, hash: {})",
+        chunk_id, document_id, content_hash
+    );
     Ok(())
 }
 
 /// Get parsed documents from vault scan result
 ///
 /// **TDD Function**: Retrieves ParsedDocuments from scan results for integration testing
-pub async fn get_parsed_documents_from_scan(_client: &SurrealClient, scan_result: &VaultScanResult) -> Vec<ParsedDocument> {
+pub async fn get_parsed_documents_from_scan(
+    _client: &SurrealClient,
+    scan_result: &VaultScanResult,
+) -> Vec<ParsedDocument> {
     let mut documents = Vec::new();
 
     for file_info in &scan_result.discovered_files {
@@ -614,7 +671,7 @@ pub async fn get_parsed_documents_from_scan(_client: &SurrealClient, scan_result
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::embedding_config::*;
+
     use std::path::PathBuf;
 
     #[tokio::test]
@@ -622,7 +679,10 @@ mod tests {
         let test_cases = vec![
             ("/vault/document.md", "vault_document.md"),
             ("/vault/nested/document.md", "vault_nested_document.md"),
-            ("/vault/with spaces/document.md", "vault_with_spaces_document.md"),
+            (
+                "/vault/with spaces/document.md",
+                "vault_with_spaces_document.md",
+            ),
         ];
 
         for (path, expected_contains) in test_cases {

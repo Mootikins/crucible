@@ -221,12 +221,12 @@ impl CandleProvider {
         self.ensure_model_loaded().await?;
 
         let model_guard = self.model.read().await;
-        let model = model_guard.as_ref().ok_or_else(|| {
-            EmbeddingError::ProviderError {
+        let model = model_guard
+            .as_ref()
+            .ok_or_else(|| EmbeddingError::ProviderError {
                 provider: "Candle".to_string(),
                 message: "Model not loaded".to_string(),
-            }
-        })?;
+            })?;
 
         // Generate a deterministic mock embedding based on text hash
         let embedding = self.generate_mock_embedding(text, model.dimensions);
@@ -368,8 +368,8 @@ impl EmbeddingProvider for CandleProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::config::{EmbeddingConfig, ProviderType};
+    use super::*;
 
     // RED Phase: These tests will initially fail and drive the implementation
 
@@ -401,7 +401,10 @@ mod tests {
         // Verify embedding values are reasonable
         for &value in &response.embedding {
             assert!(value.is_finite(), "Embedding values should be finite");
-            assert!(value >= -1.0 && value <= 1.0, "Embedding values should be normalized");
+            assert!(
+                value >= -1.0 && value <= 1.0,
+                "Embedding values should be normalized"
+            );
         }
     }
 
@@ -553,7 +556,11 @@ mod tests {
         assert!(response.is_ok());
         // RED Phase: For mock implementation, should be very fast (< 10ms)
         // GREEN Phase: Real implementation target is < 100ms
-        assert!(duration.as_millis() < 100, "Embedding generation should be fast, took {}ms", duration.as_millis());
+        assert!(
+            duration.as_millis() < 100,
+            "Embedding generation should be fast, took {}ms",
+            duration.as_millis()
+        );
     }
 
     #[tokio::test]
@@ -589,11 +596,17 @@ mod tests {
         let embedding1 = provider.generate_mock_embedding(text, 384);
         let embedding2 = provider.generate_mock_embedding(text, 384);
 
-        assert_eq!(embedding1, embedding2, "Mock embeddings should be deterministic");
+        assert_eq!(
+            embedding1, embedding2,
+            "Mock embeddings should be deterministic"
+        );
 
         // Different texts should produce different embeddings
         let embedding3 = provider.generate_mock_embedding("Different text", 384);
-        assert_ne!(embedding1, embedding3, "Different texts should produce different embeddings");
+        assert_ne!(
+            embedding1, embedding3,
+            "Different texts should produce different embeddings"
+        );
     }
 
     #[test]

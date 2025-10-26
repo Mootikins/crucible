@@ -85,9 +85,9 @@ pub mod errors {
 
 /// Basic tool service trait for backward compatibility
 pub mod traits {
-    use super::{errors::ServiceResult};
-    use async_trait::async_trait;
+    use super::errors::ServiceResult;
     use crate::types::{ToolDefinition, ToolExecutionRequest, ToolExecutionResult};
+    use async_trait::async_trait;
 
     /// Basic tool service trait - simplified version
     #[async_trait]
@@ -99,7 +99,10 @@ pub mod traits {
         async fn get_tool(&self, name: &str) -> ServiceResult<Option<ToolDefinition>>;
 
         /// Execute a tool
-        async fn execute_tool(&self, request: ToolExecutionRequest) -> ServiceResult<ToolExecutionResult>;
+        async fn execute_tool(
+            &self,
+            request: ToolExecutionRequest,
+        ) -> ServiceResult<ToolExecutionResult>;
 
         /// Get service health and status
         async fn service_health(&self) -> ServiceResult<super::types::ServiceHealth>;
@@ -156,12 +159,32 @@ pub mod database {
 
     /// Minimal database service trait
     pub trait DatabaseService: Send + Sync {
-        fn connection_status(&self) -> impl std::future::Future<Output = ServiceResult<ConnectionStatus>> + Send;
-        fn create_database(&self, name: &str) -> impl std::future::Future<Output = ServiceResult<DatabaseInfo>> + Send;
-        fn list_databases(&self) -> impl std::future::Future<Output = ServiceResult<Vec<DatabaseInfo>>> + Send;
-        fn get_database(&self, name: &str) -> impl std::future::Future<Output = ServiceResult<Option<DatabaseInfo>>> + Send;
-        fn drop_database(&self, name: &str) -> impl std::future::Future<Output = ServiceResult<bool>> + Send;
-        fn apply_schema_changes(&self, database: &str, changes: Vec<SchemaChange>) -> impl std::future::Future<Output = ServiceResult<bool>> + Send;
-        fn create_transaction(&self, database: &str) -> impl std::future::Future<Output = ServiceResult<TransactionStatus>> + Send;
+        fn connection_status(
+            &self,
+        ) -> impl std::future::Future<Output = ServiceResult<ConnectionStatus>> + Send;
+        fn create_database(
+            &self,
+            name: &str,
+        ) -> impl std::future::Future<Output = ServiceResult<DatabaseInfo>> + Send;
+        fn list_databases(
+            &self,
+        ) -> impl std::future::Future<Output = ServiceResult<Vec<DatabaseInfo>>> + Send;
+        fn get_database(
+            &self,
+            name: &str,
+        ) -> impl std::future::Future<Output = ServiceResult<Option<DatabaseInfo>>> + Send;
+        fn drop_database(
+            &self,
+            name: &str,
+        ) -> impl std::future::Future<Output = ServiceResult<bool>> + Send;
+        fn apply_schema_changes(
+            &self,
+            database: &str,
+            changes: Vec<SchemaChange>,
+        ) -> impl std::future::Future<Output = ServiceResult<bool>> + Send;
+        fn create_transaction(
+            &self,
+            database: &str,
+        ) -> impl std::future::Future<Output = ServiceResult<TransactionStatus>> + Send;
     }
 }

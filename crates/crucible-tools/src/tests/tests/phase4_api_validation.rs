@@ -6,10 +6,8 @@
 #[cfg(test)]
 mod tests {
     use crate::{
-        execute_tool, load_all_tools, init,
-        search_tools, vault_tools, system_tools, database_tools,
-        ToolResult, ToolError, ToolFunction,
-        library_info, tool_loader_info, VERSION
+        database_tools, execute_tool, init, library_info, load_all_tools, search_tools,
+        system_tools, tool_loader_info, vault_tools, ToolError, ToolFunction, ToolResult, VERSION,
     };
     use serde_json::json;
 
@@ -44,7 +42,9 @@ mod tests {
             json!({}),
             Some("test_user".to_string()),
             Some("test_session".to_string()),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
         assert!(result.success);
 
         // Test 6: Direct tool function access works
@@ -59,17 +59,22 @@ mod tests {
             json!({"query": "test"}),
             Some("test_user".to_string()),
             Some("test_session".to_string()),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         let _vault_result = vault_fn(
             "get_vault_stats".to_string(),
             json!({}),
             Some("test_user".to_string()),
             Some("test_session".to_string()),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         // Test 7: Type exports work correctly
-        let _test_result: ToolResult = ToolResult::success("test".to_string(), json!({"test": true}));
+        let _test_result: ToolResult =
+            ToolResult::success("test".to_string(), json!({"test": true}));
         let _test_error: ToolError = ToolError::Other("test error".to_string());
         let _test_function: ToolFunction = system_tools::get_system_info();
 
@@ -109,7 +114,9 @@ mod tests {
             json!({}),
             Some("user123".to_string()),
             Some("session456".to_string()),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -123,17 +130,21 @@ mod tests {
             json!({"query": "test", "top_k": 10}),
             Some("user123".to_string()),
             Some("session456".to_string()),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         let vault_stats = vault_fn(
             "get_vault_stats".to_string(),
             json!({}),
             Some("user123".to_string()),
             Some("session456".to_string()),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         // Both should work
         assert!(search_result.success || search_result.error.is_some()); // May fail if no search index, but should not panic
-        assert!(vault_stats.success || vault_stats.error.is_some());     // May fail if no vault, but should not panic
+        assert!(vault_stats.success || vault_stats.error.is_some()); // May fail if no vault, but should not panic
     }
 }

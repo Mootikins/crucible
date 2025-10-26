@@ -11,15 +11,6 @@
 //! 4. Fallback routing between system and Rune tools
 //! 5. Output formatting and validation
 
-use anyhow::Result;
-use std::io::{Write, Read, BufReader, BufRead};
-use std::process::{Command, Stdio};
-use std::path::PathBuf;
-use std::thread;
-use std::time::Duration;
-use tempfile::TempDir;
-use regex::Regex;
-
 /// Test context for end-to-end REPL tests
 struct ReplTestContext {
     temp_dir: TempDir,
@@ -94,7 +85,7 @@ struct ReplProcess {
     child: std::process::Child,
     stdin: std::process::ChildStdin,
     stdout: BufReader<std::process::ChildStdout>,
-    stderr: BufReader<std::process::ChildStdout>,
+    stderr: BufReader<std::process::ChildStderr>,
 }
 
 impl ReplProcess {
@@ -189,23 +180,40 @@ async fn test_repl_tools_command_displays_grouped_tools() -> Result<()> {
     repl.quit()?;
 
     // Assertions about the output format
-    assert!(output.contains("Available Tools"), "Output should contain 'Available Tools'");
+    assert!(
+        output.contains("Available Tools"),
+        "Output should contain 'Available Tools'"
+    );
 
     // Should show grouped tools with proper format
     assert!(output.contains("SYSTEM"), "Should show SYSTEM group");
-    assert!(output.contains("crucible-tools"), "Should show crucible-tools description");
-    assert!(output.contains("[") && output.contains("tools]"), "Should show tool count");
+    assert!(
+        output.contains("crucible-tools"),
+        "Should show crucible-tools description"
+    );
+    assert!(
+        output.contains("[") && output.contains("tools]"),
+        "Should show tool count"
+    );
 
     // Should show specific system tools
     let expected_tools = vec!["system_info", "list_files", "search_documents"];
     for tool in expected_tools {
-        assert!(output.contains(tool), "Output should contain '{}':\n{}", tool, output);
+        assert!(
+            output.contains(tool),
+            "Output should contain '{}':\n{}",
+            tool,
+            output
+        );
     }
 
     // Verify the format: "SYSTEM (crucible-tools) [X tools]:"
     let group_header_regex = Regex::new(r"SYSTEM \(crucible-tools\) \[\d+ tools\]:").unwrap();
-    assert!(group_header_regex.is_match(&output),
-           "Output should match group header format: {}", output);
+    assert!(
+        group_header_regex.is_match(&output),
+        "Output should match group header format: {}",
+        output
+    );
 
     println!("✅ :tools command displays grouped tools correctly");
     println!("📋 Sample output:\n{}", output);
@@ -233,26 +241,38 @@ async fn test_repl_run_command_executes_system_tools() -> Result<()> {
     let output = repl.read_output(3000)?;
 
     // Should contain valid JSON output
-    assert!(output.contains("{") && output.contains("}"),
-           "Output should be JSON format: {}", output);
+    assert!(
+        output.contains("{") && output.contains("}"),
+        "Output should be JSON format: {}",
+        output
+    );
 
     // Should contain system information fields
-    assert!(output.contains("platform") || output.contains("os") || output.contains("arch"),
-           "Output should contain system info: {}", output);
+    assert!(
+        output.contains("platform") || output.contains("os") || output.contains("arch"),
+        "Output should contain system info: {}",
+        output
+    );
 
     // Validate JSON is properly formatted
     let parsed: serde_json::Value = serde_json::from_str(&output)
         .map_err(|e| anyhow::anyhow!("Invalid JSON output: {} - Error: {}", output, e))?;
 
-    assert!(parsed.as_object().is_some(), "Output should be a JSON object");
+    assert!(
+        parsed.as_object().is_some(),
+        "Output should be a JSON object"
+    );
 
     // Test list_files tool with an argument
     repl.send_command(":run list_files /tmp")?;
     let files_output = repl.read_output(2000)?;
 
     // Should not error out (even if /tmp is empty)
-    assert!(!files_output.contains("❌ Tool Error"),
-           "list_files should not error: {}", files_output);
+    assert!(
+        !files_output.contains("❌ Tool Error"),
+        "list_files should not error: {}",
+        files_output
+    );
 
     // Clean exit
     repl.quit()?;
@@ -281,28 +301,37 @@ async fn test_repl_error_handling() -> Result<()> {
     repl.send_command(":run nonexistent_tool")?;
     let missing_tool_output = repl.read_output(2000)?;
 
-    assert!(missing_tool_output.contains("not found") ||
-           missing_tool_output.contains("Error") ||
-           missing_tool_output.contains("failed"),
-           "Should show error for missing tool: {}", missing_tool_output);
+    assert!(
+        missing_tool_output.contains("not found")
+            || missing_tool_output.contains("Error")
+            || missing_tool_output.contains("failed"),
+        "Should show error for missing tool: {}",
+        missing_tool_output
+    );
 
     // Test missing required arguments
     repl.send_command(":run list_files")?; // list_files requires a path argument
     let missing_args_output = repl.read_output(2000)?;
 
-    assert!(missing_args_output.contains("❌ Tool Error") ||
-           missing_args_output.contains("failed") ||
-           missing_args_output.contains("missing"),
-           "Should show error for missing arguments: {}", missing_args_output);
+    assert!(
+        missing_args_output.contains("❌ Tool Error")
+            || missing_args_output.contains("failed")
+            || missing_args_output.contains("missing"),
+        "Should show error for missing arguments: {}",
+        missing_args_output
+    );
 
     // Test invalid command
     repl.send_command(":invalid_command")?;
     let invalid_command_output = repl.read_output(2000)?;
 
-    assert!(invalid_command_output.contains("Unknown") ||
-           invalid_command_output.contains("invalid") ||
-           invalid_command_output.contains("help"),
-           "Should show error for invalid command: {}", invalid_command_output);
+    assert!(
+        invalid_command_output.contains("Unknown")
+            || invalid_command_output.contains("invalid")
+            || invalid_command_output.contains("help"),
+        "Should show error for invalid command: {}",
+        invalid_command_output
+    );
 
     // Clean exit
     repl.quit()?;
@@ -347,14 +376,22 @@ pub fn main(args) {
     // First, test that system tools work (system tools should be tried first)
     repl.send_command(":run system_info")?;
     let system_output = repl.read_output(2000)?;
-    assert!(system_output.contains("{"), "System tool should work: {}", system_output);
+    assert!(
+        system_output.contains("{"),
+        "System tool should work: {}",
+        system_output
+    );
 
     // Test that Rune tools appear in :tools listing
     repl.send_command(":tools")?;
     let tools_output = repl.read_output(2000)?;
 
     // Should show both SYSTEM and potentially RUNE groups
-    assert!(tools_output.contains("SYSTEM"), "Should show SYSTEM group: {}", tools_output);
+    assert!(
+        tools_output.contains("SYSTEM"),
+        "Should show SYSTEM group: {}",
+        tools_output
+    );
 
     // Test running the Rune tool directly (if discovered)
     repl.send_command(":run test_rune_tool")?;
@@ -368,7 +405,10 @@ pub fn main(args) {
 
     println!("✅ Fallback routing test completed");
     println!("🔧 System tools work: {}", system_output.contains("{"));
-    println!("📜 Tools listing shows groups: {}", tools_output.contains("SYSTEM"));
+    println!(
+        "📜 Tools listing shows groups: {}",
+        tools_output.contains("SYSTEM")
+    );
 
     Ok(())
 }
@@ -394,8 +434,11 @@ async fn test_repl_output_formatting() -> Result<()> {
     assert!(tools_output.contains("\n"), "Output should have newlines");
 
     // Should contain emojis for visual appeal
-    assert!(tools_output.contains("📦") || tools_output.contains("🔧"),
-           "Output should contain visual indicators: {}", tools_output);
+    assert!(
+        tools_output.contains("📦") || tools_output.contains("🔧"),
+        "Output should contain visual indicators: {}",
+        tools_output
+    );
 
     // Test that tool execution produces clean output
     repl.send_command(":run system_info")?;
@@ -403,14 +446,22 @@ async fn test_repl_output_formatting() -> Result<()> {
 
     // Should be valid JSON without extra noise
     let trimmed = system_output.trim();
-    let _ = serde_json::from_str::<serde_json::Value>(trimmed)
-        .map_err(|e| anyhow::anyhow!("System info should be valid JSON: {} - Error: {}", trimmed, e))?;
+    let _ = serde_json::from_str::<serde_json::Value>(trimmed).map_err(|e| {
+        anyhow::anyhow!(
+            "System info should be valid JSON: {} - Error: {}",
+            trimmed,
+            e
+        )
+    })?;
 
     // Clean exit
     repl.quit()?;
 
     println!("✅ Output formatting is clean and valid");
-    println!("🎨 Tools output formatted properly: {}", tools_output.contains("\n"));
+    println!(
+        "🎨 Tools output formatted properly: {}",
+        tools_output.contains("\n")
+    );
     println!("📊 System output is valid JSON: true");
 
     Ok(())
@@ -434,3 +485,11 @@ async fn test_repl_infrastructure_smoke_test() -> Result<()> {
 
     Ok(())
 }
+use anyhow::Result;
+use regex::Regex;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::Duration;
+use tempfile::TempDir;

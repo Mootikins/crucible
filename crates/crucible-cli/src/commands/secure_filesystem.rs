@@ -8,10 +8,10 @@
 //! - Symlinks pointing outside security boundaries
 //! - Resource exhaustion attacks
 
-use anyhow::{Context, Result, anyhow};
-use std::fs;
-use std::path::{Path, PathBuf, Component};
+use anyhow::{anyhow, Context, Result};
 use std::collections::HashSet;
+use std::fs;
+use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
 
 /// Configuration for secure filesystem operations
@@ -114,10 +114,18 @@ impl SecureFileWalker {
             Ok(entries) => entries,
             Err(e) => {
                 if self.config.continue_on_permission_error {
-                    tracing::warn!("Permission denied accessing directory: {} - {}", dir.display(), e);
+                    tracing::warn!(
+                        "Permission denied accessing directory: {} - {}",
+                        dir.display(),
+                        e
+                    );
                     return Ok(());
                 } else {
-                    return Err(anyhow!("Permission denied accessing directory: {} - {}", dir.display(), e));
+                    return Err(anyhow!(
+                        "Permission denied accessing directory: {} - {}",
+                        dir.display(),
+                        e
+                    ));
                 }
             }
         };
@@ -178,7 +186,11 @@ impl SecureFileWalker {
 
         // Check file size limit
         if metadata.len() > self.config.max_file_size {
-            tracing::warn!("File too large: {} ({} bytes)", file_path.display(), metadata.len());
+            tracing::warn!(
+                "File too large: {} ({} bytes)",
+                file_path.display(),
+                metadata.len()
+            );
             return Ok(false);
         }
 
@@ -196,7 +208,11 @@ impl SecureFileWalker {
         let canonical_kiln = match fs::canonicalize(&self.kiln_path) {
             Ok(path) => path,
             Err(e) => {
-                tracing::warn!("Cannot canonicalize kiln path: {} - {}", self.kiln_path.display(), e);
+                tracing::warn!(
+                    "Cannot canonicalize kiln path: {} - {}",
+                    self.kiln_path.display(),
+                    e
+                );
                 return Ok(false);
             }
         };
@@ -228,13 +244,20 @@ impl SecureFileWalker {
 
         // Check if we've seen this path in the current chain (circular symlink)
         if self.symlink_chain.contains(&path.to_path_buf()) {
-            return Err(anyhow!("Circular symlink detected: {:?}", self.symlink_chain));
+            return Err(anyhow!(
+                "Circular symlink detected: {:?}",
+                self.symlink_chain
+            ));
         }
 
         let metadata = match fs::symlink_metadata(path) {
             Ok(metadata) => metadata,
             Err(e) => {
-                return Err(anyhow!("Cannot read metadata for path {}: {}", path.display(), e));
+                return Err(anyhow!(
+                    "Cannot read metadata for path {}: {}",
+                    path.display(),
+                    e
+                ));
             }
         };
 
@@ -245,7 +268,11 @@ impl SecureFileWalker {
             let target = match fs::read_link(path) {
                 Ok(target) => target,
                 Err(e) => {
-                    return Err(anyhow!("Cannot read symlink target for {}: {}", path.display(), e));
+                    return Err(anyhow!(
+                        "Cannot read symlink target for {}: {}",
+                        path.display(),
+                        e
+                    ));
                 }
             };
 
@@ -253,9 +280,7 @@ impl SecureFileWalker {
             let resolved_target = if target.is_absolute() {
                 target
             } else {
-                path.parent()
-                    .unwrap_or_else(|| Path::new("."))
-                    .join(target)
+                path.parent().unwrap_or_else(|| Path::new(".")).join(target)
             };
 
             // Recursively resolve the target
@@ -290,7 +315,8 @@ impl PathValidator {
         }
 
         // Expand ~ to home directory
-        let expanded_path = if path.starts_with('~') && (path.len() == 1 || path.starts_with("~/")) {
+        let expanded_path = if path.starts_with('~') && (path.len() == 1 || path.starts_with("~/"))
+        {
             if let Some(home_dir) = dirs::home_dir() {
                 if path == "~" {
                     home_dir
@@ -360,18 +386,16 @@ impl PathValidator {
     /// Ensure path is within kiln boundaries
     fn ensure_within_kiln(&self, path: &Path) -> Result<()> {
         match fs::canonicalize(path) {
-            Ok(canonical_path) => {
-                match fs::canonicalize(&self.kiln_path) {
-                    Ok(kiln_canonical) => {
-                        if !canonical_path.starts_with(kiln_canonical) {
-                            return Err(anyhow!("Path outside kiln: {}", path.display()));
-                        }
-                    }
-                    Err(e) => {
-                        return Err(anyhow!("Cannot canonicalize kiln path: {}", e));
+            Ok(canonical_path) => match fs::canonicalize(&self.kiln_path) {
+                Ok(kiln_canonical) => {
+                    if !canonical_path.starts_with(kiln_canonical) {
+                        return Err(anyhow!("Path outside kiln: {}", path.display()));
                     }
                 }
-            }
+                Err(e) => {
+                    return Err(anyhow!("Cannot canonicalize kiln path: {}", e));
+                }
+            },
             Err(_) => {
                 // If we can't canonicalize, check if the path starts with kiln path
                 if !path.starts_with(&self.kiln_path) {
@@ -387,7 +411,10 @@ impl PathValidator {
     pub fn validate_search_query(&self, query: &str) -> Result<String> {
         // Check query length limits
         if query.len() > 1000 {
-            return Err(anyhow!("Search query too long ({} characters)", query.len()));
+            return Err(anyhow!(
+                "Search query too long ({} characters)",
+                query.len()
+            ));
         }
 
         // Trim whitespace
@@ -437,13 +464,20 @@ impl SecureFileReader {
         let metadata = match fs::metadata(&validated_path) {
             Ok(metadata) => metadata,
             Err(e) => {
-                return Err(anyhow!("Cannot access file: {} - {}", validated_path.display(), e));
+                return Err(anyhow!(
+                    "Cannot access file: {} - {}",
+                    validated_path.display(),
+                    e
+                ));
             }
         };
 
         // Check if it's a regular file
         if !metadata.is_file() {
-            return Err(anyhow!("Path is not a regular file: {}", validated_path.display()));
+            return Err(anyhow!(
+                "Path is not a regular file: {}",
+                validated_path.display()
+            ));
         }
 
         // Check file size limits
@@ -476,7 +510,11 @@ impl SecureFileReader {
             Ok(0) => return Ok(String::new()), // Empty file
             Ok(n) => n,
             Err(e) => {
-                return Err(anyhow!("Failed to read file: {} - {}", file_path.display(), e));
+                return Err(anyhow!(
+                    "Failed to read file: {} - {}",
+                    file_path.display(),
+                    e
+                ));
             }
         };
 
@@ -518,7 +556,11 @@ impl SecureFileReader {
                     content.push_str(&chunk);
                 }
                 Err(e) => {
-                    return Err(anyhow!("Error reading file: {} - {}", file_path.display(), e));
+                    return Err(anyhow!(
+                        "Error reading file: {} - {}",
+                        file_path.display(),
+                        e
+                    ));
                 }
             }
         }
@@ -535,9 +577,12 @@ impl SecureFileReader {
         }
 
         // Check for non-printable characters
-        let non_printable_count = content.iter().filter(|&&b| {
-            b < 32 && b != 9 && b != 10 && b != 13 // Not tab, newline, or carriage return
-        }).count();
+        let non_printable_count = content
+            .iter()
+            .filter(|&&b| {
+                b < 32 && b != 9 && b != 10 && b != 13 // Not tab, newline, or carriage return
+            })
+            .count();
 
         // If more than 30% of bytes are non-printable, consider it binary
         let binary_ratio = non_printable_count as f32 / content.len() as f32;
@@ -557,8 +602,8 @@ impl SecureFileReader {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use tempfile::TempDir;
-    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn test_path_traversal_prevention() -> Result<()> {
@@ -574,7 +619,11 @@ mod tests {
         ];
 
         for path in malicious_paths {
-            assert!(validator.validate_path(path).is_err(), "Should block path: {}", path);
+            assert!(
+                validator.validate_path(path).is_err(),
+                "Should block path: {}",
+                path
+            );
         }
 
         Ok(())

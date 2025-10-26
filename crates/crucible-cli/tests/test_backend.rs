@@ -3,9 +3,6 @@
 // These tests verify the LLM backend integration, specifically the Ollama backend.
 // Note: These tests require a running Ollama instance to pass completely.
 
-use crucible_cli::agents::backend::{Backend, ChatParams, Message, Model};
-use crucible_cli::agents::backend::ollama::OllamaBackend;
-
 #[tokio::test]
 async fn test_ollama_backend_creation() {
     let backend = OllamaBackend::new("http://localhost:11434".to_string());
@@ -52,7 +49,10 @@ async fn test_list_models() {
                 println!("  - {} (modified: {:?})", model.name, model.modified_at);
             }
             // At least one model should be available if Ollama is running
-            assert!(!models.is_empty(), "Expected at least one model to be available");
+            assert!(
+                !models.is_empty(),
+                "Expected at least one model to be available"
+            );
         }
         Err(e) => {
             eprintln!("Failed to list models (is Ollama running?): {}", e);
@@ -186,3 +186,5 @@ async fn test_chat_with_different_temperatures() {
         }
     }
 }
+use crucible_cli::agents::backend::ollama::OllamaBackend;
+use crucible_cli::agents::backend::{Backend, ChatParams, Message, Model};

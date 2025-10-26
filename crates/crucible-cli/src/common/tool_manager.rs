@@ -4,12 +4,12 @@
 //! eliminating duplicate initialization and registry management across CLI commands
 //! and REPL components.
 
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use serde_json::Value;
-use std::sync::{Arc, Mutex, Once};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex, Once};
 use tokio::sync::RwLock as AsyncRwLock;
-use tracing::{info, debug, error};
+use tracing::{debug, error, info};
 
 /// Centralized tool manager that handles all crucible-tools interactions
 ///
@@ -149,20 +149,30 @@ impl CrucibleToolManager {
         }
 
         // Execute the tool
-        debug!("Executing tool: {} with params: {:?}", tool_name, parameters);
+        debug!(
+            "Executing tool: {} with params: {:?}",
+            tool_name, parameters
+        );
         let result = crucible_tools::execute_tool(
             tool_name.to_string(),
             parameters,
             user_id.clone(),
             session_id.clone(),
-        ).await.map_err(|e| {
+        )
+        .await
+        .map_err(|e| {
             error!("Tool execution failed for '{}': {}", tool_name, e);
             anyhow::anyhow!("Tool execution failed: {}", e)
         })?;
 
         // Cache result if enabled
         if self.cache_config.enable_result_cache {
-            let cache_key = self.create_cache_key(tool_name, &result.data.clone().unwrap_or(Value::Null), &user_id, &session_id);
+            let cache_key = self.create_cache_key(
+                tool_name,
+                &result.data.clone().unwrap_or(Value::Null),
+                &user_id,
+                &session_id,
+            );
             let mut cache = self.execution_cache.write().await;
 
             // Enforce cache size limit
@@ -176,10 +186,13 @@ impl CrucibleToolManager {
                 }
             }
 
-            cache.insert(cache_key, CachedResult {
-                result: result.clone(),
-                timestamp: std::time::Instant::now(),
-            });
+            cache.insert(
+                cache_key,
+                CachedResult {
+                    result: result.clone(),
+                    timestamp: std::time::Instant::now(),
+                },
+            );
         }
 
         Ok(result)
@@ -222,11 +235,27 @@ impl CrucibleToolManager {
         for tool in tools {
             let category = if tool.starts_with("system_") {
                 "system".to_string()
-            } else if tool.starts_with("search_") || tool.starts_with("semantic_") || tool.starts_with("rebuild_") || tool.starts_with("get_index") || tool.starts_with("optimize_") || tool.starts_with("advanced_") {
+            } else if tool.starts_with("search_")
+                || tool.starts_with("semantic_")
+                || tool.starts_with("rebuild_")
+                || tool.starts_with("get_index")
+                || tool.starts_with("optimize_")
+                || tool.starts_with("advanced_")
+            {
                 "search".to_string()
-            } else if tool.starts_with("get_") || tool.starts_with("create_") || tool.starts_with("update_") || tool.starts_with("delete_") || tool.starts_with("list_") {
+            } else if tool.starts_with("get_")
+                || tool.starts_with("create_")
+                || tool.starts_with("update_")
+                || tool.starts_with("delete_")
+                || tool.starts_with("list_")
+            {
                 "vault".to_string()
-            } else if tool.contains("document") || tool.contains("content") || tool.contains("filename") || tool.contains("sync") || tool.contains("properties") {
+            } else if tool.contains("document")
+                || tool.contains("content")
+                || tool.contains("filename")
+                || tool.contains("sync")
+                || tool.contains("properties")
+            {
                 "database".to_string()
             } else {
                 "other".to_string()
@@ -264,10 +293,22 @@ impl CrucibleToolManager {
             cache.len().to_string()
         });
 
-        stats.insert("list_cache_enabled".to_string(), self.cache_config.enable_list_cache.to_string());
-        stats.insert("result_cache_enabled".to_string(), self.cache_config.enable_result_cache.to_string());
-        stats.insert("max_cache_size".to_string(), self.cache_config.max_cache_size.to_string());
-        stats.insert("cache_ttl_secs".to_string(), self.cache_config.cache_ttl_secs.to_string());
+        stats.insert(
+            "list_cache_enabled".to_string(),
+            self.cache_config.enable_list_cache.to_string(),
+        );
+        stats.insert(
+            "result_cache_enabled".to_string(),
+            self.cache_config.enable_result_cache.to_string(),
+        );
+        stats.insert(
+            "max_cache_size".to_string(),
+            self.cache_config.max_cache_size.to_string(),
+        );
+        stats.insert(
+            "cache_ttl_secs".to_string(),
+            self.cache_config.cache_ttl_secs.to_string(),
+        );
 
         if let Ok(tool_count) = self.list_tools().await {
             stats.insert("total_tools".to_string(), tool_count.len().to_string());
@@ -277,9 +318,15 @@ impl CrucibleToolManager {
     }
 
     /// Create cache key for tool execution
-    fn create_cache_key(&self, tool_name: &str, parameters: &Value, user_id: &Option<String>, session_id: &Option<String>) -> String {
-        use std::hash::{Hash, Hasher};
+    fn create_cache_key(
+        &self,
+        tool_name: &str,
+        parameters: &Value,
+        user_id: &Option<String>,
+        session_id: &Option<String>,
+    ) -> String {
         use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
 
         let mut hasher = DefaultHasher::new();
         tool_name.hash(&mut hasher);
@@ -317,7 +364,9 @@ impl CrucibleToolManager {
         user_id: Option<String>,
         session_id: Option<String>,
     ) -> Result<crucible_tools::ToolResult> {
-        Self::instance().execute_tool(tool_name, parameters, user_id, session_id).await
+        Self::instance()
+            .execute_tool(tool_name, parameters, user_id, session_id)
+            .await
     }
 
     /// List tools using the global manager
@@ -381,12 +430,15 @@ mod tests {
     async fn test_tool_execution() {
         let manager = CrucibleToolManager::instance();
 
-        let result = manager.execute_tool(
-            "system_info",
-            json!({}),
-            Some("test_user".to_string()),
-            Some("test_session".to_string()),
-        ).await.unwrap();
+        let result = manager
+            .execute_tool(
+                "system_info",
+                json!({}),
+                Some("test_user".to_string()),
+                Some("test_session".to_string()),
+            )
+            .await
+            .unwrap();
 
         assert!(result.success);
     }

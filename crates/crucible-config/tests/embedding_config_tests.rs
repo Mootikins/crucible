@@ -15,13 +15,12 @@
 //! - Integration with embedding thread pool configuration
 
 use crucible_config::{
-    Config, ConfigLoader, EmbeddingProviderConfig, ProviderError,
-    EmbeddingProviderType, ApiConfig, ModelConfig, ConfigError, ConfigFormat,
-    ProfileConfig, Environment
+    ApiConfig, Config, ConfigError, ConfigFormat, ConfigLoader, EmbeddingProviderConfig,
+    EmbeddingProviderType, Environment, ModelConfig, ProfileConfig, ProviderError,
 };
 // Import test utilities when feature is enabled
 #[cfg(feature = "test-utils")]
-use crucible_config::{TestConfigBuilder, TestConfig, TempConfig, TestEnv};
+use crucible_config::{TempConfig, TestConfig, TestConfigBuilder, TestEnv};
 use serde_json::json;
 use std::collections::HashMap;
 use tempfile::TempDir;
@@ -84,7 +83,10 @@ mod fixtures {
                 retry_attempts: Some(2),
                 headers: {
                     let mut headers = HashMap::new();
-                    headers.insert("Authorization".to_string(), "Bearer hf-test-key-67890".to_string());
+                    headers.insert(
+                        "Authorization".to_string(),
+                        "Bearer hf-test-key-67890".to_string(),
+                    );
                     headers.insert("Content-Type".to_string(), "application/json".to_string());
                     headers
                 },
@@ -126,7 +128,10 @@ mod embedding_provider_config_tests {
         let provider = openai_provider_fixture();
 
         assert_eq!(provider.provider_type, EmbeddingProviderType::OpenAI);
-        assert_eq!(provider.api.key, Some("sk-test-deterministic-key-12345".to_string()));
+        assert_eq!(
+            provider.api.key,
+            Some("sk-test-deterministic-key-12345".to_string())
+        );
         assert_eq!(provider.model.name, "text-embedding-3-small");
         assert_eq!(provider.api.timeout_seconds, Some(30));
         assert_eq!(provider.api.retry_attempts, Some(3));
@@ -144,7 +149,10 @@ mod embedding_provider_config_tests {
         invalid_provider.api.key = None;
         let validation_result = invalid_provider.validate();
         assert!(validation_result.is_err());
-        assert!(matches!(validation_result.unwrap_err(), ProviderError::MissingField { .. }));
+        assert!(matches!(
+            validation_result.unwrap_err(),
+            ProviderError::MissingField { .. }
+        ));
     }
 
     #[test]
@@ -152,14 +160,26 @@ mod embedding_provider_config_tests {
         // Test OpenAI provider
         let openai = openai_provider_fixture();
         assert!(openai.provider_type.requires_api_key());
-        assert_eq!(openai.provider_type.default_base_url(), Some("https://api.openai.com/v1".to_string()));
-        assert_eq!(openai.provider_type.default_model(), Some("text-embedding-3-small".to_string()));
+        assert_eq!(
+            openai.provider_type.default_base_url(),
+            Some("https://api.openai.com/v1".to_string())
+        );
+        assert_eq!(
+            openai.provider_type.default_model(),
+            Some("text-embedding-3-small".to_string())
+        );
 
         // Test Ollama provider
         let ollama = ollama_provider_fixture();
         assert!(!ollama.provider_type.requires_api_key());
-        assert_eq!(ollama.provider_type.default_base_url(), Some("http://localhost:11434".to_string()));
-        assert_eq!(ollama.provider_type.default_model(), Some("nomic-embed-text".to_string()));
+        assert_eq!(
+            ollama.provider_type.default_base_url(),
+            Some("http://localhost:11434".to_string())
+        );
+        assert_eq!(
+            ollama.provider_type.default_model(),
+            Some("nomic-embed-text".to_string())
+        );
 
         // Test custom provider
         let custom = custom_provider_fixture();
@@ -170,8 +190,14 @@ mod embedding_provider_config_tests {
         // RED Phase: Test Candle provider (should fail initially)
         let candle = candle_provider_fixture();
         assert!(!candle.provider_type.requires_api_key());
-        assert_eq!(candle.provider_type.default_base_url(), Some("local".to_string()));
-        assert_eq!(candle.provider_type.default_model(), Some("nomic-embed-text-v1.5".to_string()));
+        assert_eq!(
+            candle.provider_type.default_base_url(),
+            Some("local".to_string())
+        );
+        assert_eq!(
+            candle.provider_type.default_model(),
+            Some("nomic-embed-text-v1.5".to_string())
+        );
     }
 
     #[test]
@@ -179,16 +205,17 @@ mod embedding_provider_config_tests {
         let provider = openai_provider_fixture();
 
         // Test JSON serialization
-        let json_str = serde_json::to_string_pretty(&provider).expect("Failed to serialize provider");
-        let deserialized: EmbeddingProviderConfig = serde_json::from_str(&json_str)
-            .expect("Failed to deserialize provider");
+        let json_str =
+            serde_json::to_string_pretty(&provider).expect("Failed to serialize provider");
+        let deserialized: EmbeddingProviderConfig =
+            serde_json::from_str(&json_str).expect("Failed to deserialize provider");
 
         assert_eq!(provider, deserialized);
 
         // Test YAML serialization
         let yaml_str = serde_yaml::to_string(&provider).expect("Failed to serialize to YAML");
-        let yaml_deserialized: EmbeddingProviderConfig = serde_yaml::from_str(&yaml_str)
-            .expect("Failed to deserialize from YAML");
+        let yaml_deserialized: EmbeddingProviderConfig =
+            serde_yaml::from_str(&yaml_str).expect("Failed to deserialize from YAML");
 
         assert_eq!(provider, yaml_deserialized);
     }
@@ -203,36 +230,54 @@ mod config_loading_tests {
     #[tokio::test]
     async fn test_load_embedding_config_from_yaml_file() {
         let config = complete_config_fixture();
-        let (_temp_file, config_path) = TempConfig::create_temp_file_with_format(&config, ConfigFormat::Yaml);
+        let (_temp_file, config_path) =
+            TempConfig::create_temp_file_with_format(&config, ConfigFormat::Yaml);
 
         // Load configuration from file
-        let loaded_config = ConfigLoader::load_from_file(&config_path).await
+        let loaded_config = ConfigLoader::load_from_file(&config_path)
+            .await
             .expect("Failed to load configuration from YAML file");
 
         // Verify embedding provider configuration
-        let embedding_provider = loaded_config.embedding_provider()
+        let embedding_provider = loaded_config
+            .embedding_provider()
             .expect("Failed to get embedding provider from loaded config");
 
-        assert_eq!(embedding_provider.provider_type, EmbeddingProviderType::OpenAI);
-        assert_eq!(embedding_provider.api.key, Some("sk-test-deterministic-key-12345".to_string()));
+        assert_eq!(
+            embedding_provider.provider_type,
+            EmbeddingProviderType::OpenAI
+        );
+        assert_eq!(
+            embedding_provider.api.key,
+            Some("sk-test-deterministic-key-12345".to_string())
+        );
         assert_eq!(embedding_provider.model.name, "text-embedding-3-small");
     }
 
     #[tokio::test]
     async fn test_load_embedding_config_from_json_file() {
         let config = complete_config_fixture();
-        let (_temp_file, config_path) = TempConfig::create_temp_file_with_format(&config, ConfigFormat::Json);
+        let (_temp_file, config_path) =
+            TempConfig::create_temp_file_with_format(&config, ConfigFormat::Json);
 
         // Load configuration from file
-        let loaded_config = ConfigLoader::load_from_file(&config_path).await
+        let loaded_config = ConfigLoader::load_from_file(&config_path)
+            .await
             .expect("Failed to load configuration from JSON file");
 
         // Verify embedding provider configuration
-        let embedding_provider = loaded_config.embedding_provider()
+        let embedding_provider = loaded_config
+            .embedding_provider()
             .expect("Failed to get embedding provider from loaded config");
 
-        assert_eq!(embedding_provider.provider_type, EmbeddingProviderType::OpenAI);
-        assert_eq!(embedding_provider.api.key, Some("sk-test-deterministic-key-12345".to_string()));
+        assert_eq!(
+            embedding_provider.provider_type,
+            EmbeddingProviderType::OpenAI
+        );
+        assert_eq!(
+            embedding_provider.api.key,
+            Some("sk-test-deterministic-key-12345".to_string())
+        );
     }
 
     #[tokio::test]
@@ -247,15 +292,23 @@ mod config_loading_tests {
         let (_temp_file, config_path) = TempConfig::create_temp_file(&config);
 
         // Load configuration from file
-        let loaded_config = ConfigLoader::load_from_file(&config_path).await
+        let loaded_config = ConfigLoader::load_from_file(&config_path)
+            .await
             .expect("Failed to load configuration with Ollama provider");
 
         // Verify Ollama provider configuration
-        let embedding_provider = loaded_config.embedding_provider()
+        let embedding_provider = loaded_config
+            .embedding_provider()
             .expect("Failed to get Ollama embedding provider");
 
-        assert_eq!(embedding_provider.provider_type, EmbeddingProviderType::Ollama);
-        assert_eq!(embedding_provider.api.base_url, Some("http://localhost:11434".to_string()));
+        assert_eq!(
+            embedding_provider.provider_type,
+            EmbeddingProviderType::Ollama
+        );
+        assert_eq!(
+            embedding_provider.api.base_url,
+            Some("http://localhost:11434".to_string())
+        );
         assert_eq!(embedding_provider.model.name, "nomic-embed-text");
         assert!(embedding_provider.api.key.is_none()); // Ollama doesn't require API key
     }
@@ -272,16 +325,27 @@ mod config_loading_tests {
         let (_temp_file, config_path) = TempConfig::create_temp_file(&config);
 
         // Load configuration from file
-        let loaded_config = ConfigLoader::load_from_file(&config_path).await
+        let loaded_config = ConfigLoader::load_from_file(&config_path)
+            .await
             .expect("Failed to load configuration with custom provider");
 
         // Verify custom provider configuration
-        let embedding_provider = loaded_config.embedding_provider()
+        let embedding_provider = loaded_config
+            .embedding_provider()
             .expect("Failed to get custom embedding provider");
 
-        assert!(matches!(embedding_provider.provider_type, EmbeddingProviderType::Custom(_)));
-        assert_eq!(embedding_provider.api.key, Some("hf-test-key-67890".to_string()));
-        assert_eq!(embedding_provider.model.name, "sentence-transformers/all-MiniLM-L6-v2");
+        assert!(matches!(
+            embedding_provider.provider_type,
+            EmbeddingProviderType::Custom(_)
+        ));
+        assert_eq!(
+            embedding_provider.api.key,
+            Some("hf-test-key-67890".to_string())
+        );
+        assert_eq!(
+            embedding_provider.model.name,
+            "sentence-transformers/all-MiniLM-L6-v2"
+        );
         assert_eq!(embedding_provider.model.dimensions, Some(384));
     }
 
@@ -296,13 +360,17 @@ mod config_loading_tests {
         let (_temp_file, config_path) = TempConfig::create_temp_file(&config);
 
         // Load configuration from file
-        let loaded_config = ConfigLoader::load_from_file(&config_path).await
+        let loaded_config = ConfigLoader::load_from_file(&config_path)
+            .await
             .expect("Failed to load configuration without embedding provider");
 
         // Should return error when trying to get embedding provider
         let result = loaded_config.embedding_provider();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ConfigError::MissingValue { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            ConfigError::MissingValue { .. }
+        ));
     }
 
     #[tokio::test]
@@ -313,18 +381,24 @@ mod config_loading_tests {
         // Create config file in directory
         let config_path = temp_dir.path().join("crucible.yaml");
         let config_content = serde_yaml::to_string(&config).expect("Failed to serialize config");
-        fs::write(&config_path, config_content).await
+        fs::write(&config_path, config_content)
+            .await
             .expect("Failed to write config file");
 
         // Load configuration from specific file path (not directory)
-        let loaded_config = ConfigLoader::load_from_file(&config_path).await
+        let loaded_config = ConfigLoader::load_from_file(&config_path)
+            .await
             .expect("Failed to load configuration from directory");
 
         // Verify embedding provider configuration
-        let embedding_provider = loaded_config.embedding_provider()
+        let embedding_provider = loaded_config
+            .embedding_provider()
             .expect("Failed to get embedding provider from directory-loaded config");
 
-        assert_eq!(embedding_provider.provider_type, EmbeddingProviderType::OpenAI);
+        assert_eq!(
+            embedding_provider.provider_type,
+            EmbeddingProviderType::OpenAI
+        );
     }
 }
 
@@ -358,7 +432,10 @@ mod mock_provider_tests {
             .expect("Failed to get mock Ollama provider");
 
         assert_eq!(mock_provider.provider_type, EmbeddingProviderType::Ollama);
-        assert_eq!(mock_provider.api.base_url, Some("http://localhost:11434".to_string()));
+        assert_eq!(
+            mock_provider.api.base_url,
+            Some("http://localhost:11434".to_string())
+        );
         assert_eq!(mock_provider.model.name, "nomic-embed-text");
         assert!(mock_provider.api.key.is_none());
     }
@@ -370,7 +447,10 @@ mod mock_provider_tests {
         let provider2 = openai_provider_fixture();
 
         assert_eq!(provider1, provider2);
-        assert_eq!(provider1.api.key.as_ref().unwrap(), "sk-test-deterministic-key-12345");
+        assert_eq!(
+            provider1.api.key.as_ref().unwrap(),
+            "sk-test-deterministic-key-12345"
+        );
         assert_eq!(provider1.model.name, "text-embedding-3-small");
     }
 
@@ -378,9 +458,17 @@ mod mock_provider_tests {
     fn test_custom_mock_provider() {
         let custom_provider = custom_provider_fixture();
 
-        assert!(matches!(custom_provider.provider_type, EmbeddingProviderType::Custom(ref s) if s == "huggingface"));
-        assert_eq!(custom_provider.api.key.as_ref().unwrap(), "hf-test-key-67890");
-        assert_eq!(custom_provider.model.name, "sentence-transformers/all-MiniLM-L6-v2");
+        assert!(
+            matches!(custom_provider.provider_type, EmbeddingProviderType::Custom(ref s) if s == "huggingface")
+        );
+        assert_eq!(
+            custom_provider.api.key.as_ref().unwrap(),
+            "hf-test-key-67890"
+        );
+        assert_eq!(
+            custom_provider.model.name,
+            "sentence-transformers/all-MiniLM-L6-v2"
+        );
         assert_eq!(custom_provider.model.dimensions, Some(384));
 
         // Verify custom options
@@ -435,7 +523,8 @@ mod validation_tests {
 
         // Write invalid YAML
         let invalid_yaml = "embedding_provider:\n  type: openai\n  api:\n    key: [invalid yaml";
-        fs::write(&config_path, invalid_yaml).await
+        fs::write(&config_path, invalid_yaml)
+            .await
             .expect("Failed to write invalid YAML");
 
         // Should fail to load invalid configuration
@@ -466,7 +555,8 @@ mod validation_tests {
         });
 
         // Should fail to deserialize unknown provider type
-        let result: Result<EmbeddingProviderConfig, _> = serde_json::from_value(config_json["embedding_provider"].clone());
+        let result: Result<EmbeddingProviderConfig, _> =
+            serde_json::from_value(config_json["embedding_provider"].clone());
         assert!(result.is_err());
     }
 
@@ -509,11 +599,15 @@ mod environment_isolation_tests {
         std::env::set_var("OPENAI_API_KEY", "should_not_interfere");
 
         let config = TestConfig::minimal();
-        let embedding_provider = config.embedding_provider()
+        let embedding_provider = config
+            .embedding_provider()
             .expect("Failed to get embedding provider in isolated test");
 
         // Should use test configuration, not environment variables
-        assert_eq!(embedding_provider.provider_type, EmbeddingProviderType::OpenAI);
+        assert_eq!(
+            embedding_provider.provider_type,
+            EmbeddingProviderType::OpenAI
+        );
         assert_eq!(embedding_provider.api.key.as_ref().unwrap(), "test-api-key");
 
         // Restore original environment
@@ -532,28 +626,33 @@ mod environment_isolation_tests {
         let config = complete_config_fixture();
 
         // Create multiple temporary config files and keep them alive
-        let temp_files: Vec<_> = (0..5).map(|_| {
-            TempConfig::create_temp_file(&config)
-        }).collect();
+        let temp_files: Vec<_> = (0..5)
+            .map(|_| TempConfig::create_temp_file(&config))
+            .collect();
 
         let paths: Vec<_> = temp_files.iter().map(|(_, path)| path.clone()).collect();
 
         // Load configurations concurrently
-        let handles: Vec<_> = paths.into_iter().map(|path| {
-            tokio::spawn(async move {
-                ConfigLoader::load_from_file(&path).await
-            })
-        }).collect();
+        let handles: Vec<_> = paths
+            .into_iter()
+            .map(|path| tokio::spawn(async move { ConfigLoader::load_from_file(&path).await }))
+            .collect();
 
         // Wait for all loads to complete
         let results: Vec<_> = futures::future::join_all(handles).await;
 
         // All loads should succeed
         for result in results {
-            let loaded_config = result.expect("Task panicked").expect("Failed to load config");
-            let embedding_provider = loaded_config.embedding_provider()
+            let loaded_config = result
+                .expect("Task panicked")
+                .expect("Failed to load config");
+            let embedding_provider = loaded_config
+                .embedding_provider()
                 .expect("Failed to get embedding provider");
-            assert_eq!(embedding_provider.provider_type, EmbeddingProviderType::OpenAI);
+            assert_eq!(
+                embedding_provider.provider_type,
+                EmbeddingProviderType::OpenAI
+            );
         }
 
         // temp_files will be cleaned up when they go out of scope here
@@ -579,9 +678,13 @@ mod environment_isolation_tests {
         };
 
         // Verify configuration loaded correctly
-        let embedding_provider = loaded_config.embedding_provider()
+        let embedding_provider = loaded_config
+            .embedding_provider()
             .expect("Failed to get embedding provider");
-        assert_eq!(embedding_provider.provider_type, EmbeddingProviderType::OpenAI);
+        assert_eq!(
+            embedding_provider.provider_type,
+            EmbeddingProviderType::OpenAI
+        );
 
         // Temporary directory will be cleaned up when temp_dir goes out of scope
     }
@@ -600,15 +703,18 @@ mod environment_isolation_tests {
         // Verify overrides were applied
         assert_eq!(config_with_overrides.profile, Some("test".to_string()));
 
-        let embedding_provider = config_with_overrides.embedding_provider()
+        let embedding_provider = config_with_overrides
+            .embedding_provider()
             .expect("Failed to get embedding provider after overrides");
         assert_eq!(embedding_provider.api.key, Some("test-key".to_string()));
 
-        let database = config_with_overrides.database()
+        let database = config_with_overrides
+            .database()
             .expect("Failed to get database after overrides");
         assert_eq!(database.url, ":memory:");
 
-        let server = config_with_overrides.server()
+        let server = config_with_overrides
+            .server()
             .expect("Failed to get server after overrides");
         assert_eq!(server.host, "127.0.0.1");
         assert_eq!(server.port, 3000);
@@ -635,10 +741,14 @@ mod integration_tests {
 
         // This should eventually replace the current LlmEmbeddingConfig::from_env() usage
         // in embedding_pool.rs
-        let embedding_provider = config.embedding_provider()
+        let embedding_provider = config
+            .embedding_provider()
             .expect("Failed to get embedding provider for integration test");
 
-        assert_eq!(embedding_provider.provider_type, EmbeddingProviderType::OpenAI);
+        assert_eq!(
+            embedding_provider.provider_type,
+            EmbeddingProviderType::OpenAI
+        );
         assert!(embedding_provider.validate().is_ok());
 
         // TODO: This test should eventually create an actual embedding thread pool
@@ -669,14 +779,20 @@ mod integration_tests {
             settings: std::collections::HashMap::new(),
         };
 
-        config.profiles.insert("development".to_string(), dev_profile_with_embedding);
+        config
+            .profiles
+            .insert("development".to_string(), dev_profile_with_embedding);
         config.profile = Some("development".to_string());
 
         // Get active profile and verify embedding provider
-        let embedding_provider = config.embedding_provider()
+        let embedding_provider = config
+            .embedding_provider()
             .expect("Failed to get embedding provider from profile");
 
-        assert_eq!(embedding_provider.provider_type, EmbeddingProviderType::Ollama);
+        assert_eq!(
+            embedding_provider.provider_type,
+            EmbeddingProviderType::Ollama
+        );
         assert_eq!(embedding_provider.model.name, "nomic-embed-text");
     }
 
@@ -700,7 +816,8 @@ mod integration_tests {
             .build();
 
         // Verify structured config provides same values as environment
-        let embedding_provider = structured_config.embedding_provider()
+        let embedding_provider = structured_config
+            .embedding_provider()
             .expect("Failed to get embedding provider from migrated config");
 
         assert_eq!(
@@ -718,7 +835,10 @@ mod integration_tests {
         let config2 = complete_config_fixture();
 
         // Identical configurations should be equal
-        assert_eq!(config1.embedding_provider().unwrap(), config2.embedding_provider().unwrap());
+        assert_eq!(
+            config1.embedding_provider().unwrap(),
+            config2.embedding_provider().unwrap()
+        );
 
         // Different configurations should not be equal
         let different_config = TestConfigBuilder::new()
@@ -762,11 +882,25 @@ mod performance_tests {
         let yaml_duration = start.elapsed();
 
         // Performance should be reasonable (these are loose bounds)
-        assert!(json_duration.as_millis() < 1000, "JSON serialization too slow: {:?}", json_duration);
-        assert!(yaml_duration.as_millis() < 2000, "YAML serialization too slow: {:?}", yaml_duration);
+        assert!(
+            json_duration.as_millis() < 1000,
+            "JSON serialization too slow: {:?}",
+            json_duration
+        );
+        assert!(
+            yaml_duration.as_millis() < 2000,
+            "YAML serialization too slow: {:?}",
+            yaml_duration
+        );
 
-        println!("JSON serialization: {} iterations in {:?}", iterations, json_duration);
-        println!("YAML serialization: {} iterations in {:?}", iterations, yaml_duration);
+        println!(
+            "JSON serialization: {} iterations in {:?}",
+            iterations, json_duration
+        );
+        println!(
+            "YAML serialization: {} iterations in {:?}",
+            iterations, yaml_duration
+        );
     }
 
     #[test]
@@ -792,11 +926,25 @@ mod performance_tests {
         let yaml_duration = start.elapsed();
 
         // Performance should be reasonable
-        assert!(json_duration.as_millis() < 1000, "JSON deserialization too slow: {:?}", json_duration);
-        assert!(yaml_duration.as_millis() < 2000, "YAML deserialization too slow: {:?}", yaml_duration);
+        assert!(
+            json_duration.as_millis() < 1000,
+            "JSON deserialization too slow: {:?}",
+            json_duration
+        );
+        assert!(
+            yaml_duration.as_millis() < 2000,
+            "YAML deserialization too slow: {:?}",
+            yaml_duration
+        );
 
-        println!("JSON deserialization: {} iterations in {:?}", iterations, json_duration);
-        println!("YAML deserialization: {} iterations in {:?}", iterations, yaml_duration);
+        println!(
+            "JSON deserialization: {} iterations in {:?}",
+            iterations, json_duration
+        );
+        println!(
+            "YAML deserialization: {} iterations in {:?}",
+            iterations, yaml_duration
+        );
     }
 
     #[test]
@@ -812,18 +960,27 @@ mod performance_tests {
         // Add many profiles
         for i in 0..100 {
             let profile = TestConfigBuilder::new()
-                .embedding_provider(if i % 2 == 0 { openai_provider_fixture() } else { ollama_provider_fixture() })
+                .embedding_provider(if i % 2 == 0 {
+                    openai_provider_fixture()
+                } else {
+                    ollama_provider_fixture()
+                })
                 .memory_database()
                 .debug_logging()
                 .set(format!("profile_setting_{}", i), i)
                 .build();
 
-            large_config.profiles.insert(format!("profile_{}", i), profile.profiles.into_values().next().unwrap());
+            large_config.profiles.insert(
+                format!("profile_{}", i),
+                profile.profiles.into_values().next().unwrap(),
+            );
         }
 
         // Test serialization/deserialization of large config
-        let json_str = serde_json::to_string(&large_config).expect("Failed to serialize large config");
-        let deserialized: Config = serde_json::from_str(&json_str).expect("Failed to deserialize large config");
+        let json_str =
+            serde_json::to_string(&large_config).expect("Failed to serialize large config");
+        let deserialized: Config =
+            serde_json::from_str(&json_str).expect("Failed to deserialize large config");
 
         assert_eq!(large_config.profiles.len(), deserialized.profiles.len());
 
@@ -851,8 +1008,14 @@ mod candle_provider_tests {
         assert!(candle_provider.validate().is_ok());
 
         // Verify Candle-specific options
-        assert_eq!(candle_provider.options.get("model_cache_dir"), Some(&json!("/tmp/candle-models")));
-        assert_eq!(candle_provider.options.get("memory_limit_mb"), Some(&json!(4096)));
+        assert_eq!(
+            candle_provider.options.get("model_cache_dir"),
+            Some(&json!("/tmp/candle-models"))
+        );
+        assert_eq!(
+            candle_provider.options.get("memory_limit_mb"),
+            Some(&json!(4096))
+        );
         assert_eq!(candle_provider.options.get("device"), Some(&json!("cpu")));
     }
 
@@ -883,7 +1046,9 @@ mod candle_provider_tests {
 
         for device in devices {
             let mut candle_config = candle_provider_fixture();
-            candle_config.options.insert("device".to_string(), json!(device));
+            candle_config
+                .options
+                .insert("device".to_string(), json!(device));
 
             assert!(candle_config.validate().is_ok());
             assert_eq!(candle_config.options.get("device"), Some(&json!(device)));
@@ -896,10 +1061,15 @@ mod candle_provider_tests {
 
         for memory_mb in memory_limits {
             let mut candle_config = candle_provider_fixture();
-            candle_config.options.insert("memory_limit_mb".to_string(), json!(memory_mb));
+            candle_config
+                .options
+                .insert("memory_limit_mb".to_string(), json!(memory_mb));
 
             assert!(candle_config.validate().is_ok());
-            assert_eq!(candle_config.options.get("memory_limit_mb"), Some(&json!(memory_mb)));
+            assert_eq!(
+                candle_config.options.get("memory_limit_mb"),
+                Some(&json!(memory_mb))
+            );
         }
     }
 
@@ -913,10 +1083,15 @@ mod candle_provider_tests {
 
         for cache_dir in cache_dirs {
             let mut candle_config = candle_provider_fixture();
-            candle_config.options.insert("model_cache_dir".to_string(), json!(cache_dir));
+            candle_config
+                .options
+                .insert("model_cache_dir".to_string(), json!(cache_dir));
 
             assert!(candle_config.validate().is_ok());
-            assert_eq!(candle_config.options.get("model_cache_dir"), Some(&json!(cache_dir)));
+            assert_eq!(
+                candle_config.options.get("model_cache_dir"),
+                Some(&json!(cache_dir))
+            );
         }
     }
 
@@ -925,14 +1100,16 @@ mod candle_provider_tests {
         let candle_provider = candle_provider_fixture();
 
         // Test JSON serialization
-        let json_str = serde_json::to_string_pretty(&candle_provider).expect("Failed to serialize Candle provider");
-        let deserialized: EmbeddingProviderConfig = serde_json::from_str(&json_str)
-            .expect("Failed to deserialize Candle provider");
+        let json_str = serde_json::to_string_pretty(&candle_provider)
+            .expect("Failed to serialize Candle provider");
+        let deserialized: EmbeddingProviderConfig =
+            serde_json::from_str(&json_str).expect("Failed to deserialize Candle provider");
 
         assert_eq!(candle_provider, deserialized);
 
         // Test YAML serialization
-        let yaml_str = serde_yaml::to_string(&candle_provider).expect("Failed to serialize Candle provider to YAML");
+        let yaml_str = serde_yaml::to_string(&candle_provider)
+            .expect("Failed to serialize Candle provider to YAML");
         let yaml_deserialized: EmbeddingProviderConfig = serde_yaml::from_str(&yaml_str)
             .expect("Failed to deserialize Candle provider from YAML");
 
@@ -951,17 +1128,25 @@ mod candle_provider_tests {
         let (_temp_file, config_path) = TempConfig::create_temp_file(&config);
 
         // Load configuration from file
-        let loaded_config = ConfigLoader::load_from_file(&config_path).await
+        let loaded_config = ConfigLoader::load_from_file(&config_path)
+            .await
             .expect("Failed to load configuration with Candle provider");
 
         // Verify Candle provider configuration
-        let embedding_provider = loaded_config.embedding_provider()
+        let embedding_provider = loaded_config
+            .embedding_provider()
             .expect("Failed to get Candle embedding provider");
 
-        assert_eq!(embedding_provider.provider_type, EmbeddingProviderType::Candle);
+        assert_eq!(
+            embedding_provider.provider_type,
+            EmbeddingProviderType::Candle
+        );
         assert_eq!(embedding_provider.model.name, "nomic-embed-text-v1.5");
         assert!(embedding_provider.api.key.is_none());
-        assert_eq!(embedding_provider.options.get("device"), Some(&json!("cpu")));
+        assert_eq!(
+            embedding_provider.options.get("device"),
+            Some(&json!("cpu"))
+        );
     }
 
     #[test]
@@ -978,7 +1163,11 @@ mod candle_provider_tests {
             let mut candle_config = candle_provider_fixture();
             candle_config.model.name = model.to_string();
 
-            assert!(candle_config.validate().is_ok(), "Model {} should be valid", model);
+            assert!(
+                candle_config.validate().is_ok(),
+                "Model {} should be valid",
+                model
+            );
         }
 
         // Test invalid model name
@@ -996,7 +1185,10 @@ mod candle_provider_tests {
 
         assert!(!candle_type.requires_api_key());
         assert_eq!(candle_type.default_base_url(), Some("local".to_string()));
-        assert_eq!(candle_type.default_model(), Some("nomic-embed-text-v1.5".to_string()));
+        assert_eq!(
+            candle_type.default_model(),
+            Some("nomic-embed-text-v1.5".to_string())
+        );
     }
 
     #[test]
@@ -1007,12 +1199,19 @@ mod candle_provider_tests {
         assert!(candle_config.validate().is_ok());
 
         // Test with additional custom options
-        candle_config.options.insert("custom_option".to_string(), json!("custom_value"));
-        candle_config.options.insert("batch_size".to_string(), json!(32));
+        candle_config
+            .options
+            .insert("custom_option".to_string(), json!("custom_value"));
+        candle_config
+            .options
+            .insert("batch_size".to_string(), json!(32));
         assert!(candle_config.validate().is_ok());
 
         // Test with custom headers (should be allowed but not used by Candle)
-        candle_config.api.headers.insert("Custom-Header".to_string(), "custom-value".to_string());
+        candle_config
+            .api
+            .headers
+            .insert("Custom-Header".to_string(), "custom-value".to_string());
         assert!(candle_config.validate().is_ok());
     }
 

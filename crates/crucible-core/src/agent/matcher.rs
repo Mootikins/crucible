@@ -154,28 +154,32 @@ impl CapabilityMatcher {
 
     /// Count how many capabilities match
     fn count_capability_matches(&self, agent: &AgentDefinition, required_caps: &[String]) -> usize {
-        required_caps.iter()
+        required_caps
+            .iter()
             .filter(|req_cap| agent.capabilities.iter().any(|cap| cap.name == **req_cap))
             .count()
     }
 
     /// Count how many skills match
     fn count_skill_matches(&self, agent: &AgentDefinition, required_skills: &[String]) -> usize {
-        required_skills.iter()
+        required_skills
+            .iter()
             .filter(|req_skill| agent.skills.iter().any(|skill| skill.name == **req_skill))
             .count()
     }
 
     /// Count how many tags match
     fn count_tag_matches(&self, agent: &AgentDefinition, required_tags: &[String]) -> usize {
-        required_tags.iter()
+        required_tags
+            .iter()
             .filter(|req_tag| agent.tags.contains(*req_tag))
             .count()
     }
 
     /// Count how many required tools are available
     fn count_tool_matches(&self, agent: &AgentDefinition, required_tools: &[String]) -> usize {
-        required_tools.iter()
+        required_tools
+            .iter()
             .filter(|tool| agent.required_tools.contains(*tool))
             .count()
     }
@@ -183,7 +187,9 @@ impl CapabilityMatcher {
     /// Count skills at or above the required level
     fn count_skill_level_matches(&self, agent: &AgentDefinition, min_level: &SkillLevel) -> usize {
         let level_value = self.skill_level_to_value(min_level);
-        agent.capabilities.iter()
+        agent
+            .capabilities
+            .iter()
             .filter(|cap| self.skill_level_to_value(&cap.skill_level) >= level_value)
             .count()
     }
@@ -205,8 +211,9 @@ impl CapabilityMatcher {
 
         // Check capabilities match
         for cap in &agent.capabilities {
-            if cap.name.to_lowercase().contains(&search_lower) ||
-               cap.description.to_lowercase().contains(&search_lower) {
+            if cap.name.to_lowercase().contains(&search_lower)
+                || cap.description.to_lowercase().contains(&search_lower)
+            {
                 score += 3;
             }
         }
@@ -256,7 +263,9 @@ impl CapabilityMatcher {
             let mut matched_criteria = Vec::new();
 
             // Check for tool compatibility
-            let shared_tools = primary.required_tools.iter()
+            let shared_tools = primary
+                .required_tools
+                .iter()
                 .filter(|tool| agent.required_tools.contains(*tool))
                 .count();
             if shared_tools > 0 {
@@ -265,8 +274,15 @@ impl CapabilityMatcher {
             }
 
             // Check for complementary capabilities
-            let complementary_caps = agent.capabilities.iter()
-                .filter(|cap| !primary.capabilities.iter().any(|p_cap| p_cap.name == cap.name))
+            let complementary_caps = agent
+                .capabilities
+                .iter()
+                .filter(|cap| {
+                    !primary
+                        .capabilities
+                        .iter()
+                        .any(|p_cap| p_cap.name == cap.name)
+                })
                 .count();
             if complementary_caps > 0 {
                 score += complementary_caps as u32 * 5;
@@ -274,8 +290,15 @@ impl CapabilityMatcher {
             }
 
             // Check for complementary skills
-            let complementary_skills = agent.skills.iter()
-                .filter(|skill| !primary.skills.iter().any(|p_skill| p_skill.name == skill.name))
+            let complementary_skills = agent
+                .skills
+                .iter()
+                .filter(|skill| {
+                    !primary
+                        .skills
+                        .iter()
+                        .any(|p_skill| p_skill.name == skill.name)
+                })
                 .count();
             if complementary_skills > 0 {
                 score += complementary_skills as u32 * 3;

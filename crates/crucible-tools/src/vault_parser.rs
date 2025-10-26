@@ -3,7 +3,7 @@
 //! This module provides functionality to parse markdown files and extract frontmatter.
 //! Implemented to make the failing tests pass with minimal functionality.
 
-use crate::vault_types::{VaultFile, VaultError, VaultResult};
+use crate::vault_types::{VaultError, VaultFile, VaultResult};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
@@ -19,16 +19,12 @@ pub struct VaultParser {
 impl VaultParser {
     /// Create a new vault parser
     pub fn new() -> Self {
-        Self {
-            strict_mode: false,
-        }
+        Self { strict_mode: false }
     }
 
     /// Create a parser with strict frontmatter validation
     pub fn strict() -> Self {
-        Self {
-            strict_mode: true,
-        }
+        Self { strict_mode: true }
     }
 
     /// Parse a markdown file and extract metadata
@@ -43,17 +39,21 @@ impl VaultParser {
         // Read file content in blocking task
         let content = tokio::task::spawn_blocking({
             let file_path = file_path.clone();
-            move || {
-                fs::read_to_string(&file_path)
-            }
-        }).await.map_err(|e| VaultError::HashError(format!("Task join error: {}", e)))??;
+            move || fs::read_to_string(&file_path)
+        })
+        .await
+        .map_err(|e| VaultError::HashError(format!("Task join error: {}", e)))??;
 
         // Parse the content
         self.parse_content(file_path, content).await
     }
 
     /// Parse markdown content and extract frontmatter
-    pub async fn parse_content(&self, file_path: String, content: String) -> VaultResult<VaultFile> {
+    pub async fn parse_content(
+        &self,
+        file_path: String,
+        content: String,
+    ) -> VaultResult<VaultFile> {
         let (frontmatter, markdown_content) = self.extract_frontmatter(&content)?;
 
         // Parse frontmatter into structured data
@@ -107,7 +107,7 @@ impl VaultParser {
         let lines: Vec<&str> = content.lines().collect();
         if lines.len() < 2 {
             return Err(VaultError::FrontmatterParseError(
-                "Frontmatter is incomplete".to_string()
+                "Frontmatter is incomplete".to_string(),
             ));
         }
 
@@ -154,10 +154,9 @@ impl VaultParser {
             return Ok(HashMap::new());
         }
 
-        let parsed: serde_yaml::Value = serde_yaml::from_str(frontmatter)
-            .map_err(|e| VaultError::FrontmatterParseError(
-                format!("YAML parsing failed: {}", e)
-            ))?;
+        let parsed: serde_yaml::Value = serde_yaml::from_str(frontmatter).map_err(|e| {
+            VaultError::FrontmatterParseError(format!("YAML parsing failed: {}", e))
+        })?;
 
         // Convert YAML value to JSON value
         let json_value: Value = serde_yaml_to_json(&parsed);
@@ -167,7 +166,7 @@ impl VaultParser {
             Ok(map.into_iter().collect())
         } else {
             Err(VaultError::FrontmatterParseError(
-                "Frontmatter must be a mapping/object".to_string()
+                "Frontmatter must be a mapping/object".to_string(),
             ))
         }
     }
@@ -195,20 +194,24 @@ impl VaultParser {
 
     /// Calculate hash of content for change detection
     fn calculate_content_hash(&self, content: &str) -> String {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
         format!("{:x}", hasher.finalize())
     }
 
     /// Normalize frontmatter values (tags, dates, etc.)
-    fn normalize_frontmatter(&self, frontmatter: &std::collections::HashMap<String, Value>) -> std::collections::HashMap<String, Value> {
+    fn normalize_frontmatter(
+        &self,
+        frontmatter: &std::collections::HashMap<String, Value>,
+    ) -> std::collections::HashMap<String, Value> {
         let mut normalized = frontmatter.clone();
 
         // Normalize tags array
         if let Some(tags_value) = normalized.get_mut("tags") {
             if let Some(tags_array) = tags_value.as_array_mut() {
-                let normalized_tags: Vec<Value> = tags_array.iter()
+                let normalized_tags: Vec<Value> = tags_array
+                    .iter()
                     .filter_map(|tag| tag.as_str())
                     .map(|tag| self.normalize_tag(tag))
                     .filter(|tag| !tag.is_empty())
@@ -233,7 +236,10 @@ impl VaultParser {
     }
 
     /// Extract created date from frontmatter
-    fn extract_created_date(&self, frontmatter: &std::collections::HashMap<String, Value>) -> Option<chrono::DateTime<chrono::Utc>> {
+    fn extract_created_date(
+        &self,
+        frontmatter: &std::collections::HashMap<String, Value>,
+    ) -> Option<chrono::DateTime<chrono::Utc>> {
         // Try different date field names
         let date_fields = ["created", "date", "published", "posted"];
 
@@ -251,7 +257,10 @@ impl VaultParser {
     }
 
     /// Parse date string in various formats
-    fn parse_date_string(&self, date_str: &str) -> Result<chrono::DateTime<chrono::Utc>, Box<dyn std::error::Error>> {
+    fn parse_date_string(
+        &self,
+        date_str: &str,
+    ) -> Result<chrono::DateTime<chrono::Utc>, Box<dyn std::error::Error>> {
         // Try ISO 8601 format first
         if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(date_str) {
             return Ok(dt.with_timezone(&chrono::Utc));
@@ -296,7 +305,9 @@ fn serde_yaml_to_json(yaml_value: &serde_yaml::Value) -> Value {
             } else if let Some(u) = n.as_u64() {
                 Value::Number(serde_json::Number::from(u))
             } else if let Some(f) = n.as_f64() {
-                Value::Number(serde_json::Number::from_f64(f).unwrap_or_else(|| serde_json::Number::from(0)))
+                Value::Number(
+                    serde_json::Number::from_f64(f).unwrap_or_else(|| serde_json::Number::from(0)),
+                )
             } else {
                 Value::Null
             }
@@ -330,7 +341,7 @@ impl Default for VaultParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_parser_creates_successfully() {
         let parser = VaultParser::new();
@@ -345,11 +356,17 @@ mod tests {
         let parser = VaultParser::new();
         let content = "# Simple Note\n\nThis is a note without frontmatter.";
 
-        let result = parser.parse_content("test.md".to_string(), content.to_string()).await.unwrap();
+        let result = parser
+            .parse_content("test.md".to_string(), content.to_string())
+            .await
+            .unwrap();
 
         assert_eq!(result.get_title(), "Simple Note");
         assert!(result.metadata.frontmatter.is_empty());
-        assert_eq!(result.content, "# Simple Note\n\nThis is a note without frontmatter.");
+        assert_eq!(
+            result.content,
+            "# Simple Note\n\nThis is a note without frontmatter."
+        );
     }
 
     #[tokio::test]
@@ -364,13 +381,19 @@ created: 2025-01-01
 
 This is a note with frontmatter."#;
 
-        let result = parser.parse_content("test.md".to_string(), content.to_string()).await.unwrap();
+        let result = parser
+            .parse_content("test.md".to_string(), content.to_string())
+            .await
+            .unwrap();
 
         assert_eq!(result.get_title(), "Test Note");
         assert_eq!(result.get_type(), Some("meta".to_string()));
         assert_eq!(result.get_tags(), vec!["test", "example"]);
         assert!(result.metadata.frontmatter.contains_key("created"));
-        assert_eq!(result.content, "# Test Note\n\nThis is a note with frontmatter.");
+        assert_eq!(
+            result.content,
+            "# Test Note\n\nThis is a note with frontmatter."
+        );
     }
 
     #[tokio::test]
@@ -380,7 +403,7 @@ This is a note with frontmatter."#;
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            VaultError::FileNotFound(_) => {}, // Expected
+            VaultError::FileNotFound(_) => {} // Expected
             other => panic!("Expected FileNotFound, got: {:?}", other),
         }
     }

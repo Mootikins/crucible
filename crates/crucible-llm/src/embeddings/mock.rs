@@ -73,7 +73,8 @@ impl MockEmbeddingProvider {
 
     /// Simple hash function for deterministic results
     fn hash_text(&self, text: &str) -> u32 {
-        text.chars().fold(0u32, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u32))
+        text.chars()
+            .fold(0u32, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u32))
     }
 }
 
@@ -196,7 +197,11 @@ mod tests {
     #[tokio::test]
     async fn test_mock_provider_batch() {
         let provider = MockEmbeddingProvider::new();
-        let texts = vec!["text1".to_string(), "text2".to_string(), "text3".to_string()];
+        let texts = vec![
+            "text1".to_string(),
+            "text2".to_string(),
+            "text3".to_string(),
+        ];
 
         let results = provider.embed_batch(texts).await.unwrap();
 
@@ -238,45 +243,30 @@ impl EmbeddingFixtures {
         let mut batch_embeddings = HashMap::new();
 
         // Pre-generated embeddings for common test texts (768 dimensions for nomic model)
-        embeddings.insert(
-            "Hello, world!".to_string(),
-            {
-                let base = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
-                let mut full = vec![0.0; 768];
-                full[..8.min(768)].copy_from_slice(&base);
-                full
-            }
-        );
+        embeddings.insert("Hello, world!".to_string(), {
+            let base = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
+            let mut full = vec![0.0; 768];
+            full[..8.min(768)].copy_from_slice(&base);
+            full
+        });
 
-        embeddings.insert(
-            "This is a test document".to_string(),
-            {
-                let base = vec![0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1];
-                let mut full = vec![0.0; 768];
-                full[..8.min(768)].copy_from_slice(&base);
-                full
-            }
-        );
+        embeddings.insert("This is a test document".to_string(), {
+            let base = vec![0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1];
+            let mut full = vec![0.0; 768];
+            full[..8.min(768)].copy_from_slice(&base);
+            full
+        });
 
-        embeddings.insert(
-            "Search query example".to_string(),
-            vec![0.5; 768]
-        );
+        embeddings.insert("Search query example".to_string(), vec![0.5; 768]);
 
-        embeddings.insert(
-            "Empty string".to_string(),
-            vec![0.0; 768]
-        );
+        embeddings.insert("Empty string".to_string(), vec![0.0; 768]);
 
-        embeddings.insert(
-            "Unicode test: 🦀 Rust is awesome!".to_string(),
-            {
-                let base = vec![0.9, 0.1, 0.8, 0.2, 0.7, 0.3, 0.6, 0.4];
-                let mut full = vec![0.0; 768];
-                full[..8.min(768)].copy_from_slice(&base);
-                full
-            }
-        );
+        embeddings.insert("Unicode test: 🦀 Rust is awesome!".to_string(), {
+            let base = vec![0.9, 0.1, 0.8, 0.2, 0.7, 0.3, 0.6, 0.4];
+            let mut full = vec![0.0; 768];
+            full[..8.min(768)].copy_from_slice(&base);
+            full
+        });
 
         // nomic-embed-text-v1.5 specific fixtures (768 dimensions)
         let nomic_base_embedding: Vec<f32> = (0..768)
@@ -288,7 +278,7 @@ impl EmbeddingFixtures {
         for i in 0..50 {
             embeddings.insert(
                 format!("Test document {}", i),
-                vec![0.1 + i as f32 * 0.01; 768]
+                vec![0.1 + i as f32 * 0.01; 768],
             );
         }
 
@@ -300,20 +290,26 @@ impl EmbeddingFixtures {
         ];
 
         let batch_responses = vec![
-            EmbeddingResponse::new({
-                let base = vec![0.1, 0.2, 0.3, 0.4];
-                let mut full = vec![0.0; 768];
-                full[..4.min(768)].copy_from_slice(&base);
-                full
-            }, "nomic-embed-text-v1.5".to_string())
-                .with_tokens(2),
-            EmbeddingResponse::new({
-                let base = vec![0.4, 0.3, 0.2, 0.1];
-                let mut full = vec![0.0; 768];
-                full[..4.min(768)].copy_from_slice(&base);
-                full
-            }, "nomic-embed-text-v1.5".to_string())
-                .with_tokens(2),
+            EmbeddingResponse::new(
+                {
+                    let base = vec![0.1, 0.2, 0.3, 0.4];
+                    let mut full = vec![0.0; 768];
+                    full[..4.min(768)].copy_from_slice(&base);
+                    full
+                },
+                "nomic-embed-text-v1.5".to_string(),
+            )
+            .with_tokens(2),
+            EmbeddingResponse::new(
+                {
+                    let base = vec![0.4, 0.3, 0.2, 0.1];
+                    let mut full = vec![0.0; 768];
+                    full[..4.min(768)].copy_from_slice(&base);
+                    full
+                },
+                "nomic-embed-text-v1.5".to_string(),
+            )
+            .with_tokens(2),
             EmbeddingResponse::new(vec![0.5; 768], "nomic-embed-text-v1.5".to_string())
                 .with_tokens(2),
         ];
@@ -385,7 +381,8 @@ impl FixtureBasedMockProvider {
     /// Create a new fixture-based mock provider
     pub fn new(model_name: String) -> Self {
         let fixtures = Arc::new(EmbeddingFixtures::load());
-        let dimensions = fixtures.model_dimensions
+        let dimensions = fixtures
+            .model_dimensions
             .get(&model_name)
             .copied()
             .unwrap_or(768); // Default fallback
@@ -442,7 +439,8 @@ impl FixtureBasedMockProvider {
 
     /// Simple hash function for deterministic fallback generation
     fn hash_text(&self, text: &str) -> u32 {
-        text.chars().fold(0u32, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u32))
+        text.chars()
+            .fold(0u32, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u32))
     }
 
     /// Handle empty string by mapping to "Empty string" fixture
@@ -480,28 +478,31 @@ impl EmbeddingProvider for FixtureBasedMockProvider {
         // Check if we have a pre-defined batch fixture
         if let Some(responses) = self.fixtures.batch_embeddings.get(&texts) {
             // Adjust responses to match this provider's model and dimensions
-            let adjusted_responses: Vec<EmbeddingResponse> = responses.iter().map(|r| {
-                let mut embedding = r.embedding.clone();
-                if embedding.len() != self.dimensions {
-                    // Adjust dimensions
-                    let mut adjusted = Vec::with_capacity(self.dimensions);
-                    for i in 0..self.dimensions {
-                        if i < embedding.len() {
-                            adjusted.push(embedding[i]);
-                        } else {
-                            adjusted.push(0.0); // Pad with zeros
+            let adjusted_responses: Vec<EmbeddingResponse> = responses
+                .iter()
+                .map(|r| {
+                    let mut embedding = r.embedding.clone();
+                    if embedding.len() != self.dimensions {
+                        // Adjust dimensions
+                        let mut adjusted = Vec::with_capacity(self.dimensions);
+                        for i in 0..self.dimensions {
+                            if i < embedding.len() {
+                                adjusted.push(embedding[i]);
+                            } else {
+                                adjusted.push(0.0); // Pad with zeros
+                            }
                         }
+                        embedding = adjusted;
                     }
-                    embedding = adjusted;
-                }
-                EmbeddingResponse {
-                    embedding,
-                    model: self.model_name.clone(),
-                    dimensions: self.dimensions,
-                    tokens: r.tokens,
-                    metadata: None,
-                }
-            }).collect();
+                    EmbeddingResponse {
+                        embedding,
+                        model: self.model_name.clone(),
+                        dimensions: self.dimensions,
+                        tokens: r.tokens,
+                        metadata: None,
+                    }
+                })
+                .collect();
             return Ok(adjusted_responses);
         }
 
@@ -541,21 +542,25 @@ impl EmbeddingProvider for FixtureBasedMockProvider {
         }
 
         // Add some additional test models
-        models.push(crate::embeddings::provider::ModelInfo::builder()
-            .name("mock-small-model")
-            .display_name("Mock Small Model")
-            .dimensions(384)
-            .family(crate::embeddings::provider::ModelFamily::Bert)
-            .parameter_size(crate::embeddings::provider::ParameterSize::new(50, true)) // 50M
-            .build());
+        models.push(
+            crate::embeddings::provider::ModelInfo::builder()
+                .name("mock-small-model")
+                .display_name("Mock Small Model")
+                .dimensions(384)
+                .family(crate::embeddings::provider::ModelFamily::Bert)
+                .parameter_size(crate::embeddings::provider::ParameterSize::new(50, true)) // 50M
+                .build(),
+        );
 
-        models.push(crate::embeddings::provider::ModelInfo::builder()
-            .name("mock-large-model")
-            .display_name("Mock Large Model")
-            .dimensions(1536)
-            .family(crate::embeddings::provider::ModelFamily::Gpt)
-            .parameter_size(crate::embeddings::provider::ParameterSize::new(1, false)) // 1B
-            .build());
+        models.push(
+            crate::embeddings::provider::ModelInfo::builder()
+                .name("mock-large-model")
+                .display_name("Mock Large Model")
+                .dimensions(1536)
+                .family(crate::embeddings::provider::ModelFamily::Gpt)
+                .parameter_size(crate::embeddings::provider::ParameterSize::new(1, false)) // 1B
+                .build(),
+        );
 
         Ok(models)
     }

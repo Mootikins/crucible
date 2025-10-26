@@ -5,7 +5,7 @@
 //! utility functions as part of Phase 1.3 service architecture elimination.
 //! Now updated to Phase 2.1 ToolFunction interface with actual system tools.
 
-use crate::types::{ToolResult, ToolError, ToolFunction, ToolExecutionContext};
+use crate::types::{ToolError, ToolExecutionContext, ToolFunction, ToolResult};
 use anyhow::Result;
 use serde_json::{json, Value};
 use tracing::{debug, info, warn};
@@ -51,23 +51,26 @@ where
     debug!("Executing tool {} with params: {}", tool_name, params);
 
     let result = match validate_params(&params) {
-        Ok(()) => {
-            match executor(params, context).await {
-                Ok(mut result) => {
-                    result.duration_ms = start_time.elapsed().as_millis() as u64;
-                    info!("Tool {} executed successfully in {}ms",
-                          tool_name, result.duration_ms);
-                    Ok(result)
-                }
-                Err(e) => {
-                    warn!("Tool {} execution failed: {}", tool_name, e);
-                    Ok(ToolResult::error(tool_name.to_string(), e.to_string()))
-                }
+        Ok(()) => match executor(params, context).await {
+            Ok(mut result) => {
+                result.duration_ms = start_time.elapsed().as_millis() as u64;
+                info!(
+                    "Tool {} executed successfully in {}ms",
+                    tool_name, result.duration_ms
+                );
+                Ok(result)
             }
-        }
+            Err(e) => {
+                warn!("Tool {} execution failed: {}", tool_name, e);
+                Ok(ToolResult::error(tool_name.to_string(), e.to_string()))
+            }
+        },
         Err(e) => {
             warn!("Tool {} parameter validation failed: {}", tool_name, e);
-            Ok(ToolResult::error(tool_name.to_string(), format!("Parameter validation failed: {}", e)))
+            Ok(ToolResult::error(
+                tool_name.to_string(),
+                format!("Parameter validation failed: {}", e),
+            ))
         }
     };
 
@@ -105,7 +108,10 @@ pub fn error_result(tool_name: String, error: String) -> ToolResult {
 /// * `tool_name` - Name of the tool being executed
 /// * `params` - Parameters being used
 pub fn log_execution_start(tool_name: &str, params: &Value) {
-    debug!("Starting execution of tool: {} with params: {}", tool_name, params);
+    debug!(
+        "Starting execution of tool: {} with params: {}",
+        tool_name, params
+    );
 }
 
 /// Log tool execution success
@@ -114,7 +120,10 @@ pub fn log_execution_start(tool_name: &str, params: &Value) {
 /// * `tool_name` - Name of the tool that executed
 /// * `duration_ms` - Execution time in milliseconds
 pub fn log_execution_success(tool_name: &str, duration_ms: u64) {
-    info!("Tool {} executed successfully in {}ms", tool_name, duration_ms);
+    info!(
+        "Tool {} executed successfully in {}ms",
+        tool_name, duration_ms
+    );
 }
 
 /// Log tool execution error
@@ -217,10 +226,7 @@ pub mod schemas {
 
 /// Get system information - Phase 2.1 ToolFunction
 pub fn get_system_info() -> ToolFunction {
-    |tool_name: String,
-     _parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -249,19 +255,16 @@ pub fn get_system_info() -> ToolFunction {
 
 /// Execute shell command - Phase 2.1 ToolFunction
 pub fn execute_command() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let command = parameters.get("command")
+            let command = parameters
+                .get("command")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| ToolError::Other("Missing 'command' parameter".to_string()))?;
 
-            let working_dir = parameters.get("working_directory")
-                .and_then(|v| v.as_str());
+            let working_dir = parameters.get("working_directory").and_then(|v| v.as_str());
 
             info!("Executing command: {} in dir: {:?}", command, working_dir);
 
@@ -288,26 +291,29 @@ pub fn execute_command() -> ToolFunction {
 
 /// List files in directory - Phase 2.1 ToolFunction
 pub fn list_files() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let path = parameters.get("path")
+            let path = parameters
+                .get("path")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| ToolError::Other("Missing 'path' parameter".to_string()))?;
 
-            let recursive = parameters.get("recursive")
+            let recursive = parameters
+                .get("recursive")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
-            let show_hidden = parameters.get("show_hidden")
+            let show_hidden = parameters
+                .get("show_hidden")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
-            info!("Listing files in: {} (recursive: {}, hidden: {})", path, recursive, show_hidden);
+            info!(
+                "Listing files in: {} (recursive: {}, hidden: {})",
+                path, recursive, show_hidden
+            );
 
             // Mock implementation
             let files = vec![
@@ -348,18 +354,17 @@ pub fn list_files() -> ToolFunction {
 
 /// Read file content - Phase 2.1 ToolFunction
 pub fn read_file() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let path = parameters.get("path")
+            let path = parameters
+                .get("path")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| ToolError::Other("Missing 'path' parameter".to_string()))?;
 
-            let encoding = parameters.get("encoding")
+            let encoding = parameters
+                .get("encoding")
                 .and_then(|v| v.as_str())
                 .unwrap_or("utf-8");
 
@@ -388,24 +393,29 @@ pub fn read_file() -> ToolFunction {
 
 /// Get environment variables - Phase 2.1 ToolFunction
 pub fn get_environment() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let filter = parameters.get("filter")
-                .and_then(|v| v.as_str());
+            let filter = parameters.get("filter").and_then(|v| v.as_str());
 
             info!("Getting environment variables (filter: {:?})", filter);
 
             let mut env_vars = std::collections::HashMap::new();
 
             // Add some common environment variables for mock implementation
-            env_vars.insert("PATH".to_string(), std::env::var("PATH").unwrap_or_default());
-            env_vars.insert("HOME".to_string(), std::env::var("HOME").unwrap_or_default());
-            env_vars.insert("USER".to_string(), std::env::var("USER").unwrap_or_default());
+            env_vars.insert(
+                "PATH".to_string(),
+                std::env::var("PATH").unwrap_or_default(),
+            );
+            env_vars.insert(
+                "HOME".to_string(),
+                std::env::var("HOME").unwrap_or_default(),
+            );
+            env_vars.insert(
+                "USER".to_string(),
+                std::env::var("USER").unwrap_or_default(),
+            );
 
             if let Some(filter_str) = filter {
                 env_vars.retain(|key, _| key.contains(filter_str));
@@ -476,9 +486,15 @@ mod tests {
             |_params, _context| async {
                 // Add a small delay to ensure measurable timing
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-                Ok(success_result("timing_test".to_string(), json!({"processed": true}), 0))
+                Ok(success_result(
+                    "timing_test".to_string(),
+                    json!({"processed": true}),
+                    0,
+                ))
             },
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         assert!(result.success);
         // The actual duration should be measured and reasonable (around 10ms due to our sleep)
@@ -530,7 +546,9 @@ mod tests {
             parameters,
             Some("test_user".to_string()),
             Some("test_session".to_string()),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -549,12 +567,9 @@ mod tests {
             "working_directory": "/tmp"
         });
 
-        let result = tool_fn(
-            "execute_command".to_string(),
-            parameters,
-            None,
-            None,
-        ).await.unwrap();
+        let result = tool_fn("execute_command".to_string(), parameters, None, None)
+            .await
+            .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -569,12 +584,7 @@ mod tests {
         let tool_fn = execute_command();
         let parameters = json!({}); // Missing required 'command' parameter
 
-        let result = tool_fn(
-            "execute_command".to_string(),
-            parameters,
-            None,
-            None,
-        ).await;
+        let result = tool_fn("execute_command".to_string(), parameters, None, None).await;
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -594,12 +604,9 @@ mod tests {
             "show_hidden": false
         });
 
-        let result = tool_fn(
-            "list_files".to_string(),
-            parameters,
-            None,
-            None,
-        ).await.unwrap();
+        let result = tool_fn("list_files".to_string(), parameters, None, None)
+            .await
+            .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -619,12 +626,9 @@ mod tests {
             "encoding": "utf-8"
         });
 
-        let result = tool_fn(
-            "read_file".to_string(),
-            parameters,
-            None,
-            None,
-        ).await.unwrap();
+        let result = tool_fn("read_file".to_string(), parameters, None, None)
+            .await
+            .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -642,12 +646,9 @@ mod tests {
             "filter": "PATH"
         });
 
-        let result = tool_fn(
-            "get_environment".to_string(),
-            parameters,
-            None,
-            None,
-        ).await.unwrap();
+        let result = tool_fn("get_environment".to_string(), parameters, None, None)
+            .await
+            .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -662,12 +663,9 @@ mod tests {
         let tool_fn = get_environment();
         let parameters = json!({});
 
-        let result = tool_fn(
-            "get_environment".to_string(),
-            parameters,
-            None,
-            None,
-        ).await.unwrap();
+        let result = tool_fn("get_environment".to_string(), parameters, None, None)
+            .await
+            .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());

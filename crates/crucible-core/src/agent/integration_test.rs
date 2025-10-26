@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod integration_tests {
-    use crate::agent::{AgentLoader, AgentRegistry, AgentQuery, SkillLevel};
+    use crate::agent::{AgentLoader, AgentQuery, AgentRegistry, SkillLevel};
 
     #[test]
     fn test_load_example_agents() {
@@ -34,7 +34,10 @@ mod integration_tests {
 
                 // Test that we can find the orchestrator
                 let orchestrator_agents = registry.get_agents_by_tag("orchestration");
-                assert!(!orchestrator_agents.is_empty(), "Should find orchestrator agents");
+                assert!(
+                    !orchestrator_agents.is_empty(),
+                    "Should find orchestrator agents"
+                );
             }
         }
     }

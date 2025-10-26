@@ -110,8 +110,14 @@ impl ValidationError {
     /// Check if this error is recoverable
     pub fn is_recoverable(&self) -> bool {
         match self {
-            Self::InvalidValue { suggested_fix: Some(_), .. } => true,
-            Self::InvalidValue { suggested_fix: None, .. } => false,
+            Self::InvalidValue {
+                suggested_fix: Some(_),
+                ..
+            } => true,
+            Self::InvalidValue {
+                suggested_fix: None,
+                ..
+            } => false,
             Self::EnvironmentError { .. } => true,
             Self::MissingField { .. } => false,
             Self::DependencyViolation { .. } => false,
@@ -134,7 +140,10 @@ impl ValidationError {
             Self::EnvironmentError { .. } => ValidationSeverity::Warning,
             Self::MultipleErrors { errors, .. } => {
                 // If any error is severe, mark as Error
-                if errors.iter().any(|e| e.severity() == ValidationSeverity::Error) {
+                if errors
+                    .iter()
+                    .any(|e| e.severity() == ValidationSeverity::Error)
+                {
                     ValidationSeverity::Error
                 } else {
                     ValidationSeverity::Warning
@@ -153,7 +162,13 @@ impl ValidationError {
                     context.source
                 )
             }
-            Self::InvalidValue { field, value, reason, suggested_fix, .. } => {
+            Self::InvalidValue {
+                field,
+                value,
+                reason,
+                suggested_fix,
+                ..
+            } => {
                 let mut desc = format!(
                     "The value '{}' for field '{}' is invalid: {}. Please provide a valid value.",
                     value, field, reason
@@ -163,26 +178,49 @@ impl ValidationError {
                 }
                 desc
             }
-            Self::DependencyViolation { field, depends_on, message, .. } => {
+            Self::DependencyViolation {
+                field,
+                depends_on,
+                message,
+                ..
+            } => {
                 format!(
                     "Field '{}' depends on '{}' but there's a dependency issue: {}. Please ensure both fields are properly configured.",
                     field, depends_on, message
                 )
             }
-            Self::TypeMismatch { field, expected_type, actual_type, .. } => {
+            Self::TypeMismatch {
+                field,
+                expected_type,
+                actual_type,
+                ..
+            } => {
                 format!(
                     "Field '{}' expects a value of type {} but received {}. Please check your configuration.",
                     field, expected_type, actual_type
                 )
             }
-            Self::ConstraintViolation { field, constraint, details, .. } => {
+            Self::ConstraintViolation {
+                field,
+                constraint,
+                details,
+                ..
+            } => {
                 format!(
                     "Field '{}' violates the '{}' constraint: {}. Please adjust the value.",
                     field, constraint, details
                 )
             }
-            Self::ParseError { file_source, error, line, column } => {
-                let mut desc = format!("Failed to parse configuration from {}: {}", file_source, error);
+            Self::ParseError {
+                file_source,
+                error,
+                line,
+                column,
+            } => {
+                let mut desc = format!(
+                    "Failed to parse configuration from {}: {}",
+                    file_source, error
+                );
                 if let Some(line_num) = line {
                     desc.push_str(&format!(" (line {})", line_num));
                 }
@@ -191,7 +229,11 @@ impl ValidationError {
                 }
                 desc
             }
-            Self::EnvironmentError { variable, error, env_source } => {
+            Self::EnvironmentError {
+                variable,
+                error,
+                env_source,
+            } => {
                 let mut desc = format!("Environment variable '{}' error: {}", variable, error);
                 if let Some(src) = env_source {
                     desc.push_str(&format!(" (source: {})", src));
@@ -406,7 +448,7 @@ impl ValidationResult {
                     .into_iter()
                     .map(|e| e.to_string())
                     .collect::<Vec<_>>()
-                    .join("; ")
+                    .join("; "),
             ))
         }
     }
@@ -528,15 +570,14 @@ impl ValidationEngine {
             }
             ValidationRuleType::Pattern(pattern) => {
                 if let Some(s) = value.as_str() {
-                    let regex = regex::Regex::new(pattern).map_err(|e| {
-                        ValidationError::InvalidValue {
+                    let regex =
+                        regex::Regex::new(pattern).map_err(|e| ValidationError::InvalidValue {
                             field: field.to_string(),
                             value: s.to_string(),
                             reason: format!("Invalid regex pattern: {}", e),
                             context: context.clone(),
                             suggested_fix: None,
-                        }
-                    })?;
+                        })?;
                     if !regex.is_match(s) {
                         return Err(ValidationError::InvalidValue {
                             field: field.to_string(),
@@ -565,7 +606,10 @@ impl ValidationEngine {
                             return Err(ValidationError::ConstraintViolation {
                                 field: field.to_string(),
                                 constraint: "maximum value".to_string(),
-                                details: format!("Value {} is greater than maximum {}", num, max_val),
+                                details: format!(
+                                    "Value {} is greater than maximum {}",
+                                    num, max_val
+                                ),
                                 context: context.clone(),
                             });
                         }
@@ -580,7 +624,10 @@ impl ValidationEngine {
                             value: s.to_string(),
                             reason: format!("Value must be one of: {}", allowed_values.join(", ")),
                             context: context.clone(),
-                            suggested_fix: Some(format!("Choose from: {}", allowed_values.join(", "))),
+                            suggested_fix: Some(format!(
+                                "Choose from: {}",
+                                allowed_values.join(", ")
+                            )),
                         });
                     }
                 }

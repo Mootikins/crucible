@@ -800,7 +800,7 @@ impl EventHandler for EmbeddingEventHandler {
 mod tests {
     use super::*;
     use crate::{create_embedding_metadata, EmbeddingEventPriority, FileEvent, FileEventKind};
-    use crucible_llm::embeddings::config::EmbeddingConfig;
+    use crucible_surrealdb::EmbeddingConfig;
     use tempfile::TempDir;
 
     #[tokio::test]

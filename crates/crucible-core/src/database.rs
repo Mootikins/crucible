@@ -9,9 +9,9 @@
 //! through different data access patterns, enabling evaluation of which model
 //! works best for different Crucible use cases.
 
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use async_trait::async_trait;
 
 // Re-export common database types from existing modules
 pub use crate::document::DocumentNode;
@@ -83,7 +83,12 @@ pub trait RelationalDB: Send + Sync {
     async fn select(&self, query: SelectQuery) -> DbResult<QueryResult>;
 
     /// Update records matching filter criteria
-    async fn update(&self, table: &str, filter: FilterClause, updates: UpdateClause) -> DbResult<QueryResult>;
+    async fn update(
+        &self,
+        table: &str,
+        filter: FilterClause,
+        updates: UpdateClause,
+    ) -> DbResult<QueryResult>;
 
     /// Delete records matching filter criteria
     async fn delete(&self, table: &str, filter: FilterClause) -> DbResult<QueryResult>;
@@ -95,7 +100,12 @@ pub trait RelationalDB: Send + Sync {
     async fn aggregate(&self, query: AggregateQuery) -> DbResult<QueryResult>;
 
     /// Create an index on specified columns
-    async fn create_index(&self, table: &str, columns: Vec<String>, index_type: IndexType) -> DbResult<()>;
+    async fn create_index(
+        &self,
+        table: &str,
+        columns: Vec<String>,
+        index_type: IndexType,
+    ) -> DbResult<()>;
 
     /// Drop an existing index
     async fn drop_index(&self, table: &str, columns: Vec<String>) -> DbResult<()>;
@@ -133,7 +143,13 @@ pub trait GraphDB: Send + Sync {
     async fn delete_node(&self, node_id: &NodeId) -> DbResult<()>;
 
     /// Create an edge between two nodes
-    async fn create_edge(&self, from: &NodeId, to: &NodeId, label: &str, properties: EdgeProperties) -> DbResult<EdgeId>;
+    async fn create_edge(
+        &self,
+        from: &NodeId,
+        to: &NodeId,
+        label: &str,
+        properties: EdgeProperties,
+    ) -> DbResult<EdgeId>;
 
     /// Get an edge by its ID
     async fn get_edge(&self, edge_id: &EdgeId) -> DbResult<Option<Edge>>;
@@ -145,19 +161,38 @@ pub trait GraphDB: Send + Sync {
     async fn delete_edge(&self, edge_id: &NodeId) -> DbResult<()>;
 
     /// Get neighboring nodes (outgoing, incoming, or both)
-    async fn get_neighbors(&self, node_id: &NodeId, direction: Direction, edge_filter: Option<EdgeFilter>) -> DbResult<Vec<Node>>;
+    async fn get_neighbors(
+        &self,
+        node_id: &NodeId,
+        direction: Direction,
+        edge_filter: Option<EdgeFilter>,
+    ) -> DbResult<Vec<Node>>;
 
     /// Traverse graph following a pattern
-    async fn traverse(&self, start: &NodeId, pattern: TraversalPattern, max_depth: Option<u32>) -> DbResult<TraversalResult>;
+    async fn traverse(
+        &self,
+        start: &NodeId,
+        pattern: TraversalPattern,
+        max_depth: Option<u32>,
+    ) -> DbResult<TraversalResult>;
 
     /// Find all paths between two nodes
-    async fn find_paths(&self, from: &NodeId, to: &NodeId, max_depth: Option<u32>) -> DbResult<Vec<Path>>;
+    async fn find_paths(
+        &self,
+        from: &NodeId,
+        to: &NodeId,
+        max_depth: Option<u32>,
+    ) -> DbResult<Vec<Path>>;
 
     /// Find shortest path between two nodes
     async fn find_shortest_path(&self, from: &NodeId, to: &NodeId) -> DbResult<Option<Path>>;
 
     /// Perform graph analytics (centrality, clustering, etc.)
-    async fn graph_analytics(&self, nodes: Option<Vec<NodeId>>, analysis: GraphAnalysis) -> DbResult<AnalyticsResult>;
+    async fn graph_analytics(
+        &self,
+        nodes: Option<Vec<NodeId>>,
+        analysis: GraphAnalysis,
+    ) -> DbResult<AnalyticsResult>;
 
     /// Query for subgraphs matching a pattern
     async fn query_subgraph(&self, pattern: SubgraphPattern) -> DbResult<Vec<Subgraph>>;
@@ -192,31 +227,67 @@ pub trait DocumentDB: Send + Sync {
     async fn get_document(&self, collection: &str, id: &DocumentId) -> DbResult<Option<Document>>;
 
     /// Update a document (partial update)
-    async fn update_document(&self, collection: &str, id: &DocumentId, updates: DocumentUpdates) -> DbResult<()>;
+    async fn update_document(
+        &self,
+        collection: &str,
+        id: &DocumentId,
+        updates: DocumentUpdates,
+    ) -> DbResult<()>;
 
     /// Replace a document completely
-    async fn replace_document(&self, collection: &str, id: &DocumentId, document: Document) -> DbResult<()>;
+    async fn replace_document(
+        &self,
+        collection: &str,
+        id: &DocumentId,
+        document: Document,
+    ) -> DbResult<()>;
 
     /// Delete a document
     async fn delete_document(&self, collection: &str, id: &DocumentId) -> DbResult<()>;
 
     /// Query documents with filtering, sorting, and pagination
-    async fn query_documents(&self, collection: &str, query: DocumentQuery) -> DbResult<QueryResult>;
+    async fn query_documents(
+        &self,
+        collection: &str,
+        query: DocumentQuery,
+    ) -> DbResult<QueryResult>;
 
     /// Full-text search within documents
-    async fn full_text_search(&self, collection: &str, text: &str, options: SearchOptions) -> DbResult<Vec<SearchResult>>;
+    async fn full_text_search(
+        &self,
+        collection: &str,
+        text: &str,
+        options: SearchOptions,
+    ) -> DbResult<Vec<SearchResult>>;
 
     /// Aggregate documents using pipeline operations
-    async fn aggregate_documents(&self, collection: &str, pipeline: AggregationPipeline) -> DbResult<AggregationResult>;
+    async fn aggregate_documents(
+        &self,
+        collection: &str,
+        pipeline: AggregationPipeline,
+    ) -> DbResult<AggregationResult>;
 
     /// Create a text search index
-    async fn create_search_index(&self, collection: &str, fields: Vec<String>, options: SearchIndexOptions) -> DbResult<()>;
+    async fn create_search_index(
+        &self,
+        collection: &str,
+        fields: Vec<String>,
+        options: SearchIndexOptions,
+    ) -> DbResult<()>;
 
     /// Bulk insert documents
-    async fn insert_documents(&self, collection: &str, documents: Vec<Document>) -> DbResult<BatchResult>;
+    async fn insert_documents(
+        &self,
+        collection: &str,
+        documents: Vec<Document>,
+    ) -> DbResult<BatchResult>;
 
     /// Count documents matching a filter
-    async fn count_documents(&self, collection: &str, filter: Option<DocumentFilter>) -> DbResult<u64>;
+    async fn count_documents(
+        &self,
+        collection: &str,
+        filter: Option<DocumentFilter>,
+    ) -> DbResult<u64>;
 }
 
 // ==============================================================================
@@ -337,17 +408,49 @@ pub enum FilterClause {
     And(Vec<FilterClause>),
     Or(Vec<FilterClause>),
     Not(Box<FilterClause>),
-    Equals { column: String, value: serde_json::Value },
-    NotEquals { column: String, value: serde_json::Value },
-    GreaterThan { column: String, value: serde_json::Value },
-    GreaterThanOrEqual { column: String, value: serde_json::Value },
-    LessThan { column: String, value: serde_json::Value },
-    LessThanOrEqual { column: String, value: serde_json::Value },
-    Like { column: String, pattern: String },
-    In { column: String, values: Vec<serde_json::Value> },
-    IsNull { column: String },
-    IsNotNull { column: String },
-    Between { column: String, start: serde_json::Value, end: serde_json::Value },
+    Equals {
+        column: String,
+        value: serde_json::Value,
+    },
+    NotEquals {
+        column: String,
+        value: serde_json::Value,
+    },
+    GreaterThan {
+        column: String,
+        value: serde_json::Value,
+    },
+    GreaterThanOrEqual {
+        column: String,
+        value: serde_json::Value,
+    },
+    LessThan {
+        column: String,
+        value: serde_json::Value,
+    },
+    LessThanOrEqual {
+        column: String,
+        value: serde_json::Value,
+    },
+    Like {
+        column: String,
+        pattern: String,
+    },
+    In {
+        column: String,
+        values: Vec<serde_json::Value>,
+    },
+    IsNull {
+        column: String,
+    },
+    IsNotNull {
+        column: String,
+    },
+    Between {
+        column: String,
+        start: serde_json::Value,
+        end: serde_json::Value,
+    },
 }
 
 /// Order clause for sorting
@@ -547,13 +650,20 @@ pub struct Path {
 /// Graph analysis operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GraphAnalysis {
-    DegreeCentrality { direction: Direction },
+    DegreeCentrality {
+        direction: Direction,
+    },
     BetweennessCentrality,
     ClosenessCentrality,
-    PageRank { damping_factor: Option<f64>, iterations: Option<u32> },
+    PageRank {
+        damping_factor: Option<f64>,
+        iterations: Option<u32>,
+    },
     ConnectedComponents,
     StronglyConnectedComponents,
-    CommunityDetection { algorithm: CommunityAlgorithm },
+    CommunityDetection {
+        algorithm: CommunityAlgorithm,
+    },
 }
 
 /// Community detection algorithms
@@ -692,16 +802,45 @@ pub enum DocumentFilter {
     And(Vec<DocumentFilter>),
     Or(Vec<DocumentFilter>),
     Not(Box<DocumentFilter>),
-    Equals { field: String, value: serde_json::Value },
-    NotEquals { field: String, value: serde_json::Value },
-    GreaterThan { field: String, value: serde_json::Value },
-    GreaterThanOrEqual { field: String, value: serde_json::Value },
-    LessThan { field: String, value: serde_json::Value },
-    LessThanOrEqual { field: String, value: serde_json::Value },
-    Contains { field: String, value: serde_json::Value },
-    In { field: String, values: Vec<serde_json::Value> },
-    Exists { field: String },
-    ElementType { field: String, element_type: DocumentFieldType },
+    Equals {
+        field: String,
+        value: serde_json::Value,
+    },
+    NotEquals {
+        field: String,
+        value: serde_json::Value,
+    },
+    GreaterThan {
+        field: String,
+        value: serde_json::Value,
+    },
+    GreaterThanOrEqual {
+        field: String,
+        value: serde_json::Value,
+    },
+    LessThan {
+        field: String,
+        value: serde_json::Value,
+    },
+    LessThanOrEqual {
+        field: String,
+        value: serde_json::Value,
+    },
+    Contains {
+        field: String,
+        value: serde_json::Value,
+    },
+    In {
+        field: String,
+        values: Vec<serde_json::Value>,
+    },
+    Exists {
+        field: String,
+    },
+    ElementType {
+        field: String,
+        element_type: DocumentFieldType,
+    },
 }
 
 /// Document sort specification
@@ -757,14 +896,34 @@ pub struct AggregationPipeline {
 /// Aggregation pipeline stage
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AggregationStage {
-    Match { filter: DocumentFilter },
-    Group { id: serde_json::Value, operations: Vec<GroupOperation> },
-    Sort { sort: Vec<DocumentSort> },
-    Limit { limit: u32 },
-    Skip { skip: u32 },
-    Project { projection: Vec<String> },
-    Unwind { field: String },
-    Lookup { from: String, local_field: String, foreign_field: String, as_field: String },
+    Match {
+        filter: DocumentFilter,
+    },
+    Group {
+        id: serde_json::Value,
+        operations: Vec<GroupOperation>,
+    },
+    Sort {
+        sort: Vec<DocumentSort>,
+    },
+    Limit {
+        limit: u32,
+    },
+    Skip {
+        skip: u32,
+    },
+    Project {
+        projection: Vec<String>,
+    },
+    Unwind {
+        field: String,
+    },
+    Lookup {
+        from: String,
+        local_field: String,
+        foreign_field: String,
+        as_field: String,
+    },
 }
 
 /// Group operation in aggregation

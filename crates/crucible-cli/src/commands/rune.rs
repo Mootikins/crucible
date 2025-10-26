@@ -4,8 +4,8 @@
 //! Complex service architecture has been removed in Phase 1.1 dead code elimination.
 //! Now provides basic script parsing and validation functionality.
 
-use anyhow::{Context, Result};
 use crate::config::CliConfig;
+use anyhow::{Context, Result};
 use std::path::PathBuf;
 
 pub async fn list_commands(_config: CliConfig) -> Result<()> {
@@ -27,7 +27,11 @@ pub async fn execute(_config: CliConfig, script: String, args: Option<String>) -
     // Try to find the script in standard locations if it doesn't exist
     let final_script_path = if !script_path.exists() {
         let locations = vec![
-            format!("{}/.config/crucible/commands/{}.rn", dirs::home_dir().unwrap().display(), script),
+            format!(
+                "{}/.config/crucible/commands/{}.rn",
+                dirs::home_dir().unwrap().display(),
+                script
+            ),
             format!(".crucible/commands/{}.rn", script),
             format!("{}", script),
         ];
@@ -69,7 +73,9 @@ pub async fn execute(_config: CliConfig, script: String, args: Option<String>) -
 
     println!("✅ Script parsed successfully");
     println!("💡 Note: Complex Rune execution service has been simplified in Phase 1.1");
-    println!("   Advanced script execution features have been removed to focus on core functionality");
+    println!(
+        "   Advanced script execution features have been removed to focus on core functionality"
+    );
 
     Ok(())
 }
@@ -104,7 +110,10 @@ fn validate_rune_script(content: &str) -> Result<()> {
             let open_count = trimmed.matches('{').count();
             let close_count = trimmed.matches('}').count();
             if open_count != close_count {
-                println!("⚠️  Warning: Line {} may have unbalanced brackets", line_num + 1);
+                println!(
+                    "⚠️  Warning: Line {} may have unbalanced brackets",
+                    line_num + 1
+                );
             }
         }
     }

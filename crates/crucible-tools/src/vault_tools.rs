@@ -4,23 +4,18 @@
 //! including file operations, metadata management, and indexing. Uses the Phase 1A
 //! parsing system to provide actual vault data instead of mock responses.
 
-use crate::types::{ToolResult, ToolError, ToolFunction};
+use crate::types::{ToolError, ToolFunction, ToolResult};
 use crate::vault_operations::RealVaultOperations;
 use serde_json::{json, Value};
 use tracing::info;
 
 /// Search notes by frontmatter properties - Real Implementation using Phase 1A parsing
 pub fn search_by_properties() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let properties = parameters.get("properties")
-                .cloned()
-                .unwrap_or(json!({}));
+            let properties = parameters.get("properties").cloned().unwrap_or(json!({}));
 
             info!("Searching for files with properties: {:?}", properties);
 
@@ -42,9 +37,7 @@ pub fn search_by_properties() -> ToolFunction {
                         start_time.elapsed().as_millis() as u64,
                     ))
                 }
-                Err(e) => {
-                    Err(ToolError::Other(format!("Vault search failed: {}", e)))
-                }
+                Err(e) => Err(ToolError::Other(format!("Vault search failed: {}", e))),
             }
         })
     }
@@ -52,14 +45,12 @@ pub fn search_by_properties() -> ToolFunction {
 
 /// Search notes by tags - Real Implementation using Phase 1A parsing
 pub fn search_by_tags() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let tags: Vec<String> = parameters.get("tags")
+            let tags: Vec<String> = parameters
+                .get("tags")
                 .and_then(|v| v.as_array())
                 .map(|arr| {
                     arr.iter()
@@ -89,9 +80,7 @@ pub fn search_by_tags() -> ToolFunction {
                         start_time.elapsed().as_millis() as u64,
                     ))
                 }
-                Err(e) => {
-                    Err(ToolError::Other(format!("Tag search failed: {}", e)))
-                }
+                Err(e) => Err(ToolError::Other(format!("Tag search failed: {}", e))),
             }
         })
     }
@@ -99,18 +88,17 @@ pub fn search_by_tags() -> ToolFunction {
 
 /// Search notes in a specific folder - Real Implementation using Phase 1A parsing
 pub fn search_by_folder() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let path = parameters.get("path")
+            let path = parameters
+                .get("path")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| ToolError::Other("Missing 'path' parameter".to_string()))?;
 
-            let recursive = parameters.get("recursive")
+            let recursive = parameters
+                .get("recursive")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true);
 
@@ -136,9 +124,7 @@ pub fn search_by_folder() -> ToolFunction {
                         start_time.elapsed().as_millis() as u64,
                     ))
                 }
-                Err(e) => {
-                    Err(ToolError::Other(format!("Folder search failed: {}", e)))
-                }
+                Err(e) => Err(ToolError::Other(format!("Folder search failed: {}", e))),
             }
         })
     }
@@ -146,28 +132,26 @@ pub fn search_by_folder() -> ToolFunction {
 
 /// Create a new note in the vault - Phase 2.1 ToolFunction
 pub fn create_note() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let path = parameters.get("path")
+            let path = parameters
+                .get("path")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| ToolError::Other("Missing 'path' parameter".to_string()))?;
 
-            let title = parameters.get("title")
+            let title = parameters
+                .get("title")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| ToolError::Other("Missing 'title' parameter".to_string()))?;
 
-            let content = parameters.get("content")
+            let content = parameters
+                .get("content")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| ToolError::Other("Missing 'content' parameter".to_string()))?;
 
-            let properties = parameters.get("properties")
-                .cloned()
-                .unwrap_or(json!({}));
+            let properties = parameters.get("properties").cloned().unwrap_or(json!({}));
 
             info!("Creating note: {} at {}", title, path);
 
@@ -193,24 +177,21 @@ pub fn create_note() -> ToolFunction {
 
 /// Update an existing note - Phase 2.1 ToolFunction
 pub fn update_note() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let path = parameters.get("path")
+            let path = parameters
+                .get("path")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| ToolError::Other("Missing 'path' parameter".to_string()))?;
 
-            let content = parameters.get("content")
+            let content = parameters
+                .get("content")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| ToolError::Other("Missing 'content' parameter".to_string()))?;
 
-            let properties = parameters.get("properties")
-                .cloned()
-                .unwrap_or(json!({}));
+            let properties = parameters.get("properties").cloned().unwrap_or(json!({}));
 
             info!("Updating note: {}", path);
 
@@ -235,14 +216,12 @@ pub fn update_note() -> ToolFunction {
 
 /// Delete a note from the vault - Phase 2.1 ToolFunction
 pub fn delete_note() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let path = parameters.get("path")
+            let path = parameters
+                .get("path")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| ToolError::Other("Missing 'path' parameter".to_string()))?;
 
@@ -267,10 +246,7 @@ pub fn delete_note() -> ToolFunction {
 
 /// Get vault statistics - Real Implementation using Phase 1A parsing
 pub fn get_vault_stats() -> ToolFunction {
-    |tool_name: String,
-     _parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -294,9 +270,10 @@ pub fn get_vault_stats() -> ToolFunction {
                         start_time.elapsed().as_millis() as u64,
                     ))
                 }
-                Err(e) => {
-                    Err(ToolError::Other(format!("Vault stats calculation failed: {}", e)))
-                }
+                Err(e) => Err(ToolError::Other(format!(
+                    "Vault stats calculation failed: {}",
+                    e
+                ))),
             }
         })
     }
@@ -304,10 +281,7 @@ pub fn get_vault_stats() -> ToolFunction {
 
 /// List all tags in the vault - Real Implementation using Phase 1A parsing
 pub fn list_tags() -> ToolFunction {
-    |tool_name: String,
-     _parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -331,9 +305,7 @@ pub fn list_tags() -> ToolFunction {
                         start_time.elapsed().as_millis() as u64,
                     ))
                 }
-                Err(e) => {
-                    Err(ToolError::Other(format!("Tag listing failed: {}", e)))
-                }
+                Err(e) => Err(ToolError::Other(format!("Tag listing failed: {}", e))),
             }
         })
     }
@@ -359,7 +331,9 @@ mod tests {
             parameters,
             Some("test_user".to_string()),
             Some("test_session".to_string()),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -377,7 +351,9 @@ mod tests {
             parameters,
             Some("test_user".to_string()),
             Some("test_session".to_string()),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -401,7 +377,9 @@ mod tests {
             parameters,
             Some("test_user".to_string()),
             Some("test_session".to_string()),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -412,12 +390,9 @@ mod tests {
         let tool_fn = get_vault_stats();
         let parameters = json!({});
 
-        let result = tool_fn(
-            "get_vault_stats".to_string(),
-            parameters,
-            None,
-            None,
-        ).await.unwrap();
+        let result = tool_fn("get_vault_stats".to_string(), parameters, None, None)
+            .await
+            .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -432,12 +407,9 @@ mod tests {
         let tool_fn = list_tags();
         let parameters = json!({});
 
-        let result = tool_fn(
-            "list_tags".to_string(),
-            parameters,
-            None,
-            None,
-        ).await.unwrap();
+        let result = tool_fn("list_tags".to_string(), parameters, None, None)
+            .await
+            .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -455,12 +427,7 @@ mod tests {
             // Missing required 'title' and 'content' parameters
         });
 
-        let result = tool_fn(
-            "create_note".to_string(),
-            parameters,
-            None,
-            None,
-        ).await;
+        let result = tool_fn("create_note".to_string(), parameters, None, None).await;
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -479,12 +446,9 @@ mod tests {
             "recursive": true
         });
 
-        let result = tool_fn(
-            "search_by_folder".to_string(),
-            parameters,
-            None,
-            None,
-        ).await.unwrap();
+        let result = tool_fn("search_by_folder".to_string(), parameters, None, None)
+            .await
+            .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -501,12 +465,9 @@ mod tests {
             }
         });
 
-        let result = tool_fn(
-            "update_note".to_string(),
-            parameters,
-            None,
-            None,
-        ).await.unwrap();
+        let result = tool_fn("update_note".to_string(), parameters, None, None)
+            .await
+            .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -519,12 +480,9 @@ mod tests {
             "path": "old-note.md"
         });
 
-        let result = tool_fn(
-            "delete_note".to_string(),
-            parameters,
-            None,
-            None,
-        ).await.unwrap();
+        let result = tool_fn("delete_note".to_string(), parameters, None, None)
+            .await
+            .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());

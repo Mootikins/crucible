@@ -4,10 +4,10 @@
 //! to multiple destinations (database, logger, etc.) with backpressure handling
 //! and fault isolation.
 
-pub mod traits;
-pub mod error;
 pub mod circuit_breaker;
+pub mod error;
+pub mod traits;
 
-pub use traits::{OutputSink, SinkHealth};
+pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
 pub use error::{SinkError, SinkResult};
-pub use circuit_breaker::{CircuitBreaker, CircuitState, CircuitBreakerConfig};
+pub use traits::{OutputSink, SinkHealth};

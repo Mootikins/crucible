@@ -1,3 +1,4 @@
+pub mod bus;
 /// Agent-to-Agent communication and context management
 ///
 /// This crate provides:
@@ -5,22 +6,20 @@
 /// - Context window management with Rune-based pruning strategies
 /// - Multi-agent coordination and collaboration tracking
 /// - MCP client integration for external tool access
-
 pub mod context;
-pub mod protocol;
-pub mod transport;
-pub mod bus;
-pub mod registry;
 pub mod mcp_client;
+pub mod protocol;
+pub mod registry;
+pub mod transport;
 
 // Re-export common types
+pub use bus::{EntityExtractor, MessageBus};
 pub use context::{
-    ContextWindow, MessageMetadata, MessageMetadataStore,
-    AgentCollaborationGraph, PruningDecision, SummaryRequest, PruneReason,
+    AgentCollaborationGraph, ContextWindow, MessageMetadata, MessageMetadataStore, PruneReason,
+    PruningDecision, SummaryRequest,
 };
-pub use bus::{MessageBus, EntityExtractor};
-pub use transport::{LocalAgentBus, AgentHandle};
-pub use protocol::{TypedMessage, MessageEnvelope, SystemEvent};
+pub use protocol::{MessageEnvelope, SystemEvent, TypedMessage};
+pub use transport::{AgentHandle, LocalAgentBus};
 
 #[derive(Debug, thiserror::Error)]
 pub enum A2AError {
