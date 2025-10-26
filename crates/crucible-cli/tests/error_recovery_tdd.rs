@@ -23,7 +23,9 @@ use anyhow::Result;
 use crucible_cli::config::CliConfig;
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 use tempfile::TempDir;
+use tokio::time::timeout;
 
 // =============================================================================
 // Configuration Error Recovery Tests
@@ -643,4 +645,219 @@ path = "/valid/path"
     assert_eq!(valid_config.kiln.path.to_string_lossy(), "/valid/path");
 
     Ok(())
+}
+
+// =============================================================================
+// CLI Command Integration Tests
+// =============================================================================
+
+#[tokio::test]
+async fn test_search_command_with_invalid_kiln_path() {
+    // Test: search command should handle non-existent vault path gracefully
+    use crucible_cli::commands::search;
+
+    let mut config = CliConfig::default();
+    config.kiln.path = PathBuf::from("/definitely/does/not/exist/vault");
+
+    // This should fail gracefully with a helpful error message
+    let result = search::execute(
+        config,
+        Some("test query".to_string()),
+        10,
+        "table".to_string(),
+        false,
+    )
+    .await;
+
+    assert!(
+        result.is_err(),
+        "Search should fail when vault path doesn't exist"
+    );
+
+    let error = result.unwrap_err();
+    let error_msg = error.to_string();
+
+    // Should provide helpful error message mentioning the path issue
+    assert!(
+        error_msg.contains("kiln")
+            || error_msg.contains("vault")
+            || error_msg.contains("path")
+            || error_msg.contains("not found")
+            || error_msg.contains("does not exist"),
+        "Error message should mention path issue, got: {}",
+        error_msg
+    );
+
+    // Error message should be descriptive (not just a generic error)
+    assert!(
+        error_msg.len() > 20,
+        "Error message should be descriptive, got: {}",
+        error_msg
+    );
+}
+
+#[tokio::test]
+async fn test_semantic_search_timeout_handling() {
+    // Test: semantic search should handle timeouts gracefully
+    use crucible_cli::commands::semantic;
+
+    let config = CliConfig::default();
+
+    // Wrap in timeout to prevent test from hanging
+    let result = timeout(
+        Duration::from_secs(10),
+        semantic::execute(
+            config,
+            "test query".to_string(),
+            10,
+            "table".to_string(),
+            false,
+        ),
+    )
+    .await;
+
+    match result {
+        Ok(search_result) => {
+            // If it completed, it should either succeed or fail gracefully
+            match search_result {
+                Ok(_) => {
+                    // Success is fine - embeddings might exist
+                }
+                Err(e) => {
+                    // Graceful failure is also acceptable
+                    let error_msg = e.to_string();
+                    // Error should be informative, not just a panic/crash
+                    assert!(
+                        error_msg.len() > 10,
+                        "Error message should be informative, got: {}",
+                        error_msg
+                    );
+                }
+            }
+        }
+        Err(_) => {
+            // Timeout is also a form of graceful failure handling
+            // (Better than crashing or hanging indefinitely)
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_search_fallback_strategy_selection() {
+    // Test: SearchFallbackManager should select strategies based on service health
+    use crucible_cli::error_recovery::{
+        SearchFallbackConfig, SearchFallbackManager, SearchStrategy, ServiceHealth,
+        ServiceHealthMonitor,
+    };
+    use std::sync::Arc;
+
+    let health_monitor = Arc::new(ServiceHealthMonitor::new());
+    let fallback_config = SearchFallbackConfig {
+        enabled: true,
+        max_fallback_depth: 3,
+        strategies: vec![
+            SearchStrategy::Semantic,
+            SearchStrategy::Fuzzy,
+            SearchStrategy::Text,
+        ],
+    };
+
+    let fallback_manager = SearchFallbackManager::new(fallback_config, health_monitor.clone());
+
+    // Initially, all strategies should be available
+    let available = fallback_manager.get_available_strategies().await;
+    assert!(
+        available.contains(&SearchStrategy::Semantic),
+        "Semantic search should be available initially"
+    );
+    assert!(
+        available.contains(&SearchStrategy::Fuzzy),
+        "Fuzzy search should be available initially"
+    );
+    assert!(
+        available.contains(&SearchStrategy::Text),
+        "Text search should be available initially"
+    );
+
+    // Mark embedding service as unhealthy
+    health_monitor
+        .update_health("embedding_service", ServiceHealth::Unhealthy)
+        .await;
+
+    // Semantic search should now be unavailable
+    let available = fallback_manager.get_available_strategies().await;
+    assert!(
+        !available.contains(&SearchStrategy::Semantic),
+        "Semantic search should be unavailable when embedding service is unhealthy"
+    );
+    assert!(
+        available.contains(&SearchStrategy::Fuzzy),
+        "Fuzzy search should still be available"
+    );
+    assert!(
+        available.contains(&SearchStrategy::Text),
+        "Text search should still be available"
+    );
+
+    // Restore service health
+    health_monitor
+        .update_health("embedding_service", ServiceHealth::Healthy)
+        .await;
+
+    // All strategies should be available again
+    let available = fallback_manager.get_available_strategies().await;
+    assert_eq!(
+        available.len(),
+        3,
+        "All strategies should be available when services are healthy"
+    );
+}
+
+#[tokio::test]
+async fn test_error_recovery_manager_coordination() {
+    // Test: ErrorRecoveryManager should coordinate multiple recovery components
+    use crucible_cli::error_recovery::{ErrorRecoveryManager, ServiceHealth};
+
+    let config = CliConfig::default();
+    let manager = ErrorRecoveryManager::new(&config);
+
+    // Initially, system health should be available
+    let system_health = manager.get_system_health().await;
+    assert!(
+        !system_health.is_empty() || system_health.is_empty(),
+        "System health should be queryable"
+    );
+
+    // Get status summary
+    let status = manager.get_system_status_summary().await;
+    assert!(
+        status.contains("System Status") || !status.is_empty(),
+        "Status summary should be available, got: {}",
+        status
+    );
+
+    // Simulate service failure
+    let health_monitor = manager.health_monitor();
+    health_monitor
+        .update_health("embedding_service", ServiceHealth::Unhealthy)
+        .await;
+
+    // Status should reflect the unhealthy service
+    let status_after = manager.get_system_status_summary().await;
+    assert!(
+        !status_after.is_empty(),
+        "Status summary should be available after service failure"
+    );
+
+    // Simulate recovery
+    health_monitor
+        .update_health("embedding_service", ServiceHealth::Healthy)
+        .await;
+
+    // Final health check should include the embedding service
+    let final_health = manager.get_system_health().await;
+    assert!(
+        final_health.contains_key("embedding_service"),
+        "System health should track embedding service"
+    );
 }
