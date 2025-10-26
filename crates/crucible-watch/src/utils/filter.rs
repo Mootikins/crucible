@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use crate::{events::FileEvent, events::EventFilter};
+use crate::{events::EventFilter, events::FileEvent};
 use chrono::Timelike;
 use std::time::Instant;
 
@@ -159,16 +159,16 @@ impl EventFilterLogic for TempFileFilter {
     fn should_allow(&self, event: &FileEvent) -> bool {
         if let Some(file_name) = event.file_name() {
             // Common temporary file patterns
-            !file_name.starts_with('.') &&
-            !file_name.starts_with('~') &&
-            !file_name.ends_with('~') &&
-            !file_name.ends_with(".tmp") &&
-            !file_name.ends_with(".temp") &&
-            !file_name.ends_with(".swp") &&
-            !file_name.ends_with(".swo") &&
-            !file_name.ends_with(".bak") &&
-            !file_name.contains("#") &&
-            !file_name.starts_with("tmp")
+            !file_name.starts_with('.')
+                && !file_name.starts_with('~')
+                && !file_name.ends_with('~')
+                && !file_name.ends_with(".tmp")
+                && !file_name.ends_with(".temp")
+                && !file_name.ends_with(".swp")
+                && !file_name.ends_with(".swo")
+                && !file_name.ends_with(".bak")
+                && !file_name.contains("#")
+                && !file_name.starts_with("tmp")
         } else {
             true
         }
@@ -188,26 +188,26 @@ impl EventFilterLogic for SystemFileFilter {
             // Exclude common system directories and files
             let path_lower = path_str.to_lowercase();
 
-            !path_lower.contains("/.git/") &&
-            !path_lower.starts_with(".git/") &&
-            !path_lower.ends_with("/.git") &&
-            !path_lower.contains("/.svn/") &&
-            !path_lower.starts_with(".svn/") &&
-            !path_lower.ends_with("/.svn") &&
-            !path_lower.contains("/node_modules/") &&
-            !path_lower.starts_with("node_modules/") &&
-            !path_lower.ends_with("/node_modules") &&
-            !path_lower.contains("/target/") &&
-            !path_lower.starts_with("target/") &&
-            !path_lower.ends_with("/target") &&
-            !path_lower.contains("/.vscode/") &&
-            !path_lower.starts_with(".vscode/") &&
-            !path_lower.ends_with("/.vscode") &&
-            !path_lower.contains("/.idea/") &&
-            !path_lower.starts_with(".idea/") &&
-            !path_lower.ends_with("/.idea") &&
-            !path_lower.ends_with(".ds_store") &&
-            !path_lower.ends_with(".thumbs.db")
+            !path_lower.contains("/.git/")
+                && !path_lower.starts_with(".git/")
+                && !path_lower.ends_with("/.git")
+                && !path_lower.contains("/.svn/")
+                && !path_lower.starts_with(".svn/")
+                && !path_lower.ends_with("/.svn")
+                && !path_lower.contains("/node_modules/")
+                && !path_lower.starts_with("node_modules/")
+                && !path_lower.ends_with("/node_modules")
+                && !path_lower.contains("/target/")
+                && !path_lower.starts_with("target/")
+                && !path_lower.ends_with("/target")
+                && !path_lower.contains("/.vscode/")
+                && !path_lower.starts_with(".vscode/")
+                && !path_lower.ends_with("/.vscode")
+                && !path_lower.contains("/.idea/")
+                && !path_lower.starts_with(".idea/")
+                && !path_lower.ends_with("/.idea")
+                && !path_lower.ends_with(".ds_store")
+                && !path_lower.ends_with(".thumbs.db")
         } else {
             true
         }
@@ -400,13 +400,15 @@ impl EventFilterBuilder {
 
     /// Add time window filter.
     pub fn allow_only_during_hours(mut self, start: u8, end: u8) -> Self {
-        self.advanced_filters.push(Box::new(TimeWindowFilter::new(start, end)));
+        self.advanced_filters
+            .push(Box::new(TimeWindowFilter::new(start, end)));
         self
     }
 
     /// Add size filter.
     pub fn with_size_filter(mut self, min: u64, max: Option<u64>) -> Self {
-        self.advanced_filters.push(Box::new(SizeFilter::new(min, max)));
+        self.advanced_filters
+            .push(Box::new(SizeFilter::new(min, max)));
         self
     }
 
@@ -418,8 +420,7 @@ impl EventFilterBuilder {
 
     /// Build the final filter.
     pub fn build(self) -> AdvancedEventFilter {
-        let mut advanced = AdvancedEventFilter::new(self.filter)
-            .with_stats(self.collect_stats);
+        let mut advanced = AdvancedEventFilter::new(self.filter).with_stats(self.collect_stats);
 
         for filter in self.advanced_filters {
             advanced = advanced.add_custom_filter(filter);
@@ -438,7 +439,7 @@ impl Default for EventFilterBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::{FileEvent, FileEventKind};
+    use crate::{FileEvent, FileEventKind};
     use std::path::PathBuf;
 
     #[test]
@@ -460,7 +461,10 @@ mod tests {
 
         let allowed_event = FileEvent::new(FileEventKind::Created, PathBuf::from("src/main.rs"));
         let git_event = FileEvent::new(FileEventKind::Created, PathBuf::from(".git/config"));
-        let node_modules_event = FileEvent::new(FileEventKind::Created, PathBuf::from("node_modules/package/index.js"));
+        let node_modules_event = FileEvent::new(
+            FileEventKind::Created,
+            PathBuf::from("node_modules/package/index.js"),
+        );
 
         assert!(filter.should_allow(&allowed_event));
         assert!(!filter.should_allow(&git_event));
@@ -505,8 +509,7 @@ mod tests {
 
     #[test]
     fn test_advanced_filter() {
-        let base_filter = EventFilter::new()
-            .with_extension("md");
+        let base_filter = EventFilter::new().with_extension("md");
 
         let mut advanced = AdvancedEventFilter::new(base_filter)
             .with_stats(true)

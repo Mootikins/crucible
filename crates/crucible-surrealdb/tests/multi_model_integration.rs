@@ -5,14 +5,22 @@
 //! error conditions, and cross-model interactions.
 
 use crucible_core::{
-    // Traits
-    RelationalDB, GraphDB, DocumentDB,
+    ColumnDefinition,
+    DataType,
     // Types
-    DbError, TableSchema, ColumnDefinition, DataType, IndexType,
-    Record, RecordId, SelectQuery, FilterClause, UpdateClause, OrderDirection,
-    NodeId, NodeProperties, EdgeId, Direction,
-    DocumentId, Document, DocumentMetadata, DocumentQuery, DocumentFilter,
-    SearchOptions, AggregationPipeline, AggregationStage, AggregateType,
+    DbError,
+    Direction,
+    Document,
+    DocumentDB,
+    DocumentMetadata,
+    DocumentQuery,
+    GraphDB,
+    NodeId,
+    Record,
+    // Traits
+    RelationalDB,
+    SelectQuery,
+    TableSchema,
 };
 use crucible_surrealdb::SurrealClient;
 use std::collections::HashMap;
@@ -97,7 +105,11 @@ async fn test_relational_insert_and_select() {
 
     let record = Record { id: None, data };
     let insert_result = client.insert("products", record).await;
-    assert!(insert_result.is_ok(), "Failed to insert: {:?}", insert_result.err());
+    assert!(
+        insert_result.is_ok(),
+        "Failed to insert: {:?}",
+        insert_result.err()
+    );
 
     // Select all
     let query = SelectQuery {
@@ -135,7 +147,7 @@ async fn test_relational_error_duplicate_table() {
     match result.unwrap_err() {
         DbError::Schema(msg) | DbError::InvalidOperation(msg) => {
             assert!(msg.contains("already exists") || msg.contains("Table"));
-        },
+        }
         other => panic!("Wrong error type: {:?}", other),
     }
 }
@@ -183,7 +195,11 @@ async fn test_graph_create_node_basic() {
     props.insert("age".to_string(), serde_json::json!(30));
 
     let node_id = client.create_node("person", props).await;
-    assert!(node_id.is_ok(), "Failed to create node: {:?}", node_id.err());
+    assert!(
+        node_id.is_ok(),
+        "Failed to create node: {:?}",
+        node_id.err()
+    );
 }
 
 #[tokio::test]
@@ -203,11 +219,19 @@ async fn test_graph_create_edge_and_traverse() {
     let mut edge_props = HashMap::new();
     edge_props.insert("since".to_string(), serde_json::json!(2020));
 
-    let edge_id = client.create_edge(&node1, &node2, "knows", edge_props).await;
-    assert!(edge_id.is_ok(), "Failed to create edge: {:?}", edge_id.err());
+    let edge_id = client
+        .create_edge(&node1, &node2, "knows", edge_props)
+        .await;
+    assert!(
+        edge_id.is_ok(),
+        "Failed to create edge: {:?}",
+        edge_id.err()
+    );
 
     // Get neighbors
-    let neighbors = client.get_neighbors(&node1, Direction::Outgoing, None).await;
+    let neighbors = client
+        .get_neighbors(&node1, Direction::Outgoing, None)
+        .await;
     assert!(neighbors.is_ok());
     assert_eq!(neighbors.unwrap().len(), 1);
 }
@@ -230,10 +254,15 @@ async fn test_graph_edge_without_nodes() {
     let node1 = NodeId("fake1".to_string());
     let node2 = NodeId("fake2".to_string());
 
-    let result = client.create_edge(&node1, &node2, "knows", HashMap::new()).await;
+    let result = client
+        .create_edge(&node1, &node2, "knows", HashMap::new())
+        .await;
 
     // Should error because nodes don't exist
-    assert!(result.is_err(), "Should error when creating edge without nodes");
+    assert!(
+        result.is_err(),
+        "Should error when creating edge without nodes"
+    );
 }
 
 #[tokio::test]
@@ -244,20 +273,36 @@ async fn test_graph_bidirectional_neighbors() {
     let node2 = client.create_node("person", HashMap::new()).await.unwrap();
 
     // Create edge from node1 to node2
-    client.create_edge(&node1, &node2, "follows", HashMap::new()).await.unwrap();
+    client
+        .create_edge(&node1, &node2, "follows", HashMap::new())
+        .await
+        .unwrap();
 
     // Test outgoing from node1
-    let outgoing = client.get_neighbors(&node1, Direction::Outgoing, None).await.unwrap();
+    let outgoing = client
+        .get_neighbors(&node1, Direction::Outgoing, None)
+        .await
+        .unwrap();
     assert_eq!(outgoing.len(), 1);
 
     // Test incoming to node2
-    let incoming = client.get_neighbors(&node2, Direction::Incoming, None).await.unwrap();
+    let incoming = client
+        .get_neighbors(&node2, Direction::Incoming, None)
+        .await
+        .unwrap();
     // TODO: Fix incoming neighbor implementation in SurrealClient
     // Currently returns 0 neighbors for incoming direction
-    assert_eq!(incoming.len(), 0, "Known issue: incoming neighbors not implemented correctly");
+    assert_eq!(
+        incoming.len(),
+        0,
+        "Known issue: incoming neighbors not implemented correctly"
+    );
 
     // Test both directions from node1
-    let both = client.get_neighbors(&node1, Direction::Both, None).await.unwrap();
+    let both = client
+        .get_neighbors(&node1, Direction::Both, None)
+        .await
+        .unwrap();
     assert_eq!(both.len(), 1);
 }
 
@@ -270,7 +315,11 @@ async fn test_document_create_collection_basic() {
     let client = SurrealClient::new_memory().await.unwrap();
 
     let result = client.create_collection("notes", None).await;
-    assert!(result.is_ok(), "Failed to create collection: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to create collection: {:?}",
+        result.err()
+    );
 }
 
 #[tokio::test]
@@ -298,7 +347,11 @@ async fn test_document_create_and_get() {
     };
 
     let doc_id = client.create_document("posts", doc).await;
-    assert!(doc_id.is_ok(), "Failed to create document: {:?}", doc_id.err());
+    assert!(
+        doc_id.is_ok(),
+        "Failed to create document: {:?}",
+        doc_id.err()
+    );
 
     // Get document
     let doc_id = doc_id.unwrap();
@@ -373,9 +426,17 @@ async fn test_cross_model_same_storage() {
     client.create_collection("user_docs", None).await.unwrap();
 
     // All three operations should succeed on the same client
-    assert!(client.list_tables().await.unwrap().contains(&"users".to_string()));
+    assert!(client
+        .list_tables()
+        .await
+        .unwrap()
+        .contains(&"users".to_string()));
     assert!(client.get_node(&node_id).await.unwrap().is_some());
-    assert!(client.list_collections().await.unwrap().contains(&"user_docs".to_string()));
+    assert!(client
+        .list_collections()
+        .await
+        .unwrap()
+        .contains(&"user_docs".to_string()));
 }
 
 #[tokio::test]
@@ -399,12 +460,8 @@ async fn test_concurrent_multi_model_operations() {
             };
             client1.create_table("test1", schema).await
         },
-        async move {
-            client2.create_node("test", HashMap::new()).await
-        },
-        async move {
-            client3.create_collection("test_docs", None).await
-        }
+        async move { client2.create_node("test", HashMap::new()).await },
+        async move { client3.create_collection("test_docs", None).await }
     );
 
     assert!(r1.is_ok(), "Relational op failed: {:?}", r1.err());
@@ -434,7 +491,7 @@ async fn test_error_propagation_through_models() {
     match result.unwrap_err() {
         DbError::NotFound(msg) => {
             assert!(msg.contains("nonexistent") || msg.contains("table"));
-        },
+        }
         other => panic!("Expected NotFound error, got: {:?}", other),
     }
 }
@@ -454,7 +511,9 @@ async fn test_empty_properties() {
     // Empty edge properties
     let node1 = node_id.unwrap();
     let node2 = client.create_node("empty", HashMap::new()).await.unwrap();
-    let edge = client.create_edge(&node1, &node2, "link", HashMap::new()).await;
+    let edge = client
+        .create_edge(&node1, &node2, "link", HashMap::new())
+        .await;
     assert!(edge.is_ok());
 }
 

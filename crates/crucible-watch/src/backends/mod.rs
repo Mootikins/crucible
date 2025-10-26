@@ -1,18 +1,18 @@
 //! Backend implementations for file watching.
 
-mod notify_backend;
-mod polling_backend;
 mod editor_backend;
 mod factory;
+mod notify_backend;
+mod polling_backend;
 
-pub use notify_backend::*;
-pub use polling_backend::*;
 pub use editor_backend::*;
 pub use factory::*;
+pub use notify_backend::*;
+pub use polling_backend::*;
 
-use crate::traits::{FileWatcher, BackendCapabilities};
-use crate::WatchBackend;
 use crate::error::{Error, Result};
+use crate::traits::{BackendCapabilities, FileWatcher};
+use crate::WatchBackend;
 use async_trait::async_trait;
 
 /// Factory trait for creating file watcher backends.
@@ -39,7 +39,10 @@ pub struct BackendRegistry {
 impl std::fmt::Debug for BackendRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BackendRegistry")
-            .field("factories", &format!("{} registered backends", self.factories.len()))
+            .field(
+                "factories",
+                &format!("{} registered backends", self.factories.len()),
+            )
             .finish()
     }
 }
@@ -67,11 +70,16 @@ impl BackendRegistry {
 
     /// Create a watcher for the specified backend type.
     pub async fn create_watcher(&self, backend_type: WatchBackend) -> Result<Box<dyn FileWatcher>> {
-        let factory = self.factories.get(&backend_type)
+        let factory = self
+            .factories
+            .get(&backend_type)
             .ok_or_else(|| Error::BackendUnavailable(format!("{:?}", backend_type)))?;
 
         if !factory.is_available() {
-            return Err(Error::BackendUnavailable(format!("{:?} not available on this platform", backend_type)));
+            return Err(Error::BackendUnavailable(format!(
+                "{:?} not available on this platform",
+                backend_type
+            )));
         }
 
         factory.create_watcher().await
@@ -79,7 +87,8 @@ impl BackendRegistry {
 
     /// Get all available backends.
     pub fn available_backends(&self) -> Vec<WatchBackend> {
-        self.factories.iter()
+        self.factories
+            .iter()
             .filter(|(_, factory)| factory.is_available())
             .map(|(backend_type, _)| *backend_type)
             .collect()
@@ -92,7 +101,8 @@ impl BackendRegistry {
 
     /// Check if a backend is available.
     pub fn is_available(&self, backend_type: WatchBackend) -> bool {
-        self.factories.get(&backend_type)
+        self.factories
+            .get(&backend_type)
             .map(|f| f.is_available())
             .unwrap_or(false)
     }
@@ -125,7 +135,7 @@ impl Default for BackendRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::traits::{WatchConfig, FileWatcher};
+    use crate::traits::{FileWatcher, WatchConfig};
     use std::path::PathBuf;
 
     #[tokio::test]

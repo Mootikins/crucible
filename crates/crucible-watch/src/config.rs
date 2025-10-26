@@ -464,7 +464,9 @@ impl ConfigValidator {
         // Validate default profile exists
         if let Some(ref default_profile) = config.default_profile {
             if !config.watch_profiles.contains_key(default_profile) {
-                return Err(ValidationError::DefaultProfileNotFound(default_profile.clone()));
+                return Err(ValidationError::DefaultProfileNotFound(
+                    default_profile.clone(),
+                ));
             }
         }
 
@@ -473,8 +475,12 @@ impl ConfigValidator {
 
     /// Validate file watching configuration.
     fn validate_file_watching_config(config: &FileWatchingConfig) -> Result<(), ValidationError> {
-        if config.max_concurrent_watchers.is_some() && config.max_concurrent_watchers.unwrap() == 0 {
-            return Err(ValidationError::InvalidValue("max_concurrent_watchers".to_string(), "must be greater than 0".to_string()));
+        if config.max_concurrent_watchers.is_some() && config.max_concurrent_watchers.unwrap() == 0
+        {
+            return Err(ValidationError::InvalidValue(
+                "max_concurrent_watchers".to_string(),
+                "must be greater than 0".to_string(),
+            ));
         }
 
         if let Some(ref event_processing) = config.event_processing {
@@ -485,16 +491,24 @@ impl ConfigValidator {
     }
 
     /// Validate event processing configuration.
-    fn validate_event_processing_config(config: &EventProcessingConfig) -> Result<(), ValidationError> {
+    fn validate_event_processing_config(
+        config: &EventProcessingConfig,
+    ) -> Result<(), ValidationError> {
         if let Some(capacity) = config.queue_capacity {
             if capacity == 0 {
-                return Err(ValidationError::InvalidValue("queue_capacity".to_string(), "must be greater than 0".to_string()));
+                return Err(ValidationError::InvalidValue(
+                    "queue_capacity".to_string(),
+                    "must be greater than 0".to_string(),
+                ));
             }
         }
 
         if let Some(timeout) = config.handler_timeout_ms {
             if timeout == 0 {
-                return Err(ValidationError::InvalidValue("handler_timeout_ms".to_string(), "must be greater than 0".to_string()));
+                return Err(ValidationError::InvalidValue(
+                    "handler_timeout_ms".to_string(),
+                    "must be greater than 0".to_string(),
+                ));
             }
         }
 
@@ -535,11 +549,19 @@ pub enum ValidationError {
 impl std::fmt::Display for ValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ValidationError::DefaultProfileNotFound(name) => write!(f, "Default profile '{}' not found", name),
-            ValidationError::InvalidValue(field, reason) => write!(f, "Invalid value for {}: {}", field, reason),
-            ValidationError::EmptyPathList(profile) => write!(f, "Profile '{}' has empty path list", profile),
+            ValidationError::DefaultProfileNotFound(name) => {
+                write!(f, "Default profile '{}' not found", name)
+            }
+            ValidationError::InvalidValue(field, reason) => {
+                write!(f, "Invalid value for {}: {}", field, reason)
+            }
+            ValidationError::EmptyPathList(profile) => {
+                write!(f, "Profile '{}' has empty path list", profile)
+            }
             ValidationError::InvalidPath(path) => write!(f, "Invalid path: {}", path),
-            ValidationError::InvalidBackendConfig(reason) => write!(f, "Invalid backend configuration: {}", reason),
+            ValidationError::InvalidBackendConfig(reason) => {
+                write!(f, "Invalid backend configuration: {}", reason)
+            }
         }
     }
 }
@@ -577,7 +599,9 @@ mod tests {
             handlers: None,
             settings: None,
         };
-        config.watch_profiles.insert("default".to_string(), default_profile);
+        config
+            .watch_profiles
+            .insert("default".to_string(), default_profile);
 
         // Should be valid now
         assert!(ConfigValidator::validate_config(&config).is_ok());

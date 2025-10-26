@@ -4,7 +4,7 @@
 //! to bridge file system events with the embedding processing pipeline, eliminating
 //! inefficient polling and providing real-time, event-driven processing.
 
-use crate::events::FileEventKind;
+use crate::FileEventKind;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -173,11 +173,7 @@ pub struct EmbeddingEventResult {
 
 impl EmbeddingEventResult {
     /// Create a successful result
-    pub fn success(
-        event_id: Uuid,
-        processing_time: Duration,
-        embedding_dimensions: usize,
-    ) -> Self {
+    pub fn success(event_id: Uuid, processing_time: Duration, embedding_dimensions: usize) -> Self {
         Self {
             event_id,
             success: true,
@@ -290,8 +286,8 @@ pub fn determine_event_priority(
     if matches!(event_kind, FileEventKind::Created) {
         // Check if it's in a critical path (e.g., config files)
         if file_path.components().any(|c| {
-            c.as_os_str().to_string_lossy().contains("config") ||
-            c.as_os_str().to_string_lossy().contains("settings")
+            c.as_os_str().to_string_lossy().contains("config")
+                || c.as_os_str().to_string_lossy().contains("settings")
         }) {
             return EmbeddingEventPriority::Critical;
         }
@@ -425,7 +421,8 @@ mod tests {
             FileEventKind::Modified,
             content.to_string(),
             EmbeddingEventPriority::High,
-        ).to_batched(batch_id);
+        )
+        .to_batched(batch_id);
 
         assert!(event.is_batched());
         assert_eq!(event.metadata.batch_id, Some(batch_id));
@@ -444,11 +441,8 @@ mod tests {
         assert_eq!(success.embedding_dimensions, Some(384));
         assert!(success.error.is_none());
 
-        let failure = EmbeddingEventResult::failure(
-            event_id,
-            processing_time,
-            "Test error".to_string(),
-        );
+        let failure =
+            EmbeddingEventResult::failure(event_id, processing_time, "Test error".to_string());
         assert!(!failure.success);
         assert_eq!(failure.event_id, event_id);
         assert_eq!(failure.processing_time, processing_time);

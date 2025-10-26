@@ -3,21 +3,18 @@
 //! Emits EmbeddingEvent objects for integration with the embedding pipeline.
 
 use crate::{
+    embedding_events::{create_embedding_metadata, EmbeddingEvent, EventDrivenEmbeddingConfig},
+    error::{Error, Result},
     events::FileEvent,
     traits::EventHandler,
-    error::{Error, Result},
-    embedding_events::{
-        EmbeddingEvent, EventDrivenEmbeddingConfig,
-        create_embedding_metadata
-    }
 };
 use async_trait::async_trait;
+use crucible_core::parser::MarkdownParser;
+use std::error::Error as StdError;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::error::Error as StdError;
 use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, error, info, warn};
-use crucible_core::parser::MarkdownParser;
 
 /// Handler for automatically indexing files when they change.
 /// Integrates with PulldownParser for document parsing and prepares for database storage.
@@ -34,7 +31,6 @@ pub struct IndexingHandler {
 
     /// Recent events for deduplication
     recent_events: Arc<RwLock<std::collections::HashMap<String, std::time::Instant>>>,
-
     // Database connection will be added in Phase 4
 }
 
@@ -62,7 +58,10 @@ impl IndexingHandler {
     }
 
     /// Set the embedding event channel for sending embedding events.
-    pub fn with_embedding_event_channel(mut self, tx: mpsc::UnboundedSender<EmbeddingEvent>) -> Self {
+    pub fn with_embedding_event_channel(
+        mut self,
+        tx: mpsc::UnboundedSender<EmbeddingEvent>,
+    ) -> Self {
         self.embedding_event_tx = Some(tx);
         self
     }
@@ -101,7 +100,11 @@ impl IndexingHandler {
         false
     }
 
-    async fn index_file(&self, path: &PathBuf, event_kind: crate::events::FileEventKind) -> Result<()> {
+    async fn index_file(
+        &self,
+        path: &PathBuf,
+        event_kind: crate::events::FileEventKind,
+    ) -> Result<()> {
         debug!("Indexing file: {}", path.display());
 
         // Skip if not a supported file type
@@ -126,7 +129,11 @@ impl IndexingHandler {
         };
 
         let file_size = file_metadata.len();
-        debug!("Starting indexing for file: {} ({} bytes)", path.display(), file_size);
+        debug!(
+            "Starting indexing for file: {} ({} bytes)",
+            path.display(),
+            file_size
+        );
 
         // Use PulldownParser to parse the file
         let parser = crucible_core::parser::PulldownParser::new();
@@ -136,16 +143,18 @@ impl IndexingHandler {
         match parser.parse_file(path).await {
             Ok(parsed_doc) => {
                 let elapsed = start_time.elapsed();
-                let total_blocks = parsed_doc.content.headings.len() +
-                                 parsed_doc.content.paragraphs.len() +
-                                 parsed_doc.content.code_blocks.len() +
-                                 parsed_doc.content.lists.len();
+                let total_blocks = parsed_doc.content.headings.len()
+                    + parsed_doc.content.paragraphs.len()
+                    + parsed_doc.content.code_blocks.len()
+                    + parsed_doc.content.lists.len();
 
-                info!("Successfully parsed file: {} ({} blocks, {} bytes, {:?})",
-                      path.display(),
-                      total_blocks,
-                      file_size,
-                      elapsed);
+                info!(
+                    "Successfully parsed file: {} ({} blocks, {} bytes, {:?})",
+                    path.display(),
+                    total_blocks,
+                    file_size,
+                    elapsed
+                );
 
                 // Report parsing progress
                 self.report_parsing_progress(&parsed_doc, file_size, elapsed);
@@ -154,13 +163,15 @@ impl IndexingHandler {
                 self.log_parsed_document(&parsed_doc);
 
                 // Create embedding event from parsed content
-                if let Err(e) = self.create_and_emit_embedding_event(
-                    path,
-                    &parsed_doc,
-                    file_size,
-                    event_kind,
-                ).await {
-                    warn!("Failed to create embedding event for {}: {}", path.display(), e);
+                if let Err(e) = self
+                    .create_and_emit_embedding_event(path, &parsed_doc, file_size, event_kind)
+                    .await
+                {
+                    warn!(
+                        "Failed to create embedding event for {}: {}",
+                        path.display(),
+                        e
+                    );
                 }
 
                 // Phase 4: Store parsed blocks in database
@@ -170,10 +181,17 @@ impl IndexingHandler {
             }
             Err(e) => {
                 let elapsed = start_time.elapsed();
-                error!("Failed to parse file {} after {:?}: {}", path.display(), elapsed, e);
+                error!(
+                    "Failed to parse file {} after {:?}: {}",
+                    path.display(),
+                    elapsed,
+                    e
+                );
 
                 // Provide more detailed error information
-                let error_context = if let Some(io_err) = e.source().and_then(|e| e.downcast_ref::<std::io::Error>()) {
+                let error_context = if let Some(io_err) =
+                    e.source().and_then(|e| e.downcast_ref::<std::io::Error>())
+                {
                     format!("I/O error while reading {}: {}", path.display(), io_err)
                 } else if e.to_string().contains("frontmatter") {
                     format!("Frontmatter parsing error in {}: {}", path.display(), e)
@@ -213,7 +231,10 @@ impl IndexingHandler {
         let content = self.extract_content_for_embedding(parsed_doc);
 
         if content.trim().is_empty() {
-            debug!("Skipping embedding event for empty content: {}", path.display());
+            debug!(
+                "Skipping embedding event for empty content: {}",
+                path.display()
+            );
             return Ok(());
         }
 
@@ -221,17 +242,16 @@ impl IndexingHandler {
         let metadata = create_embedding_metadata(path, &trigger_event, Some(file_size));
 
         // Create embedding event
-        let embedding_event = EmbeddingEvent::new(
-            path.clone(),
-            trigger_event,
-            content,
-            metadata,
-        );
+        let embedding_event = EmbeddingEvent::new(path.clone(), trigger_event, content, metadata);
 
         // Send event if channel is available
         if let Some(ref tx) = self.embedding_event_tx {
             if let Err(e) = tx.send(embedding_event.clone()) {
-                warn!("Failed to send embedding event for {}: {}", path.display(), e);
+                warn!(
+                    "Failed to send embedding event for {}: {}",
+                    path.display(),
+                    e
+                );
             } else {
                 debug!("Successfully sent embedding event for: {}", path.display());
             }
@@ -246,7 +266,10 @@ impl IndexingHandler {
     }
 
     /// Extract content from parsed document for embedding
-    fn extract_content_for_embedding(&self, parsed_doc: &crucible_core::parser::ParsedDocument) -> String {
+    fn extract_content_for_embedding(
+        &self,
+        parsed_doc: &crucible_core::parser::ParsedDocument,
+    ) -> String {
         let mut content_parts = Vec::new();
 
         // Add title if available
@@ -266,7 +289,11 @@ impl IndexingHandler {
 
         // Add headings with their content
         for heading in &parsed_doc.content.headings {
-            content_parts.push(format!("{} {}", "#".repeat(heading.level as usize), heading.text));
+            content_parts.push(format!(
+                "{} {}",
+                "#".repeat(heading.level as usize),
+                heading.text
+            ));
         }
 
         // Add paragraphs
@@ -312,7 +339,8 @@ impl IndexingHandler {
 
         if let Some(last_time) = recent_events.get(path_str.as_ref()) {
             let elapsed = last_time.elapsed();
-            let dedup_window = std::time::Duration::from_millis(self.embedding_config.deduplication_window_ms);
+            let dedup_window =
+                std::time::Duration::from_millis(self.embedding_config.deduplication_window_ms);
             elapsed < dedup_window
         } else {
             false
@@ -326,36 +354,50 @@ impl IndexingHandler {
         recent_events.insert(path_str.to_string(), std::time::Instant::now());
 
         // Clean up old events (simple cleanup strategy)
-        let cutoff = std::time::Instant::now() -
-            std::time::Duration::from_millis(self.embedding_config.deduplication_window_ms * 2);
+        let cutoff = std::time::Instant::now()
+            - std::time::Duration::from_millis(self.embedding_config.deduplication_window_ms * 2);
 
         recent_events.retain(|_, &mut time| time > cutoff);
     }
 
     /// Get a receiver for embedding events (useful for testing)
-    pub fn create_embedding_event_channel() -> (mpsc::UnboundedSender<EmbeddingEvent>, mpsc::UnboundedReceiver<EmbeddingEvent>) {
+    pub fn create_embedding_event_channel() -> (
+        mpsc::UnboundedSender<EmbeddingEvent>,
+        mpsc::UnboundedReceiver<EmbeddingEvent>,
+    ) {
         mpsc::unbounded_channel()
     }
 
     /// Clean up old deduplication entries
     pub async fn cleanup_deduplication_cache(&self) {
         let mut recent_events = self.recent_events.write().await;
-        let cutoff = std::time::Instant::now() -
-            std::time::Duration::from_millis(self.embedding_config.deduplication_window_ms * 2);
+        let cutoff = std::time::Instant::now()
+            - std::time::Duration::from_millis(self.embedding_config.deduplication_window_ms * 2);
 
         let initial_count = recent_events.len();
         recent_events.retain(|_, &mut time| time > cutoff);
         let final_count = recent_events.len();
 
         if initial_count != final_count {
-            debug!("Cleaned up {} old deduplication entries", initial_count - final_count);
+            debug!(
+                "Cleaned up {} old deduplication entries",
+                initial_count - final_count
+            );
         }
     }
 
     /// Report parsing progress and performance metrics
-    fn report_parsing_progress(&self, doc: &crucible_core::parser::ParsedDocument, file_size: u64, elapsed: std::time::Duration) {
+    fn report_parsing_progress(
+        &self,
+        doc: &crucible_core::parser::ParsedDocument,
+        file_size: u64,
+        elapsed: std::time::Duration,
+    ) {
         let content = &doc.content;
-        let total_blocks = content.headings.len() + content.paragraphs.len() + content.code_blocks.len() + content.lists.len();
+        let total_blocks = content.headings.len()
+            + content.paragraphs.len()
+            + content.code_blocks.len()
+            + content.lists.len();
 
         // Calculate performance metrics
         let bytes_per_second = if elapsed.as_secs() > 0 {
@@ -378,9 +420,15 @@ impl IndexingHandler {
 
         info!("Parsing performance metrics:");
         info!("  - Processing rate: {} bytes/sec", bytes_per_second);
-        info!("  - Block extraction rate: {} blocks/sec", blocks_per_second);
+        info!(
+            "  - Block extraction rate: {} blocks/sec",
+            blocks_per_second
+        );
         info!("  - Average block size: {} bytes/block", bytes_per_block);
-        info!("  - Content density: {:.2} blocks/KB", (total_blocks as f64) / (file_size as f64 / 1024.0));
+        info!(
+            "  - Content density: {:.2} blocks/KB",
+            (total_blocks as f64) / (file_size as f64 / 1024.0)
+        );
 
         // Report content breakdown
         if total_blocks > 0 {
@@ -390,26 +438,47 @@ impl IndexingHandler {
             let list_pct = (content.lists.len() as f64 / total_blocks as f64) * 100.0;
 
             debug!("Content breakdown:");
-            debug!("  - Headings: {} ({:.1}%)", content.headings.len(), heading_pct);
-            debug!("  - Paragraphs: {} ({:.1}%)", content.paragraphs.len(), paragraph_pct);
-            debug!("  - Code blocks: {} ({:.1}%)", content.code_blocks.len(), code_pct);
+            debug!(
+                "  - Headings: {} ({:.1}%)",
+                content.headings.len(),
+                heading_pct
+            );
+            debug!(
+                "  - Paragraphs: {} ({:.1}%)",
+                content.paragraphs.len(),
+                paragraph_pct
+            );
+            debug!(
+                "  - Code blocks: {} ({:.1}%)",
+                content.code_blocks.len(),
+                code_pct
+            );
             debug!("  - Lists: {} ({:.1}%)", content.lists.len(), list_pct);
         }
 
         // Report task progress if applicable
-        let total_tasks: usize = content.lists.iter()
+        let total_tasks: usize = content
+            .lists
+            .iter()
             .flat_map(|l| &l.items)
             .filter(|item| item.task_status.is_some())
             .count();
 
         if total_tasks > 0 {
-            let completed_tasks = content.lists.iter()
+            let completed_tasks = content
+                .lists
+                .iter()
                 .flat_map(|l| &l.items)
-                .filter(|item| item.task_status == Some(crucible_core::parser::TaskStatus::Completed))
+                .filter(|item| {
+                    item.task_status == Some(crucible_core::parser::TaskStatus::Completed)
+                })
                 .count();
 
             let completion_rate = (completed_tasks as f64 / total_tasks as f64) * 100.0;
-            info!("Task progress: {} total tasks ({:.1}% completed)", total_tasks, completion_rate);
+            info!(
+                "Task progress: {} total tasks ({:.1}% completed)",
+                total_tasks, completion_rate
+            );
         }
 
         // Report link and tag density
@@ -426,7 +495,10 @@ impl IndexingHandler {
         };
 
         if link_density > 0.0 || tag_density > 0.0 {
-            debug!("Link and tag density: {:.2}% links, {:.2}% tags", link_density, tag_density);
+            debug!(
+                "Link and tag density: {:.2}% links, {:.2}% tags",
+                link_density, tag_density
+            );
         }
     }
 
@@ -444,19 +516,29 @@ impl IndexingHandler {
         debug!("  - Char count: {}", content.char_count);
 
         // Log task statistics if any tasks found
-        let total_tasks: usize = content.lists.iter()
+        let total_tasks: usize = content
+            .lists
+            .iter()
             .flat_map(|l| &l.items)
             .filter(|item| item.task_status.is_some())
             .count();
 
         if total_tasks > 0 {
-            let completed_tasks = content.lists.iter()
+            let completed_tasks = content
+                .lists
+                .iter()
                 .flat_map(|l| &l.items)
-                .filter(|item| item.task_status == Some(crucible_core::parser::TaskStatus::Completed))
+                .filter(|item| {
+                    item.task_status == Some(crucible_core::parser::TaskStatus::Completed)
+                })
                 .count();
 
-            debug!("  - Tasks: {} total ({} completed, {} pending)",
-                   total_tasks, completed_tasks, total_tasks - completed_tasks);
+            debug!(
+                "  - Tasks: {} total ({} completed, {} pending)",
+                total_tasks,
+                completed_tasks,
+                total_tasks - completed_tasks
+            );
         }
 
         // Log wikilink and tag statistics
@@ -481,16 +563,27 @@ impl IndexingHandler {
 
         // Remove old index
         if let Err(e) = self.remove_file_index(from).await {
-            warn!("Failed to remove index for moved file {}: {}", from.display(), e);
+            warn!(
+                "Failed to remove index for moved file {}: {}",
+                from.display(),
+                e
+            );
         }
 
         // Index new location (treat as Created event)
-        if let Err(e) = self.index_file(to, crate::events::FileEventKind::Created).await {
+        if let Err(e) = self
+            .index_file(to, crate::events::FileEventKind::Created)
+            .await
+        {
             error!("Failed to index moved file {}: {}", to.display(), e);
             return Err(e);
         }
 
-        info!("Successfully processed file move: {} -> {}", from.display(), to.display());
+        info!(
+            "Successfully processed file move: {} -> {}",
+            from.display(),
+            to.display()
+        );
         Ok(())
     }
 
@@ -507,17 +600,29 @@ impl IndexingHandler {
                 Ok(_) => successful += 1,
                 Err(e) => {
                     failed += 1;
-                    warn!("Failed to process batch event for {}: {}", event.path.display(), e);
+                    warn!(
+                        "Failed to process batch event for {}: {}",
+                        event.path.display(),
+                        e
+                    );
                 }
             }
         }
 
         let elapsed = start_time.elapsed();
-        info!("Batch processing completed: {}/{} events successful in {:?}",
-              successful, events.len(), elapsed);
+        info!(
+            "Batch processing completed: {}/{} events successful in {:?}",
+            successful,
+            events.len(),
+            elapsed
+        );
 
         if failed > 0 {
-            warn!("{} out of {} batch events failed processing", failed, events.len());
+            warn!(
+                "{} out of {} batch events failed processing",
+                failed,
+                events.len()
+            );
         }
 
         Ok(())
@@ -578,9 +683,7 @@ impl EventHandler for IndexingHandler {
             crate::events::FileEventKind::Created | crate::events::FileEventKind::Modified => {
                 self.index_file(&event.path, event.kind.clone()).await
             }
-            crate::events::FileEventKind::Deleted => {
-                self.remove_file_index(&event.path).await
-            }
+            crate::events::FileEventKind::Deleted => self.remove_file_index(&event.path).await,
             crate::events::FileEventKind::Moved { ref from, ref to } => {
                 // Handle move as delete + create operation
                 self.handle_file_move(&from, &to).await
@@ -599,12 +702,21 @@ impl EventHandler for IndexingHandler {
         // Log event processing performance
         match &result {
             Ok(_) => {
-                debug!("Successfully processed event {:?} for {} in {:?}",
-                       event.kind, event.path.display(), elapsed);
+                debug!(
+                    "Successfully processed event {:?} for {} in {:?}",
+                    event.kind,
+                    event.path.display(),
+                    elapsed
+                );
             }
             Err(e) => {
-                warn!("Failed to process event {:?} for {} after {:?}: {}",
-                      event.kind, event.path.display(), elapsed, e);
+                warn!(
+                    "Failed to process event {:?} for {} after {:?}: {}",
+                    event.kind,
+                    event.path.display(),
+                    elapsed,
+                    e
+                );
 
                 // Add error context for better debugging
                 self.log_event_error(&event, e, elapsed);
@@ -636,7 +748,7 @@ impl EventHandler for IndexingHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::{FileEvent, FileEventKind};
+    use crate::{FileEvent, FileEventKind};
     use std::path::PathBuf;
     use tempfile::TempDir;
     use tokio::fs;
@@ -700,7 +812,9 @@ fn hello() {
         fs::write(&file_path, test_content).await?;
 
         // Test file indexing
-        handler.index_file(&file_path, crate::events::FileEventKind::Created).await?;
+        handler
+            .index_file(&file_path, crate::events::FileEventKind::Created)
+            .await?;
 
         Ok(())
     }
@@ -714,7 +828,9 @@ fn hello() {
         fs::write(&file_path, "binary content").await?;
 
         // Should skip unsupported file without error
-        handler.index_file(&file_path, crate::events::FileEventKind::Created).await?;
+        handler
+            .index_file(&file_path, crate::events::FileEventKind::Created)
+            .await?;
 
         Ok(())
     }
@@ -725,7 +841,9 @@ fn hello() {
         let nonexistent_path = PathBuf::from("/nonexistent/path/file.md");
 
         // Should return error for nonexistent file
-        let result = handler.index_file(&nonexistent_path, crate::events::FileEventKind::Created).await;
+        let result = handler
+            .index_file(&nonexistent_path, crate::events::FileEventKind::Created)
+            .await;
         assert!(result.is_err());
     }
 
@@ -778,7 +896,13 @@ This file was moved.
         fs::write(&from_path, test_content).await?;
 
         // Test file move event
-        let move_event = FileEvent::new(FileEventKind::Moved { from: from_path.clone(), to: to_path.clone() }, to_path.clone());
+        let move_event = FileEvent::new(
+            FileEventKind::Moved {
+                from: from_path.clone(),
+                to: to_path.clone(),
+            },
+            to_path.clone(),
+        );
         handler.handle(move_event).await?;
 
         Ok(())
