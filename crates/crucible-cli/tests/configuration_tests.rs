@@ -430,13 +430,12 @@ fn test_embedding_config_conversion() -> Result<()> {
     ));
     assert_eq!(embedding_config.endpoint(), config.kiln.embedding_url);
     assert_eq!(
-        embedding_config.model.name,
+        &embedding_config.model.name,
         config
             .kiln
             .embedding_model
             .as_ref()
             .unwrap_or(&String::new())
-            .as_str()
     );
     assert_eq!(embedding_config.api.timeout_seconds, Some(config.timeout()));
     assert_eq!(
@@ -444,7 +443,6 @@ fn test_embedding_config_conversion() -> Result<()> {
         Some(config.network.max_retries.unwrap_or(3))
     );
     // batch_size no longer exists in EmbeddingProviderConfig
-    // assert_eq!(embedding_config.batch_size, 1);
 
     Ok(())
 }
