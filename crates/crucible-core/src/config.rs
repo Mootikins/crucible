@@ -51,7 +51,7 @@ pub struct CrucibleConfig {
     /// Service configuration
     pub services: ServiceConfig,
     /// Database configuration
-    pub database: DatabaseConfig,
+    pub database: ServiceDatabaseConfig,
     /// Network configuration
     pub network: NetworkConfig,
     /// Logging configuration
@@ -66,7 +66,7 @@ impl Default for CrucibleConfig {
     fn default() -> Self {
         Self {
             services: ServiceConfig::default(),
-            database: DatabaseConfig::default(),
+            database: ServiceDatabaseConfig::default(),
             network: NetworkConfig::default(),
             logging: LoggingConfig::default(),
             features: FeatureConfig::default(),
@@ -186,9 +186,13 @@ impl Default for HealthCheckConfig {
     }
 }
 
-/// Database configuration
+/// Service-level database configuration for orchestrated systems
+///
+/// This is distinct from crucible-config::DatabaseConfig which is used for
+/// simple profile-based configuration. This config supports primary/replica
+/// setups for service orchestration.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct DatabaseConfig {
+pub struct ServiceDatabaseConfig {
     /// Primary database configuration
     pub primary: DatabaseConnectionConfig,
     /// Replica database configuration
@@ -197,7 +201,7 @@ pub struct DatabaseConfig {
     pub pool: ConnectionPoolConfig,
 }
 
-impl Default for DatabaseConfig {
+impl Default for ServiceDatabaseConfig {
     fn default() -> Self {
         Self {
             primary: DatabaseConnectionConfig::default(),
