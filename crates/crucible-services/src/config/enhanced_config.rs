@@ -787,7 +787,14 @@ impl ConfigValidator for EventRoutingConfig {
     }
 }
 
-/// Database configuration
+// DatabaseConfig is now imported from crucible-config (canonical)
+// We extend it with a type alias and additional validation
+pub use crucible_config::DatabaseConfig as BaseDatabaseConfig;
+
+/// Service-specific database configuration with enhanced validation
+///
+/// This extends the base DatabaseConfig from crucible-config with
+/// service-specific features like pooling control.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatabaseConfig {
     /// Database connection URL
@@ -826,6 +833,24 @@ impl Default for DatabaseConfig {
             timeout_seconds: default_timeout(),
             enable_pooling: true,
             db_type: default_db_type(),
+        }
+    }
+}
+
+impl From<BaseDatabaseConfig> for DatabaseConfig {
+    fn from(base: BaseDatabaseConfig) -> Self {
+        Self {
+            url: base.url,
+            max_connections: base.max_connections.unwrap_or(10),
+            timeout_seconds: base.timeout_seconds.unwrap_or(30),
+            enable_pooling: true,
+            db_type: match base.db_type {
+                crucible_config::DatabaseType::Sqlite => "sqlite".to_string(),
+                crucible_config::DatabaseType::Postgres => "postgres".to_string(),
+                crucible_config::DatabaseType::Mysql => "mysql".to_string(),
+                crucible_config::DatabaseType::Surrealdb => "surrealdb".to_string(),
+                crucible_config::DatabaseType::Custom(s) => s,
+            },
         }
     }
 }
