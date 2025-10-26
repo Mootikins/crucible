@@ -30,7 +30,7 @@ pub struct FileWatchingConfig {
     /// Event processing configuration
     pub event_processing: Option<EventProcessingConfig>,
     /// Performance settings
-    pub performance: Option<PerformanceConfig>,
+    pub performance: Option<WatchPerformanceConfig>,
     /// Logging configuration
     pub logging: Option<WatchLoggingConfig>,
 }
@@ -137,9 +137,11 @@ pub enum BackpressureStrategy {
     DropLowPriority,
 }
 
-/// Performance configuration.
+/// Watch-specific performance configuration for file monitoring.
+///
+/// This configures performance limits and monitoring for the file watching system.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PerformanceConfig {
+pub struct WatchPerformanceConfig {
     /// Memory usage limits
     pub memory: Option<MemoryConfig>,
     /// CPU usage settings
@@ -323,7 +325,7 @@ impl Default for FileWatchingConfig {
             default_backend: WatchBackend::Notify,
             max_concurrent_watchers: Some(100),
             event_processing: Some(EventProcessingConfig::default()),
-            performance: Some(PerformanceConfig::default()),
+            performance: Some(WatchPerformanceConfig::default()),
             logging: Some(WatchLoggingConfig::default()),
         }
     }
@@ -341,7 +343,7 @@ impl Default for EventProcessingConfig {
     }
 }
 
-impl Default for PerformanceConfig {
+impl Default for WatchPerformanceConfig {
     fn default() -> Self {
         Self {
             memory: Some(MemoryConfig::default()),
