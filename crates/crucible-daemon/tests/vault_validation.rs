@@ -117,7 +117,12 @@ struct VaultStats {
 
 impl VaultStats {
     /// Add a successfully parsed file
-    fn add_successful(&mut self, path: &Path, doc: ParsedDocument, parse_time: std::time::Duration) {
+    fn add_successful(
+        &mut self,
+        path: &Path,
+        doc: ParsedDocument,
+        parse_time: std::time::Duration,
+    ) {
         let parse_time_ms = parse_time.as_millis() as u64;
         let size_bytes = doc.file_size;
 
@@ -302,9 +307,14 @@ async fn index_to_database(files: &[ParsedFile]) -> Result<DatabaseIndexStats> {
 
         // Store in database
         let path_str = file.path.to_string_lossy().to_string();
-        db.store_embedding(&path_str, &file.doc.content.plain_text, &embedding, &metadata)
-            .await
-            .with_context(|| format!("Failed to store: {}", path_str))?;
+        db.store_embedding(
+            &path_str,
+            &file.doc.content.plain_text,
+            &embedding,
+            &metadata,
+        )
+        .await
+        .with_context(|| format!("Failed to store: {}", path_str))?;
 
         stats.files_indexed += 1;
 
@@ -335,8 +345,14 @@ fn create_metadata(doc: &ParsedDocument) -> crucible_surrealdb::EmbeddingMetadat
     }
 
     // Add counts
-    properties.insert("word_count".to_string(), serde_json::json!(doc.content.word_count));
-    properties.insert("heading_count".to_string(), serde_json::json!(doc.content.headings.len()));
+    properties.insert(
+        "word_count".to_string(),
+        serde_json::json!(doc.content.word_count),
+    );
+    properties.insert(
+        "heading_count".to_string(),
+        serde_json::json!(doc.content.headings.len()),
+    );
 
     // Add frontmatter properties if present
     if let Some(fm) = &doc.frontmatter {
@@ -380,18 +396,25 @@ fn print_validation_report(stats: &VaultStats, db_stats: &DatabaseIndexStats) {
     println!("  Successfully parsed:     {}", stats.successful.len());
     println!("  Parse errors:            {}", stats.errors.len());
     println!("  Success rate:            {:.1}%", stats.success_rate());
-    println!("  Total size:              {:.2} MB", stats.total_bytes as f64 / 1_048_576.0);
+    println!(
+        "  Total size:              {:.2} MB",
+        stats.total_bytes as f64 / 1_048_576.0
+    );
 
     // Content section
     println!("\n📝 CONTENT:");
     println!("  Total words:             {}", stats.total_words);
     println!("  Total characters:        {}", stats.total_chars);
-    println!("  With frontmatter:        {} ({:.1}%)",
-             stats.with_frontmatter,
-             (stats.with_frontmatter as f64 / stats.total_files as f64) * 100.0);
-    println!("  Without frontmatter:     {} ({:.1}%)",
-             stats.without_frontmatter,
-             (stats.without_frontmatter as f64 / stats.total_files as f64) * 100.0);
+    println!(
+        "  With frontmatter:        {} ({:.1}%)",
+        stats.with_frontmatter,
+        (stats.with_frontmatter as f64 / stats.total_files as f64) * 100.0
+    );
+    println!(
+        "  Without frontmatter:     {} ({:.1}%)",
+        stats.without_frontmatter,
+        (stats.without_frontmatter as f64 / stats.total_files as f64) * 100.0
+    );
     println!("  Total headings:          {}", stats.total_headings);
     println!("  Total code blocks:       {}", stats.total_code_blocks);
 
@@ -436,13 +459,20 @@ fn print_validation_report(stats: &VaultStats, db_stats: &DatabaseIndexStats) {
 
     // Performance section
     println!("\n⚡ PERFORMANCE:");
-    println!("  Total parse time:        {} ms", stats.total_parse_time_ms);
-    println!("  Average parse time:      {} ms", stats.avg_parse_time_ms());
+    println!(
+        "  Total parse time:        {} ms",
+        stats.total_parse_time_ms
+    );
+    println!(
+        "  Average parse time:      {} ms",
+        stats.avg_parse_time_ms()
+    );
     println!("  Min parse time:          {} ms", stats.min_parse_time_ms);
     println!("  Max parse time:          {} ms", stats.max_parse_time_ms);
 
     if stats.total_parse_time_ms > 0 {
-        let throughput = (stats.successful.len() as f64 / (stats.total_parse_time_ms as f64 / 1000.0)) as usize;
+        let throughput =
+            (stats.successful.len() as f64 / (stats.total_parse_time_ms as f64 / 1000.0)) as usize;
         println!("  Throughput:              {} files/sec", throughput);
     }
 
@@ -459,11 +489,17 @@ fn print_validation_report(stats: &VaultStats, db_stats: &DatabaseIndexStats) {
 
 /// Print sample parsed documents
 fn print_sample_documents(stats: &VaultStats, count: usize) {
-    println!("📄 SAMPLE PARSED DOCUMENTS (showing {}):\n", count.min(stats.successful.len()));
+    println!(
+        "📄 SAMPLE PARSED DOCUMENTS (showing {}):\n",
+        count.min(stats.successful.len())
+    );
 
     for (i, file) in stats.successful.iter().take(count).enumerate() {
         println!("{}. {}", i + 1, file.path.display());
-        println!("   Size: {} bytes, Parse time: {} ms", file.size_bytes, file.parse_time_ms);
+        println!(
+            "   Size: {} bytes, Parse time: {} ms",
+            file.size_bytes, file.parse_time_ms
+        );
 
         // Show frontmatter info
         if let Some(fm) = &file.doc.frontmatter {
@@ -484,10 +520,12 @@ fn print_sample_documents(stats: &VaultStats, count: usize) {
         }
 
         // Show content stats
-        println!("   Words: {}, Tags: {}, Wikilinks: {}",
-                 file.doc.content.word_count,
-                 file.doc.all_tags().len(),
-                 file.doc.wikilinks.len());
+        println!(
+            "   Words: {}, Tags: {}, Wikilinks: {}",
+            file.doc.content.word_count,
+            file.doc.all_tags().len(),
+            file.doc.wikilinks.len()
+        );
 
         // Show headings
         if !file.doc.content.headings.is_empty() {
@@ -496,14 +534,27 @@ fn print_sample_documents(stats: &VaultStats, count: usize) {
             if heading_count == 1 {
                 println!("   Headings: 1 (\"{}\")", first_heading.text);
             } else {
-                println!("   Headings: {} (first: \"{}\")", heading_count, first_heading.text);
+                println!(
+                    "   Headings: {} (first: \"{}\")",
+                    heading_count, first_heading.text
+                );
             }
         }
 
         // Show preview
         let preview_len = 100.min(file.doc.content.plain_text.len());
-        let preview: String = file.doc.content.plain_text.chars().take(preview_len).collect();
-        let ellipsis = if file.doc.content.plain_text.len() > 100 { "..." } else { "" };
+        let preview: String = file
+            .doc
+            .content
+            .plain_text
+            .chars()
+            .take(preview_len)
+            .collect();
+        let ellipsis = if file.doc.content.plain_text.len() > 100 {
+            "..."
+        } else {
+            ""
+        };
         println!("   Preview: {}{}", preview.trim(), ellipsis);
 
         println!();
@@ -537,7 +588,11 @@ async fn test_validate_real_vault() -> Result<()> {
     let files = scan_markdown_files(&vault_path).await?;
     let scan_time = scan_start.elapsed();
 
-    println!("✓ Found {} markdown files in {:.2}s\n", files.len(), scan_time.as_secs_f64());
+    println!(
+        "✓ Found {} markdown files in {:.2}s\n",
+        files.len(),
+        scan_time.as_secs_f64()
+    );
 
     if files.is_empty() {
         println!("⚠️  No markdown files found in vault");
@@ -550,7 +605,11 @@ async fn test_validate_real_vault() -> Result<()> {
     let stats = parse_all_files(&files).await?;
     let parse_time = parse_start.elapsed();
 
-    println!("✓ Parsed {} files in {:.2}s\n", stats.total_files, parse_time.as_secs_f64());
+    println!(
+        "✓ Parsed {} files in {:.2}s\n",
+        stats.total_files,
+        parse_time.as_secs_f64()
+    );
 
     // Step 3: Index to in-memory database
     println!("💾 Indexing to database...\n");
@@ -558,7 +617,11 @@ async fn test_validate_real_vault() -> Result<()> {
     let db_stats = index_to_database(&stats.successful).await?;
     let index_time = index_start.elapsed();
 
-    println!("✓ Indexed {} files in {:.2}s\n", db_stats.files_indexed, index_time.as_secs_f64());
+    println!(
+        "✓ Indexed {} files in {:.2}s\n",
+        db_stats.files_indexed,
+        index_time.as_secs_f64()
+    );
 
     // Step 4: Print comprehensive report
     print_validation_report(&stats, &db_stats);

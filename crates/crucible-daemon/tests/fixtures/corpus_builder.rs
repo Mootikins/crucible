@@ -161,7 +161,7 @@ pub fn build_sample_corpus() -> SemanticTestCorpus {
                      fn factorial(n: u32) -> u32 {\n    \
                      if n <= 1 { 1 } else { n * factorial(n - 1) }\n\
                      }"
-                .to_string(),
+            .to_string(),
             category: DocumentCategory::Mixed,
             metadata: DocumentMetadata {
                 language: Some("rust".to_string()),

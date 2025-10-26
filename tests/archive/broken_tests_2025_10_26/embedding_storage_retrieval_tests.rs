@@ -33,9 +33,9 @@ mod fixtures;
 mod utils;
 
 use anyhow::Result;
+use utils::harness::DaemonEmbeddingHarness;
 use crucible_surrealdb::embedding_config::{EmbeddingConfig, EmbeddingModel, PrivacyMode};
 use std::collections::HashMap;
-use utils::harness::DaemonEmbeddingHarness;
 
 // ============================================================================
 // Database Storage Tests
@@ -53,16 +53,8 @@ async fn test_embedding_storage_with_metadata() -> Result<()> {
     let harness = DaemonEmbeddingHarness::new_default().await?;
 
     let test_documents = vec![
-        (
-            "doc1",
-            "First test document for storage validation",
-            "Test Document 1",
-        ),
-        (
-            "doc2",
-            "Second document with different content",
-            "Test Document 2",
-        ),
+        ("doc1", "First test document for storage validation", "Test Document 1"),
+        ("doc2", "Second document with different content", "Test Document 2"),
         ("doc3", "Third document about embeddings", "Embedding Test"),
     ];
 
@@ -96,11 +88,7 @@ async fn test_embedding_storage_with_metadata() -> Result<()> {
     // Test retrieval of stored embeddings
     for (id, content, _title) in &test_documents {
         let stored_embedding = harness.get_embedding(&format!("{}.md", id)).await?;
-        assert!(
-            stored_embedding.is_some(),
-            "Should retrieve stored embedding for {}",
-            id
-        );
+        assert!(stored_embedding.is_some(), "Should retrieve stored embedding for {}", id);
 
         let stored_embedding = stored_embedding.unwrap();
         assert_eq!(
@@ -134,10 +122,7 @@ async fn test_embedding_storage_with_metadata() -> Result<()> {
         test_documents.len()
     );
 
-    println!(
-        "Database stats: {} documents, {} embeddings",
-        stats.total_documents, stats.total_embeddings
-    );
+    println!("Database stats: {} documents, {} embeddings", stats.total_documents, stats.total_embeddings);
 
     Ok(())
 }
@@ -155,26 +140,11 @@ async fn test_vector_indexing_and_retrieval() -> Result<()> {
 
     // Create a set of documents with known similarities
     let documents = vec![
-        (
-            "machine_learning_basics",
-            "Introduction to machine learning algorithms and neural networks",
-        ),
-        (
-            "ai_research",
-            "Advanced AI research papers and artificial intelligence methodologies",
-        ),
-        (
-            "cooking_recipes",
-            "Traditional cooking recipes and kitchen techniques",
-        ),
-        (
-            "database_design",
-            "Database schema design and SQL optimization strategies",
-        ),
-        (
-            "web_development",
-            "Modern web development with JavaScript frameworks and responsive design",
-        ),
+        ("machine_learning_basics", "Introduction to machine learning algorithms and neural networks"),
+        ("ai_research", "Advanced AI research papers and artificial intelligence methodologies"),
+        ("cooking_recipes", "Traditional cooking recipes and kitchen techniques"),
+        ("database_design", "Database schema design and SQL optimization strategies"),
+        ("web_development", "Modern web development with JavaScript frameworks and responsive design"),
     ];
 
     // Store all documents
@@ -198,11 +168,7 @@ async fn test_vector_indexing_and_retrieval() -> Result<()> {
     for (query_name, query_text) in search_queries {
         let search_results = harness.semantic_search(query_text, 5).await?;
 
-        println!(
-            "Search results for '{}': {} documents found",
-            query_name,
-            search_results.len()
-        );
+        println!("Search results for '{}': {} documents found", query_name, search_results.len());
 
         // Verify we get some results
         assert!(
@@ -212,17 +178,14 @@ async fn test_vector_indexing_and_retrieval() -> Result<()> {
         );
 
         // Verify results contain expected document paths
-        let result_paths: Vec<_> = search_results
-            .iter()
-            .map(|(path, _)| path.clone())
-            .collect();
+        let result_paths: Vec<_> = search_results.iter().map(|(path, _)| path.clone()).collect();
 
         // Check if expected documents are in results
         match query_name {
             "ml query" => {
-                let has_ml_related = result_paths
-                    .iter()
-                    .any(|p| p.contains("machine_learning_basics") || p.contains("ai_research"));
+                let has_ml_related = result_paths.iter().any(|p|
+                    p.contains("machine_learning_basics") || p.contains("ai_research")
+                );
                 assert!(has_ml_related, "ML query should find ML-related documents");
             }
             "cooking query" => {
@@ -231,10 +194,7 @@ async fn test_vector_indexing_and_retrieval() -> Result<()> {
             }
             "database query" => {
                 let has_database = result_paths.iter().any(|p| p.contains("database_design"));
-                assert!(
-                    has_database,
-                    "Database query should find database documents"
-                );
+                assert!(has_database, "Database query should find database documents");
             }
             "web query" => {
                 let has_web = result_paths.iter().any(|p| p.contains("web_development"));
@@ -248,8 +208,7 @@ async fn test_vector_indexing_and_retrieval() -> Result<()> {
             assert!(
                 *similarity >= 0.0 && *similarity <= 1.0,
                 "Similarity score should be within [0, 1], got {} for {}",
-                similarity,
-                path
+                similarity, path
             );
             println!("  {} similarity: {:.4}", path, similarity);
         }
@@ -300,18 +259,11 @@ async fn test_database_schema_validation() -> Result<()> {
     assert!(embedding.is_some(), "Embedding should be stored");
 
     let embedding = embedding.unwrap();
-    assert_eq!(
-        embedding.len(),
-        768,
-        "Embedding should have correct dimensions"
-    );
+    assert_eq!(embedding.len(), 768, "Embedding should have correct dimensions");
 
     // Test vector operations to validate vector storage
     let fresh_embedding = harness.generate_embedding(content).await?;
-    assert_eq!(
-        embedding, fresh_embedding,
-        "Stored embedding should match fresh embedding"
-    );
+    assert_eq!(embedding, fresh_embedding, "Stored embedding should match fresh embedding");
 
     // Verify database can handle different embedding dimensions
     let config_mini = EmbeddingConfig {
@@ -365,19 +317,10 @@ async fn test_connection_handling_and_transactions() -> Result<()> {
     // Verify all documents are stored correctly
     for (id, content) in &documents {
         let stored_embedding = harness.get_embedding(&format!("{}.md", id)).await?;
-        assert!(
-            stored_embedding.is_some(),
-            "Should retrieve embedding for {}",
-            id
-        );
+        assert!(stored_embedding.is_some(), "Should retrieve embedding for {}", id);
 
         let fresh_embedding = harness.generate_embedding(content).await?;
-        assert_eq!(
-            stored_embedding.unwrap(),
-            fresh_embedding,
-            "Embedding should match for {}",
-            id
-        );
+        assert_eq!(stored_embedding.unwrap(), fresh_embedding, "Embedding should match for {}", id);
     }
 
     // Test concurrent operations
@@ -389,15 +332,14 @@ async fn test_connection_handling_and_transactions() -> Result<()> {
     ];
 
     // Create documents concurrently
-    let futures: Vec<_> = concurrent_docs
-        .iter()
-        .map(|(id, content)| {
-            let harness = harness.clone();
-            let id = id.clone();
-            let content = content.clone();
-            async move { harness.create_note(&format!("{}.md", id), &content).await }
-        })
-        .collect();
+    let futures: Vec<_> = concurrent_docs.iter().map(|(id, content)| {
+        let harness = harness.clone();
+        let id = id.clone();
+        let content = content.clone();
+        async move {
+            harness.create_note(&format!("{}.md", id), &content).await
+        }
+    }).collect();
 
     let results = futures::future::join_all(futures).await;
 
@@ -437,31 +379,11 @@ async fn test_cosine_similarity_calculations() -> Result<()> {
 
     // Create test documents with known similarity relationships
     let test_cases = vec![
-        (
-            "identical",
-            "Machine learning algorithms are powerful tools",
-            "Machine learning algorithms are powerful tools",
-        ),
-        (
-            "very_similar",
-            "Machine learning algorithms are powerful tools",
-            "Machine learning algorithms are very powerful tools",
-        ),
-        (
-            "somewhat_similar",
-            "Machine learning algorithms are powerful tools",
-            "Artificial intelligence and machine learning systems",
-        ),
-        (
-            "different",
-            "Machine learning algorithms are powerful tools",
-            "Traditional cooking recipes from around the world",
-        ),
-        (
-            "very_different",
-            "Machine learning algorithms are powerful tools",
-            "Classical music composition techniques",
-        ),
+        ("identical", "Machine learning algorithms are powerful tools", "Machine learning algorithms are powerful tools"),
+        ("very_similar", "Machine learning algorithms are powerful tools", "Machine learning algorithms are very powerful tools"),
+        ("somewhat_similar", "Machine learning algorithms are powerful tools", "Artificial intelligence and machine learning systems"),
+        ("different", "Machine learning algorithms are powerful tools", "Traditional cooking recipes from around the world"),
+        ("very_different", "Machine learning algorithms are powerful tools", "Classical music composition techniques"),
     ];
 
     for (case_name, text1, text2) in test_cases {
@@ -527,10 +449,7 @@ async fn test_cosine_similarity_calculations() -> Result<()> {
         let embedding2 = harness.generate_embedding(text2).await?;
 
         let similarity = cosine_similarity(&embedding1, &embedding2);
-        println!(
-            "Cosine similarity for edge case '{}': {:.6}",
-            case_name, similarity
-        );
+        println!("Cosine similarity for edge case '{}': {:.6}", case_name, similarity);
 
         assert!(
             similarity >= 0.0 && similarity <= 1.0,
@@ -610,18 +529,10 @@ async fn test_euclidean_distance_calculations() -> Result<()> {
         let distance = euclidean_distance(&base_embedding, &var_embedding);
         let similarity = cosine_similarity(&base_embedding, &var_embedding);
 
-        println!(
-            "Variation {}: distance = {:.6}, similarity = {:.6}",
-            i + 1,
-            distance,
-            similarity
-        );
+        println!("Variation {}: distance = {:.6}, similarity = {:.6}", i + 1, distance, similarity);
 
         assert!(distance > 0.0, "Distance should be positive");
-        assert!(
-            similarity > 0.0 && similarity < 1.0,
-            "Similarity should be in (0, 1)"
-        );
+        assert!(similarity > 0.0 && similarity < 1.0, "Similarity should be in (0, 1)");
     }
 
     Ok(())
@@ -648,22 +559,14 @@ async fn test_vector_normalization() -> Result<()> {
     for (i, embedding) in embeddings.iter().enumerate() {
         // Calculate original magnitude
         let original_magnitude = vector_magnitude(embedding);
-        println!(
-            "Original embedding {} magnitude: {:.6}",
-            i + 1,
-            original_magnitude
-        );
+        println!("Original embedding {} magnitude: {:.6}", i + 1, original_magnitude);
 
         // Normalize the vector
         let normalized = normalize_vector(embedding);
 
         // Calculate normalized magnitude
         let normalized_magnitude = vector_magnitude(&normalized);
-        println!(
-            "Normalized embedding {} magnitude: {:.6}",
-            i + 1,
-            normalized_magnitude
-        );
+        println!("Normalized embedding {} magnitude: {:.6}", i + 1, normalized_magnitude);
 
         // Verify normalization worked
         assert!(
@@ -674,8 +577,7 @@ async fn test_vector_normalization() -> Result<()> {
 
         // Verify direction is preserved (all values should be scaled by same factor)
         let scaling_factor = original_magnitude;
-        for (j, (&original, &normalized_val)) in embedding.iter().zip(normalized.iter()).enumerate()
-        {
+        for (j, (&original, &normalized_val)) in embedding.iter().zip(normalized.iter()).enumerate() {
             let expected_normalized = original / scaling_factor;
             assert!(
                 (normalized_val - expected_normalized).abs() < 1e-6,
@@ -697,10 +599,8 @@ async fn test_vector_normalization() -> Result<()> {
         let normalized = normalize_vector(&vector);
         let normalized_magnitude = vector_magnitude(&normalized);
 
-        println!(
-            "Edge case '{}': original magnitude = {:.6}, normalized magnitude = {:.6}",
-            case_name, magnitude, normalized_magnitude
-        );
+        println!("Edge case '{}': original magnitude = {:.6}, normalized magnitude = {:.6}",
+            case_name, magnitude, normalized_magnitude);
 
         if magnitude > 0.0 {
             assert!(
@@ -724,7 +624,7 @@ async fn test_vector_normalization() -> Result<()> {
 /// Verifies:
 /// - Similarity thresholds work correctly
 /// - Threshold filtering is accurate
-/// - Performance with large datasets
+        /// - Performance with large datasets
 /// - Threshold tuning effectiveness
 #[tokio::test]
 async fn test_similarity_threshold_testing() -> Result<()> {
@@ -733,19 +633,13 @@ async fn test_similarity_threshold_testing() -> Result<()> {
     // Create a diverse set of documents
     let documents = vec![
         ("ml_basics", "Introduction to machine learning and AI"),
-        (
-            "ml_advanced",
-            "Deep learning with neural networks and transformers",
-        ),
+        ("ml_advanced", "Deep learning with neural networks and transformers"),
         ("web_basics", "HTML, CSS, and JavaScript fundamentals"),
         ("web_advanced", "React, Vue, and modern frontend frameworks"),
         ("database", "SQL, NoSQL, and database design patterns"),
         ("devops", "Docker, Kubernetes, and CI/CD pipelines"),
         ("mobile", "iOS and Android development with React Native"),
-        (
-            "security",
-            "Cryptography, authentication, and security best practices",
-        ),
+        ("security", "Cryptography, authentication, and security best practices"),
     ];
 
     // Store all documents
@@ -761,16 +655,12 @@ async fn test_similarity_threshold_testing() -> Result<()> {
         let results = harness.semantic_search(query, 10).await?;
 
         // Filter results by threshold
-        let filtered_results: Vec<_> = results
-            .into_iter()
+        let filtered_results: Vec<_> = results.into_iter()
             .filter(|(_, similarity)| *similarity >= threshold)
             .collect();
 
-        println!(
-            "Threshold {:.1}: {} results (filtered from total)",
-            threshold,
-            filtered_results.len()
-        );
+        println!("Threshold {:.1}: {} results (filtered from total)",
+            threshold, filtered_results.len());
 
         // Verify all filtered results meet threshold
         for (_, similarity) in &filtered_results {
@@ -791,9 +681,9 @@ async fn test_similarity_threshold_testing() -> Result<()> {
 
         // Verify results make sense for ML query
         if !filtered_results.is_empty() {
-            let has_ml_related = filtered_results
-                .iter()
-                .any(|(path, _)| path.contains("ml_basics") || path.contains("ml_advanced"));
+            let has_ml_related = filtered_results.iter().any(|(path, _)|
+                path.contains("ml_basics") || path.contains("ml_advanced")
+            );
 
             if threshold <= 0.7 {
                 assert!(
@@ -814,16 +704,12 @@ async fn test_similarity_threshold_testing() -> Result<()> {
 
     for (query_name, query_text) in queries {
         let results = harness.semantic_search(query_text, 10).await?;
-        let high_similarity_results: Vec<_> = results
-            .iter()
+        let high_similarity_results: Vec<_> = results.iter()
             .filter(|(_, similarity)| *similarity > 0.7)
             .collect();
 
-        println!(
-            "Query '{}': {} high similarity results (>0.7)",
-            query_name,
-            high_similarity_results.len()
-        );
+        println!("Query '{}': {} high similarity results (>0.7)",
+            query_name, high_similarity_results.len());
 
         for (path, similarity) in high_similarity_results {
             println!("  {} similarity: {:.4}", path, similarity);
@@ -861,16 +747,16 @@ async fn test_batch_vs_individual_consistency() -> Result<()> {
     ];
 
     // Generate embeddings individually
-    let individual_embeddings: Result<Vec<_>> =
-        futures::future::join_all(documents.iter().enumerate().map(|(i, content)| {
+    let individual_embeddings: Result<Vec<_>> = futures::future::join_all(
+        documents.iter().enumerate().map(|(i, content)| {
             let harness = harness.clone();
             let content = content.clone();
             async move {
                 println!("Generating individual embedding {}", i + 1);
                 harness.generate_embedding(&content).await
             }
-        }))
-        .await;
+        })
+    ).await;
 
     let individual_embeddings = individual_embeddings?;
 
@@ -886,29 +772,16 @@ async fn test_batch_vs_individual_consistency() -> Result<()> {
     );
 
     // Verify each embedding is identical
-    for (i, (individual, batch)) in individual_embeddings
-        .iter()
-        .zip(batch_embeddings.iter())
-        .enumerate()
-    {
+    for (i, (individual, batch)) in individual_embeddings.iter().zip(batch_embeddings.iter()).enumerate() {
         assert_eq!(
-            individual,
-            batch,
+            individual, batch,
             "Embedding {} should be identical between individual and batch processing",
             i + 1
         );
 
         // Verify dimensions
-        assert_eq!(
-            individual.len(),
-            768,
-            "Individual embedding should have 768 dimensions"
-        );
-        assert_eq!(
-            batch.len(),
-            768,
-            "Batch embedding should have 768 dimensions"
-        );
+        assert_eq!(individual.len(), 768, "Individual embedding should have 768 dimensions");
+        assert_eq!(batch.len(), 768, "Batch embedding should have 768 dimensions");
     }
 
     // Test with different batch sizes
@@ -918,8 +791,7 @@ async fn test_batch_vs_individual_consistency() -> Result<()> {
         println!("Testing with batch size: {}", batch_size);
 
         // Process in chunks of batch_size
-        let chunked_embeddings: Vec<Vec<f32>> = documents
-            .chunks(batch_size)
+        let chunked_embeddings: Vec<Vec<f32>> = documents.chunks(batch_size)
             .flat_map(|chunk| {
                 let chunk_vec: Vec<String> = chunk.iter().map(|&s| s.to_string()).collect();
                 harness.generate_batch_embeddings(&chunk_vec).unwrap()
@@ -935,8 +807,7 @@ async fn test_batch_vs_individual_consistency() -> Result<()> {
         // Verify chunked embeddings match individual ones
         for (i, chunked) in chunked_embeddings.iter().enumerate() {
             assert_eq!(
-                chunked,
-                &individual_embeddings[i],
+                chunked, &individual_embeddings[i],
                 "Chunked embedding {} should match individual embedding",
                 i + 1
             );
@@ -962,17 +833,8 @@ async fn test_performance_comparison_batch_individual() -> Result<()> {
     // Create test documents of varying sizes
     let document_sets = vec![
         ("small", vec!["Short document"; 10]),
-        (
-            "medium",
-            vec!["This is a medium length document with more content to process."; 10],
-        ),
-        (
-            "large",
-            vec![
-                &"This is a large document that contains significantly more content. ".repeat(10);
-                5
-            ],
-        ),
+        ("medium", vec!["This is a medium length document with more content to process."; 10]),
+        ("large", vec![&"This is a large document that contains significantly more content. ".repeat(10); 5]),
     ];
 
     for (size_name, documents) in document_sets {
@@ -981,11 +843,8 @@ async fn test_performance_comparison_batch_individual() -> Result<()> {
         // Test individual processing
         let individual_start = std::time::Instant::now();
         let individual_embeddings: Result<Vec<_>> = futures::future::join_all(
-            documents
-                .iter()
-                .map(|content| harness.generate_embedding(content)),
-        )
-        .await;
+            documents.iter().map(|content| harness.generate_embedding(content))
+        ).await;
         let individual_duration = individual_start.elapsed();
         let individual_embeddings = individual_embeddings?;
 
@@ -996,11 +855,7 @@ async fn test_performance_comparison_batch_individual() -> Result<()> {
 
         // Verify embeddings are identical
         assert_eq!(individual_embeddings.len(), batch_embeddings.len());
-        for (i, (individual, batch)) in individual_embeddings
-            .iter()
-            .zip(batch_embeddings.iter())
-            .enumerate()
-        {
+        for (i, (individual, batch)) in individual_embeddings.iter().zip(batch_embeddings.iter()).enumerate() {
             assert_eq!(individual, batch, "Embedding {} should match", i);
         }
 
@@ -1009,16 +864,10 @@ async fn test_performance_comparison_batch_individual() -> Result<()> {
         let batch_per_doc = batch_duration.as_millis() as f64 / documents.len() as f64;
         let speedup = individual_per_doc / batch_per_doc;
 
-        println!(
-            "  Individual processing: {:.2} ms total, {:.2} ms per document",
-            individual_duration.as_millis(),
-            individual_per_doc
-        );
-        println!(
-            "  Batch processing: {:.2} ms total, {:.2} ms per document",
-            batch_duration.as_millis(),
-            batch_per_doc
-        );
+        println!("  Individual processing: {:.2} ms total, {:.2} ms per document",
+            individual_duration.as_millis(), individual_per_doc);
+        println!("  Batch processing: {:.2} ms total, {:.2} ms per document",
+            batch_duration.as_millis(), batch_per_doc);
         println!("  Batch speedup: {:.2}x", speedup);
 
         // Verify performance is reasonable
@@ -1085,12 +934,7 @@ async fn test_memory_usage_analysis() -> Result<()> {
         // Verify embeddings are valid
         assert_eq!(embeddings.len(), documents.len());
         for (i, embedding) in embeddings.iter().enumerate() {
-            assert_eq!(
-                embedding.len(),
-                768,
-                "Embedding {} should have correct dimensions",
-                i
-            );
+            assert_eq!(embedding.len(), 768, "Embedding {} should have correct dimensions", i);
         }
 
         // Memory usage should be reasonable (less than 10KB per embedding)
@@ -1127,10 +971,7 @@ async fn test_memory_usage_analysis() -> Result<()> {
 
     // Memory should be cleaned up (though exact behavior depends on system)
     if during_processing > before_cleanup {
-        println!(
-            "  Memory increased by {} KB during processing",
-            during_processing - before_cleanup
-        );
+        println!("  Memory increased by {} KB during processing", during_processing - before_cleanup);
     }
 
     Ok(())
@@ -1139,7 +980,7 @@ async fn test_memory_usage_analysis() -> Result<()> {
 /// Test error handling consistency
 ///
 /// Verifies:
-/// - Errors are handled consistently between batch and individual
+        /// - Errors are handled consistently between batch and individual
 /// - Error messages are informative
 /// - Partial failures are handled correctly
 /// - Recovery mechanisms work
@@ -1150,18 +991,10 @@ async fn test_error_handling_consistency() -> Result<()> {
     // Test with normal content (should succeed)
     let normal_content = "Normal test document";
     let individual_result = harness.generate_embedding(normal_content).await;
-    assert!(
-        individual_result.is_ok(),
-        "Normal content should process individually"
-    );
+    assert!(individual_result.is_ok(), "Normal content should process individually");
 
-    let batch_result = harness
-        .generate_batch_embeddings(&[normal_content.to_string()])
-        .await;
-    assert!(
-        batch_result.is_ok(),
-        "Normal content should process in batch"
-    );
+    let batch_result = harness.generate_batch_embeddings(&[normal_content.to_string()]).await;
+    assert!(batch_result.is_ok(), "Normal content should process in batch");
 
     // Test edge cases
     let edge_cases = vec![
@@ -1177,36 +1010,25 @@ async fn test_error_handling_consistency() -> Result<()> {
         let individual_result = harness.generate_embedding(content).await;
 
         // Batch processing
-        let batch_result = harness
-            .generate_batch_embeddings(&[content.to_string()])
-            .await;
+        let batch_result = harness.generate_batch_embeddings(&[content.to_string()]).await;
 
         // Both should succeed or fail consistently
         match (&individual_result, &batch_result) {
             (Ok(individual_emb), Ok(batch_emb)) => {
                 // Both succeeded - verify embeddings are identical
-                assert_eq!(
-                    individual_emb, &batch_emb[0],
-                    "Embeddings should be identical"
-                );
+                assert_eq!(individual_emb, &batch_emb[0], "Embeddings should be identical");
                 println!("  Both succeeded - embeddings identical");
             }
             (Err(individual_err), Err(batch_err)) => {
                 // Both failed - verify error types are similar
-                println!(
-                    "  Both failed - individual: {}, batch: {}",
-                    individual_err, batch_err
-                );
+                println!("  Both failed - individual: {}, batch: {}", individual_err, batch_err);
             }
             (Ok(_), Err(batch_err)) => {
                 println!("  Individual succeeded but batch failed: {}", batch_err);
                 // This might be acceptable depending on implementation
             }
             (Err(individual_err), Ok(_)) => {
-                println!(
-                    "  Individual failed but batch succeeded: {}",
-                    individual_err
-                );
+                println!("  Individual failed but batch succeeded: {}", individual_err);
                 // This might be acceptable depending on implementation
             }
         }
@@ -1215,9 +1037,9 @@ async fn test_error_handling_consistency() -> Result<()> {
     // Test batch with mixed valid/invalid content
     let mixed_content = vec![
         "Valid document 1",
-        "", // Empty
+        "",  // Empty
         "Valid document 2",
-        &"A".repeat(50000), // Very long
+        &"A".repeat(50000),  // Very long
         "Valid document 3",
     ];
 
@@ -1226,20 +1048,11 @@ async fn test_error_handling_consistency() -> Result<()> {
     match mixed_result {
         Ok(embeddings) => {
             println!("Mixed batch succeeded with {} embeddings", embeddings.len());
-            assert_eq!(
-                embeddings.len(),
-                mixed_content.len(),
-                "Should have embedding for each item"
-            );
+            assert_eq!(embeddings.len(), mixed_content.len(), "Should have embedding for each item");
 
             // Verify all embeddings are valid
             for (i, embedding) in embeddings.iter().enumerate() {
-                assert_eq!(
-                    embedding.len(),
-                    768,
-                    "Embedding {} should have correct dimensions",
-                    i
-                );
+                assert_eq!(embedding.len(), 768, "Embedding {} should have correct dimensions", i);
             }
         }
         Err(e) => {
@@ -1271,11 +1084,7 @@ async fn test_document_metadata_storage() -> Result<()> {
     // Create documents with different metadata scenarios
     let test_cases = vec![
         ("simple_doc", "Simple document content", None),
-        (
-            "doc_with_title",
-            "Document with title",
-            Some("Custom Title".to_string()),
-        ),
+        ("doc_with_title", "Document with title", Some("Custom Title".to_string())),
         ("doc_with_tags", "Document with tags", None), // Tags will be extracted from inline #tags
     ];
 
@@ -1285,9 +1094,7 @@ async fn test_document_metadata_storage() -> Result<()> {
             None => content.to_string(),
         };
 
-        let path = harness
-            .create_note(&format!("{}.md", id), &full_content)
-            .await?;
+        let path = harness.create_note(&format!("{}.md", id), &full_content).await?;
         assert!(path.exists(), "Document should be created");
 
         // Retrieve metadata
@@ -1323,16 +1130,9 @@ async fn test_document_metadata_storage() -> Result<()> {
         );
 
         // Verify folder information
-        assert!(
-            !metadata.folder.is_empty(),
-            "Folder should not be empty for {}",
-            id
-        );
+        assert!(!metadata.folder.is_empty(), "Folder should not be empty for {}", id);
 
-        println!(
-            "Metadata for {}: title={:?}, folder={}",
-            id, metadata.title, metadata.folder
-        );
+        println!("Metadata for {}: title={:?}, folder={}", id, metadata.title, metadata.folder);
     }
 
     // Test document with tags
@@ -1348,10 +1148,7 @@ More content with #more-tags here."#;
     harness.create_note("tagged_doc.md", tagged_content).await?;
 
     let tagged_metadata = harness.get_metadata("tagged_doc.md").await?;
-    assert!(
-        tagged_metadata.is_some(),
-        "Tagged document metadata should exist"
-    );
+    assert!(tagged_metadata.is_some(), "Tagged document metadata should exist");
 
     let tagged_metadata = tagged_metadata.unwrap();
 
@@ -1414,11 +1211,7 @@ async fn test_embedding_metadata_retention() -> Result<()> {
     let embedding = embedding.unwrap();
 
     // Verify embedding dimensions (metadata aspect)
-    assert_eq!(
-        embedding.len(),
-        768,
-        "Embedding should have correct dimensions"
-    );
+    assert_eq!(embedding.len(), 768, "Embedding should have correct dimensions");
 
     // Generate fresh embedding to compare (mock provider is deterministic)
     let fresh_embedding = harness.generate_embedding(content).await?;
@@ -1483,9 +1276,7 @@ async fn test_timestamp_and_version_tracking() -> Result<()> {
     let initial_content = "Initial document content";
     let before_creation = chrono::Utc::now();
 
-    let doc_path = harness
-        .create_note("timestamp_test.md", initial_content)
-        .await?;
+    let doc_path = harness.create_note("timestamp_test.md", initial_content).await?;
     let after_creation = chrono::Utc::now();
 
     assert!(doc_path.exists(), "Document should be created");
@@ -1518,10 +1309,7 @@ async fn test_timestamp_and_version_tracking() -> Result<()> {
 
     let first_update_time = metadata.updated_at;
 
-    println!(
-        "Created: {}, Updated: {}",
-        metadata.created_at, metadata.updated_at
-    );
+    println!("Created: {}, Updated: {}", metadata.created_at, metadata.updated_at);
 
     // Wait a bit to ensure different timestamps
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -1532,9 +1320,7 @@ async fn test_timestamp_and_version_tracking() -> Result<()> {
 
     // Note: This would require document update functionality
     // For now, we simulate by creating a new document
-    harness
-        .create_note("timestamp_test_updated.md", updated_content)
-        .await?;
+    harness.create_note("timestamp_test_updated.md", updated_content).await?;
     let after_update = chrono::Utc::now();
 
     // Get updated metadata
@@ -1553,10 +1339,8 @@ async fn test_timestamp_and_version_tracking() -> Result<()> {
         "Updated document created timestamp should be before update end"
     );
 
-    println!(
-        "Updated document - Created: {}, Updated: {}",
-        updated_metadata.created_at, updated_metadata.updated_at
-    );
+    println!("Updated document - Created: {}, Updated: {}",
+        updated_metadata.created_at, updated_metadata.updated_at);
 
     // Verify timestamps are different
     assert!(
@@ -1585,7 +1369,7 @@ async fn test_timestamp_and_version_tracking() -> Result<()> {
     // Verify sorting worked
     for i in 1..doc_metadata.len() {
         assert!(
-            doc_metadata[i].1.created_at >= doc_metadata[i - 1].1.created_at,
+            doc_metadata[i].1.created_at >= doc_metadata[i-1].1.created_at,
             "Documents should be in chronological order"
         );
     }
@@ -1609,29 +1393,22 @@ async fn test_configuration_preservation() -> Result<()> {
     let embedding = harness.generate_embedding(content).await?;
 
     // Verify embedding characteristics reflect default configuration
-    assert_eq!(
-        embedding.len(),
-        768,
-        "Default config should produce 768-dimensional embeddings"
-    );
+    assert_eq!(embedding.len(), 768, "Default config should produce 768-dimensional embeddings");
 
     // Test different configurations
     let configs = vec![
-        (
-            "mini_config",
-            EmbeddingConfig {
-                worker_count: 1,
-                batch_size: 1,
-                model_type: EmbeddingModel::LocalMini,
-                privacy_mode: PrivacyMode::StrictLocal,
-                max_queue_size: 10,
-                timeout_ms: 5000,
-                retry_attempts: 1,
-                retry_delay_ms: 100,
-                circuit_breaker_threshold: 5,
-                circuit_breaker_timeout_ms: 10000,
-            },
-        ),
+        ("mini_config", EmbeddingConfig {
+            worker_count: 1,
+            batch_size: 1,
+            model_type: EmbeddingModel::LocalMini,
+            privacy_mode: PrivacyMode::StrictLocal,
+            max_queue_size: 10,
+            timeout_ms: 5000,
+            retry_attempts: 1,
+            retry_delay_ms: 100,
+            circuit_breaker_threshold: 5,
+            circuit_breaker_timeout_ms: 10000,
+        }),
         ("resource_config", EmbeddingConfig::optimize_for_resources()),
     ];
 
@@ -1641,16 +1418,10 @@ async fn test_configuration_preservation() -> Result<()> {
         // Note: This would require creating harness with different configurations
         // For now, we verify the current configuration properties
 
-        let test_embedding = harness
-            .generate_embedding(&format!("{}: {}", config_name, content))
-            .await?;
+        let test_embedding = harness.generate_embedding(&format!("{}: {}", config_name, content)).await?;
 
         // Verify embedding is valid
-        assert_eq!(
-            test_embedding.len(),
-            768,
-            "Embedding should have correct dimensions"
-        );
+        assert_eq!(test_embedding.len(), 768, "Embedding should have correct dimensions");
 
         // Verify embedding is different from previous one
         let similarity = cosine_similarity(&embedding, &test_embedding);
@@ -1659,30 +1430,18 @@ async fn test_configuration_preservation() -> Result<()> {
             "Different content should produce different embeddings"
         );
 
-        println!(
-            "  Similarity to default config embedding: {:.4}",
-            similarity
-        );
+        println!("  Similarity to default config embedding: {:.4}", similarity);
     }
 
     // Test configuration validation
     let default_config = EmbeddingConfig::default();
-    assert!(
-        default_config.validate().is_ok(),
-        "Default config should be valid"
-    );
+    assert!(default_config.validate().is_ok(), "Default config should be valid");
 
     let throughput_config = EmbeddingConfig::optimize_for_throughput();
-    assert!(
-        throughput_config.validate().is_ok(),
-        "Throughput config should be valid"
-    );
+    assert!(throughput_config.validate().is_ok(), "Throughput config should be valid");
 
     let latency_config = EmbeddingConfig::optimize_for_latency();
-    assert!(
-        latency_config.validate().is_ok(),
-        "Latency config should be valid"
-    );
+    assert!(latency_config.validate().is_ok(), "Latency config should be valid");
 
     // Verify configuration differences
     assert!(
@@ -1706,8 +1465,7 @@ async fn test_configuration_preservation() -> Result<()> {
 /// Calculate cosine similarity between two vectors
 fn cosine_similarity(vec1: &[f32], vec2: &[f32]) -> f32 {
     assert_eq!(
-        vec1.len(),
-        vec2.len(),
+        vec1.len(), vec2.len(),
         "Vectors must have same length for cosine similarity"
     );
 
@@ -1725,8 +1483,7 @@ fn cosine_similarity(vec1: &[f32], vec2: &[f32]) -> f32 {
 /// Calculate Euclidean distance between two vectors
 fn euclidean_distance(vec1: &[f32], vec2: &[f32]) -> f32 {
     assert_eq!(
-        vec1.len(),
-        vec2.len(),
+        vec1.len(), vec2.len(),
         "Vectors must have same length for Euclidean distance"
     );
 
@@ -1759,7 +1516,10 @@ fn calculate_variance(values: &[f32]) -> f32 {
     }
 
     let mean = values.iter().sum::<f32>() / values.len() as f32;
-    let sum_squared_diff: f32 = values.iter().map(|&x| (x - mean) * (x - mean)).sum();
+    let sum_squared_diff: f32 = values
+        .iter()
+        .map(|&x| (x - mean) * (x - mean))
+        .sum();
 
     sum_squared_diff / values.len() as f32
 }

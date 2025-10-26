@@ -117,8 +117,10 @@ async fn test_tool_group_registration_basic() -> Result<()> {
             Ok(self.tools.clone())
         }
 
-        fn list_tools(&self) -> Vec<String> {
-            self.tools.clone()
+        async fn list_tools(
+            &mut self,
+        ) -> crucible_cli::commands::repl::tools::ToolGroupResult<Vec<String>> {
+            Ok(self.tools.clone())
         }
 
         async fn get_tool_schema(
@@ -177,20 +179,29 @@ async fn test_tool_group_registration_basic() -> Result<()> {
 
         fn get_metrics(&self) -> crucible_cli::commands::repl::tools::ToolGroupMetrics {
             crucible_cli::commands::repl::tools::ToolGroupMetrics {
-                tools_count: self.tools.len(),
-                cache_size: 0,
-                last_refresh: std::time::SystemTime::now(),
+                discoveries: 0,
+                cache_hits: 0,
+                cache_misses: 0,
+                total_discovery_time_ms: 0,
+                total_execution_time_ms: 0,
+                initialization_time_ms: None,
+                memory_usage_bytes: 0,
             }
         }
 
         fn get_cache_config(&self) -> &crucible_cli::commands::repl::tools::ToolGroupCacheConfig {
-            static MOCK_CACHE_CONFIG: crucible_cli::commands::repl::tools::ToolGroupCacheConfig =
+            use std::sync::OnceLock;
+            static MOCK_CACHE_CONFIG: OnceLock<
+                crucible_cli::commands::repl::tools::ToolGroupCacheConfig,
+            > = OnceLock::new();
+            MOCK_CACHE_CONFIG.get_or_init(|| {
                 crucible_cli::commands::repl::tools::ToolGroupCacheConfig {
-                    enabled: false,
-                    ttl_seconds: 0,
-                    max_size: 0,
-                };
-            &MOCK_CACHE_CONFIG
+                    discovery_ttl: std::time::Duration::from_secs(0),
+                    schema_ttl: std::time::Duration::from_secs(0),
+                    max_schema_cache_size: 0,
+                    caching_enabled: false,
+                }
+            })
         }
     }
 

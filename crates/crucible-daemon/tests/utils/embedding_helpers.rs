@@ -227,10 +227,7 @@ impl TestDocumentBuilder {
     }
 
     /// Generate embedding using a provider
-    pub async fn with_embedding(
-        mut self,
-        provider: &Arc<dyn EmbeddingProvider>,
-    ) -> Result<Self> {
+    pub async fn with_embedding(mut self, provider: &Arc<dyn EmbeddingProvider>) -> Result<Self> {
         let response = provider.embed(&self.content).await?;
         self.embedding = Some(response.embedding);
         self.metadata.token_count = response.tokens.unwrap_or(0);

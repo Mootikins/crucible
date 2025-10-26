@@ -197,8 +197,8 @@ async fn test_embedding_event_handler_isolation() -> Result<(), Box<dyn std::err
     let handler = EmbeddingEventHandler::new(processor_arc.clone(), embedding_tx);
 
     // Create a file event
-    let file_event = crucible_watch::events::FileEvent::new(
-        crucible_watch::events::FileEventKind::Created,
+    let file_event = crucible_watch::FileEvent::new(
+        crucible_watch::FileEventKind::Created,
         test_file.clone(),
     );
 
@@ -215,8 +215,8 @@ async fn test_embedding_event_handler_isolation() -> Result<(), Box<dyn std::err
 
     // Test unsupported file type
     let unsupported_file = watch_path.join("test.exe");
-    let unsupported_event = crucible_watch::events::FileEvent::new(
-        crucible_watch::events::FileEventKind::Created,
+    let unsupported_event = crucible_watch::FileEvent::new(
+        crucible_watch::FileEventKind::Created,
         unsupported_file,
     );
 
@@ -292,8 +292,8 @@ async fn test_batch_processing_functionality() -> Result<(), Box<dyn std::error:
         fs::write(&file_path, content).await?;
 
         // Create file event
-        let file_event = crucible_watch::events::FileEvent::new(
-            crucible_watch::events::FileEventKind::Created,
+        let file_event = crucible_watch::FileEvent::new(
+            crucible_watch::FileEventKind::Created,
             file_path,
         );
 
@@ -302,7 +302,7 @@ async fn test_batch_processing_functionality() -> Result<(), Box<dyn std::error:
             file_event.path,
             file_event.kind,
             content.to_string(),
-            crucible_watch::embedding_events::create_embedding_metadata(
+            crucible_watch::create_embedding_metadata(
                 &file_event.path,
                 &file_event.kind,
                 None,

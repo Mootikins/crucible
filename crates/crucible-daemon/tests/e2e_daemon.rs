@@ -31,8 +31,8 @@ use anyhow::Result;
 use crucible_core::parser::{MarkdownParser, PulldownParser, SurrealDBAdapter};
 use crucible_surrealdb::{EmbeddingMetadata, SurrealEmbeddingDatabase};
 use crucible_watch::{
-    prelude::TraitWatchConfig as WatchConfig, EventHandler, FileEvent, FileEventKind,
-    WatchManager, WatchManagerConfig,
+    prelude::TraitWatchConfig as WatchConfig, EventHandler, FileEvent, FileEventKind, WatchManager,
+    WatchManagerConfig,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -154,7 +154,9 @@ impl DaemonHandle {
             .unwrap_or("")
             .to_string();
 
-        let properties = doc.frontmatter.as_ref()
+        let properties = doc
+            .frontmatter
+            .as_ref()
             .map(|fm| fm.properties().clone())
             .unwrap_or_default();
 
@@ -207,7 +209,9 @@ impl DaemonHandle {
         let rx = self.processed_rx.clone();
         let path = timeout(Duration::from_secs(5), async {
             let mut rx = rx.lock().await;
-            rx.recv().await.ok_or_else(|| anyhow::anyhow!("Channel closed"))
+            rx.recv()
+                .await
+                .ok_or_else(|| anyhow::anyhow!("Channel closed"))
         })
         .await??;
 
@@ -229,17 +233,21 @@ impl DaemonHandle {
     /// Check if file exists in database
     async fn file_exists_in_db(&self, relative_path: &str) -> Result<bool> {
         let file_path = self.vault_path.join(relative_path);
-        self.database.file_exists(&file_path.to_string_lossy()).await
+        self.database
+            .file_exists(&file_path.to_string_lossy())
+            .await
     }
 
     /// Get file metadata from database
     async fn get_file_metadata(&self, relative_path: &str) -> Result<Option<EmbeddingMetadata>> {
         let file_path = self.vault_path.join(relative_path);
-        let data = self.database.get_embedding(&file_path.to_string_lossy()).await?;
+        let data = self
+            .database
+            .get_embedding(&file_path.to_string_lossy())
+            .await?;
         Ok(data.map(|d| d.metadata))
     }
 
-  
     /// Graceful shutdown
     async fn shutdown(self) -> Result<()> {
         let _ = self.shutdown_tx.send(()).await;
@@ -297,11 +305,16 @@ impl EventHandler for PipelineEventHandler {
 impl PipelineEventHandler {
     async fn handle_file_change(&self, path: &Path) -> crucible_watch::Result<()> {
         // Parse file
-        let doc = self.parser.parse_file(path).await
+        let doc = self
+            .parser
+            .parse_file(path)
+            .await
             .map_err(|e| crucible_watch::Error::Internal(e.to_string()))?;
 
         // Convert to SurrealDB record (for validation)
-        let _record = self.adapter.to_note_record(&doc)
+        let _record = self
+            .adapter
+            .to_note_record(&doc)
             .map_err(|e| crucible_watch::Error::Internal(e.to_string()))?;
 
         // Store in database
@@ -435,7 +448,9 @@ async fn test_e2e_file_to_database_to_query() -> Result<()> {
     assert!(daemon.file_exists_in_db("test.md").await?);
 
     // Get metadata and verify fields
-    let metadata = daemon.get_file_metadata("test.md").await?
+    let metadata = daemon
+        .get_file_metadata("test.md")
+        .await?
         .expect("Metadata should exist");
 
     assert_eq!(metadata.title, Some("Test Note".to_string()));
@@ -474,17 +489,37 @@ async fn test_e2e_wikilink_graph_traversal() -> Result<()> {
     assert!(daemon.file_exists_in_db("note2.md").await?);
 
     // Create wikilink relations
-    let note1_path = daemon.vault_path.join("note1.md").to_string_lossy().to_string();
-    let note2_path = daemon.vault_path.join("note2.md").to_string_lossy().to_string();
+    let note1_path = daemon
+        .vault_path
+        .join("note1.md")
+        .to_string_lossy()
+        .to_string();
+    let note2_path = daemon
+        .vault_path
+        .join("note2.md")
+        .to_string_lossy()
+        .to_string();
 
-    daemon.database.create_relation(&note1_path, &note2_path, "wikilink", None).await?;
-    daemon.database.create_relation(&note2_path, &note1_path, "wikilink", None).await?;
+    daemon
+        .database
+        .create_relation(&note1_path, &note2_path, "wikilink", None)
+        .await?;
+    daemon
+        .database
+        .create_relation(&note2_path, &note1_path, "wikilink", None)
+        .await?;
 
     // Verify relations exist
-    let related_to_note1 = daemon.database.get_related(&note1_path, Some("wikilink")).await?;
+    let related_to_note1 = daemon
+        .database
+        .get_related(&note1_path, Some("wikilink"))
+        .await?;
     assert!(related_to_note1.contains(&note2_path));
 
-    let related_to_note2 = daemon.database.get_related(&note2_path, Some("wikilink")).await?;
+    let related_to_note2 = daemon
+        .database
+        .get_related(&note2_path, Some("wikilink"))
+        .await?;
     assert!(related_to_note2.contains(&note1_path));
 
     // Cleanup
@@ -521,24 +556,28 @@ async fn test_e2e_tag_search_workflow() -> Result<()> {
     daemon.create_file("note3.md", &note3).await?;
 
     // Search for "rust" tag
-    let rust_results = daemon.database.search_by_tags(&[
-        "rust".to_string()
-    ]).await?;
+    let rust_results = daemon
+        .database
+        .search_by_tags(&["rust".to_string()])
+        .await?;
 
     assert_eq!(rust_results.len(), 2);
-    let rust_set: Vec<String> = rust_results.iter()
+    let rust_set: Vec<String> = rust_results
+        .iter()
         .map(|p| p.split('/').last().unwrap_or(p).to_string())
         .collect();
     assert!(rust_set.contains(&"note1.md".to_string()));
     assert!(rust_set.contains(&"note3.md".to_string()));
 
     // Search for "programming" tag
-    let prog_results = daemon.database.search_by_tags(&[
-        "programming".to_string()
-    ]).await?;
+    let prog_results = daemon
+        .database
+        .search_by_tags(&["programming".to_string()])
+        .await?;
 
     assert_eq!(prog_results.len(), 2);
-    let prog_set: Vec<String> = prog_results.iter()
+    let prog_set: Vec<String> = prog_results
+        .iter()
         .map(|p| p.split('/').last().unwrap_or(p).to_string())
         .collect();
     assert!(prog_set.contains(&"note1.md".to_string()));
@@ -573,7 +612,9 @@ async fn test_e2e_live_reindexing() -> Result<()> {
     daemon.create_file("note1.md", &initial).await?;
 
     // Get initial metadata
-    let initial_meta = daemon.get_file_metadata("note1.md").await?
+    let initial_meta = daemon
+        .get_file_metadata("note1.md")
+        .await?
         .expect("Initial metadata should exist");
 
     assert_eq!(initial_meta.title, Some("Original Note".to_string()));
@@ -588,7 +629,9 @@ async fn test_e2e_live_reindexing() -> Result<()> {
     daemon.modify_file("note1.md", &updated).await?;
 
     // Get updated metadata
-    let updated_meta = daemon.get_file_metadata("note1.md").await?
+    let updated_meta = daemon
+        .get_file_metadata("note1.md")
+        .await?
         .expect("Updated metadata should exist");
 
     assert_eq!(updated_meta.title, Some("Updated Note".to_string()));
@@ -659,12 +702,11 @@ async fn test_e2e_database_stats() -> Result<()> {
 
     // Create multiple notes
     for i in 1..=5 {
-        let content = create_test_markdown(
-            &format!("Note {}", i),
-            &["test", &format!("tag{}", i)],
-            &[]
-        );
-        daemon.create_file(&format!("note{}.md", i), &content).await?;
+        let content =
+            create_test_markdown(&format!("Note {}", i), &["test", &format!("tag{}", i)], &[]);
+        daemon
+            .create_file(&format!("note{}.md", i), &content)
+            .await?;
     }
 
     // Get database stats
@@ -706,19 +748,20 @@ async fn test_e2e_database_tag_search() -> Result<()> {
     daemon.create_file("python.md", &python_note).await?;
 
     // Execute search_by_tags (simulating a REPL tool)
-    let rust_results = daemon.database.search_by_tags(&[
-        "rust".to_string(),
-        "programming".to_string()
-    ]).await?;
+    let rust_results = daemon
+        .database
+        .search_by_tags(&["rust".to_string(), "programming".to_string()])
+        .await?;
 
     // Verify results - should find rust.md (has both tags)
     assert_eq!(rust_results.len(), 1);
     assert!(rust_results[0].contains("rust.md"));
 
     // Search for just "programming" tag
-    let prog_results = daemon.database.search_by_tags(&[
-        "programming".to_string()
-    ]).await?;
+    let prog_results = daemon
+        .database
+        .search_by_tags(&["programming".to_string()])
+        .await?;
 
     // Should find both notes
     assert_eq!(prog_results.len(), 2);
@@ -753,9 +796,11 @@ async fn test_e2e_concurrent_operations() -> Result<()> {
             let content = create_test_markdown(
                 &format!("Concurrent Note {}", i),
                 &["concurrent", &format!("tag{}", i)],
-                &[]
+                &[],
             );
-            daemon_clone.create_file(&format!("file{}.md", i), &content).await
+            daemon_clone
+                .create_file(&format!("file{}.md", i), &content)
+                .await
         });
         handles.push(handle);
     }
@@ -774,8 +819,8 @@ async fn test_e2e_concurrent_operations() -> Result<()> {
     assert_eq!(stats.total_documents, 10);
 
     // Cleanup
-    let daemon_owned = Arc::try_unwrap(daemon)
-        .map_err(|_| anyhow::anyhow!("Failed to unwrap Arc"))?;
+    let daemon_owned =
+        Arc::try_unwrap(daemon).map_err(|_| anyhow::anyhow!("Failed to unwrap Arc"))?;
     daemon_owned.shutdown().await?;
 
     Ok(())
@@ -834,12 +879,10 @@ async fn test_e2e_shutdown_cleanup() -> Result<()> {
 
     // Create a few files
     for i in 1..=3 {
-        let content = create_test_markdown(
-            &format!("Shutdown Test {}", i),
-            &["shutdown"],
-            &[]
-        );
-        daemon.create_file(&format!("shutdown{}.md", i), &content).await?;
+        let content = create_test_markdown(&format!("Shutdown Test {}", i), &["shutdown"], &[]);
+        daemon
+            .create_file(&format!("shutdown{}.md", i), &content)
+            .await?;
     }
 
     // Verify files were indexed
@@ -918,7 +961,9 @@ fn example() { println!("code block"); }
     assert!(daemon.file_exists_in_db("complex.md").await?);
 
     // Get metadata and verify
-    let metadata = daemon.get_file_metadata("complex.md").await?
+    let metadata = daemon
+        .get_file_metadata("complex.md")
+        .await?
         .expect("Metadata should exist");
 
     assert_eq!(metadata.title, Some("Complex Document".to_string()));
@@ -971,16 +1016,40 @@ async fn test_e2e_bidirectional_links() -> Result<()> {
     daemon.create_file("noteC.md", &note_c).await?;
 
     // Create link relations
-    let path_a = daemon.vault_path.join("noteA.md").to_string_lossy().to_string();
-    let path_b = daemon.vault_path.join("noteB.md").to_string_lossy().to_string();
-    let path_c = daemon.vault_path.join("noteC.md").to_string_lossy().to_string();
+    let path_a = daemon
+        .vault_path
+        .join("noteA.md")
+        .to_string_lossy()
+        .to_string();
+    let path_b = daemon
+        .vault_path
+        .join("noteB.md")
+        .to_string_lossy()
+        .to_string();
+    let path_c = daemon
+        .vault_path
+        .join("noteC.md")
+        .to_string_lossy()
+        .to_string();
 
-    daemon.database.create_relation(&path_a, &path_b, "wikilink", None).await?;
-    daemon.database.create_relation(&path_a, &path_c, "wikilink", None).await?;
-    daemon.database.create_relation(&path_b, &path_c, "wikilink", None).await?;
+    daemon
+        .database
+        .create_relation(&path_a, &path_b, "wikilink", None)
+        .await?;
+    daemon
+        .database
+        .create_relation(&path_a, &path_c, "wikilink", None)
+        .await?;
+    daemon
+        .database
+        .create_relation(&path_b, &path_c, "wikilink", None)
+        .await?;
 
     // Query forward links from noteA
-    let links_from_a = daemon.database.get_related(&path_a, Some("wikilink")).await?;
+    let links_from_a = daemon
+        .database
+        .get_related(&path_a, Some("wikilink"))
+        .await?;
     assert_eq!(links_from_a.len(), 2);
     assert!(links_from_a.contains(&path_b));
     assert!(links_from_a.contains(&path_c));
@@ -990,10 +1059,16 @@ async fn test_e2e_bidirectional_links() -> Result<()> {
     daemon.modify_file("noteA.md", &note_a_updated).await?;
 
     // Remove the relation
-    daemon.database.remove_relation(&path_a, &path_c, "wikilink").await?;
+    daemon
+        .database
+        .remove_relation(&path_a, &path_c, "wikilink")
+        .await?;
 
     // Query again - should only have link to noteB now
-    let links_from_a_updated = daemon.database.get_related(&path_a, Some("wikilink")).await?;
+    let links_from_a_updated = daemon
+        .database
+        .get_related(&path_a, Some("wikilink"))
+        .await?;
     assert_eq!(links_from_a_updated.len(), 1);
     assert!(links_from_a_updated.contains(&path_b));
     assert!(!links_from_a_updated.contains(&path_c));

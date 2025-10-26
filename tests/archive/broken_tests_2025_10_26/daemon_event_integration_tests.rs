@@ -1273,56 +1273,56 @@ mod test_utilities {
     }
 }
 
-/// Test suite summary
-///
-/// This comprehensive test suite validates:
-///
-/// 1. **EventBus Integration Tests**:
-///    - Event bus initialization and configuration
-///    - Event subscription and unsubscription
-///    - Event publishing with different priorities
-///    - Event bus error handling and recovery
-///
-/// 2. **DaemonEventHandler Unit Tests**:
-///    - Service lifecycle event handling
-///    - System event processing
-///    - Health event monitoring
-///    - Error event handling and recovery
-///
-/// 3. **Service Discovery Tests**:
-///    - Service registration through events
-///    - Service discovery cache management
-///    - Service health tracking
-///    - Stale service cleanup
-///
-/// 4. **Background Task Tests**:
-///    - Service discovery cleanup task
-///    - Subscription monitoring task
-///    - Health reporting task
-///    - Background task error handling
-///
-/// 5. **Event Publishing and Conversion Tests**:
-///    - Daemon operation event publishing
-///    - Legacy to advanced event conversion
-///    - Dual routing mechanisms
-///    - Event deduplication and filtering
-///
-/// 6. **Error Handling and Recovery Tests**:
-///    - Multi-tier fallback mechanisms
-///    - Circuit breaker activation and recovery
-///    - Degraded state management
-///    - Recovery strategy execution
-///
-/// 7. **Performance and Load Testing**:
-///    - Event routing performance under load
-///    - Concurrent event processing
-///    - Memory usage during high load
-///    - Event backpressure handling
-///
-/// 8. **Integration Workflow Tests**:
-///    - Complete daemon integration workflow
-///    - Daemon lifecycle management
-///    - Configuration updates at runtime
-///
-/// The test suite provides comprehensive coverage of the daemon's event-driven
-/// architecture, ensuring reliability, performance, and proper error handling
+// Test suite summary
+//
+// This comprehensive test suite validates:
+//
+// 1. **EventBus Integration Tests**:
+//    - Event bus initialization and configuration
+//    - Event subscription and unsubscription
+//    - Event publishing with different priorities
+//    - Event bus error handling and recovery
+//
+// 2. **DaemonEventHandler Unit Tests**:
+//    - Service lifecycle event handling
+//    - System event processing
+//    - Health event monitoring
+//    - Error event handling and recovery
+//
+// 3. **Service Discovery Tests**:
+//    - Service registration through events
+//    - Service discovery cache management
+//    - Service health tracking
+//    - Stale service cleanup
+//
+// 4. **Background Task Tests**:
+//    - Service discovery cleanup task
+//    - Subscription monitoring task
+//    - Health reporting task
+//    - Background task error handling
+//
+// 5. **Event Publishing and Conversion Tests**:
+//    - Daemon operation event publishing
+//    - Legacy to advanced event conversion
+//    - Dual routing mechanisms
+//    - Event deduplication and filtering
+//
+// 6. **Error Handling and Recovery Tests**:
+//    - Multi-tier fallback mechanisms
+//    - Circuit breaker activation and recovery
+//    - Degraded state management
+//    - Recovery strategy execution
+//
+// 7. **Performance and Load Testing**:
+//    - Event routing performance under load
+//    - Concurrent event processing
+//    - Memory usage during high load
+//    - Event backpressure handling
+//
+// 8. **Integration Workflow Tests**:
+//    - Complete daemon integration workflow
+//    - Daemon lifecycle management
+//    - Configuration updates at runtime
+//
+// The test suite provides comprehensive coverage of the daemon's event-driven
+// architecture, ensuring reliability, performance, and proper error handling

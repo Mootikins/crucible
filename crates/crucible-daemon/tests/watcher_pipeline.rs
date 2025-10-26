@@ -27,19 +27,19 @@
 //! - Concurrency and performance
 
 use anyhow::Result;
-use crucible_core::parser::{ParsedDocument, SurrealDBAdapter, MarkdownParser, PulldownParser};
+use async_trait::async_trait;
+use crucible_core::parser::{MarkdownParser, ParsedDocument, PulldownParser, SurrealDBAdapter};
 use crucible_surrealdb::SurrealEmbeddingDatabase;
 use crucible_watch::{
-    WatchManager, WatchManagerConfig, FileEvent, FileEventKind, EventHandler,
-    prelude::TraitWatchConfig as WatchConfig,
+    prelude::TraitWatchConfig as WatchConfig, EventHandler, FileEvent, FileEventKind, WatchManager,
+    WatchManagerConfig,
 };
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::collections::HashMap;
 use tempfile::TempDir;
-use tokio::time::{sleep, Duration};
 use tokio::sync::mpsc;
-use async_trait::async_trait;
+use tokio::time::{sleep, Duration};
 
 // ============================================================================
 // Test Helpers
@@ -51,7 +51,9 @@ fn create_test_vault() -> Result<TempDir> {
 
     // Create a sample markdown file for initial tests
     let sample_md = temp_dir.path().join("sample.md");
-    std::fs::write(&sample_md, r#"---
+    std::fs::write(
+        &sample_md,
+        r#"---
 title: Sample Note
 tags: [example]
 ---
@@ -59,7 +61,8 @@ tags: [example]
 # Sample Note
 
 This is a sample note with [[wikilink]] and #tag.
-"#)?;
+"#,
+    )?;
 
     Ok(temp_dir)
 }
@@ -113,9 +116,10 @@ async fn wait_for_processing() {
 /// Test helper: Create a watch manager with default config
 async fn create_watch_manager() -> Result<WatchManager> {
     // Disable debouncing for tests by setting delay to 0
-    let config = WatchManagerConfig::default()
-        .with_debounce_delay(Duration::from_millis(0));
-    WatchManager::new(config).await.map_err(|e| anyhow::anyhow!("{}", e))
+    let config = WatchManagerConfig::default().with_debounce_delay(Duration::from_millis(0));
+    WatchManager::new(config)
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", e))
 }
 
 /// Test helper: Event handler that processes file events through the pipeline
@@ -135,7 +139,10 @@ struct PipelineEventHandler {
 
 impl PipelineEventHandler {
     /// Create a new pipeline handler
-    fn new(database: Arc<SurrealEmbeddingDatabase>, processed_tx: mpsc::UnboundedSender<PathBuf>) -> Self {
+    fn new(
+        database: Arc<SurrealEmbeddingDatabase>,
+        processed_tx: mpsc::UnboundedSender<PathBuf>,
+    ) -> Self {
         Self {
             parser: Arc::new(PulldownParser::new()),
             adapter: Arc::new(SurrealDBAdapter::new().with_full_content()),
@@ -156,7 +163,8 @@ impl PipelineEventHandler {
         let path_str = path.to_string_lossy().to_string();
         let content = doc.content.plain_text.clone();
         let embedding = vec![0.0; 384]; // Dummy embedding
-        let folder = path.parent()
+        let folder = path
+            .parent()
             .and_then(|p| p.to_str())
             .unwrap_or("")
             .to_string();
@@ -166,14 +174,17 @@ impl PipelineEventHandler {
             title: Some(doc.title()),
             tags: doc.all_tags(),
             folder,
-            properties: HashMap::from([
-                ("word_count".to_string(), serde_json::json!(doc.content.word_count)),
-            ]),
+            properties: HashMap::from([(
+                "word_count".to_string(),
+                serde_json::json!(doc.content.word_count),
+            )]),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
 
-        self.database.store_embedding(&path_str, &content, &embedding, &metadata).await?;
+        self.database
+            .store_embedding(&path_str, &content, &embedding, &metadata)
+            .await?;
 
         // Send notification that file was processed
         let _ = self.processed_tx.send(path.to_path_buf());
@@ -262,7 +273,10 @@ async fn test_watch_detects_new_file() {
     let mut manager = create_watch_manager().await.unwrap();
     manager.register_handler(handler).await.unwrap();
     manager.start().await.unwrap();
-    manager.add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch")).await.unwrap();
+    manager
+        .add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch"))
+        .await
+        .unwrap();
 
     // Give watcher time to initialize
     sleep(Duration::from_millis(100)).await;
@@ -271,7 +285,10 @@ async fn test_watch_detects_new_file() {
     sleep(Duration::from_millis(100)).await;
 
     // 2. Action: Create new markdown file in vault
-    let file_path = create_markdown_file(vault.path(), "new_file.md", "# New File\n\nContent here.").await.unwrap();
+    let file_path =
+        create_markdown_file(vault.path(), "new_file.md", "# New File\n\nContent here.")
+            .await
+            .unwrap();
 
     // 3. Wait: Allow watcher to detect and process event
     wait_for_processing().await;
@@ -296,7 +313,10 @@ async fn test_watch_detects_file_modification() {
     let mut manager = create_watch_manager().await.unwrap();
     manager.register_handler(handler).await.unwrap();
     manager.start().await.unwrap();
-    manager.add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch")).await.unwrap();
+    manager
+        .add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch"))
+        .await
+        .unwrap();
 
     // Give watcher time to initialize
     sleep(Duration::from_millis(100)).await;
@@ -304,7 +324,9 @@ async fn test_watch_detects_file_modification() {
     let file_path = vault.path().join("sample.md");
 
     // 2. Action: Modify the markdown file content
-    modify_markdown_file(&file_path, "# Modified\n\nUpdated content.").await.unwrap();
+    modify_markdown_file(&file_path, "# Modified\n\nUpdated content.")
+        .await
+        .unwrap();
 
     // 3. Wait: Allow watcher to detect modification
     wait_for_processing().await;
@@ -325,7 +347,10 @@ async fn test_watch_detects_file_deletion() {
     let mut manager = create_watch_manager().await.unwrap();
     manager.register_handler(handler).await.unwrap();
     manager.start().await.unwrap();
-    manager.add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch")).await.unwrap();
+    manager
+        .add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch"))
+        .await
+        .unwrap();
 
     // Give watcher time to initialize
     sleep(Duration::from_millis(100)).await;
@@ -354,20 +379,28 @@ async fn test_watch_ignores_non_markdown() {
     let mut manager = create_watch_manager().await.unwrap();
     manager.register_handler(handler).await.unwrap();
     manager.start().await.unwrap();
-    manager.add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch")).await.unwrap();
+    manager
+        .add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch"))
+        .await
+        .unwrap();
 
     // Give watcher time to initialize
     sleep(Duration::from_millis(100)).await;
 
     // 2. Action: Create .txt file in vault
-    create_markdown_file(vault.path(), "test.txt", "Not markdown").await.unwrap();
+    create_markdown_file(vault.path(), "test.txt", "Not markdown")
+        .await
+        .unwrap();
 
     // 3. Wait: Give watcher time to potentially process
     wait_for_processing().await;
 
     // 4. Assert: Handler did NOT receive event (no .txt events)
     let received = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await;
-    assert!(received.is_err(), "Should NOT have received event for .txt file");
+    assert!(
+        received.is_err(),
+        "Should NOT have received event for .txt file"
+    );
 }
 
 #[tokio::test]
@@ -381,13 +414,18 @@ async fn test_watch_handles_hidden_files() {
     let mut manager = create_watch_manager().await.unwrap();
     manager.register_handler(handler).await.unwrap();
     manager.start().await.unwrap();
-    manager.add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch")).await.unwrap();
+    manager
+        .add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch"))
+        .await
+        .unwrap();
 
     // Give watcher time to initialize
     sleep(Duration::from_millis(100)).await;
 
     // 2. Action: Create .hidden.md file (starts with dot)
-    create_markdown_file(vault.path(), ".hidden.md", "# Hidden").await.unwrap();
+    create_markdown_file(vault.path(), ".hidden.md", "# Hidden")
+        .await
+        .unwrap();
 
     // 3. Wait: Allow processing time
     wait_for_processing().await;
@@ -412,12 +450,21 @@ async fn test_parse_and_index_simple_note() {
     let mut manager = create_watch_manager().await.unwrap();
     manager.register_handler(handler).await.unwrap();
     manager.start().await.unwrap();
-    manager.add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch")).await.unwrap();
+    manager
+        .add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch"))
+        .await
+        .unwrap();
 
     // Give watcher time to initialize
     sleep(Duration::from_millis(100)).await;
 
-    let file_path = create_markdown_file(vault.path(), "simple.md", "# Simple Note\n\nThis is a test note with no frontmatter.").await.unwrap();
+    let file_path = create_markdown_file(
+        vault.path(),
+        "simple.md",
+        "# Simple Note\n\nThis is a test note with no frontmatter.",
+    )
+    .await
+    .unwrap();
     wait_for_processing().await;
 
     let received = tokio::time::timeout(Duration::from_secs(1), rx.recv()).await;

@@ -4,14 +4,14 @@
 //! Filesystem events -> DaemonEventHandler -> EmbeddingEvent -> EmbeddingProcessor -> Database
 
 use anyhow::Result;
-use crucible_daemon::coordinator::DataCoordinator;
+use chrono::Utc;
 use crucible_daemon::config::{DaemonConfig, WatchPath};
-use crucible_daemon::events::{FilesystemEvent, FilesystemEventType, DaemonEvent};
+use crucible_daemon::coordinator::DataCoordinator;
+use crucible_daemon::events::{DaemonEvent, FilesystemEvent, FilesystemEventType};
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::time::sleep;
 use uuid::Uuid;
-use chrono::Utc;
 
 /// Test the unified event flow from filesystem event to embedding processing
 #[tokio::test]
@@ -187,7 +187,10 @@ async fn test_nonexistent_file_handling() -> Result<()> {
 
     // This should not panic or crash, even though the file doesn't exist
     let result = coordinator.publish_event(daemon_event).await;
-    assert!(result.is_ok(), "Publishing event for nonexistent file should not fail");
+    assert!(
+        result.is_ok(),
+        "Publishing event for nonexistent file should not fail"
+    );
 
     // Give some time for the event to be processed
     sleep(Duration::from_secs(1)).await;
