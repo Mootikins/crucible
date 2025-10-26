@@ -486,31 +486,8 @@ pub struct WorkerPoolConfig {
     pub thread_affinity: Option<Vec<usize>>,
 }
 
-/// Cache configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CacheConfig {
-    /// Cache type
-    pub cache_type: CacheType,
-    /// Cache size limit
-    pub max_size: Option<usize>,
-    /// TTL in seconds
-    pub ttl_seconds: Option<u64>,
-    /// Cache-specific options
-    pub options: HashMap<String, serde_json::Value>,
-}
-
-/// Cache types
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum CacheType {
-    /// In-memory LRU cache
-    Lru,
-    /// In-memory TTL cache
-    Ttl,
-    /// Redis cache
-    Redis,
-    /// Disabled
-    Disabled,
-}
+// CacheConfig and CacheType are now imported from crucible-config (canonical)
+pub use crucible_config::{CacheConfig, CacheType};
 
 /// Resource limits
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -971,16 +948,7 @@ impl Default for WorkerPoolConfig {
     }
 }
 
-impl Default for CacheConfig {
-    fn default() -> Self {
-        Self {
-            cache_type: CacheType::Lru,
-            max_size: Some(10000),
-            ttl_seconds: Some(3600),
-            options: HashMap::new(),
-        }
-    }
-}
+// CacheConfig Default is provided by canonical implementation in crucible-config
 
 impl Default for ResourceLimits {
     fn default() -> Self {
