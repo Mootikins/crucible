@@ -101,7 +101,7 @@ impl ConfigManager {
     }
 
     /// Get performance configuration
-    pub async fn get_performance_config(&self) -> PerformanceConfig {
+    pub async fn get_performance_config(&self) -> ServicePerformanceConfig {
         self.config.read().await.performance.clone()
     }
 

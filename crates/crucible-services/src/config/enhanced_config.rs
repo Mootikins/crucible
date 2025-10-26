@@ -27,7 +27,7 @@ pub struct EnhancedConfig {
     /// Security configuration
     pub security: SecurityConfig,
     /// Performance configuration
-    pub performance: PerformanceConfig,
+    pub performance: ServicePerformanceConfig,
     /// Plugin configuration
     pub plugins: PluginConfig,
     /// Environment-specific overrides
@@ -43,7 +43,7 @@ impl Default for EnhancedConfig {
             event_routing: EventRoutingConfig::default(),
             database: None,
             security: SecurityConfig::default(),
-            performance: PerformanceConfig::default(),
+            performance: ServicePerformanceConfig::default(),
             plugins: PluginConfig::default(),
             environment_overrides: HashMap::new(),
         }
@@ -203,7 +203,7 @@ impl EnhancedConfig {
         if other.security.encryption_enabled != SecurityConfig::default().encryption_enabled {
             self.security = other.security;
         }
-        if other.performance.max_memory_mb != PerformanceConfig::default().max_memory_mb {
+        if other.performance.max_memory_mb != ServicePerformanceConfig::default().max_memory_mb {
             self.performance = other.performance;
         }
         if other.plugins.enabled_plugins != PluginConfig::default().enabled_plugins {
@@ -1036,9 +1036,11 @@ impl ConfigValidator for SecurityConfig {
     }
 }
 
-/// Performance configuration
+/// Service-specific performance configuration for monitoring and limits.
+///
+/// This configures memory, CPU thresholds, and monitoring for service processes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PerformanceConfig {
+pub struct ServicePerformanceConfig {
     /// Maximum memory usage in MB
     #[serde(default = "default_max_memory")]
     pub max_memory_mb: u64,
@@ -1068,7 +1070,7 @@ fn default_metrics_interval() -> u64 {
     60 // 1 minute
 }
 
-impl Default for PerformanceConfig {
+impl Default for ServicePerformanceConfig {
     fn default() -> Self {
         Self {
             max_memory_mb: default_max_memory(),
@@ -1080,7 +1082,7 @@ impl Default for PerformanceConfig {
     }
 }
 
-impl ConfigValidator for PerformanceConfig {
+impl ConfigValidator for ServicePerformanceConfig {
     fn validate(&self) -> ValidationResult {
         let context = ValidationContext::new("performance_config");
         self.validate_with_context(context)
