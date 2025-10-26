@@ -8,7 +8,7 @@ use crucible_llm::embeddings::{create_provider, EmbeddingConfig, ProviderType};
 
 #[tokio::test]
 async fn test_factory_creates_candle_provider() {
-    let config = EmbeddingConfig::candle(None, Some("all-MiniLM-L6-v2".to_string()));
+    let config = EmbeddingConfig::candle(Some("all-MiniLM-L6-v2".to_string()), None, None, None);
     let provider = create_provider(config).await;
 
     assert!(
@@ -33,7 +33,7 @@ async fn test_factory_candle_different_models() {
     ];
 
     for (model_name, expected_dims) in test_cases {
-        let config = EmbeddingConfig::candle(None, Some(model_name.to_string()));
+        let config = EmbeddingConfig::candle(Some(model_name.to_string()), None, None, None);
         let provider = create_provider(config).await;
 
         assert!(
@@ -50,7 +50,7 @@ async fn test_factory_candle_different_models() {
 
 #[tokio::test]
 async fn test_factory_candle_provider_functionality() {
-    let config = EmbeddingConfig::candle(None, Some("all-MiniLM-L6-v2".to_string()));
+    let config = EmbeddingConfig::candle(Some("all-MiniLM-L6-v2".to_string()), None, None, None);
     let provider = create_provider(config).await.unwrap();
 
     // Test single embedding
@@ -83,7 +83,7 @@ async fn test_factory_candle_provider_functionality() {
 
 #[tokio::test]
 async fn test_factory_candle_provider_health_check() {
-    let config = EmbeddingConfig::candle(None, Some("all-MiniLM-L6-v2".to_string()));
+    let config = EmbeddingConfig::candle(Some("all-MiniLM-L6-v2".to_string()), None, None, None);
     let provider = create_provider(config).await.unwrap();
 
     let health = provider.health_check().await;
@@ -93,7 +93,7 @@ async fn test_factory_candle_provider_health_check() {
 
 #[tokio::test]
 async fn test_factory_candle_provider_list_models() {
-    let config = EmbeddingConfig::candle(None, Some("all-MiniLM-L6-v2".to_string()));
+    let config = EmbeddingConfig::candle(Some("all-MiniLM-L6-v2".to_string()), None, None, None);
     let provider = create_provider(config).await.unwrap();
 
     let models = provider.list_models().await;
@@ -113,7 +113,7 @@ async fn test_factory_candle_provider_list_models() {
 #[tokio::test]
 async fn test_factory_candle_config_validation() {
     // Test valid configuration
-    let config = EmbeddingConfig::candle(None, Some("all-MiniLM-L6-v2".to_string()));
+    let config = EmbeddingConfig::candle(Some("all-MiniLM-L6-v2".to_string()), None, None, None);
     assert!(
         config.validate().is_ok(),
         "Valid Candle config should pass validation"
@@ -123,8 +123,8 @@ async fn test_factory_candle_config_validation() {
     assert!(provider.is_ok(), "Valid config should create provider");
 
     // Test invalid configuration (empty model name)
-    let mut invalid_config = EmbeddingConfig::candle(None, None);
-    invalid_config.model = String::new();
+    let mut invalid_config = EmbeddingConfig::candle(None, None, None, None);
+    invalid_config.model.name = String::new();
     assert!(
         invalid_config.validate().is_err(),
         "Invalid config should fail validation"
@@ -138,25 +138,27 @@ async fn test_factory_candle_config_validation() {
 }
 
 #[tokio::test]
+#[ignore] // from_env() no longer exists in new config system
 async fn test_factory_candle_from_env() {
+    // TODO: This test needs to be rewritten to use the new configuration system
     // Set environment variables for Candle provider
     std::env::set_var("EMBEDDING_PROVIDER", "candle");
     std::env::set_var("EMBEDDING_MODEL", "nomic-embed-text-v1.5");
 
-    let config = EmbeddingConfig::from_env();
-    assert!(config.is_ok(), "Should create config from environment");
+    // let config = EmbeddingConfig::from_env();
+    // assert!(config.is_ok(), "Should create config from environment");
 
-    let config = config.unwrap();
-    assert_eq!(config.provider, ProviderType::Candle);
-    assert_eq!(config.model, "nomic-embed-text-v1.5");
+    // let config = config.unwrap();
+    // assert_eq!(config.provider_type, EmbeddingProviderType::Candle);
+    // assert_eq!(config.model.name, "nomic-embed-text-v1.5");
 
-    let provider = create_provider(config).await;
-    assert!(provider.is_ok(), "Should create provider from env config");
+    // let provider = create_provider(config).await;
+    // assert!(provider.is_ok(), "Should create provider from env config");
 
-    let provider = provider.unwrap();
-    assert_eq!(provider.provider_name(), "Candle");
-    assert_eq!(provider.model_name(), "nomic-embed-text-v1.5");
-    assert_eq!(provider.dimensions(), 768);
+    // let provider = provider.unwrap();
+    // assert_eq!(provider.provider_name(), "Candle");
+    // assert_eq!(provider.model_name(), "nomic-embed-text-v1.5");
+    // assert_eq!(provider.dimensions(), 768);
 
     // Clean up environment
     std::env::remove_var("EMBEDDING_PROVIDER");
@@ -167,7 +169,7 @@ async fn test_factory_candle_from_env() {
 async fn test_factory_candle_vs_other_providers() {
     // Test that factory correctly routes to different providers
 
-    let candle_config = EmbeddingConfig::candle(None, Some("all-MiniLM-L6-v2".to_string()));
+    let candle_config = EmbeddingConfig::candle(Some("all-MiniLM-L6-v2".to_string()), None, None, None);
     let candle_provider = create_provider(candle_config).await.unwrap();
     assert_eq!(candle_provider.provider_name(), "Candle");
 
@@ -186,7 +188,7 @@ async fn test_factory_candle_vs_other_providers() {
 
 #[tokio::test]
 async fn test_factory_candle_error_handling() {
-    let config = EmbeddingConfig::candle(None, Some("all-MiniLM-L6-v2".to_string()));
+    let config = EmbeddingConfig::candle(Some("all-MiniLM-L6-v2".to_string()), None, None, None);
     let provider = create_provider(config).await.unwrap();
 
     // Test empty text error
@@ -208,7 +210,7 @@ async fn test_factory_candle_error_handling() {
 
 #[tokio::test]
 async fn test_factory_candle_deterministic_embeddings() {
-    let config = EmbeddingConfig::candle(None, Some("all-MiniLM-L6-v2".to_string()));
+    let config = EmbeddingConfig::candle(Some("all-MiniLM-L6-v2".to_string()), None, None, None);
     let provider = create_provider(config).await.unwrap();
 
     let text = "Deterministic test text";
@@ -227,7 +229,7 @@ async fn test_factory_candle_deterministic_embeddings() {
 
 #[tokio::test]
 async fn test_factory_candle_performance() {
-    let config = EmbeddingConfig::candle(None, Some("all-MiniLM-L6-v2".to_string()));
+    let config = EmbeddingConfig::candle(Some("all-MiniLM-L6-v2".to_string()), None, None, None);
     let provider = create_provider(config).await.unwrap();
 
     let text = "Performance test";

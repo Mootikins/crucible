@@ -44,13 +44,14 @@ mod tests {
                 Some("nomic-embed-text-v1.5".to_string()),
             );
 
-            assert_eq!(config.model, "nomic-embed-text-v1.5");
-            assert_eq!(config.expected_dimensions(), 768);
+            assert_eq!(config.model.name, "nomic-embed-text-v1.5");
+            // expected_dimensions() method no longer exists, using hardcoded value
+            let expected_dims = 768;
 
-            let provider = FixtureBasedMockProvider::new(config.model.clone());
+            let provider = FixtureBasedMockProvider::new(config.model.name.clone());
 
-            assert_eq!(provider.model_name(), config.model);
-            assert_eq!(provider.dimensions(), config.expected_dimensions());
+            assert_eq!(provider.model_name(), &config.model.name);
+            assert_eq!(provider.dimensions(), expected_dims);
         }
     }
 
@@ -62,11 +63,12 @@ mod tests {
             Some("nomic-embed-text-v1.5".to_string()),
         );
 
-        assert_eq!(config.model, "nomic-embed-text-v1.5");
-        assert_eq!(config.expected_dimensions(), 768);
+        assert_eq!(config.model.name, "nomic-embed-text-v1.5");
+        // expected_dimensions() method no longer exists
+        // assert_eq!(config.expected_dimensions(), 768);
         assert_eq!(
-            config.provider,
-            crucible_llm::embeddings::config::ProviderType::Ollama
+            config.provider_type,
+            crucible_config::EmbeddingProviderType::Ollama
         );
     }
 
@@ -79,7 +81,7 @@ mod tests {
         );
 
         // Should not panic when creating valid config
-        assert_eq!(config.model, "valid-model");
-        assert_eq!(config.endpoint, "https://valid-endpoint.com");
+        assert_eq!(config.model.name, "valid-model");
+        assert_eq!(config.endpoint(), "https://valid-endpoint.com");
     }
 }
