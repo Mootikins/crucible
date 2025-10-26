@@ -6,46 +6,54 @@
 
 ## Test Failures
 
-### 4 Config Tests Failing Due to Environment Variable Pollution
+### CLI Config Tests - FIXED ✅
 
-**Status:** Known Issue - Will be fixed in Phase 2
-**Priority:** Medium (tests pass individually, fail in parallel)
+**Status:** RESOLVED in Phase 2.0 (2025-10-26)
+**Previously Failing Tests:** (all now PASS)
+- ✅ `crucible-cli::config::tests::test_llm_config_from_file`
+- ✅ `crucible-cli::config::tests::test_database_path_derivation`
+- ✅ `crucible-cli::config::tests::test_tools_path_derivation`
+- ✅ `crucible-cli::config::tests::test_builder_override` (renamed from test_environment_variable_override)
+
+**Fix Applied:**
+- Removed ALL environment variable overrides from `CliConfig::load()`
+- Added `CliConfigBuilder` pattern for programmatic configuration
+- Updated tests to use builder instead of env vars
+- No more test pollution from parallel execution
+
+**Result:** All CLI config tests pass with `cargo test --lib -p crucible-cli` (parallel execution)
+
+---
+
+### 5 Daemon Unit Tests Failing
+
+**Status:** Pre-existing Issue - Will be resolved in Phase 2.6
+**Priority:** Low (daemon config being refactored anyway)
 **Affected Tests:**
-- `crucible-cli::config::tests::test_llm_config_from_file`
-- `crucible-cli::config::tests::test_database_path_derivation`
-- `crucible-cli::config::tests::test_tools_path_derivation`
-- `crucible-cli::config::tests::test_environment_variable_override`
+- `crucible-daemon::config::tests::test_default_config`
+- `crucible-daemon::coordinator::tests::test_config_update`
+- `crucible-daemon::coordinator::tests::test_event_publishing`
+- `crucible-daemon::coordinator::tests::test_daemon_health_tracking`
+- `crucible-daemon::events::tests::test_event_statistics`
 
 **Root Cause:**
-Tests use environment variables (`OBSIDIAN_KILN_PATH`, `CRUCIBLE_CHAT_MODEL`, etc.) for configuration. When tests run in parallel (default `cargo test` behavior), they interfere with each other through shared environment state.
+`DaemonConfig::default()` creates invalid configuration:
+- `watch_paths` is empty (validation requires at least one)
+- `connection_string` is empty (validation requires non-empty)
+- These fields would normally be set via `DaemonConfig::from_env()` or file loading
 
-**Symptoms:**
-- ✅ Each test passes when run individually: `cargo test --lib -p crucible-cli test_database_path_derivation`
-- ❌ Tests fail when run together: `cargo test --lib -p crucible-cli`
-- Error: Path mismatches due to race conditions setting/reading env vars
+**Impact:**
+- Does NOT affect functionality (daemon loads config from files/env, not defaults)
+- Only affects unit tests that use `DaemonConfig::default()`
+- NOT related to Phase 2.0 env var removal (daemon still has its own env var logic)
 
-**Workaround (Temporary):**
-```bash
-# Run tests serially to avoid pollution
-cargo test --workspace -- --test-threads=1
+**Plan:**
+Phase 2.6 will simplify/remove DaemonConfig entirely, replacing it with `crucible-config::Config`. These tests will be either:
+1. Removed (if testing obsolete daemon-specific config)
+2. Rewritten (if testing important daemon functionality with new config)
 
-# Or run only the failing package serially
-cargo test -p crucible-cli --lib -- --test-threads=1
-```
-
-**Permanent Fix (Phase 2):**
-Remove ALL environment variable configuration and use file-based config only.
-
-**Implementation Plan:**
-See: `docs/CONFIG_CONSOLIDATION_PLAN.md` → Step 0: Remove Environment Variable Configuration
-
-**Key Changes:**
-1. Remove env var overrides from `CliConfig::load()`
-2. Add `ConfigBuilder` pattern for tests
-3. Use CLI args for overrides (explicit, not env vars)
-4. Provide migration tool: `cru config migrate-env-vars`
-
-**Estimated Fix:** 4-6 hours (part of Phase 2)
+**Workaround:**
+Not needed - tests are not blocking development. Daemon functionality works via file/env config loading.
 
 ---
 

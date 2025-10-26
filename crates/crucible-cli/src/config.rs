@@ -392,63 +392,19 @@ fn default_embedding_url() -> String {
 }
 
 impl CliConfig {
-    /// Load configuration with precedence: defaults < file < env
+    /// Load configuration with precedence: defaults < file < CLI args
+    ///
+    /// **NOTE:** Environment variable configuration has been removed in v0.2.0.
+    /// Use config files or CLI arguments for configuration.
     pub fn load(
         config_file: Option<PathBuf>,
         embedding_url: Option<String>,
         embedding_model: Option<String>,
     ) -> Result<Self> {
-        // Start with defaults from config file (if exists)
+        // Load from config file (if exists), otherwise use defaults
         let mut config = Self::from_file_or_default(config_file)?;
 
-        // Override with env vars (optional for testing/on-the-fly)
-        if let Ok(path) = std::env::var("OBSIDIAN_KILN_PATH") {
-            config.kiln.path = PathBuf::from(path);
-        }
-
-        if let Ok(url) = std::env::var("EMBEDDING_ENDPOINT") {
-            config.kiln.embedding_url = url;
-        }
-        if let Ok(model) = std::env::var("EMBEDDING_MODEL") {
-            config.kiln.embedding_model = Some(model);
-        }
-
-        // LLM environment variables
-        if let Ok(model) = std::env::var("CRUCIBLE_CHAT_MODEL") {
-            config.llm.chat_model = Some(model);
-        }
-        if let Ok(temp) = std::env::var("CRUCIBLE_TEMPERATURE") {
-            config.llm.temperature = temp.parse().ok();
-        }
-        if let Ok(tokens) = std::env::var("CRUCIBLE_MAX_TOKENS") {
-            config.llm.max_tokens = tokens.parse().ok();
-        }
-        if let Ok(prompt) = std::env::var("CRUCIBLE_SYSTEM_PROMPT") {
-            config.llm.system_prompt = Some(prompt);
-        }
-
-        // Database configuration environment variables
-        if let Ok(db_path) = std::env::var("CRUCIBLE_DB_PATH") {
-            config.custom_database_path = Some(PathBuf::from(db_path));
-        }
-
-        // Backend-specific environment variables
-        if let Ok(endpoint) = std::env::var("OLLAMA_ENDPOINT") {
-            config.llm.backends.ollama.endpoint = Some(endpoint);
-        }
-        if let Ok(api_key) = std::env::var("OPENAI_API_KEY") {
-            config.llm.backends.openai.api_key = Some(api_key);
-        }
-        if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
-            config.llm.backends.anthropic.api_key = Some(api_key);
-        }
-
-        // Network environment variables
-        if let Ok(timeout) = std::env::var("CRUCIBLE_TIMEOUT") {
-            config.network.timeout_secs = timeout.parse().ok();
-        }
-
-        // Override with CLI args (highest priority) - but only for non-kiln-path options
+        // Override with CLI args (highest priority)
         if let Some(url) = embedding_url {
             config.kiln.embedding_url = url;
         }
@@ -457,6 +413,11 @@ impl CliConfig {
         }
 
         Ok(config)
+    }
+
+    /// Create a builder for programmatically constructing config (useful for tests)
+    pub fn builder() -> CliConfigBuilder {
+        CliConfigBuilder::new()
     }
 
     /// Get database path (always derived from kiln path)
@@ -804,6 +765,186 @@ max_performance_degradation = 20.0
     }
 }
 
+/// Builder for programmatically constructing CliConfig (useful for tests and programmatic configuration)
+pub struct CliConfigBuilder {
+    kiln_path: Option<PathBuf>,
+    embedding_url: Option<String>,
+    embedding_model: Option<String>,
+    chat_model: Option<String>,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    streaming: Option<bool>,
+    system_prompt: Option<String>,
+    ollama_endpoint: Option<String>,
+    openai_api_key: Option<String>,
+    anthropic_api_key: Option<String>,
+    timeout_secs: Option<u64>,
+    custom_database_path: Option<PathBuf>,
+}
+
+impl CliConfigBuilder {
+    /// Create a new builder with defaults
+    pub fn new() -> Self {
+        Self {
+            kiln_path: None,
+            embedding_url: None,
+            embedding_model: None,
+            chat_model: None,
+            temperature: None,
+            max_tokens: None,
+            streaming: None,
+            system_prompt: None,
+            ollama_endpoint: None,
+            openai_api_key: None,
+            anthropic_api_key: None,
+            timeout_secs: None,
+            custom_database_path: None,
+        }
+    }
+
+    /// Set kiln path
+    pub fn kiln_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.kiln_path = Some(path.into());
+        self
+    }
+
+    /// Set embedding URL
+    pub fn embedding_url<S: Into<String>>(mut self, url: S) -> Self {
+        self.embedding_url = Some(url.into());
+        self
+    }
+
+    /// Set embedding model
+    pub fn embedding_model<S: Into<String>>(mut self, model: S) -> Self {
+        self.embedding_model = Some(model.into());
+        self
+    }
+
+    /// Set chat model
+    pub fn chat_model<S: Into<String>>(mut self, model: S) -> Self {
+        self.chat_model = Some(model.into());
+        self
+    }
+
+    /// Set temperature
+    pub fn temperature(mut self, temp: f32) -> Self {
+        self.temperature = Some(temp);
+        self
+    }
+
+    /// Set max tokens
+    pub fn max_tokens(mut self, tokens: u32) -> Self {
+        self.max_tokens = Some(tokens);
+        self
+    }
+
+    /// Set streaming
+    pub fn streaming(mut self, streaming: bool) -> Self {
+        self.streaming = Some(streaming);
+        self
+    }
+
+    /// Set system prompt
+    pub fn system_prompt<S: Into<String>>(mut self, prompt: S) -> Self {
+        self.system_prompt = Some(prompt.into());
+        self
+    }
+
+    /// Set Ollama endpoint
+    pub fn ollama_endpoint<S: Into<String>>(mut self, endpoint: S) -> Self {
+        self.ollama_endpoint = Some(endpoint.into());
+        self
+    }
+
+    /// Set OpenAI API key
+    pub fn openai_api_key<S: Into<String>>(mut self, key: S) -> Self {
+        self.openai_api_key = Some(key.into());
+        self
+    }
+
+    /// Set Anthropic API key
+    pub fn anthropic_api_key<S: Into<String>>(mut self, key: S) -> Self {
+        self.anthropic_api_key = Some(key.into());
+        self
+    }
+
+    /// Set timeout in seconds
+    pub fn timeout_secs(mut self, secs: u64) -> Self {
+        self.timeout_secs = Some(secs);
+        self
+    }
+
+    /// Set custom database path
+    pub fn database_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.custom_database_path = Some(path.into());
+        self
+    }
+
+    /// Build the CliConfig
+    pub fn build(self) -> Result<CliConfig> {
+        let mut config = CliConfig::default();
+
+        // Set kiln path (required)
+        if let Some(path) = self.kiln_path {
+            config.kiln.path = path;
+        }
+
+        // Set embedding configuration
+        if let Some(url) = self.embedding_url {
+            config.kiln.embedding_url = url;
+        }
+        if let Some(model) = self.embedding_model {
+            config.kiln.embedding_model = Some(model);
+        }
+
+        // Set LLM configuration
+        if let Some(model) = self.chat_model {
+            config.llm.chat_model = Some(model);
+        }
+        if let Some(temp) = self.temperature {
+            config.llm.temperature = Some(temp);
+        }
+        if let Some(tokens) = self.max_tokens {
+            config.llm.max_tokens = Some(tokens);
+        }
+        if let Some(streaming) = self.streaming {
+            config.llm.streaming = Some(streaming);
+        }
+        if let Some(prompt) = self.system_prompt {
+            config.llm.system_prompt = Some(prompt);
+        }
+
+        // Set backend configuration
+        if let Some(endpoint) = self.ollama_endpoint {
+            config.llm.backends.ollama.endpoint = Some(endpoint);
+        }
+        if let Some(key) = self.openai_api_key {
+            config.llm.backends.openai.api_key = Some(key);
+        }
+        if let Some(key) = self.anthropic_api_key {
+            config.llm.backends.anthropic.api_key = Some(key);
+        }
+
+        // Set network configuration
+        if let Some(timeout) = self.timeout_secs {
+            config.network.timeout_secs = Some(timeout);
+        }
+
+        // Set custom database path
+        if let Some(path) = self.custom_database_path {
+            config.custom_database_path = Some(path);
+        }
+
+        Ok(config)
+    }
+}
+
+impl Default for CliConfigBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -898,60 +1039,38 @@ mod tests {
 
     #[test]
     fn test_database_path_derivation() {
-        // Clear any existing environment variables first
-        std::env::remove_var("OBSIDIAN_KILN_PATH");
-        std::env::remove_var("CRUCIBLE_TEST_MODE");
-
         let temp = TempDir::new().unwrap();
-        let vault_path = temp.path().join("kiln");
+        let kiln_path = temp.path().join("kiln");
 
-        // Set the required environment variable
-        std::env::set_var("OBSIDIAN_KILN_PATH", vault_path.to_str().unwrap());
+        // Use builder to create config with explicit kiln path
+        let config = CliConfig::builder()
+            .kiln_path(&kiln_path)
+            .build()
+            .unwrap();
 
-        let config = CliConfig::load(None, None, None).unwrap();
+        let expected_db = kiln_path.join(".crucible/embeddings.db");
 
-        // Debug: check what path the config actually has
-        let config_kiln_path = &config.kiln.path;
-        let expected_db = vault_path.join(".crucible/embeddings.db");
-
-        // The config should use the same path we set in the environment
-        assert_eq!(
-            config_kiln_path, &vault_path,
-            "Config kiln path should match environment variable"
-        );
+        // The config should use the path we set via builder
+        assert_eq!(&config.kiln.path, &kiln_path, "Config kiln path should match builder");
         assert_eq!(config.database_path(), expected_db);
-
-        // Clean up
-        std::env::remove_var("OBSIDIAN_KILN_PATH");
     }
 
     #[test]
     fn test_tools_path_derivation() {
-        // Clear any existing environment variables first
-        std::env::remove_var("OBSIDIAN_KILN_PATH");
-        std::env::remove_var("CRUCIBLE_TEST_MODE");
-
         let temp = TempDir::new().unwrap();
-        let vault_path = temp.path().join("kiln");
+        let kiln_path = temp.path().join("kiln");
 
-        // Set the required environment variable
-        std::env::set_var("OBSIDIAN_KILN_PATH", vault_path.to_str().unwrap());
+        // Use builder to create config with explicit kiln path
+        let config = CliConfig::builder()
+            .kiln_path(&kiln_path)
+            .build()
+            .unwrap();
 
-        let config = CliConfig::load(None, None, None).unwrap();
+        let expected_tools = kiln_path.join("tools");
 
-        // Debug: check what path the config actually has
-        let config_kiln_path = &config.kiln.path;
-        let expected_tools = vault_path.join("tools");
-
-        // The config should use the same path we set in the environment
-        assert_eq!(
-            config_kiln_path, &vault_path,
-            "Config kiln path should match environment variable"
-        );
+        // The config should use the path we set via builder
+        assert_eq!(&config.kiln.path, &kiln_path, "Config kiln path should match builder");
         assert_eq!(config.tools_path(), expected_tools);
-
-        // Clean up
-        std::env::remove_var("OBSIDIAN_KILN_PATH");
     }
 
     #[test]
@@ -1015,15 +1134,6 @@ mod tests {
 
     #[test]
     fn test_llm_config_from_file() {
-        // Store original environment variables
-        let original_chat_model = std::env::var("CRUCIBLE_CHAT_MODEL");
-        let original_ollama_endpoint = std::env::var("OLLAMA_ENDPOINT");
-
-        // Clear environment variables that might interfere
-        std::env::remove_var("CRUCIBLE_CHAT_MODEL");
-        std::env::remove_var("OLLAMA_ENDPOINT");
-        std::env::remove_var("CRUCIBLE_TEST_MODE");
-
         let temp = TempDir::new().unwrap();
         let config_path = temp.path().join("config.toml");
 
@@ -1060,59 +1170,23 @@ timeout_secs = 60
             "https://custom-ollama.example.com"
         );
         assert_eq!(config.timeout(), 60);
-
-        // Restore original environment variables
-        if let Ok(val) = original_chat_model {
-            std::env::set_var("CRUCIBLE_CHAT_MODEL", val);
-        }
-        if let Ok(val) = original_ollama_endpoint {
-            std::env::set_var("OLLAMA_ENDPOINT", val);
-        }
     }
 
     #[test]
-    fn test_environment_variable_override() {
-        // Store original environment variables
-        let original_kiln_path = std::env::var("OBSIDIAN_KILN_PATH");
-        let original_chat_model = std::env::var("CRUCIBLE_CHAT_MODEL");
-        let original_temperature = std::env::var("CRUCIBLE_TEMPERATURE");
-        let original_ollama_endpoint = std::env::var("OLLAMA_ENDPOINT");
+    fn test_builder_override() {
+        // Test that builder can override all config values programmatically
+        let config = CliConfig::builder()
+            .kiln_path("/tmp/builder-test")
+            .chat_model("builder-model")
+            .temperature(0.9)
+            .ollama_endpoint("https://builder-ollama.example.com")
+            .build()
+            .unwrap();
 
-        // Enable test mode to skip loading user config
-        std::env::set_var("CRUCIBLE_TEST_MODE", "1");
-
-        // Set environment variables
-        std::env::set_var("OBSIDIAN_KILN_PATH", "/tmp/env-test");
-        std::env::set_var("CRUCIBLE_CHAT_MODEL", "env-model");
-        std::env::set_var("CRUCIBLE_TEMPERATURE", "0.9");
-        std::env::set_var("OLLAMA_ENDPOINT", "https://env-ollama.example.com");
-
-        let config = CliConfig::load(None, None, None).unwrap();
-
-        assert_eq!(config.kiln.path, std::path::PathBuf::from("/tmp/env-test"));
-        assert_eq!(config.chat_model(), "env-model");
+        assert_eq!(config.kiln.path, std::path::PathBuf::from("/tmp/builder-test"));
+        assert_eq!(config.chat_model(), "builder-model");
         assert_eq!(config.temperature(), 0.9);
-        assert_eq!(config.ollama_endpoint(), "https://env-ollama.example.com");
-
-        // Restore original environment variables
-        std::env::remove_var("CRUCIBLE_TEST_MODE");
-        std::env::remove_var("OBSIDIAN_KILN_PATH");
-        std::env::remove_var("CRUCIBLE_CHAT_MODEL");
-        std::env::remove_var("CRUCIBLE_TEMPERATURE");
-        std::env::remove_var("OLLAMA_ENDPOINT");
-
-        if let Ok(val) = original_kiln_path {
-            std::env::set_var("OBSIDIAN_KILN_PATH", val);
-        }
-        if let Ok(val) = original_chat_model {
-            std::env::set_var("CRUCIBLE_CHAT_MODEL", val);
-        }
-        if let Ok(val) = original_temperature {
-            std::env::set_var("CRUCIBLE_TEMPERATURE", val);
-        }
-        if let Ok(val) = original_ollama_endpoint {
-            std::env::set_var("OLLAMA_ENDPOINT", val);
-        }
+        assert_eq!(config.ollama_endpoint(), "https://builder-ollama.example.com");
     }
 
     #[test]

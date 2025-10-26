@@ -227,6 +227,17 @@ pub enum ConfigCommands {
         #[arg(short = 'f', long, default_value = "toml")]
         format: String,
     },
+
+    /// Migrate environment variable configuration to config file
+    MigrateEnvVars {
+        /// Path for the output config file (defaults to ~/.config/crucible/config.toml)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Show what would be migrated without writing the file
+        #[arg(short = 'n', long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand)]
