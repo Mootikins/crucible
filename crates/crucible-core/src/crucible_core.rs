@@ -6,21 +6,78 @@
 
 use super::{config::CrucibleConfig, CrucibleError, Result as CoreResult};
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
-// Re-export core service types from simplified architecture
-pub use crucible_services::types::{ServiceHealth, ServiceMetrics, ServiceStatus};
+// NOTE: This module (CrucibleCore coordinator) is not currently used in the codebase.
+// It was part of the old service architecture and remains for potential future use.
+// The service types below are defined inline since crucible-services was removed.
 
-// Re-export key traits from simplified architecture
-pub use crucible_services::service_traits::{
-    HealthCheck, ScriptEngine, ServiceLifecycle, ServiceRegistry, ToolService,
-};
+use chrono::DateTime;
 
-// Re-export ScriptEngine configuration
-pub use crucible_services::ScriptEngineConfig;
+/// Service status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ServiceStatus {
+    Healthy,
+    Degraded,
+    Unhealthy,
+}
+
+/// Service health status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceHealth {
+    pub status: ServiceStatus,
+    pub message: Option<String>,
+    pub last_check: DateTime<Utc>,
+}
+
+/// Service metrics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceMetrics {
+    pub request_count: u64,
+    pub error_count: u64,
+    pub avg_response_time_ms: f64,
+    pub last_updated: DateTime<Utc>,
+}
+
+impl Default for ServiceMetrics {
+    fn default() -> Self {
+        Self {
+            request_count: 0,
+            error_count: 0,
+            avg_response_time_ms: 0.0,
+            last_updated: Utc::now(),
+        }
+    }
+}
+
+/// Script engine configuration (placeholder)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScriptEngineConfig {
+    pub enabled: bool,
+}
+
+/// ============================================================================
+/// SERVICE TRAITS (Unused - for future compatibility)
+/// ============================================================================
+
+#[async_trait::async_trait]
+pub trait ServiceLifecycle: Send + Sync {}
+
+#[async_trait::async_trait]
+pub trait HealthCheck: Send + Sync {}
+
+#[async_trait::async_trait]
+pub trait ScriptEngine: Send + Sync {}
+
+#[async_trait::async_trait]
+pub trait ServiceRegistry: Send + Sync {}
+
+#[async_trait::async_trait]
+pub trait ToolService: Send + Sync {}
 
 /// ============================================================================
 /// SIMPLIFIED CRUCIBLE CORE
