@@ -451,27 +451,18 @@ impl Default for BufferSizes {
     }
 }
 
-/// Cache configuration
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct CacheConfig {
-    /// Enable caching
-    pub enabled: bool,
-    /// Cache TTL
-    pub ttl: Duration,
-    /// Maximum cache size
-    pub max_size: usize,
-    /// Cache eviction policy
-    pub eviction_policy: String,
+// CacheConfig is now imported from crucible-config (canonical)
+pub use crucible_config::CacheConfig;
+
+// Helper extension trait for Duration conversion
+pub trait CacheConfigExt {
+    /// Get TTL as Duration
+    fn ttl(&self) -> Duration;
 }
 
-impl Default for CacheConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            ttl: Duration::from_secs(300), // 5 minutes
-            max_size: 10000,
-            eviction_policy: "lru".to_string(),
-        }
+impl CacheConfigExt for CacheConfig {
+    fn ttl(&self) -> Duration {
+        Duration::from_secs(self.ttl_seconds)
     }
 }
 

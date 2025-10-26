@@ -243,6 +243,81 @@ impl Default for DatabaseType {
     }
 }
 
+/// Cache configuration.
+///
+/// Consolidated from all crates to provide flexible caching control.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CacheConfig {
+    /// Enable caching.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Cache type/strategy.
+    #[serde(default)]
+    pub cache_type: CacheType,
+
+    /// Maximum cache size in entries.
+    #[serde(default = "default_cache_max_size")]
+    pub max_size: usize,
+
+    /// Time-to-live in seconds.
+    #[serde(default = "default_cache_ttl")]
+    pub ttl_seconds: u64,
+
+    /// Cache eviction policy (lru, lfu, fifo).
+    #[serde(default = "default_eviction_policy")]
+    pub eviction_policy: String,
+
+    /// Additional cache-specific options.
+    #[serde(default)]
+    pub options: HashMap<String, serde_json::Value>,
+}
+
+/// Supported cache types.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum CacheType {
+    /// In-memory LRU cache.
+    Lru,
+    /// In-memory TTL cache.
+    Ttl,
+    /// Redis cache.
+    Redis,
+    /// No caching.
+    None,
+}
+
+impl Default for CacheType {
+    fn default() -> Self {
+        Self::Lru
+    }
+}
+
+fn default_cache_max_size() -> usize {
+    10000
+}
+
+fn default_cache_ttl() -> u64 {
+    300 // 5 minutes
+}
+
+fn default_eviction_policy() -> String {
+    "lru".to_string()
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            cache_type: CacheType::default(),
+            max_size: default_cache_max_size(),
+            ttl_seconds: default_cache_ttl(),
+            eviction_policy: default_eviction_policy(),
+            options: HashMap::new(),
+        }
+    }
+}
+
 /// Server configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerConfig {
