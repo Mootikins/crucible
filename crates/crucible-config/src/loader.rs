@@ -161,19 +161,15 @@ impl ConfigLoader {
                 Ok(config)
             }
             #[cfg(not(feature = "yaml"))]
-            ConfigFormat::Yaml => {
-                Err(ConfigError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Unsupported,
-                    "YAML support not enabled",
-                )))
-            }
+            ConfigFormat::Yaml => Err(ConfigError::Io(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "YAML support not enabled",
+            ))),
             #[cfg(not(feature = "toml"))]
-            ConfigFormat::Toml => {
-                Err(ConfigError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Unsupported,
-                    "TOML support not enabled",
-                )))
-            }
+            ConfigFormat::Toml => Err(ConfigError::Io(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "TOML support not enabled",
+            ))),
             ConfigFormat::Auto => {
                 // Try to detect format and parse
                 if let Ok(config) = Self::parse_from_string(content, ConfigFormat::Yaml) {
@@ -316,19 +312,15 @@ impl ConfigLoader {
                 Ok(content)
             }
             #[cfg(not(feature = "yaml"))]
-            ConfigFormat::Yaml => {
-                Err(ConfigError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Unsupported,
-                    "YAML support not enabled",
-                )))
-            }
+            ConfigFormat::Yaml => Err(ConfigError::Io(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "YAML support not enabled",
+            ))),
             #[cfg(not(feature = "toml"))]
-            ConfigFormat::Toml => {
-                Err(ConfigError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Unsupported,
-                    "TOML support not enabled",
-                )))
-            }
+            ConfigFormat::Toml => Err(ConfigError::Io(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "TOML support not enabled",
+            ))),
             ConfigFormat::Auto => {
                 // Default to YAML for auto format
                 Self::serialize_to_string(config, ConfigFormat::Yaml)

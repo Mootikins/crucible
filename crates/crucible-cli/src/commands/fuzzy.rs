@@ -2,10 +2,10 @@
 //!
 //! This module provides basic fuzzy search functionality using file system operations.
 
-use anyhow::Result;
+use crate::commands::search::get_markdown_files;
 use crate::config::CliConfig;
 use crate::interactive::SearchResultWithScore;
-use crate::commands::search::{get_markdown_files};
+use anyhow::Result;
 
 pub async fn execute(
     config: CliConfig,
@@ -36,7 +36,11 @@ pub async fn execute(
         let mut results = Vec::new();
 
         for file_path in files.into_iter().take(limit as usize) {
-            let title = file_path.split('/').next_back().unwrap_or(&file_path).to_string();
+            let title = file_path
+                .split('/')
+                .next_back()
+                .unwrap_or(&file_path)
+                .to_string();
             results.push(SearchResultWithScore {
                 id: file_path,
                 title,

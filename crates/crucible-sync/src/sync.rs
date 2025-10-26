@@ -3,11 +3,11 @@
 //! This module provides the main SyncInstance that coordinates
 //! document operations, transport, and synchronization.
 
+use crate::transport::{MemoryTransport, Transport};
 use crate::{Document, SyncError, SyncResult};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::transport::{Transport, MemoryTransport};
 
 /// A sync instance that manages document synchronization
 pub struct SyncInstance {
@@ -107,7 +107,9 @@ impl SyncInstance {
         let peers = self.peers.read().await;
         for (_, peer_transport) in peers.iter() {
             for update in &updates {
-                peer_transport.send_update(update.clone()).await
+                peer_transport
+                    .send_update(update.clone())
+                    .await
                     .map_err(|e| SyncError::Transport(e.to_string()))?;
             }
         }
@@ -131,7 +133,7 @@ impl SyncInstance {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_sync_instance_creation() {
         let sync = SyncInstance::new("test-doc").await.unwrap();
@@ -200,10 +202,12 @@ mod tests {
     async fn test_apply_change() -> SyncResult<()> {
         let sync = SyncInstance::new("test-doc").await?;
 
-        let result = sync.apply_change(|doc| {
-            // This would normally modify the document
-            doc.id().to_string()
-        }).await?;
+        let result = sync
+            .apply_change(|doc| {
+                // This would normally modify the document
+                doc.id().to_string()
+            })
+            .await?;
 
         assert_eq!(result, "test-doc");
 

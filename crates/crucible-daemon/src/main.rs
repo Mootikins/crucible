@@ -8,10 +8,10 @@
 // - Data validation and integrity checks
 
 use anyhow::Result;
-use crucible_daemon::{DataCoordinator, DaemonConfig};
-use tracing::{info, error, warn};
-use tracing_subscriber::EnvFilter;
+use crucible_daemon::{DaemonConfig, DataCoordinator};
 use std::process;
+use tracing::{error, info, warn};
+use tracing_subscriber::EnvFilter;
 
 /// Exit codes for different scenarios
 mod exit_codes {
@@ -26,13 +26,13 @@ mod exit_codes {
 async fn main() {
     // Initialize logging
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::from_default_env()
-                .add_directive(tracing::Level::INFO.into())
-        )
+        .with_env_filter(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()))
         .init();
 
-    info!("Starting Crucible one-shot daemon v{}", env!("CARGO_PKG_VERSION"));
+    info!(
+        "Starting Crucible one-shot daemon v{}",
+        env!("CARGO_PKG_VERSION")
+    );
 
     // Load configuration
     let config = match load_configuration().await {

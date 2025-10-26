@@ -7,9 +7,9 @@ use super::{enhanced_config::*, validation::*};
 use crate::errors::ServiceResult;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
-use std::time::{Duration, Instant};
 
 /// Configuration manager with validation and hot-reload capabilities
 #[derive(Debug)]
@@ -220,7 +220,8 @@ impl ConfigManager {
                                 .map(|last| {
                                     // Convert Instant to SystemTime for comparison
                                     let last_system = std::time::SystemTime::now() - last.elapsed();
-                                    modified.duration_since(last_system).unwrap_or_default() > Duration::from_secs(1)
+                                    modified.duration_since(last_system).unwrap_or_default()
+                                        > Duration::from_secs(1)
                                 })
                                 .unwrap_or(true)
                         };
@@ -251,46 +252,48 @@ impl ConfigManager {
         let config = self.config.read().await;
 
         match format {
-            ConfigExportFormat::YAML => {
-                serde_yaml::to_string(&*config)
-                    .map_err(|e| crate::errors::ServiceError::ConfigurationError(
-                        format!("YAML serialization error: {}", e)
-                    ))
-            }
-            ConfigExportFormat::JSON => {
-                serde_json::to_string_pretty(&*config)
-                    .map_err(|e| crate::errors::ServiceError::SerializationError(e))
-            }
-            ConfigExportFormat::TOML => {
-                toml::to_string_pretty(&*config)
-                    .map_err(|e| crate::errors::ServiceError::ConfigurationError(
-                        format!("TOML serialization error: {}", e)
-                    ))
-            }
+            ConfigExportFormat::YAML => serde_yaml::to_string(&*config).map_err(|e| {
+                crate::errors::ServiceError::ConfigurationError(format!(
+                    "YAML serialization error: {}",
+                    e
+                ))
+            }),
+            ConfigExportFormat::JSON => serde_json::to_string_pretty(&*config)
+                .map_err(|e| crate::errors::ServiceError::SerializationError(e)),
+            ConfigExportFormat::TOML => toml::to_string_pretty(&*config).map_err(|e| {
+                crate::errors::ServiceError::ConfigurationError(format!(
+                    "TOML serialization error: {}",
+                    e
+                ))
+            }),
         }
     }
 
     /// Import configuration from string
-    pub async fn import_config(&self, content: &str, format: ConfigExportFormat) -> ServiceResult<()> {
+    pub async fn import_config(
+        &self,
+        content: &str,
+        format: ConfigExportFormat,
+    ) -> ServiceResult<()> {
         let new_config: EnhancedConfig = match format {
-            ConfigExportFormat::YAML => {
-                serde_yaml::from_str(content)
-                    .map_err(|e| crate::errors::ServiceError::ConfigurationError(
-                        format!("YAML parsing error: {}", e)
-                    ))?
-            }
-            ConfigExportFormat::JSON => {
-                serde_json::from_str(content)
-                    .map_err(|e| crate::errors::ServiceError::ConfigurationError(
-                        format!("JSON parsing error: {}", e)
-                    ))?
-            }
-            ConfigExportFormat::TOML => {
-                toml::from_str(content)
-                    .map_err(|e| crate::errors::ServiceError::ConfigurationError(
-                        format!("TOML parsing error: {}", e)
-                    ))?
-            }
+            ConfigExportFormat::YAML => serde_yaml::from_str(content).map_err(|e| {
+                crate::errors::ServiceError::ConfigurationError(format!(
+                    "YAML parsing error: {}",
+                    e
+                ))
+            })?,
+            ConfigExportFormat::JSON => serde_json::from_str(content).map_err(|e| {
+                crate::errors::ServiceError::ConfigurationError(format!(
+                    "JSON parsing error: {}",
+                    e
+                ))
+            })?,
+            ConfigExportFormat::TOML => toml::from_str(content).map_err(|e| {
+                crate::errors::ServiceError::ConfigurationError(format!(
+                    "TOML parsing error: {}",
+                    e
+                ))
+            })?,
         };
 
         self.update_config(new_config).await
@@ -299,7 +302,9 @@ impl ConfigManager {
     /// Get configuration health status
     pub async fn health_status(&self) -> ConfigHealthStatus {
         let config = self.config.read().await;
-        let validation = self.get_cached_validation().await
+        let validation = self
+            .get_cached_validation()
+            .await
             .unwrap_or_else(|| config.validate());
 
         ConfigHealthStatus {
@@ -308,8 +313,7 @@ impl ConfigManager {
             error_count: validation.errors.len(),
             warning_count: validation.warnings.len(),
             last_validation: Some(chrono::Utc::now()),
-            config_age: self.last_load_time.read().await
-                .map(|last| last.elapsed()),
+            config_age: self.last_load_time.read().await.map(|last| last.elapsed()),
             hot_reload_enabled: self.enable_hot_reload,
         }
     }
@@ -379,9 +383,10 @@ impl ConfigManager {
                 }
             }
             _ => {
-                return Err(crate::errors::ServiceError::ConfigurationError(
-                    format!("Unsupported configuration field: {}", field)
-                ));
+                return Err(crate::errors::ServiceError::ConfigurationError(format!(
+                    "Unsupported configuration field: {}",
+                    field
+                )));
             }
         }
         Ok(())
@@ -400,9 +405,10 @@ impl ConfigManager {
                 config.security.jwt_secret = None;
             }
             _ => {
-                return Err(crate::errors::ServiceError::ConfigurationError(
-                    format!("Cannot remove field: {}", field)
-                ));
+                return Err(crate::errors::ServiceError::ConfigurationError(format!(
+                    "Cannot remove field: {}",
+                    field
+                )));
             }
         }
         Ok(())
@@ -479,9 +485,7 @@ pub enum ConfigOperation {
         value: serde_json::Value,
     },
     /// Remove field
-    Remove {
-        field: String,
-    },
+    Remove { field: String },
     /// Update field value
     Update {
         field: String,
@@ -558,7 +562,10 @@ impl ConfigManagerBuilder {
             std::env::set_var("CRUCIBLE_CONFIG_HOT_RELOAD", hot_reload.to_string());
         }
         if let Some(interval) = self.reload_interval {
-            std::env::set_var("CRUCIBLE_CONFIG_RELOAD_INTERVAL", interval.as_secs().to_string());
+            std::env::set_var(
+                "CRUCIBLE_CONFIG_RELOAD_INTERVAL",
+                interval.as_secs().to_string(),
+            );
         }
 
         ConfigManager::new().await

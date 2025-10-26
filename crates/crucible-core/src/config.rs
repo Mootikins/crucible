@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use notify::Watcher;
-use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, RwLock};
 use tracing::{debug, error, info};
 
@@ -225,7 +225,7 @@ pub struct DatabaseConnectionConfig {
 impl Default for DatabaseConnectionConfig {
     fn default() -> Self {
         Self {
-            db_type: "duckdb".to_string(),
+            db_type: "surrealdb".to_string(),
             url: "crucible.db".to_string(),
             max_connections: 10,
             connection_timeout: Duration::from_secs(30),
@@ -551,7 +551,10 @@ impl ConfigManager {
         let config_path = config_path.unwrap_or(Path::new("crucible.toml"));
 
         if !config_path.exists() {
-            info!("Configuration file not found, using defaults: {:?}", config_path);
+            info!(
+                "Configuration file not found, using defaults: {:?}",
+                config_path
+            );
             return Ok(CrucibleConfig::default());
         }
 
@@ -559,8 +562,8 @@ impl ConfigManager {
             .await
             .context("Failed to read configuration file")?;
 
-        let config: CrucibleConfig = toml::from_str(&config_content)
-            .context("Failed to parse configuration")?;
+        let config: CrucibleConfig =
+            toml::from_str(&config_content).context("Failed to parse configuration")?;
 
         // Validate configuration
         Self::validate_config(&config)?;
@@ -576,28 +579,29 @@ impl ConfigManager {
         // Validate network ports
         if config.network.http.port == config.network.grpc.port {
             return Err(ConfigError::ValidationFailed(
-                "HTTP and gRPC ports cannot be the same".to_string()
-            ).into());
+                "HTTP and gRPC ports cannot be the same".to_string(),
+            )
+            .into());
         }
 
         if config.network.http.port == config.network.websocket.port {
             return Err(ConfigError::ValidationFailed(
-                "HTTP and WebSocket ports cannot be the same".to_string()
-            ).into());
+                "HTTP and WebSocket ports cannot be the same".to_string(),
+            )
+            .into());
         }
 
         // Validate database configuration
         if config.database.primary.url.is_empty() {
-            return Err(ConfigError::RequiredMissing(
-                "database.primary.url".to_string()
-            ).into());
+            return Err(ConfigError::RequiredMissing("database.primary.url".to_string()).into());
         }
 
         // Validate service configuration
         if config.services.orchestration.max_concurrent_services == 0 {
             return Err(ConfigError::ValidationFailed(
-                "services.orchestration.max_concurrent_services must be greater than 0".to_string()
-            ).into());
+                "services.orchestration.max_concurrent_services must be greater than 0".to_string(),
+            )
+            .into());
         }
 
         Ok(())
@@ -644,7 +648,9 @@ impl ConfigManager {
                                 // Notify subscribers
                                 let change = ConfigChange {
                                     path: "root".to_string(),
-                                    old_value: Some(serde_json::to_value(old_config).unwrap_or_default()),
+                                    old_value: Some(
+                                        serde_json::to_value(old_config).unwrap_or_default(),
+                                    ),
                                     new_value: serde_json::to_value(new_config).unwrap_or_default(),
                                 };
 
@@ -718,20 +724,21 @@ impl ConfigManager {
     /// Generate JSON schema for configuration
     pub fn generate_schema() -> serde_json::Value {
         use schemars::SchemaGenerator;
-        SchemaGenerator::default().into_root_schema_for::<CrucibleConfig>().into()
+        SchemaGenerator::default()
+            .into_root_schema_for::<CrucibleConfig>()
+            .into()
     }
 
     /// Export current configuration to TOML
     pub async fn export_toml(&self) -> Result<String> {
         let config = self.config.read().await;
-        toml::to_string_pretty(&*config)
-            .context("Failed to serialize configuration to TOML")
+        toml::to_string_pretty(&*config).context("Failed to serialize configuration to TOML")
     }
 
     /// Import configuration from TOML string
     pub async fn import_toml(&self, toml_str: &str) -> Result<()> {
-        let new_config: CrucibleConfig = toml::from_str(toml_str)
-            .context("Failed to parse TOML configuration")?;
+        let new_config: CrucibleConfig =
+            toml::from_str(toml_str).context("Failed to parse TOML configuration")?;
 
         Self::validate_config(&new_config)?;
 
@@ -766,7 +773,7 @@ mod tests {
 
         assert_eq!(config.services.registry.registry_type, "memory");
         assert_eq!(config.network.http.port, 8080);
-        assert_eq!(config.database.primary.db_type, "duckdb");
+        assert_eq!(config.database.primary.db_type, "surrealdb");
     }
 
     #[tokio::test]
@@ -808,7 +815,9 @@ mod tests {
         fs::write(&config_path, toml_str).await.unwrap();
 
         // Load config
-        let loaded_config = ConfigManager::load_config(Some(&config_path)).await.unwrap();
+        let loaded_config = ConfigManager::load_config(Some(&config_path))
+            .await
+            .unwrap();
 
         assert_eq!(loaded_config.network.http.port, 9091);
     }
@@ -818,7 +827,10 @@ mod tests {
         let manager = ConfigManager::new().await.unwrap();
 
         // Update HTTP port
-        manager.update_section(|config| &mut config.network.http.port).await.unwrap();
+        manager
+            .update_section(|config| &mut config.network.http.port)
+            .await
+            .unwrap();
 
         let config = manager.get().await;
         assert_eq!(config.network.http.port, 8080); // Should be default

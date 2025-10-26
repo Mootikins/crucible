@@ -7,15 +7,15 @@
 //!
 //! It provides backward compatibility while enabling the new tool group architecture.
 
-use super::tool_group::{ToolGroupRegistry, ToolGroupMetrics, ToolGroupCacheConfig};
-use super::system_tool_group::SystemToolGroup;
-use super::types::ToolResult;
 use super::registry::ToolRegistry;
+use super::system_tool_group::SystemToolGroup;
+use super::tool_group::{ToolGroupCacheConfig, ToolGroupMetrics, ToolGroupRegistry};
+use super::types::ToolResult;
 use crate::common::CrucibleToolManager;
 use anyhow::Result;
 use std::path::PathBuf;
 use std::time::Instant;
-use tracing::{info, warn, debug};
+use tracing::{debug, info, warn};
 
 /// Unified Tool Registry that combines multiple tool sources with performance optimization
 ///
@@ -146,9 +146,15 @@ impl UnifiedToolRegistry {
     }
 
     /// Create a new unified tool registry with custom cache configuration
-    pub async fn with_cache_config(tool_dir: PathBuf, cache_config: ToolGroupCacheConfig) -> Result<Self> {
+    pub async fn with_cache_config(
+        tool_dir: PathBuf,
+        cache_config: ToolGroupCacheConfig,
+    ) -> Result<Self> {
         let start_time = Instant::now();
-        info!("Initializing UnifiedToolRegistry with tool_dir: {:?}", tool_dir);
+        info!(
+            "Initializing UnifiedToolRegistry with tool_dir: {:?}",
+            tool_dir
+        );
 
         // Ensure centralized tool manager is initialized
         CrucibleToolManager::ensure_initialized_global().await?;
@@ -175,8 +181,10 @@ impl UnifiedToolRegistry {
         let use_unified = true; // Enable unified system by default
         let initialization_time_ms = start_time.elapsed().as_millis() as u64;
 
-        info!("UnifiedToolRegistry initialized in {}ms (unified: {}, lazy loading enabled)",
-              initialization_time_ms, use_unified);
+        info!(
+            "UnifiedToolRegistry initialized in {}ms (unified: {}, lazy loading enabled)",
+            initialization_time_ms, use_unified
+        );
 
         Ok(Self {
             group_registry,
@@ -204,7 +212,10 @@ impl UnifiedToolRegistry {
         let use_unified = true; // Enable unified system by default
         let initialization_time_ms = start_time.elapsed().as_millis() as u64;
 
-        info!("UnifiedToolRegistry with centralized manager initialized in {}ms", initialization_time_ms);
+        info!(
+            "UnifiedToolRegistry with centralized manager initialized in {}ms",
+            initialization_time_ms
+        );
 
         Ok(Self {
             group_registry,
@@ -306,19 +317,33 @@ impl UnifiedToolRegistry {
                 parameters,
                 Some("repl_user".to_string()),
                 Some("repl_session".to_string()),
-            ).await {
+            )
+            .await
+            {
                 Ok(crucible_result) => {
                     // Convert crucible_tools::ToolResult to REPL ToolResult
-                    debug!("Tool {} executed successfully via centralized manager", tool_name);
-                    Ok(convert_crucible_result_to_repl_result(tool_name, crucible_result))
+                    debug!(
+                        "Tool {} executed successfully via centralized manager",
+                        tool_name
+                    );
+                    Ok(convert_crucible_result_to_repl_result(
+                        tool_name,
+                        crucible_result,
+                    ))
                 }
                 Err(e) => {
-                    debug!("Centralized manager execution failed for {}: {}", tool_name, e);
+                    debug!(
+                        "Centralized manager execution failed for {}: {}",
+                        tool_name, e
+                    );
 
                     // Try group registry as fallback
                     match self.group_registry.execute_tool(tool_name, args).await {
                         Ok(result) => {
-                            debug!("Tool {} executed successfully via group registry (fallback)", tool_name);
+                            debug!(
+                                "Tool {} executed successfully via group registry (fallback)",
+                                tool_name
+                            );
                             Ok(result)
                         }
                         Err(e) => {
@@ -352,10 +377,19 @@ impl UnifiedToolRegistry {
         let execution_time = start_time.elapsed();
         match &result {
             Ok(_) => {
-                debug!("Tool {} executed successfully in {}ms", tool_name, execution_time.as_millis());
+                debug!(
+                    "Tool {} executed successfully in {}ms",
+                    tool_name,
+                    execution_time.as_millis()
+                );
             }
             Err(e) => {
-                debug!("Tool {} execution failed in {}ms: {}", tool_name, execution_time.as_millis(), e);
+                debug!(
+                    "Tool {} execution failed in {}ms: {}",
+                    tool_name,
+                    execution_time.as_millis(),
+                    e
+                );
             }
         }
 
@@ -437,8 +471,14 @@ impl UnifiedToolRegistry {
         let mut stats = std::collections::HashMap::new();
 
         stats.insert("use_unified".to_string(), self.use_unified.to_string());
-        stats.insert("total_groups".to_string(), self.group_registry.list_groups().await.len().to_string());
-        stats.insert("total_tools".to_string(), self.list_tools().await.len().to_string());
+        stats.insert(
+            "total_groups".to_string(),
+            self.group_registry.list_groups().await.len().to_string(),
+        );
+        stats.insert(
+            "total_tools".to_string(),
+            self.list_tools().await.len().to_string(),
+        );
 
         let grouped = self.list_tools_by_group().await;
         for (group_name, tools) in grouped {
@@ -500,19 +540,23 @@ impl UnifiedToolRegistry {
 }
 
 /// Convert crucible_tools::ToolResult to REPL ToolResult
-fn convert_crucible_result_to_repl_result(tool_name: &str, crucible_result: crucible_tools::ToolResult) -> ToolResult {
+fn convert_crucible_result_to_repl_result(
+    tool_name: &str,
+    crucible_result: crucible_tools::ToolResult,
+) -> ToolResult {
     if crucible_result.success {
         let output = match crucible_result.data {
             Some(data) => {
                 // Pretty print the data
-                serde_json::to_string_pretty(&data)
-                    .unwrap_or_else(|_| format!("Data: {:?}", data))
+                serde_json::to_string_pretty(&data).unwrap_or_else(|_| format!("Data: {:?}", data))
             }
             None => format!("{} executed successfully", tool_name),
         };
         ToolResult::success(output)
     } else {
-        let error_msg = crucible_result.error.unwrap_or_else(|| "Unknown error".to_string());
+        let error_msg = crucible_result
+            .error
+            .unwrap_or_else(|| "Unknown error".to_string());
         ToolResult::error(error_msg)
     }
 }

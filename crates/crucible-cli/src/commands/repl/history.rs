@@ -28,7 +28,7 @@ impl CommandHistory {
                 10_000, // Max entries
                 file_path.clone(),
             )
-            .map_err(|e| anyhow::anyhow!("Failed to create history: {}", e))?
+            .map_err(|e| anyhow::anyhow!("Failed to create history: {}", e))?,
         );
 
         Ok(Self { history, file_path })
@@ -103,10 +103,12 @@ impl CommandHistory {
 
     /// Get total history size
     pub fn len(&self) -> usize {
-        self.history.count(reedline::SearchQuery::everything(
-            reedline::SearchDirection::Backward,
-            None,
-        )).unwrap_or(0) as usize
+        self.history
+            .count(reedline::SearchQuery::everything(
+                reedline::SearchDirection::Backward,
+                None,
+            ))
+            .unwrap_or(0) as usize
     }
 
     /// Check if history is empty
@@ -117,7 +119,8 @@ impl CommandHistory {
     /// Clear all history
     pub fn clear(&mut self) -> Result<()> {
         // Use the History trait's clear method
-        self.history.clear()
+        self.history
+            .clear()
             .map_err(|e| anyhow::anyhow!("Failed to clear history: {}", e))?;
 
         // Manually remove the file since FileBackedHistory might leave an empty file
@@ -128,7 +131,7 @@ impl CommandHistory {
         // Recreate history backend
         self.history = Box::new(
             FileBackedHistory::with_file(10_000, self.file_path.clone())
-                .map_err(|e| anyhow::anyhow!("Failed to recreate history: {}", e))?
+                .map_err(|e| anyhow::anyhow!("Failed to recreate history: {}", e))?,
         );
 
         Ok(())
@@ -139,7 +142,7 @@ impl CommandHistory {
         // Create a new instance pointing to the same file
         Box::new(
             FileBackedHistory::with_file(10_000, self.file_path.clone())
-                .expect("Failed to clone history backend")
+                .expect("Failed to clone history backend"),
         )
     }
 }

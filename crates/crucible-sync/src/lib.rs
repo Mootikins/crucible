@@ -33,7 +33,6 @@ pub use sync::SyncInstance;
 
 // pub mod discovery; // Disabled until implementation is complete
 
-
 /// Core synchronization error types
 #[derive(thiserror::Error, Debug)]
 pub enum SyncError {

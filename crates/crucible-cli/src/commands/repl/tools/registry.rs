@@ -78,10 +78,11 @@ impl ToolRegistry {
             .context("Failed to create Rune context with default modules")?;
 
         // Install database module
-        let db_module = create_db_module(db_handle.clone())
-            .context("Failed to create database module")?;
+        let db_module =
+            create_db_module(db_handle.clone()).context("Failed to create database module")?;
 
-        context.install(db_module)
+        context
+            .install(db_module)
             .context("Failed to install database module into Rune context")?;
 
         // Update the context and store the database handle
@@ -167,8 +168,7 @@ impl ToolRegistry {
         // Compile Rune script
         let mut sources = Sources::new();
         sources.insert(
-            rune::Source::new(name, source_code)
-                .context("Failed to create Rune source")?,
+            rune::Source::new(name, source_code).context("Failed to create Rune source")?,
         )?;
 
         let mut diagnostics = Diagnostics::new();
@@ -183,11 +183,7 @@ impl ToolRegistry {
             let mut writer = termcolor::Buffer::ansi();
             diagnostics.emit(&mut writer, &sources)?;
             let output = String::from_utf8_lossy(writer.as_slice());
-            return Err(anyhow!(
-                "Failed to compile tool '{}': {}",
-                name,
-                output
-            ));
+            return Err(anyhow!("Failed to compile tool '{}': {}", name, output));
         }
 
         let unit = result.context("Rune compilation failed")?;
@@ -251,7 +247,10 @@ impl ToolRegistry {
             // Two arguments - call main(arg0, arg1)
             vm.execute(["main"], (args[0].clone(), args[1].clone()))
         } else if args.len() == 3 {
-            vm.execute(["main"], (args[0].clone(), args[1].clone(), args[2].clone()))
+            vm.execute(
+                ["main"],
+                (args[0].clone(), args[1].clone(), args[2].clone()),
+            )
         } else {
             // For more args, pass as a Vec
             // This matches Rune's expectation for variadic arguments

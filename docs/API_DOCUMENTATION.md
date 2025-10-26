@@ -254,7 +254,6 @@ pub struct AppConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatabaseConfig {
     pub surrealdb: SurrealDBConfig,
-    pub duckdb: DuckDBConfig,
     pub storage_path: PathBuf,
 }
 
@@ -1638,9 +1637,6 @@ database:
     connection_string: "ws://localhost:8000"
     namespace: "crucible"
     database: "main"
-
-  duckdb:
-    path: "./data/duckdb"
 
   storage_path: "./data"
 ```

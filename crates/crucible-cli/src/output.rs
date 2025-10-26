@@ -1,8 +1,8 @@
+use crate::interactive::SearchResultWithScore;
 use anyhow::Result;
 use colored::Colorize;
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Cell, Color, Table};
 use serde_json;
-use crate::interactive::SearchResultWithScore;
 
 /// Format search results
 pub fn format_search_results(
@@ -18,7 +18,11 @@ pub fn format_search_results(
     }
 }
 
-fn format_as_plain(results: &[SearchResultWithScore], show_scores: bool, show_content: bool) -> String {
+fn format_as_plain(
+    results: &[SearchResultWithScore],
+    show_scores: bool,
+    show_content: bool,
+) -> String {
     let mut output = String::new();
 
     for (idx, result) in results.iter().enumerate() {
@@ -31,7 +35,8 @@ fn format_as_plain(results: &[SearchResultWithScore], show_scores: bool, show_co
         output.push_str(&format!("   Path: {}\n", result.id.dimmed()));
 
         if show_content {
-            let preview = result.content
+            let preview = result
+                .content
                 .lines()
                 .take(3)
                 .collect::<Vec<_>>()
@@ -45,7 +50,11 @@ fn format_as_plain(results: &[SearchResultWithScore], show_scores: bool, show_co
     output
 }
 
-fn format_as_table(results: &[SearchResultWithScore], show_scores: bool, show_content: bool) -> String {
+fn format_as_table(
+    results: &[SearchResultWithScore],
+    show_scores: bool,
+    show_content: bool,
+) -> String {
     let mut table = Table::new();
     table
         .load_preset(UTF8_FULL)
@@ -74,11 +83,7 @@ fn format_as_table(results: &[SearchResultWithScore], show_scores: bool, show_co
         }
 
         if show_content {
-            let preview: String = result.content
-                .lines()
-                .take(2)
-                .collect::<Vec<_>>()
-                .join(" ");
+            let preview: String = result.content.lines().take(2).collect::<Vec<_>>().join(" ");
             let truncated = if preview.len() > 60 {
                 format!("{}...", &preview[..60])
             } else {
@@ -105,10 +110,7 @@ pub fn format_file_list(files: &[String], format: &str) -> Result<String> {
             table.set_header(vec!["#", "Path"]);
 
             for (idx, file) in files.iter().enumerate() {
-                table.add_row(vec![
-                    Cell::new(idx + 1),
-                    Cell::new(file),
-                ]);
+                table.add_row(vec![Cell::new(idx + 1), Cell::new(file)]);
             }
 
             Ok(table.to_string())
@@ -216,14 +218,12 @@ mod tests {
 
     #[test]
     fn test_format_with_long_content() {
-        let results = vec![
-            SearchResultWithScore {
-                id: "long.md".to_string(),
-                title: "Long Content".to_string(),
-                content: "a".repeat(200), // Very long content
-                score: 0.9,
-            }
-        ];
+        let results = vec![SearchResultWithScore {
+            id: "long.md".to_string(),
+            title: "Long Content".to_string(),
+            content: "a".repeat(200), // Very long content
+            score: 0.9,
+        }];
 
         let output = format_search_results(&results, "table", false, true).unwrap();
 
@@ -233,10 +233,7 @@ mod tests {
 
     #[test]
     fn test_format_file_list_plain() {
-        let files = vec![
-            "file1.md".to_string(),
-            "file2.md".to_string(),
-        ];
+        let files = vec!["file1.md".to_string(), "file2.md".to_string()];
 
         let output = format_file_list(&files, "plain").unwrap();
 
@@ -257,10 +254,7 @@ mod tests {
 
     #[test]
     fn test_format_file_list_table() {
-        let files = vec![
-            "file1.md".to_string(),
-            "file2.md".to_string(),
-        ];
+        let files = vec!["file1.md".to_string(), "file2.md".to_string()];
 
         let output = format_file_list(&files, "table").unwrap();
 

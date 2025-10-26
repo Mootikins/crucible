@@ -32,7 +32,10 @@ impl SurrealDBService {
         let namespace = config.namespace.clone();
         let database = config.database.clone();
 
-        info!("Creating SurrealDB service for namespace: {}, database: {}", namespace, database);
+        info!(
+            "Creating SurrealDB service for namespace: {}, database: {}",
+            namespace, database
+        );
 
         // Create the SurrealDB client
         let client = Arc::new(RwLock::new(SurrealClient::new(config.clone()).await?));
@@ -107,7 +110,10 @@ impl SurrealDBService {
         // Store the record
         self.store_record(&record_id, &record).await?;
 
-        debug!("Embedding stored successfully for document: {}", document_path);
+        debug!(
+            "Embedding stored successfully for document: {}",
+            document_path
+        );
         Ok(record_id)
     }
 
@@ -139,7 +145,10 @@ impl SurrealDBService {
                     );
 
                     self.execute_query(&update_query).await?;
-                    debug!("Embedding updated successfully for document: {}", document_path);
+                    debug!(
+                        "Embedding updated successfully for document: {}",
+                        document_path
+                    );
                     return Ok(());
                 }
             }
@@ -193,11 +202,7 @@ impl SurrealDBService {
 
     /// Store a generic record
     async fn store_record(&self, id: &str, record: &Value) -> Result<()> {
-        let query = format!(
-            "CREATE {} CONTENT {}",
-            id,
-            serde_json::to_string(record)?
-        );
+        let query = format!("CREATE {} CONTENT {}", id, serde_json::to_string(record)?);
 
         self.execute_query(&query).await?;
         Ok(())
@@ -304,7 +309,11 @@ pub async fn create_surrealdb_from_config(
     let db_config = &daemon_config.database;
 
     // Extract namespace and database from connection string or use defaults
-    let connection_parts = db_config.connection.connection_string.split('/').collect::<Vec<_>>();
+    let connection_parts = db_config
+        .connection
+        .connection_string
+        .split('/')
+        .collect::<Vec<_>>();
     let (namespace, database) = if connection_parts.len() >= 4 {
         (
             connection_parts[connection_parts.len() - 2].to_string(),
@@ -358,13 +367,15 @@ mod tests {
         let service = SurrealDBService::new(config).await.unwrap();
 
         let embedding = vec![0.1, 0.2, 0.3, 0.4];
-        let record_id = service.store_embedding(
-            "test.md",
-            Some("Test Document"),
-            "# Test Content\nThis is a test document.",
-            embedding.clone(),
-            "test-model",
-        ).await;
+        let record_id = service
+            .store_embedding(
+                "test.md",
+                Some("Test Document"),
+                "# Test Content\nThis is a test document.",
+                embedding.clone(),
+                "test-model",
+            )
+            .await;
 
         assert!(record_id.is_ok());
     }
@@ -383,17 +394,23 @@ mod tests {
 
         // First store a document with embedding
         let embedding = vec![0.1, 0.2, 0.3, 0.4];
-        service.store_embedding(
-            "test.md",
-            Some("Test Document"),
-            "# Test Content\nThis is a test document.",
-            embedding,
-            "test-model",
-        ).await.unwrap();
+        service
+            .store_embedding(
+                "test.md",
+                Some("Test Document"),
+                "# Test Content\nThis is a test document.",
+                embedding,
+                "test-model",
+            )
+            .await
+            .unwrap();
 
         // Then search for similar documents
         let query_embedding = vec![0.1, 0.2, 0.3, 0.4];
-        let results = service.search_similar(&query_embedding, Some(5)).await.unwrap();
+        let results = service
+            .search_similar(&query_embedding, Some(5))
+            .await
+            .unwrap();
 
         // Should find the document we just stored (or similar results)
         assert!(results.len() >= 0); // Mock might return empty, that's ok for testing

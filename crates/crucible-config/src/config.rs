@@ -12,7 +12,7 @@ pub enum ConfigError {
     #[error("Missing configuration value: {field}")]
     MissingValue {
         /// The name of the missing configuration field
-        field: String
+        field: String,
     },
 
     /// Configuration value is invalid.
@@ -21,7 +21,7 @@ pub enum ConfigError {
         /// The name of the invalid configuration field
         field: String,
         /// The invalid value that was provided
-        value: String
+        value: String,
     },
 
     /// IO error during configuration loading.

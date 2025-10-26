@@ -94,10 +94,9 @@
 ///     format!("Hello, {}!", name)
 /// }
 /// ```
-
 use proc_macro::TokenStream;
-use syn::{spanned::Spanned, ItemFn};
 use quote::quote;
+use syn::{spanned::Spanned, ItemFn};
 
 /// The main `#[rune_tool]` attribute macro
 ///
@@ -159,7 +158,7 @@ fn validate_function(item_fn: &ItemFn) -> Result<(), syn::Error> {
     if !matches!(item_fn.vis, syn::Visibility::Public(_)) {
         return Err(syn::Error::new(
             item_fn.vis.span(),
-            "Tool functions must be public"
+            "Tool functions must be public",
         ));
     }
 
@@ -168,7 +167,7 @@ fn validate_function(item_fn: &ItemFn) -> Result<(), syn::Error> {
         if let syn::FnArg::Receiver(_) = input {
             return Err(syn::Error::new(
                 input.span(),
-                "Tool functions cannot have self parameters (must be free functions)"
+                "Tool functions cannot have self parameters (must be free functions)",
             ));
         }
     }

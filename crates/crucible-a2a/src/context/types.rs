@@ -2,7 +2,6 @@
 ///
 /// This module defines the fundamental types for tracking messages, entities,
 /// and agent interactions across multi-agent conversations.
-
 use fixedbitset::FixedBitSet;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -29,11 +28,11 @@ pub type EntityId = u64;
 pub struct MessageMetadata {
     pub message_id: MessageId,
     pub agent_id: AgentId,
-    pub timestamp: i64, // Unix timestamp
+    pub timestamp: i64,   // Unix timestamp
     pub token_count: u32, // Approximate: len / 4
     pub entity_ids: Vec<EntityId>,
     pub reference_count: usize, // How many messages reference this
-    pub access_count: u32, // How often accessed
+    pub access_count: u32,      // How often accessed
     pub parent_id: Option<MessageId>,
 }
 

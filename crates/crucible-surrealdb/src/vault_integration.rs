@@ -4,20 +4,20 @@
 //! It implements the bridge between ParsedDocument structures and the database schema.
 //! Includes comprehensive vector embedding support for semantic search and processing.
 
-use crate::SurrealClient;
 use crate::embedding_config::*;
+use crate::SurrealClient;
+use anyhow::{anyhow, Result};
 use crucible_core::{
-    parser::{ParsedDocument, FrontmatterFormat, Tag},
+    parser::{FrontmatterFormat, ParsedDocument, Tag},
     Record, RelationalDB,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
-use anyhow::{Result, anyhow};
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 
 /// Initialize the vault schema in the database
 pub async fn initialize_vault_schema(client: &SurrealClient) -> Result<()> {
-    use crucible_core::{RelationalDB, TableSchema, ColumnDefinition, DataType};
+    use crucible_core::{ColumnDefinition, DataType, RelationalDB, TableSchema};
 
     // Create notes table
     let notes_schema = TableSchema {
@@ -92,7 +92,9 @@ pub async fn initialize_vault_schema(client: &SurrealClient) -> Result<()> {
         indexes: vec![],
     };
 
-    client.create_table("notes", notes_schema).await
+    client
+        .create_table("notes", notes_schema)
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to create notes table: {}", e))?;
 
     // Create embeddings table
@@ -154,7 +156,9 @@ pub async fn initialize_vault_schema(client: &SurrealClient) -> Result<()> {
         indexes: vec![],
     };
 
-    client.create_table("embeddings", embeddings_schema).await
+    client
+        .create_table("embeddings", embeddings_schema)
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to create embeddings table: {}", e))?;
 
     info!("Vault schema with embeddings initialized successfully");
@@ -167,20 +171,40 @@ pub async fn store_parsed_document(client: &SurrealClient, doc: &ParsedDocument)
     let mut record_data = HashMap::new();
 
     // Core fields
-    record_data.insert("path".to_string(), serde_json::Value::String(doc.path.display().to_string()));
+    record_data.insert(
+        "path".to_string(),
+        serde_json::Value::String(doc.path.display().to_string()),
+    );
     record_data.insert("title".to_string(), serde_json::Value::String(doc.title()));
-    record_data.insert("content".to_string(), serde_json::Value::String(doc.content.plain_text.clone()));
+    record_data.insert(
+        "content".to_string(),
+        serde_json::Value::String(doc.content.plain_text.clone()),
+    );
 
     // Timestamps
-    record_data.insert("created_at".to_string(), serde_json::Value::String(doc.parsed_at.to_rfc3339()));
-    record_data.insert("modified_at".to_string(), serde_json::Value::String(doc.parsed_at.to_rfc3339()));
+    record_data.insert(
+        "created_at".to_string(),
+        serde_json::Value::String(doc.parsed_at.to_rfc3339()),
+    );
+    record_data.insert(
+        "modified_at".to_string(),
+        serde_json::Value::String(doc.parsed_at.to_rfc3339()),
+    );
 
     // File metadata
-    record_data.insert("content_hash".to_string(), serde_json::Value::String(doc.content_hash.clone()));
-    record_data.insert("file_size".to_string(), serde_json::Value::Number(serde_json::Number::from(doc.file_size)));
+    record_data.insert(
+        "content_hash".to_string(),
+        serde_json::Value::String(doc.content_hash.clone()),
+    );
+    record_data.insert(
+        "file_size".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(doc.file_size)),
+    );
 
     // Folder path extraction
-    let folder = doc.path.parent()
+    let folder = doc
+        .path
+        .parent()
         .and_then(|p| p.to_str())
         .unwrap_or("")
         .to_string();
@@ -188,9 +212,15 @@ pub async fn store_parsed_document(client: &SurrealClient, doc: &ParsedDocument)
 
     // Tags (combine frontmatter and inline tags)
     let all_tags = doc.all_tags();
-    record_data.insert("tags".to_string(), serde_json::Value::Array(
-        all_tags.into_iter().map(serde_json::Value::String).collect()
-    ));
+    record_data.insert(
+        "tags".to_string(),
+        serde_json::Value::Array(
+            all_tags
+                .into_iter()
+                .map(serde_json::Value::String)
+                .collect(),
+        ),
+    );
 
     // Frontmatter metadata
     let mut metadata = serde_json::Map::new();
@@ -207,15 +237,23 @@ pub async fn store_parsed_document(client: &SurrealClient, doc: &ParsedDocument)
         data: record_data,
     };
 
-    let result = client.insert("notes", record).await
+    let result = client
+        .insert("notes", record)
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to insert document: {}", e))?;
 
     // Extract the generated ID
-    let record_id = result.records.first()
+    let record_id = result
+        .records
+        .first()
         .and_then(|r| r.id.as_ref())
         .ok_or_else(|| anyhow::anyhow!("No ID returned from database"))?;
 
-    info!("Stored document: {} (ID: {})", doc.path.display(), record_id.0);
+    info!(
+        "Stored document: {} (ID: {})",
+        doc.path.display(),
+        record_id.0
+    );
     Ok(record_id.0.clone())
 }
 
@@ -223,10 +261,14 @@ pub async fn store_parsed_document(client: &SurrealClient, doc: &ParsedDocument)
 pub async fn retrieve_parsed_document(client: &SurrealClient, id: &str) -> Result<ParsedDocument> {
     // Query the specific record - use proper SurrealDB record ID format
     let sql = format!("SELECT * FROM notes WHERE id = {}", id);
-    let result = client.query(&sql, &[]).await
+    let result = client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to query document: {}", e))?;
 
-    let record = result.records.first()
+    let record = result
+        .records
+        .first()
         .ok_or_else(|| anyhow::anyhow!("Document not found: {}", id))?;
 
     // Convert back to ParsedDocument
@@ -234,7 +276,11 @@ pub async fn retrieve_parsed_document(client: &SurrealClient, id: &str) -> Resul
 }
 
 /// Create wikilink relationships for a document
-pub async fn create_wikilink_edges(client: &SurrealClient, doc_id: &str, doc: &ParsedDocument) -> Result<()> {
+pub async fn create_wikilink_edges(
+    client: &SurrealClient,
+    doc_id: &str,
+    doc: &ParsedDocument,
+) -> Result<()> {
     for wikilink in &doc.wikilinks {
         // Skip embeds - they're not considered linked documents for relationship purposes
         if wikilink.is_embed {
@@ -251,17 +297,29 @@ pub async fn create_wikilink_edges(client: &SurrealClient, doc_id: &str, doc: &P
 
         // Create the wikilink relationship
         let mut edge_data = HashMap::new();
-        edge_data.insert("link_text".to_string(), serde_json::Value::String(wikilink.display().to_string()));
-        edge_data.insert("position".to_string(), serde_json::Value::Number(serde_json::Number::from(wikilink.offset)));
-        edge_data.insert("created_at".to_string(), serde_json::Value::String(chrono::Utc::now().to_rfc3339()));
+        edge_data.insert(
+            "link_text".to_string(),
+            serde_json::Value::String(wikilink.display().to_string()),
+        );
+        edge_data.insert(
+            "position".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(wikilink.offset)),
+        );
+        edge_data.insert(
+            "created_at".to_string(),
+            serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
+        );
 
         // Store the relationship
-        let relation_sql = format!(
+        let relation_sql =
+            format!(
             "RELATE {}->wikilink->{} CONTENT {{link_text: '{}', position: {}, created_at: '{}'}}",
             doc_id, target_id, wikilink.display(), wikilink.offset, chrono::Utc::now().to_rfc3339()
         );
 
-        client.query(&relation_sql, &[]).await
+        client
+            .query(&relation_sql, &[])
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to create wikilink relationship: {}", e))?;
     }
 
@@ -269,7 +327,11 @@ pub async fn create_wikilink_edges(client: &SurrealClient, doc_id: &str, doc: &P
 }
 
 /// Create tag associations for a document
-pub async fn create_tag_associations(client: &SurrealClient, doc_id: &str, doc: &ParsedDocument) -> Result<()> {
+pub async fn create_tag_associations(
+    client: &SurrealClient,
+    doc_id: &str,
+    doc: &ParsedDocument,
+) -> Result<()> {
     // Process tags from both frontmatter and inline tags
     let all_tags = doc.all_tags();
 
@@ -280,10 +342,14 @@ pub async fn create_tag_associations(client: &SurrealClient, doc_id: &str, doc: 
         // Create the relationship
         let relation_sql = format!(
             "RELATE {}->tagged_with->tag:{} CONTENT {{added_at: '{}'}}",
-            doc_id, normalize_tag_name(&tag_name), chrono::Utc::now().to_rfc3339()
+            doc_id,
+            normalize_tag_name(&tag_name),
+            chrono::Utc::now().to_rfc3339()
         );
 
-        client.query(&relation_sql, &[]).await
+        client
+            .query(&relation_sql, &[])
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to create tag association: {}", e))?;
     }
 
@@ -291,13 +357,15 @@ pub async fn create_tag_associations(client: &SurrealClient, doc_id: &str, doc: 
 }
 
 /// Get documents linked via wikilinks
-pub async fn get_linked_documents(client: &SurrealClient, doc_id: &str) -> Result<Vec<ParsedDocument>> {
-    let sql = format!(
-        "SELECT target.* FROM wikilink WHERE from = {}",
-        doc_id
-    );
+pub async fn get_linked_documents(
+    client: &SurrealClient,
+    doc_id: &str,
+) -> Result<Vec<ParsedDocument>> {
+    let sql = format!("SELECT target.* FROM wikilink WHERE from = {}", doc_id);
 
-    let result = client.query(&sql, &[]).await
+    let result = client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to query linked documents: {}", e))?;
 
     let mut documents = Vec::new();
@@ -307,7 +375,10 @@ pub async fn get_linked_documents(client: &SurrealClient, doc_id: &str) -> Resul
                 // Convert target data back to a record format
                 let target_record = Record {
                     id: None,
-                    data: target_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                    data: target_obj
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
                 };
                 let doc = convert_record_to_parsed_document(&target_record).await?;
                 documents.push(doc);
@@ -319,14 +390,19 @@ pub async fn get_linked_documents(client: &SurrealClient, doc_id: &str) -> Resul
 }
 
 /// Get documents by tag
-pub async fn get_documents_by_tag(client: &SurrealClient, tag: &str) -> Result<Vec<ParsedDocument>> {
+pub async fn get_documents_by_tag(
+    client: &SurrealClient,
+    tag: &str,
+) -> Result<Vec<ParsedDocument>> {
     let normalized_tag = normalize_tag_name(tag);
     let sql = format!(
         "SELECT source.* FROM tagged_with WHERE to = tag:{}",
         normalized_tag
     );
 
-    let result = client.query(&sql, &[]).await
+    let result = client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to query documents by tag: {}", e))?;
 
     let mut documents = Vec::new();
@@ -335,7 +411,10 @@ pub async fn get_documents_by_tag(client: &SurrealClient, tag: &str) -> Result<V
             if let serde_json::Value::Object(source_obj) = source_data {
                 let source_record = Record {
                     id: None,
-                    data: source_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                    data: source_obj
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
                 };
                 let doc = convert_record_to_parsed_document(&source_record).await?;
                 documents.push(doc);
@@ -350,29 +429,39 @@ pub async fn get_documents_by_tag(client: &SurrealClient, tag: &str) -> Result<V
 
 async fn convert_record_to_parsed_document(record: &Record) -> Result<ParsedDocument> {
     let mut doc = ParsedDocument::new(PathBuf::from(
-        record.data.get("path")
+        record
+            .data
+            .get("path")
             .and_then(|v| v.as_str())
-            .unwrap_or("unknown.md")
+            .unwrap_or("unknown.md"),
     ));
 
     // Set basic fields
-    doc.content.plain_text = record.data.get("content")
+    doc.content.plain_text = record
+        .data
+        .get("content")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
 
-    doc.parsed_at = record.data.get("created_at")
+    doc.parsed_at = record
+        .data
+        .get("created_at")
         .and_then(|v| v.as_str())
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
         .map(|dt| dt.with_timezone(&chrono::Utc))
         .unwrap_or_else(chrono::Utc::now);
 
-    doc.content_hash = record.data.get("content_hash")
+    doc.content_hash = record
+        .data
+        .get("content_hash")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
 
-    doc.file_size = record.data.get("file_size")
+    doc.file_size = record
+        .data
+        .get("file_size")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
 
@@ -385,7 +474,7 @@ async fn convert_record_to_parsed_document(record: &Record) -> Result<ParsedDocu
 
             doc.frontmatter = Some(crucible_core::parser::Frontmatter::new(
                 yaml_str,
-                FrontmatterFormat::Yaml
+                FrontmatterFormat::Yaml,
             ));
         }
     }
@@ -404,7 +493,11 @@ async fn convert_record_to_parsed_document(record: &Record) -> Result<ParsedDocu
     Ok(doc)
 }
 
-async fn find_or_create_target_document(client: &SurrealClient, path: &str, title: &str) -> Result<String> {
+async fn find_or_create_target_document(
+    client: &SurrealClient,
+    path: &str,
+    title: &str,
+) -> Result<String> {
     // First try to find existing document
     let find_sql = format!("SELECT id, title FROM notes WHERE path = '{}'", path);
     let result = client.query(&find_sql, &[]).await?;
@@ -412,9 +505,14 @@ async fn find_or_create_target_document(client: &SurrealClient, path: &str, titl
     if let Some(record) = result.records.first() {
         if let Some(id) = &record.id {
             // Check if the existing document has the right title, if not update it
-            let existing_title = record.data.get("title").and_then(|v| v.as_str()).unwrap_or("");
+            let existing_title = record
+                .data
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             if existing_title != title {
-                let update_sql = format!("UPDATE notes SET title = '{}' WHERE id = {}", title, id.0);
+                let update_sql =
+                    format!("UPDATE notes SET title = '{}' WHERE id = {}", title, id.0);
                 client.query(&update_sql, &[]).await?;
             }
             return Ok(id.0.clone());
@@ -423,16 +521,34 @@ async fn find_or_create_target_document(client: &SurrealClient, path: &str, titl
 
     // Create a placeholder document
     let mut placeholder_data = HashMap::new();
-    placeholder_data.insert("path".to_string(), serde_json::Value::String(path.to_string()));
-    placeholder_data.insert("title".to_string(), serde_json::Value::String(title.to_string()));
-    placeholder_data.insert("content".to_string(), serde_json::Value::String(format!("Placeholder for {}", title)));
-    placeholder_data.insert("created_at".to_string(), serde_json::Value::String(chrono::Utc::now().to_rfc3339()));
-    placeholder_data.insert("modified_at".to_string(), serde_json::Value::String(chrono::Utc::now().to_rfc3339()));
+    placeholder_data.insert(
+        "path".to_string(),
+        serde_json::Value::String(path.to_string()),
+    );
+    placeholder_data.insert(
+        "title".to_string(),
+        serde_json::Value::String(title.to_string()),
+    );
+    placeholder_data.insert(
+        "content".to_string(),
+        serde_json::Value::String(format!("Placeholder for {}", title)),
+    );
+    placeholder_data.insert(
+        "created_at".to_string(),
+        serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
+    );
+    placeholder_data.insert(
+        "modified_at".to_string(),
+        serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
+    );
     placeholder_data.insert("tags".to_string(), serde_json::Value::Array(vec![]));
 
     // Store title in metadata as well so it gets properly reconstructed
     let mut metadata = serde_json::Map::new();
-    metadata.insert("title".to_string(), serde_json::Value::String(title.to_string()));
+    metadata.insert(
+        "title".to_string(),
+        serde_json::Value::String(title.to_string()),
+    );
     placeholder_data.insert("metadata".to_string(), serde_json::Value::Object(metadata));
 
     let record = Record {
@@ -441,7 +557,9 @@ async fn find_or_create_target_document(client: &SurrealClient, path: &str, titl
     };
 
     let result = client.insert("notes", record).await?;
-    let record_id = result.records.first()
+    let record_id = result
+        .records
+        .first()
         .and_then(|r| r.id.as_ref())
         .ok_or_else(|| anyhow::anyhow!("Failed to create placeholder document"))?;
 
@@ -470,7 +588,11 @@ fn normalize_tag_name(tag: &str) -> String {
 // =============================================================================
 
 /// Create embed relationships for a document
-pub async fn create_embed_relationships(client: &SurrealClient, doc_id: &str, doc: &ParsedDocument) -> Result<()> {
+pub async fn create_embed_relationships(
+    client: &SurrealClient,
+    doc_id: &str,
+    doc: &ParsedDocument,
+) -> Result<()> {
     for wikilink in &doc.wikilinks {
         // Only process embeds
         if !wikilink.is_embed {
@@ -482,24 +604,43 @@ pub async fn create_embed_relationships(client: &SurrealClient, doc_id: &str, do
 
         // Create or find the target document
         let target_path = format!("/vault/{}.md", wikilink.target);
-        let target_id = find_or_create_target_document(client, &target_path, &wikilink.target).await?;
+        let target_id =
+            find_or_create_target_document(client, &target_path, &wikilink.target).await?;
 
         // Prepare embed relationship data
         let mut embed_data = HashMap::new();
-        embed_data.insert("embed_type".to_string(), serde_json::Value::String(embed_type.clone()));
-        embed_data.insert("position".to_string(), serde_json::Value::Number(serde_json::Number::from(wikilink.offset)));
-        embed_data.insert("created_at".to_string(), serde_json::Value::String(chrono::Utc::now().to_rfc3339()));
+        embed_data.insert(
+            "embed_type".to_string(),
+            serde_json::Value::String(embed_type.clone()),
+        );
+        embed_data.insert(
+            "position".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(wikilink.offset)),
+        );
+        embed_data.insert(
+            "created_at".to_string(),
+            serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
+        );
 
         // Add reference target for heading or block embeds
         if let Some(heading_ref) = &wikilink.heading_ref {
-            embed_data.insert("reference_target".to_string(), serde_json::Value::String(heading_ref.clone()));
+            embed_data.insert(
+                "reference_target".to_string(),
+                serde_json::Value::String(heading_ref.clone()),
+            );
         } else if let Some(block_ref) = &wikilink.block_ref {
-            embed_data.insert("reference_target".to_string(), serde_json::Value::String(format!("#^{}", block_ref)));
+            embed_data.insert(
+                "reference_target".to_string(),
+                serde_json::Value::String(format!("#^{}", block_ref)),
+            );
         }
 
         // Add display alias if present
         if let Some(alias) = &wikilink.alias {
-            embed_data.insert("display_alias".to_string(), serde_json::Value::String(alias.clone()));
+            embed_data.insert(
+                "display_alias".to_string(),
+                serde_json::Value::String(alias.clone()),
+            );
         }
 
         // Store the embed relationship
@@ -509,23 +650,30 @@ pub async fn create_embed_relationships(client: &SurrealClient, doc_id: &str, do
             doc_id, target_id, embed_content
         );
 
-        client.query(&relation_sql, &[]).await
+        client
+            .query(&relation_sql, &[])
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to create embed relationship: {}", e))?;
 
-        debug!("Created embed relationship: {} -> {} ({})", doc_id, target_id, embed_type);
+        debug!(
+            "Created embed relationship: {} -> {} ({})",
+            doc_id, target_id, embed_type
+        );
     }
 
     Ok(())
 }
 
 /// Get documents embedded by a document
-pub async fn get_embedded_documents(client: &SurrealClient, doc_id: &str) -> Result<Vec<ParsedDocument>> {
-    let sql = format!(
-        "SELECT target.* FROM embeds WHERE from = {}",
-        doc_id
-    );
+pub async fn get_embedded_documents(
+    client: &SurrealClient,
+    doc_id: &str,
+) -> Result<Vec<ParsedDocument>> {
+    let sql = format!("SELECT target.* FROM embeds WHERE from = {}", doc_id);
 
-    let result = client.query(&sql, &[]).await
+    let result = client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to query embedded documents: {}", e))?;
 
     let mut documents = Vec::new();
@@ -535,7 +683,10 @@ pub async fn get_embedded_documents(client: &SurrealClient, doc_id: &str) -> Res
                 // Convert target data back to a record format
                 let target_record = Record {
                     id: None,
-                    data: target_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                    data: target_obj
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
                 };
                 let doc = convert_record_to_parsed_document(&target_record).await?;
                 documents.push(doc);
@@ -547,39 +698,51 @@ pub async fn get_embedded_documents(client: &SurrealClient, doc_id: &str) -> Res
 }
 
 /// Get embed metadata for a document
-pub async fn get_embed_metadata(client: &SurrealClient, doc_id: &str) -> Result<Vec<EmbedMetadata>> {
-    let sql = format!(
-        "SELECT * FROM embeds WHERE from = {}",
-        doc_id
-    );
+pub async fn get_embed_metadata(
+    client: &SurrealClient,
+    doc_id: &str,
+) -> Result<Vec<EmbedMetadata>> {
+    let sql = format!("SELECT * FROM embeds WHERE from = {}", doc_id);
 
-    let result = client.query(&sql, &[]).await
+    let result = client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to query embed metadata: {}", e))?;
 
     let mut metadata_list = Vec::new();
     for record in result.records {
         // Extract target document title
-        let target_title = record.data.get("target")
+        let target_title = record
+            .data
+            .get("target")
             .and_then(|t| t.as_object())
             .and_then(|obj| obj.get("title"))
             .and_then(|title| title.as_str())
             .unwrap_or("Unknown")
             .to_string();
 
-        let _embed_type = record.data.get("embed_type")
+        let _embed_type = record
+            .data
+            .get("embed_type")
             .and_then(|t| t.as_str())
             .unwrap_or("simple")
             .to_string();
 
-        let reference_target = record.data.get("reference_target")
+        let reference_target = record
+            .data
+            .get("reference_target")
             .and_then(|r| r.as_str())
             .map(|s| s.to_string());
 
-        let alias = record.data.get("display_alias")
+        let alias = record
+            .data
+            .get("display_alias")
             .and_then(|a| a.as_str())
             .map(|s| s.to_string());
 
-        let position = record.data.get("position")
+        let position = record
+            .data
+            .get("position")
             .and_then(|p| p.as_u64())
             .unwrap_or(0) as usize;
 
@@ -600,9 +763,14 @@ pub async fn get_embed_metadata(client: &SurrealClient, doc_id: &str) -> Result<
 }
 
 /// Find a document by title
-pub async fn find_document_by_title(client: &SurrealClient, title: &str) -> Result<Option<ParsedDocument>> {
+pub async fn find_document_by_title(
+    client: &SurrealClient,
+    title: &str,
+) -> Result<Option<ParsedDocument>> {
     let sql = format!("SELECT * FROM notes WHERE title = '{}'", title);
-    let result = client.query(&sql, &[]).await
+    let result = client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to query document by title: {}", e))?;
 
     if let Some(record) = result.records.first() {
@@ -614,13 +782,19 @@ pub async fn find_document_by_title(client: &SurrealClient, title: &str) -> Resu
 }
 
 /// Get embedded documents filtered by embed type
-pub async fn get_embedded_documents_by_type(client: &SurrealClient, doc_id: &str, embed_type: &str) -> Result<Vec<ParsedDocument>> {
+pub async fn get_embedded_documents_by_type(
+    client: &SurrealClient,
+    doc_id: &str,
+    embed_type: &str,
+) -> Result<Vec<ParsedDocument>> {
     let sql = format!(
         "SELECT target.* FROM embeds WHERE from = {} AND embed_type = '{}'",
         doc_id, embed_type
     );
 
-    let result = client.query(&sql, &[]).await
+    let result = client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to query embedded documents by type: {}", e))?;
 
     let mut documents = Vec::new();
@@ -629,7 +803,10 @@ pub async fn get_embedded_documents_by_type(client: &SurrealClient, doc_id: &str
             if let serde_json::Value::Object(target_obj) = target_data {
                 let target_record = Record {
                     id: None,
-                    data: target_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                    data: target_obj
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
                 };
                 let doc = convert_record_to_parsed_document(&target_record).await?;
                 documents.push(doc);
@@ -641,27 +818,40 @@ pub async fn get_embedded_documents_by_type(client: &SurrealClient, doc_id: &str
 }
 
 /// Get placeholder metadata for a document
-pub async fn get_placeholder_metadata(client: &SurrealClient, title: &str) -> Result<PlaceholderMetadata> {
+pub async fn get_placeholder_metadata(
+    client: &SurrealClient,
+    title: &str,
+) -> Result<PlaceholderMetadata> {
     // Find the document by title
-    let doc = find_document_by_title(client, title).await?
+    let doc = find_document_by_title(client, title)
+        .await?
         .ok_or_else(|| anyhow::anyhow!("Document not found: {}", title))?;
 
     // Check if it's a placeholder (empty content or contains "placeholder")
-    let is_placeholder = doc.content.plain_text.is_empty() ||
-        doc.content.plain_text.to_lowercase().contains("placeholder");
+    let is_placeholder = doc.content.plain_text.is_empty()
+        || doc
+            .content
+            .plain_text
+            .to_lowercase()
+            .contains("placeholder");
 
     // Find documents that embed this document
     let sql = format!(
         "SELECT from FROM embeds WHERE to = (SELECT id FROM notes WHERE title = '{}')",
         title
     );
-    let result = client.query(&sql, &[]).await
+    let result = client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to query embedding documents: {}", e))?;
 
-    let referenced_by: Vec<String> = result.records
+    let referenced_by: Vec<String> = result
+        .records
         .iter()
         .filter_map(|record| {
-            record.data.get("from")
+            record
+                .data
+                .get("from")
                 .and_then(|from| from.as_str())
                 .map(|s| s.to_string())
         })
@@ -675,13 +865,15 @@ pub async fn get_placeholder_metadata(client: &SurrealClient, title: &str) -> Re
 }
 
 /// Get documents linked via wikilinks (separate from embeds)
-pub async fn get_wikilinked_documents(client: &SurrealClient, doc_id: &str) -> Result<Vec<ParsedDocument>> {
-    let sql = format!(
-        "SELECT target.* FROM wikilink WHERE from = {}",
-        doc_id
-    );
+pub async fn get_wikilinked_documents(
+    client: &SurrealClient,
+    doc_id: &str,
+) -> Result<Vec<ParsedDocument>> {
+    let sql = format!("SELECT target.* FROM wikilink WHERE from = {}", doc_id);
 
-    let result = client.query(&sql, &[]).await
+    let result = client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to query wikilinked documents: {}", e))?;
 
     let mut documents = Vec::new();
@@ -690,7 +882,10 @@ pub async fn get_wikilinked_documents(client: &SurrealClient, doc_id: &str) -> R
             if let serde_json::Value::Object(target_obj) = target_data {
                 let target_record = Record {
                     id: None,
-                    data: target_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                    data: target_obj
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
                 };
                 let doc = convert_record_to_parsed_document(&target_record).await?;
                 documents.push(doc);
@@ -702,18 +897,22 @@ pub async fn get_wikilinked_documents(client: &SurrealClient, doc_id: &str) -> R
 }
 
 /// Get wikilink relations for a document
-pub async fn get_wikilink_relations(client: &SurrealClient, doc_id: &str) -> Result<Vec<LinkRelation>> {
-    let sql = format!(
-        "SELECT * FROM wikilink WHERE from = {}",
-        doc_id
-    );
+pub async fn get_wikilink_relations(
+    client: &SurrealClient,
+    doc_id: &str,
+) -> Result<Vec<LinkRelation>> {
+    let sql = format!("SELECT * FROM wikilink WHERE from = {}", doc_id);
 
-    let result = client.query(&sql, &[]).await
+    let result = client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to query wikilink relations: {}", e))?;
 
     let mut relations = Vec::new();
     for record in result.records {
-        let target_title = record.data.get("target")
+        let target_title = record
+            .data
+            .get("target")
             .and_then(|t| t.as_object())
             .and_then(|obj| obj.get("title"))
             .and_then(|title| title.as_str())
@@ -731,25 +930,31 @@ pub async fn get_wikilink_relations(client: &SurrealClient, doc_id: &str) -> Res
 }
 
 /// Get embed relations for a document
-pub async fn get_embed_relations(client: &SurrealClient, doc_id: &str) -> Result<Vec<EmbedRelation>> {
-    let sql = format!(
-        "SELECT * FROM embeds WHERE from = {}",
-        doc_id
-    );
+pub async fn get_embed_relations(
+    client: &SurrealClient,
+    doc_id: &str,
+) -> Result<Vec<EmbedRelation>> {
+    let sql = format!("SELECT * FROM embeds WHERE from = {}", doc_id);
 
-    let result = client.query(&sql, &[]).await
+    let result = client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to query embed relations: {}", e))?;
 
     let mut relations = Vec::new();
     for record in result.records {
-        let target_title = record.data.get("target")
+        let target_title = record
+            .data
+            .get("target")
             .and_then(|t| t.as_object())
             .and_then(|obj| obj.get("title"))
             .and_then(|title| title.as_str())
             .unwrap_or("Unknown")
             .to_string();
 
-        let embed_type = record.data.get("embed_type")
+        let embed_type = record
+            .data
+            .get("embed_type")
             .and_then(|t| t.as_str())
             .unwrap_or("simple")
             .to_string();
@@ -766,13 +971,18 @@ pub async fn get_embed_relations(client: &SurrealClient, doc_id: &str) -> Result
 }
 
 /// Get documents that embed a specific target document
-pub async fn get_embedding_documents(client: &SurrealClient, target_title: &str) -> Result<Vec<ParsedDocument>> {
+pub async fn get_embedding_documents(
+    client: &SurrealClient,
+    target_title: &str,
+) -> Result<Vec<ParsedDocument>> {
     let sql = format!(
         "SELECT source.* FROM embeds WHERE to = (SELECT id FROM notes WHERE title = '{}')",
         target_title
     );
 
-    let result = client.query(&sql, &[]).await
+    let result = client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to query embedding documents: {}", e))?;
 
     let mut documents = Vec::new();
@@ -781,7 +991,10 @@ pub async fn get_embedding_documents(client: &SurrealClient, target_title: &str)
             if let serde_json::Value::Object(source_obj) = source_data {
                 let source_record = Record {
                     id: None,
-                    data: source_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                    data: source_obj
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
                 };
                 let doc = convert_record_to_parsed_document(&source_record).await?;
                 documents.push(doc);
@@ -793,30 +1006,44 @@ pub async fn get_embedding_documents(client: &SurrealClient, target_title: &str)
 }
 
 /// Get specific embed with metadata
-pub async fn get_embed_with_metadata(client: &SurrealClient, doc_id: &str, target_title: &str) -> Result<Option<EmbedMetadata>> {
+pub async fn get_embed_with_metadata(
+    client: &SurrealClient,
+    doc_id: &str,
+    target_title: &str,
+) -> Result<Option<EmbedMetadata>> {
     let sql = format!(
         "SELECT * FROM embeds WHERE from = {} AND to = (SELECT id FROM notes WHERE title = '{}')",
         doc_id, target_title
     );
 
-    let result = client.query(&sql, &[]).await
+    let result = client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to query embed with metadata: {}", e))?;
 
     if let Some(record) = result.records.first() {
-        let _embed_type = record.data.get("embed_type")
+        let _embed_type = record
+            .data
+            .get("embed_type")
             .and_then(|t| t.as_str())
             .unwrap_or("simple")
             .to_string();
 
-        let reference_target = record.data.get("reference_target")
+        let reference_target = record
+            .data
+            .get("reference_target")
             .and_then(|r| r.as_str())
             .map(|s| s.to_string());
 
-        let alias = record.data.get("display_alias")
+        let alias = record
+            .data
+            .get("display_alias")
             .and_then(|a| a.as_str())
             .map(|s| s.to_string());
 
-        let position = record.data.get("position")
+        let position = record
+            .data
+            .get("position")
             .and_then(|p| p.as_u64())
             .unwrap_or(0) as usize;
 
@@ -836,7 +1063,10 @@ pub async fn get_embed_with_metadata(client: &SurrealClient, doc_id: &str, targe
 }
 
 /// Find all placeholder documents for a target
-pub async fn find_all_placeholders_for_target(client: &SurrealClient, title: &str) -> Result<Vec<ParsedDocument>> {
+pub async fn find_all_placeholders_for_target(
+    client: &SurrealClient,
+    title: &str,
+) -> Result<Vec<ParsedDocument>> {
     // This is essentially the same as find_document_by_title since there should only be one
     if let Some(doc) = find_document_by_title(client, title).await? {
         Ok(vec![doc])
@@ -923,23 +1153,56 @@ pub struct PlaceholderMetadata {
 // =============================================================================
 
 /// Store document embedding in database
-pub async fn store_document_embedding(client: &SurrealClient, embedding: &DocumentEmbedding) -> Result<()> {
+pub async fn store_document_embedding(
+    client: &SurrealClient,
+    embedding: &DocumentEmbedding,
+) -> Result<()> {
     let mut embedding_data = HashMap::new();
 
-    embedding_data.insert("document_id".to_string(), serde_json::Value::String(embedding.document_id.clone()));
-    embedding_data.insert("vector".to_string(), serde_json::Value::Array(
-        embedding.vector.iter().map(|v| serde_json::Value::Number(serde_json::Number::from_f64(*v as f64).unwrap_or(serde_json::Number::from(0)))).collect()
-    ));
-    embedding_data.insert("embedding_model".to_string(), serde_json::Value::String(embedding.embedding_model.clone()));
-    embedding_data.insert("chunk_size".to_string(), serde_json::Value::Number(serde_json::Number::from(embedding.chunk_size)));
-    embedding_data.insert("created_at".to_string(), serde_json::Value::String(embedding.created_at.to_rfc3339()));
+    embedding_data.insert(
+        "document_id".to_string(),
+        serde_json::Value::String(embedding.document_id.clone()),
+    );
+    embedding_data.insert(
+        "vector".to_string(),
+        serde_json::Value::Array(
+            embedding
+                .vector
+                .iter()
+                .map(|v| {
+                    serde_json::Value::Number(
+                        serde_json::Number::from_f64(*v as f64)
+                            .unwrap_or(serde_json::Number::from(0)),
+                    )
+                })
+                .collect(),
+        ),
+    );
+    embedding_data.insert(
+        "embedding_model".to_string(),
+        serde_json::Value::String(embedding.embedding_model.clone()),
+    );
+    embedding_data.insert(
+        "chunk_size".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(embedding.chunk_size)),
+    );
+    embedding_data.insert(
+        "created_at".to_string(),
+        serde_json::Value::String(embedding.created_at.to_rfc3339()),
+    );
 
     if let Some(chunk_id) = &embedding.chunk_id {
-        embedding_data.insert("chunk_id".to_string(), serde_json::Value::String(chunk_id.clone()));
+        embedding_data.insert(
+            "chunk_id".to_string(),
+            serde_json::Value::String(chunk_id.clone()),
+        );
     }
 
     if let Some(chunk_position) = embedding.chunk_position {
-        embedding_data.insert("chunk_position".to_string(), serde_json::Value::Number(serde_json::Number::from(chunk_position)));
+        embedding_data.insert(
+            "chunk_position".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(chunk_position)),
+        );
     }
 
     let record = Record {
@@ -949,20 +1212,29 @@ pub async fn store_document_embedding(client: &SurrealClient, embedding: &Docume
 
     let insert_result = client.insert("embeddings", record).await;
 
-    insert_result
-        .map_err(|e| anyhow::anyhow!("Failed to store embedding: {}", e))?;
+    insert_result.map_err(|e| anyhow::anyhow!("Failed to store embedding: {}", e))?;
 
-    debug!("Stored embedding for document {}, chunk {}",
-           embedding.document_id,
-           embedding.chunk_id.as_deref().unwrap_or("main"));
+    debug!(
+        "Stored embedding for document {}, chunk {}",
+        embedding.document_id,
+        embedding.chunk_id.as_deref().unwrap_or("main")
+    );
 
     Ok(())
 }
 
 /// Get document embeddings from database
-pub async fn get_document_embeddings(client: &SurrealClient, document_id: &str) -> Result<Vec<DocumentEmbedding>> {
-    let sql = format!("SELECT * FROM embeddings WHERE document_id = '{}'", document_id);
-    let result = client.query(&sql, &[]).await
+pub async fn get_document_embeddings(
+    client: &SurrealClient,
+    document_id: &str,
+) -> Result<Vec<DocumentEmbedding>> {
+    let sql = format!(
+        "SELECT * FROM embeddings WHERE document_id = '{}'",
+        document_id
+    );
+    let result = client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to query document embeddings: {}", e))?;
 
     let mut embeddings = Vec::new();
@@ -976,8 +1248,13 @@ pub async fn get_document_embeddings(client: &SurrealClient, document_id: &str) 
 
 /// Clear all embeddings for a document
 pub async fn clear_document_embeddings(client: &SurrealClient, document_id: &str) -> Result<()> {
-    let sql = format!("DELETE FROM embeddings WHERE document_id = '{}'", document_id);
-    client.query(&sql, &[]).await
+    let sql = format!(
+        "DELETE FROM embeddings WHERE document_id = '{}'",
+        document_id
+    );
+    client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to clear document embeddings: {}", e))?;
 
     debug!("Cleared embeddings for document {}", document_id);
@@ -985,9 +1262,17 @@ pub async fn clear_document_embeddings(client: &SurrealClient, document_id: &str
 }
 
 /// Update document's processed timestamp
-pub async fn update_document_processed_timestamp(client: &SurrealClient, document_id: &str) -> Result<()> {
-    let sql = format!("UPDATE notes SET processed_at = time::now() WHERE id = {}", document_id);
-    client.query(&sql, &[]).await
+pub async fn update_document_processed_timestamp(
+    client: &SurrealClient,
+    document_id: &str,
+) -> Result<()> {
+    let sql = format!(
+        "UPDATE notes SET processed_at = time::now() WHERE id = {}",
+        document_id
+    );
+    client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to update processed timestamp: {}", e))?;
 
     debug!("Updated processed timestamp for document {}", document_id);
@@ -995,14 +1280,33 @@ pub async fn update_document_processed_timestamp(client: &SurrealClient, documen
 }
 
 /// Update document content in database
-pub async fn update_document_content(client: &SurrealClient, document_id: &str, document: &ParsedDocument) -> Result<()> {
+pub async fn update_document_content(
+    client: &SurrealClient,
+    document_id: &str,
+    document: &ParsedDocument,
+) -> Result<()> {
     let mut update_data = HashMap::new();
 
-    update_data.insert("title".to_string(), serde_json::Value::String(document.title()));
-    update_data.insert("content".to_string(), serde_json::Value::String(document.content.plain_text.clone()));
-    update_data.insert("content_hash".to_string(), serde_json::Value::String(document.content_hash.clone()));
-    update_data.insert("file_size".to_string(), serde_json::Value::Number(serde_json::Number::from(document.file_size)));
-    update_data.insert("modified_at".to_string(), serde_json::Value::String(document.parsed_at.to_rfc3339()));
+    update_data.insert(
+        "title".to_string(),
+        serde_json::Value::String(document.title()),
+    );
+    update_data.insert(
+        "content".to_string(),
+        serde_json::Value::String(document.content.plain_text.clone()),
+    );
+    update_data.insert(
+        "content_hash".to_string(),
+        serde_json::Value::String(document.content_hash.clone()),
+    );
+    update_data.insert(
+        "file_size".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(document.file_size)),
+    );
+    update_data.insert(
+        "modified_at".to_string(),
+        serde_json::Value::String(document.parsed_at.to_rfc3339()),
+    );
 
     // Update frontmatter metadata
     let mut metadata = serde_json::Map::new();
@@ -1015,15 +1319,25 @@ pub async fn update_document_content(client: &SurrealClient, document_id: &str, 
 
     // Update tags
     let all_tags = document.all_tags();
-    update_data.insert("tags".to_string(), serde_json::Value::Array(
-        all_tags.into_iter().map(serde_json::Value::String).collect()
-    ));
+    update_data.insert(
+        "tags".to_string(),
+        serde_json::Value::Array(
+            all_tags
+                .into_iter()
+                .map(serde_json::Value::String)
+                .collect(),
+        ),
+    );
 
-    let sql = format!("UPDATE notes SET {} WHERE id = {}",
-                     format_update_fields(update_data),
-                     document_id);
+    let sql = format!(
+        "UPDATE notes SET {} WHERE id = {}",
+        format_update_fields(update_data),
+        document_id
+    );
 
-    client.query(&sql, &[]).await
+    client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to update document content: {}", e))?;
 
     info!("Updated document content: {}", document.path.display());
@@ -1033,7 +1347,9 @@ pub async fn update_document_content(client: &SurrealClient, document_id: &str, 
 /// Check if a document exists in the database
 pub async fn document_exists(client: &SurrealClient, document_id: &str) -> Result<bool> {
     let sql = format!("SELECT id FROM notes WHERE id = {} LIMIT 1", document_id);
-    let result = client.query(&sql, &[]).await
+    let result = client
+        .query(&sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to check document existence: {}", e))?;
 
     Ok(!result.records.is_empty())
@@ -1044,17 +1360,25 @@ pub async fn get_database_stats(client: &SurrealClient) -> Result<DatabaseStats>
     let notes_sql = "SELECT count() as total FROM notes";
     let embeddings_sql = "SELECT count() as total FROM embeddings";
 
-    let notes_result = client.query(notes_sql, &[]).await
+    let notes_result = client
+        .query(notes_sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to query notes count: {}", e))?;
-    let embeddings_result = client.query(embeddings_sql, &[]).await
+    let embeddings_result = client
+        .query(embeddings_sql, &[])
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to query embeddings count: {}", e))?;
 
-    let total_documents = notes_result.records.first()
+    let total_documents = notes_result
+        .records
+        .first()
         .and_then(|r| r.data.get("total"))
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
 
-    let total_embeddings = embeddings_result.records.first()
+    let total_embeddings = embeddings_result
+        .records
+        .first()
         .and_then(|r| r.data.get("total"))
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
@@ -1066,8 +1390,15 @@ pub async fn get_database_stats(client: &SurrealClient) -> Result<DatabaseStats>
 }
 
 /// Semantic search using vector similarity
-pub async fn semantic_search(client: &SurrealClient, query: &str, limit: usize) -> Result<Vec<(String, f64)>> {
-    debug!("Performing semantic search for query: '{}', limit: {}", query, limit);
+pub async fn semantic_search(
+    client: &SurrealClient,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<(String, f64)>> {
+    debug!(
+        "Performing semantic search for query: '{}', limit: {}",
+        query, limit
+    );
 
     // Handle empty queries
     if query.trim().is_empty() {
@@ -1079,7 +1410,10 @@ pub async fn semantic_search(client: &SurrealClient, query: &str, limit: usize) 
     // In a full implementation, this would create a real embedding provider
     let query_embedding = generate_mock_query_embedding(query)?;
 
-    debug!("Generated query embedding with {} dimensions", query_embedding.len());
+    debug!(
+        "Generated query embedding with {} dimensions",
+        query_embedding.len()
+    );
 
     // Retrieve all document embeddings from database
     let stored_embeddings = match get_all_document_embeddings(client).await {
@@ -1095,7 +1429,10 @@ pub async fn semantic_search(client: &SurrealClient, query: &str, limit: usize) 
         return Ok(Vec::new());
     }
 
-    debug!("Retrieved {} document embeddings for similarity calculation", stored_embeddings.len());
+    debug!(
+        "Retrieved {} document embeddings for similarity calculation",
+        stored_embeddings.len()
+    );
 
     // Calculate cosine similarity between query and all document embeddings
     let mut similarity_results = Vec::new();
@@ -1105,8 +1442,12 @@ pub async fn semantic_search(client: &SurrealClient, query: &str, limit: usize) 
             let similarity = calculate_cosine_similarity(&query_embedding, &doc_embedding.vector);
             similarity_results.push((doc_embedding.document_id.clone(), similarity));
         } else {
-            debug!("Skipping document {} due to dimension mismatch (query: {}, doc: {})",
-                   doc_embedding.document_id, query_embedding.len(), doc_embedding.vector.len());
+            debug!(
+                "Skipping document {} due to dimension mismatch (query: {}, doc: {})",
+                doc_embedding.document_id,
+                query_embedding.len(),
+                doc_embedding.vector.len()
+            );
         }
     }
 
@@ -1122,7 +1463,10 @@ pub async fn semantic_search(client: &SurrealClient, query: &str, limit: usize) 
         .map(|(id, score)| (id.clone(), *score))
         .collect();
 
-    debug!("Returning {} results after filtering and limiting", filtered_results.len());
+    debug!(
+        "Returning {} results after filtering and limiting",
+        filtered_results.len()
+    );
 
     // If no results meet the threshold, return the top results regardless of threshold
     if filtered_results.is_empty() {
@@ -1145,7 +1489,9 @@ pub async fn semantic_search(client: &SurrealClient, query: &str, limit: usize) 
 pub async fn get_all_document_embeddings(client: &SurrealClient) -> Result<Vec<DocumentEmbedding>> {
     let sql = "SELECT * FROM embeddings";
 
-    let result = client.query(sql, &[]).await
+    let result = client
+        .query(sql, &[])
+        .await
         .map_err(|e| anyhow!("Failed to retrieve document embeddings: {}", e))?;
 
     let mut embeddings = Vec::new();
@@ -1153,7 +1499,10 @@ pub async fn get_all_document_embeddings(client: &SurrealClient) -> Result<Vec<D
         match convert_record_to_document_embedding(&record) {
             Ok(embedding) => embeddings.push(embedding),
             Err(e) => {
-                warn!("Failed to convert database record to DocumentEmbedding: {}", e);
+                warn!(
+                    "Failed to convert database record to DocumentEmbedding: {}",
+                    e
+                );
                 continue;
             }
         }
@@ -1212,18 +1561,21 @@ fn calculate_cosine_similarity(vec_a: &[f32], vec_b: &[f32]) -> f64 {
     }
 
     // Calculate dot product
-    let dot_product: f64 = vec_a.iter()
+    let dot_product: f64 = vec_a
+        .iter()
         .zip(vec_b.iter())
         .map(|(a, b)| *a as f64 * *b as f64)
         .sum();
 
     // Calculate magnitudes
-    let magnitude_a: f64 = vec_a.iter()
+    let magnitude_a: f64 = vec_a
+        .iter()
         .map(|x| (*x as f64) * (*x as f64))
         .sum::<f64>()
         .sqrt();
 
-    let magnitude_b: f64 = vec_b.iter()
+    let magnitude_b: f64 = vec_b
+        .iter()
         .map(|x| (*x as f64) * (*x as f64))
         .sum::<f64>()
         .sqrt();
@@ -1239,16 +1591,22 @@ fn calculate_cosine_similarity(vec_a: &[f32], vec_b: &[f32]) -> f64 {
 
 /// Convert database record to DocumentEmbedding
 fn convert_record_to_document_embedding(record: &Record) -> Result<DocumentEmbedding> {
-    let document_id = record.data.get("document_id")
+    let document_id = record
+        .data
+        .get("document_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow!("Missing document_id in embedding record"))?
         .to_string();
 
-    let chunk_id = record.data.get("chunk_id")
+    let chunk_id = record
+        .data
+        .get("chunk_id")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let vector = record.data.get("vector")
+    let vector = record
+        .data
+        .get("vector")
         .and_then(|v| v.as_array())
         .ok_or_else(|| anyhow!("Missing or invalid vector in embedding record"))?
         .iter()
@@ -1256,20 +1614,28 @@ fn convert_record_to_document_embedding(record: &Record) -> Result<DocumentEmbed
         .map(|v| v as f32)
         .collect::<Vec<f32>>();
 
-    let embedding_model = record.data.get("embedding_model")
+    let embedding_model = record
+        .data
+        .get("embedding_model")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow!("Missing embedding_model in embedding record"))?
         .to_string();
 
-    let chunk_size = record.data.get("chunk_size")
+    let chunk_size = record
+        .data
+        .get("chunk_size")
         .and_then(|v| v.as_u64())
         .unwrap_or(0) as usize;
 
-    let chunk_position = record.data.get("chunk_position")
+    let chunk_position = record
+        .data
+        .get("chunk_position")
         .and_then(|v| v.as_u64())
         .map(|v| v as usize);
 
-    let created_at = record.data.get("created_at")
+    let created_at = record
+        .data
+        .get("created_at")
         .and_then(|v| v.as_str())
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
         .map(|dt| dt.with_timezone(&chrono::Utc))
@@ -1286,7 +1652,8 @@ fn convert_record_to_document_embedding(record: &Record) -> Result<DocumentEmbed
 
 /// Format update fields for SQL UPDATE statement
 fn format_update_fields(fields: HashMap<String, serde_json::Value>) -> String {
-    fields.iter()
+    fields
+        .iter()
         .map(|(key, value)| format!("{} = {}", key, format_json_value(value)))
         .collect::<Vec<String>>()
         .join(", ")
@@ -1299,14 +1666,16 @@ fn format_json_value(value: &serde_json::Value) -> String {
         serde_json::Value::Number(n) => n.to_string(),
         serde_json::Value::Bool(b) => b.to_string(),
         serde_json::Value::Array(arr) => {
-            let items = arr.iter()
+            let items = arr
+                .iter()
                 .map(format_json_value)
                 .collect::<Vec<String>>()
                 .join(", ");
             format!("[{}]", items)
         }
         serde_json::Value::Object(obj) => {
-            let items = obj.iter()
+            let items = obj
+                .iter()
                 .map(|(k, v)| format!("'{}': {}", k, format_json_value(v)))
                 .collect::<Vec<String>>()
                 .join(", ");
@@ -1353,16 +1722,29 @@ fn generate_mock_semantic_results(query: &str, _limit: usize) -> Vec<(String, f6
 
     // Mock documents that should be returned based on query content
     let mock_docs = vec![
-        ("rust-doc", "Rust programming language systems programming memory safety"),
-        ("ai-doc", "Artificial intelligence machine learning neural networks"),
+        (
+            "rust-doc",
+            "Rust programming language systems programming memory safety",
+        ),
+        (
+            "ai-doc",
+            "Artificial intelligence machine learning neural networks",
+        ),
         ("db-doc", "Database systems SQL NoSQL vector embeddings"),
-        ("web-doc", "Web development HTML CSS JavaScript frontend backend"),
-        ("devops-doc", "DevOps CI/CD Docker Kubernetes deployment automation"),
+        (
+            "web-doc",
+            "Web development HTML CSS JavaScript frontend backend",
+        ),
+        (
+            "devops-doc",
+            "DevOps CI/CD Docker Kubernetes deployment automation",
+        ),
     ];
 
     for (doc_id, content) in mock_docs {
         let score = calculate_mock_similarity(query, content);
-        if score > 0.1 { // Only include documents with some relevance
+        if score > 0.1 {
+            // Only include documents with some relevance
             results.push((format!("/notes/{}.md", doc_id), score));
         }
     }

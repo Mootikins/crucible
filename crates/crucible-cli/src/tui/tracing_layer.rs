@@ -43,11 +43,7 @@ impl<S> Layer<S> for TuiLayer
 where
     S: Subscriber,
 {
-    fn on_event(
-        &self,
-        event: &tracing::Event<'_>,
-        _ctx: Context<'_, S>,
-    ) {
+    fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
         // Extract event metadata
         let metadata = event.metadata();
 
@@ -91,7 +87,8 @@ impl Visit for LogFieldVisitor {
         if field.name() == "message" {
             self.message = Some(value.to_string());
         } else {
-            self.fields.insert(field.name().to_string(), value.to_string());
+            self.fields
+                .insert(field.name().to_string(), value.to_string());
         }
     }
 
@@ -206,12 +203,8 @@ mod tests {
         let _guard = tracing::subscriber::set_default(subscriber);
 
         // Fill the channel
-        tx.try_send(LogEntry::new(
-            tracing::Level::INFO,
-            "test",
-            "first",
-        ))
-        .expect("First send should succeed");
+        tx.try_send(LogEntry::new(tracing::Level::INFO, "test", "first"))
+            .expect("First send should succeed");
 
         // This should not block even though channel is full
         tracing::info!("second message");

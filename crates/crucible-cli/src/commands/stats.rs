@@ -1,6 +1,6 @@
+use crate::config::CliConfig;
 use anyhow::Result;
 use std::fs;
-use crate::config::CliConfig;
 
 pub async fn execute(config: CliConfig) -> Result<()> {
     let kiln_path = &config.kiln.path;

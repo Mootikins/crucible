@@ -14,10 +14,8 @@
 //! - State Synchronization Tests: Status updates, concurrent updates
 
 use anyhow::Result;
-use crucible_cli::tui::{
-    App, AppMode, LogEntry, ReplResult, StatusUpdate, TuiConfig, UiEvent,
-};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crucible_cli::tui::{App, AppMode, LogEntry, ReplResult, StatusUpdate, TuiConfig, UiEvent};
 use ratatui::{backend::TestBackend, Terminal};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -168,7 +166,9 @@ async fn test_tui_handles_key_events() {
 
     // Send character 'h'
     let key_h = KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE);
-    app.handle_event(UiEvent::Input(Event::Key(key_h))).await.unwrap();
+    app.handle_event(UiEvent::Input(Event::Key(key_h)))
+        .await
+        .unwrap();
     assert_eq!(app.repl.input(), "h");
     assert!(app.render_state.repl_dirty);
 
@@ -177,13 +177,17 @@ async fn test_tui_handles_key_events() {
 
     // Send character 'i'
     let key_i = KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE);
-    app.handle_event(UiEvent::Input(Event::Key(key_i))).await.unwrap();
+    app.handle_event(UiEvent::Input(Event::Key(key_i)))
+        .await
+        .unwrap();
     assert_eq!(app.repl.input(), "hi");
     assert!(app.render_state.repl_dirty);
 
     // Send Ctrl+C
     let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-    app.handle_event(UiEvent::Input(Event::Key(ctrl_c))).await.unwrap();
+    app.handle_event(UiEvent::Input(Event::Key(ctrl_c)))
+        .await
+        .unwrap();
     assert!(matches!(app.mode, AppMode::Exiting));
 }
 
@@ -242,7 +246,10 @@ async fn test_log_buffer_displays_messages() {
     assert_eq!(app.logs.len(), 1);
 
     // Check buffer contains message
-    let has_message = app.logs.entries().any(|e| e.message.contains("Test log message"));
+    let has_message = app
+        .logs
+        .entries()
+        .any(|e| e.message.contains("Test log message"));
     assert!(has_message);
     assert!(app.render_state.logs_dirty);
     assert_eq!(app.log_scroll.offset, 0); // Auto-scroll enabled
@@ -398,7 +405,9 @@ async fn test_repl_output_display() {
 
     // Send success result
     let success = ReplResult::success("OK", Duration::from_millis(10));
-    app.handle_event(UiEvent::ReplResult(success)).await.unwrap();
+    app.handle_event(UiEvent::ReplResult(success))
+        .await
+        .unwrap();
 
     assert!(app.last_repl_result.is_some());
     assert!(matches!(
@@ -619,9 +628,7 @@ async fn test_concurrent_updates() {
 
     // Dirty flags set
     assert!(
-        app.render_state.logs_dirty
-            || app.render_state.header_dirty
-            || app.render_state.repl_dirty
+        app.render_state.logs_dirty || app.render_state.header_dirty || app.render_state.repl_dirty
     );
 }
 

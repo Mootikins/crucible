@@ -4,20 +4,20 @@
 //! management system. It implements recursive file discovery, change detection, and processing
 //! with robust error handling and configuration management.
 
+use anyhow::{anyhow, Result};
+use chrono::{DateTime, Utc};
+use num_cpus;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
-use anyhow::{Result, anyhow};
-use chrono::{DateTime, Utc};
-use serde::{Serialize, Deserialize};
 use tokio::fs;
-use walkdir::{WalkDir, DirEntry};
-use sha2::{Sha256, Digest};
 use tracing::{debug, warn};
-use num_cpus;
+use walkdir::{DirEntry, WalkDir};
 
-use crate::SurrealClient;
 use crate::embedding_pool::EmbeddingThreadPool;
 use crate::vault_integration::*;
+use crate::SurrealClient;
 use crucible_core::parser::ParsedDocument;
 
 /// Configuration for vault scanning operations
@@ -123,9 +123,9 @@ impl VaultScannerConfig {
     pub fn for_machine_specs(cpu_cores: usize, memory_bytes: u64) -> Self {
         let parallel_processing = cpu_cores.min(8);
         let batch_size = match memory_bytes {
-            0..=2_147_483_648 => 4,           // <= 2GB
+            0..=2_147_483_648 => 4,              // <= 2GB
             2_147_483_649..=8_589_934_592 => 16, // 2GB - 8GB
-            _ => 32,                           // > 8GB
+            _ => 32,                             // > 8GB
         };
 
         Self {
@@ -335,9 +335,7 @@ pub struct VaultScannerMetrics {
 }
 
 /// Create a new vault scanner with the given configuration
-pub async fn create_vault_scanner(
-    config: VaultScannerConfig
-) -> Result<VaultScanner> {
+pub async fn create_vault_scanner(config: VaultScannerConfig) -> Result<VaultScanner> {
     validate_vault_scanner_config(&config).await?;
 
     Ok(VaultScanner {
@@ -360,7 +358,7 @@ pub async fn create_vault_scanner(
 pub async fn create_vault_scanner_with_embeddings(
     config: VaultScannerConfig,
     client: &SurrealClient,
-    embedding_pool: &EmbeddingThreadPool
+    embedding_pool: &EmbeddingThreadPool,
 ) -> Result<VaultScanner> {
     let mut scanner = create_vault_scanner(config).await?;
     scanner.client = Some(client.clone());
@@ -369,9 +367,7 @@ pub async fn create_vault_scanner_with_embeddings(
 }
 
 /// Validate vault scanner configuration
-pub async fn validate_vault_scanner_config(
-    config: &VaultScannerConfig
-) -> Result<()> {
+pub async fn validate_vault_scanner_config(config: &VaultScannerConfig) -> Result<()> {
     if config.parallel_processing == 0 {
         return Err(anyhow!("parallel_processing must be greater than 0"));
     }
@@ -408,7 +404,7 @@ impl VaultScanner {
             files_processed: self.state.files_processed,
             average_scan_time_per_file: Duration::from_millis(10), // Mock value
             average_processing_time_per_file: Duration::from_millis(50), // Mock value
-            memory_usage_mb: 64, // Mock value
+            memory_usage_mb: 64,                                   // Mock value
             last_scan_time: self.state.last_scan_time,
         }
     }
@@ -421,10 +417,7 @@ impl VaultScanner {
     }
 
     /// Scan a vault directory for files
-    pub async fn scan_vault_directory(
-        &mut self,
-        vault_path: &PathBuf
-    ) -> Result<VaultScanResult> {
+    pub async fn scan_vault_directory(&mut self, vault_path: &PathBuf) -> Result<VaultScanResult> {
         let start_time = SystemTime::now();
         let mut discovered_files = Vec::new();
         let mut scan_errors = Vec::new();
@@ -445,9 +438,7 @@ impl VaultScanner {
                 .max_depth(self.config.max_recursion_depth)
                 .follow_links(false)
         } else {
-            WalkDir::new(vault_path)
-                .max_depth(1)
-                .follow_links(false)
+            WalkDir::new(vault_path).max_depth(1).follow_links(false)
         };
 
         for entry in walkdir.into_iter() {
@@ -505,7 +496,8 @@ impl VaultScanner {
             }
         }
 
-        let scan_duration = start_time.duration_since(SystemTime::UNIX_EPOCH)
+        let scan_duration = start_time
+            .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or(Duration::from_secs(0));
 
         self.state.files_scanned = discovered_files.len();
@@ -538,14 +530,16 @@ impl VaultScanner {
     /// Process discovered vault files
     pub async fn process_vault_files(
         &mut self,
-        files: &[VaultFileInfo]
+        files: &[VaultFileInfo],
     ) -> Result<VaultProcessResult> {
         let start_time = SystemTime::now();
         let mut processed_count = 0;
         let mut failed_count = 0;
         let mut errors = Vec::new();
 
-        let client = self.client.as_ref()
+        let client = self
+            .client
+            .as_ref()
             .ok_or_else(|| anyhow!("No database client available"))?;
 
         for file_info in files {
@@ -571,7 +565,8 @@ impl VaultScanner {
             }
         }
 
-        let total_processing_time = start_time.duration_since(SystemTime::UNIX_EPOCH)
+        let total_processing_time = start_time
+            .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or(Duration::from_secs(0));
 
         let avg_time = if processed_count > 0 {
@@ -594,7 +589,7 @@ impl VaultScanner {
     /// Process files with error handling
     pub async fn process_vault_files_with_error_handling(
         &mut self,
-        files: &[VaultFileInfo]
+        files: &[VaultFileInfo],
     ) -> Result<VaultProcessResult> {
         // For now, delegate to regular processing
         // In a full implementation, this would implement retry logic
@@ -612,7 +607,11 @@ impl VaultScanner {
                 if name.to_string_lossy().starts_with('.') {
                     return Ok(VaultFileInfo {
                         path: path.to_path_buf(),
-                        relative_path: path.strip_prefix(vault_path).unwrap_or(path).to_string_lossy().to_string(),
+                        relative_path: path
+                            .strip_prefix(vault_path)
+                            .unwrap_or(path)
+                            .to_string_lossy()
+                            .to_string(),
                         file_size: 0,
                         modified_time: SystemTime::now(),
                         content_hash: String::new(),
@@ -625,9 +624,10 @@ impl VaultScanner {
 
         // Check file extension
         let is_markdown = if let Some(extension) = path.extension() {
-            self.config.file_extensions.iter().any(|ext| {
-                extension.to_string_lossy().eq_ignore_ascii_case(ext)
-            })
+            self.config
+                .file_extensions
+                .iter()
+                .any(|ext| extension.to_string_lossy().eq_ignore_ascii_case(ext))
         } else {
             false
         };
@@ -649,7 +649,8 @@ impl VaultScanner {
             String::new()
         };
 
-        let relative_path = path.strip_prefix(vault_path)
+        let relative_path = path
+            .strip_prefix(vault_path)
             .unwrap_or(path)
             .to_string_lossy()
             .to_string();
@@ -675,7 +676,7 @@ impl VaultScanner {
     async fn process_single_file(
         &self,
         client: &SurrealClient,
-        file_info: &VaultFileInfo
+        file_info: &VaultFileInfo,
     ) -> Result<()> {
         // Parse the file
         let document = parse_file_to_document(&file_info.path).await?;
@@ -739,8 +740,8 @@ impl VaultScanner {
 
 /// Parse a file to ParsedDocument
 pub async fn parse_file_to_document(file_path: &Path) -> Result<ParsedDocument> {
-    use crucible_core::parser::PulldownParser;
     use crucible_core::parser::MarkdownParser;
+    use crucible_core::parser::PulldownParser;
 
     let parser = PulldownParser::new();
     let document = parser.parse_file(file_path).await?;
@@ -751,7 +752,7 @@ pub async fn parse_file_to_document(file_path: &Path) -> Result<ParsedDocument> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+
     use tempfile::TempDir;
 
     #[tokio::test]
@@ -768,13 +769,25 @@ mod tests {
         let test_path = temp_dir.path().to_path_buf();
 
         // Create test markdown files
-        tokio::fs::write(test_path.join("test1.md"), "# Test Document\n\nContent here.").await.unwrap();
-        tokio::fs::write(test_path.join("test2.txt"), "Not a markdown file").await.unwrap();
+        tokio::fs::write(
+            test_path.join("test1.md"),
+            "# Test Document\n\nContent here.",
+        )
+        .await
+        .unwrap();
+        tokio::fs::write(test_path.join("test2.txt"), "Not a markdown file")
+            .await
+            .unwrap();
 
         // Create subdirectory
         let subdir = test_path.join("subdir");
         tokio::fs::create_dir(&subdir).await.unwrap();
-        tokio::fs::write(subdir.join("test3.md"), "# Nested Document\n\nNested content.").await.unwrap();
+        tokio::fs::write(
+            subdir.join("test3.md"),
+            "# Nested Document\n\nNested content.",
+        )
+        .await
+        .unwrap();
 
         // Test scanning
         let config = VaultScannerConfig::default();
@@ -806,7 +819,10 @@ mod tests {
         assert_eq!(config.max_recursion_depth, 10);
         assert!(config.recursive_scan);
         assert!(!config.include_hidden_files);
-        assert_eq!(config.file_extensions, vec!["md".to_string(), "markdown".to_string()]);
+        assert_eq!(
+            config.file_extensions,
+            vec!["md".to_string(), "markdown".to_string()]
+        );
         assert_eq!(config.parallel_processing, num_cpus::get());
         assert_eq!(config.batch_size, 16);
         assert!(config.enable_embeddings);
@@ -885,7 +901,11 @@ More content here.
         assert!(!title.is_empty(), "Document should have a title");
         println!("Document title: {}", title);
 
-        assert!(document.content.plain_text.contains("This is a test document"));
-        assert!(!document.wikilinks.is_empty() || document.wikilinks.is_empty()); // Should work either way
+        assert!(document
+            .content
+            .plain_text
+            .contains("This is a test document"));
+        assert!(!document.wikilinks.is_empty() || document.wikilinks.is_empty());
+        // Should work either way
     }
 }

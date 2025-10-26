@@ -9,13 +9,13 @@
 //! The trait enables the REPL to work with multiple tool sources while
 //! maintaining a consistent interface for discovery and execution.
 
+use super::types::ToolResult;
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock as AsyncRwLock;
-use super::types::ToolResult;
 
 /// Result type for tool group operations
 pub type ToolGroupResult<T> = Result<T, ToolGroupError>;
@@ -186,11 +186,7 @@ pub trait ToolGroup: std::fmt::Debug + Send + Sync {
     async fn get_tool_schema(&self, tool_name: &str) -> ToolGroupResult<Option<ToolSchema>>;
 
     /// Execute a tool from this group (with metrics)
-    async fn execute_tool(
-        &self,
-        tool_name: &str,
-        args: &[String],
-    ) -> ToolGroupResult<ToolResult>;
+    async fn execute_tool(&self, tool_name: &str, args: &[String]) -> ToolGroupResult<ToolResult>;
 
     /// Check if this group has been initialized
     fn is_initialized(&self) -> bool;
@@ -218,7 +214,10 @@ pub trait ToolGroup: std::fmt::Debug + Send + Sync {
     }
 
     /// Internal method: Perform actual schema retrieval (override in implementations)
-    async fn perform_schema_retrieval(&self, _tool_name: &str) -> ToolGroupResult<Option<ToolSchema>> {
+    async fn perform_schema_retrieval(
+        &self,
+        _tool_name: &str,
+    ) -> ToolGroupResult<Option<ToolSchema>> {
         Ok(None)
     }
 }
@@ -240,7 +239,7 @@ impl Default for ToolGroupCacheConfig {
     fn default() -> Self {
         Self {
             discovery_ttl: Duration::from_secs(300), // 5 minutes
-            schema_ttl: Duration::from_secs(600),     // 10 minutes
+            schema_ttl: Duration::from_secs(600),    // 10 minutes
             max_schema_cache_size: 1000,
             caching_enabled: true,
         }
@@ -259,8 +258,8 @@ impl ToolGroupCacheConfig {
 
     pub fn fast_cache() -> Self {
         Self {
-            discovery_ttl: Duration::from_secs(60),   // 1 minute
-            schema_ttl: Duration::from_secs(120),     // 2 minutes
+            discovery_ttl: Duration::from_secs(60), // 1 minute
+            schema_ttl: Duration::from_secs(120),   // 2 minutes
             max_schema_cache_size: 500,
             caching_enabled: true,
         }
@@ -279,7 +278,11 @@ pub trait ParameterConverter {
 /// Helper trait for tool result conversion
 pub trait ResultConverter {
     /// Convert tool execution result to the standard ToolResult format
-    fn convert_to_tool_result(&self, tool_name: &str, raw_result: Value) -> ToolGroupResult<ToolResult>;
+    fn convert_to_tool_result(
+        &self,
+        tool_name: &str,
+        raw_result: Value,
+    ) -> ToolGroupResult<ToolResult>;
 }
 
 /// Registry for managing multiple tool groups with lazy loading and caching
@@ -333,7 +336,10 @@ impl ToolGroupRegistry {
             metrics.total_groups += 1;
         }
 
-        tracing::info!("Registered tool group '{}' (lazy initialization)", group_name);
+        tracing::info!(
+            "Registered tool group '{}' (lazy initialization)",
+            group_name
+        );
 
         let duration = start_time.elapsed();
         tracing::debug!("Group registration took {}ms", duration.as_millis());
@@ -372,8 +378,12 @@ impl ToolGroupRegistry {
                         }
 
                         let duration = start_time.elapsed();
-                        tracing::info!("Lazy initialization of '{}' completed in {}ms ({} tools)",
-                                     group_name, duration.as_millis(), tools.len());
+                        tracing::info!(
+                            "Lazy initialization of '{}' completed in {}ms ({} tools)",
+                            group_name,
+                            duration.as_millis(),
+                            tools.len()
+                        );
                     }
                 }
             }
@@ -450,20 +460,21 @@ impl ToolGroupRegistry {
         args: &[String],
     ) -> ToolGroupResult<ToolResult> {
         // Ensure tool mapping is loaded (may trigger lazy initialization)
-        let group_name = self.get_tool_group(tool_name).await
-            .ok_or_else(|| ToolGroupError::ToolNotFound(format!(
-                "Tool '{}' not found in any group", tool_name
-            )))?;
+        let group_name = self.get_tool_group(tool_name).await.ok_or_else(|| {
+            ToolGroupError::ToolNotFound(format!("Tool '{}' not found in any group", tool_name))
+        })?;
 
         // Ensure the group is initialized
         self.ensure_group_initialized(&group_name).await?;
 
         // Execute the tool
         let groups = self.groups.read().await;
-        let group = groups.get(&group_name)
-            .ok_or_else(|| ToolGroupError::ToolNotFound(format!(
-                "Group '{}' not found for tool '{}'", group_name, tool_name
-            )))?;
+        let group = groups.get(&group_name).ok_or_else(|| {
+            ToolGroupError::ToolNotFound(format!(
+                "Group '{}' not found for tool '{}'",
+                group_name, tool_name
+            ))
+        })?;
 
         group.execute_tool(tool_name, args).await
     }
@@ -471,20 +482,21 @@ impl ToolGroupRegistry {
     /// Get schema for a tool (lazy initialization)
     pub async fn get_tool_schema(&self, tool_name: &str) -> ToolGroupResult<Option<ToolSchema>> {
         // Ensure tool mapping is loaded
-        let group_name = self.get_tool_group(tool_name).await
-            .ok_or_else(|| ToolGroupError::ToolNotFound(format!(
-                "Tool '{}' not found in any group", tool_name
-            )))?;
+        let group_name = self.get_tool_group(tool_name).await.ok_or_else(|| {
+            ToolGroupError::ToolNotFound(format!("Tool '{}' not found in any group", tool_name))
+        })?;
 
         // Ensure the group is initialized
         self.ensure_group_initialized(&group_name).await?;
 
         // Get the schema
         let groups = self.groups.read().await;
-        let group = groups.get(&group_name)
-            .ok_or_else(|| ToolGroupError::ToolNotFound(format!(
-                "Group '{}' not found for tool '{}'", group_name, tool_name
-            )))?;
+        let group = groups.get(&group_name).ok_or_else(|| {
+            ToolGroupError::ToolNotFound(format!(
+                "Group '{}' not found for tool '{}'",
+                group_name, tool_name
+            ))
+        })?;
 
         group.get_tool_schema(tool_name).await
     }

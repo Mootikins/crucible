@@ -267,11 +267,7 @@ impl CircuitBreakerConfig {
     }
 
     /// Create a custom configuration
-    pub fn custom(
-        failure_threshold: u32,
-        reset_timeout: Duration,
-        success_threshold: u32,
-    ) -> Self {
+    pub fn custom(failure_threshold: u32, reset_timeout: Duration, success_threshold: u32) -> Self {
         Self {
             failure_threshold,
             reset_timeout,
@@ -305,11 +301,7 @@ mod tests {
 
     #[test]
     fn test_circuit_breaker_closed_to_open() {
-        let config = CircuitBreakerConfig::custom(
-            3,
-            Duration::from_millis(100),
-            2,
-        );
+        let config = CircuitBreakerConfig::custom(3, Duration::from_millis(100), 2);
         let mut breaker = CircuitBreaker::new(config);
 
         assert_eq!(breaker.state(), CircuitState::Closed);
@@ -329,11 +321,7 @@ mod tests {
 
     #[test]
     fn test_circuit_breaker_open_to_half_open() {
-        let config = CircuitBreakerConfig::custom(
-            1,
-            Duration::from_millis(50),
-            2,
-        );
+        let config = CircuitBreakerConfig::custom(1, Duration::from_millis(50), 2);
         let mut breaker = CircuitBreaker::new(config);
 
         // Open the circuit
@@ -350,11 +338,7 @@ mod tests {
 
     #[test]
     fn test_circuit_breaker_half_open_to_closed() {
-        let config = CircuitBreakerConfig::custom(
-            1,
-            Duration::from_millis(50),
-            2,
-        );
+        let config = CircuitBreakerConfig::custom(1, Duration::from_millis(50), 2);
         let mut breaker = CircuitBreaker::new(config);
 
         // Move to half-open
@@ -374,11 +358,7 @@ mod tests {
 
     #[test]
     fn test_circuit_breaker_half_open_failure() {
-        let config = CircuitBreakerConfig::custom(
-            1,
-            Duration::from_millis(50),
-            2,
-        );
+        let config = CircuitBreakerConfig::custom(1, Duration::from_millis(50), 2);
         let mut breaker = CircuitBreaker::new(config);
 
         // Move to half-open

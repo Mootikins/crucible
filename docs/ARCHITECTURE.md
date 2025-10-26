@@ -39,7 +39,6 @@ graph TB
 
     subgraph "Storage"
         Surreal[SurrealDB]
-        Duck[DuckDB]
         Files[File System]
     end
 
@@ -98,7 +97,6 @@ graph LR
 
     subgraph "Storage"
         K[SurrealDB]
-        L[DuckDB]
         M[File System]
     end
 

@@ -11,7 +11,10 @@ async fn test_factory_creates_candle_provider() {
     let config = EmbeddingConfig::candle(None, Some("all-MiniLM-L6-v2".to_string()));
     let provider = create_provider(config).await;
 
-    assert!(provider.is_ok(), "Factory should successfully create Candle provider");
+    assert!(
+        provider.is_ok(),
+        "Factory should successfully create Candle provider"
+    );
 
     let provider = provider.unwrap();
     assert_eq!(provider.provider_name(), "Candle");
@@ -33,7 +36,11 @@ async fn test_factory_candle_different_models() {
         let config = EmbeddingConfig::candle(None, Some(model_name.to_string()));
         let provider = create_provider(config).await;
 
-        assert!(provider.is_ok(), "Factory should create provider for model: {}", model_name);
+        assert!(
+            provider.is_ok(),
+            "Factory should create provider for model: {}",
+            model_name
+        );
 
         let provider = provider.unwrap();
         assert_eq!(provider.model_name(), model_name);
@@ -48,7 +55,10 @@ async fn test_factory_candle_provider_functionality() {
 
     // Test single embedding
     let response = provider.embed("Hello, factory!").await;
-    assert!(response.is_ok(), "Candle provider should generate embeddings");
+    assert!(
+        response.is_ok(),
+        "Candle provider should generate embeddings"
+    );
 
     let response = response.unwrap();
     assert_eq!(response.model, "all-MiniLM-L6-v2");
@@ -58,7 +68,10 @@ async fn test_factory_candle_provider_functionality() {
     // Test batch embedding
     let texts = vec!["Text 1".to_string(), "Text 2".to_string()];
     let responses = provider.embed_batch(texts).await;
-    assert!(responses.is_ok(), "Candle provider should handle batch embedding");
+    assert!(
+        responses.is_ok(),
+        "Candle provider should handle batch embedding"
+    );
 
     let responses = responses.unwrap();
     assert_eq!(responses.len(), 2);
@@ -101,7 +114,10 @@ async fn test_factory_candle_provider_list_models() {
 async fn test_factory_candle_config_validation() {
     // Test valid configuration
     let config = EmbeddingConfig::candle(None, Some("all-MiniLM-L6-v2".to_string()));
-    assert!(config.validate().is_ok(), "Valid Candle config should pass validation");
+    assert!(
+        config.validate().is_ok(),
+        "Valid Candle config should pass validation"
+    );
 
     let provider = create_provider(config).await;
     assert!(provider.is_ok(), "Valid config should create provider");
@@ -109,10 +125,16 @@ async fn test_factory_candle_config_validation() {
     // Test invalid configuration (empty model name)
     let mut invalid_config = EmbeddingConfig::candle(None, None);
     invalid_config.model = String::new();
-    assert!(invalid_config.validate().is_err(), "Invalid config should fail validation");
+    assert!(
+        invalid_config.validate().is_err(),
+        "Invalid config should fail validation"
+    );
 
     let provider = create_provider(invalid_config).await;
-    assert!(provider.is_err(), "Invalid config should not create provider");
+    assert!(
+        provider.is_err(),
+        "Invalid config should not create provider"
+    );
 }
 
 #[tokio::test]
@@ -154,9 +176,12 @@ async fn test_factory_candle_vs_other_providers() {
     assert_eq!(ollama_provider.provider_name(), "Ollama");
 
     // Verify they have different characteristics
-    assert_ne!(candle_provider.provider_name(), ollama_provider.provider_name());
+    assert_ne!(
+        candle_provider.provider_name(),
+        ollama_provider.provider_name()
+    );
     assert_eq!(candle_provider.dimensions(), 384); // all-MiniLM-L6-v2
-    assert_eq!(ollama_provider.dimensions(), 768);  // nomic-embed-text
+    assert_eq!(ollama_provider.dimensions(), 768); // nomic-embed-text
 }
 
 #[tokio::test]
@@ -175,7 +200,10 @@ async fn test_factory_candle_error_handling() {
     // Test empty batch (should succeed with empty result)
     let result = provider.embed_batch(vec![]).await;
     assert!(result.is_ok(), "Empty batch should succeed");
-    assert!(result.unwrap().is_empty(), "Empty batch should return empty vector");
+    assert!(
+        result.unwrap().is_empty(),
+        "Empty batch should return empty vector"
+    );
 }
 
 #[tokio::test]
@@ -210,5 +238,9 @@ async fn test_factory_candle_performance() {
 
     assert!(response.is_ok(), "Embedding should succeed");
     // Mock implementation should be very fast (< 10ms)
-    assert!(duration.as_millis() < 10, "Mock embedding should be fast, took {}ms", duration.as_millis());
+    assert!(
+        duration.as_millis() < 10,
+        "Mock embedding should be fast, took {}ms",
+        duration.as_millis()
+    );
 }

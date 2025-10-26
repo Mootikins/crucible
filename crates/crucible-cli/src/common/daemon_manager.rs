@@ -6,9 +6,9 @@
 use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::process::Stdio;
-use tokio::process::Command;
-use tracing::{info, warn, error, debug};
 use std::time::{Duration, Instant};
+use tokio::process::Command;
+use tracing::{debug, error, info, warn};
 
 /// Daemon process manager for one-shot processing
 pub struct DaemonManager {
@@ -22,7 +22,10 @@ impl DaemonManager {
     }
 
     /// Check if embeddings exist in the database
-    pub async fn check_embeddings_exist(&self, client: &crucible_surrealdb::SurrealClient) -> Result<bool> {
+    pub async fn check_embeddings_exist(
+        &self,
+        client: &crucible_surrealdb::SurrealClient,
+    ) -> Result<bool> {
         info!("Checking if embeddings exist in database...");
 
         match crucible_surrealdb::vault_integration::get_database_stats(client).await {
@@ -34,22 +37,32 @@ impl DaemonManager {
                 warn!("Failed to get database stats: {}", e);
                 // Fallback to direct query if stats function fails
                 let embeddings_sql = "SELECT count() as total FROM embeddings LIMIT 1";
-                let result = client.query(embeddings_sql, &[]).await
+                let result = client
+                    .query(embeddings_sql, &[])
+                    .await
                     .map_err(|e| anyhow::anyhow!("Failed to query embeddings: {}", e))?;
 
-                let embeddings_count = result.records.first()
+                let embeddings_count = result
+                    .records
+                    .first()
                     .and_then(|r| r.data.get("total"))
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
 
-                info!("Found {} embeddings in database (fallback query)", embeddings_count);
+                info!(
+                    "Found {} embeddings in database (fallback query)",
+                    embeddings_count
+                );
                 Ok(embeddings_count > 0)
             }
         }
     }
 
     /// Spawn daemon for one-shot processing with progress feedback
-    pub async fn spawn_daemon_for_processing(&mut self, vault_path: &std::path::Path) -> Result<DaemonResult> {
+    pub async fn spawn_daemon_for_processing(
+        &mut self,
+        vault_path: &std::path::Path,
+    ) -> Result<DaemonResult> {
         info!("Starting daemon for one-shot kiln processing...");
 
         // Validate kiln path exists
@@ -66,7 +79,7 @@ impl DaemonManager {
             ProgressStyle::default_spinner()
                 .template("{spinner:.green} {msg:.cyan} [{elapsed_precise}]")
                 .unwrap()
-                .progress_chars("#>-")
+                .progress_chars("#>-"),
         );
         pb.set_message("Starting vault processing...");
         pb.enable_steady_tick(Duration::from_millis(100));
@@ -75,14 +88,18 @@ impl DaemonManager {
         let start_time = Instant::now();
 
         // Spawn the daemon process - use the built binary from target directory
-        let crate_root = std::env::var("CARGO_MANIFEST_DIR")
-            .unwrap_or_else(|_| std::env::current_dir().unwrap().to_string_lossy().to_string());
+        let crate_root = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| {
+            std::env::current_dir()
+                .unwrap()
+                .to_string_lossy()
+                .to_string()
+        });
 
         // Try debug build first, then release build as fallback
-        let daemon_path_debug = std::path::PathBuf::from(&crate_root)
-            .join("../../target/debug/crucible-daemon");
-        let daemon_path_release = std::path::PathBuf::from(&crate_root)
-            .join("../../target/release/crucible-daemon");
+        let daemon_path_debug =
+            std::path::PathBuf::from(&crate_root).join("../../target/debug/crucible-daemon");
+        let daemon_path_release =
+            std::path::PathBuf::from(&crate_root).join("../../target/release/crucible-daemon");
 
         let daemon_path = if daemon_path_debug.exists() {
             daemon_path_debug
@@ -106,24 +123,27 @@ impl DaemonManager {
             .env_clear()
             .envs(std::env::vars().filter(|(k, _)| {
                 // Keep only essential environment variables for security
-                matches!(k.as_str(),
-                    "OBSIDIAN_VAULT_PATH" |
-                    "EMBEDDING_ENDPOINT" |
-                    "EMBEDDING_MODEL" |
-                    "HOME" |
-                    "PATH" |
-                    "RUST_LOG" |
-                    "CRUCIBLE_DB_PATH" |
-                    "CRUCIBLE_CONFIG_PATH"
+                matches!(
+                    k.as_str(),
+                    "OBSIDIAN_VAULT_PATH"
+                        | "EMBEDDING_ENDPOINT"
+                        | "EMBEDDING_MODEL"
+                        | "HOME"
+                        | "PATH"
+                        | "RUST_LOG"
+                        | "CRUCIBLE_DB_PATH"
+                        | "CRUCIBLE_CONFIG_PATH"
                 )
             }))
             .spawn()
-            .map_err(|e| anyhow::anyhow!(
-                "Failed to spawn crucible-daemon from {}: {}. \
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to spawn crucible-daemon from {}: {}. \
                 Make sure the daemon is built (run 'cargo build -p crucible-daemon').",
-                daemon_path.display(),
-                e
-            ))?;
+                    daemon_path.display(),
+                    e
+                )
+            })?;
 
         if let Some(pb) = &self.progress_bar {
             pb.set_message("Processing vault files... (this may take a few minutes)");
@@ -153,7 +173,10 @@ impl DaemonManager {
                 };
 
                 if result.success {
-                    info!("Daemon processing completed successfully in {:.1}s", elapsed.as_secs_f64());
+                    info!(
+                        "Daemon processing completed successfully in {:.1}s",
+                        elapsed.as_secs_f64()
+                    );
                     Ok(result)
                 } else {
                     let error_msg = match result.exit_code {
@@ -228,10 +251,7 @@ impl DaemonResult {
                 self.processing_time.as_secs_f64()
             )
         } else {
-            format!(
-                "Processing failed (exit code: {:?})",
-                self.exit_code
-            )
+            format!("Processing failed (exit code: {:?})", self.exit_code)
         }
     }
 
@@ -269,9 +289,14 @@ mod tests {
         let original_path = std::env::var("OBSIDIAN_VAULT_PATH").ok();
         std::env::remove_var("OBSIDIAN_VAULT_PATH");
 
-        let result = manager.spawn_daemon_for_processing(std::path::Path::new("/nonexistent")).await;
+        let result = manager
+            .spawn_daemon_for_processing(std::path::Path::new("/nonexistent"))
+            .await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("does not exist or is not accessible"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("does not exist or is not accessible"));
 
         // Restore original value
         if let Some(path) = original_path {
@@ -290,7 +315,12 @@ mod tests {
         };
 
         assert!(result.success);
-        assert_eq!(result.status_message(), "Vault processed successfully (5.0s)");
-        assert!(result.processing_info().contains("Processed vault: /test/vault"));
+        assert_eq!(
+            result.status_message(),
+            "Vault processed successfully (5.0s)"
+        );
+        assert!(result
+            .processing_info()
+            .contains("Processed vault: /test/vault"));
     }
 }

@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
-use crate::agents::backend::{Backend, ChatParams, Message};
 use crate::agents::backend::ollama::OllamaBackend;
+use crate::agents::backend::{Backend, ChatParams, Message};
 use crate::config::CliConfig;
 
 /// Chat message structure
@@ -93,8 +93,7 @@ impl ConversationHistory {
     pub fn save_to_file(&self, path: &PathBuf) -> Result<()> {
         let json = serde_json::to_string_pretty(self)
             .context("Failed to serialize conversation history")?;
-        std::fs::write(path, json)
-            .context("Failed to write conversation history to file")?;
+        std::fs::write(path, json).context("Failed to write conversation history to file")?;
         Ok(())
     }
 
@@ -102,15 +101,14 @@ impl ConversationHistory {
     pub fn load_from_file(path: &PathBuf) -> Result<Self> {
         let json = std::fs::read_to_string(path)
             .context("Failed to read conversation history from file")?;
-        serde_json::from_str(&json)
-            .context("Failed to deserialize conversation history")
+        serde_json::from_str(&json).context("Failed to deserialize conversation history")
     }
 
     /// Generate a title from the first user message
     pub fn generate_title(&mut self) {
-        if let Some(first_user_msg) = self.messages.iter()
-            .find(|msg| msg.role == "user") {
-            let title = first_user_msg.content
+        if let Some(first_user_msg) = self.messages.iter().find(|msg| msg.role == "user") {
+            let title = first_user_msg
+                .content
                 .lines()
                 .next()
                 .unwrap_or("Untitled Conversation")
@@ -256,12 +254,10 @@ impl ChatSession {
     ) -> Result<Self> {
         let agent_registry = AgentRegistry::new();
 
-        let mut agent = agent_registry.get(&agent_name)
-            .cloned()
-            .unwrap_or_else(|| {
-                warn!("Unknown agent '{}', using default agent", agent_name);
-                agent_registry.get("default").unwrap().clone()
-            });
+        let mut agent = agent_registry.get(&agent_name).cloned().unwrap_or_else(|| {
+            warn!("Unknown agent '{}', using default agent", agent_name);
+            agent_registry.get("default").unwrap().clone()
+        });
 
         // Override agent settings with command line arguments
         if let Some(model) = model {
@@ -274,9 +270,7 @@ impl ChatSession {
             agent.max_tokens = Some(max_tokens);
         }
 
-        let model_name = agent.model
-            .clone()
-            .unwrap_or_else(|| config.chat_model());
+        let model_name = agent.model.clone().unwrap_or_else(|| config.chat_model());
 
         let history = ConversationHistory::new(agent.name.clone(), model_name);
 
@@ -286,7 +280,8 @@ impl ChatSession {
         }
 
         // Initialize LLM backend (Ollama for now)
-        let backend = Some(Arc::new(OllamaBackend::new(config.ollama_endpoint())) as Arc<dyn Backend>);
+        let backend =
+            Some(Arc::new(OllamaBackend::new(config.ollama_endpoint())) as Arc<dyn Backend>);
 
         Ok(Self {
             config,
@@ -327,18 +322,30 @@ impl ChatSession {
                 "clear" | ":c" => {
                     self.history.messages.clear();
                     println!("Conversation history cleared.");
-                },
+                }
                 "agents" => {
                     let agents = self.agent_registry.list_agents();
                     println!("🤖 Available agents:");
                     for agent in agents {
                         if let Some(agent_info) = self.agent_registry.get(agent) {
-                            let tools_status = if agent_info.can_use_tools { "🔧" } else { "💬" };
-                            println!("  {} {} - {}", tools_status, agent_info.name,
-                                agent_info.system_prompt.lines().next().unwrap_or("No description"));
+                            let tools_status = if agent_info.can_use_tools {
+                                "🔧"
+                            } else {
+                                "💬"
+                            };
+                            println!(
+                                "  {} {} - {}",
+                                tools_status,
+                                agent_info.name,
+                                agent_info
+                                    .system_prompt
+                                    .lines()
+                                    .next()
+                                    .unwrap_or("No description")
+                            );
                         }
                     }
-                },
+                }
                 "models" => {
                     if let Some(backend) = &self.backend {
                         match backend.list_models().await {
@@ -350,14 +357,20 @@ impl ChatSession {
                                         let info = vec![
                                             details.family.map(|f| format!("family: {}", f)),
                                             details.parameter_size.map(|s| format!("size: {}", s)),
-                                            details.quantization_level.map(|q| format!("quant: {}", q)),
-                                        ].into_iter().flatten().collect::<Vec<_>>().join(", ");
+                                            details
+                                                .quantization_level
+                                                .map(|q| format!("quant: {}", q)),
+                                        ]
+                                        .into_iter()
+                                        .flatten()
+                                        .collect::<Vec<_>>()
+                                        .join(", ");
                                         if !info.is_empty() {
                                             println!("    {}", info);
                                         }
                                     }
                                 }
-                            },
+                            }
                             Err(e) => {
                                 println!("❌ Failed to list models: {}", e);
                             }
@@ -365,21 +378,21 @@ impl ChatSession {
                     } else {
                         println!("❌ No backend available");
                     }
-                },
+                }
                 "save" => {
                     if let Err(e) = self.save_history() {
                         error!("Failed to save history: {}", e);
                     } else {
                         println!("💾 Conversation history saved.");
                     }
-                },
+                }
                 "tools" => {
                     println!("🚫 Tool functionality has been disabled - MCP integration removed");
                     println!("   Tool support will be available in a future release using crucible-services");
-                },
+                }
                 "history" => {
                     self.show_history_summary();
-                },
+                }
                 cmd if cmd.starts_with(":agent ") => {
                     let new_agent = cmd.strip_prefix(":agent ").unwrap().trim();
                     if let Some(agent) = self.agent_registry.get(new_agent) {
@@ -388,18 +401,18 @@ impl ChatSession {
                     } else {
                         println!("❌ Unknown agent: {}", new_agent);
                     }
-                },
+                }
                 cmd if cmd.starts_with(":model ") => {
                     let new_model = cmd.strip_prefix(":model ").unwrap().trim();
                     self.history.model = new_model.to_string();
                     println!("📋 Switched to model: {}", new_model);
-                },
+                }
                 message if !message.trim().is_empty() => {
                     if let Err(e) = self.process_user_message(message).await {
                         error!("Error processing message: {}", e);
                         println!("❌ Error: {}", e);
                     }
-                },
+                }
                 _ => continue,
             }
         }
@@ -507,10 +520,16 @@ impl ChatSession {
             println!("  Title: {}", title);
         }
 
-        let user_messages = self.history.messages.iter()
+        let user_messages = self
+            .history
+            .messages
+            .iter()
             .filter(|msg| msg.role == "user")
             .count();
-        let assistant_messages = self.history.messages.iter()
+        let assistant_messages = self
+            .history
+            .messages
+            .iter()
             .filter(|msg| msg.role == "assistant")
             .count();
 
@@ -519,11 +538,17 @@ impl ChatSession {
 
         if !self.history.messages.is_empty() {
             let first_message = &self.history.messages[0];
-            println!("  Started: {}", first_message.timestamp.format("%Y-%m-%d %H:%M:%S"));
+            println!(
+                "  Started: {}",
+                first_message.timestamp.format("%Y-%m-%d %H:%M:%S")
+            );
 
             if self.history.messages.len() > 1 {
                 let last_message = &self.history.messages[self.history.messages.len() - 1];
-                println!("  Last activity: {}", last_message.timestamp.format("%Y-%m-%d %H:%M:%S"));
+                println!(
+                    "  Last activity: {}",
+                    last_message.timestamp.format("%Y-%m-%d %H:%M:%S")
+                );
             }
         }
     }
@@ -597,21 +622,18 @@ pub async fn execute(
 ) -> Result<()> {
     info!("Starting chat session with agent: {}", agent);
 
-    let mut session = ChatSession::new(
-        config,
-        agent,
-        model,
-        temperature,
-        max_tokens,
-    ).await?;
+    let mut session = ChatSession::new(config, agent, model, temperature, max_tokens).await?;
 
     // Load history if provided
     if let Some(history_path) = history_file {
         match load_conversation_history(&history_path).await {
             Ok(history) => {
                 session.history = history;
-                println!("Loaded conversation history from: {}", history_path.display());
-            },
+                println!(
+                    "Loaded conversation history from: {}",
+                    history_path.display()
+                );
+            }
             Err(e) => {
                 warn!("Failed to load conversation history: {}", e);
             }
@@ -682,7 +704,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test_chat.json");
 
-        let mut original = ConversationHistory::new("default".to_string(), "test-model".to_string());
+        let mut original =
+            ConversationHistory::new("default".to_string(), "test-model".to_string());
         original.generate_title();
 
         let message = ChatMessage {

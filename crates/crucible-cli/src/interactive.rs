@@ -1,6 +1,9 @@
 use anyhow::Result;
 use crucible_core::database::SearchResult;
-use nucleo_matcher::{pattern::{Pattern, CaseMatching}, Matcher, Config};
+use nucleo_matcher::{
+    pattern::{CaseMatching, Pattern},
+    Config, Matcher,
+};
 use std::io::{self, Write};
 
 /// Compatibility wrapper for search results with display information
@@ -176,10 +179,7 @@ mod tests {
     #[test]
     fn test_filter_items_empty_query() {
         let mut picker = FuzzyPicker::new();
-        let items = vec![
-            "file1.md".to_string(),
-            "file2.md".to_string(),
-        ];
+        let items = vec!["file1.md".to_string(), "file2.md".to_string()];
 
         let results = picker.filter_items(&items, "");
 
@@ -200,10 +200,7 @@ mod tests {
     #[test]
     fn test_filter_items_case_insensitive() {
         let mut picker = FuzzyPicker::new();
-        let items = vec![
-            "HelloWorld.md".to_string(),
-            "goodbye.md".to_string(),
-        ];
+        let items = vec!["HelloWorld.md".to_string(), "goodbye.md".to_string()];
 
         let results = picker.filter_items(&items, "helloworld");
 
@@ -214,10 +211,7 @@ mod tests {
     #[test]
     fn test_filter_items_no_match() {
         let mut picker = FuzzyPicker::new();
-        let items = vec![
-            "foo.md".to_string(),
-            "bar.md".to_string(),
-        ];
+        let items = vec!["foo.md".to_string(), "bar.md".to_string()];
 
         let results = picker.filter_items(&items, "xyz");
 

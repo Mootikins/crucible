@@ -2,7 +2,6 @@
 ///
 /// Phase 1: Simple regex-based extraction
 /// Phase 2: NER with lightweight ML model
-
 use regex::Regex;
 use std::collections::HashSet;
 
@@ -29,7 +28,8 @@ impl EntityExtractor {
             tag_pattern: Regex::new(r"#[\w-]+").unwrap(),
 
             // Match file paths like src/main.rs, docs/README.md, ./file.txt
-            file_pattern: Regex::new(r"\b[\w./\\-]+\.(rs|md|txt|py|js|ts|json|toml|yaml|yml)\b").unwrap(),
+            file_pattern: Regex::new(r"\b[\w./\\-]+\.(rs|md|txt|py|js|ts|json|toml|yaml|yml)\b")
+                .unwrap(),
 
             // Match @agent-name or @username
             mention_pattern: Regex::new(r"@[\w-]+").unwrap(),
@@ -84,10 +84,26 @@ impl Default for EntityExtractor {
 fn is_common_word(word: &str) -> bool {
     matches!(
         word,
-        "The" | "This" | "That" | "These" | "Those"
-        | "When" | "Where" | "What" | "Which" | "Who"
-        | "How" | "Why" | "Can" | "Could" | "Would" | "Should"
-        | "Will" | "May" | "Might" | "Must"
+        "The"
+            | "This"
+            | "That"
+            | "These"
+            | "Those"
+            | "When"
+            | "Where"
+            | "What"
+            | "Which"
+            | "Who"
+            | "How"
+            | "Why"
+            | "Can"
+            | "Could"
+            | "Would"
+            | "Should"
+            | "Will"
+            | "May"
+            | "Might"
+            | "Must"
     )
 }
 

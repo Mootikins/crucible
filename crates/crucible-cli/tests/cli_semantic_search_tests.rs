@@ -9,21 +9,15 @@
 //! vault_integration::semantic_search() function.
 
 use anyhow::Result;
-use std::time::Duration;
-use tokio::time::timeout;
-use tempfile::TempDir;
-
-use crucible_cli::{
-    commands::semantic,
-    config::CliConfig,
-};
-use crucible_surrealdb::{
-    vault_integration::{self, store_parsed_document, store_document_embedding},
-    SurrealClient,
-    DocumentEmbedding,
-    SurrealDbConfig,
-};
+use crucible_cli::{commands::semantic, config::CliConfig};
 use crucible_core::parser::ParsedDocument;
+use crucible_surrealdb::{
+    vault_integration::{self, store_document_embedding, store_parsed_document},
+    DocumentEmbedding, SurrealClient, SurrealDbConfig,
+};
+use std::time::Duration;
+use tempfile::TempDir;
+use tokio::time::timeout;
 
 /// Test helper to create a test vault with sample documents and embeddings
 async fn setup_test_vault_with_embeddings() -> Result<(TempDir, CliConfig, SurrealClient)> {
@@ -35,7 +29,7 @@ async fn setup_test_vault_with_embeddings() -> Result<(TempDir, CliConfig, Surre
         kiln: crucible_cli::config::KilnConfig {
             path: vault_path.clone(),
             embedding_url: "http://localhost:11434".to_string(),
-            embedding_model: "nomic-embed-text".to_string(),
+            embedding_model: Some("nomic-embed-text".to_string()),
         },
         ..Default::default()
     };
@@ -59,16 +53,31 @@ async fn setup_test_vault_with_embeddings() -> Result<(TempDir, CliConfig, Surre
 
     // Create test documents with controlled content for predictable similarity
     let test_docs = vec![
-        ("machine-learning-basics.md", "Introduction to machine learning algorithms and neural networks",
-         vec![0.8, 0.6, 0.1, 0.2]), // High similarity for ML queries
-        ("rust-programming.md", "Systems programming with Rust language memory safety",
-         vec![0.3, 0.2, 0.8, 0.4]), // High similarity for Rust queries
-        ("database-systems.md", "SQL and NoSQL database management vector embeddings",
-         vec![0.2, 0.9, 0.3, 0.1]), // High similarity for database queries
-        ("web-development.md", "HTML CSS JavaScript frontend backend development",
-         vec![0.1, 0.3, 0.2, 0.9]), // Different pattern
-        ("ai-research.md", "Artificial intelligence deep learning transformer models",
-         vec![0.7, 0.7, 0.2, 0.3]), // High similarity for AI queries
+        (
+            "machine-learning-basics.md",
+            "Introduction to machine learning algorithms and neural networks",
+            vec![0.8, 0.6, 0.1, 0.2],
+        ), // High similarity for ML queries
+        (
+            "rust-programming.md",
+            "Systems programming with Rust language memory safety",
+            vec![0.3, 0.2, 0.8, 0.4],
+        ), // High similarity for Rust queries
+        (
+            "database-systems.md",
+            "SQL and NoSQL database management vector embeddings",
+            vec![0.2, 0.9, 0.3, 0.1],
+        ), // High similarity for database queries
+        (
+            "web-development.md",
+            "HTML CSS JavaScript frontend backend development",
+            vec![0.1, 0.3, 0.2, 0.9],
+        ), // Different pattern
+        (
+            "ai-research.md",
+            "Artificial intelligence deep learning transformer models",
+            vec![0.7, 0.7, 0.2, 0.3],
+        ), // High similarity for AI queries
     ];
 
     // Store documents and their embeddings
@@ -130,11 +139,12 @@ mod cli_semantic_search_tests {
             semantic::execute(
                 config.clone(),
                 "machine learning".to_string(),
-                5, // top_k
+                5,                  // top_k
                 "text".to_string(), // format
-                true, // show_scores
-            )
-        ).await;
+                true,               // show_scores
+            ),
+        )
+        .await;
 
         // Test should initially fail because current implementation uses mock tool execution
         // After implementation, this should succeed and return real search results
@@ -179,8 +189,9 @@ mod cli_semantic_search_tests {
                 3,
                 "json".to_string(),
                 true,
-            )
-        ).await;
+            ),
+        )
+        .await;
 
         // Search for Rust programming content
         let rust_result = timeout(
@@ -191,8 +202,9 @@ mod cli_semantic_search_tests {
                 3,
                 "json".to_string(),
                 true,
-            )
-        ).await;
+            ),
+        )
+        .await;
 
         // Mock implementation will return identical results for different queries
         // Real vector search should return different, relevant results
@@ -233,8 +245,9 @@ mod cli_semantic_search_tests {
                 5,
                 "json".to_string(),
                 true,
-            )
-        ).await;
+            ),
+        )
+        .await;
 
         match result {
             Ok(_) => {
@@ -279,8 +292,9 @@ mod cli_semantic_search_tests {
                     3,
                     format.to_string(),
                     true,
-                )
-            ).await;
+                ),
+            )
+            .await;
 
             match result {
                 Ok(_) => {
@@ -298,7 +312,10 @@ mod cli_semantic_search_tests {
                     // }
                 }
                 Err(e) => {
-                    println!("Expected failure with mock implementation for format {}: {}", format, e);
+                    println!(
+                        "Expected failure with mock implementation for format {}: {}",
+                        format, e
+                    );
                 }
             }
         }
@@ -321,8 +338,9 @@ mod cli_semantic_search_tests {
                 3, // limit
                 "json".to_string(),
                 true,
-            )
-        ).await;
+            ),
+        )
+        .await;
 
         let limit_1_result = timeout(
             Duration::from_secs(10),
@@ -332,8 +350,9 @@ mod cli_semantic_search_tests {
                 1, // limit
                 "json".to_string(),
                 true,
-            )
-        ).await;
+            ),
+        )
+        .await;
 
         // Mock implementation typically ignores limits or returns fixed number of results
         // Real implementation should respect the limit parameter
@@ -365,7 +384,7 @@ mod cli_semantic_search_tests {
             kiln: crucible_cli::config::KilnConfig {
                 path: temp_dir.path().to_path_buf(),
                 embedding_url: "http://localhost:11434".to_string(),
-                embedding_model: "nomic-embed-text".to_string(),
+                embedding_model: Some("nomic-embed-text".to_string()),
             },
             ..Default::default()
         };
@@ -378,8 +397,9 @@ mod cli_semantic_search_tests {
                 5,
                 "text".to_string(),
                 true,
-            )
-        ).await;
+            ),
+        )
+        .await;
 
         match result {
             Ok(_) => {
@@ -413,11 +433,17 @@ mod cli_semantic_search_tests {
 
         // Test multiple queries that should produce different results based on vector similarity
         let test_queries = vec![
-            ("machine learning", vec!["machine-learning-basics.md", "ai-research.md"]),
+            (
+                "machine learning",
+                vec!["machine-learning-basics.md", "ai-research.md"],
+            ),
             ("rust programming", vec!["rust-programming.md"]),
             ("database systems", vec!["database-systems.md"]),
             ("web development", vec!["web-development.md"]),
-            ("artificial intelligence", vec!["ai-research.md", "machine-learning-basics.md"]),
+            (
+                "artificial intelligence",
+                vec!["ai-research.md", "machine-learning-basics.md"],
+            ),
         ];
 
         for (query, expected_files) in test_queries {
@@ -429,8 +455,9 @@ mod cli_semantic_search_tests {
                     5,
                     "json".to_string(),
                     true,
-                )
-            ).await;
+                ),
+            )
+            .await;
 
             match result {
                 Ok(_) => {
@@ -440,7 +467,10 @@ mod cli_semantic_search_tests {
                     // 3. Similarity scores are realistic (0.0-1.0)
                     // 4. Query terms match document content via vector similarity
 
-                    println!("Query '{}' completed - verify real vector search results", query);
+                    println!(
+                        "Query '{}' completed - verify real vector search results",
+                        query
+                    );
 
                     // TODO: After implementation, add comprehensive assertions:
                     // let output = capture_stdout();
@@ -463,7 +493,10 @@ mod cli_semantic_search_tests {
                     // }
                 }
                 Err(e) => {
-                    println!("Expected failure with mock implementation for query '{}': {}", query, e);
+                    println!(
+                        "Expected failure with mock implementation for query '{}': {}",
+                        query, e
+                    );
                 }
             }
         }
@@ -488,15 +521,18 @@ mod cli_semantic_search_tests {
                 5,
                 "text".to_string(),
                 true,
-            )
-        ).await;
+            ),
+        )
+        .await;
 
         match result {
             Ok(_) => {
                 // After implementation, this should succeed and call real semantic search
                 // For now, it should fail because mock tool execution doesn't match test data
 
-                println!("Search completed - should be calling real vault_integration::semantic_search");
+                println!(
+                    "Search completed - should be calling real vault_integration::semantic_search"
+                );
 
                 // TODO: After implementation, verify the function is called by:
                 // 1. Checking that results match database content

@@ -12,9 +12,12 @@ use anyhow::Result;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
-use crate::tests::test_utilities::*;
-use crucible_cli::config::CliConfig;
+
+use crate::test_utilities::{
+    AssertUtils, MemoryUsage, PerformanceMeasurement, TestContext, TestDataGenerator,
+};
 use crucible_cli::commands::rune::{execute, list_commands};
+use crucible_cli::config::CliConfig;
 
 /// Test basic rune execution
 #[tokio::test]
@@ -40,7 +43,8 @@ function main(args) {
         context.config.clone(),
         script_path.to_string_lossy().to_string(),
         None,
-    ).await;
+    )
+    .await;
 
     // Should succeed with migration bridge fallback to legacy
     assert!(result.is_ok(), "Basic rune execution should succeed");
@@ -71,7 +75,8 @@ function main(args) {
         context.config.clone(),
         script_path.to_string_lossy().to_string(),
         Some(args.to_string()),
-    ).await;
+    )
+    .await;
 
     assert!(result.is_ok(), "Rune execution with args should succeed");
 
@@ -96,7 +101,8 @@ function main(args) {
         context.config.clone(),
         script_path.to_string_lossy().to_string(),
         Some(invalid_args.to_string()),
-    ).await;
+    )
+    .await;
 
     // Should handle invalid JSON gracefully
     assert!(result.is_err(), "Should fail with invalid JSON args");
@@ -112,7 +118,8 @@ async fn test_rune_execute_nonexistent_script() -> Result<()> {
         context.config.clone(),
         "nonexistent-script.rn".to_string(),
         None,
-    ).await;
+    )
+    .await;
 
     // Should fail gracefully
     assert!(result.is_err(), "Should fail with nonexistent script");
@@ -140,11 +147,7 @@ function main(args) {
     std::fs::write(&config_script, script_content)?;
 
     // Test discovery in config directory
-    let result = execute(
-        context.config.clone(),
-        "test-config".to_string(),
-        None,
-    ).await;
+    let result = execute(context.config.clone(), "test-config".to_string(), None).await;
 
     // Clean up
     std::fs::remove_file(&config_script).ok();
@@ -178,11 +181,7 @@ function main(args) {
     let original_dir = std::env::current_dir()?;
     std::env::set_current_dir(context.temp_dir.path())?;
 
-    let result = execute(
-        context.config.clone(),
-        "test-local".to_string(),
-        None,
-    ).await;
+    let result = execute(context.config.clone(), "test-local".to_string(), None).await;
 
     // Restore original directory
     std::env::set_current_dir(original_dir)?;
@@ -221,10 +220,14 @@ function main(args) {
         context.config.clone(),
         script_path.to_string_lossy().to_string(),
         None,
-    ).await;
+    )
+    .await;
 
     // Should try migration bridge first, then fallback to legacy
-    assert!(result.is_ok(), "Should succeed with migration bridge enabled");
+    assert!(
+        result.is_ok(),
+        "Should succeed with migration bridge enabled"
+    );
 
     Ok(())
 }
@@ -253,10 +256,14 @@ function main(args) {
         context.config.clone(),
         script_path.to_string_lossy().to_string(),
         None,
-    ).await;
+    )
+    .await;
 
     // Should use legacy execution directly
-    assert!(result.is_ok(), "Should succeed with migration bridge disabled");
+    assert!(
+        result.is_ok(),
+        "Should succeed with migration bridge disabled"
+    );
 
     Ok(())
 }
@@ -286,7 +293,8 @@ function main(args) {
         context.config.clone(),
         script_path.to_string_lossy().to_string(),
         None,
-    ).await;
+    )
+    .await;
 
     // Should fallback to legacy execution
     assert!(result.is_ok(), "Should succeed after fallback to legacy");
@@ -314,7 +322,8 @@ function main(args) {
         context.config.clone(),
         script_path.to_string_lossy().to_string(),
         None,
-    ).await;
+    )
+    .await;
 
     // Should handle syntax errors gracefully
     // The exact behavior depends on the Rune implementation
@@ -341,7 +350,8 @@ function main(args) {
         context.config.clone(),
         script_path.to_string_lossy().to_string(),
         None,
-    ).await;
+    )
+    .await;
 
     // Should handle runtime errors gracefully
     let _ = result;
@@ -366,11 +376,15 @@ function main(args) {
     let script_path = context.create_test_script("timeout-script", timeout_script);
 
     // Execute with timeout
-    let result = timeout(Duration::from_secs(5), execute(
-        context.config.clone(),
-        script_path.to_string_lossy().to_string(),
-        None,
-    )).await;
+    let result = timeout(
+        Duration::from_secs(5),
+        execute(
+            context.config.clone(),
+            script_path.to_string_lossy().to_string(),
+            None,
+        ),
+    )
+    .await;
 
     // Should timeout due to infinite loop
     assert!(result.is_err(), "Should timeout for infinite loop");
@@ -386,7 +400,10 @@ async fn test_rune_list_commands_empty() -> Result<()> {
     // Test listing commands when no scripts exist
     let result = list_commands(context.config.clone()).await;
 
-    assert!(result.is_ok(), "Listing commands should succeed even when empty");
+    assert!(
+        result.is_ok(),
+        "Listing commands should succeed even when empty"
+    );
 
     Ok(())
 }
@@ -403,11 +420,14 @@ async fn test_rune_list_commands_with_scripts() -> Result<()> {
     ];
 
     for (name, _description) in scripts {
-        let script_content = format!(r#"
+        let script_content = format!(
+            r#"
 function main(args) {{
     return {{ success: true, script: "{}" }};
 }}
-"#, name);
+"#,
+            name
+        );
 
         context.create_test_script(name, &script_content);
     }
@@ -415,7 +435,10 @@ function main(args) {{
     // Test listing commands with scripts present
     let result = list_commands(context.config.clone()).await;
 
-    assert!(result.is_ok(), "Listing commands should succeed with scripts present");
+    assert!(
+        result.is_ok(),
+        "Listing commands should succeed with scripts present"
+    );
 
     Ok(())
 }
@@ -443,7 +466,10 @@ function main(args) {
     // Clean up
     std::fs::remove_file(&example_script).ok();
 
-    assert!(result.is_ok(), "Listing commands should succeed with example scripts");
+    assert!(
+        result.is_ok(),
+        "Listing commands should succeed with example scripts"
+    );
 
     Ok(())
 }
@@ -468,15 +494,17 @@ function main(args) {
             context.config.clone(),
             script_path.to_string_lossy().to_string(),
             None,
-        ).await
-    }).await;
+        )
+        .await
+    })
+    .await;
 
     assert!(result.is_ok(), "Performance test script should succeed");
     AssertUtils::assert_execution_time_within(
         duration,
         Duration::from_millis(10),
         Duration::from_millis(5000),
-        "rune script execution"
+        "rune script execution",
     );
 
     Ok(())
@@ -490,19 +518,24 @@ async fn test_rune_execute_memory_usage() -> Result<()> {
 
     // Execute multiple scripts to test memory usage
     for i in 0..10 {
-        let script_content = format!(r#"
+        let script_content = format!(
+            r#"
 function main(args) {{
     return {{ success: true, iteration: {} }};
 }}
-"#, i);
+"#,
+            i
+        );
 
-        let script_path = context.create_test_script(&format!("memory-test-{}", i), &script_content);
+        let script_path =
+            context.create_test_script(&format!("memory-test-{}", i), &script_content);
 
         let result = execute(
             context.config.clone(),
             script_path.to_string_lossy().to_string(),
             None,
-        ).await;
+        )
+        .await;
 
         assert!(result.is_ok(), "Memory test script {} should succeed", i);
     }
@@ -527,22 +560,20 @@ async fn test_rune_concurrent_execution() -> Result<()> {
     let mut futures = Vec::new();
 
     for i in 0..5 {
-        let script_content = format!(r#"
+        let script_content = format!(
+            r#"
 function main(args) {{
     return {{ success: true, concurrent_id: {} }};
 }}
-"#, i);
+"#,
+            i
+        );
 
         let script_path = context.create_test_script(&format!("concurrent-{}", i), &script_content);
         let config = context.config.clone();
 
-        let future = async move {
-            execute(
-                config,
-                script_path.to_string_lossy().to_string(),
-                None,
-            ).await
-        };
+        let future =
+            async move { execute(config, script_path.to_string_lossy().to_string(), None).await };
 
         futures.push(future);
     }
@@ -598,7 +629,8 @@ function main(args) {
         context.config.clone(),
         script_path.to_string_lossy().to_string(),
         Some(args.to_string()),
-    ).await;
+    )
+    .await;
 
     assert!(result.is_ok(), "Complex script execution should succeed");
 
@@ -639,7 +671,8 @@ function main(args) {
         context.config.clone(),
         script_path.to_string_lossy().to_string(),
         None,
-    ).await;
+    )
+    .await;
 
     // Should succeed regardless of environment capabilities
     let _ = result;
@@ -669,7 +702,8 @@ async fn test_rune_execute_very_large_script() -> Result<()> {
         context.config.clone(),
         script_path.to_string_lossy().to_string(),
         None,
-    ).await;
+    )
+    .await;
 
     // Should handle large scripts gracefully
     let _ = result;
@@ -700,7 +734,8 @@ function main(args) {
         context.config.clone(),
         script_path.to_string_lossy().to_string(),
         None,
-    ).await;
+    )
+    .await;
 
     // Should handle Unicode characters correctly
     assert!(result.is_ok(), "Unicode script should execute successfully");
@@ -721,11 +756,14 @@ async fn test_rune_execute_script_path_edge_cases() -> Result<()> {
     ];
 
     for (filename, description) in test_cases {
-        let script_content = format!(r#"
+        let script_content = format!(
+            r#"
 function main(args) {{
     return {{ success: true, description: "{}" }};
 }}
-"#, description);
+"#,
+            description
+        );
 
         let script_path = context.create_test_script(&filename.replace(".rn", ""), &script_content);
 
@@ -733,9 +771,14 @@ function main(args) {{
             context.config.clone(),
             script_path.to_string_lossy().to_string(),
             None,
-        ).await;
+        )
+        .await;
 
-        assert!(result.is_ok(), "Script '{}' should execute successfully", description);
+        assert!(
+            result.is_ok(),
+            "Script '{}' should execute successfully",
+            description
+        );
     }
 
     Ok(())

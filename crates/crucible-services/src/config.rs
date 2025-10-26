@@ -4,22 +4,22 @@
 //! debugging, and event routing with environment-based overrides.
 //! Includes enhanced validation and error handling for Phase 7.3.
 
-pub mod validation;
 pub mod enhanced_config;
-pub mod manager;
 pub mod error_handling;
+pub mod manager;
+pub mod validation;
 
-use super::logging::init_logging;
 use super::errors::ServiceResult;
+use super::logging::init_logging;
 use serde::{Deserialize, Serialize};
 use std::env;
 use tracing::{debug, info};
 
 // Re-export enhanced configuration types
 pub use enhanced_config::*;
-pub use validation::*;
-pub use manager::*;
 pub use error_handling::*;
+pub use manager::*;
+pub use validation::*;
 
 /// Main configuration for Crucible services
 #[derive(Debug, Clone, Serialize)]
@@ -132,8 +132,14 @@ impl Default for DebuggingConfig {
                 .parse()
                 .unwrap_or(false),
             component_debug_levels: vec![
-                ("crucible_services::script_engine".to_string(), "debug".to_string()),
-                ("crucible_services::event_routing".to_string(), "trace".to_string()),
+                (
+                    "crucible_services::script_engine".to_string(),
+                    "debug".to_string(),
+                ),
+                (
+                    "crucible_services::event_routing".to_string(),
+                    "trace".to_string(),
+                ),
             ],
             debug_output_file: env::var("CRUCIBLE_DEBUG_FILE").ok(),
             max_debug_file_size_mb: 100,
@@ -212,7 +218,10 @@ impl CrucibleConfig {
         if let Ok(max_concurrent) = env::var("CRUCIBLE_MAX_CONCURRENT_EVENTS") {
             if let Ok(count) = max_concurrent.parse() {
                 self.event_routing.max_concurrent_events = count;
-                info!(max_concurrent_events = count, "Max concurrent events overridden");
+                info!(
+                    max_concurrent_events = count,
+                    "Max concurrent events overridden"
+                );
             }
         }
 
@@ -228,7 +237,9 @@ impl CrucibleConfig {
                 .filter_map(|pair| {
                     let mut parts = pair.split('=');
                     match (parts.next(), parts.next()) {
-                        (Some(component), Some(level)) => Some((component.to_string(), level.to_string())),
+                        (Some(component), Some(level)) => {
+                            Some((component.to_string(), level.to_string()))
+                        }
                         _ => None,
                     }
                 })
@@ -304,8 +315,7 @@ impl CrucibleConfig {
     /// Save configuration to file (simplified version)
     pub fn save_to_file(&self, path: &str) -> ServiceResult<()> {
         let content = format!("Crucible Configuration:\n{}", self.get_summary());
-        std::fs::write(path, content)
-            .map_err(|e| super::errors::ServiceError::IoError(e))?;
+        std::fs::write(path, content).map_err(|e| super::errors::ServiceError::IoError(e))?;
         info!(config_file = %path, "Configuration saved to file");
         Ok(())
     }
@@ -384,8 +394,8 @@ mod tests {
         assert_eq!(env_vars::get_string("TEST_STRING", "default"), "test_value");
 
         env::remove_var("TEST_BOOL");
-    env::remove_var("TEST_INT");
-    env::remove_var("TEST_STRING");
+        env::remove_var("TEST_INT");
+        env::remove_var("TEST_STRING");
     }
 
     #[test]

@@ -1,7 +1,7 @@
 // Syntax highlighting for SurrealQL queries and commands
 
-use reedline::{Highlighter, StyledText};
 use nu_ansi_term::{Color, Style};
+use reedline::{Highlighter, StyledText};
 use std::collections::HashSet;
 
 /// SurrealQL syntax highlighter
@@ -18,35 +18,101 @@ impl SurrealQLHighlighter {
         let keywords = Self::build_keyword_set();
         let functions = Self::build_function_set();
 
-        Self { keywords, functions }
+        Self {
+            keywords,
+            functions,
+        }
     }
 
     /// Build set of SurrealQL keywords
     fn build_keyword_set() -> HashSet<String> {
         vec![
             // Query keywords
-            "SELECT", "FROM", "WHERE", "ORDER", "BY", "LIMIT", "START",
-            "FETCH", "GROUP", "SPLIT", "EXPLAIN", "TIMEOUT",
+            "SELECT",
+            "FROM",
+            "WHERE",
+            "ORDER",
+            "BY",
+            "LIMIT",
+            "START",
+            "FETCH",
+            "GROUP",
+            "SPLIT",
+            "EXPLAIN",
+            "TIMEOUT",
             // Data manipulation
-            "CREATE", "UPDATE", "DELETE", "INSERT", "INTO", "RELATE",
-            "SET", "UNSET", "MERGE", "PATCH", "CONTENT", "REPLACE",
+            "CREATE",
+            "UPDATE",
+            "DELETE",
+            "INSERT",
+            "INTO",
+            "RELATE",
+            "SET",
+            "UNSET",
+            "MERGE",
+            "PATCH",
+            "CONTENT",
+            "REPLACE",
             // Operators
-            "AND", "OR", "NOT", "IN", "CONTAINS", "CONTAINSNOT", "CONTAINSALL",
-            "CONTAINSANY", "CONTAINSNONE", "INSIDE", "OUTSIDE", "INTERSECTS",
-            "IS", "NULL", "NONE", "EMPTY",
+            "AND",
+            "OR",
+            "NOT",
+            "IN",
+            "CONTAINS",
+            "CONTAINSNOT",
+            "CONTAINSALL",
+            "CONTAINSANY",
+            "CONTAINSNONE",
+            "INSIDE",
+            "OUTSIDE",
+            "INTERSECTS",
+            "IS",
+            "NULL",
+            "NONE",
+            "EMPTY",
             // Data types
-            "AS", "VALUE", "ONLY",
+            "AS",
+            "VALUE",
+            "ONLY",
             // Control flow
-            "IF", "ELSE", "THEN", "END", "RETURN",
+            "IF",
+            "ELSE",
+            "THEN",
+            "END",
+            "RETURN",
             // Transaction
-            "BEGIN", "TRANSACTION", "COMMIT", "CANCEL",
+            "BEGIN",
+            "TRANSACTION",
+            "COMMIT",
+            "CANCEL",
             // Database operations
-            "USE", "NAMESPACE", "DATABASE", "TABLE", "INFO", "FOR",
-            "DEFINE", "REMOVE", "FIELD", "INDEX", "UNIQUE", "EVENT",
-            "ANALYZER", "TOKEN", "SCOPE", "PARAM", "FUNCTION",
+            "USE",
+            "NAMESPACE",
+            "DATABASE",
+            "TABLE",
+            "INFO",
+            "FOR",
+            "DEFINE",
+            "REMOVE",
+            "FIELD",
+            "INDEX",
+            "UNIQUE",
+            "EVENT",
+            "ANALYZER",
+            "TOKEN",
+            "SCOPE",
+            "PARAM",
+            "FUNCTION",
             // Misc
-            "LET", "LIVE", "KILL", "PARALLEL", "OMIT", "PERMISSIONS",
-            "FULL", "FLEXIBLE", "READONLY",
+            "LET",
+            "LIVE",
+            "KILL",
+            "PARALLEL",
+            "OMIT",
+            "PERMISSIONS",
+            "FULL",
+            "FLEXIBLE",
+            "READONLY",
         ]
         .iter()
         .map(|s| s.to_string())
@@ -57,30 +123,74 @@ impl SurrealQLHighlighter {
     fn build_function_set() -> HashSet<String> {
         vec![
             // String functions
-            "string::concat", "string::contains", "string::endsWith",
-            "string::join", "string::length", "string::lowercase",
-            "string::repeat", "string::replace", "string::reverse",
-            "string::slice", "string::split", "string::startsWith",
-            "string::trim", "string::uppercase", "string::words",
+            "string::concat",
+            "string::contains",
+            "string::endsWith",
+            "string::join",
+            "string::length",
+            "string::lowercase",
+            "string::repeat",
+            "string::replace",
+            "string::reverse",
+            "string::slice",
+            "string::split",
+            "string::startsWith",
+            "string::trim",
+            "string::uppercase",
+            "string::words",
             // Array functions
-            "array::add", "array::all", "array::any", "array::append",
-            "array::combine", "array::concat", "array::difference",
-            "array::distinct", "array::flatten", "array::group",
-            "array::insert", "array::intersect", "array::len",
-            "array::max", "array::min", "array::pop", "array::push",
-            "array::remove", "array::reverse", "array::slice",
-            "array::sort", "array::union",
+            "array::add",
+            "array::all",
+            "array::any",
+            "array::append",
+            "array::combine",
+            "array::concat",
+            "array::difference",
+            "array::distinct",
+            "array::flatten",
+            "array::group",
+            "array::insert",
+            "array::intersect",
+            "array::len",
+            "array::max",
+            "array::min",
+            "array::pop",
+            "array::push",
+            "array::remove",
+            "array::reverse",
+            "array::slice",
+            "array::sort",
+            "array::union",
             // Math functions
-            "math::abs", "math::ceil", "math::floor", "math::round",
-            "math::sqrt", "math::pow", "math::max", "math::min",
+            "math::abs",
+            "math::ceil",
+            "math::floor",
+            "math::round",
+            "math::sqrt",
+            "math::pow",
+            "math::max",
+            "math::min",
             // Time functions
-            "time::now", "time::unix", "time::day", "time::hour",
-            "time::minute", "time::month", "time::year",
+            "time::now",
+            "time::unix",
+            "time::day",
+            "time::hour",
+            "time::minute",
+            "time::month",
+            "time::year",
             // Type functions
-            "type::bool", "type::int", "type::float", "type::string",
-            "type::array", "type::object",
+            "type::bool",
+            "type::int",
+            "type::float",
+            "type::string",
+            "type::array",
+            "type::object",
             // Count/aggregation
-            "count", "sum", "avg", "max", "min",
+            "count",
+            "sum",
+            "avg",
+            "max",
+            "min",
         ]
         .iter()
         .map(|s| s.to_string())
@@ -123,10 +233,7 @@ impl SurrealQLHighlighter {
 
         // Keywords (blue, bold)
         if self.is_keyword(token) {
-            return (
-                Style::new().fg(Color::Blue).bold(),
-                token.to_uppercase(),
-            );
+            return (Style::new().fg(Color::Blue).bold(), token.to_uppercase());
         }
 
         // Functions (magenta)
@@ -135,7 +242,10 @@ impl SurrealQLHighlighter {
         }
 
         // Operators (cyan)
-        if matches!(token, "=" | "!=" | ">" | "<" | ">=" | "<=" | "+" | "-" | "*" | "/" | "%" | "~" | "?" | "@") {
+        if matches!(
+            token,
+            "=" | "!=" | ">" | "<" | ">=" | "<=" | "+" | "-" | "*" | "/" | "%" | "~" | "?" | "@"
+        ) {
             return (Style::new().fg(Color::Cyan), token.to_string());
         }
 
@@ -276,9 +386,7 @@ mod tests {
 
         // Should have green style for string
         let parts: Vec<_> = styled.buffer.iter().collect();
-        let has_string = parts.iter().any(|(style, text)| {
-            text.contains("'test'")
-        });
+        let has_string = parts.iter().any(|(style, text)| text.contains("'test'"));
         assert!(has_string);
     }
 }

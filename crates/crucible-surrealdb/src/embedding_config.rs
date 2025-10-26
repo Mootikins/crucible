@@ -3,9 +3,9 @@
 //! Configuration types and validation for the vector embedding thread pool system.
 //! Provides privacy-focused local processing with configurable performance settings.
 
-use std::time::Duration;
-use serde::{Deserialize, Serialize};
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 /// Configuration for embedding thread pool operations
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -111,9 +111,9 @@ impl EmbeddingConfig {
     pub fn for_machine_specs(cpu_cores: usize, memory_bytes: usize) -> Self {
         let worker_count = cpu_cores.min(8); // Cap at 8 workers
         let batch_size = match memory_bytes {
-            0..=2_147_483_648 => 8,      // <= 2GB
+            0..=2_147_483_648 => 8,              // <= 2GB
             2_147_483_649..=8_589_934_592 => 16, // 2GB - 8GB
-            _ => 32,                     // > 8GB
+            _ => 32,                             // > 8GB
         };
 
         Self {
@@ -177,7 +177,9 @@ impl EmbeddingConfig {
         }
 
         if self.circuit_breaker_threshold == 0 {
-            return Err(anyhow::anyhow!("Circuit breaker threshold must be greater than 0"));
+            return Err(anyhow::anyhow!(
+                "Circuit breaker threshold must be greater than 0"
+            ));
         }
 
         Ok(())
@@ -330,10 +332,10 @@ impl EmbeddingErrorType {
     pub fn is_retryable(&self) -> bool {
         matches!(
             self,
-            EmbeddingErrorType::ProcessingError |
-            EmbeddingErrorType::TimeoutError |
-            EmbeddingErrorType::ResourceError |
-            EmbeddingErrorType::ExternalServiceError
+            EmbeddingErrorType::ProcessingError
+                | EmbeddingErrorType::TimeoutError
+                | EmbeddingErrorType::ResourceError
+                | EmbeddingErrorType::ExternalServiceError
         )
     }
 
@@ -376,11 +378,7 @@ pub struct EmbeddingError {
 
 impl EmbeddingError {
     /// Create a new embedding error
-    pub fn new(
-        document_id: String,
-        error_type: EmbeddingErrorType,
-        error_message: String,
-    ) -> Self {
+    pub fn new(document_id: String, error_type: EmbeddingErrorType, error_message: String) -> Self {
         Self {
             document_id,
             error_type,
@@ -392,11 +390,7 @@ impl EmbeddingError {
     }
 
     /// Create error with retry information
-    pub fn with_retry_info(
-        mut self,
-        retry_count: u32,
-        processing_time: Duration,
-    ) -> Self {
+    pub fn with_retry_info(mut self, retry_count: u32, processing_time: Duration) -> Self {
         self.retry_count = retry_count;
         self.processing_time = processing_time;
         self
@@ -406,9 +400,9 @@ impl EmbeddingError {
     pub fn should_trigger_circuit_breaker(&self) -> bool {
         matches!(
             self.error_type,
-            EmbeddingErrorType::ResourceError |
-            EmbeddingErrorType::ExternalServiceError |
-            EmbeddingErrorType::DatabaseError
+            EmbeddingErrorType::ResourceError
+                | EmbeddingErrorType::ExternalServiceError
+                | EmbeddingErrorType::DatabaseError
         )
     }
 }
@@ -651,11 +645,7 @@ pub struct DocumentEmbedding {
 
 impl DocumentEmbedding {
     /// Create a new document embedding
-    pub fn new(
-        document_id: String,
-        vector: Vec<f32>,
-        embedding_model: String,
-    ) -> Self {
+    pub fn new(document_id: String, vector: Vec<f32>, embedding_model: String) -> Self {
         Self {
             document_id,
             chunk_id: None,

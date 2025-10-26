@@ -4,23 +4,21 @@
 //! search from Phase 2.1. Integrates with vault_integration::semantic_search()
 //! instead of using mock tool execution.
 
-use anyhow::Result;
-use serde_json::json;
 use crate::config::CliConfig;
 use crate::interactive::SearchResultWithScore;
-use indicatif::{ProgressBar, ProgressStyle};
+use anyhow::Result;
+use crucible_config::{ApiConfig, EmbeddingProviderConfig, EmbeddingProviderType, ModelConfig};
 use crucible_surrealdb::{
-    vault_integration::{semantic_search, retrieve_parsed_document, get_database_stats},
+    embedding_pool::{create_embedding_thread_pool_with_crucible_config, EmbeddingThreadPool},
+    vault_integration::{get_database_stats, retrieve_parsed_document, semantic_search},
     vault_processor::process_vault_files,
-    vault_scanner::{VaultScannerConfig, create_vault_scanner},
-    embedding_pool::{EmbeddingThreadPool, create_embedding_thread_pool_with_crucible_config},
-    EmbeddingConfig,
-    SurrealClient,
-    SurrealDbConfig,
+    vault_scanner::{create_vault_scanner, VaultScannerConfig},
+    EmbeddingConfig, SurrealClient, SurrealDbConfig,
 };
-use crucible_config::{EmbeddingProviderConfig, EmbeddingProviderType, ApiConfig, ModelConfig};
-use std::time::Duration;
+use indicatif::{ProgressBar, ProgressStyle};
+use serde_json::json;
 use std::path::PathBuf;
+use std::time::Duration;
 
 pub async fn execute(
     config: CliConfig,
@@ -86,7 +84,7 @@ pub async fn execute(
         pb.set_style(
             ProgressStyle::default_spinner()
                 .template("{spinner:.green} {msg:.cyan}")
-                .unwrap()
+                .unwrap(),
         );
 
         if format != "json" {
@@ -99,9 +97,11 @@ pub async fn execute(
             Ok(process_result) => {
                 if format != "json" {
                     println!("✅ Processing completed successfully");
-                    println!("📊 Processed {} documents in {:.1}s",
+                    println!(
+                        "📊 Processed {} documents in {:.1}s",
                         process_result.processed_count,
-                        process_result.total_processing_time.as_secs_f64());
+                        process_result.total_processing_time.as_secs_f64()
+                    );
                     println!();
                 }
 
@@ -162,7 +162,10 @@ pub async fn execute(
         }
         Err(e) => {
             pb.finish_with_message("Search failed");
-            let error_msg = format!("Semantic search failed: {}. Make sure embeddings exist for your kiln documents.", e);
+            let error_msg = format!(
+                "Semantic search failed: {}. Make sure embeddings exist for your kiln documents.",
+                e
+            );
             if format == "json" {
                 let json_error = json!({
                     "error": true,
@@ -275,11 +278,14 @@ async fn convert_vector_search_results(
         match retrieve_parsed_document(client, &document_id).await {
             Ok(parsed_document) => {
                 // Extract title and content from the parsed document
-                let title = parsed_document.frontmatter
+                let title = parsed_document
+                    .frontmatter
                     .and_then(|fm| fm.get_string("title"))
                     .unwrap_or_else(|| {
                         // Fallback to first line of content
-                        parsed_document.content.plain_text
+                        parsed_document
+                            .content
+                            .plain_text
                             .lines()
                             .next()
                             .unwrap_or("Untitled Document")
@@ -306,7 +312,11 @@ async fn convert_vector_search_results(
     }
 
     // Sort by similarity score (descending)
-    cli_results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    cli_results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     Ok(cli_results)
 }
@@ -314,16 +324,18 @@ async fn convert_vector_search_results(
 /// Check if embeddings exist in the database
 async fn check_embeddings_exist(client: &SurrealClient) -> Result<bool> {
     match get_database_stats(client).await {
-        Ok(stats) => {
-            Ok(stats.total_embeddings > 0)
-        }
+        Ok(stats) => Ok(stats.total_embeddings > 0),
         Err(_e) => {
             // Fallback to direct query if stats function fails
             let embeddings_sql = "SELECT count() as total FROM embeddings LIMIT 1";
-            let result = client.query(embeddings_sql, &[]).await
+            let result = client
+                .query(embeddings_sql, &[])
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to query embeddings: {}", e))?;
 
-            let embeddings_count = result.records.first()
+            let embeddings_count = result
+                .records
+                .first()
                 .and_then(|r| r.data.get("total"))
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0);
@@ -340,7 +352,6 @@ async fn process_vault_integrated(
     pb: &ProgressBar,
     config: &CliConfig,
 ) -> Result<crucible_surrealdb::vault_scanner::VaultProcessResult> {
-
     // Validate kiln path exists
     if !vault_path.exists() {
         return Err(anyhow::anyhow!(
@@ -368,7 +379,8 @@ async fn process_vault_integrated(
         process_wikilinks: true,
         enable_incremental: false, // Process all files for simplicity
         track_file_changes: true,
-        change_detection_method: crucible_surrealdb::vault_scanner::ChangeDetectionMethod::ContentHash,
+        change_detection_method:
+            crucible_surrealdb::vault_scanner::ChangeDetectionMethod::ContentHash,
         error_handling_mode: crucible_surrealdb::vault_scanner::ErrorHandlingMode::ContinueOnError,
         max_error_count: 100,
         error_retry_attempts: 3,
@@ -381,13 +393,16 @@ async fn process_vault_integrated(
     };
 
     // Create kiln scanner and scan directory
-    let mut scanner = create_vault_scanner(scanner_config.clone()).await
+    let mut scanner = create_vault_scanner(scanner_config.clone())
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to create kiln scanner: {}", e))?;
 
     pb.set_message("Discovering files to process...");
 
     let vault_path_buf = PathBuf::from(vault_path);
-    let scan_result = scanner.scan_vault_directory(&vault_path_buf).await
+    let scan_result = scanner
+        .scan_vault_directory(&vault_path_buf)
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to scan kiln directory: {}", e))?;
 
     if scan_result.discovered_files.is_empty() {
@@ -400,7 +415,8 @@ async fn process_vault_integrated(
     pb.set_message("Found files to process, starting embedding generation...");
 
     // Create embedding thread pool for parallel processing using CLI configuration
-    let embedding_pool = create_embedding_pool_from_cli_config(&config).await
+    let embedding_pool = create_embedding_pool_from_cli_config(&config)
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to create embedding thread pool: {}", e))?;
 
     // Process files with integrated pipeline
@@ -411,7 +427,9 @@ async fn process_vault_integrated(
         client,
         &scanner_config,
         Some(&embedding_pool),
-    ).await.map_err(|e| anyhow::anyhow!("Failed to process kiln files: {}", e))?;
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("Failed to process kiln files: {}", e))?;
 
     pb.set_message("Processing completed successfully");
 
@@ -419,40 +437,44 @@ async fn process_vault_integrated(
 }
 
 /// Create embedding thread pool from CLI configuration
-async fn create_embedding_pool_from_cli_config(
-    config: &CliConfig,
-) -> Result<EmbeddingThreadPool> {
+async fn create_embedding_pool_from_cli_config(config: &CliConfig) -> Result<EmbeddingThreadPool> {
     // Convert CLI embedding config to crucible-config provider config
     let provider_config = create_provider_config_from_cli(config)?;
 
     // Create thread pool with real provider configuration
     let pool_config = EmbeddingConfig::default(); // Use default pool config
 
-    create_embedding_thread_pool_with_crucible_config(pool_config, provider_config).await
-        .map_err(|e| anyhow::anyhow!("Failed to create embedding thread pool with provider config: {}", e))
+    create_embedding_thread_pool_with_crucible_config(pool_config, provider_config)
+        .await
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to create embedding thread pool with provider config: {}",
+                e
+            )
+        })
 }
 
 /// Convert CLI configuration to crucible-config provider configuration
-fn create_provider_config_from_cli(
-    config: &CliConfig,
-) -> Result<EmbeddingProviderConfig> {
+fn create_provider_config_from_cli(config: &CliConfig) -> Result<EmbeddingProviderConfig> {
     // Extract model name from CLI config
-    let model_name = config.kiln.embedding_model.as_ref()
-        .ok_or_else(|| anyhow::anyhow!(
+    let model_name = config.kiln.embedding_model.as_ref().ok_or_else(|| {
+        anyhow::anyhow!(
             "Embedding model is not configured. Please set it via:\n\
             - Environment variable: EMBEDDING_MODEL\n\
             - CLI argument: --embedding-model <model>\n\
             - Config file: embedding_model = \"<model>\""
-        ))?;
+        )
+    })?;
 
     // Create provider config based on embedding URL
     // For now, we default to Ollama provider for local/embedded models
     // and OpenAI for cloud endpoints
     let provider_type = if config.kiln.embedding_url.contains("api.openai.com") {
         EmbeddingProviderType::OpenAI
-    } else if config.kiln.embedding_url.contains("localhost") ||
-               config.kiln.embedding_url.contains("127.0.0.1") ||
-               config.kiln.embedding_url.contains("11434") {
+    } else if config.kiln.embedding_url.contains("localhost")
+        || config.kiln.embedding_url.contains("127.0.0.1")
+        || config.kiln.embedding_url.contains("11434")
+    {
         EmbeddingProviderType::Ollama
     } else {
         // Default to Ollama for custom endpoints
@@ -491,9 +513,9 @@ fn create_provider_config_from_cli(
     };
 
     // Validate the configuration
-    provider_config.validate()
+    provider_config
+        .validate()
         .map_err(|e| anyhow::anyhow!("Invalid embedding provider configuration: {}", e))?;
 
     Ok(provider_config)
 }
-

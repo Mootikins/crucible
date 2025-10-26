@@ -4,8 +4,8 @@
 //! into SurrealDB-compatible data structures for indexing.
 
 use crate::parser::types::ParsedDocument;
-use serde_json::{Value, Map};
 use anyhow::Result;
+use serde_json::{Map, Value};
 
 /// Adapter for converting parsed documents to SurrealDB records
 pub struct SurrealDBAdapter {
@@ -49,10 +49,7 @@ impl SurrealDBAdapter {
         );
 
         // Title: from frontmatter, first heading, or filename
-        record.insert(
-            "title".to_string(),
-            Value::String(doc.title()),
-        );
+        record.insert("title".to_string(), Value::String(doc.title()));
 
         // Word count
         record.insert(
@@ -66,10 +63,7 @@ impl SurrealDBAdapter {
         } else {
             // Extract excerpt: first paragraph or up to max_excerpt_length
             // Split on double newline to get first paragraph
-            let first_paragraph = doc.content.plain_text
-                .split("\n\n")
-                .next()
-                .unwrap_or("");
+            let first_paragraph = doc.content.plain_text.split("\n\n").next().unwrap_or("");
 
             // Truncate to max_excerpt_length bytes if needed
             let bytes = first_paragraph.as_bytes();
@@ -98,10 +92,7 @@ impl SurrealDBAdapter {
         record.insert("metadata".to_string(), Value::Object(metadata));
 
         // Tags: combined from frontmatter and inline, deduplicated and sorted
-        let all_tags: Vec<Value> = doc.all_tags()
-            .into_iter()
-            .map(Value::String)
-            .collect();
+        let all_tags: Vec<Value> = doc.all_tags().into_iter().map(Value::String).collect();
         record.insert("tags".to_string(), Value::Array(all_tags));
 
         Ok(Value::Object(record))
@@ -118,11 +109,7 @@ impl SurrealDBAdapter {
             // Extract surrounding context (~50 chars on each side)
             let context = self.extract_context(&doc.content.plain_text, wikilink.offset, 50);
 
-            edges.push((
-                source_path.clone(),
-                wikilink.target.clone(),
-                context,
-            ));
+            edges.push((source_path.clone(), wikilink.target.clone(), context));
         }
 
         Ok(edges)
@@ -178,11 +165,13 @@ impl Default for SurrealDBAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::types::{DocumentContent, Frontmatter, FrontmatterFormat, Heading, Wikilink, Tag};
+    use crate::parser::types::{
+        DocumentContent, Frontmatter, FrontmatterFormat, Heading, Tag, Wikilink,
+    };
 
     fn create_test_document() -> ParsedDocument {
-        use std::path::PathBuf;
         use chrono::Utc;
+        use std::path::PathBuf;
 
         // Create frontmatter using the raw string format
         let frontmatter_raw = "title: Test Note\ntags: [project, ai]\nstatus: active".to_string();
@@ -196,33 +185,27 @@ mod tests {
                 char_count: 47,
                 paragraphs: vec![],
                 lists: vec![],
-                headings: vec![
-                    Heading {
-                        level: 1,
-                        text: "Test".to_string(),
-                        offset: 0,
-                        id: Some("test".to_string()),
-                    }
-                ],
+                headings: vec![Heading {
+                    level: 1,
+                    text: "Test".to_string(),
+                    offset: 0,
+                    id: Some("test".to_string()),
+                }],
                 code_blocks: vec![],
             },
-            wikilinks: vec![
-                Wikilink {
-                    target: "link".to_string(),
-                    alias: None,
-                    offset: 37,
-                    heading_ref: None,
-                    block_ref: None,
-                    is_embed: false,
-                }
-            ],
-            tags: vec![
-                Tag {
-                    name: "tag".to_string(),
-                    path: vec!["tag".to_string()],
-                    offset: 48,
-                }
-            ],
+            wikilinks: vec![Wikilink {
+                target: "link".to_string(),
+                alias: None,
+                offset: 37,
+                heading_ref: None,
+                block_ref: None,
+                is_embed: false,
+            }],
+            tags: vec![Tag {
+                name: "tag".to_string(),
+                path: vec!["tag".to_string()],
+                offset: 48,
+            }],
             parsed_at: Utc::now(),
             content_hash: "test_hash_123".to_string(),
             file_size: 100,
@@ -234,7 +217,9 @@ mod tests {
         let adapter = SurrealDBAdapter::new();
         let doc = create_test_document();
 
-        let record = adapter.to_note_record(&doc).expect("Should convert to record");
+        let record = adapter
+            .to_note_record(&doc)
+            .expect("Should convert to record");
 
         // Check basic fields
         assert_eq!(record["path"], "Projects/test.md");
@@ -242,7 +227,10 @@ mod tests {
         assert_eq!(record["word_count"], 10);
 
         // Should NOT include full content by default
-        assert!(!record["content"].as_str().unwrap().contains("This is a test document"));
+        assert!(!record["content"]
+            .as_str()
+            .unwrap()
+            .contains("This is a test document"));
         assert!(record["content"].as_str().unwrap().len() <= 1000);
     }
 
@@ -251,10 +239,15 @@ mod tests {
         let adapter = SurrealDBAdapter::new().with_full_content();
         let doc = create_test_document();
 
-        let record = adapter.to_note_record(&doc).expect("Should convert to record");
+        let record = adapter
+            .to_note_record(&doc)
+            .expect("Should convert to record");
 
         // Should include full plain_text content when configured
-        assert_eq!(record["content"], "Test\n\nThis is a test document with link and tag.");
+        assert_eq!(
+            record["content"],
+            "Test\n\nThis is a test document with link and tag."
+        );
     }
 
     #[test]
@@ -262,10 +255,14 @@ mod tests {
         let adapter = SurrealDBAdapter::new();
         let doc = create_test_document();
 
-        let record = adapter.to_note_record(&doc).expect("Should convert to record");
+        let record = adapter
+            .to_note_record(&doc)
+            .expect("Should convert to record");
 
         // Check frontmatter extraction
-        let metadata = record["metadata"].as_object().expect("Should have metadata");
+        let metadata = record["metadata"]
+            .as_object()
+            .expect("Should have metadata");
         assert_eq!(metadata["status"], "active");
 
         // Tags from frontmatter should be in tags array
@@ -279,7 +276,9 @@ mod tests {
         let adapter = SurrealDBAdapter::new();
         let doc = create_test_document();
 
-        let edges = adapter.to_wikilink_edges(&doc).expect("Should extract edges");
+        let edges = adapter
+            .to_wikilink_edges(&doc)
+            .expect("Should extract edges");
 
         assert_eq!(edges.len(), 1);
         assert_eq!(edges[0].0, "Projects/test.md"); // source
@@ -292,7 +291,9 @@ mod tests {
         let adapter = SurrealDBAdapter::new();
         let doc = create_test_document();
 
-        let associations = adapter.to_tag_associations(&doc).expect("Should extract tags");
+        let associations = adapter
+            .to_tag_associations(&doc)
+            .expect("Should extract tags");
 
         // Should have tags from both frontmatter and content
         assert_eq!(associations.len(), 3); // project, ai, tag
@@ -310,7 +311,9 @@ mod tests {
         doc.content.plain_text = "a".repeat(200);
         doc.content.char_count = 200;
 
-        let record = adapter.to_note_record(&doc).expect("Should convert to record");
+        let record = adapter
+            .to_note_record(&doc)
+            .expect("Should convert to record");
 
         // Content should be truncated to max excerpt length
         assert!(record["content"].as_str().unwrap().len() <= 50);
@@ -318,8 +321,8 @@ mod tests {
 
     #[test]
     fn test_no_frontmatter_document() {
-        use std::path::PathBuf;
         use chrono::Utc;
+        use std::path::PathBuf;
 
         let adapter = SurrealDBAdapter::new();
 
@@ -342,7 +345,9 @@ mod tests {
             file_size: 14,
         };
 
-        let record = adapter.to_note_record(&doc).expect("Should handle no frontmatter");
+        let record = adapter
+            .to_note_record(&doc)
+            .expect("Should handle no frontmatter");
 
         assert_eq!(record["path"], "simple.md");
         assert!(record["metadata"].as_object().unwrap().is_empty());

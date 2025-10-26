@@ -4,10 +4,7 @@
 //! after Phase 5 cleanup. It provides basic service coordination without the complexity
 //! of the previous event-driven system.
 
-use super::{
-    config::CrucibleConfig,
-    Result as CoreResult, CrucibleError,
-};
+use super::{config::CrucibleConfig, CrucibleError, Result as CoreResult};
 use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -15,13 +12,11 @@ use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
 // Re-export core service types from simplified architecture
-pub use crucible_services::types::{
-    ServiceHealth, ServiceStatus, ServiceMetrics,
-};
+pub use crucible_services::types::{ServiceHealth, ServiceMetrics, ServiceStatus};
 
 // Re-export key traits from simplified architecture
 pub use crucible_services::service_traits::{
-    ServiceLifecycle, HealthCheck, ScriptEngine, ToolService, ServiceRegistry,
+    HealthCheck, ScriptEngine, ServiceLifecycle, ServiceRegistry, ToolService,
 };
 
 // Re-export ScriptEngine configuration
@@ -60,7 +55,10 @@ pub struct CrucibleCore {
 #[derive(Debug, Clone)]
 pub enum CoreMessage {
     /// Service status update
-    ServiceStatusUpdate { service_id: String, status: ServiceStatus },
+    ServiceStatusUpdate {
+        service_id: String,
+        status: ServiceStatus,
+    },
     /// Health check request
     HealthCheck,
     /// Metrics update
@@ -112,7 +110,11 @@ impl CrucibleCore {
     }
 
     /// Register a service with the core
-    pub async fn register_service(&self, name: String, service: Arc<dyn ServiceLifecycle>) -> CoreResult<()> {
+    pub async fn register_service(
+        &self,
+        name: String,
+        service: Arc<dyn ServiceLifecycle>,
+    ) -> CoreResult<()> {
         let mut services = self.services.write().await;
         services.insert(name.clone(), service);
 
@@ -163,13 +165,15 @@ impl CrucibleCore {
 
     /// Start the core and all registered services
     pub async fn start(&self) -> CoreResult<()> {
-        self.update_health(ServiceStatus::Degraded, Some("Core starting".to_string())).await;
+        self.update_health(ServiceStatus::Degraded, Some("Core starting".to_string()))
+            .await;
 
         // Note: Service starting simplified for now
         // In a real implementation, we'd need a different approach for mutable operations
         tracing::info!("Service starting simplified - all services assumed started");
 
-        self.update_health(ServiceStatus::Healthy, Some("Core running".to_string())).await;
+        self.update_health(ServiceStatus::Healthy, Some("Core running".to_string()))
+            .await;
 
         // Start message processing
         self.start_message_processing().await;
@@ -180,7 +184,8 @@ impl CrucibleCore {
 
     /// Stop the core and all registered services
     pub async fn stop(&self) -> CoreResult<()> {
-        self.update_health(ServiceStatus::Degraded, Some("Core stopping".to_string())).await;
+        self.update_health(ServiceStatus::Degraded, Some("Core stopping".to_string()))
+            .await;
 
         // Send shutdown message
         let _ = self.message_sender.send(CoreMessage::Shutdown);
@@ -189,7 +194,8 @@ impl CrucibleCore {
         // In a real implementation, we'd need a different approach for mutable operations
         tracing::info!("Service stopping simplified - all services remain registered");
 
-        self.update_health(ServiceStatus::Degraded, Some("Core stopped".to_string())).await;
+        self.update_health(ServiceStatus::Degraded, Some("Core stopped".to_string()))
+            .await;
 
         tracing::info!("CrucibleCore {} stopped", self.id);
         Ok(())
@@ -218,7 +224,11 @@ impl CrucibleCore {
                 while let Some(message) = receiver.recv().await {
                     match message {
                         CoreMessage::ServiceStatusUpdate { service_id, status } => {
-                            tracing::debug!("Service {} status updated to {:?}", service_id, status);
+                            tracing::debug!(
+                                "Service {} status updated to {:?}",
+                                service_id,
+                                status
+                            );
                         }
                         CoreMessage::HealthCheck => {
                             let mut h = health.write().await;
@@ -240,7 +250,8 @@ impl CrucibleCore {
 
     /// Send a message to the core
     pub fn send_message(&self, message: CoreMessage) -> CoreResult<()> {
-        self.message_sender.send(message)
+        self.message_sender
+            .send(message)
             .map_err(|_| CrucibleError::InvalidOperation("Failed to send message".to_string()))
     }
 
@@ -251,18 +262,19 @@ impl CrucibleCore {
 
         for (name, _service) in services.iter() {
             // Simplified health check - assume services are healthy if they're registered
-            results.insert(name.clone(), ServiceHealth {
-                status: ServiceStatus::Healthy,
-                message: Some("Service registered and assumed healthy".to_string()),
-                last_check: Utc::now(),
-            });
+            results.insert(
+                name.clone(),
+                ServiceHealth {
+                    status: ServiceStatus::Healthy,
+                    message: Some("Service registered and assumed healthy".to_string()),
+                    last_check: Utc::now(),
+                },
+            );
         }
 
         Ok(results)
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {

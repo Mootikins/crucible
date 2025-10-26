@@ -4,7 +4,7 @@
 //! debugging capabilities while maintaining minimal performance overhead.
 
 use super::errors::{ServiceError, ServiceResult};
-use super::logging::{EventTracer, EventMetrics};
+use super::logging::{EventMetrics, EventTracer};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -76,11 +76,7 @@ pub struct Event {
 
 impl Event {
     /// Create a new event
-    pub fn new(
-        event_type: EventType,
-        source: String,
-        payload: serde_json::Value,
-    ) -> Self {
+    pub fn new(event_type: EventType, source: String, payload: serde_json::Value) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
             event_type,
@@ -113,7 +109,10 @@ impl Event {
 
     /// Get event age
     pub fn age(&self) -> Duration {
-        chrono::Utc::now().signed_duration_since(self.created_at).to_std().unwrap_or_default()
+        chrono::Utc::now()
+            .signed_duration_since(self.created_at)
+            .to_std()
+            .unwrap_or_default()
     }
 }
 
@@ -312,7 +311,9 @@ impl EventRouter {
                     max_concurrent = self.config.max_concurrent_events,
                     "System at capacity, rejecting event"
                 );
-                return Err(ServiceError::ExecutionError("System at capacity".to_string()));
+                return Err(ServiceError::ExecutionError(
+                    "System at capacity".to_string(),
+                ));
             }
             active.insert(event_id.clone(), start_time);
         }
@@ -357,7 +358,9 @@ impl EventRouter {
             let mut active = self.active_events.write().await;
             active.remove(&event_id);
 
-            return Err(ServiceError::ValidationError("No handlers available".to_string()));
+            return Err(ServiceError::ValidationError(
+                "No handlers available".to_string(),
+            ));
         }
 
         // Make routing decision
@@ -378,7 +381,10 @@ impl EventRouter {
         for target in &decision.targets {
             let handler_start = Instant::now();
 
-            match self.deliver_to_handler(&processed_event, target, &handlers).await {
+            match self
+                .deliver_to_handler(&processed_event, target, &handlers)
+                .await
+            {
                 Ok(updated_event) => {
                     processed_event = updated_event;
                     delivery_results.push(DeliveryResult {
@@ -441,7 +447,8 @@ impl EventRouter {
         }
 
         // Log completion
-        self.event_tracer.trace_event_complete(&event_id, routing_time_ms, true);
+        self.event_tracer
+            .trace_event_complete(&event_id, routing_time_ms, true);
 
         info!(
             event_id = %event_id,
@@ -465,7 +472,8 @@ impl EventRouter {
         event: &Event,
         handlers: &[Arc<dyn EventHandler>],
     ) -> RoutingDecision {
-        let targets: Vec<String> = handlers.iter()
+        let targets: Vec<String> = handlers
+            .iter()
             .map(|h| h.handler_name().to_string())
             .collect();
 
@@ -476,10 +484,16 @@ impl EventRouter {
         };
 
         let reasoning = match &strategy {
-            RoutingStrategy::Direct => format!("Direct routing to specified target: {:?}", event.target),
+            RoutingStrategy::Direct => {
+                format!("Direct routing to specified target: {:?}", event.target)
+            }
             RoutingStrategy::Broadcast => "Broadcasting to all suitable handlers".to_string(),
-            RoutingStrategy::TypeBased => format!("Type-based routing for event type: {}", event.event_type),
-            RoutingStrategy::PriorityBased => format!("Priority-based routing for priority: {:?}", event.priority),
+            RoutingStrategy::TypeBased => {
+                format!("Type-based routing for event type: {}", event.event_type)
+            }
+            RoutingStrategy::PriorityBased => {
+                format!("Priority-based routing for priority: {:?}", event.priority)
+            }
             RoutingStrategy::Custom(name) => format!("Custom routing strategy: {}", name),
         };
 
@@ -500,7 +514,8 @@ impl EventRouter {
         target: &str,
         handlers: &[Arc<dyn EventHandler>],
     ) -> Result<Event, ServiceError> {
-        let handler = handlers.iter()
+        let handler = handlers
+            .iter()
             .find(|h| h.handler_name() == target)
             .ok_or_else(|| ServiceError::ServiceNotFound(target.to_string()))?;
 

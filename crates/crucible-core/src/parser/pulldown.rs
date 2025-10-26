@@ -1,12 +1,12 @@
 //! Pulldown-cmark based markdown parser implementation
 
+use super::error::ParserResult;
 use super::traits::{MarkdownParser, ParserCapabilities};
 use super::types::*;
-use super::error::ParserResult;
 use async_trait::async_trait;
-use pulldown_cmark::{Parser as CmarkParser, Event, Tag as CmarkTag, TagEnd, HeadingLevel};
-use std::path::Path;
 use chrono::Utc;
+use pulldown_cmark::{Event, HeadingLevel, Parser as CmarkParser, Tag as CmarkTag, TagEnd};
+use std::path::Path;
 
 /// Markdown parser using pulldown-cmark
 pub struct PulldownParser {
@@ -205,7 +205,12 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
 
     for event in parser {
         match event {
-            Event::Start(CmarkTag::Heading{level, id: _, classes: _, attrs: _}) => {
+            Event::Start(CmarkTag::Heading {
+                level,
+                id: _,
+                classes: _,
+                attrs: _,
+            }) => {
                 // Close any open paragraph
                 if in_paragraph {
                     if !current_paragraph_text.trim().is_empty() {

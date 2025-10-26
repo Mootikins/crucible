@@ -51,14 +51,16 @@ impl FileMetadata {
 
     /// Get a frontmatter value as string
     pub fn get_string(&self, key: &str) -> Option<String> {
-        self.frontmatter.get(key)
+        self.frontmatter
+            .get(key)
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
     }
 
     /// Get a frontmatter value as array of strings
     pub fn get_string_array(&self, key: &str) -> Vec<String> {
-        self.frontmatter.get(key)
+        self.frontmatter
+            .get(key)
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -131,10 +133,13 @@ impl VaultFile {
 
     /// Get the file title (from metadata or filename)
     pub fn get_title(&self) -> String {
-        self.metadata.title.clone()
+        self.metadata
+            .title
+            .clone()
             .or_else(|| {
                 // Extract from filename
-                self.path.file_stem()
+                self.path
+                    .file_stem()
                     .and_then(|s| s.to_str())
                     .map(|s| s.to_string())
             })

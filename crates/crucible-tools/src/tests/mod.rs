@@ -6,7 +6,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::types::{ToolDefinition, ToolResult, ToolExecutionContext};
+    use crate::types::{ToolDefinition, ToolExecutionContext, ToolResult};
     use serde_json::json;
 
     // Import Phase 4.1 API validation tests
@@ -54,7 +54,9 @@ mod tests {
         let info = crate::library_info();
         assert_eq!(info.name, "crucible-tools");
         assert!(info.features.contains(&"simple_composition".to_string()));
-        assert!(info.features.contains(&"direct_async_functions".to_string()));
+        assert!(info
+            .features
+            .contains(&"direct_async_functions".to_string()));
         assert!(info.features.contains(&"unified_interface".to_string()));
         assert!(info.features.contains(&"25_tools_registered".to_string()));
     }
@@ -70,7 +72,7 @@ mod tests {
         // Test the simplified context creation methods
         let context1 = ToolExecutionContext::with_user_session(
             Some("user123".to_string()),
-            Some("session456".to_string())
+            Some("session456".to_string()),
         );
         assert_eq!(context1.user_id, Some("user123".to_string()));
         assert_eq!(context1.session_id, Some("session456".to_string()));
@@ -80,7 +82,10 @@ mod tests {
 
         let context3 = context2.with_env("TEST_VAR".to_string(), "test_value".to_string());
         assert!(context3.environment.contains_key("TEST_VAR"));
-        assert_eq!(context3.environment.get("TEST_VAR"), Some(&"test_value".to_string()));
+        assert_eq!(
+            context3.environment.get("TEST_VAR"),
+            Some(&"test_value".to_string())
+        );
     }
 
     #[tokio::test]
@@ -96,7 +101,9 @@ mod tests {
         // Test library info includes current features
         let info = crate::library_info();
         assert!(info.features.contains(&"simple_composition".to_string()));
-        assert!(info.features.contains(&"direct_tool_registration".to_string()));
+        assert!(info
+            .features
+            .contains(&"direct_tool_registration".to_string()));
         assert!(info.features.contains(&"25_tools_registered".to_string()));
     }
 
@@ -118,7 +125,9 @@ mod tests {
         // Test library info includes current features
         let info = crate::library_info();
         assert!(info.features.contains(&"simple_composition".to_string()));
-        assert!(info.features.contains(&"direct_async_functions".to_string()));
+        assert!(info
+            .features
+            .contains(&"direct_async_functions".to_string()));
         assert!(info.features.contains(&"database_tools".to_string()));
         assert!(info.features.contains(&"search_tools".to_string()));
         assert!(info.features.contains(&"vault_tools".to_string()));
@@ -139,44 +148,83 @@ mod tests {
         // Test execution of a few representative tools from each category
 
         // Test system tool
-        let result = crate::execute_tool(
-            "system_info".to_string(),
-            json!({}),
-            None,
-            None,
-        ).await.unwrap();
+        let result = crate::execute_tool("system_info".to_string(), json!({}), None, None)
+            .await
+            .unwrap();
         assert!(result.success);
         assert!(result.data.is_some());
 
         // Test get_environment tool (should work on any system)
-        let result = crate::execute_tool(
-            "get_environment".to_string(),
-            json!({}),
-            None,
-            None,
-        ).await.unwrap();
+        let result = crate::execute_tool("get_environment".to_string(), json!({}), None, None)
+            .await
+            .unwrap();
         assert!(result.success);
         assert!(result.data.is_some());
 
         // Verify tool count by category
         let tools = crate::list_registered_tools().await;
 
-        let system_tools = vec!["system_info", "execute_command", "list_files", "read_file", "get_environment"];
-        let vault_tools = vec!["search_by_properties", "search_by_tags", "search_by_folder", "create_note", "update_note", "delete_note", "get_vault_stats", "list_tags"];
-        let database_tools = vec!["semantic_search", "search_by_content", "search_by_filename", "update_note_properties", "index_document", "get_document_stats", "sync_metadata"];
-        let search_tools = vec!["search_documents", "rebuild_index", "get_index_stats", "optimize_index", "advanced_search"];
+        let system_tools = vec![
+            "system_info",
+            "execute_command",
+            "list_files",
+            "read_file",
+            "get_environment",
+        ];
+        let vault_tools = vec![
+            "search_by_properties",
+            "search_by_tags",
+            "search_by_folder",
+            "create_note",
+            "update_note",
+            "delete_note",
+            "get_vault_stats",
+            "list_tags",
+        ];
+        let database_tools = vec![
+            "semantic_search",
+            "search_by_content",
+            "search_by_filename",
+            "update_note_properties",
+            "index_document",
+            "get_document_stats",
+            "sync_metadata",
+        ];
+        let search_tools = vec![
+            "search_documents",
+            "rebuild_index",
+            "get_index_stats",
+            "optimize_index",
+            "advanced_search",
+        ];
 
         for tool in &system_tools {
-            assert!(tools.contains(&tool.to_string()), "Missing system tool: {}", tool);
+            assert!(
+                tools.contains(&tool.to_string()),
+                "Missing system tool: {}",
+                tool
+            );
         }
         for tool in &vault_tools {
-            assert!(tools.contains(&tool.to_string()), "Missing vault tool: {}", tool);
+            assert!(
+                tools.contains(&tool.to_string()),
+                "Missing vault tool: {}",
+                tool
+            );
         }
         for tool in &database_tools {
-            assert!(tools.contains(&tool.to_string()), "Missing database tool: {}", tool);
+            assert!(
+                tools.contains(&tool.to_string()),
+                "Missing database tool: {}",
+                tool
+            );
         }
         for tool in &search_tools {
-            assert!(tools.contains(&tool.to_string()), "Missing search tool: {}", tool);
+            assert!(
+                tools.contains(&tool.to_string()),
+                "Missing search tool: {}",
+                tool
+            );
         }
 
         assert_eq!(tools.len(), 25, "Should have exactly 25 tools total");

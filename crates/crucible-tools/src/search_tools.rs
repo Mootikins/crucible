@@ -5,30 +5,32 @@
 //! Converted from Tool trait implementations to direct async function composition as part of
 //! Phase 1.3 service architecture removal. Now updated to Phase 2.1 ToolFunction interface.
 
-use crate::types::{ToolResult, ToolError, ToolFunction};
+use crate::types::{ToolError, ToolFunction, ToolResult};
 use serde_json::{json, Value};
 use tracing::info;
 
 /// Search documents using semantic similarity - Phase 2.1 ToolFunction
 pub fn search_documents() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let query = parameters.get("query")
+            let query = parameters
+                .get("query")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| ToolError::Other("Missing 'query' parameter".to_string()))?;
 
-            let top_k = parameters.get("top_k")
+            let top_k = parameters
+                .get("top_k")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(10);
 
             let filters = parameters.get("filters").cloned();
 
-            info!("Searching documents: {} (top_k: {}, filters: {:?})", query, top_k, filters);
+            info!(
+                "Searching documents: {} (top_k: {}, filters: {:?})",
+                query, top_k, filters
+            );
 
             let documents = vec![
                 json!({
@@ -76,18 +78,17 @@ pub fn search_documents() -> ToolFunction {
 
 /// Rebuild search indexes for all documents - Phase 2.1 ToolFunction
 pub fn rebuild_index() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let force = parameters.get("force")
+            let force = parameters
+                .get("force")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
-            let index_types = parameters.get("index_types")
+            let index_types = parameters
+                .get("index_types")
                 .and_then(|v| v.as_array())
                 .map(|arr| {
                     arr.iter()
@@ -96,7 +97,11 @@ pub fn rebuild_index() -> ToolFunction {
                         .collect()
                 })
                 .unwrap_or_else(|| {
-                    vec!["semantic".to_string(), "full_text".to_string(), "metadata".to_string()]
+                    vec![
+                        "semantic".to_string(),
+                        "full_text".to_string(),
+                        "metadata".to_string(),
+                    ]
                 });
 
             info!("Rebuilding indexes: {:?} (force: {})", index_types, force);
@@ -124,10 +129,7 @@ pub fn rebuild_index() -> ToolFunction {
 
 /// Get statistics about search indexes - Phase 2.1 ToolFunction
 pub fn get_index_stats() -> ToolFunction {
-    |tool_name: String,
-     _parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -185,14 +187,12 @@ pub fn get_index_stats() -> ToolFunction {
 
 /// Optimize search indexes for better performance - Phase 2.1 ToolFunction
 pub fn optimize_index() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let index_names: Option<Vec<String>> = parameters.get("index_names")
+            let index_names: Option<Vec<String>> = parameters
+                .get("index_names")
                 .and_then(|v| v.as_array())
                 .map(|arr| {
                     arr.iter()
@@ -201,13 +201,18 @@ pub fn optimize_index() -> ToolFunction {
                         .collect()
                 });
 
-            let rebuild_threshold = parameters.get("rebuild_threshold")
+            let rebuild_threshold = parameters
+                .get("rebuild_threshold")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.3);
 
-            info!("Optimizing indexes: {:?} (threshold: {})", index_names, rebuild_threshold);
+            info!(
+                "Optimizing indexes: {:?} (threshold: {})",
+                index_names, rebuild_threshold
+            );
 
-            let optimized_indexes = vec!["semantic_index".to_string(), "full_text_index".to_string()];
+            let optimized_indexes =
+                vec!["semantic_index".to_string(), "full_text_index".to_string()];
             let rebuilt_indexes = vec!["metadata_index".to_string()];
             let space_saved_bytes = 1048576;
             let performance_improvement = "15% faster search".to_string();
@@ -233,24 +238,26 @@ pub fn optimize_index() -> ToolFunction {
 
 /// Advanced search with multiple criteria and ranking - Phase 2.1 ToolFunction
 pub fn advanced_search() -> ToolFunction {
-    |tool_name: String,
-     parameters: Value,
-     user_id: Option<String>,
-     session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let query = parameters.get("query")
+            let query = parameters
+                .get("query")
                 .cloned()
                 .ok_or_else(|| ToolError::Other("Missing 'query' parameter".to_string()))?;
 
             let ranking = parameters.get("ranking").cloned();
 
-            let limit = parameters.get("limit")
+            let limit = parameters
+                .get("limit")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(20);
 
-            info!("Advanced search: {:?} (ranking: {:?}, limit: {})", query, ranking, limit);
+            info!(
+                "Advanced search: {:?} (ranking: {:?}, limit: {})",
+                query, ranking, limit
+            );
 
             let results = vec![
                 json!({
@@ -329,7 +336,9 @@ mod tests {
             parameters,
             Some("test_user".to_string()),
             Some("test_session".to_string()),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -365,7 +374,9 @@ mod tests {
             parameters,
             Some("test_user".to_string()),
             Some("test_session".to_string()),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -379,12 +390,9 @@ mod tests {
             "index_types": ["semantic", "full_text"]
         });
 
-        let result = tool_fn(
-            "rebuild_index".to_string(),
-            parameters,
-            None,
-            None,
-        ).await.unwrap();
+        let result = tool_fn("rebuild_index".to_string(), parameters, None, None)
+            .await
+            .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -395,12 +403,9 @@ mod tests {
         let tool_fn = get_index_stats();
         let parameters = json!({});
 
-        let result = tool_fn(
-            "get_index_stats".to_string(),
-            parameters,
-            None,
-            None,
-        ).await.unwrap();
+        let result = tool_fn("get_index_stats".to_string(), parameters, None, None)
+            .await
+            .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -417,12 +422,9 @@ mod tests {
             "rebuild_threshold": 0.5
         });
 
-        let result = tool_fn(
-            "optimize_index".to_string(),
-            parameters,
-            None,
-            None,
-        ).await.unwrap();
+        let result = tool_fn("optimize_index".to_string(), parameters, None, None)
+            .await
+            .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -433,12 +435,7 @@ mod tests {
         let tool_fn = search_documents();
         let parameters = json!({}); // Missing required 'query' parameter
 
-        let result = tool_fn(
-            "search_documents".to_string(),
-            parameters,
-            None,
-            None,
-        ).await;
+        let result = tool_fn("search_documents".to_string(), parameters, None, None).await;
 
         assert!(result.is_err());
         match result.unwrap_err() {

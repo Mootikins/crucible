@@ -3,11 +3,11 @@
 //! This module provides CLI commands for managing and monitoring Crucible services,
 //! including health checks, metrics, and lifecycle management.
 
-use crate::config::CliConfig;
 use crate::cli::ServiceCommands;
+use crate::config::CliConfig;
 use anyhow::Result;
 use colored::*;
-use comfy_table::{Table, Cell, Color};
+use comfy_table::{Cell, Color, Table};
 use serde_json;
 use std::time::Duration;
 use tokio::time::interval;
@@ -18,12 +18,16 @@ pub async fn execute(config: CliConfig, command: ServiceCommands) -> Result<()> 
     debug!("Executing service command: {:?}", command);
 
     match command {
-        ServiceCommands::Health { service, format, detailed } => {
-            execute_health_command(config, service, format, detailed).await
-        }
-        ServiceCommands::Metrics { service, format, real_time } => {
-            execute_metrics_command(config, service, format, real_time).await
-        }
+        ServiceCommands::Health {
+            service,
+            format,
+            detailed,
+        } => execute_health_command(config, service, format, detailed).await,
+        ServiceCommands::Metrics {
+            service,
+            format,
+            real_time,
+        } => execute_metrics_command(config, service, format, real_time).await,
         ServiceCommands::Start { service, wait } => {
             execute_start_command(config, service, wait).await
         }
@@ -33,12 +37,17 @@ pub async fn execute(config: CliConfig, command: ServiceCommands) -> Result<()> 
         ServiceCommands::Restart { service, wait } => {
             execute_restart_command(config, service, wait).await
         }
-        ServiceCommands::List { format, status, detailed } => {
-            execute_list_command(config, format, status, detailed).await
-        }
-        ServiceCommands::Logs { service, lines, follow, errors } => {
-            execute_logs_command(config, service, lines, follow, errors).await
-        }
+        ServiceCommands::List {
+            format,
+            status,
+            detailed,
+        } => execute_list_command(config, format, status, detailed).await,
+        ServiceCommands::Logs {
+            service,
+            lines,
+            follow,
+            errors,
+        } => execute_logs_command(config, service, lines, follow, errors).await,
     }
 }
 
@@ -55,13 +64,29 @@ async fn execute_health_command(
     // In a real implementation, this would query actual services
 
     let services = vec![
-        ("crucible-script-engine", "healthy", "Running normally", "0.1.0"),
-        ("crucible-rune-service", "healthy", "Processing tools", "0.1.0"),
-        ("crucible-plugin-manager", "degraded", "High memory usage", "0.1.0"),
+        (
+            "crucible-script-engine",
+            "healthy",
+            "Running normally",
+            "0.1.0",
+        ),
+        (
+            "crucible-rune-service",
+            "healthy",
+            "Processing tools",
+            "0.1.0",
+        ),
+        (
+            "crucible-plugin-manager",
+            "degraded",
+            "High memory usage",
+            "0.1.0",
+        ),
     ];
 
     let services_to_check = if let Some(service_name) = service {
-        services.into_iter()
+        services
+            .into_iter()
             .filter(|(name, _, _, _)| name == &service_name)
             .collect()
     } else {
@@ -70,15 +95,18 @@ async fn execute_health_command(
 
     match format.as_str() {
         "json" => {
-            let health_data: Vec<_> = services_to_check.into_iter().map(|(name, status, message, version)| {
-                serde_json::json!({
-                    "service": name,
-                    "status": status,
-                    "message": message,
-                    "version": version,
-                    "timestamp": chrono::Utc::now().to_rfc3339()
+            let health_data: Vec<_> = services_to_check
+                .into_iter()
+                .map(|(name, status, message, version)| {
+                    serde_json::json!({
+                        "service": name,
+                        "status": status,
+                        "message": message,
+                        "version": version,
+                        "timestamp": chrono::Utc::now().to_rfc3339()
+                    })
                 })
-            }).collect();
+                .collect();
 
             println!("{}", serde_json::to_string_pretty(&health_data)?);
         }
@@ -162,7 +190,8 @@ async fn execute_metrics_command(
         ];
 
         let metrics_to_show = if let Some(service_name) = service {
-            metrics.into_iter()
+            metrics
+                .into_iter()
                 .filter(|(name, _, _, _, _, _)| name == &service_name)
                 .collect()
         } else {
@@ -171,23 +200,28 @@ async fn execute_metrics_command(
 
         match format {
             "json" => {
-                let metrics_data: Vec<_> = metrics_to_show.into_iter().map(|(name, total, success, errors, active, cpu)| {
-                    serde_json::json!({
-                        "service": name,
-                        "total_requests": total,
-                        "successful_requests": success,
-                        "failed_requests": errors,
-                        "active_connections": active,
-                        "cpu_usage_percent": cpu,
-                        "timestamp": chrono::Utc::now().to_rfc3339()
+                let metrics_data: Vec<_> = metrics_to_show
+                    .into_iter()
+                    .map(|(name, total, success, errors, active, cpu)| {
+                        serde_json::json!({
+                            "service": name,
+                            "total_requests": total,
+                            "successful_requests": success,
+                            "failed_requests": errors,
+                            "active_connections": active,
+                            "cpu_usage_percent": cpu,
+                            "timestamp": chrono::Utc::now().to_rfc3339()
+                        })
                     })
-                }).collect();
+                    .collect();
 
                 println!("{}", serde_json::to_string_pretty(&metrics_data)?);
             }
             "table" | _ => {
                 let mut table = Table::new();
-                table.set_header(vec!["Service", "Total", "Success", "Errors", "Active", "CPU %"]);
+                table.set_header(vec![
+                    "Service", "Total", "Success", "Errors", "Active", "CPU %",
+                ]);
 
                 for (name, total, success, errors, active, cpu) in metrics_to_show {
                     let success_rate = if total > 0 {
@@ -280,23 +314,50 @@ async fn execute_list_command(
     info!("Listing services");
 
     let services = vec![
-        ("crucible-script-engine", "running", "Tool execution service", "0.1.0", "2h 15m"),
-        ("crucible-rune-service", "running", "Rune script execution", "0.1.0", "1h 45m"),
-        ("crucible-plugin-manager", "degraded", "Plugin lifecycle management", "0.1.0", "45m"),
-        ("crucible-event-system", "stopped", "Event routing and handling", "0.1.0", "0m"),
+        (
+            "crucible-script-engine",
+            "running",
+            "Tool execution service",
+            "0.1.0",
+            "2h 15m",
+        ),
+        (
+            "crucible-rune-service",
+            "running",
+            "Rune script execution",
+            "0.1.0",
+            "1h 45m",
+        ),
+        (
+            "crucible-plugin-manager",
+            "degraded",
+            "Plugin lifecycle management",
+            "0.1.0",
+            "45m",
+        ),
+        (
+            "crucible-event-system",
+            "stopped",
+            "Event routing and handling",
+            "0.1.0",
+            "0m",
+        ),
     ];
 
     match format.as_str() {
         "json" => {
-            let services_data: Vec<_> = services.into_iter().map(|(name, state, description, version, uptime)| {
-                serde_json::json!({
-                    "name": name,
-                    "state": state,
-                    "description": description,
-                    "version": version,
-                    "uptime": uptime
+            let services_data: Vec<_> = services
+                .into_iter()
+                .map(|(name, state, description, version, uptime)| {
+                    serde_json::json!({
+                        "name": name,
+                        "state": state,
+                        "description": description,
+                        "version": version,
+                        "uptime": uptime
+                    })
                 })
-            }).collect();
+                .collect();
 
             println!("{}", serde_json::to_string_pretty(&services_data)?);
         }
@@ -348,12 +409,15 @@ async fn execute_list_command(
                 for (name, state, description, version, uptime) in &services {
                     println!("\n{} ({})", name.cyan().bold(), version);
                     println!("  Description: {}", description);
-                    println!("  State: {}", match *state {
-                        "running" => (*state).green(),
-                        "degraded" => (*state).yellow(),
-                        "stopped" => (*state).red(),
-                        _ => (*state).normal(),
-                    });
+                    println!(
+                        "  State: {}",
+                        match *state {
+                            "running" => (*state).green(),
+                            "degraded" => (*state).yellow(),
+                            "stopped" => (*state).red(),
+                            _ => (*state).normal(),
+                        }
+                    );
                     println!("  Uptime: {}", uptime);
 
                     if *state == "degraded" {
@@ -395,7 +459,13 @@ async fn execute_logs_command(
         // Simulate log following
         let mut counter = 0;
         loop {
-            let log_level = if counter % 10 == 0 { "ERROR" } else if counter % 5 == 0 { "WARN" } else { "INFO" };
+            let log_level = if counter % 10 == 0 {
+                "ERROR"
+            } else if counter % 5 == 0 {
+                "WARN"
+            } else {
+                "INFO"
+            };
             let log_message = match counter % 10 {
                 0 => "Script execution failed: timeout",
                 1 => "Service health check completed",
@@ -413,7 +483,12 @@ async fn execute_logs_command(
             let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S");
             let formatted_log = match log_level {
                 "ERROR" => format!("[{}] {} {}", timestamp, log_level.red().bold(), log_message),
-                "WARN" => format!("[{}] {} {}", timestamp, log_level.yellow().bold(), log_message),
+                "WARN" => format!(
+                    "[{}] {} {}",
+                    timestamp,
+                    log_level.yellow().bold(),
+                    log_message
+                ),
                 _ => format!("[{}] {} {}", timestamp, log_level.white(), log_message),
             };
 
@@ -427,16 +502,48 @@ async fn execute_logs_command(
     } else {
         // Show recent logs
         let sample_logs = vec![
-            ("2025-01-22 10:15:32", "INFO", "ScriptEngine service started successfully"),
-            ("2025-01-22 10:15:31", "INFO", "Loading 12 tools from registry"),
-            ("2025-01-22 10:15:30", "WARN", "Cache directory not found, creating new one"),
-            ("2025-01-22 10:15:29", "ERROR", "Failed to load tool: invalid-tool"),
+            (
+                "2025-01-22 10:15:32",
+                "INFO",
+                "ScriptEngine service started successfully",
+            ),
+            (
+                "2025-01-22 10:15:31",
+                "INFO",
+                "Loading 12 tools from registry",
+            ),
+            (
+                "2025-01-22 10:15:30",
+                "WARN",
+                "Cache directory not found, creating new one",
+            ),
+            (
+                "2025-01-22 10:15:29",
+                "ERROR",
+                "Failed to load tool: invalid-tool",
+            ),
             ("2025-01-22 10:15:28", "INFO", "Service health check passed"),
-            ("2025-01-22 10:15:27", "INFO", "Migration bridge initialized"),
-            ("2025-01-22 10:15:26", "INFO", "Security policy loaded: safe"),
+            (
+                "2025-01-22 10:15:27",
+                "INFO",
+                "Migration bridge initialized",
+            ),
+            (
+                "2025-01-22 10:15:26",
+                "INFO",
+                "Security policy loaded: safe",
+            ),
             ("2025-01-22 10:15:25", "WARN", "Memory usage high: 78%"),
-            ("2025-01-22 10:15:24", "INFO", "Tool execution completed: search-tool"),
-            ("2025-01-22 10:15:23", "ERROR", "Script execution timeout: 30s exceeded"),
+            (
+                "2025-01-22 10:15:24",
+                "INFO",
+                "Tool execution completed: search-tool",
+            ),
+            (
+                "2025-01-22 10:15:23",
+                "ERROR",
+                "Script execution timeout: 30s exceeded",
+            ),
         ];
 
         let logs_to_show = if lines > 0 && lines < sample_logs.len() {

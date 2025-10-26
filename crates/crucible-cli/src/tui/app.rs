@@ -421,8 +421,7 @@ Tool Execution:
             }
 
             _ => {
-                let result =
-                    ReplResult::error(format!("Unknown command: {}. Try :help", command));
+                let result = ReplResult::error(format!("Unknown command: {}. Try :help", command));
                 self.handle_repl_result(result);
             }
         }

@@ -31,9 +31,9 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),                       // Header
+            Constraint::Length(1),                              // Header
             Constraint::Percentage(app.config.log_split_ratio), // Logs
-            Constraint::Min(5),                          // REPL (at least 5 lines)
+            Constraint::Min(5),                                 // REPL (at least 5 lines)
         ])
         .split(frame.area());
 

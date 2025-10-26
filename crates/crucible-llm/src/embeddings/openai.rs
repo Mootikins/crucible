@@ -94,15 +94,18 @@ impl OpenAIProvider {
         config.validate()?;
 
         // Get API key
-        let api_key = config.api_key.clone().ok_or_else(|| {
-            EmbeddingError::ConfigError("OpenAI requires an API key".to_string())
-        })?;
+        let api_key = config
+            .api_key
+            .clone()
+            .ok_or_else(|| EmbeddingError::ConfigError("OpenAI requires an API key".to_string()))?;
 
         // Build HTTP client with timeout
         let client = Client::builder()
             .timeout(Duration::from_secs(config.timeout_secs))
             .build()
-            .map_err(|e| EmbeddingError::ConfigError(format!("Failed to create HTTP client: {}", e)))?;
+            .map_err(|e| {
+                EmbeddingError::ConfigError(format!("Failed to create HTTP client: {}", e))
+            })?;
 
         Ok(Self {
             client,
@@ -239,7 +242,7 @@ impl EmbeddingProvider for OpenAIProvider {
         // For now, return a stub implementation
         // OpenAI doesn't focus on Ollama, so we return a minimal error
         Err(EmbeddingError::ModelDiscoveryNotSupported(
-            "OpenAI".to_string()
+            "OpenAI".to_string(),
         ))
     }
 }
@@ -258,7 +261,8 @@ impl OpenAIProvider {
             .unwrap_or(60); // Default to 60 seconds
 
         // Try to parse error response
-        let error_detail = if let Ok(error_response) = response.json::<OpenAIErrorResponse>().await {
+        let error_detail = if let Ok(error_response) = response.json::<OpenAIErrorResponse>().await
+        {
             error_response.error.message
         } else {
             format!("HTTP {}", status)
@@ -268,20 +272,16 @@ impl OpenAIProvider {
             StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
                 Err(EmbeddingError::AuthenticationError(error_detail))
             }
-            StatusCode::TOO_MANY_REQUESTS => {
-                Err(EmbeddingError::RateLimitExceeded {
-                    retry_after_secs: retry_after,
-                })
-            }
+            StatusCode::TOO_MANY_REQUESTS => Err(EmbeddingError::RateLimitExceeded {
+                retry_after_secs: retry_after,
+            }),
             StatusCode::BAD_REQUEST | StatusCode::NOT_FOUND => {
                 Err(EmbeddingError::InvalidResponse(error_detail))
             }
-            _ if status.is_server_error() => {
-                Err(EmbeddingError::ProviderError {
-                    provider: "OpenAI".to_string(),
-                    message: error_detail,
-                })
-            }
+            _ if status.is_server_error() => Err(EmbeddingError::ProviderError {
+                provider: "OpenAI".to_string(),
+                message: error_detail,
+            }),
             _ => Err(EmbeddingError::Other(format!(
                 "OpenAI API error: {}",
                 error_detail
@@ -439,10 +439,7 @@ mod tests {
         let api_key = std::env::var("OPENAI_API_KEY")
             .expect("OPENAI_API_KEY environment variable must be set");
 
-        let config = EmbeddingConfig::openai(
-            api_key,
-            Some("text-embedding-3-small".to_string()),
-        );
+        let config = EmbeddingConfig::openai(api_key, Some("text-embedding-3-small".to_string()));
         let provider = OpenAIProvider::new(config).unwrap();
 
         let result = provider.embed("Hello, world!").await;
@@ -461,10 +458,7 @@ mod tests {
         let api_key = std::env::var("OPENAI_API_KEY")
             .expect("OPENAI_API_KEY environment variable must be set");
 
-        let config = EmbeddingConfig::openai(
-            api_key,
-            Some("text-embedding-3-small".to_string()),
-        );
+        let config = EmbeddingConfig::openai(api_key, Some("text-embedding-3-small".to_string()));
         let provider = OpenAIProvider::new(config).unwrap();
 
         let texts = vec![
@@ -491,10 +485,7 @@ mod tests {
         let api_key = std::env::var("OPENAI_API_KEY")
             .expect("OPENAI_API_KEY environment variable must be set");
 
-        let config = EmbeddingConfig::openai(
-            api_key,
-            Some("text-embedding-3-small".to_string()),
-        );
+        let config = EmbeddingConfig::openai(api_key, Some("text-embedding-3-small".to_string()));
         let provider = OpenAIProvider::new(config).unwrap();
 
         let result = provider.health_check().await;

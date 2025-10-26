@@ -10,9 +10,9 @@ use std::time::Instant;
 use tracing::{debug, error, info, warn};
 
 use crate::commands::repl::formatter::{QueryResult, QueryStatus};
+use crucible_core::{RelationalDB, SelectQuery};
 use crucible_surrealdb::{SurrealClient, SurrealDbConfig};
 use std::default::Default;
-use crucible_core::{RelationalDB, SelectQuery};
 
 /// Real database connection using SurrealDB
 #[derive(Clone)]
@@ -39,7 +39,7 @@ impl ReplDatabase {
 
         let db = Self {
             client: Arc::new(client),
-            config
+            config,
         };
 
         // Initialize database schema
@@ -58,7 +58,7 @@ impl ReplDatabase {
 
         let db = Self {
             client: Arc::new(client),
-            config
+            config,
         };
         db.initialize().await?;
 
@@ -84,9 +84,9 @@ impl ReplDatabase {
     async fn insert_sample_data(&self) -> Result<()> {
         debug!("Inserting sample data");
 
+        use chrono::Utc;
         use crucible_core::{Record, RecordId};
         use serde_json::json;
-        use chrono::Utc;
 
         // Sample notes
         let notes = vec![
@@ -261,7 +261,9 @@ impl ReplDatabase {
                     let rows = self.convert_records_to_rows(result.records);
                     Ok(QueryResult {
                         rows,
-                        duration: std::time::Duration::from_millis(result.execution_time_ms.unwrap_or(0)),
+                        duration: std::time::Duration::from_millis(
+                            result.execution_time_ms.unwrap_or(0),
+                        ),
                         affected_rows: Some(result.total_count.unwrap_or(0)),
                         status: QueryStatus::Success,
                     })
@@ -318,22 +320,28 @@ impl ReplDatabase {
     }
 
     /// Convert SurrealDB Records to REPL rows (BTreeMap format)
-    fn convert_records_to_rows(&self, records: Vec<crucible_core::Record>) -> Vec<BTreeMap<String, serde_json::Value>> {
-        records.into_iter().map(|record| {
-            let mut row = BTreeMap::new();
+    fn convert_records_to_rows(
+        &self,
+        records: Vec<crucible_core::Record>,
+    ) -> Vec<BTreeMap<String, serde_json::Value>> {
+        records
+            .into_iter()
+            .map(|record| {
+                let mut row = BTreeMap::new();
 
-            // Add ID if present
-            if let Some(id) = record.id {
-                row.insert("id".to_string(), serde_json::Value::String(id.0));
-            }
+                // Add ID if present
+                if let Some(id) = record.id {
+                    row.insert("id".to_string(), serde_json::Value::String(id.0));
+                }
 
-            // Add all data fields
-            for (key, value) in record.data {
-                row.insert(key, value);
-            }
+                // Add all data fields
+                for (key, value) in record.data {
+                    row.insert(key, value);
+                }
 
-            row
-        }).collect()
+                row
+            })
+            .collect()
     }
 
     /// Get list of tables for autocomplete
@@ -343,7 +351,12 @@ impl ReplDatabase {
             Err(e) => {
                 warn!("Failed to list tables: {}", e);
                 // Return default tables as fallback
-                Ok(vec!["notes".to_string(), "tags".to_string(), "links".to_string(), "metadata".to_string()])
+                Ok(vec![
+                    "notes".to_string(),
+                    "tags".to_string(),
+                    "links".to_string(),
+                    "metadata".to_string(),
+                ])
             }
         }
     }
@@ -369,7 +382,9 @@ impl ReplDatabase {
                 Ok(result) => {
                     stats.insert(
                         format!("{}_count", table),
-                        serde_json::Value::Number(serde_json::Number::from(result.total_count.unwrap_or(0)))
+                        serde_json::Value::Number(serde_json::Number::from(
+                            result.total_count.unwrap_or(0),
+                        )),
                     );
                 }
                 Err(e) => {
@@ -379,8 +394,14 @@ impl ReplDatabase {
         }
 
         // Add metadata
-        stats.insert("database_type".to_string(), serde_json::Value::String("SurrealDB".to_string()));
-        stats.insert("connection_path".to_string(), serde_json::Value::String(self.config.path.clone()));
+        stats.insert(
+            "database_type".to_string(),
+            serde_json::Value::String("SurrealDB".to_string()),
+        );
+        stats.insert(
+            "connection_path".to_string(),
+            serde_json::Value::String(self.config.path.clone()),
+        );
 
         Ok(stats)
     }

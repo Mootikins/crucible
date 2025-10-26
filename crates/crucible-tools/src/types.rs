@@ -110,12 +110,16 @@ impl ToolExecutionRequest {
     }
 
     /// Create a request with user and session context
-    pub fn with_user_session(tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>) -> Self {
+    pub fn with_user_session(
+        tool_name: String,
+        parameters: Value,
+        user_id: Option<String>,
+        session_id: Option<String>,
+    ) -> Self {
         let context = ToolExecutionContext::with_user_session(user_id, session_id);
         Self::new(tool_name, parameters, context)
     }
 }
-
 
 /// Simplified tool error type for Phase 3.1
 #[derive(Debug, Clone)]
@@ -168,7 +172,11 @@ impl ToolResult {
     }
 
     /// Create a successful result with duration
-    pub fn success_with_duration(tool_name: String, data: serde_json::Value, duration_ms: u64) -> Self {
+    pub fn success_with_duration(
+        tool_name: String,
+        data: serde_json::Value,
+        duration_ms: u64,
+    ) -> Self {
         Self {
             success: true,
             data: Some(data),
@@ -208,7 +216,9 @@ pub type ToolFunction = fn(
     parameters: serde_json::Value,
     user_id: Option<String>,
     session_id: Option<String>,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ToolResult, ToolError>> + Send>>;
+) -> std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<ToolResult, ToolError>> + Send>,
+>;
 
 /// Simple tool registry function signature for Phase 3.1
 /// Maps tool names to their executable functions
@@ -229,7 +239,8 @@ pub async fn execute_tool(
     let reg = registry.read().await;
 
     // Find the tool function
-    let tool_fn = reg.get(&tool_name)
+    let tool_fn = reg
+        .get(&tool_name)
         .ok_or_else(|| ToolError::ToolNotFound(tool_name.clone()))?;
 
     // Execute the tool
@@ -250,7 +261,8 @@ pub async fn execute_tool(
 }
 
 /// Simplified global tool registry for Phase 3.1
-static mut GLOBAL_TOOL_REGISTRY: Option<std::sync::Arc<tokio::sync::RwLock<ToolFunctionRegistry>>> = None;
+static mut GLOBAL_TOOL_REGISTRY: Option<std::sync::Arc<tokio::sync::RwLock<ToolFunctionRegistry>>> =
+    None;
 static REGISTRY_INIT: std::sync::Once = std::sync::Once::new();
 
 /// Initialize the global tool registry
@@ -271,10 +283,7 @@ pub async fn get_tool_registry() -> std::sync::Arc<tokio::sync::RwLock<ToolFunct
 }
 
 /// Register a tool function
-pub async fn register_tool_function(
-    name: String,
-    function: ToolFunction,
-) -> Result<(), ToolError> {
+pub async fn register_tool_function(name: String, function: ToolFunction) -> Result<(), ToolError> {
     let registry = get_tool_registry().await;
     let mut reg = registry.write().await;
     reg.insert(name, function);
@@ -287,7 +296,6 @@ pub async fn list_registered_tools() -> Vec<String> {
     let reg = registry.read().await;
     reg.keys().cloned().collect()
 }
-
 
 // ===== SIMPLE TOOL LOADER (PHASE 3.1) =====
 // Simplified tool loading without hot-reload or dynamic discovery complexity
@@ -373,7 +381,10 @@ async fn register_database_tools() -> Result<(), ToolError> {
         ("semantic_search", database_tools::semantic_search()),
         ("search_by_content", database_tools::search_by_content()),
         ("search_by_filename", database_tools::search_by_filename()),
-        ("update_note_properties", database_tools::update_note_properties()),
+        (
+            "update_note_properties",
+            database_tools::update_note_properties(),
+        ),
         ("index_document", database_tools::index_document()),
         ("get_document_stats", database_tools::get_document_stats()),
         ("sync_metadata", database_tools::sync_metadata()),
@@ -412,7 +423,9 @@ pub fn tool_loader_info() -> ToolLoaderInfo {
     ToolLoaderInfo {
         version: "3.2".to_string(),
         name: "Phase 3.2 Complete - Tools Verified".to_string(),
-        description: "Tool loading with simplified types and all 25+ tools verified for Phase 3.2 compliance".to_string(),
+        description:
+            "Tool loading with simplified types and all 25+ tools verified for Phase 3.2 compliance"
+                .to_string(),
         total_tools: 25, // System (5) + Vault (8) + Database (7) + Search (5) = 25 tools
         features: vec![
             "simplified_types".to_string(),
