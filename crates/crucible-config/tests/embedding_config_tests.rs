@@ -41,8 +41,8 @@ mod fixtures {
     /// Ollama provider fixture with deterministic test data
     pub fn ollama_provider_fixture() -> EmbeddingProviderConfig {
         EmbeddingProviderConfig::ollama(
-            "http://localhost:11434".to_string(),
-            "nomic-embed-text".to_string(),
+            Some("http://localhost:11434".to_string()),
+            Some("nomic-embed-text".to_string()),
         )
     }
 
