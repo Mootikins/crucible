@@ -91,14 +91,14 @@ pub fn validate_corpus_expectations(corpus: &SemanticTestCorpus) {
             expectation.doc_b
         ));
 
-        let embedding_a = doc_a.embedding.as_ref().expect(&format!(
-            "Document {} missing embedding",
-            doc_a.id
-        ));
-        let embedding_b = doc_b.embedding.as_ref().expect(&format!(
-            "Document {} missing embedding",
-            doc_b.id
-        ));
+        let embedding_a = doc_a
+            .embedding
+            .as_ref()
+            .expect(&format!("Document {} missing embedding", doc_a.id));
+        let embedding_b = doc_b
+            .embedding
+            .as_ref()
+            .expect(&format!("Document {} missing embedding", doc_b.id));
 
         let similarity = cosine_similarity(embedding_a, embedding_b);
 

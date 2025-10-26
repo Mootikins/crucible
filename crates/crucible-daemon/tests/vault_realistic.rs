@@ -115,27 +115,49 @@ impl VaultTestHarness {
 
     /// Check if a file exists in the database
     async fn file_exists(&self, path: &str) -> Result<bool> {
-        let full_path = self.vault_dir.path().join(path).to_string_lossy().to_string();
+        let full_path = self
+            .vault_dir
+            .path()
+            .join(path)
+            .to_string_lossy()
+            .to_string();
         self.db.file_exists(&full_path).await
     }
 
     /// Get file metadata from database
     async fn get_metadata(&self, path: &str) -> Result<Option<EmbeddingMetadata>> {
-        let full_path = self.vault_dir.path().join(path).to_string_lossy().to_string();
+        let full_path = self
+            .vault_dir
+            .path()
+            .join(path)
+            .to_string_lossy()
+            .to_string();
         let data = self.db.get_embedding(&full_path).await?;
         Ok(data.map(|d| d.metadata))
     }
 
     /// Create a wikilink relation between two files
     async fn create_relation(&self, from: &str, to: &str, rel_type: &str) -> Result<()> {
-        let from_path = self.vault_dir.path().join(from).to_string_lossy().to_string();
+        let from_path = self
+            .vault_dir
+            .path()
+            .join(from)
+            .to_string_lossy()
+            .to_string();
         let to_path = self.vault_dir.path().join(to).to_string_lossy().to_string();
-        self.db.create_relation(&from_path, &to_path, rel_type, None).await
+        self.db
+            .create_relation(&from_path, &to_path, rel_type, None)
+            .await
     }
 
     /// Get related files
     async fn get_related(&self, path: &str, rel_type: Option<&str>) -> Result<Vec<String>> {
-        let full_path = self.vault_dir.path().join(path).to_string_lossy().to_string();
+        let full_path = self
+            .vault_dir
+            .path()
+            .join(path)
+            .to_string_lossy()
+            .to_string();
         self.db.get_related(&full_path, rel_type).await
     }
 
@@ -245,8 +267,16 @@ Archived content.
         .await?;
 
     // Verify all files exist
-    assert!(harness.file_exists("Projects/Crucible/Architecture/design.md").await?);
-    assert!(harness.file_exists("Projects/Crucible/Implementation/code.md").await?);
+    assert!(
+        harness
+            .file_exists("Projects/Crucible/Architecture/design.md")
+            .await?
+    );
+    assert!(
+        harness
+            .file_exists("Projects/Crucible/Implementation/code.md")
+            .await?
+    );
     assert!(harness.file_exists("Daily/2025-01/2025-01-15.md").await?);
     assert!(harness.file_exists("Daily/2025-01/2025-01-16.md").await?);
     assert!(harness.file_exists("Archive/old-note.md").await?);
@@ -256,7 +286,9 @@ Archived content.
         .get_metadata("Projects/Crucible/Architecture/design.md")
         .await?
         .expect("Design note should exist");
-    assert!(design_meta.folder.contains("Projects/Crucible/Architecture"));
+    assert!(design_meta
+        .folder
+        .contains("Projects/Crucible/Architecture"));
 
     let daily_meta = harness
         .get_metadata("Daily/2025-01/2025-01-15.md")
@@ -353,14 +385,30 @@ This note has a heading reference: [[noteB#Important Heading]].
         .await?;
 
     // Create wikilink relations (simulating what the parser would extract)
-    harness.create_relation("noteA.md", "noteB.md", "wikilink").await?;
-    harness.create_relation("noteA.md", "noteC.md", "wikilink").await?;
-    harness.create_relation("noteB.md", "noteC.md", "wikilink").await?;
-    harness.create_relation("noteB.md", "noteA.md", "wikilink").await?;
-    harness.create_relation("noteC.md", "noteA.md", "wikilink").await?;
-    harness.create_relation("noteD.md", "noteA.md", "wikilink").await?;
-    harness.create_relation("noteD.md", "noteC.md", "wikilink").await?;
-    harness.create_relation("noteE.md", "noteB.md", "wikilink").await?;
+    harness
+        .create_relation("noteA.md", "noteB.md", "wikilink")
+        .await?;
+    harness
+        .create_relation("noteA.md", "noteC.md", "wikilink")
+        .await?;
+    harness
+        .create_relation("noteB.md", "noteC.md", "wikilink")
+        .await?;
+    harness
+        .create_relation("noteB.md", "noteA.md", "wikilink")
+        .await?;
+    harness
+        .create_relation("noteC.md", "noteA.md", "wikilink")
+        .await?;
+    harness
+        .create_relation("noteD.md", "noteA.md", "wikilink")
+        .await?;
+    harness
+        .create_relation("noteD.md", "noteC.md", "wikilink")
+        .await?;
+    harness
+        .create_relation("noteE.md", "noteB.md", "wikilink")
+        .await?;
 
     // Verify relations exist
     let a_links = harness.get_related("noteA.md", Some("wikilink")).await?;
@@ -376,7 +424,11 @@ This note has a heading reference: [[noteB#Important Heading]].
     assert_eq!(d_links.len(), 2, "Note D (hub) should link to 2 notes");
 
     let e_links = harness.get_related("noteE.md", Some("wikilink")).await?;
-    assert_eq!(e_links.len(), 1, "Note E should link to 1 note (with heading ref)");
+    assert_eq!(
+        e_links.len(),
+        1,
+        "Note E should link to 1 note (with heading ref)"
+    );
 
     // Verify stats
     let stats = harness.get_stats().await?;
@@ -510,7 +562,10 @@ Testing date parsing.
     assert!(harness.file_exists("dates.md").await?);
 
     // Verify full frontmatter
-    let full_meta = harness.get_metadata("full.md").await?.expect("Full note should exist");
+    let full_meta = harness
+        .get_metadata("full.md")
+        .await?
+        .expect("Full note should exist");
     assert_eq!(full_meta.title, Some("Full Frontmatter".to_string()));
     assert!(full_meta.tags.contains(&"rust".to_string()));
     assert!(full_meta.tags.contains(&"testing".to_string()));
@@ -525,24 +580,36 @@ Testing date parsing.
     );
 
     // Verify minimal frontmatter
-    let minimal_meta = harness.get_metadata("minimal.md").await?.expect("Minimal note should exist");
+    let minimal_meta = harness
+        .get_metadata("minimal.md")
+        .await?
+        .expect("Minimal note should exist");
     assert_eq!(minimal_meta.title, Some("Minimal Note".to_string()));
     assert!(minimal_meta.tags.is_empty());
 
     // Verify array values
-    let arrays_meta = harness.get_metadata("arrays.md").await?.expect("Arrays note should exist");
+    let arrays_meta = harness
+        .get_metadata("arrays.md")
+        .await?
+        .expect("Arrays note should exist");
     assert_eq!(arrays_meta.title, Some("Array Values".to_string()));
     assert!(arrays_meta.tags.contains(&"tag1".to_string()));
     assert!(arrays_meta.tags.contains(&"tag2".to_string()));
     assert!(arrays_meta.tags.contains(&"tag3".to_string()));
 
     // Verify nested objects
-    let nested_meta = harness.get_metadata("nested.md").await?.expect("Nested note should exist");
+    let nested_meta = harness
+        .get_metadata("nested.md")
+        .await?
+        .expect("Nested note should exist");
     assert_eq!(nested_meta.title, Some("Nested Objects".to_string()));
     assert!(nested_meta.properties.contains_key("metadata"));
 
     // Verify dates
-    let dates_meta = harness.get_metadata("dates.md").await?.expect("Dates note should exist");
+    let dates_meta = harness
+        .get_metadata("dates.md")
+        .await?
+        .expect("Dates note should exist");
     assert_eq!(dates_meta.title, Some("Date Fields".to_string()));
     assert!(dates_meta.properties.contains_key("created"));
     assert!(dates_meta.properties.contains_key("modified"));
@@ -703,11 +770,7 @@ And nested inline: #type/implementation
 
     // Search by tags
     let rust_notes = harness.search_by_tags(&["rust"]).await?;
-    assert_eq!(
-        rust_notes.len(),
-        4,
-        "Should find 4 notes with 'rust' tag"
-    );
+    assert_eq!(rust_notes.len(), 4, "Should find 4 notes with 'rust' tag");
 
     let systems_notes = harness.search_by_tags(&["systems"]).await?;
     assert_eq!(
@@ -820,25 +883,38 @@ Title has special characters.
     assert!(harness.file_exists("special-chars.md").await?);
 
     // Verify plain markdown (title from filename since no frontmatter)
-    let plain_meta = harness.get_metadata("plain.md").await?.expect("Plain note should exist");
+    let plain_meta = harness
+        .get_metadata("plain.md")
+        .await?
+        .expect("Plain note should exist");
     assert_eq!(plain_meta.title, Some("plain".to_string()));
     assert!(plain_meta.tags.is_empty());
 
     // Verify empty file handled
-    let empty_meta = harness.get_metadata("empty.md").await?.expect("Empty note should exist");
+    let empty_meta = harness
+        .get_metadata("empty.md")
+        .await?
+        .expect("Empty note should exist");
     assert!(
-        empty_meta.title == Some("empty".to_string()) || empty_meta.title == Some("Untitled".to_string()),
+        empty_meta.title == Some("empty".to_string())
+            || empty_meta.title == Some("Untitled".to_string()),
         "Empty file should have fallback title"
     );
 
     // Verify unicode
-    let unicode_meta = harness.get_metadata("unicode.md").await?.expect("Unicode note should exist");
+    let unicode_meta = harness
+        .get_metadata("unicode.md")
+        .await?
+        .expect("Unicode note should exist");
     assert!(unicode_meta.title.is_some());
     assert!(unicode_meta.tags.contains(&"emoji".to_string()));
     assert!(unicode_meta.tags.contains(&"unicode".to_string()));
 
     // Verify long content
-    let long_meta = harness.get_metadata("long.md").await?.expect("Long note should exist");
+    let long_meta = harness
+        .get_metadata("long.md")
+        .await?
+        .expect("Long note should exist");
     assert_eq!(long_meta.title, Some("Long Content".to_string()));
     assert!(long_meta.tags.contains(&"performance".to_string()));
 
@@ -891,7 +967,10 @@ Despite malformed frontmatter, content should be extracted.
             // File was created and indexed (best-effort parsing)
             assert!(harness.file_exists("malformed.md").await?);
             let meta = harness.get_metadata("malformed.md").await?;
-            assert!(meta.is_some(), "Should have metadata even with malformed frontmatter");
+            assert!(
+                meta.is_some(),
+                "Should have metadata even with malformed frontmatter"
+            );
         }
         Err(_e) => {
             // Parser rejected malformed frontmatter - this is acceptable
