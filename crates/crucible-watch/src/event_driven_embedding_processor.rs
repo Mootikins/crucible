@@ -7,10 +7,9 @@
 use crate::{
     embedding_events::{EmbeddingEvent, EmbeddingEventResult, EventDrivenEmbeddingConfig},
     error::{Error, Result},
-    events::{FileEvent, FileEventKind},
+    events::FileEvent,
     traits::EventHandler,
 };
-use crucible_llm::EmbeddingConfig;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -127,9 +126,9 @@ impl EventDrivenEmbeddingProcessor {
         // Take the receiver
         let mut rx = {
             let mut receiver_guard = self.embedding_rx.write().await;
-            receiver_guard.take().ok_or_else(|| {
-                Error::Config("Embedding event receiver not set".to_string())
-            })?
+            receiver_guard
+                .take()
+                .ok_or_else(|| Error::Config("Embedding event receiver not set".to_string()))?
         };
 
         let state = self.state.clone();
@@ -154,17 +153,24 @@ impl EventDrivenEmbeddingProcessor {
                 match tokio::time::timeout(Duration::from_millis(10), rx.recv()).await {
                     Ok(Some(event)) => {
                         let file_path = event.file_path.clone();
-                        info!("📥 Batch processor received embedding event for: {}",
-                              file_path.display());
-                        if let Err(e) = Self::process_embedding_event(
-                            &state,
-                            &config,
-                            &embedding_pool,
-                            event,
-                        ).await {
-                            error!("Error processing embedding event for {}: {}", file_path.display(), e);
+                        info!(
+                            "📥 Batch processor received embedding event for: {}",
+                            file_path.display()
+                        );
+                        if let Err(e) =
+                            Self::process_embedding_event(&state, &config, &embedding_pool, event)
+                                .await
+                        {
+                            error!(
+                                "Error processing embedding event for {}: {}",
+                                file_path.display(),
+                                e
+                            );
                         } else {
-                            info!("✅ Successfully processed embedding event for: {}", file_path.display());
+                            info!(
+                                "✅ Successfully processed embedding event for: {}",
+                                file_path.display()
+                            );
                         }
                     }
                     Ok(None) => {
@@ -196,8 +202,11 @@ impl EventDrivenEmbeddingProcessor {
         embedding_pool: &Arc<EmbeddingThreadPool>,
         event: EmbeddingEvent,
     ) -> Result<()> {
-        info!("🔧 Processing embedding event for: {} (content length: {})",
-              event.file_path.display(), event.content.len());
+        info!(
+            "🔧 Processing embedding event for: {} (content length: {})",
+            event.file_path.display(),
+            event.content.len()
+        );
 
         // Update metrics
         {
@@ -221,7 +230,10 @@ impl EventDrivenEmbeddingProcessor {
             };
 
             if should_deduplicate {
-                debug!("Deduplicating embedding event for: {}", event.file_path.display());
+                debug!(
+                    "Deduplicating embedding event for: {}",
+                    event.file_path.display()
+                );
                 {
                     let mut state_guard = state.write().await;
                     state_guard.metrics.deduplicated_events += 1;
@@ -237,7 +249,8 @@ impl EventDrivenEmbeddingProcessor {
             // Create new batch if needed
             if state_guard.current_batch.is_empty() {
                 state_guard.current_batch_id = Some(uuid::Uuid::new_v4());
-                state_guard.batch_deadline = Some(Instant::now() + Duration::from_millis(config.batch_timeout_ms));
+                state_guard.batch_deadline =
+                    Some(Instant::now() + Duration::from_millis(config.batch_timeout_ms));
             }
 
             // Mark event as batched
@@ -248,24 +261,27 @@ impl EventDrivenEmbeddingProcessor {
 
             state_guard.current_batch.push(batched_event);
 
-            info!("📦 Added event to batch (size: {}) for: {}",
-                  state_guard.current_batch.len(), event.file_path.display());
+            info!(
+                "📦 Added event to batch (size: {}) for: {}",
+                state_guard.current_batch.len(),
+                event.file_path.display()
+            );
 
             // Process batch if it's full
             if state_guard.current_batch.len() >= config.max_batch_size {
-                info!("🚀 Batch full, processing {} events", state_guard.current_batch.len());
+                info!(
+                    "🚀 Batch full, processing {} events",
+                    state_guard.current_batch.len()
+                );
                 let batch = std::mem::take(&mut state_guard.current_batch);
                 let batch_id = state_guard.current_batch_id.take();
                 state_guard.batch_deadline.take();
 
                 drop(state_guard); // Release lock before processing
 
-                if let Err(e) = Self::process_batch(
-                    state,
-                    embedding_pool,
-                    batch,
-                    batch_id.unwrap(),
-                ).await {
+                if let Err(e) =
+                    Self::process_batch(state, embedding_pool, batch, batch_id.unwrap()).await
+                {
                     error!("Error processing batch: {}", e);
                 }
             }
@@ -279,7 +295,9 @@ impl EventDrivenEmbeddingProcessor {
 
             // Clean up old events
             let cutoff = Instant::now() - Duration::from_millis(config.deduplication_window_ms * 2);
-            state_guard.recent_events.retain(|_, &mut time| time > cutoff);
+            state_guard
+                .recent_events
+                .retain(|_, &mut time| time > cutoff);
         }
 
         Ok(())
@@ -331,9 +349,18 @@ impl EventDrivenEmbeddingProcessor {
         batch: Vec<EmbeddingEvent>,
         batch_id: uuid::Uuid,
     ) -> Result<()> {
-        info!("🔄 Processing batch {} with {} events", batch_id, batch.len());
+        info!(
+            "🔄 Processing batch {} with {} events",
+            batch_id,
+            batch.len()
+        );
         for (i, event) in batch.iter().enumerate() {
-            info!("  Event {}: {} ({} chars)", i, event.file_path.display(), event.content.len());
+            info!(
+                "  Event {}: {} ({} chars)",
+                i,
+                event.file_path.display(),
+                event.content.len()
+            );
         }
 
         let start_time = Instant::now();
@@ -344,13 +371,15 @@ impl EventDrivenEmbeddingProcessor {
         {
             let mut state_guard = state.write().await;
             for event in &batch {
-                state_guard.processing_events.insert(event.id, Instant::now());
+                state_guard
+                    .processing_events
+                    .insert(event.id, Instant::now());
             }
         }
 
         // Process events in parallel up to max_concurrent_requests
         let semaphore = Arc::new(tokio::sync::Semaphore::new(
-            std::cmp::min(batch.len(), 10) // Limit concurrency
+            std::cmp::min(batch.len(), 10), // Limit concurrency
         ));
 
         let mut futures = Vec::new();
@@ -404,14 +433,18 @@ impl EventDrivenEmbeddingProcessor {
             let batch_size = (successful + failed) as f64;
             let total_batches = state_guard.metrics.total_batches_processed as f64;
             state_guard.metrics.average_batch_size =
-                (state_guard.metrics.average_batch_size * (total_batches - 1.0) + batch_size) / total_batches;
+                (state_guard.metrics.average_batch_size * (total_batches - 1.0) + batch_size)
+                    / total_batches;
 
             state_guard.metrics.total_processing_time += start_time.elapsed();
         }
 
         info!(
             "Batch {} completed: {} successful, {} failed, {:?}",
-            batch_id, successful, failed, start_time.elapsed()
+            batch_id,
+            successful,
+            failed,
+            start_time.elapsed()
         );
 
         Ok(())
@@ -423,30 +456,51 @@ impl EventDrivenEmbeddingProcessor {
         embedding_pool: &Arc<EmbeddingThreadPool>,
         event: EmbeddingEvent,
     ) -> Result<()> {
-        info!("⚡ Processing single event for: {} (doc_id: {})",
-              event.file_path.display(), event.document_id);
+        info!(
+            "⚡ Processing single event for: {} (doc_id: {})",
+            event.file_path.display(),
+            event.document_id
+        );
 
         let start_time = Instant::now();
 
-        info!("🔄 Sending document to embedding pool: {}", event.file_path.display());
+        info!(
+            "🔄 Sending document to embedding pool: {}",
+            event.file_path.display()
+        );
         // Process with embedding pool
-        let retry_result = embedding_pool.process_document_with_retry(
-            &event.document_id,
-            &event.content,
-        ).await.map_err(|e| {
-            error!("❌ Embedding pool failed for {}: {}", event.file_path.display(), e);
-            Error::Embedding(format!("Failed to process document: {}", e))
-        })?;
+        let retry_result = embedding_pool
+            .process_document_with_retry(&event.document_id, &event.content)
+            .await
+            .map_err(|e| {
+                error!(
+                    "❌ Embedding pool failed for {}: {}",
+                    event.file_path.display(),
+                    e
+                );
+                Error::Embedding(format!("Failed to process document: {}", e))
+            })?;
 
         let elapsed = start_time.elapsed();
 
         if retry_result.succeeded {
-            info!("✅ Successfully processed event for: {} (attempt: {}, time: {:?})",
-                   event.file_path.display(), retry_result.attempt_count, elapsed);
+            info!(
+                "✅ Successfully processed event for: {} (attempt: {}, time: {:?})",
+                event.file_path.display(),
+                retry_result.attempt_count,
+                elapsed
+            );
         } else {
-            error!("❌ Failed to process event for: {} after {} attempts in {:?}: {}",
-                   event.file_path.display(), retry_result.attempt_count, elapsed,
-                   retry_result.final_error.map(|e| e.error_message).unwrap_or_default());
+            error!(
+                "❌ Failed to process event for: {} after {} attempts in {:?}: {}",
+                event.file_path.display(),
+                retry_result.attempt_count,
+                elapsed,
+                retry_result
+                    .final_error
+                    .map(|e| e.error_message)
+                    .unwrap_or_default()
+            );
         }
 
         Ok(())
@@ -467,7 +521,10 @@ impl EventDrivenEmbeddingProcessor {
         };
 
         if !batch.is_empty() {
-            info!("Processing remaining batch of {} events during shutdown", batch.len());
+            info!(
+                "Processing remaining batch of {} events during shutdown",
+                batch.len()
+            );
             if let Some(batch_id) = batch_id {
                 Self::process_batch(state, embedding_pool, batch, batch_id).await?;
             }
@@ -488,12 +545,11 @@ impl EventDrivenEmbeddingProcessor {
 
         // For now, we'll send it directly to the embedding pool
         // In a full implementation, we'd add it to the batch
-        let retry_result = self.embedding_pool.process_document_with_retry(
-            &embedding_event.document_id,
-            &embedding_event.content,
-        ).await.map_err(|e| {
-            Error::Embedding(format!("Failed to process document: {}", e))
-        })?;
+        let retry_result = self
+            .embedding_pool
+            .process_document_with_retry(&embedding_event.document_id, &embedding_event.content)
+            .await
+            .map_err(|e| Error::Embedding(format!("Failed to process document: {}", e)))?;
 
         let elapsed = start_time.elapsed();
 
@@ -504,7 +560,8 @@ impl EventDrivenEmbeddingProcessor {
                 self.embedding_pool.model_type().await.dimensions(),
             ))
         } else {
-            let error_msg = retry_result.final_error
+            let error_msg = retry_result
+                .final_error
                 .map(|e| e.error_message)
                 .unwrap_or_else(|| "Unknown error".to_string());
 
@@ -517,13 +574,18 @@ impl EventDrivenEmbeddingProcessor {
     }
 
     /// Transform a file event to an embedding event
-    async fn transform_file_event_to_embedding_event(&self, event: FileEvent) -> Result<EmbeddingEvent> {
+    async fn transform_file_event_to_embedding_event(
+        &self,
+        event: FileEvent,
+    ) -> Result<EmbeddingEvent> {
         // Read file content
-        let content = tokio::fs::read_to_string(&event.path).await
+        let content = tokio::fs::read_to_string(&event.path)
+            .await
             .map_err(|e| Error::Io(e))?;
 
         // Get file metadata
-        let metadata = tokio::fs::metadata(&event.path).await
+        let metadata = tokio::fs::metadata(&event.path)
+            .await
             .map_err(|e| Error::Io(e))?;
 
         let file_size = Some(metadata.len());
@@ -533,11 +595,7 @@ impl EventDrivenEmbeddingProcessor {
             event.path.clone(),
             event.kind.clone(),
             content,
-            crate::embedding_events::create_embedding_metadata(
-                &event.path,
-                &event.kind,
-                file_size,
-            ),
+            crate::embedding_events::create_embedding_metadata(&event.path, &event.kind, file_size),
         );
 
         Ok(embedding_event)
@@ -557,7 +615,10 @@ impl EventDrivenEmbeddingProcessor {
         if let Some(handle) = self.processor_handle.write().await.take() {
             match handle.await {
                 Ok(_) => info!("Event-driven embedding processor shutdown successfully"),
-                Err(e) => warn!("Event-driven embedding processor task completed with error: {:?}", e),
+                Err(e) => warn!(
+                    "Event-driven embedding processor task completed with error: {:?}",
+                    e
+                ),
             }
         }
 
@@ -618,13 +679,18 @@ impl EmbeddingEventHandler {
     }
 
     /// Convert a file event to an embedding event
-    async fn convert_file_event_to_embedding_event(&self, event: FileEvent) -> Result<EmbeddingEvent> {
+    async fn convert_file_event_to_embedding_event(
+        &self,
+        event: FileEvent,
+    ) -> Result<EmbeddingEvent> {
         // Read file content
-        let content = tokio::fs::read_to_string(&event.path).await
+        let content = tokio::fs::read_to_string(&event.path)
+            .await
             .map_err(|e| Error::Io(e))?;
 
         // Get file metadata
-        let metadata = tokio::fs::metadata(&event.path).await
+        let metadata = tokio::fs::metadata(&event.path)
+            .await
             .map_err(|e| Error::Io(e))?;
 
         let file_size = Some(metadata.len());
@@ -634,11 +700,7 @@ impl EmbeddingEventHandler {
             event.path.clone(),
             event.kind.clone(),
             content,
-            crate::embedding_events::create_embedding_metadata(
-                &event.path,
-                &event.kind,
-                file_size,
-            ),
+            crate::embedding_events::create_embedding_metadata(&event.path, &event.kind, file_size),
         );
 
         Ok(embedding_event)
@@ -648,38 +710,65 @@ impl EmbeddingEventHandler {
 #[async_trait::async_trait]
 impl EventHandler for EmbeddingEventHandler {
     async fn handle(&self, event: FileEvent) -> Result<()> {
-        info!("🔥 EmbeddingEventHandler received event: {:?} for file: {}",
-              event.kind, event.path.display());
+        info!(
+            "🔥 EmbeddingEventHandler received event: {:?} for file: {}",
+            event.kind,
+            event.path.display()
+        );
 
         if !self.enable_real_time {
-            warn!("Real-time processing disabled, skipping event for: {}", event.path.display());
+            warn!(
+                "Real-time processing disabled, skipping event for: {}",
+                event.path.display()
+            );
             return Ok(());
         }
 
-        info!("Converting file event to embedding event for: {}", event.path.display());
+        info!(
+            "Converting file event to embedding event for: {}",
+            event.path.display()
+        );
         // Convert file event to embedding event
-        let embedding_event = match self.convert_file_event_to_embedding_event(event.clone()).await {
+        let embedding_event = match self
+            .convert_file_event_to_embedding_event(event.clone())
+            .await
+        {
             Ok(embedding_event) => {
-                info!("Successfully created embedding event for: {}", event.path.display());
+                info!(
+                    "Successfully created embedding event for: {}",
+                    event.path.display()
+                );
                 embedding_event
-            },
+            }
             Err(e) => {
-                error!("Failed to convert file event to embedding event for {}: {}",
-                       event.path.display(), e);
+                error!(
+                    "Failed to convert file event to embedding event for {}: {}",
+                    event.path.display(),
+                    e
+                );
                 return Err(e);
             }
         };
 
         // Send embedding event through the channel for batch processing
-        info!("Sending embedding event to batch processor for: {}", event.path.display());
+        info!(
+            "Sending embedding event to batch processor for: {}",
+            event.path.display()
+        );
         match self.embedding_event_tx.send(embedding_event) {
             Ok(_) => {
-                info!("Successfully queued embedding event for: {}", event.path.display());
+                info!(
+                    "Successfully queued embedding event for: {}",
+                    event.path.display()
+                );
                 debug!("Successfully sent embedding event for batch processing");
             }
             Err(e) => {
                 warn!("Failed to send embedding event: {}", e);
-                return Err(Error::Channel(format!("Failed to send embedding event: {}", e)));
+                return Err(Error::Channel(format!(
+                    "Failed to send embedding event: {}",
+                    e
+                )));
             }
         }
 
@@ -710,7 +799,8 @@ impl EventHandler for EmbeddingEventHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::embedding_events::{EmbeddingEventPriority, create_embedding_metadata};
+    use crate::{create_embedding_metadata, EmbeddingEventPriority, FileEvent, FileEventKind};
+    use crucible_llm::embeddings::config::EmbeddingConfig;
     use tempfile::TempDir;
 
     #[tokio::test]
@@ -719,10 +809,8 @@ mod tests {
         let embedding_config = EmbeddingConfig::default();
         let embedding_pool = EmbeddingThreadPool::new(embedding_config).await?;
 
-        let processor = EventDrivenEmbeddingProcessor::new(
-            config,
-            Arc::new(embedding_pool),
-        ).await?;
+        let processor =
+            EventDrivenEmbeddingProcessor::new(config, Arc::new(embedding_pool)).await?;
 
         assert!(!processor.is_shutdown().await);
 
@@ -740,10 +828,8 @@ mod tests {
         let embedding_config = EmbeddingConfig::default();
         let embedding_pool = EmbeddingThreadPool::new(embedding_config).await?;
 
-        let processor = EventDrivenEmbeddingProcessor::new(
-            config,
-            Arc::new(embedding_pool),
-        ).await?;
+        let processor =
+            EventDrivenEmbeddingProcessor::new(config, Arc::new(embedding_pool)).await?;
 
         let temp_dir = TempDir::new()?;
         let file_path = temp_dir.path().join("test.md");
@@ -752,13 +838,18 @@ mod tests {
         tokio::fs::write(&file_path, content).await?;
 
         let event = FileEvent::new(FileEventKind::Created, file_path.clone());
-        let embedding_event = processor.transform_file_event_to_embedding_event(event).await?;
+        let embedding_event = processor
+            .transform_file_event_to_embedding_event(event)
+            .await?;
 
         assert_eq!(embedding_event.file_path, file_path);
         assert_eq!(embedding_event.trigger_event, FileEventKind::Created);
         assert_eq!(embedding_event.content, content);
         assert_eq!(embedding_event.metadata.content_type, "text/markdown");
-        assert_eq!(embedding_event.metadata.file_extension, Some("md".to_string()));
+        assert_eq!(
+            embedding_event.metadata.file_extension,
+            Some("md".to_string())
+        );
         assert!(embedding_event.metadata.file_size.is_some());
 
         processor.shutdown().await?;
@@ -776,10 +867,8 @@ mod tests {
         let embedding_config = EmbeddingConfig::default();
         let embedding_pool = EmbeddingThreadPool::new(embedding_config).await?;
 
-        let processor = EventDrivenEmbeddingProcessor::new(
-            config,
-            Arc::new(embedding_pool),
-        ).await?;
+        let processor =
+            EventDrivenEmbeddingProcessor::new(config, Arc::new(embedding_pool)).await?;
 
         // Test that batch processing works (implementation details depend on the specific use case)
         let metrics = processor.get_metrics().await;
@@ -800,10 +889,8 @@ mod tests {
         let embedding_config = EmbeddingConfig::default();
         let embedding_pool = EmbeddingThreadPool::new(embedding_config).await?;
 
-        let processor = EventDrivenEmbeddingProcessor::new(
-            config,
-            Arc::new(embedding_pool),
-        ).await?;
+        let processor =
+            EventDrivenEmbeddingProcessor::new(config, Arc::new(embedding_pool)).await?;
 
         // Test deduplication logic
         let metrics = processor.get_metrics().await;
@@ -819,10 +906,8 @@ mod tests {
         let embedding_config = EmbeddingConfig::default();
         let embedding_pool = EmbeddingThreadPool::new(embedding_config).await?;
 
-        let processor = Arc::new(EventDrivenEmbeddingProcessor::new(
-            config,
-            Arc::new(embedding_pool),
-        ).await?);
+        let processor =
+            Arc::new(EventDrivenEmbeddingProcessor::new(config, Arc::new(embedding_pool)).await?);
 
         // Create a channel for testing
         let (embedding_tx, _embedding_rx) = mpsc::unbounded_channel::<EmbeddingEvent>();
@@ -855,10 +940,8 @@ mod tests {
         let embedding_config = EmbeddingConfig::default();
         let embedding_pool = EmbeddingThreadPool::new(embedding_config).await?;
 
-        let processor = EventDrivenEmbeddingProcessor::new(
-            config,
-            Arc::new(embedding_pool),
-        ).await?;
+        let processor =
+            EventDrivenEmbeddingProcessor::new(config, Arc::new(embedding_pool)).await?;
 
         let initial_metrics = processor.get_metrics().await;
         assert_eq!(initial_metrics.total_events_received, 0);

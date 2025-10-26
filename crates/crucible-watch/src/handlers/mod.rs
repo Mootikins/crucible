@@ -1,17 +1,17 @@
 //! Event handlers for integrating with existing Crucible systems.
 
 // TODO: Re-enable when crucible_mcp is available
-mod indexing;
-mod rune_reload;
-mod obsidian_sync;
 pub mod composite;
+mod indexing;
+mod obsidian_sync;
+mod rune_reload;
 
-pub use indexing::*;
-pub use rune_reload::*;
-pub use obsidian_sync::*;
 pub use composite::*;
+pub use indexing::*;
+pub use obsidian_sync::*;
+pub use rune_reload::*;
 
-use crate::{events::FileEvent, traits::EventHandler, error::Result};
+use crate::{error::Result, events::FileEvent, traits::EventHandler};
 use std::sync::Arc;
 
 /// Registry for managing event handlers.
@@ -22,7 +22,10 @@ pub struct HandlerRegistry {
 impl std::fmt::Debug for HandlerRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HandlerRegistry")
-            .field("handlers", &format!("{} registered handlers", self.handlers.len()))
+            .field(
+                "handlers",
+                &format!("{} registered handlers", self.handlers.len()),
+            )
             .finish()
     }
 }
@@ -39,7 +42,8 @@ impl HandlerRegistry {
     pub fn register(&mut self, handler: Arc<dyn EventHandler>) {
         self.handlers.push(handler);
         // Sort by priority (highest first)
-        self.handlers.sort_by(|a, b| b.priority().cmp(&a.priority()));
+        self.handlers
+            .sort_by(|a, b| b.priority().cmp(&a.priority()));
     }
 
     /// Remove a handler by name.
@@ -81,7 +85,7 @@ impl Default for HandlerRegistry {
 
 /// Create a default set of handlers for a typical Crucible installation.
 pub fn create_default_handlers() -> Result<HandlerRegistry> {
-    let registry = HandlerRegistry::new();
+    let mut registry = HandlerRegistry::new();
 
     // Register default handlers
     // TODO: Re-enable when crucible_mcp is available
@@ -106,8 +110,8 @@ pub fn create_default_handlers() -> Result<HandlerRegistry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{FileEvent, FileEventKind};
     use async_trait::async_trait;
-    use crate::events::{FileEvent, FileEventKind};
     use std::path::PathBuf;
 
     struct MockHandler {
@@ -134,8 +138,14 @@ mod tests {
     async fn test_handler_registry() {
         let mut registry = HandlerRegistry::new();
 
-        let handler1 = Arc::new(MockHandler { name: "test1", priority: 100 });
-        let handler2 = Arc::new(MockHandler { name: "test2", priority: 200 });
+        let handler1 = Arc::new(MockHandler {
+            name: "test1",
+            priority: 100,
+        });
+        let handler2 = Arc::new(MockHandler {
+            name: "test2",
+            priority: 200,
+        });
 
         registry.register(handler1.clone());
         registry.register(handler2.clone());
@@ -154,7 +164,10 @@ mod tests {
     async fn test_event_filtering() {
         let mut registry = HandlerRegistry::new();
 
-        let handler = Arc::new(MockHandler { name: "test", priority: 100 });
+        let handler = Arc::new(MockHandler {
+            name: "test",
+            priority: 100,
+        });
         registry.register(handler);
 
         let event = FileEvent::new(FileEventKind::Created, PathBuf::from("test.md"));

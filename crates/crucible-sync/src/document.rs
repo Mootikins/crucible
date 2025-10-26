@@ -4,11 +4,11 @@
 //! CRDT operations, updates, and content management.
 
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::sync::RwLock;
-use yrs::{Doc, Text, Transact, Update, GetString, ReadTxn};
 use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::Encode;
-use thiserror::Error;
+use yrs::{Doc, GetString, ReadTxn, Text, Transact, Update};
 
 /// Error types for document operations
 #[derive(Error, Debug)]
@@ -86,15 +86,17 @@ impl Document {
     pub async fn apply_update(&self, update: Vec<u8>) -> Result<(), DocumentError> {
         let doc = self.doc.read().await;
         let mut txn = doc.transact_mut();
-        let update = Update::decode_v1(&update)
-            .map_err(|e| DocumentError::Yrs(e.to_string()))?;
-        txn.apply_update(update);
+        let update = Update::decode_v1(&update).map_err(|e| DocumentError::Yrs(e.to_string()))?;
+        let _ = txn.apply_update(update); // Result intentionally ignored - apply_update returns ()
         txn.commit();
         Ok(())
     }
 
     /// Get updates since the specified state vector
-    pub async fn get_updates_since(&self, state_vector: Vec<u8>) -> Result<Vec<Vec<u8>>, DocumentError> {
+    pub async fn get_updates_since(
+        &self,
+        state_vector: Vec<u8>,
+    ) -> Result<Vec<Vec<u8>>, DocumentError> {
         let doc = self.doc.read().await;
         let txn = doc.transact();
 
