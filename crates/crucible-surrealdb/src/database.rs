@@ -84,7 +84,9 @@ impl SurrealEmbeddingDatabase {
             metadata: metadata.clone(),
         };
 
-        let mut storage = self.storage.lock().unwrap();
+        let mut storage = self.storage
+            .lock()
+            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
         storage.insert(file_path.to_string(), data);
         println!("Stored embedding for: {}", file_path);
         Ok(())
@@ -92,7 +94,9 @@ impl SurrealEmbeddingDatabase {
 
     /// Store an embedding using EmbeddingData struct (for edge case tests)
     pub async fn store_embedding_data(&self, data: &EmbeddingData) -> Result<()> {
-        let mut storage = self.storage.lock().unwrap();
+        let mut storage = self.storage
+            .lock()
+            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
         storage.insert(data.file_path.clone(), data.clone());
         println!("Stored embedding data for: {}", data.file_path);
         Ok(())
@@ -104,7 +108,9 @@ impl SurrealEmbeddingDatabase {
         file_path: &str,
         metadata: &EmbeddingMetadata,
     ) -> Result<()> {
-        let mut storage = self.storage.lock().unwrap();
+        let mut storage = self.storage
+            .lock()
+            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
 
         if let Some(embedding_data) = storage.get_mut(file_path) {
             embedding_data.metadata = metadata.clone();
@@ -121,7 +127,9 @@ impl SurrealEmbeddingDatabase {
         file_path: &str,
         properties: HashMap<String, serde_json::Value>,
     ) -> Result<bool> {
-        let mut storage = self.storage.lock().unwrap();
+        let mut storage = self.storage
+            .lock()
+            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
 
         if let Some(embedding_data) = storage.get_mut(file_path) {
             // Update properties while preserving other metadata
@@ -136,13 +144,17 @@ impl SurrealEmbeddingDatabase {
 
     /// Check if a file exists in the database
     pub async fn file_exists(&self, file_path: &str) -> Result<bool> {
-        let storage = self.storage.lock().unwrap();
+        let storage = self.storage
+            .lock()
+            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
         Ok(storage.contains_key(file_path))
     }
 
     /// Get embedding data for a file
     pub async fn get_embedding(&self, file_path: &str) -> Result<Option<EmbeddingData>> {
-        let storage = self.storage.lock().unwrap();
+        let storage = self.storage
+            .lock()
+            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
         Ok(storage.get(file_path).cloned())
     }
 
@@ -153,7 +165,9 @@ impl SurrealEmbeddingDatabase {
         query_embedding: &[f32],
         top_k: u32,
     ) -> Result<Vec<SearchResultWithScore>> {
-        let storage = self.storage.lock().unwrap();
+        let storage = self.storage
+            .lock()
+            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
         let mut results = Vec::new();
 
         for (file_path, embedding_data) in storage.iter() {
@@ -194,7 +208,9 @@ impl SurrealEmbeddingDatabase {
 
     /// Search files by tags
     pub async fn search_by_tags(&self, tags: &[String]) -> Result<Vec<String>> {
-        let storage = self.storage.lock().unwrap();
+        let storage = self.storage
+            .lock()
+            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
         let mut results = Vec::new();
 
         for (file_path, embedding_data) in storage.iter() {
@@ -217,7 +233,9 @@ impl SurrealEmbeddingDatabase {
         &self,
         properties: &HashMap<String, serde_json::Value>,
     ) -> Result<Vec<String>> {
-        let storage = self.storage.lock().unwrap();
+        let storage = self.storage
+            .lock()
+            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
         let mut results = Vec::new();
 
         for (file_path, embedding_data) in storage.iter() {
@@ -255,7 +273,9 @@ impl SurrealEmbeddingDatabase {
         &self,
         query: &SearchQuery,
     ) -> Result<Vec<SearchResultWithScore>> {
-        let storage = self.storage.lock().unwrap();
+        let storage = self.storage
+            .lock()
+            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
         let mut results = Vec::new();
 
         for (file_path, embedding_data) in storage.iter() {
@@ -372,7 +392,9 @@ impl SurrealEmbeddingDatabase {
 
     /// Get all files in the database
     pub async fn list_files(&self) -> Result<Vec<String>> {
-        let storage = self.storage.lock().unwrap();
+        let storage = self.storage
+            .lock()
+            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
         let mut files: Vec<String> = storage.keys().cloned().collect();
         files.sort(); // Return sorted list for deterministic results
         Ok(files)
@@ -380,7 +402,9 @@ impl SurrealEmbeddingDatabase {
 
     /// Delete a file from the database
     pub async fn delete_file(&self, file_path: &str) -> Result<bool> {
-        let mut storage = self.storage.lock().unwrap();
+        let mut storage = self.storage
+            .lock()
+            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
 
         if storage.remove(file_path).is_some() {
             println!("Deleted file: {}", file_path);
@@ -438,7 +462,9 @@ impl SurrealEmbeddingDatabase {
 
     /// Get comprehensive database statistics
     pub async fn get_stats(&self) -> Result<DatabaseStats> {
-        let storage = self.storage.lock().unwrap();
+        let storage = self.storage
+            .lock()
+            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
 
         let total_documents = storage.len() as i64;
         let total_embeddings = storage
@@ -475,7 +501,9 @@ impl SurrealEmbeddingDatabase {
         relation_type: &str,
         properties: Option<HashMap<String, serde_json::Value>>,
     ) -> Result<()> {
-        let mut relations = self.relations.lock().unwrap();
+        let mut relations = self.relations
+            .lock()
+            .expect("Relations lock poisoned - document links may be corrupted");
 
         relations.push((
             from_file.to_string(),
@@ -500,13 +528,17 @@ impl SurrealEmbeddingDatabase {
         properties: HashMap<String, serde_json::Value>,
     ) -> Result<bool> {
         // Check if both files exist
-        let storage = self.storage.lock().unwrap();
+        let storage = self.storage
+            .lock()
+            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
         if !storage.contains_key(from_file) || !storage.contains_key(to_file) {
             return Ok(false);
         }
         drop(storage);
 
-        let mut relations = self.relations.lock().unwrap();
+        let mut relations = self.relations
+            .lock()
+            .expect("Relations lock poisoned - document links may be corrupted");
         relations.push((
             from_file.to_string(),
             to_file.to_string(),
@@ -528,7 +560,9 @@ impl SurrealEmbeddingDatabase {
         to_file: &str,
         relation_type: &str,
     ) -> Result<bool> {
-        let mut relations = self.relations.lock().unwrap();
+        let mut relations = self.relations
+            .lock()
+            .expect("Relations lock poisoned - document links may be corrupted");
         let initial_len = relations.len();
 
         relations.retain(|(from, to, rel_type, _)| {
@@ -551,7 +585,9 @@ impl SurrealEmbeddingDatabase {
         file_path: &str,
         relation_type: Option<&str>,
     ) -> Result<Vec<String>> {
-        let relations = self.relations.lock().unwrap();
+        let relations = self.relations
+            .lock()
+            .expect("Relations lock poisoned - document links may be corrupted");
         let mut related_files = Vec::new();
 
         for (from_file, to_file, rel_type, _properties) in relations.iter() {
