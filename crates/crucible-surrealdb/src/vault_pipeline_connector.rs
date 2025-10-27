@@ -629,18 +629,41 @@ async fn clear_document_embeddings(_client: &SurrealClient, _document_id: &str) 
 
 /// Store embedding in database
 async fn store_embedding_in_database(
-    _client: &SurrealClient,
+    client: &SurrealClient,
     chunk_id: &str,
     document_id: &str,
     content_hash: &str,
 ) -> Result<()> {
-    // For TDD purposes, this is a no-op that just logs the operation
-    // In a real implementation, this would store the embedding
-    // vector and metadata in the database
+    use crate::embedding_config::DocumentEmbedding;
+    use crate::vault_integration::store_document_embedding;
+
+    // Create a DocumentEmbedding with mock vector data
+    // NOTE: In production, this vector would come from the embedding thread pool
+    // For now, we use a mock vector (768 dimensions with random-ish values based on hash)
+    let dimensions = 768;
+    let mock_vector: Vec<f32> = (0..dimensions)
+        .map(|i| {
+            // Generate pseudo-random values based on content hash and position
+            let hash_byte = content_hash.as_bytes().get(i % content_hash.len()).unwrap_or(&0);
+            (*hash_byte as f32 / 255.0) * 2.0 - 1.0  // Normalize to [-1, 1]
+        })
+        .collect();
+
+    let embedding = DocumentEmbedding::new(
+        document_id.to_string(),
+        mock_vector,
+        "nomic-embed-text".to_string(),  // Match the model from config
+    )
+    .with_chunk_info(chunk_id.to_string(), 1000, 0);  // Mock chunk info
+
+    // Store in database using the real storage function
+    store_document_embedding(client, &embedding).await?;
+
     debug!(
-        "Storing embedding for chunk {} (document: {}, hash: {})",
-        chunk_id, document_id, content_hash
+        "Stored embedding for chunk {} (document: {}, hash: {}, dims: {})",
+        chunk_id, document_id, content_hash, dimensions
     );
+
     Ok(())
 }
 

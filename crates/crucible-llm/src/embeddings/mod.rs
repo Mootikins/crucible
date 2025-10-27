@@ -22,13 +22,13 @@ pub mod candle;
 /// Provider trait and common functionality.
 pub mod provider;
 
-// Make mock available for both internal tests and external integration tests
-#[cfg(any(test, feature = "test-utils"))]
+/// Mock provider for testing
 pub mod mock;
 
 pub use candle::CandleProvider;
 pub use config::{EmbeddingConfig, EmbeddingProviderType, ProviderType};
 pub use error::{EmbeddingError, EmbeddingResult};
+pub use mock::MockEmbeddingProvider;
 pub use ollama::OllamaProvider;
 pub use openai::OpenAIProvider;
 pub use provider::{EmbeddingProvider, EmbeddingResponse};
@@ -53,6 +53,11 @@ pub async fn create_provider(
         }
         EmbeddingProviderType::Candle => {
             let provider = candle::CandleProvider::new(config)?;
+            Ok(Arc::new(provider))
+        }
+        EmbeddingProviderType::Mock => {
+            let dimensions = config.model.dimensions.unwrap_or(768) as usize;
+            let provider = mock::MockEmbeddingProvider::with_dimensions(dimensions);
             Ok(Arc::new(provider))
         }
         _ => Err(EmbeddingError::ConfigError(format!(

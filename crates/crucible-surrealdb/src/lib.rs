@@ -58,8 +58,8 @@ pub use embedding_pool::EmbeddingThreadPool;
 
 // Vault scanner exports
 pub use vault_processor::{
-    process_document_embeddings, process_incremental_changes, process_vault_files,
-    process_vault_files_with_error_handling, scan_vault_directory,
+    process_document_embeddings, process_incremental_changes, process_vault_delta,
+    process_vault_files, process_vault_files_with_error_handling, scan_vault_directory,
 };
 pub use vault_scanner::{
     create_vault_scanner, create_vault_scanner_with_embeddings, parse_file_to_document,
