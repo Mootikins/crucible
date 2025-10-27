@@ -3,6 +3,8 @@
 //! These tests are written TDD-style - they should fail first,
 //! then drive the implementation to make them pass.
 
+use crucible_config::Config;
+
 /// Helper function to get CLI binary path
 fn cli_binary_path() -> PathBuf {
     // Look for CLI binary in target directory
@@ -25,14 +27,16 @@ fn cli_binary_path() -> PathBuf {
     }
 }
 
-/// Helper to run CLI command with proper environment
-async fn run_cli_command(args: Vec<&str>, env_vars: Vec<(&str, &str)>) -> Result<String> {
+/// Helper to run CLI command with configuration
+async fn run_cli_command(args: Vec<&str>, config: &Config) -> Result<String> {
     let binary_path = cli_binary_path();
     let mut cmd = Command::new(binary_path);
 
-    // Add environment variables
-    for (key, value) in env_vars {
-        cmd.env(key, value);
+    // Write config to a temporary file and pass it via --config flag
+    // For now, we'll extract kiln path if present and pass it via args
+    // TODO: Update CLI to accept config file parameter
+    if let Some(kiln_path) = config.kiln_path_opt() {
+        cmd.arg("--kiln-path").arg(kiln_path);
     }
 
     for arg in args {
@@ -62,19 +66,19 @@ async fn run_cli_command(args: Vec<&str>, env_vars: Vec<(&str, &str)>) -> Result
     Ok(combined_output)
 }
 
-/// Helper to create a test vault with sample content
-async fn create_test_vault() -> Result<TempDir> {
+/// Helper to create a test kiln with sample content and return config
+async fn create_test_kiln_with_config() -> Result<(Config, TempDir)> {
     let temp_dir = TempDir::new()?;
-    let vault_path = temp_dir.path();
+    let kiln_path = temp_dir.path();
 
-    // Create .obsidian directory for Obsidian vault
-    std::fs::create_dir_all(vault_path.join(".obsidian"))?;
+    // Create .obsidian directory for Obsidian kiln
+    std::fs::create_dir_all(kiln_path.join(".obsidian"))?;
 
     // Create sample markdown files
     let test_files = vec![
         (
             "Getting Started.md",
-            "# Getting Started\n\nThis is a getting started guide for the vault.",
+            "# Getting Started\n\nThis is a getting started guide for the kiln.",
         ),
         (
             "Project Architecture.md",
@@ -89,25 +93,26 @@ async fn create_test_vault() -> Result<TempDir> {
     ];
 
     for (filename, content) in test_files {
-        let file_path = vault_path.join(filename);
+        let file_path = kiln_path.join(filename);
         std::fs::write(file_path, content)?;
     }
 
-    Ok(temp_dir)
+    // Create config with kiln path
+    use crucible_config::TestConfig;
+    let config = TestConfig::with_kiln_path(kiln_path.to_string_lossy().to_string());
+
+    Ok((config, temp_dir))
 }
 
 #[tokio::test]
 async fn test_basic_search_works_immediately() -> Result<()> {
-    // GIVEN: A test vault with content
-    let vault_dir = create_test_vault().await?;
+    // GIVEN: A test kiln with content
+    let (config, _kiln_dir) = create_test_kiln_with_config().await?;
 
     // WHEN: User performs basic search
     let result = run_cli_command(
         vec!["search", "getting"],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -318,14 +323,14 @@ async fn test_search_empty_query_shows_help() -> Result<()> {
 /// Helper to run CLI command and allow failure (captures error output)
 async fn run_cli_command_allow_failure(
     args: Vec<&str>,
-    env_vars: Vec<(&str, &str)>,
+    config: &Config,
 ) -> Result<String> {
     let binary_path = cli_binary_path();
     let mut cmd = Command::new(binary_path);
 
-    // Add environment variables
-    for (key, value) in env_vars {
-        cmd.env(key, value);
+    // Pass kiln path if present
+    if let Some(kiln_path) = config.kiln_path_opt() {
+        cmd.arg("--kiln-path").arg(kiln_path);
     }
 
     for arg in args {
