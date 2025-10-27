@@ -12,3 +12,4 @@ pub mod error_recovery;
 pub mod interactive;
 pub mod output;
 pub mod tui;
+pub mod watcher;

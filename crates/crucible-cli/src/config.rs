@@ -23,6 +23,9 @@ pub struct CliConfig {
     /// Migration configuration
     #[serde(default)]
     pub migration: MigrationConfig,
+    /// File watching configuration
+    #[serde(default)]
+    pub file_watching: FileWatcherConfig,
     /// Custom database path (overrides default kiln/.crucible/embeddings.db)
     #[serde(skip)]
     pub custom_database_path: Option<PathBuf>,
@@ -226,6 +229,18 @@ pub struct MigrationValidationConfig {
     pub max_performance_degradation: f32,
 }
 
+/// File watcher configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileWatcherConfig {
+    /// Enable file watching (default: true)
+    pub enabled: bool,
+    /// Debounce delay in milliseconds (default: 500)
+    pub debounce_ms: u64,
+    /// Additional exclude patterns beyond built-in defaults
+    #[serde(default)]
+    pub exclude_patterns: Vec<String>,
+}
+
 /// Default configuration constants
 impl Default for CliConfig {
     fn default() -> Self {
@@ -239,6 +254,7 @@ impl Default for CliConfig {
             network: NetworkConfig::default(),
             services: ServicesConfig::default(),
             migration: MigrationConfig::default(),
+            file_watching: FileWatcherConfig::default(),
             custom_database_path: None,
         }
     }
@@ -354,6 +370,16 @@ impl Default for MigrationConfig {
             preserve_tool_ids: true,
             backup_originals: true,
             validation: MigrationValidationConfig::default(),
+        }
+    }
+}
+
+impl Default for FileWatcherConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,  // ON by default (industry standard)
+            debounce_ms: 500,  // Match cargo-watch default
+            exclude_patterns: Vec::new(),  // Built-in defaults are hardcoded
         }
     }
 }
