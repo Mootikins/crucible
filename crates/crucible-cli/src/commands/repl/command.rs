@@ -220,6 +220,8 @@ TOOLS:
   :tools                      List all available tools
   :run <tool> [args...]       Execute a tool with arguments
   :rune <script> [args...]    Run a Rune script
+  :help <tool>                Show detailed help for a specific tool
+  :h <tool>                   (shorthand)
 
 INFORMATION:
   :stats                      Show kiln and REPL statistics

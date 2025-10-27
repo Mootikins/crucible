@@ -240,9 +240,23 @@ impl Repl {
                 self.set_output_format(format);
                 Ok(())
             }
-            Command::Help(topic) => {
-                self.show_help(topic.as_deref());
-                Ok(())
+            Command::Help(topic) => match topic {
+                Some(topic_str) => {
+                    // Check if it's a command or a tool
+                    // First, try as a command
+                    if Command::help_for_command(&topic_str).is_some() {
+                        self.show_help(Some(&topic_str));
+                        Ok(())
+                    } else {
+                        // Try as a tool
+                        self.show_tool_help(&topic_str).await
+                    }
+                }
+                None => {
+                    // Show general help
+                    self.show_help(None);
+                    Ok(())
+                }
             }
             Command::ShowHistory(limit) => {
                 self.show_history(limit);
@@ -371,14 +385,52 @@ impl Repl {
                 tools.len()
             );
 
-            for tool in &tools {
-                println!("    {}", tool.cyan());
+            // Calculate column width for this group based on longest tool name
+            let max_name_len = tools.iter().map(|name| name.len()).max().unwrap_or(0);
+            let column_width = max_name_len.max(20); // Minimum 20 chars for alignment
+
+            // Fetch schemas for all tools in this group in parallel
+            let schema_futures: Vec<_> = tools
+                .iter()
+                .map(|tool_name| async {
+                    let schema = self.tools.get_tool_schema(tool_name).await.ok().flatten();
+                    (tool_name.clone(), schema)
+                })
+                .collect();
+
+            let tool_schemas = futures::future::join_all(schema_futures).await;
+
+            // Display tools with descriptions
+            for (tool_name, schema_opt) in tool_schemas {
+                let description = schema_opt
+                    .as_ref()
+                    .map(|schema| {
+                        // Truncate description to 60 chars if needed
+                        let desc = &schema.description;
+                        if desc.len() > 60 {
+                            format!("{}...", &desc[..57])
+                        } else {
+                            desc.to_string()
+                        }
+                    })
+                    .unwrap_or_else(|| String::new());
+
+                if !description.is_empty() {
+                    println!(
+                        "    {:<width$} - {}",
+                        tool_name.cyan(),
+                        description.white(),
+                        width = column_width
+                    );
+                } else {
+                    println!("    {}", tool_name.cyan());
+                }
             }
             println!();
         }
 
         println!(
-            "{} :run <tool> [args...] | Example: :run system_info",
+            "{} :run <tool> [args...] | :help <tool> for details",
             "Tip:".yellow()
         );
         println!();
@@ -395,7 +447,20 @@ impl Repl {
             .tools
             .execute_tool(tool_name, &args)
             .await
-            .map_err(|e| ReplError::Tool(e.to_string()))?;
+            .map_err(|e| {
+                let err_str = e.to_string();
+                // Check if this is a parameter conversion error
+                if err_str.contains("Parameter conversion failed:") {
+                    // Extract the actual error message after the prefix
+                    let clean_msg = err_str
+                        .strip_prefix("Parameter conversion failed: ")
+                        .unwrap_or(&err_str);
+                    eprintln!("\n{} {}\n", "❌ Tool Execution Failed:".red().bold(), clean_msg);
+                } else {
+                    eprintln!("\n{} {}\n", "❌ Tool Error:".red(), err_str);
+                }
+                ReplError::Tool(e.to_string())
+            })?;
 
         // Display result based on status
         match result.status {
@@ -484,6 +549,48 @@ impl Repl {
         } else {
             // Show general help
             println!("\n{}", Command::general_help());
+        }
+    }
+
+    /// Show detailed help for a specific tool
+    async fn show_tool_help(&self, tool_name: &str) -> Result<(), ReplError> {
+        use colored::Colorize;
+
+        // Fetch the tool schema
+        match self.tools.get_tool_schema(tool_name).await {
+            Ok(Some(schema)) => {
+                // Format and display the schema
+                let formatted = format_tool_schema(&schema);
+                println!("{}", formatted);
+                Ok(())
+            }
+            Ok(None) => {
+                // Tool exists but has no schema
+                println!(
+                    "\n{} Tool '{}' found, but no schema information is available.",
+                    "ℹ".yellow(),
+                    tool_name.cyan()
+                );
+                Ok(())
+            }
+            Err(e) => {
+                // Tool not found or error retrieving schema
+                println!(
+                    "\n{} Tool '{}' not found or error retrieving schema: {}",
+                    "❌".red(),
+                    tool_name.cyan(),
+                    e
+                );
+                println!(
+                    "{} Use {} to see all available tools.",
+                    "💡".cyan(),
+                    ":tools".green()
+                );
+                Err(ReplError::Tool(format!(
+                    "Tool '{}' not found or schema unavailable",
+                    tool_name
+                )))
+            }
         }
     }
 
@@ -619,6 +726,92 @@ impl OutputFormat {
             OutputFormat::Csv => "csv",
         }
     }
+}
+
+/// Format a tool schema for display in the REPL
+fn format_tool_schema(schema: &tools::ToolSchema) -> String {
+    use colored::Colorize;
+
+    let mut output = String::new();
+
+    // Title box
+    let title_line = format!(" {} ", schema.name);
+    let border_len = title_line.len() + 2;
+    let top_border = format!("╭─{}─╮", "─".repeat(border_len));
+    let bottom_border = format!("╰─{}─╯", "─".repeat(border_len));
+
+    output.push_str(&format!("\n{}\n", top_border.cyan()));
+    output.push_str(&format!("│ {} │\n", schema.name.bold().cyan()));
+    output.push_str(&format!("│ {} │\n", " ".repeat(border_len)));
+    output.push_str(&format!("│ {} │\n", schema.description.white()));
+    output.push_str(&format!("{}\n", bottom_border.cyan()));
+
+    // Parameters section
+    if let Some(properties) = schema.input_schema.get("properties").and_then(|p| p.as_object()) {
+        output.push_str(&format!("\n{}:\n", "Parameters".bold().green()));
+
+        // Get required fields
+        let required: Vec<String> = schema
+            .input_schema
+            .get("required")
+            .and_then(|r| r.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        for (param_name, param_schema) in properties {
+            let param_type = param_schema
+                .get("type")
+                .and_then(|t| t.as_str())
+                .unwrap_or("unknown");
+
+            let is_required = required.contains(param_name);
+            let required_str = if is_required {
+                "required".red()
+            } else {
+                "optional".yellow()
+            };
+
+            output.push_str(&format!(
+                "  {} {} ({}, {})\n",
+                "•".cyan(),
+                param_name.bold(),
+                param_type.italic(),
+                required_str
+            ));
+
+            // Add description if available
+            if let Some(description) = param_schema.get("description").and_then(|d| d.as_str()) {
+                output.push_str(&format!("    {}\n", description.white()));
+            }
+
+            output.push('\n');
+        }
+    } else {
+        output.push_str(&format!(
+            "\n{}\n",
+            "No parameters required.".italic().white()
+        ));
+    }
+
+    // Usage example
+    output.push_str(&format!("\n{}:\n", "Usage".bold().green()));
+    output.push_str(&format!(
+        "  :run {} {}\n",
+        schema.name.cyan(),
+        "[args...]".italic().white()
+    ));
+
+    // Additional usage tip
+    output.push_str(&format!(
+        "\n{} Arguments should be space-separated. Use quotes for strings with spaces.\n",
+        "Tip:".yellow()
+    ));
+
+    output
 }
 
 /// Main entry point for REPL command

@@ -537,6 +537,23 @@ impl UnifiedToolRegistry {
     pub fn is_unified_enabled(&self) -> bool {
         self.use_unified
     }
+
+    /// Get schema information for a specific tool
+    pub async fn get_tool_schema(
+        &self,
+        tool_name: &str,
+    ) -> Result<Option<super::ToolSchema>> {
+        if self.use_unified {
+            // Try to get schema from the group registry
+            self.group_registry
+                .get_tool_schema(tool_name)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to get tool schema: {}", e))
+        } else {
+            // Legacy mode - no schema support for Rune tools yet
+            Ok(None)
+        }
+    }
 }
 
 /// Convert crucible_tools::ToolResult to REPL ToolResult
