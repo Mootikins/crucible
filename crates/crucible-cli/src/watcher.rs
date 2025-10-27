@@ -191,6 +191,10 @@ impl SimpleFileWatcher {
             // Pattern like **/.git/**
             let dir_name = &pattern[3..pattern.len() - 3];
             path_str.contains(&format!("/{}/", dir_name)) || path_str.starts_with(&format!("{}/", dir_name))
+        } else if pattern.starts_with("**/") && pattern.ends_with("*") {
+            // Pattern like **/.obsidian/workspace*
+            let middle = &pattern[3..pattern.len() - 1];
+            path_str.contains(middle)
         } else if pattern.ends_with("*") {
             // Pattern like .obsidian/workspace*
             let prefix = &pattern[..pattern.len() - 1];
