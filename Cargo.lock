@@ -1751,6 +1751,7 @@ dependencies = [
  "crucible-core",
  "crucible-llm",
  "futures",
+ "md5",
  "ndarray 0.16.1",
  "num_cpus",
  "serde",

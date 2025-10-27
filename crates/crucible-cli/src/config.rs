@@ -658,6 +658,13 @@ max_performance_degradation = 20.0
 
     /// Convert to EmbeddingConfig for use with create_provider
     pub fn to_embedding_config(&self) -> Result<EmbeddingConfig> {
+        // Check if we're in test mode or mock provider requested
+        if std::env::var("CRUCIBLE_TEST_MODE").is_ok()
+            || self.kiln.embedding_model.as_ref().map(|m| m.as_str()) == Some("mock")
+            || self.kiln.embedding_model.as_ref().map(|m| m.as_str()) == Some("mock-test-model") {
+            return Ok(EmbeddingConfig::mock());
+        }
+
         // Validate that embedding model is configured
         let model = self.kiln.embedding_model.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
@@ -668,7 +675,7 @@ max_performance_degradation = 20.0
             )
         })?;
 
-        // For now, we default to Ollama provider
+        // Default to Ollama provider
         // In the future, we could add provider selection to the config
         Ok(EmbeddingConfig::ollama(
             Some(self.kiln.embedding_url.clone()),

@@ -11,8 +11,8 @@ use crucible_config::{ApiConfig, EmbeddingProviderConfig, EmbeddingProviderType,
 use crucible_surrealdb::{
     embedding_pool::{create_embedding_thread_pool_with_crucible_config, EmbeddingThreadPool},
     vault_integration::{get_database_stats, retrieve_parsed_document, semantic_search},
-    vault_processor::process_vault_files,
-    vault_scanner::{create_vault_scanner, VaultScannerConfig},
+    vault_processor::{process_vault_delta, process_vault_files, scan_vault_directory},
+    vault_scanner::{create_vault_scanner, VaultScannerConfig, VaultProcessResult},
     EmbeddingConfig, SurrealClient, SurrealDbConfig,
 };
 use indicatif::{ProgressBar, ProgressStyle};
@@ -79,7 +79,10 @@ pub async fn execute(
     // Check if embeddings exist, process kiln if needed
     let embeddings_exist = check_embeddings_exist(&client).await?;
 
+    eprintln!("DEBUG SEMANTIC: embeddings_exist = {}", embeddings_exist);
+
     if !embeddings_exist {
+        eprintln!("DEBUG SEMANTIC: Taking FULL processing path (no embeddings)");
         pb.finish_with_message("No embeddings found, starting processing...");
         pb.set_style(
             ProgressStyle::default_spinner()
@@ -92,7 +95,7 @@ pub async fn execute(
             println!("🚀 Starting kiln processing to generate embeddings...\n");
         }
 
-        // Process kiln using integrated functionality
+        // Process kiln using integrated functionality (first time - full processing)
         match process_vault_integrated(&client, &config.kiln.path, &pb, &config).await {
             Ok(process_result) => {
                 if format != "json" {
@@ -151,7 +154,29 @@ pub async fn execute(
             }
         }
     } else {
-        pb.set_message("Embeddings found, performing semantic search...");
+        eprintln!("DEBUG SEMANTIC: Taking DELTA processing path (embeddings exist)");
+        // Embeddings exist - use delta processing for any changed files
+        pb.set_message("Checking for vault changes...");
+
+        eprintln!("DEBUG SEMANTIC: About to call process_vault_delta_if_needed");
+        match process_vault_delta_if_needed(&client, &config.kiln.path, &pb, &config).await {
+            Ok(delta_result) => {
+                if delta_result.processed_count > 0 {
+                    if format != "json" {
+                        println!("🔄 Detected {} changed files, updated embeddings", delta_result.processed_count);
+                    }
+                    pb.set_message("Embeddings updated, performing semantic search...");
+                } else {
+                    pb.set_message("No changes detected, performing semantic search...");
+                }
+            }
+            Err(e) => {
+                // Delta processing failed - log but continue with search
+                // The embeddings that exist should still be valid
+                eprintln!("⚠️  Delta processing check failed (continuing with existing embeddings): {}", e);
+                pb.set_message("Performing semantic search with existing embeddings...");
+            }
+        }
     }
 
     // Perform real semantic search using vector similarity
@@ -360,6 +385,12 @@ async fn process_vault_integrated(
         ));
     }
 
+    // Initialize database schema (tables, indexes, etc.)
+    pb.set_message("Initializing database schema...");
+    crucible_surrealdb::vault_integration::initialize_vault_schema(client)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to initialize database schema: {}", e))?;
+
     pb.set_message("Scanning kiln directory...");
 
     // Create kiln scanner configuration
@@ -400,10 +431,27 @@ async fn process_vault_integrated(
     pb.set_message("Discovering files to process...");
 
     let vault_path_buf = PathBuf::from(vault_path);
+
+    // DEBUG: Log the vault path being scanned
+    eprintln!("DEBUG: Scanning vault path: {:?}", vault_path_buf);
+    eprintln!("DEBUG: Path exists: {}", vault_path_buf.exists());
+    eprintln!("DEBUG: Is directory: {}", vault_path_buf.is_dir());
+
     let scan_result = scanner
         .scan_vault_directory(&vault_path_buf)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to scan kiln directory: {}", e))?;
+
+    // DEBUG: Log scan results
+    eprintln!("DEBUG: Total files found: {}", scan_result.total_files_found);
+    eprintln!("DEBUG: Markdown files found: {}", scan_result.markdown_files_found);
+    eprintln!("DEBUG: Discovered files count: {}", scan_result.discovered_files.len());
+    eprintln!("DEBUG: Scan errors: {}", scan_result.scan_errors.len());
+
+    for (i, file) in scan_result.discovered_files.iter().enumerate().take(5) {
+        eprintln!("DEBUG: File {}: {:?} (markdown={}, accessible={})",
+                  i, file.path, file.is_markdown, file.is_accessible);
+    }
 
     if scan_result.discovered_files.is_empty() {
         return Err(anyhow::anyhow!(
@@ -518,4 +566,124 @@ fn create_provider_config_from_cli(config: &CliConfig) -> Result<EmbeddingProvid
         .map_err(|e| anyhow::anyhow!("Invalid embedding provider configuration: {}", e))?;
 
     Ok(provider_config)
+}
+
+/// Process vault using delta processing to only update changed files
+///
+/// This function scans the vault directory and uses hash comparison to identify
+/// which files have changed since last processing. Only changed files are reprocessed,
+/// which significantly improves performance for subsequent searches.
+///
+/// # Performance Target
+/// - Single file change: ≤1 second
+///
+/// # Process Flow
+/// 1. Scan vault directory to discover all files
+/// 2. Use process_vault_delta to detect changes via hash comparison
+/// 3. Only reprocess files that have actually changed
+/// 4. Return processing statistics
+///
+/// # Arguments
+/// * `client` - SurrealDB client connection
+/// * `vault_path` - Path to the vault directory
+/// * `pb` - Progress bar for user feedback
+/// * `config` - CLI configuration
+///
+/// # Returns
+/// VaultProcessResult with processing statistics (0 processed if no changes)
+async fn process_vault_delta_if_needed(
+    client: &SurrealClient,
+    vault_path: &std::path::Path,
+    pb: &ProgressBar,
+    config: &CliConfig,
+) -> Result<VaultProcessResult> {
+    eprintln!("DEBUG DELTA: Entered process_vault_delta_if_needed");
+
+    // Validate kiln path exists
+    if !vault_path.exists() {
+        return Err(anyhow::anyhow!(
+            "Kiln path '{}' does not exist or is not accessible",
+            vault_path.display()
+        ));
+    }
+
+    pb.set_message("Scanning kiln for changes...");
+
+    // Create kiln scanner configuration
+    let scanner_config = VaultScannerConfig {
+        max_file_size_bytes: 50 * 1024 * 1024, // 50MB
+        max_recursion_depth: 10,
+        recursive_scan: true,
+        include_hidden_files: false,
+        file_extensions: vec!["md".to_string(), "markdown".to_string()],
+        parallel_processing: std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4),
+        batch_processing: true,
+        batch_size: 16,
+        enable_embeddings: true,
+        process_embeds: true,
+        process_wikilinks: true,
+        enable_incremental: true, // Enable incremental for delta processing
+        track_file_changes: true,
+        change_detection_method:
+            crucible_surrealdb::vault_scanner::ChangeDetectionMethod::ContentHash,
+        error_handling_mode: crucible_surrealdb::vault_scanner::ErrorHandlingMode::ContinueOnError,
+        max_error_count: 100,
+        error_retry_attempts: 3,
+        error_retry_delay_ms: 500,
+        skip_problematic_files: true,
+        log_errors_detailed: true,
+        error_threshold_circuit_breaker: 10,
+        circuit_breaker_timeout_ms: 30000,
+        processing_timeout_ms: 30000,
+    };
+
+    // Scan vault directory to discover all files
+    let vault_path_buf = PathBuf::from(vault_path);
+    let mut discovered_files = scan_vault_directory(&vault_path_buf, &scanner_config)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to scan kiln directory: {}", e))?;
+
+    // Filter out .crucible directory files (database, internal files)
+    discovered_files.retain(|f| {
+        !f.path.components().any(|c| c.as_os_str() == ".crucible")
+    });
+
+    if discovered_files.is_empty() {
+        pb.set_message("No markdown files found in kiln");
+        return Ok(VaultProcessResult {
+            processed_count: 0,
+            failed_count: 0,
+            errors: Vec::new(),
+            total_processing_time: Duration::from_secs(0),
+            average_processing_time_per_document: Duration::from_secs(0),
+        });
+    }
+
+    pb.set_message("Detecting changed files...");
+
+    // Extract file paths for delta processing
+    let file_paths: Vec<PathBuf> = discovered_files.iter().map(|f| f.path.clone()).collect();
+
+    // Create embedding thread pool for parallel processing
+    let embedding_pool = create_embedding_pool_from_cli_config(&config)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to create embedding thread pool: {}", e))?;
+
+    pb.set_message("Processing changed files...");
+
+    // Use delta processing - will detect changes and only process what changed
+    let process_result = process_vault_delta(
+        file_paths,
+        client,
+        &scanner_config,
+        Some(&embedding_pool),
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("Failed to process vault delta: {}", e))?;
+
+    pb.set_message("Delta processing completed");
+
+    Ok(process_result)
 }
