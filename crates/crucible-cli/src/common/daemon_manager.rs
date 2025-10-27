@@ -287,25 +287,47 @@ pub async fn ensure_watcher_running(config: &crate::config::CliConfig) -> Result
 
     info!("Initializing file watcher for: {}", config.kiln.path.display());
 
+    // Spawn the entire watcher + event handling in a background task
+    let vault_path = config.kiln.path.clone();
+    let watcher_config = config.file_watching.clone();
+    let config_clone = config.clone();
+
+    std::thread::spawn(move || {
+        // Create a new Tokio runtime for this thread to avoid lifetime issues
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+        rt.block_on(async move {
+            run_file_watcher(vault_path, watcher_config, config_clone).await;
+        });
+    });
+
+    // Give the watcher a moment to initialize before continuing
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    Ok(())
+}
+
+/// Run file watcher in background task (extracted to avoid HRTB lifetime issues)
+async fn run_file_watcher(
+    vault_path: std::path::PathBuf,
+    watcher_config: crate::config::FileWatcherConfig,
+    config: crate::config::CliConfig,
+) {
+    use crate::watcher::{SimpleFileWatcher, get_fix_instructions};
+
+    let debounce_ms = watcher_config.debounce_ms;
+
     // Create channel for watch events
     let (event_tx, event_rx) = mpsc::unbounded_channel();
 
     // Create watcher (with pre-flight checks)
-    match SimpleFileWatcher::new(&config.kiln.path, config.file_watching.clone(), event_tx) {
-        Ok(watcher) => {
-            // Spawn background task to handle events
-            let config_clone = config.clone();
-            tokio::spawn(async move {
-                // Keep watcher alive by moving it into the task
-                let _watcher = watcher;
+    match SimpleFileWatcher::new(&vault_path, watcher_config, event_tx) {
+        Ok(_watcher) => {
+            info!("✓ File watching enabled (debounce: {}ms)", debounce_ms);
 
-                if let Err(e) = handle_watch_events(event_rx, config_clone).await {
-                    error!("File watcher event handler error: {}", e);
-                }
-            });
-
-            info!("✓ File watching enabled (debounce: {}ms)", config.file_watching.debounce_ms);
-            Ok(())
+            // Handle events - this keeps the watcher alive
+            if let Err(e) = handle_watch_events(event_rx, config).await {
+                error!("File watcher event handler error: {}", e);
+            }
         }
         Err(e) => {
             // Graceful degradation: log warning but continue
@@ -318,8 +340,6 @@ pub async fn ensure_watcher_running(config: &crate::config::CliConfig) -> Result
             if !fix.is_empty() {
                 warn!("\n  How to fix:\n  {}", fix.replace('\n', "\n  "));
             }
-
-            Ok(())  // Graceful degradation
         }
     }
 }
@@ -327,7 +347,7 @@ pub async fn ensure_watcher_running(config: &crate::config::CliConfig) -> Result
 /// Handle watch events in background task
 async fn handle_watch_events(
     mut event_rx: mpsc::UnboundedReceiver<crate::watcher::WatchEvent>,
-    _config: crate::config::CliConfig,  // Will be used for delta processing
+    config: crate::config::CliConfig,
 ) -> Result<()> {
     use std::collections::HashSet;
     use tokio::time::{sleep, Duration};
@@ -374,18 +394,142 @@ async fn handle_watch_events(
                 // Process batched files
                 if !pending_files.is_empty() {
                     let file_count = pending_files.len();
-                    debug!("Processing {} changed file(s)", file_count);
+                    info!("🔄 Processing {} changed file(s)", file_count);
 
-                    // TODO: Call delta processing with pending_files
-                    // For now, just log
-                    for path in pending_files.drain() {
-                        debug!("  - {}", path.display());
+                    // Process the changed files (pass owned values to avoid lifetime issues)
+                    let files: Vec<_> = pending_files.drain().collect();
+                    let config_clone = config.clone();
+                    match process_changed_files(files, config_clone).await {
+                        Ok(count) => {
+                            info!("✅ Processed {} file(s) successfully", count);
+                        }
+                        Err(e) => {
+                            error!("Failed to process changed files: {}", e);
+                        }
                     }
-
-                    debug!("Batch processing complete");
                 }
             }
         }
+    }
+}
+
+/// Process specific changed files (delta processing)
+async fn process_changed_files(
+    changed_files: Vec<std::path::PathBuf>,
+    config: crate::config::CliConfig,
+) -> Result<usize> {
+    use crucible_surrealdb::{
+        embedding_pool::create_embedding_thread_pool_with_crucible_config,
+        vault_scanner::{VaultScannerConfig, ErrorHandlingMode, ChangeDetectionMethod},
+        vault_processor::process_vault_delta,
+        vault_integration::initialize_vault_schema,
+        SurrealClient, SurrealDbConfig, EmbeddingConfig,
+    };
+
+    // Create database client
+    let db_config = SurrealDbConfig {
+        namespace: "crucible".to_string(),
+        database: "vault".to_string(),
+        path: config.database_path_str()?,
+        max_connections: Some(10),
+        timeout_seconds: Some(30),
+    };
+
+    let client = SurrealClient::new(db_config)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to connect to database: {}", e))?;
+
+    // Initialize schema (idempotent)
+    initialize_vault_schema(&client)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to initialize schema: {}", e))?;
+
+    // Handle empty input
+    if changed_files.is_empty() {
+        debug!("No files to process");
+        return Ok(0);
+    }
+
+    debug!("Processing {} changed files", changed_files.len());
+
+    // Create scanner config for processing with embeddings enabled
+    let scanner_config = VaultScannerConfig {
+        max_file_size_bytes: 50 * 1024 * 1024, // 50MB
+        max_recursion_depth: 10,
+        recursive_scan: true,
+        include_hidden_files: false,
+        file_extensions: vec!["md".to_string(), "markdown".to_string()],
+        parallel_processing: std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4),
+        batch_processing: true,
+        batch_size: 16,
+        enable_embeddings: true,  // Enabled - we're in a separate thread now
+        process_embeds: true,
+        process_wikilinks: true,
+        enable_incremental: true,  // Delta processing
+        track_file_changes: true,
+        change_detection_method: ChangeDetectionMethod::ContentHash,
+        error_handling_mode: ErrorHandlingMode::ContinueOnError,
+        max_error_count: 100,
+        error_retry_attempts: 3,
+        error_retry_delay_ms: 500,
+        skip_problematic_files: true,
+        log_errors_detailed: true,
+        error_threshold_circuit_breaker: 10,
+        circuit_breaker_timeout_ms: 30000,
+        processing_timeout_ms: 30000,
+    };
+
+    // Create embedding provider config and pool
+    let provider_config = create_provider_config_from_cli(&config)?;
+    let pool_config = EmbeddingConfig::default();
+    let embedding_pool = create_embedding_thread_pool_with_crucible_config(
+        pool_config,
+        provider_config,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("Failed to create embedding pool: {}", e))?;
+
+    // Process the files using delta processor with embeddings
+    debug!("Processing {} files with delta update and embeddings", changed_files.len());
+    let result = process_vault_delta(
+        changed_files,
+        &client,
+        &scanner_config,
+        Some(&embedding_pool),
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("Failed to process delta files: {}", e))?;
+
+    Ok(result.processed_count)
+}
+
+/// Convert CLI configuration to crucible-config provider configuration
+fn create_provider_config_from_cli(config: &crate::config::CliConfig) -> Result<crucible_config::EmbeddingProviderConfig> {
+    use crucible_config::EmbeddingProviderConfig;
+
+    // Extract model name from CLI config
+    let model_name = config.kiln.embedding_model.as_ref().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Embedding model is not configured. Please set it in ~/.config/crucible/config.toml"
+        )
+    })?;
+
+    // Determine provider type and create appropriate config
+    if config.kiln.embedding_url.contains("api.openai.com") {
+        // OpenAI provider
+        let api_key = std::env::var("OPENAI_API_KEY").ok();
+        Ok(EmbeddingProviderConfig::openai(
+            api_key.unwrap_or_default(),
+            Some(model_name.clone()),
+        ))
+    } else {
+        // Default to Ollama for local/custom endpoints
+        Ok(EmbeddingProviderConfig::ollama(
+            Some(config.kiln.embedding_url.clone()),
+            Some(model_name.clone()),
+        ))
     }
 }
 
