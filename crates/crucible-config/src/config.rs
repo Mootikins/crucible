@@ -198,6 +198,19 @@ impl Config {
         self.custom.insert(key, json_value);
         Ok(())
     }
+
+    /// Get the kiln path from configuration.
+    pub fn kiln_path(&self) -> Result<String, ConfigError> {
+        self.get::<String>("kiln_path")?
+            .ok_or_else(|| ConfigError::MissingValue {
+                field: "kiln_path".to_string(),
+            })
+    }
+
+    /// Get the kiln path or return None if not set.
+    pub fn kiln_path_opt(&self) -> Option<String> {
+        self.get::<String>("kiln_path").ok().flatten()
+    }
 }
 
 /// Database configuration.

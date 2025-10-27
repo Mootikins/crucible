@@ -111,21 +111,22 @@ pub fn create_mock_provider(dimensions: usize) -> Arc<dyn EmbeddingProvider> {
 
 /// Create a real Ollama provider for integration tests
 ///
-/// Uses environment variables for configuration:
-/// - `EMBEDDING_ENDPOINT`: Default = "http://localhost:11434"
-/// - `EMBEDDING_MODEL`: Default = "nomic-embed-text"
+/// # Arguments
+///
+/// * `endpoint` - Optional endpoint URL (default: "http://localhost:11434")
+/// * `model` - Optional model name (default: "nomic-embed-text")
 ///
 /// # Example
 ///
 /// ```rust,ignore
-/// let provider = create_ollama_provider().await.unwrap();
+/// let provider = create_ollama_provider(None, None).await.unwrap();
 /// let response = provider.embed("test").await.unwrap();
 /// println!("Generated {} dim embedding", response.dimensions);
 /// ```
-pub async fn create_ollama_provider() -> Result<Arc<dyn EmbeddingProvider>> {
-    let endpoint = std::env::var("EMBEDDING_ENDPOINT").ok();
-    let model = std::env::var("EMBEDDING_MODEL").ok();
-
+pub async fn create_ollama_provider(
+    endpoint: Option<String>,
+    model: Option<String>,
+) -> Result<Arc<dyn EmbeddingProvider>> {
     let config = EmbeddingConfig::ollama(endpoint, model);
     let provider = OllamaProvider::new(config)?;
 
