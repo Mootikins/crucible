@@ -545,6 +545,7 @@ fn test_configuration_error_handling() -> Result<()> {
         network: Default::default(),
         services: Default::default(),
         migration: Default::default(),
+        file_watching: Default::default(),
         custom_database_path: None,
     };
 
