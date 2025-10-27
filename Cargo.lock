@@ -1817,6 +1817,7 @@ dependencies = [
  "crucible-rune-macros",
  "crucible-surrealdb",
  "dashmap 6.1.0",
+ "encoding_rs",
  "futures",
  "glob",
  "lazy_static",
