@@ -20,6 +20,9 @@ async fn main() -> Result<()> {
     // Load configuration
     let config = config::CliConfig::load(cli.config, cli.embedding_url, cli.embedding_model)?;
 
+    // Auto-start file watcher/daemon for background processing
+    crucible_cli::common::daemon_manager::ensure_watcher_running(&config).await?;
+
     // Execute command (default to REPL if no command provided)
     match cli.command {
         Some(Commands::Search {
