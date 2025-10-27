@@ -143,6 +143,7 @@ pub struct ServicesConfig {
 
 /// ScriptEngine service configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ScriptEngineConfig {
     /// Enable ScriptEngine service
     pub enabled: bool,
@@ -166,6 +167,7 @@ pub struct ScriptEngineConfig {
 
 /// Service discovery configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ServiceDiscoveryConfig {
     /// Enable service discovery
     pub enabled: bool,
@@ -179,6 +181,7 @@ pub struct ServiceDiscoveryConfig {
 
 /// Service health monitoring configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ServiceHealthConfig {
     /// Enable health monitoring
     pub enabled: bool,
@@ -194,6 +197,7 @@ pub struct ServiceHealthConfig {
 
 /// Migration configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct MigrationConfig {
     /// Enable migration features
     pub enabled: bool,
