@@ -60,21 +60,36 @@ streaming = false
 enabled = false
 security_level = "development"
 max_source_size = 2048000
+default_timeout_secs = 60
+enable_caching = true
+max_cache_size = 500
+max_memory_mb = 200
+max_cpu_percentage = 90.0
+max_concurrent_operations = 100
 
 [services.discovery]
 enabled = false
 endpoints = ["test-endpoint:1234"]
+polling_interval_secs = 30
+timeout_secs = 10
+retry_attempts = 5
+cache_ttl_secs = 300
 
 [services.health]
 enabled = false
 check_interval_secs = 30
+timeout_secs = 5
+unhealthy_threshold = 5
+healthy_threshold = 2
 
 [migration]
 enabled = false
-auto_migrate = true
 default_security_level = "production"
+auto_migrate = true
 enable_caching = false
 max_cache_size = 100
+preserve_tool_ids = true
+backup_originals = true
 "#;
 
     std::fs::write(&config_path, config_content)?;
