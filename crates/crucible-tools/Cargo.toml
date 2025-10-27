@@ -94,6 +94,7 @@ tokio-test = "0.4"
 tempfile = "3.8"
 tracing-subscriber = "0.3"
 tokio-util = "0.7"
+encoding_rs = "0.8"
 
 [features]
 default = ["embeddings"]
