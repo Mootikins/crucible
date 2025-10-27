@@ -82,6 +82,11 @@ uuid = { workspace = true, features = ["v4", "serde"] }
 # Table formatting
 tabled = { workspace = true }
 
+# File watching
+notify = { workspace = true }
+notify-debouncer-mini = "0.7"
+ignore = "0.4"  # For .gitignore parsing
+
 [dev-dependencies]
 tempfile = { workspace = true }
 assert_cmd = { workspace = true }
