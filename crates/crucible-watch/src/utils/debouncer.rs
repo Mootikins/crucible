@@ -68,6 +68,12 @@ impl Debouncer {
             self.last_cleanup = Instant::now();
         }
 
+        // If debounce delay is zero or very small, emit events immediately
+        if self.delay.as_millis() == 0 {
+            debug!("Zero delay - emitting event immediately");
+            return Some(event);
+        }
+
         let key = if self.deduplicate {
             crate::utils::EventUtils::deduplication_key(&event)
         } else {
@@ -82,6 +88,9 @@ impl Debouncer {
         let now = Instant::now();
         let emit_time = now + self.delay;
 
+        // First, check if any existing events are ready to be emitted
+        let ready_event = self.emit_ready_events(now).await;
+
         match self.pending_events.get_mut(&key) {
             Some(pending) => {
                 // Update existing pending event
@@ -93,10 +102,10 @@ impl Debouncer {
                     "Updated pending event: {} (updates: {})",
                     key, pending.update_count
                 );
-                None
+                ready_event
             }
             None => {
-                // New event
+                // New event - add to pending
                 let pending = PendingEvent {
                     event,
                     first_seen: now,
@@ -107,10 +116,14 @@ impl Debouncer {
                 self.pending_events.insert(key.clone(), pending);
                 debug!("Added pending event: {}", key);
 
-                // Check if any events are ready to be emitted
-                self.emit_ready_events(now).await
+                ready_event
             }
         }
+    }
+
+    /// Check for and emit events that are ready to be processed.
+    pub async fn check_ready_events(&mut self, now: Instant) -> Option<FileEvent> {
+        self.emit_ready_events(now).await
     }
 
     /// Emit events that are ready to be processed.

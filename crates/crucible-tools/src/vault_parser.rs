@@ -52,8 +52,14 @@ impl VaultParser {
     pub async fn parse_content(
         &self,
         file_path: String,
-        content: String,
+        mut content: String,
     ) -> VaultResult<VaultFile> {
+        // Strip UTF-8 BOM if present (U+FEFF)
+        // Windows editors (Notepad, some IDEs) often add this, which breaks frontmatter detection
+        if content.starts_with('\u{FEFF}') {
+            content = content.trim_start_matches('\u{FEFF}').to_string();
+        }
+
         let (frontmatter, markdown_content) = self.extract_frontmatter(&content)?;
 
         // Parse frontmatter into structured data

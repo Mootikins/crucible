@@ -266,6 +266,7 @@ impl WatchManager {
         let task = tokio::spawn(async move {
             let mut receiver = event_receiver;
             let mut shutdown = shutdown_rx;
+            let mut flush_interval = tokio::time::interval(tokio::time::Duration::from_millis(50));
 
             loop {
                 tokio::select! {
@@ -280,6 +281,17 @@ impl WatchManager {
                             error!("Error processing event: {}", e);
                         }
                     }
+                    _ = flush_interval.tick() => {
+                        // Periodically flush pending debounced events
+                        if let Err(e) = Self::flush_debounced_events(
+                            &handlers,
+                            &event_queue,
+                            &debouncer,
+                            &performance_monitor,
+                        ).await {
+                            error!("Error flushing debounced events: {}", e);
+                        }
+                    }
                     _ = shutdown.recv() => {
                         info!("Event processor shutting down");
                         break;
@@ -292,6 +304,35 @@ impl WatchManager {
         Ok(())
     }
 
+    /// Flush debounced events that are ready to be processed.
+    async fn flush_debounced_events(
+        handlers: &Arc<RwLock<HandlerRegistry>>,
+        event_queue: &Arc<Mutex<EventQueue>>,
+        debouncer: &Arc<Mutex<Debouncer>>,
+        performance_monitor: &Arc<Mutex<PerformanceMonitor>>,
+    ) -> Result<()> {
+        // Check for ready events
+        let mut debouncer_guard = debouncer.lock().await;
+        let now = std::time::Instant::now();
+
+        // Manually check and emit ready events
+        let ready_event = debouncer_guard.check_ready_events(now).await;
+        drop(debouncer_guard);
+
+        if let Some(event) = ready_event {
+            // Queue and process the ready event
+            {
+                let mut queue = event_queue.lock().await;
+                queue.push(event).await?;
+            }
+
+            // Process the queued events
+            Self::process_queued_events(handlers, event_queue, performance_monitor).await?;
+        }
+
+        Ok(())
+    }
+
     /// Process a single event through the pipeline.
     async fn process_event(
         event: FileEvent,
@@ -300,8 +341,6 @@ impl WatchManager {
         debouncer: &Arc<Mutex<Debouncer>>,
         performance_monitor: &Arc<Mutex<PerformanceMonitor>>,
     ) -> Result<()> {
-        let start_time = std::time::Instant::now();
-
         // Debounce event
         {
             let mut debouncer_guard = debouncer.lock().await;
@@ -314,6 +353,18 @@ impl WatchManager {
                 return Ok(());
             }
         }
+
+        // Process the queued events
+        Self::process_queued_events(handlers, event_queue, performance_monitor).await
+    }
+
+    /// Process all queued events through handlers.
+    async fn process_queued_events(
+        handlers: &Arc<RwLock<HandlerRegistry>>,
+        event_queue: &Arc<Mutex<EventQueue>>,
+        performance_monitor: &Arc<Mutex<PerformanceMonitor>>,
+    ) -> Result<()> {
+        let start_time = std::time::Instant::now();
 
         // Process queued events
         let events_to_process = {
