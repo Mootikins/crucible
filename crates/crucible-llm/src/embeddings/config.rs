@@ -94,6 +94,8 @@ pub fn expected_dimensions_for_model(
         (EmbeddingProviderType::Candle, "jina-embeddings-v3-base-en") => 768,
         (EmbeddingProviderType::Candle, "all-MiniLM-L6-v2") => 384,
         (EmbeddingProviderType::Candle, "bge-small-en-v1.5") => 384,
+        // Mock models for testing
+        (EmbeddingProviderType::Mock, _) => 768,
         // Default to provider defaults for unknown models
         (EmbeddingProviderType::Ollama, _) => 768,
         (EmbeddingProviderType::OpenAI, _) => 1536,

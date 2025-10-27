@@ -814,6 +814,10 @@ impl EmbeddingThreadPool {
 
                 LlmEmbeddingConfig::ollama(Some(base_url), Some(config.model.name.clone()))
             }
+            EmbeddingProviderType::Mock => {
+                // Mock provider for testing
+                LlmEmbeddingConfig::mock()
+            }
             EmbeddingProviderType::Cohere => {
                 // For Cohere, we'd need to extend the LLM config to support it
                 // For now, map to OpenAI-like config

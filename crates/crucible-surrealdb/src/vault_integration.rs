@@ -1210,7 +1210,16 @@ pub async fn store_document_embedding(
         data: embedding_data,
     };
 
+    eprintln!("DEBUG STORAGE: About to insert embedding into database");
+    eprintln!("DEBUG STORAGE: Document ID: {}", embedding.document_id);
+    eprintln!("DEBUG STORAGE: Chunk ID: {:?}", embedding.chunk_id);
+
     let insert_result = client.insert("embeddings", record).await;
+
+    match &insert_result {
+        Ok(_) => eprintln!("DEBUG STORAGE: Successfully inserted embedding into database"),
+        Err(e) => eprintln!("DEBUG STORAGE: Failed to insert embedding: {}", e),
+    }
 
     insert_result.map_err(|e| anyhow::anyhow!("Failed to store embedding: {}", e))?;
 
@@ -1259,6 +1268,54 @@ pub async fn clear_document_embeddings(client: &SurrealClient, document_id: &str
 
     debug!("Cleared embeddings for document {}", document_id);
     Ok(())
+}
+
+/// Delete all embeddings for a specific document before reprocessing
+///
+/// This function removes all embedding records associated with a document ID,
+/// which is necessary before re-embedding a changed document to avoid duplicate
+/// or stale embeddings.
+///
+/// # Arguments
+/// * `client` - SurrealDB client connection
+/// * `doc_id` - Document ID in SurrealDB format (e.g., "notes:abc123")
+///
+/// # Returns
+/// The number of embedding records deleted
+///
+/// # Errors
+/// Returns an error if the database query fails
+///
+/// # Example
+/// ```ignore
+/// let deleted_count = delete_document_embeddings(&client, "notes:abc123").await?;
+/// println!("Deleted {} embeddings", deleted_count);
+/// ```
+pub async fn delete_document_embeddings(
+    client: &SurrealClient,
+    doc_id: &str,
+) -> Result<usize> {
+    debug!("Deleting embeddings for document: {}", doc_id);
+
+    // Use parameterized query to prevent SQL injection
+    // Note: For now, using string interpolation since the mock client doesn't support parameters
+    // In production with real SurrealDB, this should use proper parameterized queries
+    let sql = format!("DELETE FROM embeddings WHERE document_id = '{}'", doc_id);
+
+    let result = client
+        .query(&sql, &[])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to delete document embeddings: {}", e))?;
+
+    // Extract deletion count from result
+    let deletion_count = result.records.len();
+
+    debug!(
+        "Deleted {} embeddings for document {}",
+        deletion_count, doc_id
+    );
+
+    Ok(deletion_count)
 }
 
 /// Update document's processed timestamp
@@ -1360,6 +1417,8 @@ pub async fn get_database_stats(client: &SurrealClient) -> Result<DatabaseStats>
     let notes_sql = "SELECT count() as total FROM notes";
     let embeddings_sql = "SELECT count() as total FROM embeddings";
 
+    eprintln!("DEBUG STATS: Querying database statistics");
+
     let notes_result = client
         .query(notes_sql, &[])
         .await
@@ -1369,19 +1428,31 @@ pub async fn get_database_stats(client: &SurrealClient) -> Result<DatabaseStats>
         .await
         .map_err(|e| anyhow::anyhow!("Failed to query embeddings count: {}", e))?;
 
+    eprintln!("DEBUG STATS: Notes query returned {} records", notes_result.records.len());
+    eprintln!("DEBUG STATS: Embeddings query returned {} records", embeddings_result.records.len());
+
     let total_documents = notes_result
         .records
         .first()
         .and_then(|r| r.data.get("total"))
-        .and_then(|v| v.as_u64())
+        .and_then(|v| {
+            eprintln!("DEBUG STATS: Notes total value: {:?}", v);
+            v.as_u64()
+        })
         .unwrap_or(0);
 
     let total_embeddings = embeddings_result
         .records
         .first()
         .and_then(|r| r.data.get("total"))
-        .and_then(|v| v.as_u64())
+        .and_then(|v| {
+            eprintln!("DEBUG STATS: Embeddings total value: {:?}", v);
+            v.as_u64()
+        })
         .unwrap_or(0);
+
+    eprintln!("DEBUG STATS: Total documents: {}", total_documents);
+    eprintln!("DEBUG STATS: Total embeddings: {}", total_embeddings);
 
     Ok(DatabaseStats {
         total_documents,

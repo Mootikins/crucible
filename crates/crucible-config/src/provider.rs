@@ -134,6 +134,26 @@ impl EmbeddingProviderConfig {
         }
     }
 
+    /// Create a new Mock embedding provider configuration for testing.
+    pub fn mock() -> Self {
+        Self {
+            provider_type: EmbeddingProviderType::Mock,
+            api: ApiConfig {
+                key: None,
+                base_url: Some("mock".to_string()),
+                timeout_seconds: Some(5),
+                retry_attempts: Some(1),
+                headers: HashMap::new(),
+            },
+            model: ModelConfig {
+                name: "mock-test-model".to_string(),
+                dimensions: Some(768),
+                max_tokens: Some(8192),
+            },
+            options: HashMap::new(),
+        }
+    }
+
     /// Get the endpoint URL for this provider.
     pub fn endpoint(&self) -> String {
         self.api.base_url.clone()
@@ -191,6 +211,8 @@ pub enum EmbeddingProviderType {
     Ollama,
     /// Candle local embeddings.
     Candle,
+    /// Mock embeddings for testing.
+    Mock,
     /// Cohere embeddings.
     Cohere,
     /// Google Vertex AI embeddings.
@@ -202,7 +224,7 @@ pub enum EmbeddingProviderType {
 impl EmbeddingProviderType {
     /// Check if this provider type requires an API key.
     pub fn requires_api_key(&self) -> bool {
-        !matches!(self, Self::Ollama | Self::Candle)
+        !matches!(self, Self::Ollama | Self::Candle | Self::Mock)
     }
 
     /// Get the default base URL for the provider.
@@ -211,6 +233,7 @@ impl EmbeddingProviderType {
             Self::OpenAI => Some("https://api.openai.com/v1".to_string()),
             Self::Ollama => Some("http://localhost:11434".to_string()),
             Self::Candle => Some("local".to_string()),
+            Self::Mock => Some("mock".to_string()),
             Self::Cohere => Some("https://api.cohere.ai/v1".to_string()),
             Self::VertexAI => Some("https://aiplatform.googleapis.com/v1".to_string()),
             Self::Custom(_) => None,
@@ -223,6 +246,7 @@ impl EmbeddingProviderType {
             Self::OpenAI => Some("text-embedding-3-small".to_string()),
             Self::Ollama => Some("nomic-embed-text".to_string()),
             Self::Candle => Some("nomic-embed-text-v1.5".to_string()),
+            Self::Mock => Some("mock-test-model".to_string()),
             Self::Cohere => Some("embed-english-v3.0".to_string()),
             Self::VertexAI => Some("textembedding-gecko@003".to_string()),
             Self::Custom(_) => None,
