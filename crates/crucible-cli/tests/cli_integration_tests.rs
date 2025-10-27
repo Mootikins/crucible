@@ -66,13 +66,10 @@ async fn run_cli_command(args: Vec<&str>, config: &Config) -> Result<String> {
     Ok(combined_output)
 }
 
-/// Helper to create a test kiln with sample content and return config
-async fn create_test_kiln_with_config() -> Result<(Config, TempDir)> {
+/// Helper to create a test kiln with sample content
+async fn create_test_kiln() -> Result<TempDir> {
     let temp_dir = TempDir::new()?;
     let kiln_path = temp_dir.path();
-
-    // Create .obsidian directory for Obsidian kiln
-    std::fs::create_dir_all(kiln_path.join(".obsidian"))?;
 
     // Create sample markdown files
     let test_files = vec![
@@ -97,17 +94,16 @@ async fn create_test_kiln_with_config() -> Result<(Config, TempDir)> {
         std::fs::write(file_path, content)?;
     }
 
-    // Create config with kiln path
-    use crucible_config::TestConfig;
-    let config = TestConfig::with_kiln_path(kiln_path.to_string_lossy().to_string());
-
-    Ok((config, temp_dir))
+    Ok(temp_dir)
 }
 
 #[tokio::test]
 async fn test_basic_search_works_immediately() -> Result<()> {
     // GIVEN: A test kiln with content
-    let (config, _kiln_dir) = create_test_kiln_with_config().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // WHEN: User performs basic search
     let result = run_cli_command(
@@ -125,10 +121,11 @@ async fn test_basic_search_works_immediately() -> Result<()> {
 
 #[tokio::test]
 async fn test_search_without_vault_gives_helpful_error() -> Result<()> {
-    // GIVEN: No vault path set (set to invalid path)
+    // GIVEN: No kiln path set (set to invalid path)
+    let config = crucible_config::TestConfig::with_kiln_path("/nonexistent/path");
     let result = run_cli_command(
         vec!["search", "test"],
-        vec![("OBSIDIAN_VAULT_PATH", "/nonexistent/path")],
+        &config,
     )
     .await;
 
@@ -152,15 +149,15 @@ async fn test_search_without_vault_gives_helpful_error() -> Result<()> {
 #[tokio::test]
 async fn test_basic_search_with_options() -> Result<()> {
     // GIVEN: A test vault
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // WHEN: User searches with limit option
     let result = run_cli_command(
         vec!["search", "development", "--limit", "2"],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -174,15 +171,15 @@ async fn test_basic_search_with_options() -> Result<()> {
 #[tokio::test]
 async fn test_search_json_output_format() -> Result<()> {
     // GIVEN: A test vault
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // WHEN: User requests JSON output
     let result = run_cli_command(
         vec!["search", "test", "--format", "json"],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -197,15 +194,15 @@ async fn test_search_json_output_format() -> Result<()> {
 #[tokio::test]
 async fn test_fuzzy_search_without_daemon() -> Result<()> {
     // GIVEN: A test vault
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // WHEN: User performs fuzzy search
     let result = run_cli_command(
         vec!["fuzzy", "arch"],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -218,15 +215,15 @@ async fn test_fuzzy_search_without_daemon() -> Result<()> {
 #[tokio::test]
 async fn test_stats_command_works_immediately() -> Result<()> {
     // GIVEN: A test vault
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // WHEN: User requests vault statistics
     let result = run_cli_command(
         vec!["stats"],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -240,7 +237,7 @@ async fn test_stats_command_works_immediately() -> Result<()> {
 #[tokio::test]
 async fn test_help_command_shows_available_commands() -> Result<()> {
     // WHEN: User requests help
-    let result = run_cli_command(vec!["--help"], vec![]).await?;
+    let result = run_cli_command(vec!["--help"], &crucible_config::TestConfig::minimal()).await?;
 
     // THEN: Should show available commands
     assert!(result.contains("search"));
@@ -253,7 +250,7 @@ async fn test_help_command_shows_available_commands() -> Result<()> {
 #[tokio::test]
 async fn test_no_command_defaults_to_help() -> Result<()> {
     // WHEN: User runs CLI with no arguments
-    let result = run_cli_command(vec![], vec![]).await?;
+    let result = run_cli_command(vec![], &crucible_config::TestConfig::minimal()).await?;
 
     // THEN: Should show help or REPL mode
     assert!(result.contains("help") || result.contains("commands") || result.contains("REPL"));
@@ -264,7 +261,7 @@ async fn test_no_command_defaults_to_help() -> Result<()> {
 #[tokio::test]
 async fn test_version_command_works() -> Result<()> {
     // WHEN: User requests version
-    let result = run_cli_command(vec!["--version"], vec![]).await?;
+    let result = run_cli_command(vec!["--version"], &crucible_config::TestConfig::minimal()).await?;
 
     // THEN: Should show version information
     assert!(result.contains("0.1.0") || result.contains("version"));
@@ -275,7 +272,7 @@ async fn test_version_command_works() -> Result<()> {
 #[tokio::test]
 async fn test_invalid_command_gives_helpful_error() -> Result<()> {
     // WHEN: User uses invalid command
-    let result = run_cli_command(vec!["invalid-command"], vec![]).await;
+    let result = run_cli_command(vec!["invalid-command"], &crucible_config::TestConfig::minimal()).await;
 
     // THEN: Should give helpful error message
     match result {
@@ -302,15 +299,15 @@ async fn test_invalid_command_gives_helpful_error() -> Result<()> {
 #[tokio::test]
 async fn test_search_empty_query_shows_help() -> Result<()> {
     // GIVEN: A test vault
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // WHEN: User searches with empty query
     let result = run_cli_command_allow_failure(
         vec!["search", ""],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -359,10 +356,13 @@ async fn run_cli_command_allow_failure(
 #[tokio::test]
 async fn test_search_with_unicode_content() -> Result<()> {
     // GIVEN: A test vault with unicode content
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // Create file with unicode content
-    let unicode_file = vault_dir.path().join("unicode-test.md");
+    let unicode_file = kiln_dir.path().join("unicode-test.md");
     let unicode_content =
         "# Unicode Test\n\nTest with emoji 🚀 and special chars: café, résumé, naïve";
     std::fs::write(&unicode_file, unicode_content)?;
@@ -370,10 +370,7 @@ async fn test_search_with_unicode_content() -> Result<()> {
     // WHEN: User searches for unicode terms
     let result = run_cli_command(
         vec!["search", "café"],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -390,15 +387,15 @@ async fn test_search_with_unicode_content() -> Result<()> {
 #[tokio::test]
 async fn test_search_query_too_short_1_character_fails() -> Result<()> {
     // GIVEN: A test vault
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // WHEN: User searches with 1-character query (below MIN_QUERY_LENGTH of 2)
     let result = run_cli_command_allow_failure(
         vec!["search", "a"],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -413,19 +410,19 @@ async fn test_search_query_too_short_1_character_fails() -> Result<()> {
 #[tokio::test]
 async fn test_search_query_at_minimum_length_2_characters_passes() -> Result<()> {
     // GIVEN: A test vault with content containing "ab"
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // Create a file with the exact 2-character query
-    let test_file = vault_dir.path().join("boundary-test.md");
+    let test_file = kiln_dir.path().join("boundary-test.md");
     std::fs::write(&test_file, "# Boundary Test\n\nThis file contains ab.")?;
 
     // WHEN: User searches with 2-character query (at MIN_QUERY_LENGTH)
     let result = run_cli_command(
         vec!["search", "ab"],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -442,11 +439,14 @@ async fn test_search_query_at_minimum_length_2_characters_passes() -> Result<()>
 #[tokio::test]
 async fn test_search_query_near_max_length_999_characters_passes() -> Result<()> {
     // GIVEN: A test vault
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // Create a file with a long unique string
     let long_query = "x".repeat(999); // 999 characters (below MAX_QUERY_LENGTH of 1000)
-    let test_file = vault_dir.path().join("long-query-test.md");
+    let test_file = kiln_dir.path().join("long-query-test.md");
     std::fs::write(
         &test_file,
         format!("# Long Query Test\n\nThis file contains: {}", long_query),
@@ -455,10 +455,7 @@ async fn test_search_query_near_max_length_999_characters_passes() -> Result<()>
     // WHEN: User searches with 999-character query
     let result = run_cli_command(
         vec!["search", &long_query],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -475,11 +472,14 @@ async fn test_search_query_near_max_length_999_characters_passes() -> Result<()>
 #[tokio::test]
 async fn test_search_query_at_max_length_1000_characters_passes() -> Result<()> {
     // GIVEN: A test vault
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // Create a file with a very long unique string
     let max_query = "y".repeat(1000); // 1000 characters (at MAX_QUERY_LENGTH)
-    let test_file = vault_dir.path().join("max-query-test.md");
+    let test_file = kiln_dir.path().join("max-query-test.md");
     std::fs::write(
         &test_file,
         format!("# Max Query Test\n\nThis file contains: {}", max_query),
@@ -488,10 +488,7 @@ async fn test_search_query_at_max_length_1000_characters_passes() -> Result<()> 
     // WHEN: User searches with 1000-character query
     let result = run_cli_command(
         vec!["search", &max_query],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -508,16 +505,16 @@ async fn test_search_query_at_max_length_1000_characters_passes() -> Result<()> 
 #[tokio::test]
 async fn test_search_query_too_long_1001_characters_fails() -> Result<()> {
     // GIVEN: A test vault
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // WHEN: User searches with 1001-character query (above MAX_QUERY_LENGTH of 1000)
     let too_long_query = "z".repeat(1001); // 1001 characters (above MAX_QUERY_LENGTH)
     let result = run_cli_command_allow_failure(
         vec!["search", &too_long_query],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -536,7 +533,10 @@ async fn test_search_query_too_long_1001_characters_fails() -> Result<()> {
 #[tokio::test]
 async fn test_semantic_search_model_specific_filtering() -> Result<()> {
     // GIVEN: A test vault with content
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // WHEN: User performs semantic search with specific model filtering
     let result = run_cli_command_allow_failure(
@@ -548,10 +548,7 @@ async fn test_semantic_search_model_specific_filtering() -> Result<()> {
             "--top-k",
             "5",
         ],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -574,7 +571,10 @@ async fn test_semantic_search_model_specific_filtering() -> Result<()> {
 #[tokio::test]
 async fn test_semantic_search_with_invalid_model_fails() -> Result<()> {
     // GIVEN: A test vault
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // WHEN: User performs semantic search with invalid embedding model
     let result = run_cli_command_allow_failure(
@@ -584,10 +584,7 @@ async fn test_semantic_search_with_invalid_model_fails() -> Result<()> {
             "--embedding-model",
             "invalid-model-name",
         ],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -603,10 +600,13 @@ async fn test_semantic_search_with_invalid_model_fails() -> Result<()> {
 #[tokio::test]
 async fn test_semantic_search_query_embedding_generation() -> Result<()> {
     // GIVEN: A test vault
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // Create a file with specific content to test semantic matching
-    let test_file = vault_dir.path().join("semantic-test.md");
+    let test_file = kiln_dir.path().join("semantic-test.md");
     let semantic_content = "# Artificial Intelligence\n\nThis document discusses neural networks, deep learning, and artificial intelligence concepts.";
     std::fs::write(&test_file, semantic_content)?;
 
@@ -618,10 +618,7 @@ async fn test_semantic_search_query_embedding_generation() -> Result<()> {
             "--embedding-model",
             "local-standard",
         ],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -641,25 +638,25 @@ async fn test_semantic_search_query_embedding_generation() -> Result<()> {
 #[tokio::test]
 async fn test_semantic_search_mixed_model_handling() -> Result<()> {
     // GIVEN: A test vault with documents that should have different embedding models
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // Create multiple files with different content types
-    let ai_file = vault_dir.path().join("ai-research.md");
+    let ai_file = kiln_dir.path().join("ai-research.md");
     let ai_content =
         "# AI Research\n\nMachine learning algorithms and neural network architectures.";
     std::fs::write(&ai_file, ai_content)?;
 
-    let simple_file = vault_dir.path().join("simple-notes.md");
+    let simple_file = kiln_dir.path().join("simple-notes.md");
     let simple_content = "# Simple Notes\n\nBasic text content for testing purposes.";
     std::fs::write(&simple_file, simple_content)?;
 
     // WHEN: User performs semantic search when documents have different embedding models
     let result = run_cli_command_allow_failure(
         vec!["semantic", "machine learning algorithms", "--top-k", "10"],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -689,10 +686,13 @@ async fn test_semantic_search_mixed_model_handling() -> Result<()> {
 #[tokio::test]
 async fn test_semantic_search_embedding_model_consistency() -> Result<()> {
     // GIVEN: A test vault
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // Create a document about machine learning
-    let ml_file = vault_dir.path().join("machine-learning.md");
+    let ml_file = kiln_dir.path().join("machine-learning.md");
     let ml_content = "# Machine Learning\n\nThis document covers supervised learning, unsupervised learning, and reinforcement learning algorithms.";
     std::fs::write(&ml_file, ml_content)?;
 
@@ -706,10 +706,7 @@ async fn test_semantic_search_embedding_model_consistency() -> Result<()> {
             "--format",
             "json",
         ],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -722,10 +719,7 @@ async fn test_semantic_search_embedding_model_consistency() -> Result<()> {
             "--format",
             "json",
         ],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -762,15 +756,15 @@ async fn test_semantic_search_embedding_model_consistency() -> Result<()> {
 #[tokio::test]
 async fn test_semantic_search_model_dimension_mismatch_handling() -> Result<()> {
     // GIVEN: A test vault
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // WHEN: User searches with a model that has different dimensions than stored embeddings
     let result = run_cli_command_allow_failure(
         vec!["semantic", "test query", "--embedding-model", "local-mini"], // 256 dimensions
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -796,14 +790,17 @@ async fn test_semantic_search_model_dimension_mismatch_handling() -> Result<()> 
 #[tokio::test]
 async fn test_semantic_search_real_embedding_integration() -> Result<()> {
     // GIVEN: A test vault with rich semantic content
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // Create files with semantically related but different keyword content
-    let research_file = vault_dir.path().join("research-paper.md");
+    let research_file = kiln_dir.path().join("research-paper.md");
     let research_content = "# Academic Research Paper\n\nThis study examines the effectiveness of neural networks in natural language processing tasks. We present a novel approach to transformer architectures that improves performance on various benchmarks.";
     std::fs::write(&research_file, research_content)?;
 
-    let tutorial_file = vault_dir.path().join("tutorial.md");
+    let tutorial_file = kiln_dir.path().join("tutorial.md");
     let tutorial_content = "# Deep Learning Tutorial\n\nLearn how to build and train artificial neural networks. This guide covers backpropagation, gradient descent, and optimization techniques for machine learning models.";
     std::fs::write(&tutorial_file, tutorial_content)?;
 
@@ -817,10 +814,7 @@ async fn test_semantic_search_real_embedding_integration() -> Result<()> {
             "--top-k",
             "5",
         ],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -854,11 +848,14 @@ async fn test_semantic_search_real_embedding_integration() -> Result<()> {
 #[tokio::test]
 async fn test_semantic_search_performance_validation() -> Result<()> {
     // GIVEN: A test vault with multiple documents
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
+    let config = crucible_config::TestConfig::with_kiln_path(
+        kiln_dir.path().to_string_lossy().to_string()
+    );
 
     // Create several documents to test search performance
     for i in 1..=5 {
-        let file_path = vault_dir.path().join(format!("doc-{}.md", i));
+        let file_path = kiln_dir.path().join(format!("doc-{}.md", i));
         let content = format!(
             "# Document {}\n\nContent for document number {} with various topics and information.",
             i, i
@@ -876,10 +873,7 @@ async fn test_semantic_search_performance_validation() -> Result<()> {
             "--embedding-model",
             "local-standard",
         ],
-        vec![(
-            "OBSIDIAN_VAULT_PATH",
-            vault_dir.path().to_string_lossy().as_ref(),
-        )],
+        &config,
     )
     .await?;
 
@@ -923,11 +917,10 @@ async fn test_semantic_search_performance_validation() -> Result<()> {
 
 #[tokio::test]
 async fn test_semantic_search_model_feature_availability() -> Result<()> {
-    // GIVEN: A test vault
-    let vault_dir = create_test_vault().await?;
+    // GIVEN: Minimal test setup (help doesn't need a kiln)
 
     // WHEN: User requests help for semantic search to see available models
-    let result = run_cli_command_allow_failure(vec!["semantic", "--help"], vec![]).await?;
+    let result = run_cli_command_allow_failure(vec!["semantic", "--help"], &crucible_config::TestConfig::minimal()).await?;
 
     // THEN: Should show available embedding models and model-related options
     // This test FAILS because model feature documentation is not implemented
