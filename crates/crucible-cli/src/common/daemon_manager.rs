@@ -271,6 +271,20 @@ impl DaemonResult {
     }
 }
 
+/// Ensure file watcher is running for the vault
+///
+/// TODO: Implement simple in-process file watching using notify crate
+/// For now, we rely on on-demand delta processing in semantic search
+pub async fn ensure_watcher_running(_config: &crate::config::CliConfig) -> Result<()> {
+    // Phase 2 TODO: Implement background file watching using notify crate
+    // - Spawn background thread with notify::RecommendedWatcher
+    // - Watch vault directory for changes
+    // - Trigger delta processing on file events
+    // - Keep simple - no complex daemon infrastructure needed
+    debug!("File watcher auto-start not yet implemented (will use notify crate)");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
