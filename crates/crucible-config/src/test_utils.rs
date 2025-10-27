@@ -63,6 +63,23 @@ impl TestConfigBuilder {
         ))
     }
 
+    /// Add a custom Ollama embedding provider with specific endpoint and model.
+    pub fn ollama_embedding<S1: Into<String>, S2: Into<String>>(
+        self,
+        endpoint: S1,
+        model: S2,
+    ) -> Self {
+        self.embedding_provider(EmbeddingProviderConfig::ollama(
+            Some(endpoint.into()),
+            Some(model.into()),
+        ))
+    }
+
+    /// Add a kiln path to the configuration.
+    pub fn kiln_path<S: Into<String>>(self, path: S) -> Self {
+        self.set("kiln_path", path.into())
+    }
+
     /// Add a database configuration.
     pub fn database(mut self, database: DatabaseConfig) -> Self {
         self.config.database = Some(database);
@@ -222,6 +239,76 @@ impl TestConfig {
                 ..Default::default()
             })
             .build()
+    }
+
+    /// Create a test configuration with a temporary kiln.
+    /// Returns the config and the TempDir (which must be kept alive).
+    pub fn with_temp_kiln() -> (Config, TempDir) {
+        let (temp_dir, kiln_path) = TestKiln::create_temp_kiln();
+        let config = TestConfigBuilder::new()
+            .profile("test")
+            .kiln_path(kiln_path)
+            .mock_ollama_embedding()
+            .memory_database()
+            .debug_logging()
+            .build();
+        (config, temp_dir)
+    }
+
+    /// Create a test configuration with a custom kiln path.
+    pub fn with_kiln_path<S: Into<String>>(kiln_path: S) -> Config {
+        TestConfigBuilder::new()
+            .profile("test")
+            .kiln_path(kiln_path)
+            .mock_ollama_embedding()
+            .memory_database()
+            .debug_logging()
+            .build()
+    }
+}
+
+/// Test kiln utilities for managing temporary kilns in tests.
+pub struct TestKiln;
+
+impl TestKiln {
+    /// Create a temporary kiln directory with sample markdown files.
+    /// Returns the TempDir and its path as a string.
+    pub fn create_temp_kiln() -> (TempDir, String) {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path();
+
+        // Create some sample markdown files
+        let test_files = vec![
+            ("README.md", "# README\n\nWelcome to the test kiln."),
+            ("notes.md", "# Notes\n\nSome test notes here."),
+            ("project.md", "# Project\n\nProject documentation."),
+        ];
+
+        for (filename, content) in test_files {
+            std::fs::write(kiln_path.join(filename), content).unwrap();
+        }
+
+        let path_str = kiln_path.to_string_lossy().to_string();
+        (temp_dir, path_str)
+    }
+
+    /// Create a temporary kiln with specific files.
+    pub fn create_temp_kiln_with_files(files: Vec<(&str, &str)>) -> (TempDir, String) {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path();
+
+        // Create provided files
+        for (filename, content) in files {
+            let file_path = kiln_path.join(filename);
+            // Create parent directories if needed
+            if let Some(parent) = file_path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(file_path, content).unwrap();
+        }
+
+        let path_str = kiln_path.to_string_lossy().to_string();
+        (temp_dir, path_str)
     }
 }
 

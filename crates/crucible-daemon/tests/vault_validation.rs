@@ -34,22 +34,33 @@ use tokio::fs;
 // Configuration
 // ============================================================================
 
-/// Get vault path from environment variable
-///
-/// Returns None if CRUCIBLE_TEST_VAULT is not set, causing test to be skipped.
-/// If set to "1", uses default path ~/Documents/crucible-testing
-/// Otherwise uses the provided path.
-fn get_vault_path() -> Option<PathBuf> {
-    match std::env::var("CRUCIBLE_TEST_VAULT") {
-        Ok(val) if val == "1" => {
-            // Use default vault path
-            dirs::home_dir().map(|home| home.join("Documents/crucible-testing"))
+/// Configuration for kiln validation tests
+struct KilnTestConfig {
+    kiln_path: PathBuf,
+}
+
+impl KilnTestConfig {
+    /// Get kiln path for testing
+    ///
+    /// Checks for kiln path in order:
+    /// 1. CRUCIBLE_TEST_VAULT env var (if set to "1", uses ~/Documents/crucible-testing)
+    /// 2. Returns None to skip test if not configured
+    fn from_env() -> Option<Self> {
+        match std::env::var("CRUCIBLE_TEST_VAULT") {
+            Ok(val) if val == "1" => {
+                // Use default kiln path
+                dirs::home_dir().map(|home| Self {
+                    kiln_path: home.join("Documents/crucible-testing"),
+                })
+            }
+            Ok(val) if !val.is_empty() => {
+                // Use custom kiln path
+                Some(Self {
+                    kiln_path: PathBuf::from(val),
+                })
+            }
+            _ => None,
         }
-        Ok(val) if !val.is_empty() => {
-            // Use custom vault path
-            Some(PathBuf::from(val))
-        }
-        _ => None,
     }
 }
 
@@ -567,25 +578,25 @@ fn print_sample_documents(stats: &VaultStats, count: usize) {
 
 #[tokio::test]
 #[ignore] // Ignored by default, run with --ignored
-async fn test_validate_real_vault() -> Result<()> {
-    // Get vault path from environment
-    let Some(vault_path) = get_vault_path() else {
+async fn test_validate_real_kiln() -> Result<()> {
+    // Get kiln configuration
+    let Some(config) = KilnTestConfig::from_env() else {
         println!("\n⏭️  Test skipped");
-        println!("   Set CRUCIBLE_TEST_VAULT=1 to run with default vault");
-        println!("   Or set CRUCIBLE_TEST_VAULT=/path/to/vault for custom path\n");
+        println!("   Set CRUCIBLE_TEST_VAULT=1 to run with default kiln");
+        println!("   Or set CRUCIBLE_TEST_VAULT=/path/to/kiln for custom path\n");
         return Ok(());
     };
 
-    // Verify vault exists
-    if !vault_path.exists() {
-        anyhow::bail!("Vault path does not exist: {}", vault_path.display());
+    // Verify kiln exists
+    if !config.kiln_path.exists() {
+        anyhow::bail!("Kiln path does not exist: {}", config.kiln_path.display());
     }
 
-    println!("\n🔍 Scanning vault: {}\n", vault_path.display());
+    println!("\n🔍 Scanning kiln: {}\n", config.kiln_path.display());
 
-    // Step 1: Scan vault for all .md files
+    // Step 1: Scan kiln for all .md files
     let scan_start = Instant::now();
-    let files = scan_markdown_files(&vault_path).await?;
+    let files = scan_markdown_files(&config.kiln_path).await?;
     let scan_time = scan_start.elapsed();
 
     println!(
