@@ -623,42 +623,91 @@ impl ParameterConverter for SystemToolGroup {
             "system_info" | "get_kiln_stats" | "get_index_stats" | "get_environment" => {
                 if !args.is_empty() {
                     return Err(ToolGroupError::ParameterConversionFailed(format!(
-                        "{} takes no arguments, got {}",
+                        "{} takes no arguments. Got {} argument{}.\nUse :help {} for details.",
                         tool_name,
-                        args.len()
+                        args.len(),
+                        if args.len() == 1 { "" } else { "s" },
+                        tool_name
                     )));
                 }
                 Ok(Value::Object(serde_json::Map::new()))
             }
 
-            // Tools that take a single string argument
-            "list_files" | "read_file" | "semantic_search" | "search_by_content"
-            | "search_documents" => {
+            // list_files
+            "list_files" => {
                 if args.len() != 1 {
                     return Err(ToolGroupError::ParameterConversionFailed(format!(
-                        "{} requires exactly 1 argument, got {}",
-                        tool_name,
-                        args.len()
+                        "Missing required parameter: path (string).\nGot {} argument{}, expected 1.\nUse :help list_files for details.",
+                        args.len(),
+                        if args.len() == 1 { "" } else { "s" }
                     )));
                 }
                 let mut params = serde_json::Map::new();
-                match tool_name {
-                    "list_files" | "read_file" => {
-                        params.insert("path".to_string(), Value::String(args[0].clone()));
-                    }
-                    "semantic_search" | "search_by_content" | "search_documents" => {
-                        params.insert("query".to_string(), Value::String(args[0].clone()));
-                    }
-                    _ => {}
-                }
+                params.insert("path".to_string(), Value::String(args[0].clone()));
                 Ok(Value::Object(params))
             }
 
-            // Tools that take multiple arguments
+            // read_file
+            "read_file" => {
+                if args.len() != 1 {
+                    return Err(ToolGroupError::ParameterConversionFailed(format!(
+                        "Missing required parameter: path (string).\nGot {} argument{}, expected 1.\nUse :help read_file for details.",
+                        args.len(),
+                        if args.len() == 1 { "" } else { "s" }
+                    )));
+                }
+                let mut params = serde_json::Map::new();
+                params.insert("path".to_string(), Value::String(args[0].clone()));
+                Ok(Value::Object(params))
+            }
+
+            // semantic_search
+            "semantic_search" => {
+                if args.len() != 1 {
+                    return Err(ToolGroupError::ParameterConversionFailed(format!(
+                        "Missing required parameter: query (string).\nOptional: limit (integer).\nGot {} argument{}, expected 1.\nUse :help semantic_search for details.",
+                        args.len(),
+                        if args.len() == 1 { "" } else { "s" }
+                    )));
+                }
+                let mut params = serde_json::Map::new();
+                params.insert("query".to_string(), Value::String(args[0].clone()));
+                Ok(Value::Object(params))
+            }
+
+            // search_by_content
+            "search_by_content" => {
+                if args.len() != 1 {
+                    return Err(ToolGroupError::ParameterConversionFailed(format!(
+                        "Missing required parameter: query (string).\nOptional: case_sensitive (boolean), limit (integer).\nGot {} argument{}, expected 1.\nUse :help search_by_content for details.",
+                        args.len(),
+                        if args.len() == 1 { "" } else { "s" }
+                    )));
+                }
+                let mut params = serde_json::Map::new();
+                params.insert("query".to_string(), Value::String(args[0].clone()));
+                Ok(Value::Object(params))
+            }
+
+            // search_documents
+            "search_documents" => {
+                if args.len() != 1 {
+                    return Err(ToolGroupError::ParameterConversionFailed(format!(
+                        "Missing required parameter: query (string).\nOptional: top_k (integer), filters (object).\nGot {} argument{}, expected 1.\nUse :help search_documents for details.",
+                        args.len(),
+                        if args.len() == 1 { "" } else { "s" }
+                    )));
+                }
+                let mut params = serde_json::Map::new();
+                params.insert("query".to_string(), Value::String(args[0].clone()));
+                Ok(Value::Object(params))
+            }
+
+            // search_by_tags
             "search_by_tags" => {
                 if args.is_empty() {
                     return Err(ToolGroupError::ParameterConversionFailed(
-                        "search_by_tags requires at least 1 argument (tag list)".to_string(),
+                        "Missing required parameter: tags (array of strings).\nProvide at least one tag.\nOptional: match_all (boolean).\nUse :help search_by_tags for details.".to_string(),
                     ));
                 }
                 let mut params = serde_json::Map::new();
@@ -667,11 +716,11 @@ impl ParameterConverter for SystemToolGroup {
                 Ok(Value::Object(params))
             }
 
-            // execute_command takes command and optional args
+            // execute_command
             "execute_command" => {
                 if args.is_empty() {
                     return Err(ToolGroupError::ParameterConversionFailed(
-                        "execute_command requires at least a command".to_string(),
+                        "Missing required parameter: command (string).\nOptional: args (array of strings).\nUse :help execute_command for details.".to_string(),
                     ));
                 }
                 let mut params = serde_json::Map::new();
@@ -684,13 +733,22 @@ impl ParameterConverter for SystemToolGroup {
                 Ok(Value::Object(params))
             }
 
-            // create_note: path, title, content, optional tags
+            // create_note
             "create_note" => {
                 if args.len() < 3 {
-                    return Err(ToolGroupError::ParameterConversionFailed(
-                        "create_note requires at least 3 arguments: path, title, content"
-                            .to_string(),
-                    ));
+                    let missing_params = if args.is_empty() {
+                        "path (string), title (string), content (string)"
+                    } else if args.len() == 1 {
+                        "title (string), content (string)"
+                    } else {
+                        "content (string)"
+                    };
+                    return Err(ToolGroupError::ParameterConversionFailed(format!(
+                        "Missing required parameters: {}.\nOptional: tags (array of strings).\nGot {} argument{}, expected at least 3.\nUse :help create_note for details.",
+                        missing_params,
+                        args.len(),
+                        if args.len() == 1 { "" } else { "s" }
+                    )));
                 }
                 let mut params = serde_json::Map::new();
                 params.insert("path".to_string(), Value::String(args[0].clone()));
@@ -754,5 +812,139 @@ impl ResultConverter for SystemToolGroup {
         Err(ToolGroupError::ResultConversionFailed(
             "SystemToolGroup uses direct crucible_tools::ToolResult conversion".to_string(),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test that error messages include parameter details
+    #[test]
+    fn test_improved_error_messages_for_list_files() {
+        let tool_group = SystemToolGroup::new();
+
+        // Test with no arguments
+        let result = tool_group.convert_args_to_params("list_files", &[]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("path (string)"), "Error should mention parameter name and type: {}", err_msg);
+        assert!(err_msg.contains(":help list_files"), "Error should suggest help command: {}", err_msg);
+
+        // Test with too many arguments
+        let result = tool_group.convert_args_to_params("list_files", &["path1".to_string(), "path2".to_string()]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("path (string)"), "Error should mention parameter name and type: {}", err_msg);
+    }
+
+    #[test]
+    fn test_improved_error_messages_for_create_note() {
+        let tool_group = SystemToolGroup::new();
+
+        // Test with no arguments
+        let result = tool_group.convert_args_to_params("create_note", &[]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("path (string)"), "Error should mention missing path: {}", err_msg);
+        assert!(err_msg.contains("title (string)"), "Error should mention missing title: {}", err_msg);
+        assert!(err_msg.contains("content (string)"), "Error should mention missing content: {}", err_msg);
+        assert!(err_msg.contains(":help create_note"), "Error should suggest help command: {}", err_msg);
+
+        // Test with one argument
+        let result = tool_group.convert_args_to_params("create_note", &["path".to_string()]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("title (string)"), "Error should mention missing title: {}", err_msg);
+        assert!(err_msg.contains("content (string)"), "Error should mention missing content: {}", err_msg);
+
+        // Test with two arguments
+        let result = tool_group.convert_args_to_params("create_note", &["path".to_string(), "title".to_string()]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("content (string)"), "Error should mention missing content: {}", err_msg);
+    }
+
+    #[test]
+    fn test_improved_error_messages_for_search_by_tags() {
+        let tool_group = SystemToolGroup::new();
+
+        // Test with no arguments
+        let result = tool_group.convert_args_to_params("search_by_tags", &[]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("tags (array of strings)"), "Error should mention parameter type: {}", err_msg);
+        assert!(err_msg.contains("at least one tag"), "Error should explain the requirement: {}", err_msg);
+        assert!(err_msg.contains(":help search_by_tags"), "Error should suggest help command: {}", err_msg);
+    }
+
+    #[test]
+    fn test_improved_error_messages_for_semantic_search() {
+        let tool_group = SystemToolGroup::new();
+
+        // Test with no arguments
+        let result = tool_group.convert_args_to_params("semantic_search", &[]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("query (string)"), "Error should mention required parameter: {}", err_msg);
+        assert!(err_msg.contains("Optional: limit (integer)"), "Error should mention optional parameters: {}", err_msg);
+        assert!(err_msg.contains(":help semantic_search"), "Error should suggest help command: {}", err_msg);
+    }
+
+    #[test]
+    fn test_no_arg_tools_error_messages() {
+        let tool_group = SystemToolGroup::new();
+
+        // Test system_info with arguments when it takes none
+        let result = tool_group.convert_args_to_params("system_info", &["arg1".to_string()]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = err.to_string();
+        assert!(err_msg.contains("takes no arguments"), "Error should explain no arguments needed: {}", err_msg);
+        assert!(err_msg.contains(":help system_info"), "Error should suggest help command: {}", err_msg);
+    }
+
+    #[test]
+    fn test_successful_parameter_conversion() {
+        let tool_group = SystemToolGroup::new();
+
+        // Test list_files with correct arguments
+        let result = tool_group.convert_args_to_params("list_files", &["path/to/dir".to_string()]);
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        assert_eq!(params["path"], "path/to/dir");
+
+        // Test create_note with all required arguments
+        let result = tool_group.convert_args_to_params(
+            "create_note",
+            &["path".to_string(), "title".to_string(), "content".to_string()],
+        );
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        assert_eq!(params["path"], "path");
+        assert_eq!(params["title"], "title");
+        assert_eq!(params["content"], "content");
+
+        // Test create_note with optional tags
+        let result = tool_group.convert_args_to_params(
+            "create_note",
+            &[
+                "path".to_string(),
+                "title".to_string(),
+                "content".to_string(),
+                "tag1".to_string(),
+                "tag2".to_string(),
+            ],
+        );
+        assert!(result.is_ok());
+        let params = result.unwrap();
+        assert!(params["tags"].is_array());
     }
 }
