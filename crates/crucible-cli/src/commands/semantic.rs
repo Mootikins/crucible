@@ -95,7 +95,7 @@ pub async fn execute(
             println!("🚀 Starting kiln processing to generate embeddings...\n");
         }
 
-        // Process kiln using integrated functionality (first time - full processing)
+        // Process vault synchronously (daemon handles background processing)
         match process_vault_integrated(&client, &config.kiln.path, &pb, &config).await {
             Ok(process_result) => {
                 if format != "json" {
