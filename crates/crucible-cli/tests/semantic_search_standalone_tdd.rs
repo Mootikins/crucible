@@ -547,6 +547,7 @@ async fn test_cli_semantic_search_works(vault_path: &PathBuf) -> Result<()> {
     }
 }
 use anyhow::Result;
+use crucible_llm::embeddings::create_mock_provider;
 use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;

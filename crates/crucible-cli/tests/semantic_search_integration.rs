@@ -22,6 +22,7 @@ fn simple_hash(content: &str) -> u64 {
 }
 
 use anyhow::Result;
+use crucible_llm::embeddings::create_mock_provider;
 use crucible_cli::{commands::semantic, config::CliConfig};
 use crucible_core::parser::ParsedDocument;
 use crucible_surrealdb::{
@@ -33,6 +34,7 @@ use crucible_surrealdb::{
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use std::sync::Arc;
 use tokio::time::timeout;
 
 /// Test vault path using the existing comprehensive test vault
@@ -150,7 +152,7 @@ impl ExistingTestVault {
         doc.file_size = content.len() as u64;
 
         // Store document
-        let doc_id = store_parsed_document(&self.client, &doc).await?;
+        let doc_id = store_parsed_document(&self.client, &doc, &self.vault_path).await?;
 
         // Generate and store embedding (simplified for testing)
         let embedding_vector = self.generate_test_embedding(&content).await?;
@@ -368,7 +370,7 @@ mod semantic_search_integration_tests {
 
             let search_result = timeout(
                 Duration::from_secs(10),
-                semantic_search(&test_vault.client, query, 5),
+                semantic_search(&test_vault.client, query, 5, create_mock_provider(768)),
             )
             .await;
 
@@ -445,7 +447,7 @@ mod semantic_search_integration_tests {
 
             let search_result = timeout(
                 Duration::from_secs(5),
-                semantic_search(&test_vault.client, query, 3),
+                semantic_search(&test_vault.client, query, 3, create_mock_provider(768)),
             )
             .await;
 
@@ -558,7 +560,7 @@ mod semantic_search_integration_tests {
         let test_vault = ExistingTestVault::new().await?;
 
         // Test search before processing vault
-        let empty_result = semantic_search(&test_vault.client, "test query", 5).await;
+        let empty_result = semantic_search(&test_vault.client, "test query", 5, create_mock_provider(768)).await;
         assert!(
             empty_result.is_err() || empty_result.unwrap().is_empty(),
             "Should return empty results or error when no embeddings exist"
@@ -573,7 +575,7 @@ mod semantic_search_integration_tests {
         }
 
         // Test search with partial data
-        let partial_result = semantic_search(&test_vault.client, "test", 5).await;
+        let partial_result = semantic_search(&test_vault.client, "test", 5, create_mock_provider(768)).await;
         assert!(partial_result.is_ok(), "Should work with partial data");
 
         // Test edge case queries
@@ -584,7 +586,7 @@ mod semantic_search_integration_tests {
         ];
 
         for query in edge_queries {
-            let result = semantic_search(&test_vault.client, query, 5).await;
+            let result = semantic_search(&test_vault.client, query, 5, create_mock_provider(768)).await;
             match result {
                 Ok(results) => {
                     println!("Edge query '{}' returned {} results", query, results.len());
@@ -626,7 +628,7 @@ mod semantic_search_integration_tests {
         );
 
         // Test that embeddings can be retrieved through search
-        let search_results = semantic_search(&test_vault.client, "test content", 10).await?;
+        let search_results = semantic_search(&test_vault.client, "test content", 10, create_mock_provider(768)).await?;
         assert!(
             !search_results.is_empty(),
             "Should find results with stored embeddings"
@@ -692,7 +694,7 @@ mod semantic_search_integration_tests {
             println!("Step 3: Testing workflow - {}", description);
 
             let search_start = Instant::now();
-            let results = semantic_search(&test_vault.client, query, 5).await?;
+            let results = semantic_search(&test_vault.client, query, 5, create_mock_provider(768)).await?;
             let search_time = search_start.elapsed();
 
             println!(

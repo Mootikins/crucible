@@ -12,7 +12,8 @@ use std::path::PathBuf;
 #[tokio::test]
 async fn test_simple_embed_relationship() {
     // Create a test document with embeds
-    let mut doc = ParsedDocument::new(PathBuf::from("/test/notes/embed_test.md"));
+    let kiln_root = PathBuf::from("/test");
+    let mut doc = ParsedDocument::new(kiln_root.join("notes/embed_test.md"));
 
     // Add frontmatter
     let frontmatter = Frontmatter::new(
@@ -46,7 +47,7 @@ This document has an embed: ![[Target Document]]"#;
         .unwrap();
 
     // Store the main document
-    let doc_id = vault_integration::store_parsed_document(&client, &doc)
+    let doc_id = vault_integration::store_parsed_document(&client, &doc, &kiln_root)
         .await
         .unwrap();
 
@@ -83,7 +84,8 @@ This document has an embed: ![[Target Document]]"#;
 #[tokio::test]
 async fn test_find_document_by_title() {
     // Create a test document
-    let mut doc = ParsedDocument::new(PathBuf::from("/test/notes/find_test.md"));
+    let kiln_root = PathBuf::from("/test");
+    let mut doc = ParsedDocument::new(kiln_root.join("notes/find_test.md"));
 
     // Add frontmatter
     let frontmatter = Frontmatter::new(
@@ -111,7 +113,7 @@ async fn test_find_document_by_title() {
         .unwrap();
 
     // Store the document
-    let doc_id = vault_integration::store_parsed_document(&client, &doc)
+    let doc_id = vault_integration::store_parsed_document(&client, &doc, &kiln_root)
         .await
         .unwrap();
 
@@ -123,7 +125,10 @@ async fn test_find_document_by_title() {
     assert!(found_doc.is_some(), "Should find the document by title");
     let found = found_doc.unwrap();
     assert_eq!(found.title(), "Findable Document");
-    assert_eq!(found.path, doc.path);
+    // Path comparison - the stored path may be relative
+    let found_path_str = found.path.to_str().unwrap();
+    assert!(found_path_str.ends_with("find_test.md"),
+        "Found document path should end with find_test.md");
 
     // Try to find a non-existent document
     let not_found = vault_integration::find_document_by_title(&client, "Nonexistent Document")

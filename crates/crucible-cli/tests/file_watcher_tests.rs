@@ -55,6 +55,7 @@ fn create_test_config(vault_path: &Path) -> crucible_cli::config::CliConfig {
             embedding_url: "http://localhost:11434".to_string(),
             embedding_model: Some("nomic-embed-text".to_string()),
         },
+        embedding: None,
         file_watching: FileWatcherConfig {
             enabled: true,
             debounce_ms: 100, // Shorter for testing
@@ -279,7 +280,7 @@ async fn test_watcher_debounces_rapid_changes() -> Result<()> {
 
 #[tokio::test]
 async fn test_ensure_watcher_running_graceful_degradation() -> Result<()> {
-    use crucible_cli::common::daemon_manager;
+    use crucible_cli::common::kiln_processor;
 
     // Test with non-existent vault path - should fail gracefully
     let config = crucible_cli::config::CliConfig {
@@ -288,6 +289,7 @@ async fn test_ensure_watcher_running_graceful_degradation() -> Result<()> {
             embedding_url: "http://localhost:11434".to_string(),
             embedding_model: Some("nomic-embed-text".to_string()),
         },
+        embedding: None,
         file_watching: crucible_cli::config::FileWatcherConfig {
             enabled: true,
             debounce_ms: 100,
@@ -301,7 +303,7 @@ async fn test_ensure_watcher_running_graceful_degradation() -> Result<()> {
     };
 
     // Should not panic, should handle gracefully
-    let result = daemon_manager::ensure_watcher_running(&config).await;
+    let result = kiln_processor::ensure_watcher_running(&config).await;
 
     // Should succeed even if watcher fails (graceful degradation)
     assert!(result.is_ok(), "ensure_watcher_running should handle errors gracefully");
@@ -311,7 +313,7 @@ async fn test_ensure_watcher_running_graceful_degradation() -> Result<()> {
 
 #[tokio::test]
 async fn test_watcher_disabled_by_config() -> Result<()> {
-    use crucible_cli::common::daemon_manager;
+    use crucible_cli::common::kiln_processor;
 
     let temp_dir = create_test_vault().await?;
     let vault_path = temp_dir.path();
@@ -322,6 +324,7 @@ async fn test_watcher_disabled_by_config() -> Result<()> {
             embedding_url: "http://localhost:11434".to_string(),
             embedding_model: Some("nomic-embed-text".to_string()),
         },
+        embedding: None,
         file_watching: crucible_cli::config::FileWatcherConfig {
             enabled: false,  // Disabled
             debounce_ms: 500,
@@ -335,7 +338,7 @@ async fn test_watcher_disabled_by_config() -> Result<()> {
     };
 
     // Should return quickly without starting watcher
-    let result = daemon_manager::ensure_watcher_running(&config).await;
+    let result = kiln_processor::ensure_watcher_running(&config).await;
 
     assert!(result.is_ok(), "Should handle disabled watcher gracefully");
 
@@ -346,7 +349,7 @@ async fn test_watcher_disabled_by_config() -> Result<()> {
 #[tokio::test]
 #[ignore] // Requires embedding service running, mark as ignored by default
 async fn test_file_change_triggers_processing() -> Result<()> {
-    use crucible_cli::common::daemon_manager;
+    use crucible_cli::common::kiln_processor;
 
     let temp_dir = create_test_vault().await?;
     let vault_path = temp_dir.path();
@@ -354,7 +357,7 @@ async fn test_file_change_triggers_processing() -> Result<()> {
     let config = create_test_config(vault_path);
 
     // Start watcher
-    daemon_manager::ensure_watcher_running(&config).await?;
+    kiln_processor::ensure_watcher_running(&config).await?;
 
     // Give watcher time to initialize
     sleep(Duration::from_millis(200)).await;
