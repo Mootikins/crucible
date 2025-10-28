@@ -74,7 +74,7 @@ walkdir = "2.4"
 serde_yaml = "0.9"
 
 # Markdown parsing
-pulldown-cmark = "0.9"
+pulldown-cmark = "0.13"
 
 # Rune macros
 crucible-rune-macros = { workspace = true }
@@ -84,7 +84,7 @@ parking_lot = { workspace = true }
 dashmap = { workspace = true }
 
 # Vector operations for embeddings
-ndarray = "0.15"
+ndarray = "0.16"
 
 # Additional dependencies for migration
 futures = "0.3"
