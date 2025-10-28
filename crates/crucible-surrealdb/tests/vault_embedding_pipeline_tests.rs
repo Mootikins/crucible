@@ -13,13 +13,18 @@ use crucible_core::parser::types::*;
 use crucible_core::parser::ParsedDocument;
 use crucible_surrealdb::embedding_config::*;
 use crucible_surrealdb::embedding_pool::*;
-use crucible_surrealdb::multi_client::SurrealClient;
+use crucible_surrealdb::SurrealClient;
 use crucible_surrealdb::vault_pipeline_connector::*;
 use crucible_surrealdb::vault_scanner::*;
 use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::fs;
+
+/// Test kiln root for all tests
+fn test_kiln_root() -> PathBuf {
+    PathBuf::from("/tmp/test_kiln")
+}
 
 /// Create test ParsedDocument with realistic content
 async fn create_test_parsed_document(
@@ -127,7 +132,8 @@ mod tdd_vault_embedding_pipeline_tests {
         let test_doc = create_test_document_batch().await.pop().unwrap();
 
         // Act & Assert (This should fail initially)
-        let connector = VaultPipelineConnector::new(thread_pool.clone());
+        let kiln_root = test_kiln_root();
+        let connector = VaultPipelineConnector::new(thread_pool.clone(), kiln_root);
         let result = connector
             .process_document_to_embedding(&client, &test_doc)
             .await;
@@ -138,7 +144,7 @@ mod tdd_vault_embedding_pipeline_tests {
         let processing_result = result.unwrap();
         assert_eq!(
             processing_result.document_id,
-            generate_document_id_from_path(&test_doc.path)
+            generate_document_id_from_path(&test_doc.path, &test_kiln_root())
         );
         assert!(
             processing_result.embeddings_generated > 0,
@@ -162,7 +168,8 @@ mod tdd_vault_embedding_pipeline_tests {
         let test_documents = create_test_document_batch().await;
 
         // Act & Assert (This should fail initially)
-        let connector = VaultPipelineConnector::new(thread_pool.clone());
+        let kiln_root = test_kiln_root();
+        let connector = VaultPipelineConnector::new(thread_pool.clone(), kiln_root);
         let result = connector
             .process_documents_to_embeddings(&client, &test_documents)
             .await;
@@ -193,8 +200,9 @@ mod tdd_vault_embedding_pipeline_tests {
         ];
 
         // Act & Assert (This should fail initially)
+        let kiln_root = test_kiln_root();
         for path in &test_paths {
-            let document_id = generate_document_id_from_path(path);
+            let document_id = generate_document_id_from_path(path, &kiln_root);
 
             // TDD: This should fail because no ID generation exists yet
             assert!(!document_id.is_empty(), "Document ID should not be empty");
@@ -212,7 +220,7 @@ mod tdd_vault_embedding_pipeline_tests {
             );
 
             // Test consistency
-            let id2 = generate_document_id_from_path(path);
+            let id2 = generate_document_id_from_path(path, &kiln_root);
             assert_eq!(
                 document_id, id2,
                 "Document ID generation should be consistent"
@@ -230,7 +238,8 @@ mod tdd_vault_embedding_pipeline_tests {
 
         // Act & Assert (This should fail initially)
         let config = VaultPipelineConfig::default();
-        let embedding_inputs = transform_parsed_document_to_embedding_inputs(&test_doc, &config);
+        let kiln_root = test_kiln_root();
+        let embedding_inputs = transform_parsed_document_to_embedding_inputs(&test_doc, &config, &kiln_root);
 
         // TDD: This should fail because no transformation exists yet
         assert!(
@@ -241,7 +250,7 @@ mod tdd_vault_embedding_pipeline_tests {
         for (document_id, content) in &embedding_inputs {
             assert_eq!(
                 document_id,
-                &generate_document_id_from_path(&test_doc.path),
+                &generate_document_id_from_path(&test_doc.path, &kiln_root),
                 "Document ID should match"
             );
             assert!(!content.is_empty(), "Content should not be empty");
@@ -263,7 +272,8 @@ mod tdd_vault_embedding_pipeline_tests {
         let client = SurrealClient::new_memory().await.unwrap();
 
         let mut test_doc = create_test_document_batch().await.pop().unwrap();
-        let connector = VaultPipelineConnector::new(thread_pool.clone());
+        let kiln_root = test_kiln_root();
+        let connector = VaultPipelineConnector::new(thread_pool.clone(), kiln_root);
 
         // Act: Initial processing
         let initial_result = connector
@@ -313,7 +323,8 @@ mod tdd_vault_embedding_pipeline_tests {
             create_test_parsed_document(temp_dir.path().join("empty.md"), "Empty Document", "")
                 .await;
 
-        let connector = VaultPipelineConnector::new(thread_pool.clone());
+        let kiln_root = test_kiln_root();
+        let connector = VaultPipelineConnector::new(thread_pool.clone(), kiln_root);
 
         // Act & Assert (This should fail initially)
         let result = connector
@@ -385,7 +396,8 @@ Final section with concluding remarks for document {}.
             test_documents.push(doc);
         }
 
-        let connector = VaultPipelineConnector::new(thread_pool.clone());
+        let kiln_root = test_kiln_root();
+        let connector = VaultPipelineConnector::new(thread_pool.clone(), kiln_root);
         let start_time = std::time::Instant::now();
 
         // Act & Assert (This should fail initially)
@@ -447,7 +459,8 @@ Final section with concluding remarks for document {}.
         let config = EmbeddingConfig::optimize_for_resources();
         let thread_pool = EmbeddingThreadPool::new(config).await.unwrap();
         let client = SurrealClient::new_memory().await.unwrap();
-        let connector = VaultPipelineConnector::new(thread_pool.clone());
+        let kiln_root = test_kiln_root();
+        let connector = VaultPipelineConnector::new(thread_pool.clone(), kiln_root);
 
         // Scan vault
         let scanner_config = VaultScannerConfig::default();
@@ -533,8 +546,9 @@ Final section with concluding remarks for document {}.
         ];
 
         // Act & Assert (This should fail initially)
+        let kiln_root = test_kiln_root();
         for path in &edge_cases {
-            let document_id = generate_document_id_from_path(path);
+            let document_id = generate_document_id_from_path(path, &kiln_root);
 
             // TDD: This should fail because no robust ID generation exists yet
             assert!(
@@ -561,7 +575,7 @@ Final section with concluding remarks for document {}.
             );
 
             // Should be consistent
-            let id2 = generate_document_id_from_path(path);
+            let id2 = generate_document_id_from_path(path, &kiln_root);
             assert_eq!(
                 document_id, id2,
                 "ID generation should be consistent for path: {:?}",
@@ -593,7 +607,8 @@ Final section with concluding remarks for document {}.
 
         // Act & Assert (This should fail initially)
         let config = VaultPipelineConfig::default();
-        let embedding_inputs = transform_parsed_document_to_embedding_inputs(&test_doc, &config);
+        let kiln_root = test_kiln_root();
+        let embedding_inputs = transform_parsed_document_to_embedding_inputs(&test_doc, &config, &kiln_root);
 
         // TDD: This should fail because no metadata preservation exists yet
         assert!(!embedding_inputs.is_empty());

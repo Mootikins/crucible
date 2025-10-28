@@ -115,8 +115,11 @@ async fn perform_integrated_semantic_search(
         process_vault_if_needed(&client, &vault_path).await?;
     }
 
+    // Create embedding provider for query embeddings
+    let embedding_provider = create_default_embedding_provider().await?;
+
     // Perform semantic search
-    let search_results = semantic_search(&client, query, top_k)
+    let search_results = semantic_search(&client, query, top_k, embedding_provider)
         .await
         .map_err(|e| anyhow::anyhow!("Semantic search failed: {}", e))?;
 
@@ -424,6 +427,38 @@ pub fn sync_metadata() -> ToolFunction {
             ))
         })
     }
+}
+
+/// Create a default embedding provider using environment variables or defaults
+async fn create_default_embedding_provider(
+) -> Result<std::sync::Arc<dyn crucible_llm::embeddings::EmbeddingProvider>, anyhow::Error> {
+    use crucible_config::{ApiConfig, EmbeddingProviderConfig, EmbeddingProviderType, ModelConfig};
+    use std::collections::HashMap;
+
+    // Use default embedding configuration (Ollama with nomic-embed-text)
+    let config = EmbeddingProviderConfig {
+        provider_type: EmbeddingProviderType::Ollama,
+        api: ApiConfig {
+            key: None,
+            base_url: Some(
+                env::var("EMBEDDING_ENDPOINT")
+                    .unwrap_or_else(|_| "http://localhost:11434".to_string()),
+            ),
+            timeout_seconds: Some(30),
+            retry_attempts: Some(3),
+            headers: HashMap::new(),
+        },
+        model: ModelConfig {
+            name: env::var("EMBEDDING_MODEL").unwrap_or_else(|_| "nomic-embed-text".to_string()),
+            dimensions: Some(768), // nomic-embed-text dimensions
+            max_tokens: None,
+        },
+        options: HashMap::new(),
+    };
+
+    crucible_llm::embeddings::create_provider(config)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to create default embedding provider: {}", e))
 }
 
 #[cfg(test)]

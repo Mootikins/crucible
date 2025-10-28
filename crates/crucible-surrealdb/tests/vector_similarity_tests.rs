@@ -9,6 +9,7 @@
 //! 2. After implementation, these tests should PASS when real vector similarity is used
 
 use crucible_llm::embeddings::{create_mock_provider, EmbeddingProvider};
+use std::sync::Arc;
 use crucible_surrealdb::{embedding_config::DocumentEmbedding, vault_integration, SurrealClient};
 use vault_integration::{
     get_database_stats, get_document_embeddings, initialize_vault_schema, semantic_search,
@@ -376,7 +377,7 @@ async fn test_semantic_search_basic_vector_similarity() {
 
     // Perform semantic search - this should use vector similarity after implementation
     let query = "machine learning";
-    let search_results = semantic_search(&client, query, 5)
+    let search_results = semantic_search(&client, query, 5, create_mock_provider(768))
         .await
         .expect("Semantic search should succeed");
 
@@ -437,7 +438,7 @@ async fn test_semantic_search_ranking_accuracy() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Perform semantic search
-    let search_results = semantic_search(&client, "machine learning", 10)
+    let search_results = semantic_search(&client, "machine learning", 10, create_mock_provider(768))
         .await
         .expect("Semantic search should succeed");
 
@@ -487,7 +488,7 @@ async fn test_semantic_search_different_embedding_dimensions() {
     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
     // Perform semantic search - should handle mixed dimensions gracefully
-    let search_results = semantic_search(&client, "test query", 10)
+    let search_results = semantic_search(&client, "test query", 10, create_mock_provider(768))
         .await
         .expect("Semantic search should succeed");
 
@@ -526,7 +527,7 @@ async fn test_semantic_search_similarity_threshold_filtering() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Perform semantic search with limit
-    let search_results = semantic_search(&client, "machine learning", 3)
+    let search_results = semantic_search(&client, "machine learning", 3, create_mock_provider(768))
         .await
         .expect("Semantic search should succeed");
 
@@ -587,7 +588,7 @@ async fn test_batch_similarity_search_multiple_queries() {
     let mut all_results = Vec::new();
 
     for query in queries {
-        let search_results = semantic_search(&client, query, 5)
+        let search_results = semantic_search(&client, query, 5, create_mock_provider(768))
             .await
             .expect("Semantic search should succeed");
         all_results.push((query, search_results));
@@ -648,7 +649,7 @@ async fn test_semantic_search_empty_database() {
         .expect("Failed to initialize schema");
 
     // Search in empty database
-    let search_results = semantic_search(&client, "any query", 10)
+    let search_results = semantic_search(&client, "any query", 10, create_mock_provider(768))
         .await
         .expect("Search should succeed even on empty database");
 
@@ -677,7 +678,7 @@ async fn test_semantic_search_empty_query() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Search with empty query
-    let search_results = semantic_search(&client, "", 10)
+    let search_results = semantic_search(&client, "", 10, create_mock_provider(768))
         .await
         .expect("Search should handle empty query gracefully");
 
@@ -715,7 +716,7 @@ async fn test_semantic_search_missing_embeddings() {
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
     // Search for documents without embeddings
-    let search_results = semantic_search(&client, "test", 10)
+    let search_results = semantic_search(&client, "test", 10, create_mock_provider(768))
         .await
         .expect("Search should handle missing embeddings gracefully");
 
@@ -760,7 +761,7 @@ async fn test_semantic_search_malformed_embeddings() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Search should handle malformed embeddings gracefully
-    let search_results = semantic_search(&client, "test", 10).await;
+    let search_results = semantic_search(&client, "test", 10, create_mock_provider(768)).await;
 
     match search_results {
         Ok(results) => {
@@ -819,7 +820,7 @@ async fn test_semantic_search_performance_large_dataset() {
 
     // Perform semantic search and measure performance
     let search_start = std::time::Instant::now();
-    let search_results = semantic_search(&client, "performance test query", 10)
+    let search_results = semantic_search(&client, "performance test query", 10, create_mock_provider(768))
         .await
         .expect("Semantic search should succeed");
     let search_duration = search_start.elapsed();
@@ -884,7 +885,7 @@ async fn test_semantic_search_concurrent_queries() {
 
     for query in queries {
         let client_clone = client.clone();
-        let task = tokio::spawn(async move { semantic_search(&client_clone, query, 5).await });
+        let task = tokio::spawn(async move { semantic_search(&client_clone, query, 5, create_mock_provider(768)).await });
         search_tasks.push(task);
     }
 
@@ -971,7 +972,7 @@ async fn test_vector_search_integration_with_database_stats() {
     );
 
     // Perform semantic search
-    let search_results = semantic_search(&client, "test query", 5)
+    let search_results = semantic_search(&client, "test query", 5, create_mock_provider(768))
         .await
         .expect("Semantic search should succeed");
 
@@ -1016,7 +1017,7 @@ async fn test_vector_search_integration_with_embedding_retrieval() {
     );
 
     // Perform semantic search
-    let search_results = semantic_search(&client, "machine learning", 10)
+    let search_results = semantic_search(&client, "machine learning", 10, create_mock_provider(768))
         .await
         .expect("Semantic search should succeed");
 
@@ -1061,7 +1062,7 @@ async fn test_current_implementation_is_mock_text_search() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Search for text that matches stored document content patterns
-    let search_results = semantic_search(&client, "machine", 10)
+    let search_results = semantic_search(&client, "machine", 10, create_mock_provider(768))
         .await
         .expect("Search should succeed");
 
