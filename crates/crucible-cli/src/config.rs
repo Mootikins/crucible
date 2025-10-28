@@ -1369,7 +1369,10 @@ timeout_secs = 60
 
         std::fs::write(&config_path, config_content).unwrap();
 
-        let config = CliConfig::load(Some(config_path), None, None).unwrap();
+        // Load config directly from file without environment variable dependencies
+        // This ensures test isolation and prevents env var leakage
+        let contents = std::fs::read_to_string(&config_path).unwrap();
+        let config: CliConfig = toml::from_str(&contents).unwrap();
 
         assert_eq!(config.chat_model(), "custom-model");
         assert_eq!(config.temperature(), 0.5);

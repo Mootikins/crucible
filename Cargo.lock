@@ -626,12 +626,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
-name = "atomic_refcell"
-version = "0.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41e67cd8309bbd06cd603a9e693a784ac2e5d1e955f11286e355089fcab3047c"
-
-[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1819,7 +1813,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
- "yrs 0.24.0",
+ "yrs",
 ]
 
 [[package]]
@@ -1918,8 +1912,7 @@ dependencies = [
  "tokio-tungstenite 0.28.0",
  "tracing",
  "uuid",
- "yrs 0.24.0",
- "yrs-kvstore",
+ "yrs",
 ]
 
 [[package]]
@@ -11119,22 +11112,6 @@ dependencies = [
 
 [[package]]
 name = "yrs"
-version = "0.19.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8ca5126331b9a5ef5bb10f3f1c3d01b05f298d348c66f8fb15497d83ee73176"
-dependencies = [
- "arc-swap",
- "atomic_refcell",
- "fastrand",
- "serde",
- "serde_json",
- "smallstr",
- "smallvec 1.15.1",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "yrs"
 version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f904a99678a852d7cbc6958c94087f739c10cfb19642635951219c525a5fdb89"
@@ -11149,17 +11126,6 @@ dependencies = [
  "smallstr",
  "smallvec 1.15.1",
  "thiserror 2.0.17",
-]
-
-[[package]]
-name = "yrs-kvstore"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98d4ff429e242c38b6b31115f177b52f6f77a1c0cf553bd2e0bb7fbcc90e3429"
-dependencies = [
- "smallvec 1.15.1",
- "thiserror 1.0.69",
- "yrs 0.19.2",
 ]
 
 [[package]]
