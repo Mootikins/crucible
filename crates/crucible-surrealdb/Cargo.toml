@@ -19,8 +19,8 @@ thiserror = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
 
-# SurrealDB with in-memory backend for testing
-surrealdb = { version = "2", features = ["kv-mem"] }
+# SurrealDB with in-memory and RocksDB backends
+surrealdb = { version = "2", features = ["kv-mem", "kv-rocksdb"] }
 chrono = { workspace = true }
 uuid = { workspace = true }
 comfy-table = "7.2"
@@ -46,3 +46,8 @@ tempfile = "3.8"
 tokio-test = "0.4"
 num_cpus = "1.16"
 tracing-test = "0.2"
+criterion = { version = "0.5", features = ["async_tokio"] }
+
+[[bench]]
+name = "graph_relations_bench"
+harness = false

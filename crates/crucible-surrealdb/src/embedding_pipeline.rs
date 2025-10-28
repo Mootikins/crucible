@@ -5,7 +5,7 @@
 
 use crate::embedding_config::*;
 use crate::embedding_pool::EmbeddingThreadPool;
-use crate::multi_client::SurrealClient;
+use crate::SurrealClient;
 use anyhow::{anyhow, Result};
 use crucible_core::parser::ParsedDocument;
 use std::collections::HashMap;

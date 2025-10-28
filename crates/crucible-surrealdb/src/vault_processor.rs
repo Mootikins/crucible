@@ -6,7 +6,7 @@
 
 use anyhow::{anyhow, Result};
 use futures::stream::{self, StreamExt};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
@@ -38,6 +38,7 @@ pub async fn process_vault_files(
     client: &SurrealClient,
     config: &VaultScannerConfig,
     embedding_pool: Option<&EmbeddingThreadPool>,
+    kiln_root: &std::path::Path,
 ) -> Result<VaultProcessResult> {
     let start_time = std::time::Instant::now();
     let mut processed_count = 0;
@@ -86,7 +87,7 @@ pub async fn process_vault_files(
                 batch.len()
             );
 
-            let batch_result = process_file_batch(batch, client, config, embedding_pool).await?;
+            let batch_result = process_file_batch(batch, client, config, embedding_pool, kiln_root).await?;
 
             processed_count += batch_result.processed_count;
             failed_count += batch_result.failed_count;
@@ -104,7 +105,7 @@ pub async fn process_vault_files(
         if config.parallel_processing > 1 && markdown_files.len() > 1 {
             eprintln!("DEBUG PROCESSOR: Using parallel processing (workers={})", config.parallel_processing);
             let parallel_result =
-                process_files_parallel(&markdown_files, client, config, embedding_pool).await?;
+                process_files_parallel(&markdown_files, client, config, embedding_pool, kiln_root).await?;
             eprintln!("DEBUG PROCESSOR: Parallel result: processed={}, failed={}, errors={}",
                       parallel_result.processed_count, parallel_result.failed_count, parallel_result.errors.len());
             processed_count = parallel_result.processed_count;
@@ -113,7 +114,7 @@ pub async fn process_vault_files(
         } else {
             eprintln!("DEBUG PROCESSOR: Using sequential processing");
             let sequential_result =
-                process_files_sequential(&markdown_files, client, config, embedding_pool).await?;
+                process_files_sequential(&markdown_files, client, config, embedding_pool, kiln_root).await?;
             eprintln!("DEBUG PROCESSOR: Sequential result: processed={}, failed={}, errors={}",
                       sequential_result.processed_count, sequential_result.failed_count, sequential_result.errors.len());
             processed_count = sequential_result.processed_count;
@@ -149,6 +150,7 @@ pub async fn process_vault_files_with_error_handling(
     client: &SurrealClient,
     config: &VaultScannerConfig,
     embedding_pool: Option<&EmbeddingThreadPool>,
+    kiln_root: &std::path::Path,
 ) -> Result<VaultProcessResult> {
     let start_time = std::time::Instant::now();
     let mut processed_count = 0;
@@ -164,7 +166,7 @@ pub async fn process_vault_files_with_error_handling(
         .collect();
 
     for file_info in markdown_files {
-        match process_single_file_with_recovery(file_info, client, config, embedding_pool).await {
+        match process_single_file_with_recovery(file_info, client, config, embedding_pool, kiln_root).await {
             Ok(success) => {
                 if success {
                     processed_count += 1;
@@ -210,11 +212,12 @@ pub async fn process_single_file_with_recovery(
     client: &SurrealClient,
     config: &VaultScannerConfig,
     embedding_pool: Option<&EmbeddingThreadPool>,
+    kiln_root: &std::path::Path,
 ) -> Result<bool> {
     let mut last_error = None;
 
     for attempt in 0..=config.error_retry_attempts {
-        match process_single_file_internal(file_info, client, embedding_pool).await {
+        match process_single_file_internal(file_info, client, embedding_pool, kiln_root).await {
             Ok(_) => {
                 if attempt > 0 {
                     info!(
@@ -258,9 +261,10 @@ pub async fn process_incremental_changes(
     client: &SurrealClient,
     config: &VaultScannerConfig,
     embedding_pool: Option<&EmbeddingThreadPool>,
+    kiln_root: &Path,
 ) -> Result<VaultProcessResult> {
     if !config.enable_incremental {
-        return process_vault_files(all_files, client, config, embedding_pool).await;
+        return process_vault_files(all_files, client, config, embedding_pool, kiln_root).await;
     }
 
     let start_time = std::time::Instant::now();
@@ -300,6 +304,7 @@ pub async fn process_incremental_changes(
             client,
             config,
             embedding_pool,
+            kiln_root,
         )
         .await?;
         processed_count = result.processed_count;
@@ -358,11 +363,12 @@ async fn process_file_batch(
     client: &SurrealClient,
     config: &VaultScannerConfig,
     embedding_pool: Option<&EmbeddingThreadPool>,
+    kiln_root: &std::path::Path,
 ) -> Result<VaultProcessResult> {
     if config.parallel_processing > 1 && batch.len() > 1 {
-        process_files_parallel(batch, client, config, embedding_pool).await
+        process_files_parallel(batch, client, config, embedding_pool, kiln_root).await
     } else {
-        process_files_sequential(batch, client, config, embedding_pool).await
+        process_files_sequential(batch, client, config, embedding_pool, kiln_root).await
     }
 }
 
@@ -371,16 +377,19 @@ async fn process_files_parallel(
     client: &SurrealClient,
     config: &VaultScannerConfig,
     embedding_pool: Option<&EmbeddingThreadPool>,
+    kiln_root: &std::path::Path,
 ) -> Result<VaultProcessResult> {
     let start_time = std::time::Instant::now();
     let semaphore = Arc::new(Semaphore::new(config.parallel_processing));
     let client = Arc::new(client.clone());
+    let kiln_root = Arc::new(kiln_root.to_path_buf());
 
     let results = stream::iter(files)
         .map(|file_info| {
             let semaphore = semaphore.clone();
             let client = client.clone();
             let embedding_pool = embedding_pool.cloned();
+            let kiln_root = kiln_root.clone();
 
             async move {
                 let _permit = semaphore.acquire().await?;
@@ -389,6 +398,7 @@ async fn process_files_parallel(
                     &client,
                     config,
                     embedding_pool.as_ref(),
+                    &kiln_root,
                 )
                 .await
             }
@@ -434,13 +444,14 @@ async fn process_files_sequential(
     client: &SurrealClient,
     config: &VaultScannerConfig,
     embedding_pool: Option<&EmbeddingThreadPool>,
+    kiln_root: &std::path::Path,
 ) -> Result<VaultProcessResult> {
     let start_time = std::time::Instant::now();
     let mut processed_count = 0;
     let mut failed_count = 0;
 
     for file_info in files {
-        match process_single_file_with_recovery(file_info, client, config, embedding_pool).await {
+        match process_single_file_with_recovery(file_info, client, config, embedding_pool, kiln_root).await {
             Ok(success) => {
                 if success {
                     processed_count += 1;
@@ -472,16 +483,13 @@ async fn process_single_file_internal(
     file_info: &VaultFileInfo,
     client: &SurrealClient,
     embedding_pool: Option<&EmbeddingThreadPool>,
+    kiln_root: &std::path::Path,
 ) -> Result<()> {
-    eprintln!("DEBUG INTERNAL: Processing file: {:?}", file_info.path);
-
     // Parse the file
     let document = crate::vault_scanner::parse_file_to_document(&file_info.path).await?;
-    eprintln!("DEBUG INTERNAL: Parsed document: {:?}", document.path);
 
     // Store the document
-    let doc_id = store_parsed_document(client, &document).await?;
-    eprintln!("DEBUG INTERNAL: Stored document with ID: {}", doc_id);
+    let doc_id = store_parsed_document(client, &document, kiln_root).await?;
 
     // Create relationships
     create_wikilink_edges(client, &doc_id, &document).await?;
@@ -490,37 +498,27 @@ async fn process_single_file_internal(
 
     // Process embeddings if available
     if let Some(pool) = embedding_pool {
-        eprintln!("DEBUG INTERNAL: Processing embeddings with thread pool");
-
         // Use VaultPipelineConnector to process embeddings
-        let connector = crate::vault_pipeline_connector::VaultPipelineConnector::new(pool.clone());
+        let connector = crate::vault_pipeline_connector::VaultPipelineConnector::new(pool.clone(), kiln_root.to_path_buf());
         match connector.process_document_to_embedding(client, &document).await {
             Ok(result) => {
                 info!(
                     "Generated {} embeddings for document {} in {:?}",
                     result.embeddings_generated, doc_id, result.processing_time
                 );
-                eprintln!(
-                    "DEBUG INTERNAL: Generated {} embeddings successfully",
-                    result.embeddings_generated
-                );
             }
             Err(e) => {
                 error!("Failed to generate embeddings for {}: {}", doc_id, e);
-                eprintln!("DEBUG INTERNAL: Embedding generation failed: {}", e);
                 // Don't fail the entire processing if embeddings fail
                 // Just log the error and continue
             }
         }
-    } else {
-        eprintln!("DEBUG INTERNAL: No embedding pool available");
     }
 
     // Update processed timestamp
     update_document_processed_timestamp(client, &doc_id).await?;
 
     debug!("Successfully processed file: {}", file_info.path.display());
-    eprintln!("DEBUG INTERNAL: Successfully processed file: {:?}", file_info.path);
 
     Ok(())
 }
@@ -616,6 +614,7 @@ async fn find_document_id_by_path(client: &SurrealClient, path: &PathBuf) -> Res
 async fn bulk_query_document_hashes(
     client: &SurrealClient,
     paths: &[PathBuf],
+    kiln_root: &Path,
 ) -> Result<std::collections::HashMap<PathBuf, String>> {
     use std::collections::HashMap;
 
@@ -627,9 +626,23 @@ async fn bulk_query_document_hashes(
     debug!("Querying hashes for {} files", paths.len());
     eprintln!("DEBUG BULK_QUERY: Querying hashes for {} files", paths.len());
 
-    // Build query with IN clause
+    // Convert absolute paths to relative paths for database query
+    // Store mapping from relative -> absolute for later lookup
+    let mut abs_to_rel: HashMap<PathBuf, PathBuf> = HashMap::new();
+    let mut rel_paths: Vec<PathBuf> = Vec::new();
+
+    for abs_path in paths {
+        if let Ok(rel_path) = abs_path.strip_prefix(kiln_root) {
+            abs_to_rel.insert(abs_path.clone(), rel_path.to_path_buf());
+            rel_paths.push(rel_path.to_path_buf());
+        } else {
+            warn!("Path {} is not under kiln_root {}", abs_path.display(), kiln_root.display());
+        }
+    }
+
+    // Build query with IN clause using relative paths
     // Note: Using string formatting for now since mock client doesn't support parameters
-    let path_strings: Vec<String> = paths
+    let path_strings: Vec<String> = rel_paths
         .iter()
         .map(|p| format!("'{}'", p.display()))
         .collect();
@@ -644,14 +657,21 @@ async fn bulk_query_document_hashes(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to query document hashes: {}", e))?;
 
-    // Build HashMap from results
+    // Build HashMap from results, mapping back to absolute paths
     let mut hash_map = HashMap::new();
     for record in result.records {
         if let Some(path_value) = record.data.get("path") {
-            if let Some(path_str) = path_value.as_str() {
+            if let Some(rel_path_str) = path_value.as_str() {
                 if let Some(hash_value) = record.data.get("content_hash") {
                     if let Some(hash_str) = hash_value.as_str() {
-                        hash_map.insert(PathBuf::from(path_str), hash_str.to_string());
+                        let rel_path = PathBuf::from(rel_path_str);
+                        // Find the absolute path that corresponds to this relative path
+                        for (abs_path, stored_rel_path) in &abs_to_rel {
+                            if stored_rel_path == &rel_path {
+                                hash_map.insert(abs_path.clone(), hash_str.to_string());
+                                break;
+                            }
+                        }
                     }
                 }
             }
@@ -778,6 +798,7 @@ async fn convert_paths_to_file_infos(paths: &[PathBuf]) -> Result<Vec<VaultFileI
 async fn detect_changed_files(
     client: &SurrealClient,
     file_infos: &[VaultFileInfo],
+    kiln_root: &Path,
 ) -> Result<Vec<VaultFileInfo>> {
     if file_infos.is_empty() {
         debug!("No files to check for changes");
@@ -790,7 +811,7 @@ async fn detect_changed_files(
     let paths: Vec<PathBuf> = file_infos.iter().map(|fi| fi.path.clone()).collect();
 
     // Query database for stored hashes
-    let stored_hashes = bulk_query_document_hashes(client, &paths).await?;
+    let stored_hashes = bulk_query_document_hashes(client, &paths, kiln_root).await?;
 
     // Compare hashes to find changed files
     let mut changed_files = Vec::new();
@@ -878,6 +899,7 @@ pub async fn process_vault_delta(
     client: &SurrealClient,
     config: &VaultScannerConfig,
     embedding_pool: Option<&EmbeddingThreadPool>,
+    kiln_root: &Path,
 ) -> Result<VaultProcessResult> {
     let start_time = std::time::Instant::now();
 
@@ -911,7 +933,7 @@ pub async fn process_vault_delta(
     );
 
     // Step 2: Detect which files actually changed
-    let changed_file_infos = detect_changed_files(client, &file_infos).await?;
+    let changed_file_infos = detect_changed_files(client, &file_infos, kiln_root).await?;
 
     info!(
         "Detected {} actually changed files (out of {} candidates) in {:?}",
@@ -968,7 +990,7 @@ pub async fn process_vault_delta(
 
     // Step 4: Process changed files using existing pipeline
     let processing_result =
-        process_vault_files(&changed_file_infos, client, config, embedding_pool).await?;
+        process_vault_files(&changed_file_infos, client, config, embedding_pool, kiln_root).await?;
 
     let total_time = start_time.elapsed();
 
