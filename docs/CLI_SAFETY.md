@@ -118,7 +118,7 @@ All error messages follow this pattern:
 Error: Search query too short (1 < 2 characters). Please provide a more specific query.
 
 # File System Error
-Error: Kiln path does not exist: /invalid/path. Please set OBSIDIAN_VAULT_PATH to a valid kiln directory.
+Error: Kiln path does not exist: /invalid/path. Please configure a valid kiln directory in your config file.
 
 # Memory Error
 Error: File too large (16MB > 10MB limit): /path/to/large-file.md

@@ -1,5 +1,7 @@
 # Delta Processing Test Implementation - Task 1.2
 
+**⚠️ NOTE**: This document may reference outdated environment variable configuration. All configuration is now in config files.
+
 ## Overview
 
 Successfully added a failing test for delta processing (change detection) to the existing CLI daemon integration test file as part of the TDD approach for implementing efficient delta processing in the Crucible system.

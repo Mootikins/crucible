@@ -1,5 +1,7 @@
 # Test Environment Variable Migration Guide
 
+**⚠️ DEPRECATED**: This migration is complete. Tests no longer use environment variables for configuration.
+
 ## Overview
 
 This guide documents the migration from environment variables to configuration structs in tests to eliminate race conditions during parallel test execution.
