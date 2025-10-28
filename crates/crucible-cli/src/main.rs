@@ -20,8 +20,8 @@ async fn main() -> Result<()> {
     // Load configuration
     let config = config::CliConfig::load(cli.config, cli.embedding_url, cli.embedding_model)?;
 
-    // Auto-start file watcher/daemon for background processing
-    crucible_cli::common::daemon_manager::ensure_watcher_running(&config).await?;
+    // Auto-start file watcher for background processing
+    let _pending_files = crucible_cli::common::kiln_processor::ensure_watcher_running(&config).await?;
 
     // Execute command (default to REPL if no command provided)
     match cli.command {
@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
 
         Some(Commands::Service(cmd)) => commands::service::execute(config, cmd).await?,
 
-        Some(Commands::Daemon(cmd)) => commands::daemon::execute(config, cmd).await?,
+        Some(Commands::Process(cmd)) => commands::process::execute(config, cmd).await?,
 
         Some(Commands::Migration(cmd)) => commands::migration::execute(config, cmd).await?,
 

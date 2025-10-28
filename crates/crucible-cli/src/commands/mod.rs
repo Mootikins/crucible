@@ -1,6 +1,6 @@
 pub mod chat;
 pub mod config;
-pub mod daemon;
+pub mod process;
 pub mod fuzzy;
 pub mod migration;
 pub mod note;
