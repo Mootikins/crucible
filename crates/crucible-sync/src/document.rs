@@ -68,8 +68,23 @@ impl Document {
     pub async fn delete_text(&self, index: u32, length: u32) -> Result<(), DocumentError> {
         let doc = self.doc.read().await;
         let text_elem = doc.get_or_insert_text("content");
+
+        // Get current length to validate bounds
+        let txn = doc.transact();
+        let current_len = text_elem.len(&txn);
+        drop(txn);
+
+        // Validate index is within bounds
+        if index >= current_len {
+            return Ok(()); // No-op for out-of-bounds index
+        }
+
+        // Clamp length to available text
+        let actual_length = length.min(current_len - index);
+
+        // Perform the deletion with validated parameters
         let mut txn = doc.transact_mut();
-        text_elem.remove_range(&mut txn, index, length);
+        text_elem.remove_range(&mut txn, index, actual_length);
         txn.commit();
         Ok(())
     }

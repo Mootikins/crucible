@@ -56,6 +56,12 @@ impl SyncInstance {
 
     /// Sync with another instance (direct connection)
     pub async fn sync_with(&self, other: &SyncInstance) -> SyncResult<()> {
+        // Only sync documents with the same ID
+        if self.document.id() != other.document.id() {
+            // Different document IDs - no sync should occur
+            return Ok(());
+        }
+
         // Get our current state vector
         let our_sv = self.document.get_state_vector().await;
 
