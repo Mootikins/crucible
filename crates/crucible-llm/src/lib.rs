@@ -12,6 +12,7 @@
 //! ## Modules
 //!
 //! - [`embeddings`]: Text embedding generation and management
+//! - [`reranking`]: Document reranking for improved search relevance
 //!
 //! ## Example
 //!
@@ -37,12 +38,17 @@
 #![warn(clippy::all)]
 
 pub mod embeddings;
+pub mod reranking;
 pub mod text_generation;
 
 // Re-export commonly used types at crate root
 pub use embeddings::{
     EmbeddingConfig, EmbeddingError, EmbeddingProvider, EmbeddingResponse, EmbeddingResult,
     OllamaProvider, OpenAIProvider,
+};
+
+pub use reranking::{
+    FastEmbedReranker, Reranker, RerankResult, RerankerModelInfo,
 };
 
 pub use text_generation::{

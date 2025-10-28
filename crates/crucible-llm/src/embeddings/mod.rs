@@ -19,6 +19,9 @@ pub mod openai;
 /// Candle local provider implementation.
 pub mod candle;
 
+/// FastEmbed local provider implementation.
+pub mod fastembed;
+
 /// Provider trait and common functionality.
 pub mod provider;
 
@@ -26,6 +29,7 @@ pub mod provider;
 pub mod mock;
 
 pub use candle::CandleProvider;
+pub use fastembed::FastEmbedProvider;
 pub use config::{EmbeddingConfig, EmbeddingProviderType, ProviderType};
 pub use error::{EmbeddingError, EmbeddingResult};
 pub use mock::MockEmbeddingProvider;
@@ -53,6 +57,10 @@ pub async fn create_provider(
         }
         EmbeddingProviderType::Candle => {
             let provider = candle::CandleProvider::new(config)?;
+            Ok(Arc::new(provider))
+        }
+        EmbeddingProviderType::FastEmbed => {
+            let provider = fastembed::FastEmbedProvider::new(config)?;
             Ok(Arc::new(provider))
         }
         EmbeddingProviderType::Mock => {
