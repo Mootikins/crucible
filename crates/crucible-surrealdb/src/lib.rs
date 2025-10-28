@@ -28,9 +28,9 @@
 //! ```
 
 pub mod database;
-pub mod multi_client;
 pub mod query;
 pub mod schema_types;
+pub mod surreal_client;
 pub mod types;
 pub mod vault_integration;
 pub mod vault_pipeline_connector;
@@ -44,7 +44,7 @@ pub mod embedding_pipeline;
 pub mod embedding_pool;
 
 pub use database::SurrealEmbeddingDatabase;
-pub use multi_client::SurrealClient;
+pub use surreal_client::SurrealClient;
 pub use schema_types::*;
 pub use types::*;
 

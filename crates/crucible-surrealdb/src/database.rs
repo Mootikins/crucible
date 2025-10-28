@@ -1,4 +1,4 @@
-//! SurrealDB implementation of the embedding database interface.
+//! SurrealDB implementation of the kiln database interface.
 //!
 //! This module provides a SurrealDB-based implementation that offers:
 //! - Native vector storage as arrays
@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-/// In-memory embedding database (temporary implementation)
+/// In-memory kiln database (temporary implementation)
 pub struct SurrealEmbeddingDatabase {
     // In-memory storage for documents
     storage: Arc<Mutex<HashMap<String, EmbeddingData>>>,
@@ -86,7 +86,7 @@ impl SurrealEmbeddingDatabase {
 
         let mut storage = self.storage
             .lock()
-            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
+            .expect("Storage lock poisoned - kiln database is in inconsistent state");
         storage.insert(file_path.to_string(), data);
         println!("Stored embedding for: {}", file_path);
         Ok(())
@@ -96,7 +96,7 @@ impl SurrealEmbeddingDatabase {
     pub async fn store_embedding_data(&self, data: &EmbeddingData) -> Result<()> {
         let mut storage = self.storage
             .lock()
-            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
+            .expect("Storage lock poisoned - kiln database is in inconsistent state");
         storage.insert(data.file_path.clone(), data.clone());
         println!("Stored embedding data for: {}", data.file_path);
         Ok(())
@@ -110,7 +110,7 @@ impl SurrealEmbeddingDatabase {
     ) -> Result<()> {
         let mut storage = self.storage
             .lock()
-            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
+            .expect("Storage lock poisoned - kiln database is in inconsistent state");
 
         if let Some(embedding_data) = storage.get_mut(file_path) {
             embedding_data.metadata = metadata.clone();
@@ -129,7 +129,7 @@ impl SurrealEmbeddingDatabase {
     ) -> Result<bool> {
         let mut storage = self.storage
             .lock()
-            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
+            .expect("Storage lock poisoned - kiln database is in inconsistent state");
 
         if let Some(embedding_data) = storage.get_mut(file_path) {
             // Update properties while preserving other metadata
@@ -146,7 +146,7 @@ impl SurrealEmbeddingDatabase {
     pub async fn file_exists(&self, file_path: &str) -> Result<bool> {
         let storage = self.storage
             .lock()
-            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
+            .expect("Storage lock poisoned - kiln database is in inconsistent state");
         Ok(storage.contains_key(file_path))
     }
 
@@ -154,7 +154,7 @@ impl SurrealEmbeddingDatabase {
     pub async fn get_embedding(&self, file_path: &str) -> Result<Option<EmbeddingData>> {
         let storage = self.storage
             .lock()
-            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
+            .expect("Storage lock poisoned - kiln database is in inconsistent state");
         Ok(storage.get(file_path).cloned())
     }
 
@@ -167,7 +167,7 @@ impl SurrealEmbeddingDatabase {
     ) -> Result<Vec<SearchResultWithScore>> {
         let storage = self.storage
             .lock()
-            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
+            .expect("Storage lock poisoned - kiln database is in inconsistent state");
         let mut results = Vec::new();
 
         for (file_path, embedding_data) in storage.iter() {
@@ -210,7 +210,7 @@ impl SurrealEmbeddingDatabase {
     pub async fn search_by_tags(&self, tags: &[String]) -> Result<Vec<String>> {
         let storage = self.storage
             .lock()
-            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
+            .expect("Storage lock poisoned - kiln database is in inconsistent state");
         let mut results = Vec::new();
 
         for (file_path, embedding_data) in storage.iter() {
@@ -235,7 +235,7 @@ impl SurrealEmbeddingDatabase {
     ) -> Result<Vec<String>> {
         let storage = self.storage
             .lock()
-            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
+            .expect("Storage lock poisoned - kiln database is in inconsistent state");
         let mut results = Vec::new();
 
         for (file_path, embedding_data) in storage.iter() {
@@ -275,7 +275,7 @@ impl SurrealEmbeddingDatabase {
     ) -> Result<Vec<SearchResultWithScore>> {
         let storage = self.storage
             .lock()
-            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
+            .expect("Storage lock poisoned - kiln database is in inconsistent state");
         let mut results = Vec::new();
 
         for (file_path, embedding_data) in storage.iter() {
@@ -394,7 +394,7 @@ impl SurrealEmbeddingDatabase {
     pub async fn list_files(&self) -> Result<Vec<String>> {
         let storage = self.storage
             .lock()
-            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
+            .expect("Storage lock poisoned - kiln database is in inconsistent state");
         let mut files: Vec<String> = storage.keys().cloned().collect();
         files.sort(); // Return sorted list for deterministic results
         Ok(files)
@@ -404,7 +404,7 @@ impl SurrealEmbeddingDatabase {
     pub async fn delete_file(&self, file_path: &str) -> Result<bool> {
         let mut storage = self.storage
             .lock()
-            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
+            .expect("Storage lock poisoned - kiln database is in inconsistent state");
 
         if storage.remove(file_path).is_some() {
             println!("Deleted file: {}", file_path);
@@ -464,7 +464,7 @@ impl SurrealEmbeddingDatabase {
     pub async fn get_stats(&self) -> Result<DatabaseStats> {
         let storage = self.storage
             .lock()
-            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
+            .expect("Storage lock poisoned - kiln database is in inconsistent state");
 
         let total_documents = storage.len() as i64;
         let total_embeddings = storage
@@ -530,7 +530,7 @@ impl SurrealEmbeddingDatabase {
         // Check if both files exist
         let storage = self.storage
             .lock()
-            .expect("Storage lock poisoned - embeddings database is in inconsistent state");
+            .expect("Storage lock poisoned - kiln database is in inconsistent state");
         if !storage.contains_key(from_file) || !storage.contains_key(to_file) {
             return Ok(false);
         }
