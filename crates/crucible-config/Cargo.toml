@@ -9,7 +9,7 @@ edition.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true, optional = true }
-toml = { version = "0.8", optional = true }
+toml = { version = "0.9", optional = true }
 uuid = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
