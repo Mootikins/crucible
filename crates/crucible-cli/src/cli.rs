@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-// Import daemon command types
-use crate::commands::daemon::DaemonCommands;
+// Import process command types
+use crate::commands::process::ProcessCommands;
 
 #[derive(Parser)]
 #[command(name = "cru")]
@@ -134,9 +134,9 @@ pub enum Commands {
     #[command(subcommand)]
     Service(ServiceCommands),
 
-    /// Daemon management for background processing
+    /// Kiln processing management
     #[command(subcommand)]
-    Daemon(DaemonCommands),
+    Process(ProcessCommands),
 
     /// Migration management for tool migration
     #[command(subcommand)]

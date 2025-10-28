@@ -11,6 +11,9 @@ pub use crucible_config::EmbeddingProviderType as ProviderType;
 pub struct CliConfig {
     /// Kiln configuration
     pub kiln: KilnConfig,
+    /// Embedding configuration (new structured format)
+    #[serde(default)]
+    pub embedding: Option<EmbeddingConfigSection>,
     /// LLM configuration
     #[serde(default)]
     pub llm: LlmConfig,
@@ -26,9 +29,103 @@ pub struct CliConfig {
     /// File watching configuration
     #[serde(default)]
     pub file_watching: FileWatcherConfig,
-    /// Custom database path (overrides default kiln/.crucible/embeddings.db)
+    /// Custom database path (overrides default kiln/.crucible/kiln.db)
     #[serde(skip)]
     pub custom_database_path: Option<PathBuf>,
+}
+
+/// Embedding configuration section (new structured format)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbeddingConfigSection {
+    /// Embedding provider type (fastembed, ollama, openai, candle)
+    pub provider: Option<String>,
+    /// Model name
+    pub model: Option<String>,
+    /// FastEmbed-specific options
+    #[serde(default)]
+    pub fastembed: FastEmbedOptions,
+    /// Ollama-specific options
+    #[serde(default)]
+    pub ollama: OllamaEmbeddingOptions,
+    /// OpenAI-specific options
+    #[serde(default)]
+    pub openai: OpenAIEmbeddingOptions,
+    /// Reranking configuration
+    #[serde(default)]
+    pub reranking: RerankingOptions,
+}
+
+/// FastEmbed provider options
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FastEmbedOptions {
+    /// Cache directory for downloaded models
+    pub cache_dir: Option<PathBuf>,
+    /// Batch size for processing
+    pub batch_size: Option<u32>,
+    /// Show download progress
+    pub show_download: Option<bool>,
+}
+
+/// Ollama embedding provider options
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OllamaEmbeddingOptions {
+    /// Ollama endpoint URL
+    pub url: Option<String>,
+    /// Request timeout in seconds
+    pub timeout_secs: Option<u64>,
+    /// Maximum retry attempts
+    pub max_retries: Option<u32>,
+}
+
+/// OpenAI embedding provider options
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OpenAIEmbeddingOptions {
+    /// OpenAI API endpoint
+    pub url: Option<String>,
+    /// API key (can also be set via environment variable)
+    pub api_key: Option<String>,
+    /// Request timeout in seconds
+    pub timeout_secs: Option<u64>,
+}
+
+/// Reranking configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RerankingOptions {
+    /// Enable reranking
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    /// Reranking provider (fastembed, cohere, etc.)
+    pub provider: Option<String>,
+    /// Reranking model name
+    pub model: Option<String>,
+    /// Number of initial candidates to retrieve before reranking
+    pub initial_candidates: Option<usize>,
+    /// FastEmbed reranking options
+    #[serde(default)]
+    pub fastembed: FastEmbedRerankOptions,
+}
+
+impl Default for RerankingOptions {
+    fn default() -> Self {
+        Self {
+            enabled: Some(false),
+            provider: Some("fastembed".to_string()),
+            model: Some("bge-reranker-base".to_string()),
+            initial_candidates: Some(50),
+            fastembed: FastEmbedRerankOptions::default(),
+        }
+    }
+}
+
+/// FastEmbed reranker options
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FastEmbedRerankOptions {
+    /// Cache directory for reranker models
+    pub cache_dir: Option<PathBuf>,
+    /// Batch size for reranking
+    pub batch_size: Option<usize>,
+    /// Show download progress
+    pub show_download: Option<bool>,
 }
 
 /// Kiln configuration
@@ -254,6 +351,7 @@ impl Default for CliConfig {
                 embedding_url: default_embedding_url(),
                 embedding_model: None,
             },
+            embedding: None, // Use legacy kiln config by default
             llm: LlmConfig::default(),
             network: NetworkConfig::default(),
             services: ServicesConfig::default(),
@@ -438,7 +536,7 @@ impl CliConfig {
         if let Some(custom_path) = &self.custom_database_path {
             custom_path.clone()
         } else {
-            self.kiln.path.join(".crucible/embeddings.db")
+            self.kiln.path.join(".crucible/kiln.db")
         }
     }
 
@@ -539,7 +637,7 @@ endpoint = "https://api.anthropic.com"
 # api_key = "sk-ant-..."
 
 # Note: The following are automatically derived from kiln path:
-#   - Database: {kiln}/.crucible/embeddings.db
+#   - Database: {kiln}/.crucible/kiln.db
 #   - Tools: {kiln}/tools/
 
 [services]
@@ -695,22 +793,120 @@ max_performance_degradation = 20.0
             return Ok(EmbeddingConfig::mock());
         }
 
-        // Validate that embedding model is configured
+        // NEW: Check for new [embedding] section format
+        if let Some(embedding_config) = &self.embedding {
+            return self.to_embedding_config_from_new_format(embedding_config);
+        }
+
+        // LEGACY: Fall back to old kiln.embedding_* format for backward compatibility
+        tracing::warn!(
+            "Using legacy kiln.embedding_* config format. \
+            Consider migrating to [embedding] section for explicit provider selection."
+        );
+        self.to_embedding_config_from_legacy()
+    }
+
+    /// Convert from new [embedding] section format
+    fn to_embedding_config_from_new_format(&self, embedding: &EmbeddingConfigSection) -> Result<EmbeddingConfig> {
+        let model = embedding.model.as_ref()
+            .or(self.kiln.embedding_model.as_ref())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Embedding model is not configured. Please set it in [embedding] section:\n\
+                    [embedding]\n\
+                    model = \"<model-name>\""
+                )
+            })?;
+
+        // Determine provider: explicit > default to FastEmbed
+        let provider = embedding.provider.as_deref().unwrap_or("fastembed");
+
+        match provider.to_lowercase().as_str() {
+            "fastembed" => {
+                Ok(EmbeddingConfig::fastembed(
+                    Some(model.clone()),
+                    embedding.fastembed.cache_dir.as_ref().map(|p| p.to_string_lossy().to_string()),
+                    embedding.fastembed.batch_size,
+                ))
+            }
+            "ollama" => {
+                let url = embedding.ollama.url.as_ref()
+                    .or(Some(&self.kiln.embedding_url))
+                    .ok_or_else(|| anyhow::anyhow!("Ollama URL not configured"))?;
+                Ok(EmbeddingConfig::ollama(
+                    Some(url.clone()),
+                    Some(model.clone()),
+                ))
+            }
+            "openai" => {
+                let api_key = if let Some(key) = &embedding.openai.api_key {
+                    key.clone()
+                } else {
+                    std::env::var("OPENAI_API_KEY")
+                        .map_err(|_| anyhow::anyhow!("OpenAI API key not configured"))?
+                };
+                Ok(EmbeddingConfig::openai(
+                    api_key,
+                    Some(model.clone()),
+                ))
+            }
+            "candle" => {
+                Ok(EmbeddingConfig::candle(
+                    Some(model.clone()),
+                    None, // cache_dir
+                    None, // memory_mb
+                    None, // device
+                ))
+            }
+            _ => {
+                Err(anyhow::anyhow!(
+                    "Unknown embedding provider: {}. Valid options: fastembed, ollama, openai, candle",
+                    provider
+                ))
+            }
+        }
+    }
+
+    /// Convert from legacy kiln.embedding_* format (backward compatibility)
+    fn to_embedding_config_from_legacy(&self) -> Result<EmbeddingConfig> {
         let model = self.kiln.embedding_model.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
                 "Embedding model is not configured. Please set it via:\n\
                 - Environment variable: EMBEDDING_MODEL\n\
-                - CLI argument: --embedding-model <model>\n\
                 - Config file: embedding_model = \"<model>\""
             )
         })?;
 
-        // Default to Ollama provider
-        // In the future, we could add provider selection to the config
-        Ok(EmbeddingConfig::ollama(
-            Some(self.kiln.embedding_url.clone()),
-            Some(model.clone()),
-        ))
+        // Infer provider from URL (legacy behavior)
+        let provider_type = if self.kiln.embedding_url == "local" {
+            "fastembed"
+        } else if self.kiln.embedding_url.contains("api.openai.com") {
+            "openai"
+        } else {
+            // Default to Ollama for any other URL
+            "ollama"
+        };
+
+        match provider_type {
+            "fastembed" => {
+                Ok(EmbeddingConfig::fastembed(
+                    Some(model.clone()),
+                    None,
+                    None,
+                ))
+            }
+            "openai" => {
+                let api_key = std::env::var("OPENAI_API_KEY")
+                    .unwrap_or_default();
+                Ok(EmbeddingConfig::openai(api_key, Some(model.clone())))
+            }
+            _ => {
+                Ok(EmbeddingConfig::ollama(
+                    Some(self.kiln.embedding_url.clone()),
+                    Some(model.clone()),
+                ))
+            }
+        }
     }
 
     /// Get resolved chat model (from config or default)
@@ -1063,7 +1259,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let expected_db = kiln_path.join(".crucible/embeddings.db");
+        let expected_db = kiln_path.join(".crucible/kiln.db");
 
         // The config should use the path we set via builder
         assert_eq!(&config.kiln.path, &kiln_path, "Config kiln path should match builder");
@@ -1223,5 +1419,127 @@ timeout_secs = 60
         std::env::remove_var("OBSIDIAN_KILN_PATH");
         std::env::remove_var("OPENAI_API_KEY");
         std::env::remove_var("ANTHROPIC_API_KEY");
+    }
+
+    #[test]
+    fn test_new_embedding_config_fastembed() {
+        let mut config = CliConfig::default();
+        config.embedding = Some(EmbeddingConfigSection {
+            provider: Some("fastembed".to_string()),
+            model: Some("nomic-embed-text-v1.5".to_string()),
+            fastembed: FastEmbedOptions {
+                cache_dir: Some(PathBuf::from("/tmp/cache")),
+                batch_size: Some(64),
+                show_download: Some(false),
+            },
+            ollama: Default::default(),
+            openai: Default::default(),
+            reranking: RerankingOptions::default(),
+        });
+
+        let embedding_config = config.to_embedding_config().unwrap();
+        assert_eq!(embedding_config.model_name(), "nomic-embed-text-v1.5");
+        assert_eq!(embedding_config.provider_type, ProviderType::FastEmbed);
+    }
+
+    #[test]
+    fn test_new_embedding_config_ollama() {
+        let mut config = CliConfig::default();
+        config.embedding = Some(EmbeddingConfigSection {
+            provider: Some("ollama".to_string()),
+            model: Some("nomic-embed-text".to_string()),
+            fastembed: Default::default(),
+            ollama: OllamaEmbeddingOptions {
+                url: Some("https://llama.terminal.krohnos.io".to_string()),
+                timeout_secs: Some(120),
+                max_retries: Some(5),
+            },
+            openai: Default::default(),
+            reranking: RerankingOptions::default(),
+        });
+
+        let embedding_config = config.to_embedding_config().unwrap();
+        assert_eq!(embedding_config.model_name(), "nomic-embed-text");
+        assert_eq!(embedding_config.provider_type, ProviderType::Ollama);
+        assert_eq!(embedding_config.endpoint(), "https://llama.terminal.krohnos.io");
+    }
+
+    #[test]
+    fn test_new_embedding_config_openai() {
+        let mut config = CliConfig::default();
+        config.embedding = Some(EmbeddingConfigSection {
+            provider: Some("openai".to_string()),
+            model: Some("text-embedding-3-small".to_string()),
+            fastembed: Default::default(),
+            ollama: Default::default(),
+            openai: OpenAIEmbeddingOptions {
+                url: Some("https://api.openai.com/v1".to_string()),
+                api_key: Some("sk-test-key".to_string()),
+                timeout_secs: Some(30),
+            },
+            reranking: RerankingOptions::default(),
+        });
+
+        let embedding_config = config.to_embedding_config().unwrap();
+        assert_eq!(embedding_config.model_name(), "text-embedding-3-small");
+        assert_eq!(embedding_config.provider_type, ProviderType::OpenAI);
+    }
+
+    #[test]
+    fn test_legacy_embedding_config_local() {
+        let mut config = CliConfig::default();
+        config.kiln.embedding_url = "local".to_string();
+        config.kiln.embedding_model = Some("nomic-embed-text-v1.5".to_string());
+
+        let embedding_config = config.to_embedding_config().unwrap();
+        assert_eq!(embedding_config.model_name(), "nomic-embed-text-v1.5");
+        assert_eq!(embedding_config.provider_type, ProviderType::FastEmbed);
+    }
+
+    #[test]
+    fn test_legacy_embedding_config_ollama() {
+        let mut config = CliConfig::default();
+        config.kiln.embedding_url = "https://llama.terminal.krohnos.io".to_string();
+        config.kiln.embedding_model = Some("nomic-embed-text".to_string());
+
+        let embedding_config = config.to_embedding_config().unwrap();
+        assert_eq!(embedding_config.model_name(), "nomic-embed-text");
+        assert_eq!(embedding_config.provider_type, ProviderType::Ollama);
+    }
+
+    #[test]
+    fn test_embedding_config_default_provider() {
+        // Test that when no provider is specified, it defaults to fastembed
+        let mut config = CliConfig::default();
+        config.embedding = Some(EmbeddingConfigSection {
+            provider: None, // No provider specified
+            model: Some("bge-small-en-v1.5".to_string()),
+            fastembed: Default::default(),
+            ollama: Default::default(),
+            openai: Default::default(),
+            reranking: RerankingOptions::default(),
+        });
+
+        let embedding_config = config.to_embedding_config().unwrap();
+        assert_eq!(embedding_config.provider_type, ProviderType::FastEmbed);
+        assert_eq!(embedding_config.model_name(), "bge-small-en-v1.5");
+    }
+
+    #[test]
+    fn test_embedding_config_model_fallback() {
+        // Test that model can come from kiln config if not in embedding config
+        let mut config = CliConfig::default();
+        config.kiln.embedding_model = Some("fallback-model".to_string());
+        config.embedding = Some(EmbeddingConfigSection {
+            provider: Some("fastembed".to_string()),
+            model: None, // No model in embedding section
+            fastembed: Default::default(),
+            ollama: Default::default(),
+            openai: Default::default(),
+            reranking: RerankingOptions::default(),
+        });
+
+        let embedding_config = config.to_embedding_config().unwrap();
+        assert_eq!(embedding_config.model_name(), "fallback-model");
     }
 }

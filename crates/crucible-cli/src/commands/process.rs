@@ -1,24 +1,24 @@
-//! Daemon management commands for CLI
+//! Kiln processing commands for CLI
 //!
-//! This module provides CLI commands for managing the crucible-daemon process,
+//! This module provides CLI commands for managing the crucible-kiln processor,
 //! including starting, stopping, and checking status.
 
-use crate::common::DaemonManager;
+use crate::common::KilnProcessor;
 use crate::config::CliConfig;
 use anyhow::Result;
 use tracing::{error, info};
 
-/// Execute daemon commands
-pub async fn execute(config: CliConfig, command: DaemonCommands) -> Result<()> {
-    info!("Executing daemon command: {:?}", command);
+/// Execute processor commands
+pub async fn execute(config: CliConfig, command: ProcessCommands) -> Result<()> {
+    info!("Executing processor command: {:?}", command);
 
     match command {
-        DaemonCommands::Start { wait, background } => {
+        ProcessCommands::Start { wait, background } => {
             execute_start_command(config, wait, background).await
         }
-        DaemonCommands::Stop { force } => execute_stop_command(config, force).await,
-        DaemonCommands::Status => execute_status_command(config).await,
-        DaemonCommands::Restart { wait, force } => {
+        ProcessCommands::Stop { force } => execute_stop_command(config, force).await,
+        ProcessCommands::Status => execute_status_command(config).await,
+        ProcessCommands::Restart { wait, force } => {
             execute_restart_command(config, wait, force).await
         }
     }
@@ -26,19 +26,19 @@ pub async fn execute(config: CliConfig, command: DaemonCommands) -> Result<()> {
 
 /// Execute start command
 async fn execute_start_command(config: CliConfig, wait: bool, background: bool) -> Result<()> {
-    info!("Starting daemon for kiln: {}", config.kiln.path.display());
+    info!("Starting processor for kiln: {}", config.kiln.path.display());
 
-    println!("🚀 Starting crucible-daemon...");
+    println!("🚀 Starting kiln processor...");
     println!("📁 Kiln path: {}", config.kiln.path.display());
 
-    let mut daemon_manager = DaemonManager::new();
+    let mut processor_manager = KilnProcessor::new();
 
     if background {
-        println!("🔄 Starting daemon in background mode...");
-        // For now, we'll use the existing spawn_daemon_for_processing method
-        // In the future, this could start a persistent background daemon
-        match daemon_manager
-            .spawn_daemon_for_processing(&config.kiln.path)
+        println!("🔄 Starting processor in background mode...");
+        // For now, we'll use the existing process_kiln method
+        // In the future, this could start a persistent background processor
+        match processor_manager
+            .process_kiln(&config.kiln.path)
             .await
         {
             Ok(result) => {
@@ -46,14 +46,14 @@ async fn execute_start_command(config: CliConfig, wait: bool, background: bool) 
                 println!("📊 {}", result.processing_info());
             }
             Err(e) => {
-                error!("Failed to start daemon: {}", e);
+                error!("Failed to start processor: {}", e);
                 return Err(e);
             }
         }
     } else {
-        println!("🔄 Starting daemon in one-shot mode...");
-        match daemon_manager
-            .spawn_daemon_for_processing(&config.kiln.path)
+        println!("🔄 Starting processor in one-shot mode...");
+        match processor_manager
+            .process_kiln(&config.kiln.path)
             .await
         {
             Ok(result) => {
@@ -61,15 +61,15 @@ async fn execute_start_command(config: CliConfig, wait: bool, background: bool) 
                 println!("📊 {}", result.processing_info());
             }
             Err(e) => {
-                error!("Failed to start daemon: {}", e);
+                error!("Failed to start processor: {}", e);
                 return Err(e);
             }
         }
     }
 
     if wait {
-        println!("⏳ Waiting for daemon to complete processing...");
-        // The spawn_daemon_for_processing already waits for completion
+        println!("⏳ Waiting for processor to complete processing...");
+        // The process_kiln already waits for completion
         println!("✅ Daemon processing completed");
     }
 
@@ -78,19 +78,19 @@ async fn execute_start_command(config: CliConfig, wait: bool, background: bool) 
 
 /// Execute stop command
 async fn execute_stop_command(_config: CliConfig, force: bool) -> Result<()> {
-    info!("Stopping daemon (force: {})", force);
+    info!("Stopping processor (force: {})", force);
 
     if force {
-        println!("🛑 Force stopping crucible-daemon...");
+        println!("🛑 Force stopping kiln processor...");
     } else {
-        println!("🛑 Stopping crucible-daemon...");
+        println!("🛑 Stopping kiln processor...");
     }
 
-    // TODO: Implement daemon stopping logic
-    // This would require the daemon to be running in background mode
+    // TODO: Implement processor stopping logic
+    // This would require the processor to be running in background mode
     // with proper PID management and signal handling
     println!("⚠️  Daemon stopping not yet implemented");
-    println!("💡 Use Ctrl+C to stop running daemon processes");
+    println!("💡 Use Ctrl+C to stop running kiln processores");
 
     Ok(())
 }
@@ -98,15 +98,15 @@ async fn execute_stop_command(_config: CliConfig, force: bool) -> Result<()> {
 /// Execute status command
 async fn execute_status_command(config: CliConfig) -> Result<()> {
     info!(
-        "Checking daemon status for kiln: {}",
+        "Checking processor status for kiln: {}",
         config.kiln.path.display()
     );
 
-    println!("🔍 Checking daemon status...");
+    println!("🔍 Checking processor status...");
     println!("📁 Kiln path: {}", config.kiln.path.display());
 
-    // Check if embeddings exist (indirect daemon status check)
-    let daemon_manager = DaemonManager::new();
+    // Check if embeddings exist (indirect processor status check)
+    let processor_manager = KilnProcessor::new();
 
     // Initialize database connection to check embeddings
     let db_config = crucible_surrealdb::SurrealDbConfig {
@@ -118,14 +118,14 @@ async fn execute_status_command(config: CliConfig) -> Result<()> {
     };
 
     match crucible_surrealdb::SurrealClient::new(db_config).await {
-        Ok(client) => match daemon_manager.check_embeddings_exist(&client).await {
+        Ok(client) => match processor_manager.check_embeddings_exist(&client).await {
             Ok(true) => {
                 println!("✅ Daemon has processed this kiln");
                 println!("📊 Embeddings are available for semantic search");
             }
             Ok(false) => {
                 println!("❌ No embeddings found");
-                println!("💡 Run 'crucible daemon start' to process the kiln");
+                println!("💡 Run 'crucible processor start' to process the kiln");
             }
             Err(e) => {
                 println!("⚠️  Could not check embeddings: {}", e);
@@ -133,7 +133,7 @@ async fn execute_status_command(config: CliConfig) -> Result<()> {
         },
         Err(e) => {
             println!("❌ Could not connect to database: {}", e);
-            println!("💡 Make sure the daemon has run at least once");
+            println!("💡 Make sure the processor has run at least once");
         }
     }
 
@@ -142,49 +142,49 @@ async fn execute_status_command(config: CliConfig) -> Result<()> {
 
 /// Execute restart command
 async fn execute_restart_command(config: CliConfig, wait: bool, force: bool) -> Result<()> {
-    info!("Restarting daemon (wait: {}, force: {})", wait, force);
+    info!("Restarting processor (wait: {}, force: {})", wait, force);
 
-    println!("🔄 Restarting crucible-daemon...");
+    println!("🔄 Restarting kiln processor...");
 
-    // Stop existing daemon (if implemented)
+    // Stop existing processor (if implemented)
     if force {
-        println!("🛑 Force stopping any existing daemon...");
+        println!("🛑 Force stopping any existing processor...");
     }
 
-    // Start new daemon
+    // Start new processor
     execute_start_command(config, wait, false).await
 }
 
 #[derive(clap::Parser, Debug)]
-pub enum DaemonCommands {
-    /// Start the daemon process
+pub enum ProcessCommands {
+    /// Start the kiln processor
     Start {
-        /// Wait for daemon to complete processing
+        /// Wait for processor to complete processing
         #[arg(short, long)]
         wait: bool,
 
-        /// Start daemon in background mode
+        /// Start processor in background mode
         #[arg(short, long)]
         background: bool,
     },
 
-    /// Stop the daemon process
+    /// Stop the kiln processor
     Stop {
-        /// Force stop the daemon
+        /// Force stop the processor
         #[arg(short, long)]
         force: bool,
     },
 
-    /// Check daemon status
+    /// Check processor status
     Status,
 
-    /// Restart the daemon process
+    /// Restart the kiln processor
     Restart {
-        /// Wait for daemon to complete processing
+        /// Wait for processor to complete processing
         #[arg(short, long)]
         wait: bool,
 
-        /// Force restart the daemon
+        /// Force restart the processor
         #[arg(short, long)]
         force: bool,
     },

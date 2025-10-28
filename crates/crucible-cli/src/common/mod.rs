@@ -1,7 +1,7 @@
 //! Common utilities and shared components for Crucible CLI
 
-pub mod daemon_manager;
+pub mod kiln_processor;
 pub mod tool_manager;
 
-pub use daemon_manager::{DaemonManager, DaemonResult};
+pub use kiln_processor::{KilnProcessor, ProcessingResult};
 pub use tool_manager::{CrucibleToolManager, ToolManagerConfig};

@@ -1098,7 +1098,7 @@ impl DaemonConfig {
             // Set database connection to use vault's .crucible directory
             // Use the same database path, namespace, and database as the CLI for consistency
             config.database.connection.connection_string = format!(
-                "file://{}/.crucible/embeddings.db/crucible/vault",
+                "file://{}/.crucible/kiln.db/crucible/vault",
                 vault_path.display()
             );
         } else {
