@@ -90,7 +90,7 @@ async fn setup_test_vault_with_embeddings() -> Result<(TempDir, CliConfig, Surre
         doc.file_size = content.len() as u64;
 
         // Store document
-        let doc_id = store_parsed_document(&client, &doc).await?;
+        let doc_id = store_parsed_document(&client, &doc, &vault_path).await?;
 
         // Create and store embedding
         let mut embedding = DocumentEmbedding::new(

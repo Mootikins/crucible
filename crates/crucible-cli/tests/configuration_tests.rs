@@ -418,7 +418,7 @@ fn test_path_derivation() -> Result<()> {
     let config = CliConfig::load(None, None, None)?;
 
     // Test database path derivation
-    let expected_db = vault_path.join(".crucible/embeddings.db");
+    let expected_db = vault_path.join(".crucible/kiln.db");
     assert_eq!(config.database_path(), expected_db);
 
     // Test tools path derivation
@@ -556,6 +556,7 @@ fn test_configuration_error_handling() -> Result<()> {
             embedding_url: "http://localhost:11434".to_string(),
             embedding_model: Some("test-model".to_string()),
         },
+        embedding: None,
         llm: Default::default(),
         network: Default::default(),
         services: Default::default(),

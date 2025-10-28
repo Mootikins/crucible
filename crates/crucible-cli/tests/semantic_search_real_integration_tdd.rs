@@ -184,7 +184,7 @@ async fn run_semantic_search_json(kiln_path: &PathBuf, query: &str) -> Result<Va
 
 /// Helper to check if database exists and has embeddings
 async fn check_database_embeddings(kiln_path: &PathBuf) -> Result<bool> {
-    let db_path = kiln_path.join(".crucible/embeddings.db");
+    let db_path = kiln_path.join(".crucible/kiln.db");
 
     if !db_path.exists() {
         return Ok(false);

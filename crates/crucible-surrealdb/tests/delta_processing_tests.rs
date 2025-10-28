@@ -45,19 +45,17 @@ async fn create_and_store_document(
     client: &SurrealClient,
     path: PathBuf,
     content: &str,
+    kiln_root: &PathBuf,
 ) -> Result<String> {
     let mut doc = ParsedDocument::new(path);
     doc.content.plain_text = content.to_string();
 
-    // Calculate hash using the same method as file scanning
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(content.as_bytes());
-    doc.content_hash = format!("{:x}", hasher.finalize());
+    // Calculate hash using MD5 to match what convert_paths_to_file_infos uses
+    doc.content_hash = format!("{:x}", md5::compute(content.as_bytes()));
 
     doc.file_size = content.len() as u64;
 
-    let doc_id = store_parsed_document(client, &doc).await?;
+    let doc_id = store_parsed_document(client, &doc, kiln_root).await?;
     Ok(doc_id)
 }
 
@@ -82,6 +80,7 @@ async fn test_delete_document_embeddings_callable() -> Result<()> {
 #[tokio::test]
 async fn test_detect_changed_files_single_change() -> Result<()> {
     let temp_dir = TempDir::new()?;
+    let kiln_root = temp_dir.path().to_path_buf();
     let (_db_temp, client) = create_test_client().await?;
 
     // Create 3 files
@@ -90,9 +89,9 @@ async fn test_detect_changed_files_single_change() -> Result<()> {
     let file3 = create_test_file(&temp_dir, "note3.md", "Content 3").await?;
 
     // Store all files in database
-    create_and_store_document(&client, file1.clone(), "Content 1").await?;
-    create_and_store_document(&client, file2.clone(), "Content 2").await?;
-    create_and_store_document(&client, file3.clone(), "Content 3").await?;
+    create_and_store_document(&client, file1.clone(), "Content 1", &kiln_root).await?;
+    create_and_store_document(&client, file2.clone(), "Content 2", &kiln_root).await?;
+    create_and_store_document(&client, file3.clone(), "Content 3", &kiln_root).await?;
 
     // Modify one file
     tokio::fs::write(&file2, "Modified Content 2").await?;
@@ -101,7 +100,7 @@ async fn test_detect_changed_files_single_change() -> Result<()> {
     let config = VaultScannerConfig::default();
     let changed_paths = vec![file1.clone(), file2.clone(), file3.clone()];
 
-    let result = process_vault_delta(changed_paths, &client, &config, None).await?;
+    let result = process_vault_delta(changed_paths, &client, &config, None, &kiln_root).await?;
 
     // Should only process the one changed file
     assert_eq!(
@@ -115,20 +114,21 @@ async fn test_detect_changed_files_single_change() -> Result<()> {
 #[tokio::test]
 async fn test_detect_changed_files_no_changes() -> Result<()> {
     let temp_dir = TempDir::new()?;
+    let kiln_root = temp_dir.path().to_path_buf();
     let (_db_temp, client) = create_test_client().await?;
 
     // Create and store files
     let file1 = create_test_file(&temp_dir, "note1.md", "Content 1").await?;
     let file2 = create_test_file(&temp_dir, "note2.md", "Content 2").await?;
 
-    create_and_store_document(&client, file1.clone(), "Content 1").await?;
-    create_and_store_document(&client, file2.clone(), "Content 2").await?;
+    create_and_store_document(&client, file1.clone(), "Content 1", &kiln_root).await?;
+    create_and_store_document(&client, file2.clone(), "Content 2", &kiln_root).await?;
 
     // Don't modify anything
     let config = VaultScannerConfig::default();
     let changed_paths = vec![file1, file2];
 
-    let result = process_vault_delta(changed_paths, &client, &config, None).await?;
+    let result = process_vault_delta(changed_paths, &client, &config, None, &kiln_root).await?;
 
     // Should not process any files
     assert_eq!(
@@ -142,20 +142,21 @@ async fn test_detect_changed_files_no_changes() -> Result<()> {
 #[tokio::test]
 async fn test_convert_paths_handles_missing_files() -> Result<()> {
     let temp_dir = TempDir::new()?;
+    let kiln_root = temp_dir.path().to_path_buf();
     let (_db_temp, client) = create_test_client().await?;
 
     // Create one file, leave another non-existent
     let file1 = create_test_file(&temp_dir, "note1.md", "Content 1").await?;
     let file2 = temp_dir.path().join("nonexistent.md"); // Doesn't exist
 
-    create_and_store_document(&client, file1.clone(), "Content 1").await?;
+    create_and_store_document(&client, file1.clone(), "Content 1", &kiln_root).await?;
 
     // Try to process both
     let config = VaultScannerConfig::default();
     let changed_paths = vec![file1, file2];
 
     // Should gracefully skip missing file
-    let result = process_vault_delta(changed_paths, &client, &config, None).await;
+    let result = process_vault_delta(changed_paths, &client, &config, None, &kiln_root).await;
     assert!(result.is_ok(), "Should handle missing files gracefully");
 
     Ok(())
@@ -164,13 +165,14 @@ async fn test_convert_paths_handles_missing_files() -> Result<()> {
 #[tokio::test]
 async fn test_bulk_query_efficiency() -> Result<()> {
     let temp_dir = TempDir::new()?;
+    let kiln_root = temp_dir.path().to_path_buf();
     let (_db_temp, client) = create_test_client().await?;
 
     // Create 10 files (simulating bulk operation)
     let mut paths = Vec::new();
     for i in 0..10 {
         let file = create_test_file(&temp_dir, &format!("note{}.md", i), &format!("Content {}", i)).await?;
-        create_and_store_document(&client, file.clone(), &format!("Content {}", i)).await?;
+        create_and_store_document(&client, file.clone(), &format!("Content {}", i), &kiln_root).await?;
         paths.push(file);
     }
 
@@ -178,7 +180,7 @@ async fn test_bulk_query_efficiency() -> Result<()> {
     let config = VaultScannerConfig::default();
     let start = std::time::Instant::now();
 
-    let result = process_vault_delta(paths, &client, &config, None).await?;
+    let result = process_vault_delta(paths, &client, &config, None, &kiln_root).await?;
 
     let duration = start.elapsed();
 
@@ -198,11 +200,12 @@ async fn test_bulk_query_efficiency() -> Result<()> {
 #[tokio::test]
 async fn test_delta_processing_performance() -> Result<()> {
     let temp_dir = TempDir::new()?;
+    let kiln_root = temp_dir.path().to_path_buf();
     let (_db_temp, client) = create_test_client().await?;
 
     // Create and store a file
     let file = create_test_file(&temp_dir, "note.md", "Original content").await?;
-    create_and_store_document(&client, file.clone(), "Original content").await?;
+    create_and_store_document(&client, file.clone(), "Original content", &kiln_root).await?;
 
     // Modify the file
     tokio::fs::write(&file, "Modified content").await?;
@@ -211,7 +214,7 @@ async fn test_delta_processing_performance() -> Result<()> {
     let config = VaultScannerConfig::default();
     let start = std::time::Instant::now();
 
-    let result = process_vault_delta(vec![file], &client, &config, None).await?;
+    let result = process_vault_delta(vec![file], &client, &config, None, &kiln_root).await?;
 
     let duration = start.elapsed();
 
@@ -229,10 +232,12 @@ async fn test_delta_processing_performance() -> Result<()> {
 
 #[tokio::test]
 async fn test_empty_input_handling() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let kiln_root = temp_dir.path().to_path_buf();
     let (_db_temp, client) = create_test_client().await?;
 
     let config = VaultScannerConfig::default();
-    let result = process_vault_delta(vec![], &client, &config, None).await?;
+    let result = process_vault_delta(vec![], &client, &config, None, &kiln_root).await?;
 
     assert_eq!(result.processed_count, 0);
     assert_eq!(result.failed_count, 0);
@@ -244,6 +249,7 @@ async fn test_empty_input_handling() -> Result<()> {
 #[tokio::test]
 async fn test_new_files_detected_as_changed() -> Result<()> {
     let temp_dir = TempDir::new()?;
+    let kiln_root = temp_dir.path().to_path_buf();
     let (_db_temp, client) = create_test_client().await?;
 
     // Create files but DON'T store them in database
@@ -251,7 +257,7 @@ async fn test_new_files_detected_as_changed() -> Result<()> {
     let file2 = create_test_file(&temp_dir, "new2.md", "New content 2").await?;
 
     let config = VaultScannerConfig::default();
-    let result = process_vault_delta(vec![file1, file2], &client, &config, None).await?;
+    let result = process_vault_delta(vec![file1, file2], &client, &config, None, &kiln_root).await?;
 
     // Should process both new files
     assert_eq!(
