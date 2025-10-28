@@ -17,7 +17,7 @@ syn = { workspace = true }
 
 [dev-dependencies]
 # Testing utilities
-trybuild = "1.0"
+trybuild = "1.0.113"
 
 # For testing generated code
 serde_json = { workspace = true }
