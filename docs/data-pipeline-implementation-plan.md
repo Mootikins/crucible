@@ -1,5 +1,7 @@
 # Data Pipeline Implementation Plan: Files → Embeddings → Search → Queries
 
+**⚠️ NOTE**: This document may reference outdated environment variable configuration. All configuration is now in config files.
+
 ## Overview
 Start with the data pipeline foundation and work our way up to user queries. This ensures data flows correctly from file parsing through embedding generation to user-facing search functionality.
 

@@ -1157,17 +1157,18 @@ history_size = 1000
 
 ### Environment Variables
 
+Environment variables are used only for sensitive data (API keys, passwords) and runtime overrides:
+
 | Variable | Description |
 |----------|-------------|
-| `CRUCIBLE_VAULT_PATH` | Override vault path |
-| `CRUCIBLE_CONFIG_PATH` | Override config file path |
+| `CRUCIBLE_CONFIG` | Override config file path |
+| `CRUCIBLE_PROFILE` | Select config profile to use |
 | `CRUCIBLE_LOG_LEVEL` | Set log level (trace,debug,info,warn,error) |
 | `CRUCIBLE_TEST_MODE` | Enable test mode (skip user config loading) |
-| `CRUCIBLE_EMBEDDING_URL` | Override embedding service URL |
-| `CRUCIBLE_EMBEDDING_MODEL` | Override embedding model |
-| `CRUCIBLE_LLM_PROVIDER` | Override LLM provider |
-| `CRUCIBLE_LLM_MODEL` | Override LLM model |
-| `CRUCIBLE_LLM_BASE_URL` | Override LLM base URL |
+| `OPENAI_API_KEY` | OpenAI API key (read by config) |
+| `DATABASE_URL` | Database connection URL (read by config) |
+
+Note: All other configuration should be in config files, not environment variables.
 
 ## Advanced Usage
 

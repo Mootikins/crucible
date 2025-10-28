@@ -1,4 +1,6 @@
-# Configuration Consolidation Plan - Phase 2
+# Configuration Consolidation Plan
+
+**⚠️ DEPRECATED**: This plan is complete. Configuration is now in config files, not environment variables. - Phase 2
 
 **Status:** Planning Document
 **Created:** 2025-10-26

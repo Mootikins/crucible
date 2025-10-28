@@ -30,10 +30,10 @@ The crucible-config system supports:
 **Usage**:
 ```bash
 # Use the development configuration
-CRUCIBLE_CONFIG_PATH=./examples/development-config.yaml crucible-mcp-server
+crucible-cli --config ./examples/development-config.yaml
 
 # Or switch to testing profile within the config
-CRUCIBLE_PROFILE=testing crucible-mcp-server --config ./examples/development-config.yaml
+CRUCIBLE_PROFILE=testing crucible-cli --config ./examples/development-config.yaml
 ```
 
 **Key Configuration Sections**:
@@ -58,15 +58,15 @@ CRUCIBLE_PROFILE=testing crucible-mcp-server --config ./examples/development-con
 
 **Usage**:
 ```bash
-# Run tests with mocking
-CRUCIBLE_CONFIG_PATH=./examples/testing-config.toml cargo test
+# Run tests with config file
+cargo test -- --config ./examples/testing-config.toml
 
 # Run integration tests
 CRUCIBLE_PROFILE=integration cargo test integration_tests
 
 # CI/CD pipeline usage
-export CRUCIBLE_CI_MODE=true
-export CRUCIBLE_CONFIG_PATH=./examples/testing-config.toml
+export CRUCIBLE_CONFIG=./examples/testing-config.toml
+cargo test
 ```
 
 **Key Configuration Sections**:
@@ -92,15 +92,14 @@ export CRUCIBLE_CONFIG_PATH=./examples/testing-config.toml
 
 **Usage**:
 ```bash
-# Production deployment with environment variables
+# Production deployment - secrets read from environment
 export OPENAI_API_KEY=your-openai-api-key
 export DATABASE_URL=postgres://user:pass@host:port/db
 export SSL_CERT_PATH=/etc/ssl/certs/crucible.crt
 export SSL_KEY_PATH=/etc/ssl/private/crucible.key
 export JWT_SECRET=your-jwt-secret
 
-export CRUCIBLE_CONFIG_PATH=./examples/production-config.yaml
-crucible-mcp-server
+crucible-cli --config ./examples/production-config.yaml
 ```
 
 **Key Configuration Sections**:
@@ -143,17 +142,18 @@ cp examples/production-config.yaml ./crucible-config.yaml
 # Then customize with your production values
 ```
 
-### 2. Configure Environment Variables
+### 2. Configure Secrets
+
+Store sensitive values in environment variables referenced by config files:
 
 **Development** (minimal setup):
 ```bash
-export OBSIDIAN_VAULT_PATH=/path/to/your/vault
+# No secrets required for local Ollama
 ```
 
 **Testing** (CI/CD):
 ```bash
-export CRUCIBLE_CI_MODE=true
-export CRUCIBLE_TEST_MODE=true
+# No secrets required for mock services
 ```
 
 **Production** (required):
@@ -169,10 +169,10 @@ export JWT_SECRET=your-jwt-secret
 
 ```bash
 # Using configuration file
-CRUCIBLE_CONFIG_PATH=./crucible-config.yaml crucible-mcp-server
+crucible-cli --config ./crucible-config.yaml
 
 # Or specify profile
-CRUCIBLE_PROFILE=production crucible-mcp-server --config ./crucible-config.yaml
+CRUCIBLE_PROFILE=production crucible-cli --config ./crucible-config.yaml
 ```
 
 ## Configuration System Features
