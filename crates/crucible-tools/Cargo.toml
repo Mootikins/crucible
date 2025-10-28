@@ -58,14 +58,14 @@ pathdiff = "0.2"
 url = "2.5"
 
 # Validation
-validator = { version = "0.18", features = ["derive"] }
+validator = { version = "0.20", features = ["derive"] }
 
 # Hashing
-md5 = "0.7"
+md5 = "0.8"
 sha2 = "0.10"
 
 # Random number generation
-rand = "0.8"
+rand = "0.9"
 
 # File system operations for vault parsing
 walkdir = "2.4"
