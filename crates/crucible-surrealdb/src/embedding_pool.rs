@@ -839,9 +839,21 @@ impl EmbeddingThreadPool {
                 LlmEmbeddingConfig::openai(api_key, Some(config.model.name.clone()))
             }
             EmbeddingProviderType::Candle => {
-                // For Candle, map to OpenAI-like config for now
-                // This should be replaced with proper Candle configuration
-                LlmEmbeddingConfig::openai("dummy_key".to_string(), Some(config.model.name.clone()))
+                // For Candle, use candle config
+                LlmEmbeddingConfig::candle(
+                    Some(config.model.name.clone()),
+                    None, // cache_dir
+                    None, // memory_mb
+                    None, // device
+                )
+            }
+            EmbeddingProviderType::FastEmbed => {
+                // For FastEmbed, use fastembed config
+                LlmEmbeddingConfig::fastembed(
+                    Some(config.model.name.clone()),
+                    None, // cache_dir
+                    None, // batch_size
+                )
             }
             EmbeddingProviderType::Custom(_) => {
                 return Err(anyhow!("Custom embedding providers are not yet supported"));

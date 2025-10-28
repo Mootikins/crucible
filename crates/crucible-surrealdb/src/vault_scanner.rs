@@ -681,8 +681,15 @@ impl VaultScanner {
         // Parse the file
         let document = parse_file_to_document(&file_info.path).await?;
 
+        // Get kiln root from state (set during scan_vault_directory)
+        let kiln_root = self
+            .state
+            .current_vault_path
+            .as_ref()
+            .ok_or_else(|| anyhow!("Vault path not set in scanner state"))?;
+
         // Store the document
-        let doc_id = store_parsed_document(client, &document).await?;
+        let doc_id = store_parsed_document(client, &document, kiln_root).await?;
 
         // Create relationships
         if self.config.process_wikilinks {

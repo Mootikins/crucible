@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::embedding_pool::EmbeddingThreadPool;
-use crate::multi_client::SurrealClient;
+use crate::SurrealClient;
 use crate::vault_scanner::VaultScanResult;
 use crucible_core::parser::ParsedDocument;
 
@@ -98,24 +98,28 @@ pub struct VaultPipelineConnector {
     config: VaultPipelineConfig,
     /// Document ID cache for consistency
     document_id_cache: HashMap<PathBuf, String>,
+    /// Kiln root path (for generating relative document IDs)
+    kiln_root: PathBuf,
 }
 
 impl VaultPipelineConnector {
     /// Create a new vault pipeline connector
-    pub fn new(thread_pool: EmbeddingThreadPool) -> Self {
+    pub fn new(thread_pool: EmbeddingThreadPool, kiln_root: PathBuf) -> Self {
         Self {
             thread_pool,
             config: VaultPipelineConfig::default(),
             document_id_cache: HashMap::new(),
+            kiln_root,
         }
     }
 
     /// Create connector with custom configuration
-    pub fn with_config(thread_pool: EmbeddingThreadPool, config: VaultPipelineConfig) -> Self {
+    pub fn with_config(thread_pool: EmbeddingThreadPool, config: VaultPipelineConfig, kiln_root: PathBuf) -> Self {
         Self {
             thread_pool,
             config,
             document_id_cache: HashMap::new(),
+            kiln_root,
         }
     }
 
@@ -131,12 +135,12 @@ impl VaultPipelineConnector {
 
         info!("Processing document: {}", document.path.display());
 
-        // Generate document ID
-        let document_id = generate_document_id_from_path(&document.path);
+        // Generate document ID (relative to kiln root)
+        let document_id = generate_document_id_from_path(&document.path, &self.kiln_root);
 
         // Transform ParsedDocument to embedding inputs
         let embedding_inputs =
-            transform_parsed_document_to_embedding_inputs(document, &self.config);
+            transform_parsed_document_to_embedding_inputs(document, &self.config, &self.kiln_root);
 
         if embedding_inputs.is_empty() {
             warn!(
@@ -325,7 +329,7 @@ impl VaultPipelineConnector {
         let mut skipped_documents = 0;
 
         for document in documents {
-            let document_id = generate_document_id_from_path(&document.path);
+            let document_id = generate_document_id_from_path(&document.path, &self.kiln_root);
 
             // Check if document needs processing based on content hash
             match check_document_needs_processing(client, &document_id, &document.content_hash)
@@ -370,7 +374,7 @@ impl VaultPipelineConnector {
 
         // Clear existing embeddings for documents that need reprocessing
         for document in &documents_to_process {
-            let document_id = generate_document_id_from_path(&document.path);
+            let document_id = generate_document_id_from_path(&document.path, &self.kiln_root);
             if let Err(e) = clear_document_embeddings(client, &document_id).await {
                 warn!(
                     "Failed to clear embeddings for document {}: {}",
@@ -392,6 +396,7 @@ impl Clone for VaultPipelineConnector {
             thread_pool: self.thread_pool.clone(),
             config: self.config.clone(),
             document_id_cache: self.document_id_cache.clone(),
+            kiln_root: self.kiln_root.clone(),
         }
     }
 }
@@ -399,9 +404,19 @@ impl Clone for VaultPipelineConnector {
 /// Generate document ID from file path
 ///
 /// **TDD Function**: Implements consistent document ID generation
-pub fn generate_document_id_from_path(path: &Path) -> String {
+///
+/// # Arguments
+/// * `path` - The absolute file path
+/// * `kiln_root` - The root directory of the kiln (used to create relative paths)
+///
+/// # Returns
+/// A sanitized document ID based on the relative path from kiln_root
+pub fn generate_document_id_from_path(path: &Path, kiln_root: &Path) -> String {
+    // Strip kiln root prefix to create relative path
+    let relative_path = path.strip_prefix(kiln_root).unwrap_or(path);
+
     // Convert to string and normalize
-    let path_str = path.to_string_lossy();
+    let path_str = relative_path.to_string_lossy();
 
     // Remove leading slashes and normalize path separators
     let normalized = path_str
@@ -496,13 +511,14 @@ pub fn generate_document_id_from_path(path: &Path) -> String {
 #[allow(dead_code)]
 fn generate_document_id_from_path_cached(
     path: &Path,
+    kiln_root: &Path,
     cache: &mut HashMap<PathBuf, String>,
 ) -> String {
     if let Some(cached_id) = cache.get(path) {
         return cached_id.clone();
     }
 
-    let document_id = generate_document_id_from_path(path);
+    let document_id = generate_document_id_from_path(path, kiln_root);
     cache.insert(path.to_path_buf(), document_id.clone());
     document_id
 }
@@ -513,6 +529,7 @@ fn generate_document_id_from_path_cached(
 pub fn transform_parsed_document_to_embedding_inputs(
     document: &ParsedDocument,
     config: &VaultPipelineConfig,
+    kiln_root: &Path,
 ) -> Vec<(String, String)> {
     let mut inputs = Vec::new();
 
@@ -523,8 +540,8 @@ pub fn transform_parsed_document_to_embedding_inputs(
         return inputs;
     }
 
-    // Generate document ID
-    let document_id = generate_document_id_from_path(&document.path);
+    // Generate document ID (relative to kiln root)
+    let document_id = generate_document_id_from_path(&document.path, kiln_root);
 
     // Prepare content with metadata if enabled
     let mut enhanced_content = String::new();
@@ -634,10 +651,14 @@ async fn store_embedding_in_database(
     document_id: &str,
     content_hash: &str,
 ) -> Result<()> {
-    use crate::embedding_config::DocumentEmbedding;
-    use crate::vault_integration::store_document_embedding;
+    use crate::vault_integration::store_embedding;
 
-    // Create a DocumentEmbedding with mock vector data
+    // Create the note_id from document_id
+    // document_id is the relative path like "Projects_file_md"
+    // note_id should be "notes:Projects_file_md"
+    let note_id = format!("notes:{}", document_id);
+
+    // Create a mock vector for now
     // NOTE: In production, this vector would come from the embedding thread pool
     // For now, we use a mock vector (768 dimensions with random-ish values based on hash)
     let dimensions = 768;
@@ -649,15 +670,23 @@ async fn store_embedding_in_database(
         })
         .collect();
 
-    let embedding = DocumentEmbedding::new(
-        document_id.to_string(),
-        mock_vector,
-        "nomic-embed-text".to_string(),  // Match the model from config
-    )
-    .with_chunk_info(chunk_id.to_string(), 1000, 0);  // Mock chunk info
+    // Extract chunk position from chunk_id
+    // chunk_id might be like "Projects_file_md_chunk_0" or just "Projects_file_md"
+    let chunk_position = chunk_id
+        .rsplit_once("_chunk_")
+        .and_then(|(_, pos)| pos.parse::<usize>().ok())
+        .unwrap_or(0);
 
-    // Store in database using the real storage function
-    store_document_embedding(client, &embedding).await?;
+    // Store using the NEW graph-based store_embedding function
+    store_embedding(
+        client,
+        &note_id,
+        mock_vector,
+        "nomic-embed-text",  // embedding model
+        1000,                 // chunk_size (mock value)
+        chunk_position,
+    )
+    .await?;
 
     debug!(
         "Stored embedding for chunk {} (document: {}, hash: {}, dims: {})",
@@ -699,34 +728,36 @@ mod tests {
 
     #[tokio::test]
     async fn test_document_id_generation() {
+        let kiln_root = PathBuf::from("/");
         let test_cases = vec![
-            ("/vault/document.md", "vault_document.md"),
-            ("/vault/nested/document.md", "vault_nested_document.md"),
+            ("/vault/document.md", "vault_document_md"),
+            ("/vault/nested/document.md", "vault_nested_document_md"),
             (
                 "/vault/with spaces/document.md",
-                "vault_with_spaces_document.md",
+                "vault_with_spaces_document_md",
             ),
         ];
 
-        for (path, expected_contains) in test_cases {
-            let document_id = generate_document_id_from_path(&PathBuf::from(path));
+        for (path, _expected_contains) in test_cases {
+            let document_id = generate_document_id_from_path(&PathBuf::from(path), &kiln_root);
             assert!(!document_id.is_empty());
             assert!(!document_id.contains('/'));
             assert!(!document_id.contains('\\'));
 
             // Test consistency
-            let id2 = generate_document_id_from_path(&PathBuf::from(path));
+            let id2 = generate_document_id_from_path(&PathBuf::from(path), &kiln_root);
             assert_eq!(document_id, id2);
         }
     }
 
     #[tokio::test]
     async fn test_document_transformation() {
+        let kiln_root = PathBuf::from("/test");
         let mut document = ParsedDocument::new(PathBuf::from("/test/doc.md"));
         document.content.plain_text = "Test content".to_string();
 
         let config = VaultPipelineConfig::default();
-        let inputs = transform_parsed_document_to_embedding_inputs(&document, &config);
+        let inputs = transform_parsed_document_to_embedding_inputs(&document, &config, &kiln_root);
 
         assert!(!inputs.is_empty());
         for (id, content) in inputs {
