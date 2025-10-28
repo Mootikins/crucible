@@ -134,6 +134,44 @@ impl EmbeddingProviderConfig {
         }
     }
 
+    /// Create a new FastEmbed embedding provider configuration.
+    pub fn fastembed(
+        model: Option<String>,
+        cache_dir: Option<String>,
+        batch_size: Option<u32>,
+    ) -> Self {
+        let mut options = HashMap::new();
+        if let Some(cache_dir) = cache_dir {
+            options.insert(
+                "cache_dir".to_string(),
+                serde_json::Value::String(cache_dir),
+            );
+        }
+        if let Some(batch_size) = batch_size {
+            options.insert(
+                "batch_size".to_string(),
+                serde_json::Value::Number(batch_size.into()),
+            );
+        }
+
+        Self {
+            provider_type: EmbeddingProviderType::FastEmbed,
+            api: ApiConfig {
+                key: None,
+                base_url: Some("local".to_string()),
+                timeout_seconds: Some(60),
+                retry_attempts: Some(1),
+                headers: HashMap::new(),
+            },
+            model: ModelConfig {
+                name: model.unwrap_or_else(|| "bge-small-en-v1.5".to_string()),
+                dimensions: None,
+                max_tokens: Some(512),
+            },
+            options,
+        }
+    }
+
     /// Create a new Mock embedding provider configuration for testing.
     pub fn mock() -> Self {
         Self {
@@ -211,6 +249,8 @@ pub enum EmbeddingProviderType {
     Ollama,
     /// Candle local embeddings.
     Candle,
+    /// FastEmbed local embeddings (ONNX-based).
+    FastEmbed,
     /// Mock embeddings for testing.
     Mock,
     /// Cohere embeddings.
@@ -224,7 +264,7 @@ pub enum EmbeddingProviderType {
 impl EmbeddingProviderType {
     /// Check if this provider type requires an API key.
     pub fn requires_api_key(&self) -> bool {
-        !matches!(self, Self::Ollama | Self::Candle | Self::Mock)
+        !matches!(self, Self::Ollama | Self::Candle | Self::FastEmbed | Self::Mock)
     }
 
     /// Get the default base URL for the provider.
@@ -233,6 +273,7 @@ impl EmbeddingProviderType {
             Self::OpenAI => Some("https://api.openai.com/v1".to_string()),
             Self::Ollama => Some("http://localhost:11434".to_string()),
             Self::Candle => Some("local".to_string()),
+            Self::FastEmbed => Some("local".to_string()),
             Self::Mock => Some("mock".to_string()),
             Self::Cohere => Some("https://api.cohere.ai/v1".to_string()),
             Self::VertexAI => Some("https://aiplatform.googleapis.com/v1".to_string()),
@@ -246,6 +287,7 @@ impl EmbeddingProviderType {
             Self::OpenAI => Some("text-embedding-3-small".to_string()),
             Self::Ollama => Some("nomic-embed-text".to_string()),
             Self::Candle => Some("nomic-embed-text-v1.5".to_string()),
+            Self::FastEmbed => Some("bge-small-en-v1.5".to_string()),
             Self::Mock => Some("mock-test-model".to_string()),
             Self::Cohere => Some("embed-english-v3.0".to_string()),
             Self::VertexAI => Some("textembedding-gecko@003".to_string()),

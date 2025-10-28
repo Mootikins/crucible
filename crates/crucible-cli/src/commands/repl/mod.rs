@@ -681,7 +681,7 @@ impl ReplConfig {
             kiln_path,
             db_path: db_path
                 .map(|p| p.into())
-                .unwrap_or_else(|| config_dir.join("embeddings.db")),
+                .unwrap_or_else(|| config_dir.join("kiln.db")),
             history_file: config_dir.join("repl_history"),
             tool_dir: tool_dir
                 .map(|p| p.into())

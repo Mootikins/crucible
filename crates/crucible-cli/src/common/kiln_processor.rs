@@ -1,6 +1,6 @@
-//! Daemon management utilities for CLI
+//! Kiln processing utilities for CLI
 //!
-//! Provides functionality to spawn and manage the crucible-daemon process
+//! Provides functionality to spawn and manage the kiln processor process
 //! for one-shot vault processing when embeddings are missing.
 
 use anyhow::Result;
@@ -12,12 +12,12 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
 /// Daemon process manager for one-shot processing
-pub struct DaemonManager {
+pub struct KilnProcessor {
     progress_bar: Option<ProgressBar>,
 }
 
-impl DaemonManager {
-    /// Create a new daemon manager
+impl KilnProcessor {
+    /// Create a new kiln processor
     pub fn new() -> Self {
         Self { progress_bar: None }
     }
@@ -60,10 +60,10 @@ impl DaemonManager {
     }
 
     /// Spawn daemon for one-shot processing with progress feedback
-    pub async fn spawn_daemon_for_processing(
+    pub async fn process_kiln(
         &mut self,
         vault_path: &std::path::Path,
-    ) -> Result<DaemonResult> {
+    ) -> Result<ProcessingResult> {
         info!("Starting daemon for one-shot kiln processing...");
 
         // Validate kiln path exists
@@ -88,7 +88,7 @@ impl DaemonManager {
 
         let start_time = Instant::now();
 
-        // Spawn the daemon process - use the built binary from target directory
+        // Spawn the kiln processor - use the built binary from target directory
         let crate_root = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| {
             std::env::current_dir()
                 .unwrap()
@@ -98,9 +98,9 @@ impl DaemonManager {
 
         // Try debug build first, then release build as fallback
         let daemon_path_debug =
-            std::path::PathBuf::from(&crate_root).join("../../target/debug/crucible-daemon");
+            std::path::PathBuf::from(&crate_root).join("../../target/debug/kiln processor");
         let daemon_path_release =
-            std::path::PathBuf::from(&crate_root).join("../../target/release/crucible-daemon");
+            std::path::PathBuf::from(&crate_root).join("../../target/release/kiln processor");
 
         let daemon_path = if daemon_path_debug.exists() {
             daemon_path_debug
@@ -108,8 +108,8 @@ impl DaemonManager {
             daemon_path_release
         } else {
             return Err(anyhow::anyhow!(
-                "crucible-daemon binary not found at {} or {}. \
-                Run 'cargo build -p crucible-daemon' to build the daemon.",
+                "kiln processor binary not found at {} or {}. \
+                Run 'cargo build -p kiln processor' to build the daemon.",
                 daemon_path_debug.display(),
                 daemon_path_release.display()
             ));
@@ -139,8 +139,8 @@ impl DaemonManager {
             .spawn()
             .map_err(|e| {
                 anyhow::anyhow!(
-                    "Failed to spawn crucible-daemon from {}: {}. \
-                Make sure the daemon is built (run 'cargo build -p crucible-daemon').",
+                    "Failed to spawn kiln processor from {}: {}. \
+                Make sure the daemon is built (run 'cargo build -p kiln processor').",
                     daemon_path.display(),
                     e
                 )
@@ -152,7 +152,7 @@ impl DaemonManager {
 
         // Wait for the daemon to complete
         let start_wait = Instant::now();
-        debug!("Waiting for daemon process to complete...");
+        debug!("Waiting for kiln processor to complete...");
 
         match child.wait().await {
             Ok(status) => {
@@ -165,7 +165,7 @@ impl DaemonManager {
                     self.progress_bar = Some(pb);
                 }
 
-                let result = DaemonResult {
+                let result = ProcessingResult {
                     success: status.success(),
                     exit_code: status.code(),
                     processing_time: elapsed,
@@ -201,8 +201,8 @@ impl DaemonManager {
                     pb.abandon_with_message("Processing failed".to_string());
                     self.progress_bar = Some(pb);
                 }
-                error!("Failed to wait for daemon process: {}", e);
-                Err(anyhow::anyhow!("Failed to wait for daemon process: {}", e))
+                error!("Failed to wait for kiln processor: {}", e);
+                Err(anyhow::anyhow!("Failed to wait for kiln processor: {}", e))
             }
         }
     }
@@ -222,18 +222,18 @@ impl DaemonManager {
     }
 }
 
-impl Drop for DaemonManager {
+impl Drop for KilnProcessor {
     fn drop(&mut self) {
         self.cleanup();
     }
 }
 
-/// Result from daemon processing operation
+/// Result from kiln processoring operation
 #[derive(Debug, Clone)]
-pub struct DaemonResult {
+pub struct ProcessingResult {
     /// Whether the processing was successful
     pub success: bool,
-    /// Exit code from daemon process
+    /// Exit code from kiln processor
     pub exit_code: Option<i32>,
     /// Total processing time
     pub processing_time: Duration,
@@ -243,7 +243,7 @@ pub struct DaemonResult {
     pub vault_path: Option<String>,
 }
 
-impl DaemonResult {
+impl ProcessingResult {
     /// Get human-readable status message
     pub fn status_message(&self) -> String {
         if self.success {
@@ -274,43 +274,52 @@ impl DaemonResult {
 
 /// Ensure file watcher is running for the vault
 ///
-/// Spawns a background task that watches for file changes and triggers delta processing.
+/// Spawns a background task that watches for file changes and queues them for processing.
 /// Follows industry best practices: enabled by default, graceful degradation on failure.
-pub async fn ensure_watcher_running(config: &crate::config::CliConfig) -> Result<()> {
+///
+/// Returns a shared queue of pending files that the main process should periodically check.
+pub async fn ensure_watcher_running(
+    config: &crate::config::CliConfig,
+) -> Result<std::sync::Arc<std::sync::RwLock<std::collections::HashSet<std::path::PathBuf>>>> {
     use crate::watcher::{SimpleFileWatcher, get_fix_instructions};
+    use std::sync::{Arc, RwLock};
+    use std::collections::HashSet;
 
     // Check if enabled in config (default: true)
     if !config.file_watching.enabled {
         debug!("File watching disabled by configuration");
-        return Ok(());
+        return Ok(Arc::new(RwLock::new(HashSet::new())));
     }
 
     info!("Initializing file watcher for: {}", config.kiln.path.display());
 
+    // Create shared queue for pending files
+    let pending_files = Arc::new(RwLock::new(HashSet::new()));
+    let pending_files_clone = Arc::clone(&pending_files);
+
     // Spawn the entire watcher + event handling in a background task
     let vault_path = config.kiln.path.clone();
     let watcher_config = config.file_watching.clone();
-    let config_clone = config.clone();
 
     std::thread::spawn(move || {
-        // Create a new Tokio runtime for this thread to avoid lifetime issues
+        // Create a new Tokio runtime for this thread
         let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
         rt.block_on(async move {
-            run_file_watcher(vault_path, watcher_config, config_clone).await;
+            run_file_watcher(vault_path, watcher_config, pending_files_clone).await;
         });
     });
 
     // Give the watcher a moment to initialize before continuing
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-    Ok(())
+    Ok(pending_files)
 }
 
-/// Run file watcher in background task (extracted to avoid HRTB lifetime issues)
+/// Run file watcher in background task
 async fn run_file_watcher(
     vault_path: std::path::PathBuf,
     watcher_config: crate::config::FileWatcherConfig,
-    config: crate::config::CliConfig,
+    pending_files: std::sync::Arc<std::sync::RwLock<std::collections::HashSet<std::path::PathBuf>>>,
 ) {
     use crate::watcher::{SimpleFileWatcher, get_fix_instructions};
 
@@ -325,7 +334,7 @@ async fn run_file_watcher(
             info!("✓ File watching enabled (debounce: {}ms)", debounce_ms);
 
             // Handle events - this keeps the watcher alive
-            if let Err(e) = handle_watch_events(event_rx, config).await {
+            if let Err(e) = handle_watch_events(event_rx, pending_files).await {
                 error!("File watcher event handler error: {}", e);
             }
         }
@@ -344,34 +353,34 @@ async fn run_file_watcher(
     }
 }
 
-/// Handle watch events in background task
+/// Handle watch events in background task - queues files for processing
 async fn handle_watch_events(
     mut event_rx: mpsc::UnboundedReceiver<crate::watcher::WatchEvent>,
-    config: crate::config::CliConfig,
+    pending_files_queue: std::sync::Arc<std::sync::RwLock<std::collections::HashSet<std::path::PathBuf>>>,
 ) -> Result<()> {
     use std::collections::HashSet;
     use tokio::time::{sleep, Duration};
 
     debug!("File watcher event handler started");
 
-    // Batch events to avoid processing the same file multiple times
-    let mut pending_files: HashSet<std::path::PathBuf> = HashSet::new();
+    // Batch events locally to avoid processing the same file multiple times
+    let mut local_pending: HashSet<std::path::PathBuf> = HashSet::new();
     let batch_window = Duration::from_secs(1);
 
     loop {
         // Wait for first event or timeout
         tokio::select! {
             Some(event) = event_rx.recv() => {
-                // Add file to pending set
+                // Add file to local pending set
                 match event {
                     crate::watcher::WatchEvent::Changed(path) |
                     crate::watcher::WatchEvent::Created(path) => {
                         debug!("Queued for processing: {}", path.display());
-                        pending_files.insert(path);
+                        local_pending.insert(path);
                     }
                     crate::watcher::WatchEvent::Deleted(path) => {
                         debug!("File deleted, removing from processing queue: {}", path.display());
-                        pending_files.remove(&path);
+                        local_pending.remove(&path);
                     }
                 }
 
@@ -383,28 +392,27 @@ async fn handle_watch_events(
                     match event {
                         crate::watcher::WatchEvent::Changed(path) |
                         crate::watcher::WatchEvent::Created(path) => {
-                            pending_files.insert(path);
+                            local_pending.insert(path);
                         }
                         crate::watcher::WatchEvent::Deleted(path) => {
-                            pending_files.remove(&path);
+                            local_pending.remove(&path);
                         }
                     }
                 }
 
-                // Process batched files
-                if !pending_files.is_empty() {
-                    let file_count = pending_files.len();
-                    info!("🔄 Processing {} changed file(s)", file_count);
+                // Move batched files to shared queue for main process to handle
+                if !local_pending.is_empty() {
+                    let file_count = local_pending.len();
+                    info!("📋 Queuing {} changed file(s) for processing", file_count);
 
-                    // Process the changed files (pass owned values to avoid lifetime issues)
-                    let files: Vec<_> = pending_files.drain().collect();
-                    let config_clone = config.clone();
-                    match process_changed_files(files, config_clone).await {
-                        Ok(count) => {
-                            info!("✅ Processed {} file(s) successfully", count);
+                    // Write lock to add files to shared queue
+                    match pending_files_queue.write() {
+                        Ok(mut queue) => {
+                            queue.extend(local_pending.drain());
+                            info!("✅ Files queued successfully (total pending: {})", queue.len());
                         }
                         Err(e) => {
-                            error!("Failed to process changed files: {}", e);
+                            error!("Failed to acquire write lock on pending files queue: {}", e);
                         }
                     }
                 }
@@ -413,124 +421,13 @@ async fn handle_watch_events(
     }
 }
 
-/// Process specific changed files (delta processing)
-async fn process_changed_files(
-    changed_files: Vec<std::path::PathBuf>,
-    config: crate::config::CliConfig,
-) -> Result<usize> {
-    use crucible_surrealdb::{
-        embedding_pool::create_embedding_thread_pool_with_crucible_config,
-        vault_scanner::{VaultScannerConfig, ErrorHandlingMode, ChangeDetectionMethod},
-        vault_processor::process_vault_delta,
-        vault_integration::initialize_vault_schema,
-        SurrealClient, SurrealDbConfig, EmbeddingConfig,
-    };
-
-    // Create database client
-    let db_config = SurrealDbConfig {
-        namespace: "crucible".to_string(),
-        database: "vault".to_string(),
-        path: config.database_path_str()?,
-        max_connections: Some(10),
-        timeout_seconds: Some(30),
-    };
-
-    let client = SurrealClient::new(db_config)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to connect to database: {}", e))?;
-
-    // Initialize schema (idempotent)
-    initialize_vault_schema(&client)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to initialize schema: {}", e))?;
-
-    // Handle empty input
-    if changed_files.is_empty() {
-        debug!("No files to process");
-        return Ok(0);
-    }
-
-    debug!("Processing {} changed files", changed_files.len());
-
-    // Create scanner config for processing with embeddings enabled
-    let scanner_config = VaultScannerConfig {
-        max_file_size_bytes: 50 * 1024 * 1024, // 50MB
-        max_recursion_depth: 10,
-        recursive_scan: true,
-        include_hidden_files: false,
-        file_extensions: vec!["md".to_string(), "markdown".to_string()],
-        parallel_processing: std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4),
-        batch_processing: true,
-        batch_size: 16,
-        enable_embeddings: true,  // Enabled - we're in a separate thread now
-        process_embeds: true,
-        process_wikilinks: true,
-        enable_incremental: true,  // Delta processing
-        track_file_changes: true,
-        change_detection_method: ChangeDetectionMethod::ContentHash,
-        error_handling_mode: ErrorHandlingMode::ContinueOnError,
-        max_error_count: 100,
-        error_retry_attempts: 3,
-        error_retry_delay_ms: 500,
-        skip_problematic_files: true,
-        log_errors_detailed: true,
-        error_threshold_circuit_breaker: 10,
-        circuit_breaker_timeout_ms: 30000,
-        processing_timeout_ms: 30000,
-    };
-
-    // Create embedding provider config and pool
-    let provider_config = create_provider_config_from_cli(&config)?;
-    let pool_config = EmbeddingConfig::default();
-    let embedding_pool = create_embedding_thread_pool_with_crucible_config(
-        pool_config,
-        provider_config,
-    )
-    .await
-    .map_err(|e| anyhow::anyhow!("Failed to create embedding pool: {}", e))?;
-
-    // Process the files using delta processor with embeddings
-    debug!("Processing {} files with delta update and embeddings", changed_files.len());
-    let result = process_vault_delta(
-        changed_files,
-        &client,
-        &scanner_config,
-        Some(&embedding_pool),
-    )
-    .await
-    .map_err(|e| anyhow::anyhow!("Failed to process delta files: {}", e))?;
-
-    Ok(result.processed_count)
-}
 
 /// Convert CLI configuration to crucible-config provider configuration
 fn create_provider_config_from_cli(config: &crate::config::CliConfig) -> Result<crucible_config::EmbeddingProviderConfig> {
-    use crucible_config::EmbeddingProviderConfig;
-
-    // Extract model name from CLI config
-    let model_name = config.kiln.embedding_model.as_ref().ok_or_else(|| {
-        anyhow::anyhow!(
-            "Embedding model is not configured. Please set it in ~/.config/crucible/config.toml"
-        )
-    })?;
-
-    // Determine provider type and create appropriate config
-    if config.kiln.embedding_url.contains("api.openai.com") {
-        // OpenAI provider
-        let api_key = std::env::var("OPENAI_API_KEY").ok();
-        Ok(EmbeddingProviderConfig::openai(
-            api_key.unwrap_or_default(),
-            Some(model_name.clone()),
-        ))
-    } else {
-        // Default to Ollama for local/custom endpoints
-        Ok(EmbeddingProviderConfig::ollama(
-            Some(config.kiln.embedding_url.clone()),
-            Some(model_name.clone()),
-        ))
-    }
+    // Use the unified config conversion method that handles both new [embedding] section
+    // and legacy kiln.embedding_* format
+    // Note: to_embedding_config() already returns EmbeddingProviderConfig (re-exported as EmbeddingConfig)
+    config.to_embedding_config()
 }
 
 #[cfg(test)]
@@ -539,20 +436,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_daemon_manager_creation() {
-        let manager = DaemonManager::new();
+        let manager = KilnProcessor::new();
         assert!(manager.progress_bar.is_none());
     }
 
     #[tokio::test]
     async fn test_missing_vault_path_error() {
-        let mut manager = DaemonManager::new();
+        let mut manager = KilnProcessor::new();
 
         // Temporarily clear the environment variable
         let original_path = std::env::var("OBSIDIAN_VAULT_PATH").ok();
         std::env::remove_var("OBSIDIAN_VAULT_PATH");
 
         let result = manager
-            .spawn_daemon_for_processing(std::path::Path::new("/nonexistent"))
+            .process_kiln(std::path::Path::new("/nonexistent"))
             .await;
         assert!(result.is_err());
         assert!(result
@@ -568,7 +465,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_daemon_result_creation() {
-        let result = DaemonResult {
+        let result = ProcessingResult {
             success: true,
             exit_code: Some(0),
             processing_time: Duration::from_secs(5),

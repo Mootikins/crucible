@@ -10,7 +10,7 @@ use anyhow::Result;
 use crucible_config::{ApiConfig, EmbeddingProviderConfig, EmbeddingProviderType, ModelConfig};
 use crucible_surrealdb::{
     embedding_pool::{create_embedding_thread_pool_with_crucible_config, EmbeddingThreadPool},
-    vault_integration::{get_database_stats, retrieve_parsed_document, semantic_search},
+    vault_integration::{get_database_stats, retrieve_parsed_document},
     vault_processor::{process_vault_delta, process_vault_files, scan_vault_directory},
     vault_scanner::{create_vault_scanner, VaultScannerConfig, VaultProcessResult},
     EmbeddingConfig, SurrealClient, SurrealDbConfig,
@@ -59,7 +59,7 @@ pub async fn execute(
         }
         Err(e) => {
             pb.finish_with_message("Database connection failed");
-            let error_msg = format!("Failed to connect to database: {}. Make sure embeddings have been generated for your kiln.", e);
+            let error_msg = format!("Failed to connect to kiln database: {}. Make sure your kiln has been processed.", e);
             if format == "json" {
                 let json_error = json!({
                     "error": true,
@@ -91,8 +91,8 @@ pub async fn execute(
         );
 
         if format != "json" {
-            println!("❌ No embeddings found in database");
-            println!("🚀 Starting kiln processing to generate embeddings...\n");
+            println!("❌ No embeddings found in kiln database");
+            println!("🚀 Starting kiln processing...\n");
         }
 
         // Process vault synchronously (daemon handles background processing)
@@ -111,7 +111,7 @@ pub async fn execute(
                 // Verify embeddings were created
                 let embeddings_check = check_embeddings_exist(&client).await?;
                 if !embeddings_check {
-                    let error_msg = "Processing completed but no embeddings were found. \
+                    let error_msg = "Processing completed but no embeddings were created. \
                         Check for processing errors above.";
                     if format == "json" {
                         let json_error = json!({
@@ -173,14 +173,73 @@ pub async fn execute(
             Err(e) => {
                 // Delta processing failed - log but continue with search
                 // The embeddings that exist should still be valid
-                eprintln!("⚠️  Delta processing check failed (continuing with existing embeddings): {}", e);
-                pb.set_message("Performing semantic search with existing embeddings...");
+                eprintln!("⚠️  Delta processing check failed (continuing with existing data): {}", e);
+                pb.set_message("Performing semantic search with existing data...");
             }
         }
     }
 
-    // Perform real semantic search using vector similarity
-    let search_results = match semantic_search(&client, &query, top_k as usize).await {
+    // Create embedding provider for query embeddings
+    eprintln!("DEBUG: Creating embedding provider for query embeddings");
+    let embedding_provider = match create_embedding_provider_from_cli_config(&config).await {
+        Ok(provider) => {
+            eprintln!("DEBUG: Created embedding provider: {}", provider.provider_name());
+            provider
+        }
+        Err(e) => {
+            eprintln!("ERROR: Failed to create embedding provider: {}", e);
+            return Err(e);
+        }
+    };
+
+    // Create reranker if enabled in config
+    eprintln!("DEBUG: Attempting to create reranker from config");
+    let reranker = match create_reranker_from_config(&config).await {
+        Ok(r) => {
+            if r.is_some() {
+                eprintln!("DEBUG: Reranker created successfully");
+            } else {
+                eprintln!("DEBUG: Reranker is None (disabled in config)");
+            }
+            r
+        }
+        Err(e) => {
+            eprintln!("ERROR: Failed to create reranker: {}", e);
+            return Err(e);
+        }
+    };
+
+    // Determine search parameters based on reranking
+    let (initial_limit, final_limit) = if reranker.is_some() {
+        let initial = config
+            .embedding
+            .as_ref()
+            .and_then(|e| e.reranking.initial_candidates)
+            .unwrap_or(50);
+        (initial, top_k as usize)
+    } else {
+        (top_k as usize, top_k as usize)
+    };
+
+    if reranker.is_some() {
+        pb.set_message("Performing semantic search with reranking...");
+        eprintln!("DEBUG: About to call semantic_search_with_reranking with initial_limit={}, final_limit={}", initial_limit, final_limit);
+    } else {
+        eprintln!("DEBUG: Reranker is None, calling with both limits={}", initial_limit);
+    }
+
+    // Perform semantic search with optional reranking
+    eprintln!("DEBUG: Calling semantic_search_with_reranking NOW");
+    let search_results = match crucible_surrealdb::vault_integration::semantic_search_with_reranking(
+        &client,
+        &query,
+        initial_limit,
+        reranker,
+        final_limit,
+        embedding_provider,
+    )
+    .await
+    {
         Ok(results) => {
             pb.finish_with_message("Search completed");
             results
@@ -188,7 +247,7 @@ pub async fn execute(
         Err(e) => {
             pb.finish_with_message("Search failed");
             let error_msg = format!(
-                "Semantic search failed: {}. Make sure embeddings exist for your kiln documents.",
+                "Semantic search failed: {}. Make sure your kiln has been processed.",
                 e
             );
             if format == "json" {
@@ -222,7 +281,7 @@ pub async fn execute(
         } else {
             println!("❌ No semantic search results found for query: {}", query);
             println!("\n💡 Semantic Search Integration:");
-            println!("   No embeddings found matching your query.");
+            println!("   No results found matching your query.");
             println!("   This could mean:");
             println!("   • Your kiln hasn't been processed yet");
             println!("   • No documents match your semantic query");
@@ -282,7 +341,7 @@ pub async fn execute(
             }
 
             println!("💡 Semantic Search Integration:");
-            println!("   Results are based on vector similarity using document embeddings.");
+            println!("   Results are based on semantic similarity across your kiln.");
             println!("   Higher scores indicate better semantic matches to your query.");
             println!("   Embeddings are auto-generated when needed using integrated processing.");
         }
@@ -475,6 +534,7 @@ async fn process_vault_integrated(
         client,
         &scanner_config,
         Some(&embedding_pool),
+        vault_path,
     )
     .await
     .map_err(|e| anyhow::anyhow!("Failed to process kiln files: {}", e))?;
@@ -504,68 +564,24 @@ async fn create_embedding_pool_from_cli_config(config: &CliConfig) -> Result<Emb
 
 /// Convert CLI configuration to crucible-config provider configuration
 fn create_provider_config_from_cli(config: &CliConfig) -> Result<EmbeddingProviderConfig> {
-    // Extract model name from CLI config
-    let model_name = config.kiln.embedding_model.as_ref().ok_or_else(|| {
-        anyhow::anyhow!(
-            "Embedding model is not configured. Please set it via:\n\
-            - Environment variable: EMBEDDING_MODEL\n\
-            - CLI argument: --embedding-model <model>\n\
-            - Config file: embedding_model = \"<model>\""
-        )
-    })?;
+    // Use the unified config conversion method that handles both new [embedding] section
+    // and legacy kiln.embedding_* format
+    // Note: to_embedding_config() already returns EmbeddingProviderConfig (re-exported as EmbeddingConfig)
+    config.to_embedding_config()
+}
 
-    // Create provider config based on embedding URL
-    // For now, we default to Ollama provider for local/embedded models
-    // and OpenAI for cloud endpoints
-    let provider_type = if config.kiln.embedding_url.contains("api.openai.com") {
-        EmbeddingProviderType::OpenAI
-    } else if config.kiln.embedding_url.contains("localhost")
-        || config.kiln.embedding_url.contains("127.0.0.1")
-        || config.kiln.embedding_url.contains("11434")
-    {
-        EmbeddingProviderType::Ollama
-    } else {
-        // Default to Ollama for custom endpoints
-        EmbeddingProviderType::Ollama
-    };
+/// Create embedding provider directly from CLI configuration
+async fn create_embedding_provider_from_cli_config(
+    config: &CliConfig,
+) -> Result<std::sync::Arc<dyn crucible_llm::embeddings::EmbeddingProvider>> {
+    // Convert CLI config to embedding provider config
+    let provider_config = create_provider_config_from_cli(config)?;
 
-    // Create API config
-    let mut api_config = ApiConfig {
-        key: None, // API keys not needed for Ollama
-        base_url: Some(config.kiln.embedding_url.clone()),
-        timeout_seconds: Some(config.network.timeout_secs.unwrap_or(60)),
-        retry_attempts: Some(config.network.max_retries.unwrap_or(3)),
-        headers: std::collections::HashMap::new(),
-    };
-
-    // For OpenAI, try to get API key from environment
-    if provider_type == EmbeddingProviderType::OpenAI {
-        if let Ok(api_key) = std::env::var("OPENAI_API_KEY") {
-            api_config.key = Some(api_key);
-        }
-    }
-
-    // Create model config
-    let model_config = ModelConfig {
-        name: model_name.clone(),
-        dimensions: None, // Let provider determine dimensions
-        max_tokens: Some(8192),
-    };
-
-    // Create provider config
-    let provider_config = EmbeddingProviderConfig {
-        provider_type,
-        api: api_config,
-        model: model_config,
-        options: std::collections::HashMap::new(),
-    };
-
-    // Validate the configuration
-    provider_config
-        .validate()
-        .map_err(|e| anyhow::anyhow!("Invalid embedding provider configuration: {}", e))?;
-
-    Ok(provider_config)
+    // Create the provider using crucible-llm
+    // Note: crucible_llm::embeddings::EmbeddingConfig is a re-export of crucible_config::EmbeddingProviderConfig
+    crucible_llm::embeddings::create_provider(provider_config)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to create embedding provider: {}", e))
 }
 
 /// Process vault using delta processing to only update changed files
@@ -679,6 +695,7 @@ async fn process_vault_delta_if_needed(
         client,
         &scanner_config,
         Some(&embedding_pool),
+        vault_path,
     )
     .await
     .map_err(|e| anyhow::anyhow!("Failed to process vault delta: {}", e))?;
@@ -686,4 +703,76 @@ async fn process_vault_delta_if_needed(
     pb.set_message("Delta processing completed");
 
     Ok(process_result)
+}
+
+/// Create a reranker from CLI configuration
+async fn create_reranker_from_config(
+    config: &CliConfig,
+) -> Result<Option<std::sync::Arc<dyn crucible_llm::Reranker>>> {
+    // Check if reranking is enabled
+    let reranking_config = match &config.embedding {
+        Some(embedding) => &embedding.reranking,
+        None => return Ok(None),
+    };
+
+    if !reranking_config.enabled.unwrap_or(false) {
+        return Ok(None);
+    }
+
+    let provider = reranking_config
+        .provider
+        .as_deref()
+        .unwrap_or("fastembed");
+
+    match provider {
+        "fastembed" => {
+            use crucible_llm::reranking::fastembed::{
+                FastEmbedReranker, FastEmbedRerankerConfig, RerankerModel,
+            };
+
+            let model_name = reranking_config
+                .model
+                .as_deref()
+                .unwrap_or("bge-reranker-base");
+
+            let model = match model_name {
+                "bge-reranker-base" => RerankerModel::BGERerankerBase,
+                "bge-reranker-v2-m3" => RerankerModel::BGERerankerV2M3,
+                "jina-reranker-v1-turbo-en" => RerankerModel::JINARerankerV1TurboEn,
+                "jina-reranker-v2-base-multilingual" => RerankerModel::JINARerankerV2BaseMultiligual,
+                _ => {
+                    eprintln!(
+                        "⚠️  Unknown reranker model '{}', using default bge-reranker-base",
+                        model_name
+                    );
+                    RerankerModel::BGERerankerBase
+                }
+            };
+
+            let mut reranker_config = FastEmbedRerankerConfig::default();
+            reranker_config.model = model;
+
+            if let Some(cache_dir) = &reranking_config.fastembed.cache_dir {
+                reranker_config.cache_dir = Some(cache_dir.clone());
+            }
+
+            if let Some(batch_size) = reranking_config.fastembed.batch_size {
+                reranker_config.batch_size = Some(batch_size);
+            }
+
+            if let Some(show_download) = reranking_config.fastembed.show_download {
+                reranker_config.show_download = show_download;
+            }
+
+            let reranker = FastEmbedReranker::new(reranker_config)?;
+            Ok(Some(std::sync::Arc::new(reranker) as std::sync::Arc<dyn crucible_llm::Reranker>))
+        }
+        _ => {
+            eprintln!(
+                "⚠️  Unsupported reranking provider '{}', reranking disabled",
+                provider
+            );
+            Ok(None)
+        }
+    }
 }
