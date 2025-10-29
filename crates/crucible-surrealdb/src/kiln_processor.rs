@@ -46,7 +46,7 @@ pub async fn process_kiln_files(
     let mut errors = Vec::new();
 
     info!("Processing {} kiln files", files.len());
-    eprintln!("DEBUG PROCESSOR: Processing {} kiln files", files.len());
+    debug!("processing {} kiln files", files.len());
 
     // Filter to only accessible markdown files
     let markdown_files: Vec<&KilnFileInfo> = files
@@ -55,32 +55,35 @@ pub async fn process_kiln_files(
         .collect();
 
     info!("Found {} markdown files to process", markdown_files.len());
-    eprintln!(
-        "DEBUG PROCESSOR: Found {} markdown files to process",
+    debug!(
+        "found {} markdown files to process",
         markdown_files.len()
     );
 
     for (i, file) in files.iter().enumerate().take(5) {
-        eprintln!(
-            "DEBUG PROCESSOR: File {}: {:?} (markdown={}, accessible={})",
-            i, file.path, file.is_markdown, file.is_accessible
+        debug!(
+            "sample file {}: {:?} (markdown={}, accessible={})",
+            i,
+            file.path,
+            file.is_markdown,
+            file.is_accessible
         );
     }
 
-    eprintln!(
-        "DEBUG PROCESSOR: batch_processing={}, markdown_files.len()={}, batch_size={}",
+    debug!(
+        "batch_processing={}, markdown_files={}, batch_size={}",
         config.batch_processing,
         markdown_files.len(),
         config.batch_size
     );
-    eprintln!(
-        "DEBUG PROCESSOR: parallel_processing={}",
+    debug!(
+        "parallel_processing={}",
         config.parallel_processing
     );
 
     if config.batch_processing && markdown_files.len() > config.batch_size {
         // Process in batches
-        eprintln!("DEBUG PROCESSOR: Using batch processing");
+        debug!("using batch processing");
         let batches: Vec<Vec<&KilnFileInfo>> = markdown_files
             .chunks(config.batch_size)
             .map(|chunk| chunk.to_vec())
@@ -116,15 +119,15 @@ pub async fn process_kiln_files(
     } else {
         // Process all files at once or in parallel
         if config.parallel_processing > 1 && markdown_files.len() > 1 {
-            eprintln!(
-                "DEBUG PROCESSOR: Using parallel processing (workers={})",
+            debug!(
+                "using parallel processing (workers={})",
                 config.parallel_processing
             );
             let parallel_result =
                 process_files_parallel(&markdown_files, client, config, embedding_pool, kiln_root)
                     .await?;
-            eprintln!(
-                "DEBUG PROCESSOR: Parallel result: processed={}, failed={}, errors={}",
+            debug!(
+                "parallel result: processed={}, failed={}, errors={}",
                 parallel_result.processed_count,
                 parallel_result.failed_count,
                 parallel_result.errors.len()
@@ -133,7 +136,7 @@ pub async fn process_kiln_files(
             failed_count = parallel_result.failed_count;
             errors = parallel_result.errors;
         } else {
-            eprintln!("DEBUG PROCESSOR: Using sequential processing");
+            debug!("using sequential processing");
             let sequential_result = process_files_sequential(
                 &markdown_files,
                 client,
@@ -142,8 +145,8 @@ pub async fn process_kiln_files(
                 kiln_root,
             )
             .await?;
-            eprintln!(
-                "DEBUG PROCESSOR: Sequential result: processed={}, failed={}, errors={}",
+            debug!(
+                "sequential result: processed={}, failed={}, errors={}",
                 sequential_result.processed_count,
                 sequential_result.failed_count,
                 sequential_result.errors.len()
@@ -580,7 +583,7 @@ async fn process_single_file_internal(
 
 async fn needs_processing(file_info: &KilnFileInfo, client: &SurrealClient) -> Result<bool> {
     // Check if document exists in database
-    let doc_id = find_document_id_by_path(client, &file_info.path).await?;
+    let doc_id = find_document_id_by_path(client, &file_info.relative_path).await?;
 
     if doc_id.is_empty() {
         return Ok(true); // New document
@@ -588,7 +591,7 @@ async fn needs_processing(file_info: &KilnFileInfo, client: &SurrealClient) -> R
 
     // Check if document exists and compare content hash
     // Note: Using string formatting for now since mock client doesn't support parameters
-    let path_str = file_info.path.display().to_string();
+    let path_str = file_info.relative_path.replace('\'', "''");
     let sql = format!(
         "SELECT content_hash, processed_at FROM notes WHERE path = '{}'",
         path_str
@@ -624,9 +627,9 @@ async fn needs_processing(file_info: &KilnFileInfo, client: &SurrealClient) -> R
     Ok(true) // Needs processing
 }
 
-async fn find_document_id_by_path(client: &SurrealClient, path: &PathBuf) -> Result<String> {
+async fn find_document_id_by_path(client: &SurrealClient, relative_path: &str) -> Result<String> {
     // Note: Using string formatting for now since mock client doesn't support parameters
-    let path_str = path.display().to_string();
+    let path_str = relative_path.replace('\'', "''");
     let sql = format!("SELECT id FROM notes WHERE path = '{}'", path_str);
 
     let result = client.query(&sql, &[]).await?;
@@ -679,11 +682,7 @@ async fn bulk_query_document_hashes(
         return Ok(HashMap::new());
     }
 
-    debug!("Querying hashes for {} files", paths.len());
-    eprintln!(
-        "DEBUG BULK_QUERY: Querying hashes for {} files",
-        paths.len()
-    );
+    debug!("querying hashes for {} files", paths.len());
 
     // Convert absolute paths to relative paths for database query
     // Store mapping from relative -> absolute for later lookup
@@ -707,7 +706,10 @@ async fn bulk_query_document_hashes(
     // Note: Using string formatting for now since mock client doesn't support parameters
     let path_strings: Vec<String> = rel_paths
         .iter()
-        .map(|p| format!("'{}'", p.display()))
+        .map(|p| {
+            let sanitized = p.display().to_string().replace('\'', "''");
+            format!("'{}'", sanitized)
+        })
         .collect();
 
     let sql = format!(
@@ -742,12 +744,7 @@ async fn bulk_query_document_hashes(
     }
 
     debug!(
-        "Retrieved {} hashes from database (out of {} requested)",
-        hash_map.len(),
-        paths.len()
-    );
-    eprintln!(
-        "DEBUG BULK_QUERY: Retrieved {} hashes from database (out of {} requested)",
+        "retrieved {} hashes from database (out of {} requested)",
         hash_map.len(),
         paths.len()
     );
@@ -763,6 +760,7 @@ async fn bulk_query_document_hashes(
 ///
 /// # Arguments
 /// * `paths` - Slice of file paths to convert
+/// * `kiln_root` - Root directory so relative paths can be normalized
 ///
 /// # Returns
 /// Vector of KilnFileInfo structures for successfully read files
@@ -773,9 +771,9 @@ async fn bulk_query_document_hashes(
 /// # Example
 /// ```ignore
 /// let paths = vec![PathBuf::from("note1.md"), PathBuf::from("note2.md")];
-/// let file_infos = convert_paths_to_file_infos(&paths).await?;
+/// let file_infos = convert_paths_to_file_infos(&paths, kiln_root).await?;
 /// ```
-async fn convert_paths_to_file_infos(paths: &[PathBuf]) -> Result<Vec<KilnFileInfo>> {
+async fn convert_paths_to_file_infos(paths: &[PathBuf], kiln_root: &Path) -> Result<Vec<KilnFileInfo>> {
     let mut file_infos = Vec::new();
 
     for path in paths {
@@ -811,10 +809,15 @@ async fn convert_paths_to_file_infos(paths: &[PathBuf]) -> Result<Vec<KilnFileIn
             .modified()
             .unwrap_or_else(|_| std::time::SystemTime::now());
 
+        let relative_path = path
+            .strip_prefix(kiln_root)
+            .unwrap_or(path)
+            .to_path_buf();
+
         // Create KilnFileInfo
         let file_info = KilnFileInfo {
             path: path.clone(),
-            relative_path: path.display().to_string(),
+            relative_path: relative_path.display().to_string(),
             file_size: metadata.len(),
             modified_time,
             is_markdown: path
@@ -889,30 +892,19 @@ async fn detect_changed_files(
                 // File exists in database - compare hashes
                 if stored_hash != &file_info.content_hash {
                     debug!(
-                        "File changed (hash mismatch): {} (stored: {}..., current: {}...)",
-                        file_info.path.display(),
-                        &stored_hash[..8],
-                        &file_info.content_hash[..8]
-                    );
-                    eprintln!(
-                        "DEBUG DETECT: File CHANGED: {} (stored: {}..., current: {}...)",
+                        "file changed (hash mismatch): {} (stored: {}..., current: {}...)",
                         file_info.path.display(),
                         &stored_hash[..8],
                         &file_info.content_hash[..8]
                     );
                     changed_files.push(file_info.clone());
                 } else {
-                    debug!("File unchanged: {}", file_info.path.display());
-                    eprintln!("DEBUG DETECT: File UNCHANGED: {}", file_info.path.display());
+                    debug!("file unchanged: {}", file_info.path.display());
                 }
             }
             None => {
                 // File not in database - treat as new/changed
-                debug!("New file (not in database): {}", file_info.path.display());
-                eprintln!(
-                    "DEBUG DETECT: File NOT IN DB (treating as new): {}",
-                    file_info.path.display()
-                );
+                debug!("new file (not in database): {}", file_info.path.display());
                 changed_files.push(file_info.clone());
             }
         }
@@ -964,7 +956,8 @@ async fn detect_changed_files(
 ///     changed_paths,
 ///     &client,
 ///     &config,
-///     Some(&embedding_pool)
+///     Some(&embedding_pool),
+///     &kiln_root
 /// ).await?;
 /// println!("Processed {} files in {:?}", result.processed_count, result.total_processing_time);
 /// ```
@@ -981,8 +974,8 @@ pub async fn process_kiln_delta(
         "Starting delta processing for {} potentially changed files",
         changed_files.len()
     );
-    eprintln!(
-        "DEBUG DELTA PROCESSOR: Starting delta processing for {} files",
+    debug!(
+        "starting delta processing for {} files",
         changed_files.len()
     );
 
@@ -1000,7 +993,7 @@ pub async fn process_kiln_delta(
 
     // Step 1: Convert paths to KilnFileInfo structures
     let change_detection_start = std::time::Instant::now();
-    let file_infos = convert_paths_to_file_infos(&changed_files).await?;
+    let file_infos = convert_paths_to_file_infos(&changed_files, kiln_root).await?;
     let change_detection_time = change_detection_start.elapsed();
 
     debug!(
@@ -1018,8 +1011,8 @@ pub async fn process_kiln_delta(
         file_infos.len(),
         change_detection_time
     );
-    eprintln!(
-        "DEBUG DELTA PROCESSOR: Detected {} changed files out of {} candidates",
+    debug!(
+        "detected {} changed files out of {} candidates",
         changed_file_infos.len(),
         file_infos.len()
     );
@@ -1040,7 +1033,7 @@ pub async fn process_kiln_delta(
     let mut total_embeddings_deleted = 0;
     for file_info in &changed_file_infos {
         // Find document ID by path
-        let doc_id = find_document_id_by_path(client, &file_info.path).await?;
+        let doc_id = find_document_id_by_path(client, &file_info.relative_path).await?;
 
         if !doc_id.is_empty() {
             // Delete old embeddings
