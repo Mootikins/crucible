@@ -244,17 +244,17 @@ pub fn delete_note() -> ToolFunction {
     }
 }
 
-/// Get vault statistics - Real Implementation using Phase 1A parsing
-pub fn get_vault_stats() -> ToolFunction {
+/// Get kiln statistics - Real Implementation using Phase 1A parsing
+pub fn get_kiln_stats() -> ToolFunction {
     |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            info!("Getting vault statistics");
+            info!("Getting kiln statistics");
 
             // Use real vault operations
             let vault_ops = RealVaultOperations::new();
-            match vault_ops.get_vault_stats().await {
+            match vault_ops.get_kiln_stats().await {
                 Ok(mut stats) => {
                     // Add user and session info
                     if let Some(user_id) = user_id {
@@ -271,7 +271,7 @@ pub fn get_vault_stats() -> ToolFunction {
                     ))
                 }
                 Err(e) => Err(ToolError::Other(format!(
-                    "Vault stats calculation failed: {}",
+                    "Kiln stats calculation failed: {}",
                     e
                 ))),
             }
@@ -386,11 +386,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_vault_stats_function() {
-        let tool_fn = get_vault_stats();
+    async fn test_get_kiln_stats_function() {
+        let tool_fn = get_kiln_stats();
         let parameters = json!({});
 
-        let result = tool_fn("get_vault_stats".to_string(), parameters, None, None)
+        let result = tool_fn("get_kiln_stats".to_string(), parameters, None, None)
             .await
             .unwrap();
 

@@ -51,7 +51,7 @@ async fn test_unified_registry_discovers_system_tools() -> Result<()> {
     // Should contain known system tools
     let expected_system_tools = vec![
         "search_documents",
-        "get_vault_stats",
+        "get_kiln_stats",
         "system_info",
         "list_files",
     ];

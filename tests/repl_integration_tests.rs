@@ -146,7 +146,7 @@ fn test_repl_tools_command_displays_grouped_tools() -> Result<()> {
     // Verify system tools are actually listed (check for specific known tools)
     let expected_system_tools = vec![
         "system_info",
-        "get_vault_stats",
+        "get_kiln_stats",
         "list_files",
         "search_content",
         "get_database_stats",
@@ -192,10 +192,10 @@ fn test_repl_run_command_executes_system_tools() -> Result<()> {
     }
 
     // Test another tool that should provide specific output
-    let output2 = repl.send_command(":run get_vault_stats")?;
-    println!("📋 REPL :run get_vault_stats output:\n{}", output2);
+    let output2 = repl.send_command(":run get_kiln_stats")?;
+    println!("📋 REPL :run get_kiln_stats output:\n{}", output2);
 
-    // Verify get_vault_stats provides meaningful output
+    // Verify get_kiln_stats provides meaningful output
     let vault_stats_assertions = vec![
         ("Stats output", !output2.is_empty()),
         ("No tool errors", !output2.contains("Tool Error") && !output2.contains("not found")),

@@ -215,7 +215,7 @@ impl PerformanceBenchmarks {
         let mut times = Vec::new();
 
         // Test tools that should be available
-        let test_tools = vec![("system_info", vec![]), ("get_vault_stats", vec![])];
+        let test_tools = vec![("system_info", vec![]), ("get_kiln_stats", vec![])];
 
         // Warmup
         for _ in 0..self.config.warmup_iterations {

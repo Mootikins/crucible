@@ -56,7 +56,7 @@ async fn test_expected_system_tools_available() -> Result<()> {
         "system_info",
         "list_files",
         "search_documents",
-        "get_vault_stats",
+        "get_kiln_stats",
         "get_environment",
         "read_file",
         "write_file",
@@ -129,7 +129,7 @@ async fn test_repl_command_patterns() -> Result<()> {
 async fn test_tool_output_format_expectations() -> Result<()> {
     // Test that we expect certain output formats from tools
 
-    let expected_json_outputs = vec!["system_info", "get_environment", "get_vault_stats"];
+    let expected_json_outputs = vec!["system_info", "get_environment", "get_kiln_stats"];
 
     let expected_text_outputs = vec!["list_files", "read_file", "search_documents"];
 

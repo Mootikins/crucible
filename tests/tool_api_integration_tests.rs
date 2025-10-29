@@ -96,7 +96,7 @@ impl ToolApiTestHarness {
         assert!(!search_docs.contains("❌"), "Search documents should not error");
 
         // Test 4: Get vault stats tool (no parameters)
-        let vault_stats = repl.send_command(":run get_vault_stats")?;
+        let vault_stats = repl.send_command(":run get_kiln_stats")?;
         assert!(!vault_stats.is_empty(), "Vault stats tool should produce output");
         assert!(!vault_stats.contains("❌"), "Vault stats should not error");
 
@@ -177,7 +177,7 @@ impl ToolApiTestHarness {
         assert!(!analysis.is_empty(), "Analysis step should find task-related content");
 
         // Step 3: Get vault statistics for context
-        let statistics = repl.send_command(":run get_vault_stats")?;
+        let statistics = repl.send_command(":run get_kiln_stats")?;
         assert!(!statistics.is_empty(), "Statistics step should provide context");
 
         // Workflow 2: Search → Extract → Process
@@ -228,7 +228,7 @@ impl ToolApiTestHarness {
         let mut repl = repl_harness.spawn_repl()?;
 
         // Test 1: Structured result processing
-        let structured_result = repl.send_command(":run get_vault_stats")?;
+        let structured_result = repl.send_command(":run get_kiln_stats")?;
         assert!(!structured_result.is_empty(), "Should return structured results");
 
         // Check if result contains expected structure
@@ -258,12 +258,12 @@ impl ToolApiTestHarness {
 
         // Test 5: Result formatting and display
         repl.send_command(":format json")?;
-        let json_results = repl.send_command(":run get_vault_stats")?;
+        let json_results = repl.send_command(":run get_kiln_stats")?;
         assert!(json_results.contains("{") || json_results.contains("[") || !json_results.is_empty(),
                "JSON format should work with tool results");
 
         repl.send_command(":format table")?;
-        let table_results = repl.send_command(":run get_vault_stats")?;
+        let table_results = repl.send_command(":run get_kiln_stats")?;
         assert!(!table_results.is_empty(), "Table format should work with tool results");
 
         repl.quit()?;
@@ -282,7 +282,7 @@ impl ToolApiTestHarness {
         // Test 1: Individual tool performance
         let performance_tools = vec![
             ("system_info", ":run system_info"),
-            ("get_vault_stats", ":run get_vault_stats"),
+            ("get_kiln_stats", ":run get_kiln_stats"),
             ("list_files", ":run list_files /tmp"),
         ];
 
@@ -383,7 +383,7 @@ impl ToolApiTestHarness {
         let _ = repl.send_command(":run nonexistent_tool_3")?;
 
         // Should still be functional after multiple errors
-        let functionality_test = repl.send_command(":run get_vault_stats")?;
+        let functionality_test = repl.send_command(":run get_kiln_stats")?;
         assert!(!functionality_test.contains("❌"), "System should remain functional after multiple errors");
 
         // Test 7: Tool error message quality
@@ -518,7 +518,7 @@ impl ToolRegistryValidator {
     pub fn new() -> Self {
         let expected_tools = vec![
             "system_info".to_string(),
-            "get_vault_stats".to_string(),
+            "get_kiln_stats".to_string(),
             "list_files".to_string(),
             "search_documents".to_string(),
             "search_by_tags".to_string(),
@@ -789,7 +789,7 @@ async fn test_tool_registry_validation() -> Result<()> {
 
     // Test tool outputs
     let mut tool_outputs = HashMap::new();
-    let test_tools = vec!["system_info", "get_vault_stats", "search_documents"];
+    let test_tools = vec!["system_info", "get_kiln_stats", "search_documents"];
 
     for tool in test_tools {
         let command = if tool == "search_documents" {
@@ -824,7 +824,7 @@ async fn test_tool_result_analysis() -> Result<()> {
     // Execute various tools and collect results
     let test_commands = vec![
         ":run system_info",
-        ":run get_vault_stats",
+        ":run get_kiln_stats",
         ":run search_documents \"quantum\"",
         ":run list_files /tmp",
     ];

@@ -332,7 +332,7 @@ impl CrossInterfaceTestHarness {
         // Check state through REPL
         let repl_harness = ReplTestHarness::new().await?;
         let mut repl = repl_harness.spawn_repl()?;
-        let repl_stats = repl.send_command(":run get_vault_stats")?;
+        let repl_stats = repl.send_command(":run get_kiln_stats")?;
         repl.quit();
 
         // Both should show indexed content

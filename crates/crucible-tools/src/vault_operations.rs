@@ -230,9 +230,9 @@ impl RealVaultOperations {
         Ok(matching_files)
     }
 
-    /// Calculate real vault statistics
-    pub async fn get_vault_stats(&self) -> VaultResult<Value> {
-        info!("Calculating vault statistics");
+    /// Calculate real kiln statistics
+    pub async fn get_kiln_stats(&self) -> VaultResult<Value> {
+        info!("Calculating kiln statistics");
 
         let vault_files = self.scan_and_parse_vault().await?;
 

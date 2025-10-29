@@ -279,7 +279,7 @@ impl ExtendedReplTestHarness {
         assert!(!tasks_result.is_empty(), "Should find task information");
 
         // Step 3: Get project statistics
-        let project_stats = repl.send_command(":run get_vault_stats")?;
+        let project_stats = repl.send_command(":run get_kiln_stats")?;
         assert!(!project_stats.is_empty(), "Should get vault statistics");
 
         // Workflow 3: Knowledge discovery workflow

@@ -349,43 +349,57 @@ impl ToolGroupRegistry {
 
     /// Initialize a group on-demand
     async fn ensure_group_initialized(&self, group_name: &str) -> ToolGroupResult<()> {
+        // Check if tools have already been discovered for this group
+        let already_discovered = {
+            let tool_to_group = self.tool_to_group.read().await;
+            tool_to_group.values().any(|g| g == group_name)
+        };
+
+        if already_discovered {
+            return Ok(());
+        }
+
         let groups = self.groups.read().await;
         if let Some(group) = groups.get(group_name) {
-            if !group.is_initialized() {
-                drop(groups); // Release read lock
+            let needs_init = !group.is_initialized();
+            drop(groups); // Release read lock
 
-                // Get write lock and initialize
-                let mut groups = self.groups.write().await;
-                if let Some(group) = groups.get_mut(group_name) {
-                    if !group.is_initialized() {
-                        let start_time = Instant::now();
-                        group.initialize().await?;
+            // Get write lock to initialize and/or discover tools
+            let mut groups = self.groups.write().await;
+            if let Some(group) = groups.get_mut(group_name) {
+                let start_time = Instant::now();
 
-                        // Discover tools and update mappings
-                        let tools = group.discover_tools().await?;
-                        {
-                            let mut tool_to_group = self.tool_to_group.write().await;
-                            for tool_name in &tools {
-                                tool_to_group.insert(tool_name.clone(), group_name.to_string());
-                            }
-                        }
+                // Initialize if needed
+                if needs_init && !group.is_initialized() {
+                    group.initialize().await?;
+                }
 
-                        // Update metrics
-                        {
-                            let mut metrics = self.registry_metrics.write().unwrap();
-                            metrics.lazy_initializations += 1;
-                            metrics.total_tools += tools.len() as u64;
-                        }
-
-                        let duration = start_time.elapsed();
-                        tracing::info!(
-                            "Lazy initialization of '{}' completed in {}ms ({} tools)",
-                            group_name,
-                            duration.as_millis(),
-                            tools.len()
-                        );
+                // Discover tools and update mappings (even if already initialized)
+                let tools = group.discover_tools().await?;
+                {
+                    let mut tool_to_group = self.tool_to_group.write().await;
+                    for tool_name in &tools {
+                        tool_to_group.insert(tool_name.clone(), group_name.to_string());
                     }
                 }
+
+                // Update metrics
+                {
+                    let mut metrics = self.registry_metrics.write().unwrap();
+                    if needs_init {
+                        metrics.lazy_initializations += 1;
+                    }
+                    metrics.total_tools += tools.len() as u64;
+                }
+
+                let duration = start_time.elapsed();
+                tracing::info!(
+                    "Tool discovery for '{}' completed in {}ms ({} tools){}",
+                    group_name,
+                    duration.as_millis(),
+                    tools.len(),
+                    if needs_init { " with initialization" } else { "" }
+                );
             }
         }
         Ok(())

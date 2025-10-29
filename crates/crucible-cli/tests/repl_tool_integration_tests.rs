@@ -40,7 +40,7 @@ async fn test_crucible_tools_baseline() -> Result<()> {
     // Should contain expected core tools
     let expected_tools = vec![
         "search_documents",
-        "get_vault_stats",
+        "get_kiln_stats",
         "system_info",
         "list_files",
     ];
@@ -332,7 +332,7 @@ async fn test_system_tool_group_basic() -> Result<()> {
     // Should contain expected tools
     let expected_tools = vec![
         "search_documents",
-        "get_kiln_stats",
+        "get_kiln_stats",  // Tool uses 'vault' terminology
         "system_info",
         "list_files",
     ];
