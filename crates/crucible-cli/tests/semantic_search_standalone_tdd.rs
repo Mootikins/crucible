@@ -39,18 +39,48 @@ async fn create_test_kiln() -> Result<(TempDir, PathBuf)> {
 
 /// Helper to run CLI semantic search command
 async fn run_cli_semantic_search(kiln_path: &PathBuf, query: &str) -> Result<String> {
+    // Create temporary config file (environment variables no longer supported)
+    let config_content = format!(
+        r#"[kiln]
+path = "{}"
+
+[embedding]
+provider = "fastembed"
+model = "BAAI/bge-small-en-v1.5"
+"#,
+        kiln_path.display()
+    );
+
+    let temp_config = tempfile::NamedTempFile::new()?;
+    fs::write(temp_config.path(), config_content)?;
+
     let output = Command::new(env!("CARGO_BIN_EXE_cru"))
+        .arg("--config")
+        .arg(temp_config.path())
         .arg("semantic")
         .arg(query)
         .arg("--top-k")
         .arg("3")
         .arg("--format")
         .arg("json")
-        .env("OBSIDIAN_KILN_PATH", kiln_path.to_string_lossy().as_ref())
         .output()
         .await?;
 
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    // Logging goes to stderr, JSON goes to stdout
+    // But if there's an error, it might be in stderr
+    if !output.status.success() {
+        return Ok(format!("Error: {}", stderr));
+    }
+
+    // Try to extract JSON from stdout (may have some non-JSON prefix from logs)
+    if let Some(json_start) = stdout.find('{') {
+        Ok(stdout[json_start..].to_string())
+    } else {
+        Ok(stdout)
+    }
 }
 
 /// Helper to check if the legacy crucible-daemon binary exists
@@ -537,15 +567,22 @@ async fn test_cli_semantic_search_works(kiln_path: &PathBuf) -> Result<()> {
     let output = run_cli_semantic_search(kiln_path, "test query").await?;
 
     // Check if output looks like valid JSON with results
-    let parsed: Value = serde_json::from_str(&output)?;
-
-    if let Some(_results) = parsed.get("results") {
-        println!("✅ CLI semantic search returned results");
-        Ok(())
-    } else {
-        Err(anyhow::anyhow!(
-            "CLI semantic search didn't return expected results format"
-        ))
+    match serde_json::from_str::<Value>(&output) {
+        Ok(parsed) => {
+            if let Some(_results) = parsed.get("results") {
+                println!("✅ CLI semantic search returned results");
+                Ok(())
+            } else {
+                println!("❌ CLI output (valid JSON but no results): {}", output);
+                Err(anyhow::anyhow!(
+                    "CLI semantic search didn't return expected results format"
+                ))
+            }
+        }
+        Err(e) => {
+            println!("❌ CLI output (not valid JSON): {}", output);
+            Err(anyhow::anyhow!("Failed to parse JSON: {}", e))
+        }
     }
 }
 use anyhow::Result;
