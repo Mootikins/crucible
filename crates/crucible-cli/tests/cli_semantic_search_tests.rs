@@ -6,28 +6,28 @@
 //!
 //! Tests follow TDD methodology: they should fail initially because the CLI
 //! semantic search uses mock crucible_tools::execute_tool() instead of real
-//! vault_integration::semantic_search() function.
+//! kiln_integration::semantic_search() function.
 
 use anyhow::Result;
 use crucible_cli::{commands::semantic, config::CliConfig};
 use crucible_core::parser::ParsedDocument;
 use crucible_surrealdb::{
-    vault_integration::{self, store_document_embedding, store_parsed_document},
+    kiln_integration::{self, store_document_embedding, store_parsed_document},
     DocumentEmbedding, SurrealClient, SurrealDbConfig,
 };
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::time::timeout;
 
-/// Test helper to create a test vault with sample documents and embeddings
-async fn setup_test_vault_with_embeddings() -> Result<(TempDir, CliConfig, SurrealClient)> {
+/// Test helper to create a test kiln with sample documents and embeddings
+async fn setup_test_kiln_with_embeddings() -> Result<(TempDir, CliConfig, SurrealClient)> {
     let temp_dir = TempDir::new()?;
-    let vault_path = temp_dir.path().to_path_buf();
+    let kiln_path = temp_dir.path().to_path_buf();
 
     // Create test configuration
     let config = CliConfig {
         kiln: crucible_cli::config::KilnConfig {
-            path: vault_path.clone(),
+            path: kiln_path.clone(),
             embedding_url: "http://localhost:11434".to_string(),
             embedding_model: Some("nomic-embed-text".to_string()),
         },
@@ -48,8 +48,8 @@ async fn setup_test_vault_with_embeddings() -> Result<(TempDir, CliConfig, Surre
     };
     let client = SurrealClient::new(db_config).await?;
 
-    // Initialize vault schema
-    vault_integration::initialize_vault_schema(&client).await?;
+    // Initialize kiln schema
+    kiln_integration::initialize_kiln_schema(&client).await?;
 
     // Create test documents with controlled content for predictable similarity
     let test_docs = vec![
@@ -83,14 +83,14 @@ async fn setup_test_vault_with_embeddings() -> Result<(TempDir, CliConfig, Surre
     // Store documents and their embeddings
     for (filename, content, embedding_vector) in test_docs {
         // Create ParsedDocument
-        let mut doc = ParsedDocument::new(vault_path.join(filename));
+        let mut doc = ParsedDocument::new(kiln_path.join(filename));
         doc.content.plain_text = content.to_string();
         doc.parsed_at = chrono::Utc::now();
         doc.content_hash = format!("hash_{}", filename);
         doc.file_size = content.len() as u64;
 
         // Store document
-        let doc_id = store_parsed_document(&client, &doc, &vault_path).await?;
+        let doc_id = store_parsed_document(&client, &doc, &kiln_path).await?;
 
         // Create and store embedding
         let mut embedding = DocumentEmbedding::new(
@@ -131,7 +131,7 @@ mod cli_semantic_search_tests {
     /// Test that CLI semantic search uses real vector search instead of mock tool execution
     /// This test should FAIL initially because CLI uses crucible_tools::execute_tool()
     async fn test_cli_semantic_search_uses_real_vector_search() -> Result<()> {
-        let (_temp_dir, config, _client) = setup_test_vault_with_embeddings().await?;
+        let (_temp_dir, config, _client) = setup_test_kiln_with_embeddings().await?;
 
         // Execute semantic search CLI command
         let result = timeout(
@@ -178,7 +178,7 @@ mod cli_semantic_search_tests {
     /// Test that different queries return different relevant results based on vector similarity
     /// This test should FAIL initially because mock implementation returns static results
     async fn test_cli_semantic_search_different_queries_different_results() -> Result<()> {
-        let (_temp_dir, config, _client) = setup_test_vault_with_embeddings().await?;
+        let (_temp_dir, config, _client) = setup_test_kiln_with_embeddings().await?;
 
         // Search for machine learning content
         let ml_result = timeout(
@@ -235,7 +235,7 @@ mod cli_semantic_search_tests {
     /// Test that CLI semantic search results contain real document paths and similarity scores
     /// This test should FAIL initially because mock implementation returns fake paths
     async fn test_cli_semantic_search_contains_real_document_paths() -> Result<()> {
-        let (_temp_dir, config, _client) = setup_test_vault_with_embeddings().await?;
+        let (_temp_dir, config, _client) = setup_test_kiln_with_embeddings().await?;
 
         let result = timeout(
             Duration::from_secs(10),
@@ -251,7 +251,7 @@ mod cli_semantic_search_tests {
 
         match result {
             Ok(_) => {
-                // After implementation, verify results contain real document paths from our test vault
+                // After implementation, verify results contain real document paths from our test kiln
                 // Mock implementation will return fake paths that don't match our test data
 
                 // TODO: After implementation, add assertions like:
@@ -278,7 +278,7 @@ mod cli_semantic_search_tests {
     /// Test that CLI output formatting works with real search results
     /// This test should FAIL initially because mock results have different structure
     async fn test_cli_semantic_search_output_formatting() -> Result<()> {
-        let (_temp_dir, config, _client) = setup_test_vault_with_embeddings().await?;
+        let (_temp_dir, config, _client) = setup_test_kiln_with_embeddings().await?;
 
         // Test both text and JSON output formats
         let formats = vec!["text", "json"];
@@ -327,7 +327,7 @@ mod cli_semantic_search_tests {
     /// Test configuration options (similarity threshold, result limits) work correctly
     /// This test should FAIL initially because mock implementation ignores configuration
     async fn test_cli_semantic_search_configuration_options() -> Result<()> {
-        let (_temp_dir, config, _client) = setup_test_vault_with_embeddings().await?;
+        let (_temp_dir, config, _client) = setup_test_kiln_with_embeddings().await?;
 
         // Test different result limits
         let limit_3_result = timeout(
@@ -429,7 +429,7 @@ mod cli_semantic_search_tests {
     /// Test that CLI semantic search integrates with real database instead of mock tools
     /// This is a comprehensive integration test that should FAIL initially
     async fn test_cli_semantic_search_comprehensive_integration() -> Result<()> {
-        let (_temp_dir, config, _client) = setup_test_vault_with_embeddings().await?;
+        let (_temp_dir, config, _client) = setup_test_kiln_with_embeddings().await?;
 
         // Test multiple queries that should produce different results based on vector similarity
         let test_queries = vec![
@@ -505,12 +505,12 @@ mod cli_semantic_search_tests {
     }
 
     #[tokio::test]
-    /// Test that CLI semantic search connects to real vault_integration::semantic_search function
+    /// Test that CLI semantic search connects to real kiln_integration::semantic_search function
     /// This test should FAIL initially because CLI uses mock crucible_tools::execute_tool()
-    async fn test_cli_semantic_search_connects_to_vault_integration() -> Result<()> {
-        let (_temp_dir, config, _client) = setup_test_vault_with_embeddings().await?;
+    async fn test_cli_semantic_search_connects_to_kiln_integration() -> Result<()> {
+        let (_temp_dir, config, _client) = setup_test_kiln_with_embeddings().await?;
 
-        // Execute search and verify it calls real vault_integration::semantic_search
+        // Execute search and verify it calls real kiln_integration::semantic_search
         // instead of mock crucible_tools::execute_tool
 
         let result = timeout(
@@ -531,7 +531,7 @@ mod cli_semantic_search_tests {
                 // For now, it should fail because mock tool execution doesn't match test data
 
                 println!(
-                    "Search completed - should be calling real vault_integration::semantic_search"
+                    "Search completed - should be calling real kiln_integration::semantic_search"
                 );
 
                 // TODO: After implementation, verify the function is called by:

@@ -332,7 +332,7 @@ async fn test_system_tool_group_basic() -> Result<()> {
     // Should contain expected tools
     let expected_tools = vec![
         "search_documents",
-        "get_kiln_stats",  // Tool uses 'vault' terminology
+        "get_kiln_stats", // Tool uses 'kiln' terminology
         "system_info",
         "list_files",
     ];

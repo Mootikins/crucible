@@ -33,8 +33,8 @@ pub fn semantic_search() -> ToolFunction {
                 .and_then(|v| v.as_u64())
                 .unwrap_or(10);
 
-            let vault_path = parameters
-                .get("vault_path")
+            let kiln_path = parameters
+                .get("kiln_path")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
 
@@ -44,9 +44,10 @@ pub fn semantic_search() -> ToolFunction {
             );
 
             // Use integrated crucible-surrealdb semantic search functionality
-            let search_results = perform_integrated_semantic_search(query, top_k as usize, vault_path)
-                .await
-                .map_err(|e| ToolError::Other(format!("Semantic search failed: {}", e)))?;
+            let search_results =
+                perform_integrated_semantic_search(query, top_k as usize, kiln_path)
+                    .await
+                    .map_err(|e| ToolError::Other(format!("Semantic search failed: {}", e)))?;
 
             let result_data = json!({
                 "results": search_results,
@@ -69,36 +70,36 @@ pub fn semantic_search() -> ToolFunction {
 async fn perform_integrated_semantic_search(
     query: &str,
     top_k: usize,
-    vault_path_opt: Option<String>,
+    kiln_path_opt: Option<String>,
 ) -> Result<Vec<Value>, anyhow::Error> {
     use crucible_surrealdb::{
-        vault_integration::{retrieve_parsed_document, semantic_search},
+        kiln_integration::{retrieve_parsed_document, semantic_search},
         SurrealClient, SurrealDbConfig,
     };
 
-    // Get vault path from parameter or environment variable (for backwards compatibility)
-    let vault_path_str = if let Some(path) = vault_path_opt {
+    // Get kiln path from parameter or environment variable (for backwards compatibility)
+    let kiln_path_str = if let Some(path) = kiln_path_opt {
         path
     } else {
-        env::var("OBSIDIAN_VAULT_PATH")
-            .map_err(|_| anyhow::anyhow!("OBSIDIAN_VAULT_PATH environment variable not set"))?
+        env::var("OBSIDIAN_KILN_PATH")
+            .map_err(|_| anyhow::anyhow!("OBSIDIAN_KILN_PATH environment variable not set"))?
     };
 
-    let vault_path = PathBuf::from(vault_path_str);
+    let kiln_path = PathBuf::from(kiln_path_str);
 
-    // Validate vault path exists
-    if !vault_path.exists() {
+    // Validate kiln path exists
+    if !kiln_path.exists() {
         return Err(anyhow::anyhow!(
-            "Vault path '{}' does not exist",
-            vault_path.display()
+            "Kiln path '{}' does not exist",
+            kiln_path.display()
         ));
     }
 
     // Initialize database connection
     let db_config = SurrealDbConfig {
         namespace: "crucible".to_string(),
-        database: "vault".to_string(),
-        path: format!("{}/.crucible/cache.db", vault_path.display()),
+        database: "kiln".to_string(),
+        path: format!("{}/.crucible/cache.db", kiln_path.display()),
         max_connections: Some(10),
         timeout_seconds: Some(30),
     };
@@ -107,12 +108,12 @@ async fn perform_integrated_semantic_search(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to connect to database: {}", e))?;
 
-    // Check if embeddings exist, process vault if needed
+    // Check if embeddings exist, process kiln if needed
     let embeddings_exist = check_embeddings_exist_integrated(&client).await?;
 
     if !embeddings_exist {
-        // Process vault to generate embeddings
-        process_vault_if_needed(&client, &vault_path).await?;
+        // Process kiln to generate embeddings
+        process_kiln_if_needed(&client, &kiln_path).await?;
     }
 
     // Create embedding provider for query embeddings
@@ -186,7 +187,7 @@ async fn perform_integrated_semantic_search(
 async fn check_embeddings_exist_integrated(
     client: &crucible_surrealdb::SurrealClient,
 ) -> Result<bool, anyhow::Error> {
-    use crucible_surrealdb::vault_integration::get_database_stats;
+    use crucible_surrealdb::kiln_integration::get_database_stats;
 
     match get_database_stats(client).await {
         Ok(stats) => Ok(stats.total_embeddings > 0),
@@ -210,23 +211,23 @@ async fn check_embeddings_exist_integrated(
     }
 }
 
-/// Process vault if embeddings don't exist
-async fn process_vault_if_needed(
+/// Process kiln if embeddings don't exist
+async fn process_kiln_if_needed(
     _client: &crucible_surrealdb::SurrealClient,
-    vault_path: &PathBuf,
+    kiln_path: &PathBuf,
 ) -> Result<(), anyhow::Error> {
     // For now, provide clear instructions to use the CLI command first
-    // This avoids the complex lifetime issues in the vault processor
+    // This avoids the complex lifetime issues in the kiln processor
     // and provides a reliable path forward for users
     Err(anyhow::anyhow!(
         "No embeddings found in database. Please run the CLI semantic search command first to generate embeddings:\n\
         \n\
-        OBSIDIAN_VAULT_PATH={} ./target/release/cru semantic \"test query\"\n\
+        OBSIDIAN_KILN_PATH={} ./target/release/cru semantic \"test query\"\n\
         \n\
-        This will process your vault and generate the required embeddings for semantic search.\n\
+        This will process your kiln and generate the required embeddings for semantic search.\n\
         \n\
         After the initial processing, semantic search will work through the REPL tools.",
-        vault_path.display()
+        kiln_path.display()
     ))
 }
 
@@ -476,7 +477,7 @@ mod tests {
         let parameters = json!({
             "query": "machine learning",
             "top_k": 5,
-            "vault_path": "/nonexistent/path"  // Will fail early, which is fine for this test
+            "kiln_path": "/nonexistent/path"  // Will fail early, which is fine for this test
         });
 
         let result = tool_fn(

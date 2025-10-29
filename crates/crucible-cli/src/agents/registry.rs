@@ -7,29 +7,29 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct AgentRegistry {
     agents: HashMap<String, AgentCard>,
-    vault_paths: Vec<PathBuf>,
+    kiln_paths: Vec<PathBuf>,
 }
 
 impl AgentRegistry {
     pub fn new() -> Self {
         Self {
             agents: HashMap::new(),
-            vault_paths: Vec::new(),
+            kiln_paths: Vec::new(),
         }
     }
 
-    pub fn add_vault_path<P: AsRef<Path>>(&mut self, path: P) {
-        self.vault_paths.push(path.as_ref().to_path_buf());
+    pub fn add_kiln_path<P: AsRef<Path>>(&mut self, path: P) {
+        self.kiln_paths.push(path.as_ref().to_path_buf());
     }
 
     pub fn load_agents(&mut self) -> Result<()> {
         self.agents.clear();
 
-        for vault_path in &self.vault_paths.clone() {
-            if let Err(e) = self.load_agents_from_path(vault_path) {
+        for kiln_path in &self.kiln_paths.clone() {
+            if let Err(e) = self.load_agents_from_path(kiln_path) {
                 eprintln!(
                     "Warning: Failed to load agents from {}: {}",
-                    vault_path.display(),
+                    kiln_path.display(),
                     e
                 );
             }
@@ -38,8 +38,8 @@ impl AgentRegistry {
         Ok(())
     }
 
-    fn load_agents_from_path<P: AsRef<Path>>(&mut self, vault_path: P) -> Result<()> {
-        let path = vault_path.as_ref();
+    fn load_agents_from_path<P: AsRef<Path>>(&mut self, kiln_path: P) -> Result<()> {
+        let path = kiln_path.as_ref();
 
         if !path.exists() {
             return Ok(());
@@ -137,22 +137,22 @@ mod tests {
     fn test_new_registry() {
         let registry = AgentRegistry::new();
         assert!(registry.list_agents().is_empty());
-        assert!(registry.vault_paths.is_empty());
+        assert!(registry.kiln_paths.is_empty());
     }
 
     #[test]
-    fn test_add_vault_path() {
+    fn test_add_kiln_path() {
         let mut registry = AgentRegistry::new();
-        registry.add_vault_path("/test/path");
-        assert_eq!(registry.vault_paths.len(), 1);
-        assert_eq!(registry.vault_paths[0], PathBuf::from("/test/path"));
+        registry.add_kiln_path("/test/path");
+        assert_eq!(registry.kiln_paths.len(), 1);
+        assert_eq!(registry.kiln_paths[0], PathBuf::from("/test/path"));
     }
 
     #[test]
     fn test_load_agents_from_directory() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let mut registry = AgentRegistry::new();
-        registry.add_vault_path(temp_dir.path());
+        registry.add_kiln_path(temp_dir.path());
 
         let agent1 = create_test_agent_card("test-agent-1", "You are a helpful assistant.");
         let agent2 = create_test_agent_card("test-agent-2", "You are a creative writer.");
@@ -186,7 +186,7 @@ mod tests {
     fn test_load_agents_from_nested_directories() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let mut registry = AgentRegistry::new();
-        registry.add_vault_path(temp_dir.path());
+        registry.add_kiln_path(temp_dir.path());
 
         let nested_dir = temp_dir.path().join("nested");
         fs::create_dir(&nested_dir)?;
@@ -207,7 +207,7 @@ mod tests {
     fn test_load_agents_handles_invalid_yaml() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let mut registry = AgentRegistry::new();
-        registry.add_vault_path(temp_dir.path());
+        registry.add_kiln_path(temp_dir.path());
 
         let invalid_file = temp_dir.path().join("invalid.md");
         fs::write(
@@ -231,7 +231,7 @@ mod tests {
     #[test]
     fn test_load_agents_from_nonexistent_directory() -> Result<()> {
         let mut registry = AgentRegistry::new();
-        registry.add_vault_path("/nonexistent/path");
+        registry.add_kiln_path("/nonexistent/path");
 
         registry.load_agents()?;
 
@@ -244,7 +244,7 @@ mod tests {
     fn test_find_agents_by_tag() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let mut registry = AgentRegistry::new();
-        registry.add_vault_path(temp_dir.path());
+        registry.add_kiln_path(temp_dir.path());
 
         let agent1 = AgentCard {
             name: "agent1".to_string(),
@@ -299,7 +299,7 @@ mod tests {
     fn test_find_agents_by_capability() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let mut registry = AgentRegistry::new();
-        registry.add_vault_path(temp_dir.path());
+        registry.add_kiln_path(temp_dir.path());
 
         let agent1 = AgentCard {
             name: "agent1".to_string(),
@@ -355,12 +355,12 @@ mod tests {
     }
 
     #[test]
-    fn test_multiple_vault_paths() -> Result<()> {
+    fn test_multiple_kiln_paths() -> Result<()> {
         let temp_dir1 = TempDir::new()?;
         let temp_dir2 = TempDir::new()?;
         let mut registry = AgentRegistry::new();
-        registry.add_vault_path(temp_dir1.path());
-        registry.add_vault_path(temp_dir2.path());
+        registry.add_kiln_path(temp_dir1.path());
+        registry.add_kiln_path(temp_dir2.path());
 
         let agent1 = create_test_agent_card("agent1", "From directory 1");
         let agent2 = create_test_agent_card("agent2", "From directory 2");
@@ -383,7 +383,7 @@ mod tests {
         let temp_dir1 = TempDir::new()?;
         let temp_dir2 = TempDir::new()?;
         let mut registry = AgentRegistry::new();
-        registry.add_vault_path(temp_dir1.path());
+        registry.add_kiln_path(temp_dir1.path());
 
         let agent1 = create_test_agent_card("agent1", "First load");
         create_test_markdown_file(&temp_dir1.path().join("agent1.md"), &agent1)?;
@@ -391,7 +391,7 @@ mod tests {
         registry.load_agents()?;
         assert_eq!(registry.list_agents().len(), 1);
 
-        registry.add_vault_path(temp_dir2.path());
+        registry.add_kiln_path(temp_dir2.path());
         let agent2 = create_test_agent_card("agent2", "Second load");
         create_test_markdown_file(&temp_dir2.path().join("agent2.md"), &agent2)?;
 
@@ -405,6 +405,6 @@ mod tests {
     fn test_default() {
         let registry = AgentRegistry::default();
         assert!(registry.list_agents().is_empty());
-        assert!(registry.vault_paths.is_empty());
+        assert!(registry.kiln_paths.is_empty());
     }
 }

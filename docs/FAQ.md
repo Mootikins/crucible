@@ -259,9 +259,9 @@ crucible-cli migration validate --auto-fix
 
 **A**: Common solutions:
 
-1. **Check vault path**:
+1. **Check kiln path**:
    ```bash
-   crucible-cli --vault-path /correct/path search "query"
+   crucible-cli --kiln-path /correct/path search "query"
    ```
 
 2. **Rebuild index**:
@@ -271,7 +271,7 @@ crucible-cli migration validate --auto-fix
 
 3. **Check file permissions**:
    ```bash
-   ls -la /path/to/vault
+   ls -la /path/to/kiln
    ```
 
 ### Q: Database connection errors

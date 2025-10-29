@@ -23,7 +23,7 @@ fn test_stats_command_with_empty_kiln() {
     let kiln = TestKiln::new().unwrap();
 
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path")
+    cmd.arg("--kiln-path")
         .arg(kiln.kiln_path_str())
         .arg("--db-path")
         .arg(kiln.db_path_str())
@@ -37,7 +37,7 @@ fn test_note_list_empty() {
     let kiln = TestKiln::new().unwrap();
 
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path")
+    cmd.arg("--kiln-path")
         .arg(kiln.kiln_path_str())
         .arg("--db-path")
         .arg(kiln.db_path_str())
@@ -53,7 +53,7 @@ fn test_note_create() {
     let note_path = "test-note.md";
 
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path")
+    cmd.arg("--kiln-path")
         .arg(kiln.kiln_path_str())
         .arg("--db-path")
         .arg(kiln.db_path_str())
@@ -93,7 +93,7 @@ fn test_missing_kiln_path() {
 
     // Use a nonexistent kiln path
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path")
+    cmd.arg("--kiln-path")
         .arg("/nonexistent/path")
         .arg("--db-path")
         .arg(kiln.db_path_str())

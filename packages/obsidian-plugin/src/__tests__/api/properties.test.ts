@@ -22,7 +22,7 @@ describe("PropertiesHandler", () => {
 
   it("should update existing frontmatter properties", async () => {
     const file = new TFile("test.md");
-    app.vault.getAbstractFileByPath.mockReturnValue(file);
+    app.kiln.getAbstractFileByPath.mockReturnValue(file);
 
     const existingContent = `---
 status: draft
@@ -32,8 +32,8 @@ status: draft
 
 Content`;
 
-    app.vault.read.mockResolvedValue(existingContent);
-    app.vault.modify.mockResolvedValue(undefined);
+    app.kiln.read.mockResolvedValue(existingContent);
+    app.kiln.modify.mockResolvedValue(undefined);
 
     const req = {
       on: vi.fn((event, handler) => {
@@ -53,20 +53,20 @@ Content`;
 
     await handler.updateProperties("test.md", req, res);
 
-    expect(app.vault.modify).toHaveBeenCalled();
-    const modifiedContent = app.vault.modify.mock.calls[0][1];
+    expect(app.kiln.modify).toHaveBeenCalled();
+    const modifiedContent = app.kiln.modify.mock.calls[0][1];
     expect(modifiedContent).toContain("status: published");
     expect(res.writeHead).toHaveBeenCalledWith(200, expect.anything());
   });
 
   it("should add frontmatter to file without it", async () => {
     const file = new TFile("test.md");
-    app.vault.getAbstractFileByPath.mockReturnValue(file);
+    app.kiln.getAbstractFileByPath.mockReturnValue(file);
 
     const existingContent = `# Test\n\nContent without frontmatter`;
 
-    app.vault.read.mockResolvedValue(existingContent);
-    app.vault.modify.mockResolvedValue(undefined);
+    app.kiln.read.mockResolvedValue(existingContent);
+    app.kiln.modify.mockResolvedValue(undefined);
 
     const req = {
       on: vi.fn((event, handler) => {
@@ -86,7 +86,7 @@ Content`;
 
     await handler.updateProperties("test.md", req, res);
 
-    const modifiedContent = app.vault.modify.mock.calls[0][1];
+    const modifiedContent = app.kiln.modify.mock.calls[0][1];
     expect(modifiedContent).toContain("---");
     expect(modifiedContent).toContain("status: draft");
     expect(modifiedContent).toContain("# Test");
@@ -94,7 +94,7 @@ Content`;
 
   it("should preserve content when updating frontmatter", async () => {
     const file = new TFile("test.md");
-    app.vault.getAbstractFileByPath.mockReturnValue(file);
+    app.kiln.getAbstractFileByPath.mockReturnValue(file);
 
     const existingContent = `---
 title: Original
@@ -106,8 +106,8 @@ Paragraph 1
 
 Paragraph 2`;
 
-    app.vault.read.mockResolvedValue(existingContent);
-    app.vault.modify.mockResolvedValue(undefined);
+    app.kiln.read.mockResolvedValue(existingContent);
+    app.kiln.modify.mockResolvedValue(undefined);
 
     const req = {
       on: vi.fn((event, handler) => {
@@ -127,7 +127,7 @@ Paragraph 2`;
 
     await handler.updateProperties("test.md", req, res);
 
-    const modifiedContent = app.vault.modify.mock.calls[0][1];
+    const modifiedContent = app.kiln.modify.mock.calls[0][1];
     expect(modifiedContent).toContain("# Heading");
     expect(modifiedContent).toContain("Paragraph 1");
     expect(modifiedContent).toContain("Paragraph 2");
@@ -135,7 +135,7 @@ Paragraph 2`;
 
   it("should handle complex property values", async () => {
     const file = new TFile("test.md");
-    app.vault.getAbstractFileByPath.mockReturnValue(file);
+    app.kiln.getAbstractFileByPath.mockReturnValue(file);
 
     const existingContent = `---
 title: Test
@@ -143,8 +143,8 @@ title: Test
 
 Content`;
 
-    app.vault.read.mockResolvedValue(existingContent);
-    app.vault.modify.mockResolvedValue(undefined);
+    app.kiln.read.mockResolvedValue(existingContent);
+    app.kiln.modify.mockResolvedValue(undefined);
 
     const req = {
       on: vi.fn((event, handler) => {
@@ -172,7 +172,7 @@ Content`;
 
     await handler.updateProperties("test.md", req, res);
 
-    const modifiedContent = app.vault.modify.mock.calls[0][1];
+    const modifiedContent = app.kiln.modify.mock.calls[0][1];
     expect(modifiedContent).toContain("tags:");
     expect(modifiedContent).toContain("metadata:");
     expect(modifiedContent).toContain("count: 42");
@@ -180,7 +180,7 @@ Content`;
 
   it("should handle invalid YAML gracefully", async () => {
     const file = new TFile("test.md");
-    app.vault.getAbstractFileByPath.mockReturnValue(file);
+    app.kiln.getAbstractFileByPath.mockReturnValue(file);
 
     const existingContent = `---
 invalid: : : yaml
@@ -188,8 +188,8 @@ invalid: : : yaml
 
 Content`;
 
-    app.vault.read.mockResolvedValue(existingContent);
-    app.vault.modify.mockResolvedValue(undefined);
+    app.kiln.read.mockResolvedValue(existingContent);
+    app.kiln.modify.mockResolvedValue(undefined);
 
     const req = {
       on: vi.fn((event, handler) => {
@@ -210,13 +210,13 @@ Content`;
     // Invalid YAML is handled by replacing frontmatter entirely
     await handler.updateProperties("test.md", req, res);
 
-    expect(app.vault.modify).toHaveBeenCalled();
-    const modifiedContent = app.vault.modify.mock.calls[0][1];
+    expect(app.kiln.modify).toHaveBeenCalled();
+    const modifiedContent = app.kiln.modify.mock.calls[0][1];
     expect(modifiedContent).toContain("status: active");
   });
 
   it("should handle missing file", async () => {
-    app.vault.getAbstractFileByPath.mockReturnValue(null);
+    app.kiln.getAbstractFileByPath.mockReturnValue(null);
 
     const req = {
       on: vi.fn((event, handler) => {

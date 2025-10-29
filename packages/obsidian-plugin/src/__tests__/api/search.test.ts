@@ -21,7 +21,7 @@ describe("SearchHandler", () => {
       const file1 = new TFile("note1.md");
       const file2 = new TFile("note2.md");
 
-      app.vault.getMarkdownFiles.mockReturnValue([file1, file2]);
+      app.kiln.getMarkdownFiles.mockReturnValue([file1, file2]);
 
       app.metadataCache.getFileCache = vi.fn((file) => {
         if (file === file1) {
@@ -49,7 +49,7 @@ describe("SearchHandler", () => {
       const file1 = new TFile("note1.md");
       const file2 = new TFile("note2.md");
 
-      app.vault.getMarkdownFiles.mockReturnValue([file1, file2]);
+      app.kiln.getMarkdownFiles.mockReturnValue([file1, file2]);
 
       app.metadataCache.getFileCache = vi.fn((file) => {
         if (file === file1) {
@@ -76,7 +76,7 @@ describe("SearchHandler", () => {
     it("should return empty array when no matches", async () => {
       const file1 = new TFile("note1.md");
 
-      app.vault.getMarkdownFiles.mockReturnValue([file1]);
+      app.kiln.getMarkdownFiles.mockReturnValue([file1]);
       app.metadataCache.getFileCache.mockReturnValue({
         frontmatter: { tags: ["project"] },
       });
@@ -100,7 +100,7 @@ describe("SearchHandler", () => {
       const file2 = new TFile("Projects/AI/note2.md");
       const file3 = new TFile("Archive/note3.md");
 
-      app.vault.getMarkdownFiles.mockReturnValue([file1, file2, file3]);
+      app.kiln.getMarkdownFiles.mockReturnValue([file1, file2, file3]);
 
       const req = {} as IncomingMessage;
       const res = {
@@ -120,7 +120,7 @@ describe("SearchHandler", () => {
       const file2 = new TFile("Projects/AI/note2.md");
       const file3 = new TFile("Archive/note3.md");
 
-      app.vault.getMarkdownFiles.mockReturnValue([file1, file2, file3]);
+      app.kiln.getMarkdownFiles.mockReturnValue([file1, file2, file3]);
 
       const req = {} as IncomingMessage;
       const res = {
@@ -139,7 +139,7 @@ describe("SearchHandler", () => {
     it("should return empty array for empty folder", async () => {
       const file1 = new TFile("Projects/note1.md");
 
-      app.vault.getMarkdownFiles.mockReturnValue([file1]);
+      app.kiln.getMarkdownFiles.mockReturnValue([file1]);
 
       const req = {} as IncomingMessage;
       const res = {
@@ -159,7 +159,7 @@ describe("SearchHandler", () => {
       const file1 = new TFile("note1.md");
       const file2 = new TFile("note2.md");
 
-      app.vault.getMarkdownFiles.mockReturnValue([file1, file2]);
+      app.kiln.getMarkdownFiles.mockReturnValue([file1, file2]);
 
       app.metadataCache.getFileCache = vi.fn((file) => {
         if (file === file1) {
@@ -187,7 +187,7 @@ describe("SearchHandler", () => {
       const file1 = new TFile("note1.md");
       const file2 = new TFile("note2.md");
 
-      app.vault.getMarkdownFiles.mockReturnValue([file1, file2]);
+      app.kiln.getMarkdownFiles.mockReturnValue([file1, file2]);
 
       app.metadataCache.getFileCache = vi.fn((file) => {
         if (file === file1) {
@@ -214,7 +214,7 @@ describe("SearchHandler", () => {
     it("should handle missing properties", async () => {
       const file1 = new TFile("note1.md");
 
-      app.vault.getMarkdownFiles.mockReturnValue([file1]);
+      app.kiln.getMarkdownFiles.mockReturnValue([file1]);
       app.metadataCache.getFileCache.mockReturnValue({
         frontmatter: { status: "draft" },
       });
@@ -237,8 +237,8 @@ describe("SearchHandler", () => {
       const file1 = new TFile("note1.md");
       const file2 = new TFile("note2.md");
 
-      app.vault.getMarkdownFiles.mockReturnValue([file1, file2]);
-      app.vault.read = vi.fn((file) => {
+      app.kiln.getMarkdownFiles.mockReturnValue([file1, file2]);
+      app.kiln.read = vi.fn((file) => {
         if (file === file1) {
           return Promise.resolve("# Research\n\nThis is about AI research.");
         }
@@ -261,8 +261,8 @@ describe("SearchHandler", () => {
     it("should be case-insensitive", async () => {
       const file1 = new TFile("note1.md");
 
-      app.vault.getMarkdownFiles.mockReturnValue([file1]);
-      app.vault.read.mockResolvedValue("# Research\n\nAI RESEARCH project.");
+      app.kiln.getMarkdownFiles.mockReturnValue([file1]);
+      app.kiln.read.mockResolvedValue("# Research\n\nAI RESEARCH project.");
 
       const req = {} as IncomingMessage;
       const res = {
@@ -280,8 +280,8 @@ describe("SearchHandler", () => {
     it("should return empty array when no matches", async () => {
       const file1 = new TFile("note1.md");
 
-      app.vault.getMarkdownFiles.mockReturnValue([file1]);
-      app.vault.read.mockResolvedValue("# Notes\n\nGeneral content.");
+      app.kiln.getMarkdownFiles.mockReturnValue([file1]);
+      app.kiln.read.mockResolvedValue("# Notes\n\nGeneral content.");
 
       const req = {} as IncomingMessage;
       const res = {

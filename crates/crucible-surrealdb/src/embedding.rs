@@ -12,8 +12,8 @@ pub use crate::embedding_config::{
 pub use crate::embedding_pipeline::EmbeddingPipeline;
 pub use crate::embedding_pool::EmbeddingThreadPool;
 
-// Re-export from vault_integration for embedding-specific functions
-pub use crate::vault_integration::{
+// Re-export from kiln_integration for embedding-specific functions
+pub use crate::kiln_integration::{
     clear_document_embeddings, document_exists, get_database_stats, get_document_embeddings,
     semantic_search, store_document_embedding, update_document_content,
     update_document_processed_timestamp, DatabaseStats,

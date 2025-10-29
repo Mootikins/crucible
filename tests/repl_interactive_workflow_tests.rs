@@ -14,30 +14,30 @@ use serde::{Deserialize, Serialize};
 use tokio::fs;
 
 use crate::comprehensive_integration_workflow_tests::{
-    ComprehensiveTestVault, ReplTestHarness, ReplTestProcess
+    ComprehensiveTestKiln, ReplTestHarness, ReplTestProcess
 };
 
 /// Extended REPL test harness for interactive workflows
 pub struct ExtendedReplTestHarness {
-    vault_dir: TempDir,
-    test_vault: ComprehensiveTestVault,
+    kiln_dir: TempDir,
+    test_kiln: ComprehensiveTestKiln,
 }
 
 impl ExtendedReplTestHarness {
     /// Create a new extended REPL test harness
     pub async fn new() -> Result<Self> {
-        let test_vault = ComprehensiveTestVault::create().await?;
-        let vault_dir = test_vault.path().to_owned();
+        let test_kiln = ComprehensiveTestKiln::create().await?;
+        let kiln_dir = test_kiln.path().to_owned();
 
         Ok(Self {
-            vault_dir: vault_dir.to_owned(),
-            test_vault,
+            kiln_dir: kiln_dir.to_owned(),
+            test_kiln,
         })
     }
 
     /// Spawn a REPL process with custom configuration
     pub fn spawn_repl_with_config(&self, config: ReplConfig) -> Result<ExtendedReplTestProcess> {
-        ExtendedReplTestProcess::spawn(&self.vault_dir, config)
+        ExtendedReplTestProcess::spawn(&self.kiln_dir, config)
     }
 
     /// Test REPL startup and initialization workflow
@@ -280,7 +280,7 @@ impl ExtendedReplTestHarness {
 
         // Step 3: Get project statistics
         let project_stats = repl.send_command(":run get_kiln_stats")?;
-        assert!(!project_stats.is_empty(), "Should get vault statistics");
+        assert!(!project_stats.is_empty(), "Should get kiln statistics");
 
         // Workflow 3: Knowledge discovery workflow
         println!("  🔍 Testing knowledge discovery workflow");
@@ -466,22 +466,22 @@ impl Default for ReplConfig {
 /// Extended REPL test process with additional capabilities
 pub struct ExtendedReplTestProcess {
     process: Child,
-    vault_dir: std::path::PathBuf,
+    kiln_dir: std::path::PathBuf,
     config: ReplConfig,
 }
 
 impl ExtendedReplTestProcess {
     /// Spawn a REPL process with custom configuration
-    pub fn spawn(vault_dir: &std::path::Path, config: ReplConfig) -> Result<Self> {
-        let db_path = vault_dir.join("test.db");
-        let tool_dir = vault_dir.join("tools");
+    pub fn spawn(kiln_dir: &std::path::Path, config: ReplConfig) -> Result<Self> {
+        let db_path = kiln_dir.join("test.db");
+        let tool_dir = kiln_dir.join("tools");
 
         // Create tools directory
         std::fs::create_dir_all(&tool_dir)?;
 
         let mut process = Command::new(env!("CARGO_BIN_EXE_crucible-cli"))
             .args([
-                "--vault-path", vault_dir.to_str().unwrap(),
+                "--kiln-path", kiln_dir.to_str().unwrap(),
                 "--db-path", db_path.to_str().unwrap(),
                 "--tool-dir", tool_dir.to_str().unwrap(),
                 "--format", &config.output_format,
@@ -496,7 +496,7 @@ impl ExtendedReplTestProcess {
 
         Ok(Self {
             process,
-            vault_dir: vault_dir.to_owned(),
+            kiln_dir: kiln_dir.to_owned(),
             config,
         })
     }

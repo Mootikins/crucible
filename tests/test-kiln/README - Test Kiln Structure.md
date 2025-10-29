@@ -5,7 +5,7 @@ created: 2025-01-31
 modified: 2025-01-31
 status: active
 priority: high
-aliases: [Test Vault Overview, Search Testing Guide]
+aliases: [Test Kiln Overview, Search Testing Guide]
 related: ["[[Knowledge Management Hub]]", "[[Project Management]]", "[[Technical Documentation]]"]
 total_notes: 12
 test_scenarios: 150+
@@ -15,14 +15,14 @@ category: "testing-documentation"
 purpose: "end-to-end-testing"
 ---
 
-# Test Vault Structure & Search Scenarios
+# Test Kiln Structure & Search Scenarios
 
-This document provides a comprehensive overview of the Crucible test vault structure, including detailed search scenarios for testing the knowledge management system's capabilities.
+This document provides a comprehensive overview of the Crucible test kiln structure, including detailed search scenarios for testing the knowledge management system's capabilities.
 
-## Vault Overview
+## Kiln Overview
 
 ### Purpose and Scope
-This test vault is designed for comprehensive end-to-end testing of the Crucible knowledge management system. It contains 12 realistic markdown files covering diverse content types, frontmatter properties, and linking patterns that mirror real-world usage scenarios.
+This test kiln is designed for comprehensive end-to-end testing of the Crucible knowledge management system. It contains 12 realistic markdown files covering diverse content types, frontmatter properties, and linking patterns that mirror real-world usage scenarios.
 
 ### Key Statistics
 - **Total Notes**: 12 files
@@ -37,7 +37,7 @@ This test vault is designed for comprehensive end-to-end testing of the Crucible
 
 ```
 tests/test-kiln/
-├── README - Test Vault Structure.md       # This file
+├── README - Test Kiln Structure.md       # This file
 ├── Knowledge Management Hub.md            # Central linking node
 ├── Project Management.md                  # Tasks, timelines, tracking
 ├── Research Methods.md                    # Academic content and methodology
@@ -48,7 +48,7 @@ tests/test-kiln/
 ├── Ideas & Brainstorming.md               # Innovation and concept development
 ├── API Documentation.md                   # Technical specifications
 ├── Book Review.md                         # Detailed literary analysis
-└── Vault Network Analysis.md              # Link and relationship mapping
+└── Kiln Network Analysis.md              # Link and relationship mapping
 ```
 
 ## Content Categories
@@ -348,7 +348,7 @@ SELECT * FROM documents WHERE methodology IS NOT NULL;
 
 ### Link Validation
 ```sql
--- Find all wikilinks in the vault
+-- Find all wikilinks in the kiln
 SELECT content FROM documents WHERE content LIKE '%[[%]]%';
 
 -- Validate link targets exist
@@ -433,7 +433,7 @@ WHERE created > modified
 
 ### Running Tests
 1. **Setup**: Ensure all files are in the `tests/test-kiln/` directory
-2. **Index**: Run vault indexing to build search database
+2. **Index**: Run kiln indexing to build search database
 3. **Execute**: Run test suites for different search types
 4. **Validate**: Verify results match expected outcomes
 
@@ -467,6 +467,6 @@ WHERE created > modified
 
 ## Conclusion
 
-This test vault provides a comprehensive foundation for testing Crucible's knowledge management capabilities. The diverse content types, extensive frontmatter properties, and varied link patterns ensure thorough validation of all system features, from basic search to advanced relationship mapping and semantic analysis.
+This test kiln provides a comprehensive foundation for testing Crucible's knowledge management capabilities. The diverse content types, extensive frontmatter properties, and varied link patterns ensure thorough validation of all system features, from basic search to advanced relationship mapping and semantic analysis.
 
 The 150+ test scenarios cover realistic usage patterns and edge cases, providing confidence in system reliability and performance across different use cases and user needs.

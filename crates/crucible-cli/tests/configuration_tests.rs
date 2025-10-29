@@ -13,7 +13,7 @@
 fn test_configuration_default_values() -> Result<()> {
     let config = CliConfig::default();
 
-    // Test vault defaults
+    // Test kiln defaults
     assert_eq!(config.kiln.embedding_url, "http://localhost:11434");
     assert_eq!(config.kiln.embedding_model, None);
 
@@ -46,7 +46,7 @@ fn test_configuration_file_loading() -> Result<()> {
 
     let config_content = r#"
 [kiln]
-path = "/test/vault"
+path = "/test/kiln"
 embedding_url = "https://test-embedding.com"
 embedding_model = "test-model"
 
@@ -96,8 +96,8 @@ backup_originals = true
     let contents = std::fs::read_to_string(&config_path)?;
     let config: CliConfig = toml::from_str(&contents)?;
 
-    // Test vault configuration
-    assert_eq!(config.kiln.path.to_string_lossy(), "/test/vault");
+    // Test kiln configuration
+    assert_eq!(config.kiln.path.to_string_lossy(), "/test/kiln");
     assert_eq!(config.kiln.embedding_url, "https://test-embedding.com");
     assert_eq!(config.kiln.embedding_model, Some("test-model".to_string()));
 
@@ -139,7 +139,10 @@ fn test_api_key_configuration() -> Result<()> {
         .anthropic_api_key("sk-ant-config-anthropic")
         .build()?;
 
-    assert_eq!(config.openai_api_key(), Some("sk-config-openai".to_string()));
+    assert_eq!(
+        config.openai_api_key(),
+        Some("sk-config-openai".to_string())
+    );
     assert_eq!(
         config.anthropic_api_key(),
         Some("sk-ant-config-anthropic".to_string())
@@ -183,7 +186,7 @@ fn test_configuration_precedence() -> Result<()> {
     // Create config file with some values
     let config_content = r#"
 [kiln]
-path = "/file/vault"
+path = "/file/kiln"
 embedding_url = "https://file-embedding.com"
 embedding_model = "file-model"
 
@@ -209,8 +212,8 @@ temperature = 0.3
     // - embedding_model should be from CLI override (highest precedence)
     assert_eq!(config.kiln.embedding_model, Some("cli-model".to_string()));
 
-    // - vault.path should be from file (middle precedence)
-    assert_eq!(config.kiln.path.to_string_lossy(), "/file/vault");
+    // - kiln.path should be from file (middle precedence)
+    assert_eq!(config.kiln.path.to_string_lossy(), "/file/kiln");
 
     // - llm.chat_model should be from file (middle precedence)
     assert_eq!(config.chat_model(), "file-model");
@@ -381,24 +384,22 @@ fn test_configuration_file_creation() -> Result<()> {
 #[test]
 fn test_path_derivation() -> Result<()> {
     let temp_dir = TempDir::new()?;
-    let vault_path = temp_dir.path().join("test_vault");
+    let kiln_path = temp_dir.path().join("test_kiln");
 
-    // Use builder to create config with explicit vault path
-    let config = CliConfig::builder()
-        .kiln_path(&vault_path)
-        .build()?;
+    // Use builder to create config with explicit kiln path
+    let config = CliConfig::builder().kiln_path(&kiln_path).build()?;
 
     // Test database path derivation
-    let expected_db = vault_path.join(".crucible/kiln.db");
+    let expected_db = kiln_path.join(".crucible/kiln.db");
     assert_eq!(config.database_path(), expected_db);
 
     // Test tools path derivation
-    let expected_tools = vault_path.join("tools");
+    let expected_tools = kiln_path.join("tools");
     assert_eq!(config.tools_path(), expected_tools);
 
     // Test string conversions
     assert_eq!(config.database_path_str()?, expected_db.to_str().unwrap());
-    assert_eq!(config.kiln_path_str()?, vault_path.to_str().unwrap());
+    assert_eq!(config.kiln_path_str()?, kiln_path.to_str().unwrap());
 
     Ok(())
 }
@@ -542,8 +543,8 @@ fn test_configuration_error_handling() -> Result<()> {
     // We need to use OsString to create truly invalid UTF-8
     #[cfg(unix)]
     {
-        use std::os::unix::ffi::OsStringExt;
         use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
 
         let invalid_bytes = vec![0xFF, 0xFF, 0xFF];
         let invalid_osstring = OsString::from_vec(invalid_bytes);
@@ -724,7 +725,7 @@ fn test_configuration_performance() -> Result<()> {
     // Create a relatively large configuration
     let mut config_content = String::new();
     config_content.push_str("[kiln]\n");
-    config_content.push_str("path = \"/test/vault\"\n");
+    config_content.push_str("path = \"/test/kiln\"\n");
     config_content.push_str("embedding_url = \"http://localhost:11434\"\n");
     config_content.push_str("embedding_model = \"test-model\"\n\n");
 

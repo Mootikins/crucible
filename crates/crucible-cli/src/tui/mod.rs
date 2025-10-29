@@ -2,7 +2,7 @@
 //
 // This module implements a terminal user interface using ratatui, providing:
 // - Real-time log display from worker threads
-// - Status bar with vault statistics
+// - Status bar with kiln statistics
 // - REPL for SurrealQL queries and tool execution
 //
 // Architecture: Actor-based with message passing via tokio channels.

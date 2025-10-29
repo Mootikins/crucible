@@ -5,7 +5,7 @@
 //! issues with mock embeddings, configuration integration, and persistent storage.
 //!
 //! **Current Issues Analysis:**
-//! - Mock embeddings are used instead of real embedding generation (line 1080 in vault_integration.rs)
+//! - Mock embeddings are used instead of real embedding generation (line 1080 in kiln_integration.rs)
 //! - CLI embedding configuration is ignored during semantic search
 //! - Database storage may not be properly persistent across runs
 //! - Similarity scores are not meaningful or variable enough
@@ -61,7 +61,7 @@ max_tokens = 2048
     Ok(temp_file)
 }
 
-/// Test helper to create a realistic test vault with diverse content
+/// Test helper to create a realistic test kiln with diverse content
 async fn create_test_kiln() -> Result<(TempDir, PathBuf)> {
     let temp_dir = TempDir::new()?;
     let kiln_path = temp_dir.path().to_path_buf();
@@ -226,10 +226,7 @@ fn extract_json_from_output(output: &str) -> Result<String> {
         let trimmed = line.trim();
         if trimmed.starts_with('{') {
             // Found potential JSON, try to parse from here
-            let remaining: Vec<&str> = output
-                .lines()
-                .skip_while(|l| l.trim() != trimmed)
-                .collect();
+            let remaining: Vec<&str> = output.lines().skip_while(|l| l.trim() != trimmed).collect();
             let json_candidate = remaining.join("\n");
 
             // Validate it's actual JSON
@@ -293,10 +290,16 @@ async fn process_kiln_for_embeddings(kiln_path: &PathBuf) -> Result<()> {
 
     // Print output for debugging
     if !output.stdout.is_empty() {
-        println!("Process stdout: {}", String::from_utf8_lossy(&output.stdout));
+        println!(
+            "Process stdout: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
     }
     if !output.stderr.is_empty() {
-        println!("Process stderr: {}", String::from_utf8_lossy(&output.stderr));
+        println!(
+            "Process stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     // Give more time for processing to complete (FastEmbed may download models on first run)
@@ -313,7 +316,7 @@ mod semantic_search_real_integration_tdd_tests {
     /// Test that demonstrates mock embeddings are used instead of real ones
     ///
     /// This test should FAIL because:
-    /// 1. vault_integration.rs uses generate_mock_query_embedding() (line 1080)
+    /// 1. kiln_integration.rs uses generate_mock_query_embedding() (line 1080)
     /// 2. Similarity scores follow predictable patterns based on query keywords
     /// 3. No actual embedding service is called to generate real query embeddings
     async fn test_semantic_search_uses_mock_embeddings_instead_of_real() -> Result<()> {
@@ -325,7 +328,7 @@ mod semantic_search_real_integration_tdd_tests {
         // Process kiln to ensure embeddings exist
         process_kiln_for_embeddings(&kiln_path).await?;
 
-        // Test queries that have specific mock patterns in vault_integration.rs
+        // Test queries that have specific mock patterns in kiln_integration.rs
         let test_queries = vec![
             (
                 "machine learning",
@@ -855,7 +858,7 @@ mod semantic_search_real_integration_tdd_tests {
 
         // Issue 1: Mock embeddings instead of real ones
         println!("\n1. ❌ Mock Embeddings Issue:");
-        println!("   Location: vault_integration.rs line 1080 (generate_mock_query_embedding)");
+        println!("   Location: kiln_integration.rs line 1080 (generate_mock_query_embedding)");
         println!("   Problem: Uses predefined patterns instead of real embedding generation");
         println!("   Impact: No actual semantic understanding, predictable score patterns");
 

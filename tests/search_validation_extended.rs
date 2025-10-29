@@ -12,7 +12,7 @@ use anyhow::Result;
 use serde_json::json;
 use tempfile::TempDir;
 
-use crate::common::{CrucibleToolManager, TestVaultManager};
+use crate::common::{CrucibleToolManager, TestKilnManager};
 use crate::search_validation_comprehensive::{SearchTestHarness, SearchResult, LinkRelationships};
 
 // ============================================================================
@@ -537,9 +537,9 @@ mod link_structure_search_tests {
             total_outgoing += relationships.outgoing_links.len();
         }
 
-        // Should have a reasonable number of links in the test vault
-        assert!(total_backlinks > 0, "Should have backlinks in the test vault");
-        assert!(total_outgoing > 0, "Should have outgoing links in the test vault");
+        // Should have a reasonable number of links in the test kiln
+        assert!(total_backlinks > 0, "Should have backlinks in the test kiln");
+        assert!(total_outgoing > 0, "Should have outgoing links in the test kiln");
 
         Ok(())
     }
@@ -586,7 +586,7 @@ mod link_structure_search_tests {
             }
         }
 
-        // In a well-connected test vault, should have few orphans
+        // In a well-connected test kiln, should have few orphans
         // This test verifies the link analysis is working
         println!("Found {} potentially orphaned documents", orphaned_docs.len());
 
@@ -635,7 +635,7 @@ mod link_structure_search_tests {
     async fn test_wikilink_resolution_validation() -> Result<()> {
         let harness = SearchTestHarness::new().await?;
 
-        // Find all wikilinks in the vault
+        // Find all wikilinks in the kiln
         let wikilink_results = harness.search_cli("[[", 20).await?;
 
         let mut total_wikilinks = 0;
@@ -669,7 +669,7 @@ mod link_structure_search_tests {
             }
         }
 
-        assert!(total_wikilinks > 0, "Should find wikilinks in the test vault");
+        assert!(total_wikilinks > 0, "Should find wikilinks in the test kiln");
         println!("Found {} wikilinks, resolved {} targets", total_wikilinks, resolved_links);
 
         Ok(())

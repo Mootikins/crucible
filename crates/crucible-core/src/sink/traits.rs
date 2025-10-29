@@ -256,10 +256,10 @@ mod tests {
             .with_buffer_size(100)
             .with_flush_interval(std::time::Duration::from_secs(5))
             .with_max_retries(5)
-            .with_property("db_name".to_string(), "vault".to_string());
+            .with_property("db_name".to_string(), "kiln".to_string());
 
         assert_eq!(config.buffer_size, Some(100));
         assert_eq!(config.max_retries, Some(5));
-        assert_eq!(config.properties.get("db_name"), Some(&"vault".to_string()));
+        assert_eq!(config.properties.get("db_name"), Some(&"kiln".to_string()));
     }
 }

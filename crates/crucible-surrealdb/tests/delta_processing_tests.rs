@@ -4,10 +4,10 @@
 //! implementation for Phase 1 of the feature.
 
 use anyhow::Result;
-use crucible_surrealdb::{
-    process_vault_delta, vault_integration::*, SurrealClient, SurrealDbConfig, VaultScannerConfig,
-};
 use crucible_core::parser::ParsedDocument;
+use crucible_surrealdb::{
+    kiln_integration::*, process_kiln_delta, KilnScannerConfig, SurrealClient, SurrealDbConfig,
+};
 use std::path::PathBuf;
 use tempfile::TempDir;
 use tokio;
@@ -28,7 +28,7 @@ async fn create_test_client() -> Result<(TempDir, SurrealClient)> {
     let client = SurrealClient::new(config).await?;
 
     // Initialize schema
-    initialize_vault_schema(&client).await?;
+    initialize_kiln_schema(&client).await?;
 
     Ok((temp_dir, client))
 }
@@ -97,10 +97,10 @@ async fn test_detect_changed_files_single_change() -> Result<()> {
     tokio::fs::write(&file2, "Modified Content 2").await?;
 
     // Test delta processing
-    let config = VaultScannerConfig::default();
+    let config = KilnScannerConfig::default();
     let changed_paths = vec![file1.clone(), file2.clone(), file3.clone()];
 
-    let result = process_vault_delta(changed_paths, &client, &config, None, &kiln_root).await?;
+    let result = process_kiln_delta(changed_paths, &client, &config, None, &kiln_root).await?;
 
     // Should only process the one changed file
     assert_eq!(
@@ -125,10 +125,10 @@ async fn test_detect_changed_files_no_changes() -> Result<()> {
     create_and_store_document(&client, file2.clone(), "Content 2", &kiln_root).await?;
 
     // Don't modify anything
-    let config = VaultScannerConfig::default();
+    let config = KilnScannerConfig::default();
     let changed_paths = vec![file1, file2];
 
-    let result = process_vault_delta(changed_paths, &client, &config, None, &kiln_root).await?;
+    let result = process_kiln_delta(changed_paths, &client, &config, None, &kiln_root).await?;
 
     // Should not process any files
     assert_eq!(
@@ -152,11 +152,11 @@ async fn test_convert_paths_handles_missing_files() -> Result<()> {
     create_and_store_document(&client, file1.clone(), "Content 1", &kiln_root).await?;
 
     // Try to process both
-    let config = VaultScannerConfig::default();
+    let config = KilnScannerConfig::default();
     let changed_paths = vec![file1, file2];
 
     // Should gracefully skip missing file
-    let result = process_vault_delta(changed_paths, &client, &config, None, &kiln_root).await;
+    let result = process_kiln_delta(changed_paths, &client, &config, None, &kiln_root).await;
     assert!(result.is_ok(), "Should handle missing files gracefully");
 
     Ok(())
@@ -171,16 +171,22 @@ async fn test_bulk_query_efficiency() -> Result<()> {
     // Create 10 files (simulating bulk operation)
     let mut paths = Vec::new();
     for i in 0..10 {
-        let file = create_test_file(&temp_dir, &format!("note{}.md", i), &format!("Content {}", i)).await?;
-        create_and_store_document(&client, file.clone(), &format!("Content {}", i), &kiln_root).await?;
+        let file = create_test_file(
+            &temp_dir,
+            &format!("note{}.md", i),
+            &format!("Content {}", i),
+        )
+        .await?;
+        create_and_store_document(&client, file.clone(), &format!("Content {}", i), &kiln_root)
+            .await?;
         paths.push(file);
     }
 
     // Process all files - should use single bulk query internally
-    let config = VaultScannerConfig::default();
+    let config = KilnScannerConfig::default();
     let start = std::time::Instant::now();
 
-    let result = process_vault_delta(paths, &client, &config, None, &kiln_root).await?;
+    let result = process_kiln_delta(paths, &client, &config, None, &kiln_root).await?;
 
     let duration = start.elapsed();
 
@@ -211,10 +217,10 @@ async fn test_delta_processing_performance() -> Result<()> {
     tokio::fs::write(&file, "Modified content").await?;
 
     // Measure delta processing time
-    let config = VaultScannerConfig::default();
+    let config = KilnScannerConfig::default();
     let start = std::time::Instant::now();
 
-    let result = process_vault_delta(vec![file], &client, &config, None, &kiln_root).await?;
+    let result = process_kiln_delta(vec![file], &client, &config, None, &kiln_root).await?;
 
     let duration = start.elapsed();
 
@@ -236,8 +242,8 @@ async fn test_empty_input_handling() -> Result<()> {
     let kiln_root = temp_dir.path().to_path_buf();
     let (_db_temp, client) = create_test_client().await?;
 
-    let config = VaultScannerConfig::default();
-    let result = process_vault_delta(vec![], &client, &config, None, &kiln_root).await?;
+    let config = KilnScannerConfig::default();
+    let result = process_kiln_delta(vec![], &client, &config, None, &kiln_root).await?;
 
     assert_eq!(result.processed_count, 0);
     assert_eq!(result.failed_count, 0);
@@ -256,14 +262,11 @@ async fn test_new_files_detected_as_changed() -> Result<()> {
     let file1 = create_test_file(&temp_dir, "new1.md", "New content 1").await?;
     let file2 = create_test_file(&temp_dir, "new2.md", "New content 2").await?;
 
-    let config = VaultScannerConfig::default();
-    let result = process_vault_delta(vec![file1, file2], &client, &config, None, &kiln_root).await?;
+    let config = KilnScannerConfig::default();
+    let result = process_kiln_delta(vec![file1, file2], &client, &config, None, &kiln_root).await?;
 
     // Should process both new files
-    assert_eq!(
-        result.processed_count, 2,
-        "Should process both new files"
-    );
+    assert_eq!(result.processed_count, 2, "Should process both new files");
 
     Ok(())
 }

@@ -112,7 +112,7 @@ This fix enables proper record ID queries, which are essential for:
 1. **Reranking Pipeline**: Can now retrieve individual documents by ID for reranking
 2. **Direct Lookups**: O(1) performance for known record IDs
 3. **Graph Traversal**: Supports record ID syntax in FROM clauses
-4. **Vault Integration**: Matches SurrealDB's standard record ID format
+4. **Kiln Integration**: Matches SurrealDB's standard record ID format
 
 ## Performance
 

@@ -6,7 +6,7 @@
 //! has inconsistent behavior regarding daemon dependencies.
 //!
 //! **Current Issue Analysis:**
-//! - CLI `cru semantic` command: Uses integrated vault_integration::semantic_search() ✓
+//! - CLI `cru semantic` command: Uses integrated kiln_integration::semantic_search() ✓
 //! - REPL `:run semantic_search` tool: Uses mock crucible_tools implementation ❌
 //! - Some code paths may still attempt to spawn crucible-daemon process ❌
 //!
@@ -16,10 +16,10 @@
 //! 3. Provide clear specification for daemonless semantic search
 //! 4. Drive implementation of integrated semantic search across all entry points
 
-/// Test helper to create a minimal test vault with sample content
-async fn create_test_vault() -> Result<(TempDir, PathBuf)> {
+/// Test helper to create a minimal test kiln with sample content
+async fn create_test_kiln() -> Result<(TempDir, PathBuf)> {
     let temp_dir = TempDir::new()?;
-    let vault_path = temp_dir.path().to_path_buf();
+    let kiln_path = temp_dir.path().to_path_buf();
 
     // Create test markdown files with semantic content
     let test_files = vec![
@@ -30,15 +30,15 @@ async fn create_test_vault() -> Result<(TempDir, PathBuf)> {
     ];
 
     for (filename, content) in test_files {
-        let file_path = vault_path.join(filename);
+        let file_path = kiln_path.join(filename);
         fs::write(file_path, content)?;
     }
 
-    Ok((temp_dir, vault_path))
+    Ok((temp_dir, kiln_path))
 }
 
 /// Helper to run CLI semantic search command
-async fn run_cli_semantic_search(vault_path: &PathBuf, query: &str) -> Result<String> {
+async fn run_cli_semantic_search(kiln_path: &PathBuf, query: &str) -> Result<String> {
     let output = Command::new(env!("CARGO_BIN_EXE_cru"))
         .arg("semantic")
         .arg(query)
@@ -46,7 +46,7 @@ async fn run_cli_semantic_search(vault_path: &PathBuf, query: &str) -> Result<St
         .arg("3")
         .arg("--format")
         .arg("json")
-        .env("OBSIDIAN_VAULT_PATH", vault_path.to_string_lossy().as_ref())
+        .env("OBSIDIAN_KILN_PATH", kiln_path.to_string_lossy().as_ref())
         .output()
         .await?;
 
@@ -70,18 +70,18 @@ mod semantic_search_daemonless_tdd_tests {
     /// Test that demonstrates the current inconsistency in semantic search behavior
     ///
     /// This test should FAIL because:
-    /// 1. CLI semantic search uses integrated vault_integration::semantic_search()
+    /// 1. CLI semantic search uses integrated kiln_integration::semantic_search()
     /// 2. REPL semantic_search tool uses mock crucible_tools implementation
     /// 3. This architectural gap causes different behavior for the same functionality
     async fn test_semantic_search_inconsistency_between_cli_and_repl() -> Result<()> {
-        let (_temp_dir, vault_path) = create_test_vault().await?;
+        let (_temp_dir, kiln_path) = create_test_kiln().await?;
 
         println!("🔍 Testing semantic search inconsistency between CLI and REPL entry points");
-        println!("📁 Test vault: {}", vault_path.display());
+        println!("📁 Test kiln: {}", kiln_path.display());
 
         // Test 1: CLI semantic search command (should work with integrated implementation)
         println!("\n1. Testing CLI semantic search command...");
-        let cli_result = run_cli_semantic_search(&vault_path, "machine learning").await;
+        let cli_result = run_cli_semantic_search(&kiln_path, "machine learning").await;
 
         match cli_result {
             Ok(cli_output) => {
@@ -121,7 +121,9 @@ mod semantic_search_daemonless_tdd_tests {
 
                 // This demonstrates the inconsistency: CLI uses real search, REPL uses mock
                 println!("\n❌ INCONSISTENCY DETECTED:");
-                println!("   - CLI semantic search: Uses integrated vault_integration::semantic_search()");
+                println!(
+                    "   - CLI semantic search: Uses integrated kiln_integration::semantic_search()"
+                );
                 println!("   - REPL semantic_search tool: Uses mock crucible_tools implementation");
                 println!("   - Same functionality, different behavior and results");
 
@@ -152,10 +154,10 @@ mod semantic_search_daemonless_tdd_tests {
     /// a crucible-daemon process. The test demonstrates where daemon dependencies
     /// still exist in the semantic search functionality.
     async fn test_semantic_search_without_external_daemon() -> Result<()> {
-        let (_temp_dir, vault_path) = create_test_vault().await?;
+        let (_temp_dir, kiln_path) = create_test_kiln().await?;
 
         println!("🔍 Testing semantic search without external daemon dependencies");
-        println!("📁 Test vault: {}", vault_path.display());
+        println!("📁 Test kiln: {}", kiln_path.display());
 
         // Check if daemon binary exists
         let daemon_exists = daemon_binary_exists();
@@ -170,7 +172,7 @@ mod semantic_search_daemonless_tdd_tests {
 
         // Test CLI Command
         println!("\n🔧 Testing entry point: CLI Command");
-        let cli_result = run_cli_semantic_search(&vault_path, "artificial intelligence").await;
+        let cli_result = run_cli_semantic_search(&kiln_path, "artificial intelligence").await;
 
         match cli_result {
             Ok(result) => {
@@ -258,10 +260,10 @@ mod semantic_search_daemonless_tdd_tests {
     /// while REPL semantic_search tool uses mock implementation, producing different
     /// results for the same query.
     async fn test_semantic_search_consistency_across_entry_points() -> Result<()> {
-        let (_temp_dir, vault_path) = create_test_vault().await?;
+        let (_temp_dir, kiln_path) = create_test_kiln().await?;
 
         println!("🔍 Testing semantic search consistency across entry points");
-        println!("📁 Test vault: {}", vault_path.display());
+        println!("📁 Test kiln: {}", kiln_path.display());
 
         let test_queries = vec![
             "machine learning",
@@ -274,7 +276,7 @@ mod semantic_search_daemonless_tdd_tests {
             println!("\n🔍 Testing query: '{}'", query);
 
             // Test CLI semantic search
-            let cli_result = run_cli_semantic_search(&vault_path, query).await;
+            let cli_result = run_cli_semantic_search(&kiln_path, query).await;
             let repl_result = test_repl_semantic_search_tool_with_query(query).await;
 
             match (cli_result, repl_result) {
@@ -319,7 +321,7 @@ mod semantic_search_daemonless_tdd_tests {
                     });
 
                     if cli_has_real_files {
-                        println!("✅ CLI returns real file paths from vault");
+                        println!("✅ CLI returns real file paths from kiln");
                     } else {
                         println!("⚠️  CLI may also be using mock data");
                     }
@@ -384,10 +386,10 @@ mod semantic_search_daemonless_tdd_tests {
     /// This test should FAIL with the current "crucible-daemon binary not found"
     /// error, providing a clear specification for what needs to be implemented.
     async fn test_daemonless_semantic_search_specification() -> Result<()> {
-        let (_temp_dir, vault_path) = create_test_vault().await?;
+        let (_temp_dir, kiln_path) = create_test_kiln().await?;
 
         println!("🎯 TDD RED Phase: Daemonless Semantic Search Specification");
-        println!("📁 Test vault: {}", vault_path.display());
+        println!("📁 Test kiln: {}", kiln_path.display());
 
         // This test should demonstrate the current problem clearly
         println!("\n🔍 CURRENT PROBLEM:");
@@ -406,7 +408,7 @@ mod semantic_search_daemonless_tdd_tests {
         println!("\n🧪 TESTING CURRENT STATE:");
 
         // This should reveal the current limitations
-        let cli_works = test_cli_semantic_search_works(&vault_path).await.is_ok();
+        let cli_works = test_cli_semantic_search_works(&kiln_path).await.is_ok();
         let repl_uses_mock = test_repl_uses_mock_implementation().await?;
 
         println!("📊 Test Results:");
@@ -423,7 +425,7 @@ mod semantic_search_daemonless_tdd_tests {
             println!("   This needs to be fixed to use integrated semantic search");
             println!("   The fix should:");
             println!("   1. Replace mock crucible_tools semantic_search with real implementation");
-            println!("   2. Use vault_integration::semantic_search() across all entry points");
+            println!("   2. Use kiln_integration::semantic_search() across all entry points");
             println!("   3. Ensure no daemon dependencies exist");
             println!("   4. Provide consistent results across CLI and REPL");
 
@@ -531,8 +533,8 @@ async fn test_repl_uses_mock_implementation() -> Result<bool> {
 }
 
 /// Helper to test CLI semantic search functionality
-async fn test_cli_semantic_search_works(vault_path: &PathBuf) -> Result<()> {
-    let output = run_cli_semantic_search(vault_path, "test query").await?;
+async fn test_cli_semantic_search_works(kiln_path: &PathBuf) -> Result<()> {
+    let output = run_cli_semantic_search(kiln_path, "test query").await?;
 
     // Check if output looks like valid JSON with results
     let parsed: Value = serde_json::from_str(&output)?;

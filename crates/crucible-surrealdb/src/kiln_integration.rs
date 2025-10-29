@@ -1,4 +1,4 @@
-//! Vault Integration Module
+//! Kiln Integration Module
 //!
 //! This module provides the integration layer between the parser system and SurrealDB.
 //! It implements the bridge between ParsedDocument structures and the database schema.
@@ -15,8 +15,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tracing::{debug, error, info, warn};
 
-/// Initialize the vault schema in the database
-pub async fn initialize_vault_schema(client: &SurrealClient) -> Result<()> {
+/// Initialize the kiln schema in the database
+pub async fn initialize_kiln_schema(client: &SurrealClient) -> Result<()> {
     use crucible_core::{ColumnDefinition, DataType, RelationalDB, TableSchema};
 
     // Create notes table
@@ -154,7 +154,7 @@ pub async fn initialize_vault_schema(client: &SurrealClient) -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("Failed to create embeddings table: {}", e))?;
 
-    info!("Vault schema with embeddings initialized successfully");
+    info!("Kiln schema with embeddings initialized successfully");
     Ok(())
 }
 
@@ -249,11 +249,7 @@ pub async fn store_parsed_document(
     // Store the record with explicit ID - use UPDATE for upsert behavior
     // This allows both creating new records and updating existing ones
     let json_data = serde_json::to_string(&record_data)?;
-    let update_sql = format!(
-        "UPDATE notes:⟨{}⟩ CONTENT {}",
-        relative_id,
-        json_data
-    );
+    let update_sql = format!("UPDATE notes:⟨{}⟩ CONTENT {}", relative_id, json_data);
 
     client
         .query(&update_sql, &[])
@@ -307,7 +303,7 @@ pub async fn create_wikilink_edges(
 
         // For now, create placeholder target documents if they don't exist
         // In a full implementation, we'd want to resolve the actual target document IDs
-        let target_path = format!("/vault/{}.md", wikilink.target);
+        let target_path = format!("/kiln/{}.md", wikilink.target);
 
         // Create or find the target document
         let display_name = wikilink.display();
@@ -642,7 +638,7 @@ pub async fn create_embed_relationships(
         let embed_type = determine_embed_type(wikilink);
 
         // Create or find the target document
-        let target_path = format!("/vault/{}.md", wikilink.target);
+        let target_path = format!("/kiln/{}.md", wikilink.target);
         let target_id =
             find_or_create_target_document(client, &target_path, &wikilink.target).await?;
 
@@ -1316,10 +1312,7 @@ pub async fn store_embedding(
         .map_err(|e| anyhow::anyhow!("Failed to insert embedding: {}", e))?;
 
     // Create graph relation: notes:id -> has_embedding -> embeddings:chunk_id
-    let relate_sql = format!(
-        "RELATE {} -> has_embedding -> {}",
-        note_id, chunk_id
-    );
+    let relate_sql = format!("RELATE {} -> has_embedding -> {}", note_id, chunk_id);
 
     client
         .query(&relate_sql, &[])
@@ -1428,10 +1421,7 @@ pub async fn store_embedding_with_chunk_id(
         .map_err(|e| anyhow::anyhow!("Failed to insert embedding: {}", e))?;
 
     // Create graph relation: notes:id -> has_embedding -> embeddings:chunk_id
-    let relate_sql = format!(
-        "RELATE {} -> has_embedding -> {}",
-        note_id, chunk_id
-    );
+    let relate_sql = format!("RELATE {} -> has_embedding -> {}", note_id, chunk_id);
 
     client
         .query(&relate_sql, &[])
@@ -1513,10 +1503,7 @@ pub async fn clear_document_embeddings(client: &SurrealClient, document_id: &str
     }
 
     // Step 2: Delete all has_embedding edges from this note
-    let delete_edges_sql = format!(
-        "DELETE {} -> has_embedding",
-        note_id.replace("'", "\\'")
-    );
+    let delete_edges_sql = format!("DELETE {} -> has_embedding", note_id.replace("'", "\\'"));
     client
         .query(&delete_edges_sql, &[])
         .await
@@ -1557,10 +1544,7 @@ pub async fn clear_document_embeddings(client: &SurrealClient, document_id: &str
 /// let deleted_count = delete_document_embeddings(&client, "notes:abc123").await?;
 /// println!("Deleted {} embeddings", deleted_count);
 /// ```
-pub async fn delete_document_embeddings(
-    client: &SurrealClient,
-    doc_id: &str,
-) -> Result<usize> {
+pub async fn delete_document_embeddings(client: &SurrealClient, doc_id: &str) -> Result<usize> {
     debug!("Deleting embeddings for document: {}", doc_id);
 
     // Extract the relative path part from doc_id
@@ -1699,8 +1683,14 @@ pub async fn get_database_stats(client: &SurrealClient) -> Result<DatabaseStats>
         .await
         .map_err(|e| anyhow::anyhow!("Failed to query embeddings count: {}", e))?;
 
-    eprintln!("DEBUG STATS: Notes query returned {} records", notes_result.records.len());
-    eprintln!("DEBUG STATS: Embeddings query returned {} records", embeddings_result.records.len());
+    eprintln!(
+        "DEBUG STATS: Notes query returned {} records",
+        notes_result.records.len()
+    );
+    eprintln!(
+        "DEBUG STATS: Embeddings query returned {} records",
+        embeddings_result.records.len()
+    );
 
     let total_documents = notes_result
         .records
@@ -1864,7 +1854,10 @@ pub async fn semantic_search_with_reranking(
     // Stage 1: Vector search - retrieve more candidates than needed
     let initial_results = semantic_search(client, query, initial_limit, embedding_provider).await?;
 
-    eprintln!("DEBUG RERANK: Stage 1 vector search returned {} results", initial_results.len());
+    eprintln!(
+        "DEBUG RERANK: Stage 1 vector search returned {} results",
+        initial_results.len()
+    );
 
     if initial_results.is_empty() {
         warn!("Stage 1 vector search returned no results");
@@ -1884,7 +1877,10 @@ pub async fn semantic_search_with_reranking(
         // Optimized: Use indexed document_id field for O(1) lookups
         let mut documents = Vec::new();
         let mut failed_retrievals = 0;
-        eprintln!("DEBUG RERANK: Starting optimized document retrieval for {} results", initial_results.len());
+        eprintln!(
+            "DEBUG RERANK: Starting optimized document retrieval for {} results",
+            initial_results.len()
+        );
 
         for (document_id, vec_score) in &initial_results {
             eprintln!("DEBUG RERANK: Fetching document_id: {}", document_id);
@@ -1909,21 +1905,28 @@ pub async fn semantic_search_with_reranking(
             };
 
             match notes_result.records.first() {
-                Some(note_record) => {
-                    match convert_record_to_parsed_document(note_record).await {
-                        Ok(doc) => {
-                            let text = doc.content.plain_text.clone();
-                            eprintln!("DEBUG RERANK: Retrieved document with {} chars of text", text.len());
-                            documents.push((document_id.clone(), text, *vec_score));
-                        }
-                        Err(e) => {
-                            eprintln!("DEBUG RERANK: Failed to convert document {}: {}", document_id, e);
-                            failed_retrievals += 1;
-                        }
+                Some(note_record) => match convert_record_to_parsed_document(note_record).await {
+                    Ok(doc) => {
+                        let text = doc.content.plain_text.clone();
+                        eprintln!(
+                            "DEBUG RERANK: Retrieved document with {} chars of text",
+                            text.len()
+                        );
+                        documents.push((document_id.clone(), text, *vec_score));
                     }
-                }
+                    Err(e) => {
+                        eprintln!(
+                            "DEBUG RERANK: Failed to convert document {}: {}",
+                            document_id, e
+                        );
+                        failed_retrievals += 1;
+                    }
+                },
                 None => {
-                    eprintln!("DEBUG RERANK: Document not found for document_id: {}", document_id);
+                    eprintln!(
+                        "DEBUG RERANK: Document not found for document_id: {}",
+                        document_id
+                    );
                     failed_retrievals += 1;
                 }
             }
@@ -2091,7 +2094,10 @@ fn convert_record_to_document_embedding(record: &Record) -> Result<DocumentEmbed
 }
 
 /// Convert record to DocumentEmbedding with explicit document_id
-fn convert_record_to_document_embedding_with_id(record: &Record, document_id: &str) -> Result<DocumentEmbedding> {
+fn convert_record_to_document_embedding_with_id(
+    record: &Record,
+    document_id: &str,
+) -> Result<DocumentEmbedding> {
     // Use the provided document_id instead of extracting from record
     let document_id = document_id.to_string();
 
@@ -2300,8 +2306,8 @@ mod tests {
         };
         let client = SurrealClient::new(config).await.unwrap();
 
-        // Initialize vault schema (skip if tables already exist)
-        let _ = initialize_vault_schema(&client).await;
+        // Initialize kiln schema (skip if tables already exist)
+        let _ = initialize_kiln_schema(&client).await;
 
         // Create a test note
         let kiln_root = PathBuf::from("/test/kiln");
@@ -2321,16 +2327,9 @@ mod tests {
         let vector: Vec<f32> = (0..768).map(|i| i as f32 / 768.0).collect();
 
         // Store embedding with graph relation
-        let chunk_id = store_embedding(
-            &client,
-            &note_id,
-            vector.clone(),
-            "test-model",
-            1000,
-            0,
-        )
-        .await
-        .unwrap();
+        let chunk_id = store_embedding(&client, &note_id, vector.clone(), "test-model", 1000, 0)
+            .await
+            .unwrap();
 
         println!("Stored embedding with ID: {}", chunk_id);
 
@@ -2349,11 +2348,18 @@ mod tests {
         println!("Graph traversal returned {} records", result.records.len());
 
         // Verify we got the embedding back
-        assert_eq!(result.records.len(), 1, "Should retrieve one embedding via graph traversal");
+        assert_eq!(
+            result.records.len(),
+            1,
+            "Should retrieve one embedding via graph traversal"
+        );
 
         // The result contains 'out' field pointing to the embedding record ID
         let embedding_record = &result.records[0];
-        assert!(embedding_record.data.contains_key("out"), "Should have 'out' field with embedding ID");
+        assert!(
+            embedding_record.data.contains_key("out"),
+            "Should have 'out' field with embedding ID"
+        );
 
         println!("✓ Graph relations test passed!");
     }
@@ -2368,8 +2374,8 @@ mod tests {
         };
         let client = SurrealClient::new(config).await.unwrap();
 
-        // Initialize vault schema (skip if tables already exist)
-        let _ = initialize_vault_schema(&client).await;
+        // Initialize kiln schema (skip if tables already exist)
+        let _ = initialize_kiln_schema(&client).await;
 
         // Create a test note
         let kiln_root = PathBuf::from("/test/kiln");
@@ -2406,10 +2412,17 @@ mod tests {
         let traversal_sql = format!("SELECT out FROM {}->has_embedding", note_id);
         let result = client.query(&traversal_sql, &[]).await.unwrap();
 
-        println!("Retrieved {} embeddings via graph traversal", result.records.len());
+        println!(
+            "Retrieved {} embeddings via graph traversal",
+            result.records.len()
+        );
 
         // Verify we got all 3 chunks
-        assert_eq!(result.records.len(), 3, "Should retrieve all three embedding chunks");
+        assert_eq!(
+            result.records.len(),
+            3,
+            "Should retrieve all three embedding chunks"
+        );
 
         println!("✓ Multiple chunks graph relations test passed!");
     }

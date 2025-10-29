@@ -1,12 +1,12 @@
 //! Test harness for embedding integration tests
 //!
 //! Provides a high-level test harness for integration testing of embedding
-//! generation, storage, and semantic search with a realistic vault environment.
+//! generation, storage, and semantic search with a realistic kiln environment.
 //!
 //! ## DaemonEmbeddingHarness
 //!
 //! The main test harness that provides:
-//! - Temporary vault directory management
+//! - Temporary kiln directory management
 //! - In-memory SurrealDB database
 //! - Configurable embedding providers (mock/Ollama/auto)
 //! - Note creation with automatic or manual embeddings
@@ -120,16 +120,16 @@ impl Default for EmbeddingHarnessConfig {
 /// Integration test harness for embedding workflows
 ///
 /// Provides a complete test environment with:
-/// - Temporary vault directory (auto-cleaned on drop)
+/// - Temporary kiln directory (auto-cleaned on drop)
 /// - In-memory SurrealDB database
 /// - Configurable embedding provider (mock/Ollama/auto)
 /// - Markdown parser and adapter
 /// - Note creation with automatic/manual embeddings
 /// - Semantic search and metadata queries
 ///
-/// Compatible with VaultTestHarness API for easy migration.
+/// Compatible with KilnTestHarness API for easy migration.
 pub struct DaemonEmbeddingHarness {
-    vault_dir: TempDir,
+    kiln_dir: TempDir,
     db: SurrealEmbeddingDatabase,
     parser: PulldownParser,
     adapter: SurrealDBAdapter,
@@ -141,10 +141,10 @@ impl Clone for DaemonEmbeddingHarness {
     fn clone(&self) -> Self {
         // Note: This creates a new temporary directory, which is the best we can do
         // since TempDir doesn't implement Clone. The database and provider are shared.
-        let new_vault_dir = tempfile::TempDir::new().expect("Failed to create temporary directory");
+        let new_kiln_dir = tempfile::TempDir::new().expect("Failed to create temporary directory");
 
         Self {
-            vault_dir: new_vault_dir,
+            kiln_dir: new_kiln_dir,
             db: self.db.clone(),
             parser: self.parser.clone(),
             adapter: self.adapter.clone(),
@@ -164,8 +164,8 @@ impl DaemonEmbeddingHarness {
     /// let harness = DaemonEmbeddingHarness::new(config).await?;
     /// ```
     pub async fn new(config: EmbeddingHarnessConfig) -> Result<Self> {
-        // Create temporary vault directory
-        let vault_dir = TempDir::new()?;
+        // Create temporary kiln directory
+        let kiln_dir = TempDir::new()?;
 
         // Create in-memory database
         let db = SurrealEmbeddingDatabase::new_memory();
@@ -183,7 +183,7 @@ impl DaemonEmbeddingHarness {
         };
 
         Ok(Self {
-            vault_dir,
+            kiln_dir,
             db,
             parser,
             adapter,
@@ -209,17 +209,17 @@ impl DaemonEmbeddingHarness {
     // Note Creation
     // ========================================================================
 
-    /// Create a note in the vault with automatic embedding generation
+    /// Create a note in the kiln with automatic embedding generation
     ///
     /// This is the primary method for creating test notes. It:
-    /// 1. Writes the file to the vault directory
+    /// 1. Writes the file to the kiln directory
     /// 2. Parses the markdown content
     /// 3. Generates an embedding using the configured provider
     /// 4. Stores the note with embedding in the database
     ///
     /// # Arguments
     ///
-    /// * `path` - Relative path from vault root (e.g., "Projects/note.md")
+    /// * `path` - Relative path from kiln root (e.g., "Projects/note.md")
     /// * `content` - Markdown content (with or without frontmatter)
     ///
     /// # Returns
@@ -243,7 +243,7 @@ impl DaemonEmbeddingHarness {
     /// ).await?;
     /// ```
     pub async fn create_note(&self, path: &str, content: &str) -> Result<PathBuf> {
-        let note_path = self.vault_dir.path().join(path);
+        let note_path = self.kiln_dir.path().join(path);
 
         // Create parent directories
         if let Some(parent) = note_path.parent() {
@@ -324,7 +324,7 @@ impl DaemonEmbeddingHarness {
     /// ).await?;
     /// ```
     pub async fn create_note_no_embedding(&self, path: &str, content: &str) -> Result<PathBuf> {
-        let note_path = self.vault_dir.path().join(path);
+        let note_path = self.kiln_dir.path().join(path);
 
         // Create parent directories
         if let Some(parent) = note_path.parent() {
@@ -402,7 +402,7 @@ impl DaemonEmbeddingHarness {
         content: &str,
         embedding: Vec<f32>,
     ) -> Result<PathBuf> {
-        let note_path = self.vault_dir.path().join(path);
+        let note_path = self.kiln_dir.path().join(path);
 
         // Create parent directories
         if let Some(parent) = note_path.parent() {
@@ -465,7 +465,7 @@ impl DaemonEmbeddingHarness {
     // Semantic Search
     // ========================================================================
 
-    /// Perform semantic search on vault notes
+    /// Perform semantic search on kiln notes
     ///
     /// Generates an embedding for the query and finds the most similar notes
     /// using cosine similarity.
@@ -512,7 +512,7 @@ impl DaemonEmbeddingHarness {
     /// assert!(harness.has_embedding("note.md").await?);
     /// ```
     pub async fn has_embedding(&self, path: &str) -> Result<bool> {
-        let full_path = self.vault_dir.path().join(path).to_string_lossy().to_string();
+        let full_path = self.kiln_dir.path().join(path).to_string_lossy().to_string();
         let data = self.db.get_embedding(&full_path).await?;
 
         Ok(data.map(|d| !d.embedding.iter().all(|&v| v == 0.0)).unwrap_or(false))
@@ -527,7 +527,7 @@ impl DaemonEmbeddingHarness {
     /// assert_eq!(embedding.len(), 768);
     /// ```
     pub async fn get_embedding(&self, path: &str) -> Result<Option<Vec<f32>>> {
-        let full_path = self.vault_dir.path().join(path).to_string_lossy().to_string();
+        let full_path = self.kiln_dir.path().join(path).to_string_lossy().to_string();
         let data = self.db.get_embedding(&full_path).await?;
 
         Ok(data.map(|d| d.embedding))
@@ -626,38 +626,38 @@ impl DaemonEmbeddingHarness {
     }
 
     // ========================================================================
-    // VaultTestHarness Compatibility
+    // KilnTestHarness Compatibility
     // ========================================================================
 
     /// Check if a file exists in the database
     ///
-    /// Compatible with VaultTestHarness::file_exists()
+    /// Compatible with KilnTestHarness::file_exists()
     pub async fn file_exists(&self, path: &str) -> Result<bool> {
-        let full_path = self.vault_dir.path().join(path).to_string_lossy().to_string();
+        let full_path = self.kiln_dir.path().join(path).to_string_lossy().to_string();
         self.db.file_exists(&full_path).await
     }
 
     /// Get metadata for a note
     ///
-    /// Compatible with VaultTestHarness::get_metadata()
+    /// Compatible with KilnTestHarness::get_metadata()
     pub async fn get_metadata(&self, path: &str) -> Result<Option<EmbeddingMetadata>> {
-        let full_path = self.vault_dir.path().join(path).to_string_lossy().to_string();
+        let full_path = self.kiln_dir.path().join(path).to_string_lossy().to_string();
         let data = self.db.get_embedding(&full_path).await?;
         Ok(data.map(|d| d.metadata))
     }
 
     /// Get database statistics
     ///
-    /// Compatible with VaultTestHarness::get_stats()
+    /// Compatible with KilnTestHarness::get_stats()
     pub async fn get_stats(&self) -> Result<DatabaseStats> {
         self.db.get_stats().await
     }
 
-    /// Get the vault directory path
+    /// Get the kiln directory path
     ///
     /// Returns the temporary directory where notes are stored.
-    pub fn vault_path(&self) -> &Path {
-        self.vault_dir.path()
+    pub fn kiln_path(&self) -> &Path {
+        self.kiln_dir.path()
     }
 
     /// Get reference to the embedding provider
@@ -689,7 +689,7 @@ mod tests {
         let harness = DaemonEmbeddingHarness::new(config).await?;
 
         // Verify harness components initialized
-        assert!(harness.vault_path().exists());
+        assert!(harness.kiln_path().exists());
 
         let stats = harness.get_stats().await?;
         assert_eq!(stats.total_documents, 0);
@@ -702,7 +702,7 @@ mod tests {
         let harness = DaemonEmbeddingHarness::new_default().await?;
 
         // Verify harness components initialized
-        assert!(harness.vault_path().exists());
+        assert!(harness.kiln_path().exists());
 
         let stats = harness.get_stats().await?;
         assert_eq!(stats.total_documents, 0);
@@ -874,10 +874,10 @@ This is a test note for embedding generation.
     }
 
     #[tokio::test]
-    async fn test_vault_test_harness_compatibility() -> Result<()> {
+    async fn test_kiln_test_harness_compatibility() -> Result<()> {
         let harness = DaemonEmbeddingHarness::new_default().await?;
 
-        // Test VaultTestHarness-compatible methods
+        // Test KilnTestHarness-compatible methods
         harness.create_note("test.md", "# Test").await?;
 
         // file_exists
@@ -892,9 +892,9 @@ This is a test note for embedding generation.
         let stats = harness.get_stats().await?;
         assert_eq!(stats.total_documents, 1);
 
-        // vault_path
-        let vault_path = harness.vault_path();
-        assert!(vault_path.exists());
+        // kiln_path
+        let kiln_path = harness.kiln_path();
+        assert!(kiln_path.exists());
 
         // provider
         let provider = harness.provider();
@@ -903,7 +903,7 @@ This is a test note for embedding generation.
 
         // db
         let db = harness.db();
-        let full_path = harness.vault_path().join("test.md").to_string_lossy().to_string();
+        let full_path = harness.kiln_path().join("test.md").to_string_lossy().to_string();
         let exists = db.file_exists(&full_path).await?;
         assert!(exists);
 

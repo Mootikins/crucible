@@ -398,7 +398,11 @@ impl ToolGroupRegistry {
                     group_name,
                     duration.as_millis(),
                     tools.len(),
-                    if needs_init { " with initialization" } else { "" }
+                    if needs_init {
+                        " with initialization"
+                    } else {
+                        ""
+                    }
                 );
             }
         }

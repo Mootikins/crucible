@@ -315,8 +315,8 @@ pub async fn load_all_tools() -> Result<(), ToolError> {
     // Register system tools
     register_system_tools().await?;
 
-    // Register vault tools
-    register_vault_tools().await?;
+    // Register kiln tools
+    register_kiln_tools().await?;
 
     // Register database tools
     register_database_tools().await?;
@@ -350,24 +350,24 @@ async fn register_system_tools() -> Result<(), ToolError> {
     Ok(())
 }
 
-/// Register all vault tools
-async fn register_vault_tools() -> Result<(), ToolError> {
-    use crate::vault_tools;
+/// Register all kiln tools
+async fn register_kiln_tools() -> Result<(), ToolError> {
+    use crate::kiln_tools;
 
     let tools = vec![
-        ("search_by_properties", vault_tools::search_by_properties()),
-        ("search_by_tags", vault_tools::search_by_tags()),
-        ("search_by_folder", vault_tools::search_by_folder()),
-        ("create_note", vault_tools::create_note()),
-        ("update_note", vault_tools::update_note()),
-        ("delete_note", vault_tools::delete_note()),
-        ("get_kiln_stats", vault_tools::get_kiln_stats()),
-        ("list_tags", vault_tools::list_tags()),
+        ("search_by_properties", kiln_tools::search_by_properties()),
+        ("search_by_tags", kiln_tools::search_by_tags()),
+        ("search_by_folder", kiln_tools::search_by_folder()),
+        ("create_note", kiln_tools::create_note()),
+        ("update_note", kiln_tools::update_note()),
+        ("delete_note", kiln_tools::delete_note()),
+        ("get_kiln_stats", kiln_tools::get_kiln_stats()),
+        ("list_tags", kiln_tools::list_tags()),
     ];
 
     for (name, function) in tools {
         register_tool_function(name.to_string(), function).await?;
-        tracing::debug!("Registered vault tool: {}", name);
+        tracing::debug!("Registered kiln tool: {}", name);
     }
 
     Ok(())
@@ -426,7 +426,7 @@ pub fn tool_loader_info() -> ToolLoaderInfo {
         description:
             "Tool loading with simplified types and all 25+ tools verified for Phase 3.2 compliance"
                 .to_string(),
-        total_tools: 25, // System (5) + Vault (8) + Database (7) + Search (5) = 25 tools
+        total_tools: 25, // System (5) + Kiln (8) + Database (7) + Search (5) = 25 tools
         features: vec![
             "simplified_types".to_string(),
             "no_hot_reload".to_string(),

@@ -158,28 +158,28 @@ async fn test_tool_execution_integration() -> Result<(), Box<dyn std::error::Err
     );
 
     // Test executing get_kiln_stats
-    let vault_result = registry.execute_tool("get_kiln_stats", &[]).await;
+    let kiln_result = registry.execute_tool("get_kiln_stats", &[]).await;
     assert!(
-        vault_result.is_ok(),
+        kiln_result.is_ok(),
         "❌ Should be able to execute get_kiln_stats tool"
     );
 
-    let vault_tool_result = vault_result.unwrap();
+    let kiln_tool_result = kiln_result.unwrap();
     assert!(
         matches!(
-            vault_tool_result.status,
+            kiln_tool_result.status,
             crucible_cli::commands::repl::tools::ToolStatus::Success
         ),
         "❌ get_kiln_stats should execute successfully"
     );
     assert!(
-        !vault_tool_result.output.is_empty(),
+        !kiln_tool_result.output.is_empty(),
         "❌ get_kiln_stats should produce output"
     );
 
     println!(
         "✅ get_kiln_stats tool output: {} chars",
-        vault_tool_result.output.len()
+        kiln_tool_result.output.len()
     );
 
     // Test executing a tool with arguments

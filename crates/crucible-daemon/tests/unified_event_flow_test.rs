@@ -36,10 +36,10 @@ async fn test_unified_event_flow_integration() -> Result<()> {
 
     // Create temporary test directory
     let temp_dir = TempDir::new()?;
-    let vault_path = temp_dir.path();
+    let kiln_path = temp_dir.path();
 
     // Create a test markdown file
-    let test_file_path = vault_path.join("test_note.md");
+    let test_file_path = kiln_path.join("test_note.md");
     let test_content = r#"---
 title: Test Note
 tags: [test, integration]
@@ -65,13 +65,13 @@ Some content here to test embedding generation.
     // Create daemon configuration
     let mut config = DaemonConfig::default();
     config.filesystem.watch_paths = vec![WatchPath {
-        path: vault_path.to_path_buf(),
+        path: kiln_path.to_path_buf(),
         recursive: true,
         mode: crucible_daemon::config::WatchMode::All,
         filters: None,
         events: None,
     }];
-    config.database.backup.storage.path = vault_path.join("test.db");
+    config.database.backup.storage.path = kiln_path.join("test.db");
 
     // Create data coordinator
     let mut coordinator = DataCoordinator::new(config).await?;
@@ -115,7 +115,7 @@ async fn test_multiple_files_unified_flow() -> Result<()> {
 
     // Create temporary test directory
     let temp_dir = TempDir::new()?;
-    let vault_path = temp_dir.path();
+    let kiln_path = temp_dir.path();
 
     // Create multiple test markdown files
     let files = vec![
@@ -125,20 +125,20 @@ async fn test_multiple_files_unified_flow() -> Result<()> {
     ];
 
     for (filename, content) in &files {
-        let file_path = vault_path.join(filename);
+        let file_path = kiln_path.join(filename);
         std::fs::write(file_path, content)?;
     }
 
     // Create daemon configuration
     let mut config = DaemonConfig::default();
     config.filesystem.watch_paths = vec![WatchPath {
-        path: vault_path.to_path_buf(),
+        path: kiln_path.to_path_buf(),
         recursive: true,
         mode: crucible_daemon::config::WatchMode::All,
         filters: None,
         events: None,
     }];
-    config.database.backup.storage.path = vault_path.join("test_multiple.db");
+    config.database.backup.storage.path = kiln_path.join("test_multiple.db");
 
     // Create data coordinator
     let mut coordinator = DataCoordinator::new(config).await?;
@@ -148,7 +148,7 @@ async fn test_multiple_files_unified_flow() -> Result<()> {
 
     // Create and publish filesystem events for each file
     for (filename, _) in &files {
-        let file_path = vault_path.join(filename);
+        let file_path = kiln_path.join(filename);
         let fs_event = FilesystemEvent {
             event_id: Uuid::new_v4(),
             path: file_path.clone(),
@@ -178,18 +178,18 @@ async fn test_nonexistent_file_handling() -> Result<()> {
 
     // Create temporary test directory
     let temp_dir = TempDir::new()?;
-    let vault_path = temp_dir.path();
+    let kiln_path = temp_dir.path();
 
     // Create daemon configuration
     let mut config = DaemonConfig::default();
     config.filesystem.watch_paths = vec![WatchPath {
-        path: vault_path.to_path_buf(),
+        path: kiln_path.to_path_buf(),
         recursive: true,
         mode: crucible_daemon::config::WatchMode::All,
         filters: None,
         events: None,
     }];
-    config.database.backup.storage.path = vault_path.join("test_nonexistent.db");
+    config.database.backup.storage.path = kiln_path.join("test_nonexistent.db");
 
     // Create data coordinator
     let mut coordinator = DataCoordinator::new(config).await?;
@@ -198,7 +198,7 @@ async fn test_nonexistent_file_handling() -> Result<()> {
     coordinator.initialize().await?;
 
     // Create a filesystem event for a non-existent file
-    let nonexistent_path = vault_path.join("nonexistent.md");
+    let nonexistent_path = kiln_path.join("nonexistent.md");
     let fs_event = FilesystemEvent {
         event_id: Uuid::new_v4(),
         path: nonexistent_path.clone(),

@@ -64,14 +64,14 @@ async fn main() {
         process::exit(exit_codes::CONFIG_ERROR);
     }
 
-    // Process vault once and exit
-    match process_vault_once(&mut coordinator).await {
+    // Process kiln once and exit
+    match process_kiln_once(&mut coordinator).await {
         Ok(_) => {
-            info!("Vault processing completed successfully");
+            info!("Kiln processing completed successfully");
             process::exit(exit_codes::SUCCESS);
         }
         Err(e) => {
-            error!("Vault processing failed: {}", e);
+            error!("Kiln processing failed: {}", e);
             // Determine error type for appropriate exit code
             let error_msg = e.to_string().to_lowercase();
             let exit_code = if error_msg.contains("database") || error_msg.contains("surrealdb") {
@@ -86,9 +86,9 @@ async fn main() {
     }
 }
 
-/// Process the vault exactly once and return result
-async fn process_vault_once(coordinator: &mut DataCoordinator) -> Result<()> {
-    info!("Starting one-shot vault processing");
+/// Process the kiln exactly once and return result
+async fn process_kiln_once(coordinator: &mut DataCoordinator) -> Result<()> {
+    info!("Starting one-shot kiln processing");
 
     // Start the coordinator (but don't run indefinitely)
     if let Err(e) = coordinator.start().await {
@@ -96,9 +96,9 @@ async fn process_vault_once(coordinator: &mut DataCoordinator) -> Result<()> {
         return Err(e);
     }
 
-    // Process the vault once
-    if let Err(e) = coordinator.process_vault_once().await {
-        error!("Failed to process vault: {}", e);
+    // Process the kiln once
+    if let Err(e) = coordinator.process_kiln_once().await {
+        error!("Failed to process kiln: {}", e);
         return Err(e);
     }
 
@@ -108,7 +108,7 @@ async fn process_vault_once(coordinator: &mut DataCoordinator) -> Result<()> {
         // Don't fail the whole operation for shutdown errors
     }
 
-    info!("One-shot vault processing completed");
+    info!("One-shot kiln processing completed");
     Ok(())
 }
 
@@ -122,11 +122,11 @@ async fn load_configuration() -> Result<DaemonConfig> {
         }
         Err(e) => {
             error!("Failed to load configuration from environment: {}", e);
-            error!("OBSIDIAN_VAULT_PATH environment variable is required for daemon security");
+            error!("OBSIDIAN_KILN_PATH environment variable is required for daemon security");
             return Err(anyhow::anyhow!(
                 "Failed to load secure daemon configuration. \
-                Please set OBSIDIAN_VAULT_PATH environment variable.\n\
-                Example: export OBSIDIAN_VAULT_PATH=/path/to/your/vault"
+                Please set OBSIDIAN_KILN_PATH environment variable.\n\
+                Example: export OBSIDIAN_KILN_PATH=/path/to/your/kiln"
             ));
         }
     }

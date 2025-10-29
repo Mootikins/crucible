@@ -192,7 +192,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 ### Search and Indexing
 
-| Vault Size | Memory Required | Indexing Time | Search Performance |
+| Kiln Size | Memory Required | Indexing Time | Search Performance |
 |------------|----------------|---------------|-------------------|
 | **Small** (< 1,000 files) | 512 MB | < 1 minute | Excellent |
 | **Medium** (1,000-10,000 files) | 1-2 GB | 1-5 minutes | Good |
@@ -219,7 +219,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 #### Memory Scaling
 
-- **Linear scaling** with vault size for search indexing
+- **Linear scaling** with kiln size for search indexing
 - **Embedding models** add 1-8 GB depending on model size
 - **Concurrent operations** increase memory usage proportionally
 
@@ -279,7 +279,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 ### Runtime Storage
 
-| Vault Size | Storage Required | Index Size |
+| Kiln Size | Storage Required | Index Size |
 |------------|------------------|------------|
 | **Small** (1 GB) | 1.5-2 GB | 50-100 MB |
 | **Medium** (10 GB) | 12-15 GB | 500 MB - 1 GB |
@@ -423,7 +423,7 @@ dd if=/dev/zero of=tempfile bs=1M count=100 && rm tempfile
 ### Scaling for Teams
 
 - **Server-class hardware** for team deployments
-- **Network-attached storage** for shared vaults
+- **Network-attached storage** for shared kilns
 - **Load balancing** for concurrent users
 - **Backup systems** for data protection
 

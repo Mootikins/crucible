@@ -1,7 +1,7 @@
 //! Content Type Handling Tests for Embedding System
 //!
 //! This test suite validates embedding generation for diverse content types
-//! from the test vault, including technical, academic, business, and multilingual content.
+//! from the test kiln, including technical, academic, business, and multilingual content.
 //!
 //! ## Test Coverage
 //!
@@ -52,7 +52,7 @@ use std::path::Path;
 async fn test_technical_content_code_examples() -> Result<()> {
     let harness = DaemonEmbeddingHarness::new_default().await?;
 
-    // Read technical documentation from test vault
+    // Read technical documentation from test kiln
     let tech_doc_path = "tests/test-kiln/Technical Documentation.md";
     let tech_content = std::fs::read_to_string(tech_doc_path)?;
 
@@ -124,7 +124,7 @@ async fn test_technical_content_code_examples() -> Result<()> {
 async fn test_api_documentation_content() -> Result<()> {
     let harness = DaemonEmbeddingHarness::new_default().await?;
 
-    // Read API documentation from test vault
+    // Read API documentation from test kiln
     let api_doc_path = "tests/test-kiln/API Documentation.md";
     let api_content = std::fs::read_to_string(api_doc_path)?;
 
@@ -321,7 +321,7 @@ max_file_size = "10MB""#),
 async fn test_academic_research_content() -> Result<()> {
     let harness = DaemonEmbeddingHarness::new_default().await?;
 
-    // Read research methods from test vault
+    // Read research methods from test kiln
     let research_doc_path = "tests/test-kiln/Research Methods.md";
     let research_content = std::fs::read_to_string(research_doc_path)?;
 
@@ -509,7 +509,7 @@ The framework extends traditional bag-of-words models by incorporating attention
 async fn test_business_project_management_content() -> Result<()> {
     let harness = DaemonEmbeddingHarness::new_default().await?;
 
-    // Read project management document from test vault
+    // Read project management document from test kiln
     let pm_doc_path = "tests/test-kiln/Project Management.md";
     let pm_content = std::fs::read_to_string(pm_doc_path)?;
 
@@ -566,7 +566,7 @@ async fn test_business_project_management_content() -> Result<()> {
 async fn test_meeting_notes_and_action_items() -> Result<()> {
     let harness = DaemonEmbeddingHarness::new_default().await?;
 
-    // Read meeting notes from test vault
+    // Read meeting notes from test kiln
     let meeting_doc_path = "tests/test-kiln/Meeting Notes.md";
     let meeting_content = std::fs::read_to_string(meeting_doc_path)?;
 

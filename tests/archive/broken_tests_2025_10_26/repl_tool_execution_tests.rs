@@ -447,6 +447,6 @@ async fn test_kiln_tools_integration() -> Result<()> {
         println!("ℹ No kiln-related tools found");
     }
 
-    println!("✓ Vault tools integration test passed");
+    println!("✓ Kiln tools integration test passed");
     Ok(())
 }

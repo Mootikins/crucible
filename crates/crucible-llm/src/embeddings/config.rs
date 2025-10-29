@@ -77,10 +77,7 @@ pub use crucible_config::EmbeddingProviderType;
 ///
 /// This is a simplified version - in production, we'd have a more
 /// comprehensive model dimension mapping.
-pub fn expected_dimensions_for_model(
-    provider: &EmbeddingProviderType,
-    model: &str,
-) -> usize {
+pub fn expected_dimensions_for_model(provider: &EmbeddingProviderType, model: &str) -> usize {
     match (provider, model) {
         // Ollama models
         (EmbeddingProviderType::Ollama, "nomic-embed-text") => 768,

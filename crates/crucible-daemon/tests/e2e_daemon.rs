@@ -60,8 +60,8 @@ struct DaemonHandle {
     /// Adapter to convert parsed documents to SurrealDB format
     adapter: Arc<SurrealDBAdapter>,
 
-    /// Path to the test vault
-    vault_path: PathBuf,
+    /// Path to the test kiln
+    kiln_path: PathBuf,
 
     /// Channel to receive processing notifications
     processed_rx: Arc<Mutex<mpsc::UnboundedReceiver<PathBuf>>>,
@@ -72,7 +72,7 @@ struct DaemonHandle {
 
 impl DaemonHandle {
     /// Create a new daemon instance with all components initialized
-    async fn create(vault_path: PathBuf) -> Result<Self> {
+    async fn create(kiln_path: PathBuf) -> Result<Self> {
         // Initialize database
         let database = Arc::new(SurrealEmbeddingDatabase::new_memory());
         database.initialize().await?;
@@ -100,7 +100,7 @@ impl DaemonHandle {
         watcher.register_handler(handler.clone()).await?;
         watcher.start().await?;
         watcher
-            .add_watch(vault_path.clone(), WatchConfig::new("test-kiln"))
+            .add_watch(kiln_path.clone(), WatchConfig::new("test-kiln"))
             .await?;
 
         // Give watcher time to initialize
@@ -114,15 +114,15 @@ impl DaemonHandle {
             database,
             parser,
             adapter,
-            vault_path,
+            kiln_path,
             processed_rx: Arc::new(Mutex::new(processed_rx)),
             shutdown_tx,
         })
     }
 
-    /// Create a file in the vault and manually trigger indexing
+    /// Create a file in the kiln and manually trigger indexing
     async fn create_file(&self, relative_path: &str, content: &str) -> Result<PathBuf> {
-        let file_path = self.vault_path.join(relative_path);
+        let file_path = self.kiln_path.join(relative_path);
 
         // Create parent directories if needed
         if let Some(parent) = file_path.parent() {
@@ -181,7 +181,7 @@ impl DaemonHandle {
 
     /// Modify an existing file and re-index it
     async fn modify_file(&self, relative_path: &str, new_content: &str) -> Result<()> {
-        let file_path = self.vault_path.join(relative_path);
+        let file_path = self.kiln_path.join(relative_path);
         tokio::fs::write(&file_path, new_content).await?;
 
         // Re-process the modified file
@@ -192,7 +192,7 @@ impl DaemonHandle {
 
     /// Delete a file
     async fn delete_file(&self, relative_path: &str) -> Result<()> {
-        let file_path = self.vault_path.join(relative_path);
+        let file_path = self.kiln_path.join(relative_path);
         tokio::fs::remove_file(&file_path).await?;
         Ok(())
     }
@@ -232,7 +232,7 @@ impl DaemonHandle {
 
     /// Check if file exists in database
     async fn file_exists_in_db(&self, relative_path: &str) -> Result<bool> {
-        let file_path = self.vault_path.join(relative_path);
+        let file_path = self.kiln_path.join(relative_path);
         self.database
             .file_exists(&file_path.to_string_lossy())
             .await
@@ -240,7 +240,7 @@ impl DaemonHandle {
 
     /// Get file metadata from database
     async fn get_file_metadata(&self, relative_path: &str) -> Result<Option<EmbeddingMetadata>> {
-        let file_path = self.vault_path.join(relative_path);
+        let file_path = self.kiln_path.join(relative_path);
         let data = self
             .database
             .get_embedding(&file_path.to_string_lossy())
@@ -367,8 +367,8 @@ impl PipelineEventHandler {
     }
 }
 
-/// Setup test vault with initial structure
-async fn setup_test_vault() -> Result<TempDir> {
+/// Setup test kiln with initial structure
+async fn setup_test_kiln() -> Result<TempDir> {
     let temp_dir = TempDir::new()?;
 
     // Create some initial files for tests
@@ -376,13 +376,13 @@ async fn setup_test_vault() -> Result<TempDir> {
     tokio::fs::write(
         &readme,
         r#"---
-title: Test Vault
+title: Test Kiln
 tags: [test]
 ---
 
-# Test Vault
+# Test Kiln
 
-This is a test vault for E2E testing.
+This is a test kiln for E2E testing.
 "#,
     )
     .await?;
@@ -430,14 +430,14 @@ fn create_test_markdown(title: &str, tags: &[&str], links: &[&str]) -> String {
 async fn test_e2e_file_to_database_to_query() -> Result<()> {
     // Test Flow:
     // 1. Create daemon with all components
-    // 2. Create markdown file in vault with known content
+    // 2. Create markdown file in kiln with known content
     // 3. Parser processes file
     // 4. DB stores note
     // 5. Query returns the note
     // 6. Verify all fields correct (title, tags, content, word_count)
 
     // Setup
-    let temp_dir = setup_test_vault().await?;
+    let temp_dir = setup_test_kiln().await?;
     let daemon = DaemonHandle::create(temp_dir.path().to_path_buf()).await?;
 
     // Create markdown file (this will process it immediately)
@@ -474,7 +474,7 @@ async fn test_e2e_wikilink_graph_traversal() -> Result<()> {
     // 6. Verify graph edges exist
 
     // Setup
-    let temp_dir = setup_test_vault().await?;
+    let temp_dir = setup_test_kiln().await?;
     let daemon = DaemonHandle::create(temp_dir.path().to_path_buf()).await?;
 
     // Create linked notes
@@ -490,12 +490,12 @@ async fn test_e2e_wikilink_graph_traversal() -> Result<()> {
 
     // Create wikilink relations
     let note1_path = daemon
-        .vault_path
+        .kiln_path
         .join("note1.md")
         .to_string_lossy()
         .to_string();
     let note2_path = daemon
-        .vault_path
+        .kiln_path
         .join("note2.md")
         .to_string_lossy()
         .to_string();
@@ -543,7 +543,7 @@ async fn test_e2e_tag_search_workflow() -> Result<()> {
     // 10. Verify results contain note1.md and note2.md
 
     // Setup
-    let temp_dir = setup_test_vault().await?;
+    let temp_dir = setup_test_kiln().await?;
     let daemon = DaemonHandle::create(temp_dir.path().to_path_buf()).await?;
 
     // Create notes with different tags
@@ -604,7 +604,7 @@ async fn test_e2e_live_reindexing() -> Result<()> {
     // 10. Verify updated_at timestamp changed
 
     // Setup
-    let temp_dir = setup_test_vault().await?;
+    let temp_dir = setup_test_kiln().await?;
     let daemon = DaemonHandle::create(temp_dir.path().to_path_buf()).await?;
 
     // Create initial note
@@ -658,7 +658,7 @@ async fn test_e2e_database_query_execution() -> Result<()> {
     // 4. Verify results are correct
 
     // Setup
-    let temp_dir = setup_test_vault().await?;
+    let temp_dir = setup_test_kiln().await?;
     let daemon = DaemonHandle::create(temp_dir.path().to_path_buf()).await?;
 
     // Create test notes
@@ -697,7 +697,7 @@ async fn test_e2e_database_stats() -> Result<()> {
     // 4. Verify stats show correct counts
 
     // Setup
-    let temp_dir = setup_test_vault().await?;
+    let temp_dir = setup_test_kiln().await?;
     let daemon = DaemonHandle::create(temp_dir.path().to_path_buf()).await?;
 
     // Create multiple notes
@@ -737,7 +737,7 @@ async fn test_e2e_database_tag_search() -> Result<()> {
     // 4. Verify tool output shows matching notes
 
     // Setup
-    let temp_dir = setup_test_vault().await?;
+    let temp_dir = setup_test_kiln().await?;
     let daemon = DaemonHandle::create(temp_dir.path().to_path_buf()).await?;
 
     // Create notes with specific tags
@@ -785,7 +785,7 @@ async fn test_e2e_concurrent_operations() -> Result<()> {
     // 4. Verify no race conditions (all 10 files indexed)
 
     // Setup
-    let temp_dir = setup_test_vault().await?;
+    let temp_dir = setup_test_kiln().await?;
     let daemon = Arc::new(DaemonHandle::create(temp_dir.path().to_path_buf()).await?);
 
     // Spawn 10 concurrent file creation tasks
@@ -836,7 +836,7 @@ async fn test_e2e_error_recovery() -> Result<()> {
     // 5. Verify valid file processes correctly
 
     // Setup
-    let temp_dir = setup_test_vault().await?;
+    let temp_dir = setup_test_kiln().await?;
     let daemon = DaemonHandle::create(temp_dir.path().to_path_buf()).await?;
 
     // Create file with malformed frontmatter (parser should handle gracefully)
@@ -874,7 +874,7 @@ async fn test_e2e_shutdown_cleanup() -> Result<()> {
     // 5. Verify no panics during shutdown
 
     // Setup
-    let temp_dir = setup_test_vault().await?;
+    let temp_dir = setup_test_kiln().await?;
     let daemon = DaemonHandle::create(temp_dir.path().to_path_buf()).await?;
 
     // Create a few files
@@ -931,7 +931,7 @@ async fn test_e2e_complex_document_parsing() -> Result<()> {
     // 4. Verify all components extracted correctly
 
     // Setup
-    let temp_dir = setup_test_vault().await?;
+    let temp_dir = setup_test_kiln().await?;
     let daemon = DaemonHandle::create(temp_dir.path().to_path_buf()).await?;
 
     // Create complex markdown document
@@ -1003,7 +1003,7 @@ async fn test_e2e_bidirectional_links() -> Result<()> {
     // 9. Update relations and verify
 
     // Setup
-    let temp_dir = setup_test_vault().await?;
+    let temp_dir = setup_test_kiln().await?;
     let daemon = DaemonHandle::create(temp_dir.path().to_path_buf()).await?;
 
     // Create linked notes
@@ -1017,17 +1017,17 @@ async fn test_e2e_bidirectional_links() -> Result<()> {
 
     // Create link relations
     let path_a = daemon
-        .vault_path
+        .kiln_path
         .join("noteA.md")
         .to_string_lossy()
         .to_string();
     let path_b = daemon
-        .vault_path
+        .kiln_path
         .join("noteB.md")
         .to_string_lossy()
         .to_string();
     let path_c = daemon
-        .vault_path
+        .kiln_path
         .join("noteC.md")
         .to_string_lossy()
         .to_string();

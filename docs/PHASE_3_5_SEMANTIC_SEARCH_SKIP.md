@@ -52,7 +52,7 @@ The archived `semantic_search.rs` (888 lines, 23 tests) does **NOT** need restor
 **Status:** ✅ All passing
 
 #### 2. `crucible-cli/tests/semantic_search_integration.rs` (742 lines)
-**Tests with real 12-file test vault:**
+**Tests with real 12-file test kiln:**
 - 20+ semantic queries with expected keywords
 - Performance and diversity analysis
 - CLI command integration
@@ -116,7 +116,7 @@ The archived `semantic_search.rs` (888 lines, 23 tests) does **NOT** need restor
 | Distribution | 1 monolithic file | Well-organized across crates | Current |
 | Performance Tests | Basic | Scale + concurrency | Current |
 | TDD Approach | No | Explicit red/green | Current |
-| Real Test Vault | No | 12 realistic files | Current |
+| Real Test Kiln | No | 12 realistic files | Current |
 
 ### Coverage Assessment
 
@@ -169,7 +169,7 @@ The archived `semantic_search.rs` (888 lines, 23 tests) does **NOT** need restor
 - **Archive:** Depended on removed `DaemonEmbeddingHarness`
 - **Current:** Uses simplified Phase 2 architecture:
   - `crucible-config` directly
-  - `vault_integration` functions
+  - `kiln_integration` functions
   - No service layer complexity
 
 ---

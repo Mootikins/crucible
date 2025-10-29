@@ -20,9 +20,9 @@ fn create_test_provider_config() -> EmbeddingProviderConfig {
     // Use Candle (local) provider for tests - no external dependencies
     EmbeddingProviderConfig::candle(
         Some("all-MiniLM-L6-v2".to_string()), // Small model for fast tests
-        None, // cache_dir - use default
-        None, // memory_mb - use default
-        None, // device - use default
+        None,                                 // cache_dir - use default
+        None,                                 // memory_mb - use default
+        None,                                 // device - use default
     )
 }
 
@@ -160,18 +160,24 @@ async fn test_provider_switching_based_on_configuration() {
 
     let candle_config1 = EmbeddingProviderConfig::candle(
         Some("all-MiniLM-L6-v2".to_string()), // 384 dimensions
-        None, None, None,
+        None,
+        None,
+        None,
     );
 
-    let candle_pool1 = create_embedding_thread_pool_with_crucible_config(pool_config1, candle_config1)
-        .await
-        .unwrap();
+    let candle_pool1 =
+        create_embedding_thread_pool_with_crucible_config(pool_config1, candle_config1)
+            .await
+            .unwrap();
 
     let result1 = candle_pool1
         .process_document_with_retry("test_switch_1", test_content)
         .await
         .unwrap();
-    assert!(result1.succeeded, "Candle provider with all-MiniLM-L6-v2 should work");
+    assert!(
+        result1.succeeded,
+        "Candle provider with all-MiniLM-L6-v2 should work"
+    );
 
     candle_pool1.shutdown().await.unwrap();
 
@@ -191,18 +197,24 @@ async fn test_provider_switching_based_on_configuration() {
 
     let candle_config2 = EmbeddingProviderConfig::candle(
         Some("bge-small-en-v1.5".to_string()), // 384 dimensions (but testing different model)
-        None, None, None,
+        None,
+        None,
+        None,
     );
 
-    let candle_pool2 = create_embedding_thread_pool_with_crucible_config(pool_config2, candle_config2)
-        .await
-        .unwrap();
+    let candle_pool2 =
+        create_embedding_thread_pool_with_crucible_config(pool_config2, candle_config2)
+            .await
+            .unwrap();
 
     let result2 = candle_pool2
         .process_document_with_retry("test_switch_2", test_content)
         .await
         .unwrap();
-    assert!(result2.succeeded, "Candle provider with bge-small-en-v1.5 should work");
+    assert!(
+        result2.succeeded,
+        "Candle provider with bge-small-en-v1.5 should work"
+    );
 
     candle_pool2.shutdown().await.unwrap();
 }
@@ -309,7 +321,9 @@ async fn test_error_handling_for_embedding_service_failures() {
     );
 
     // This should succeed in creating the pool but fail when generating embeddings
-    let pool_result = create_embedding_thread_pool_with_crucible_config(pool_config.clone(), provider_config).await;
+    let pool_result =
+        create_embedding_thread_pool_with_crucible_config(pool_config.clone(), provider_config)
+            .await;
 
     // The pool creation might fail if model validation happens at startup
     // Or it might succeed but fall back to mock embeddings
@@ -347,14 +361,19 @@ async fn test_error_handling_for_embedding_service_failures() {
                 }
             } else {
                 // Pool fell back to mock embeddings - also acceptable
-                println!("Pool fell back to mock embeddings with invalid model (graceful degradation)");
+                println!(
+                    "Pool fell back to mock embeddings with invalid model (graceful degradation)"
+                );
             }
 
             pool.shutdown().await.unwrap();
         }
         Err(e) => {
             // Pool creation failed - this is the ideal error handling behavior
-            println!("Pool creation failed as expected with invalid model configuration: {}", e);
+            println!(
+                "Pool creation failed as expected with invalid model configuration: {}",
+                e
+            );
         }
     }
 }
@@ -363,11 +382,12 @@ async fn test_error_handling_for_embedding_service_failures() {
 #[traced_test]
 async fn test_configuration_validation() {
     // Test 1: Valid Candle configuration
-    let candle_config = EmbeddingProviderConfig::candle(
-        Some("all-MiniLM-L6-v2".to_string()),
-        None, None, None,
+    let candle_config =
+        EmbeddingProviderConfig::candle(Some("all-MiniLM-L6-v2".to_string()), None, None, None);
+    assert!(
+        candle_config.validate().is_ok(),
+        "Valid Candle config should pass validation"
     );
-    assert!(candle_config.validate().is_ok(), "Valid Candle config should pass validation");
 
     // Test 2: Missing API key for OpenAI should fail validation
     let mut openai_config = EmbeddingProviderConfig::openai(
@@ -377,39 +397,58 @@ async fn test_configuration_validation() {
     openai_config.api.key = None; // Remove API key
 
     let result = openai_config.validate();
-    assert!(result.is_err(), "OpenAI config without API key should fail validation");
+    assert!(
+        result.is_err(),
+        "OpenAI config without API key should fail validation"
+    );
 
     // Test 3: Empty model name should fail validation
     let mut invalid_config = EmbeddingProviderConfig::candle(None, None, None, None);
     invalid_config.model.name = String::new();
 
     let result = invalid_config.validate();
-    assert!(result.is_err(), "Config with empty model name should fail validation");
+    assert!(
+        result.is_err(),
+        "Config with empty model name should fail validation"
+    );
 
     // Test 4: Valid OpenAI configuration
     let openai_config = EmbeddingProviderConfig::openai(
         "test-key".to_string(),
         Some("text-embedding-3-small".to_string()),
     );
-    assert!(openai_config.validate().is_ok(), "Valid OpenAI config should pass validation");
+    assert!(
+        openai_config.validate().is_ok(),
+        "Valid OpenAI config should pass validation"
+    );
 
     // Test 5: Valid pool configuration
     let pool_config = create_test_pool_config();
-    assert!(pool_config.validate().is_ok(), "Valid pool config should pass validation");
+    assert!(
+        pool_config.validate().is_ok(),
+        "Valid pool config should pass validation"
+    );
 
     // Test 6: Invalid pool configuration (zero workers)
     let mut invalid_pool_config = create_test_pool_config();
     invalid_pool_config.worker_count = 0;
 
     let result = invalid_pool_config.validate();
-    assert!(result.is_err(), "Pool config with zero workers should fail validation");
+    assert!(
+        result.is_err(),
+        "Pool config with zero workers should fail validation"
+    );
 
     // Test 7: Pool creation with valid config should succeed
     let pool_config = create_test_pool_config();
     let provider_config = create_test_provider_config();
 
-    let pool_result = create_embedding_thread_pool_with_crucible_config(pool_config, provider_config).await;
-    assert!(pool_result.is_ok(), "Pool creation with valid config should succeed");
+    let pool_result =
+        create_embedding_thread_pool_with_crucible_config(pool_config, provider_config).await;
+    assert!(
+        pool_result.is_ok(),
+        "Pool creation with valid config should succeed"
+    );
 
     if let Ok(pool) = pool_result {
         pool.shutdown().await.unwrap();
@@ -424,7 +463,11 @@ async fn test_embedding_dimensions_match_provider_specifications() {
         ("all-MiniLM-L6-v2", EmbeddingModel::LocalMini, 384),
         ("bge-small-en-v1.5", EmbeddingModel::LocalMini, 384),
         ("nomic-embed-text-v1.5", EmbeddingModel::LocalStandard, 768),
-        ("jina-embeddings-v2-base-en", EmbeddingModel::LocalStandard, 768),
+        (
+            "jina-embeddings-v2-base-en",
+            EmbeddingModel::LocalStandard,
+            768,
+        ),
     ];
 
     for (model, model_type, _expected_dims) in test_cases {
@@ -441,10 +484,8 @@ async fn test_embedding_dimensions_match_provider_specifications() {
             circuit_breaker_timeout_ms: 30000,
         };
 
-        let provider_config = EmbeddingProviderConfig::candle(
-            Some(model.to_string()),
-            None, None, None,
-        );
+        let provider_config =
+            EmbeddingProviderConfig::candle(Some(model.to_string()), None, None, None);
 
         let pool = create_embedding_thread_pool_with_crucible_config(pool_config, provider_config)
             .await
@@ -459,11 +500,7 @@ async fn test_embedding_dimensions_match_provider_specifications() {
             .unwrap();
 
         // ASSERT: Verify dimensions match specification
-        assert!(
-            result.succeeded,
-            "Should succeed with Candle/{}",
-            model
-        );
+        assert!(result.succeeded, "Should succeed with Candle/{}", model);
 
         // Note: We can't directly access the embedding vector from the thread pool interface
         // but we can verify the processing succeeded, which means dimensions were handled correctly
@@ -576,8 +613,10 @@ async fn test_mock_vs_real_embedding_differences() {
     let metrics = pool.get_metrics().await;
     // NOTE: Metrics tracking may vary based on implementation
     // The key verification is that both results succeeded, which we already checked
-    println!("Metrics: total_tasks_processed={}, failed_tasks={}",
-        metrics.total_tasks_processed, metrics.failed_tasks);
+    println!(
+        "Metrics: total_tasks_processed={}, failed_tasks={}",
+        metrics.total_tasks_processed, metrics.failed_tasks
+    );
 
     pool.shutdown().await.unwrap();
 }

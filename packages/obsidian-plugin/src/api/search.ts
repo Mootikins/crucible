@@ -18,7 +18,7 @@ export class SearchHandler {
         return;
       }
 
-      const files = this.app.vault.getMarkdownFiles();
+      const files = this.app.kiln.getMarkdownFiles();
       const matchingFiles: FileInfo[] = [];
 
       for (const file of files) {
@@ -86,7 +86,7 @@ export class SearchHandler {
         return;
       }
 
-      const files = this.app.vault.getMarkdownFiles();
+      const files = this.app.kiln.getMarkdownFiles();
       const matchingFiles: FileInfo[] = [];
 
       // Normalize folder path (remove leading/trailing slashes)
@@ -142,7 +142,7 @@ export class SearchHandler {
         return;
       }
 
-      const files = this.app.vault.getMarkdownFiles();
+      const files = this.app.kiln.getMarkdownFiles();
       const matchingFiles: FileInfo[] = [];
 
       for (const file of files) {
@@ -202,13 +202,13 @@ export class SearchHandler {
         return;
       }
 
-      const files = this.app.vault.getMarkdownFiles();
+      const files = this.app.kiln.getMarkdownFiles();
       const matchingFiles: FileInfo[] = [];
       const lowerQuery = query.toLowerCase();
 
       for (const file of files) {
         try {
-          const content = await this.app.vault.read(file);
+          const content = await this.app.kiln.read(file);
           const lowerContent = content.toLowerCase();
 
           if (lowerContent.includes(lowerQuery)) {

@@ -53,8 +53,8 @@ These tests were archived during config consolidation cleanup. They test against
 - repl_unit_tests.rs
 - test_chat.rs
 - tool_registry.rs
-- vault_integration_tests.rs
-- vault_processing_integration_tdd.rs
+- kiln_integration_tests.rs
+- kiln_processing_integration_tdd.rs
 
 ## Impact
 

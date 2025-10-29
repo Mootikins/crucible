@@ -202,20 +202,20 @@ impl TestUtils {
         format!("test_{}", Uuid::new_v4().to_string().replace("-", "_"))
     }
 
-    /// Create a test vault directory
-    pub async fn create_test_vault(&self, name: &str) -> Result<PathBuf> {
-        let vault_path = self.test_dir.path().join(name);
-        fs::create_dir_all(&vault_path).await
-            .context("Failed to create test vault directory")?;
+    /// Create a test kiln directory
+    pub async fn create_test_kiln(&self, name: &str) -> Result<PathBuf> {
+        let kiln_path = self.test_dir.path().join(name);
+        fs::create_dir_all(&kiln_path).await
+            .context("Failed to create test kiln directory")?;
 
-        // Create standard vault structure
-        fs::create_dir_all(vault_path.join("notes")).await?;
-        fs::create_dir_all(vault_path.join("attachments")).await?;
-        fs::create_dir_all(vault_path.join("templates")).await?;
-        fs::create_dir_all(vault_path.join("scripts")).await?;
+        // Create standard kiln structure
+        fs::create_dir_all(kiln_path.join("notes")).await?;
+        fs::create_dir_all(kiln_path.join("attachments")).await?;
+        fs::create_dir_all(kiln_path.join("templates")).await?;
+        fs::create_dir_all(kiln_path.join("scripts")).await?;
 
-        info!(vault_path = ?vault_path, "Created test vault directory");
-        Ok(vault_path)
+        info!(kiln_path = ?kiln_path, "Created test kiln directory");
+        Ok(kiln_path)
     }
 
     /// Generate test documents for realistic workloads

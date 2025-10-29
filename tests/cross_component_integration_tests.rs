@@ -260,9 +260,9 @@ impl CrossComponentIntegrationTests {
             state.test_data_created.push(doc.id);
         }
 
-        // Create test vault
-        let vault_path = self.test_utils.create_test_vault("integration_vault").await?;
-        state.test_data_created.push(vault_path.to_string_lossy().to_string());
+        // Create test kiln
+        let kiln_path = self.test_utils.create_test_kiln("integration_kiln").await?;
+        state.test_data_created.push(kiln_path.to_string_lossy().to_string());
 
         info!("Integration test data created successfully");
         Ok(())

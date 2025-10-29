@@ -108,7 +108,7 @@ let (tx, mut rx) = mpsc::unbounded_channel();
 let handler = Arc::new(PipelineEventHandler::new(db.clone(), tx));
 
 // Trigger event
-create_markdown_file(vault.path(), "test.md", content).await?;
+create_markdown_file(kiln.path(), "test.md", content).await?;
 
 // Wait for processing with timeout
 let received = tokio::time::timeout(Duration::from_secs(1), rx.recv()).await;

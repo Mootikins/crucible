@@ -191,7 +191,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create a sample daemon event
     let filesystem_event = DaemonEvent::new(
         EventType::Filesystem(crucible_services::events::core::FilesystemEventType::FileCreated {
-            path: "/vault/example.md".to_string(),
+            path: "/kiln/example.md".to_string(),
         }),
         EventSource::filesystem("file-watcher-1".to_string()),
         EventPayload::text("File created: example.md".to_string()),

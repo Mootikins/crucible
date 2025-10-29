@@ -21,9 +21,7 @@
 ///
 /// Since Phase 2.0 removed environment variable configuration, integration tests
 /// that spawn the CLI binary need to pass configuration via --config flag.
-fn create_temp_config(
-    kiln_path: &PathBuf,
-) -> Result<tempfile::NamedTempFile> {
+fn create_temp_config(kiln_path: &PathBuf) -> Result<tempfile::NamedTempFile> {
     let config_content = format!(
         r#"[kiln]
 path = "{}"
@@ -78,14 +76,14 @@ fn cli_binary_path() -> PathBuf {
 
 /// Helper to run CLI semantic search command with JSON output
 async fn run_semantic_search_json(
-    vault_path: &PathBuf,
+    kiln_path: &PathBuf,
     query: &str,
     additional_args: Vec<&str>,
 ) -> Result<String> {
     let binary_path = cli_binary_path();
 
     // Create temporary config file (Phase 2.0: no env var support)
-    let config_file = create_temp_config(vault_path)?;
+    let config_file = create_temp_config(kiln_path)?;
 
     let mut cmd = Command::new(binary_path);
 
@@ -140,13 +138,13 @@ fn extract_json_from_output(output: &str) -> String {
     }
 }
 
-/// Helper to create a test vault with sample semantic content
-async fn create_test_vault() -> Result<(TempDir, PathBuf)> {
+/// Helper to create a test kiln with sample semantic content
+async fn create_test_kiln() -> Result<(TempDir, PathBuf)> {
     let temp_dir = TempDir::new()?;
-    let vault_path = temp_dir.path().to_path_buf();
+    let kiln_path = temp_dir.path().to_path_buf();
 
-    // Create .obsidian directory for Obsidian vault
-    fs::create_dir_all(vault_path.join(".obsidian"))?;
+    // Create .obsidian directory for Obsidian kiln
+    fs::create_dir_all(kiln_path.join(".obsidian"))?;
 
     // Create test markdown files with rich semantic content
     let test_files = vec![
@@ -214,11 +212,11 @@ Natural language processing, computer vision, and reinforcement learning have se
     ];
 
     for (filename, content) in test_files {
-        let file_path = vault_path.join(filename);
+        let file_path = kiln_path.join(filename);
         fs::write(file_path, content)?;
     }
 
-    Ok((temp_dir, vault_path))
+    Ok((temp_dir, kiln_path))
 }
 
 /// Helper to use the existing test-kiln for more realistic testing
@@ -240,11 +238,11 @@ mod semantic_search_json_output_tdd_tests {
         println!("🧪 TDD RED Phase: Testing semantic search JSON output validity");
 
         // Use the existing test-kiln for realistic content
-        let vault_path = get_test_kiln_path();
-        println!("📁 Using test-kiln: {}", vault_path.display());
+        let kiln_path = get_test_kiln_path();
+        println!("📁 Using test-kiln: {}", kiln_path.display());
 
         // Test basic semantic search with JSON output
-        let result = run_semantic_search_json(&vault_path, "machine learning", vec![]).await?;
+        let result = run_semantic_search_json(&kiln_path, "machine learning", vec![]).await?;
         println!("📄 Raw output length: {} characters", result.len());
 
         // Try to parse as JSON - this should fail if the output isn't valid JSON
@@ -295,12 +293,12 @@ mod semantic_search_json_output_tdd_tests {
     async fn test_semantic_search_json_contains_search_results() -> Result<()> {
         println!("🧪 TDD RED Phase: Testing semantic search JSON content accuracy");
 
-        let vault_path = get_test_kiln_path();
-        println!("📁 Using test-kiln: {}", vault_path.display());
+        let kiln_path = get_test_kiln_path();
+        println!("📁 Using test-kiln: {}", kiln_path.display());
 
         // Test semantic search that should find relevant results
         let result =
-            run_semantic_search_json(&vault_path, "artificial intelligence", vec!["--top-k", "5"])
+            run_semantic_search_json(&kiln_path, "artificial intelligence", vec!["--top-k", "5"])
                 .await?;
         println!("📄 Raw output: {}", result);
 
@@ -359,7 +357,7 @@ mod semantic_search_json_output_tdd_tests {
 
                 if !has_real_files && !results.is_empty() {
                     println!("❌ TDD FAILURE: JSON doesn't contain real file references");
-                    panic!("RED PHASE: JSON results should reference real files from the vault");
+                    panic!("RED PHASE: JSON results should reference real files from the kiln");
                 }
             }
         } else {
@@ -379,20 +377,20 @@ mod semantic_search_json_output_tdd_tests {
     async fn test_semantic_search_json_error_formatting() -> Result<()> {
         println!("🧪 TDD RED Phase: Testing semantic search JSON error formatting");
 
-        // Create an empty vault directory to trigger errors
-        let temp_vault = TempDir::new()?;
-        let vault_path = temp_vault.path().to_path_buf();
+        // Create an empty kiln directory to trigger errors
+        let temp_kiln = TempDir::new()?;
+        let kiln_path = temp_kiln.path().to_path_buf();
 
         // Create .obsidian directory but no markdown files
-        fs::create_dir_all(vault_path.join(".obsidian"))?;
+        fs::create_dir_all(kiln_path.join(".obsidian"))?;
 
         println!(
-            "📁 Using empty vault to trigger errors: {}",
-            vault_path.display()
+            "📁 Using empty kiln to trigger errors: {}",
+            kiln_path.display()
         );
 
         // Test semantic search that should fail due to no content
-        let result = run_semantic_search_json(&vault_path, "test query", vec![]).await?;
+        let result = run_semantic_search_json(&kiln_path, "test query", vec![]).await?;
         println!("📄 Raw output: {}", result);
 
         // Check if error output is properly formatted as JSON
@@ -442,12 +440,12 @@ mod semantic_search_json_output_tdd_tests {
     async fn test_semantic_search_json_field_validation() -> Result<()> {
         println!("🧪 TDD RED Phase: Testing semantic search JSON field validation");
 
-        let vault_path = get_test_kiln_path();
-        println!("📁 Using test-kiln: {}", vault_path.display());
+        let kiln_path = get_test_kiln_path();
+        println!("📁 Using test-kiln: {}", kiln_path.display());
 
         // Test semantic search with comprehensive output
         let result =
-            run_semantic_search_json(&vault_path, "database systems", vec!["--top-k", "3"]).await?;
+            run_semantic_search_json(&kiln_path, "database systems", vec!["--top-k", "3"]).await?;
         println!("📄 Raw output length: {} characters", result.len());
 
         // Parse JSON
@@ -604,8 +602,8 @@ mod semantic_search_json_output_tdd_tests {
     async fn test_semantic_search_json_consistency_across_queries() -> Result<()> {
         println!("🧪 TDD RED Phase: Testing semantic search JSON consistency across queries");
 
-        let vault_path = get_test_kiln_path();
-        println!("📁 Using test-kiln: {}", vault_path.display());
+        let kiln_path = get_test_kiln_path();
+        println!("📁 Using test-kiln: {}", kiln_path.display());
 
         let test_queries = vec![
             ("machine learning", vec![]),
@@ -618,7 +616,7 @@ mod semantic_search_json_output_tdd_tests {
         for (query, args) in test_queries {
             println!("\n🔍 Testing query: '{}' with args: {:?}", query, args);
 
-            let result = run_semantic_search_json(&vault_path, query, args).await?;
+            let result = run_semantic_search_json(&kiln_path, query, args).await?;
 
             // Extract structure (field names) without values
             if let Ok(parsed) = serde_json::from_str::<Value>(&result) {

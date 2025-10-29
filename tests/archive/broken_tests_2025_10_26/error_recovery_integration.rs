@@ -279,7 +279,7 @@ async fn test_search_command_with_fallback() {
 
     // Should provide helpful error message
     assert!(
-        error_msg.contains("kiln") || error_msg.contains("vault") || error_msg.contains("path")
+        error_msg.contains("kiln") || error_msg.contains("kiln") || error_msg.contains("path")
     );
     assert!(error_msg.len() > 20); // Should be descriptive
 }

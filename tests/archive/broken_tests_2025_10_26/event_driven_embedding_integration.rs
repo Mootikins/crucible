@@ -62,20 +62,20 @@ impl MockEmbeddingProvider {
     }
 }
 
-/// Test vault structure for embedding integration tests
-struct TestVault {
+/// Test kiln structure for embedding integration tests
+struct TestKiln {
     temp_dir: TempDir,
-    vault_path: PathBuf,
+    kiln_path: PathBuf,
     documents_path: PathBuf,
     config_path: PathBuf,
 }
 
-impl TestVault {
+impl TestKiln {
     async fn new() -> Result<Self> {
         let temp_dir = TempDir::new().map_err(|e| Error::Io(e))?;
-        let vault_path = temp_dir.path().to_path_buf();
-        let documents_path = vault_path.join("documents");
-        let config_path = vault_path.join("config");
+        let kiln_path = temp_dir.path().to_path_buf();
+        let documents_path = kiln_path.join("documents");
+        let config_path = kiln_path.join("config");
 
         // Create directory structure
         tokio::fs::create_dir_all(&documents_path)
@@ -87,7 +87,7 @@ impl TestVault {
 
         Ok(Self {
             temp_dir,
-            vault_path,
+            kiln_path,
             documents_path,
             config_path,
         })
@@ -236,8 +236,8 @@ tags: [technical, specification]
         Ok(file_paths)
     }
 
-    fn get_vault_path(&self) -> &PathBuf {
-        &self.vault_path
+    fn get_kiln_path(&self) -> &PathBuf {
+        &self.kiln_path
     }
 
     fn get_documents_path(&self) -> &PathBuf {
@@ -354,7 +354,7 @@ fn calculate_cosine_similarity(vec1: &[f32], vec2: &[f32]) -> f32 {
 
 /// Integration test setup and execution
 struct EmbeddingIntegrationTest {
-    vault: TestVault,
+    kiln: TestKiln,
     database: Arc<MockEmbeddingDatabase>,
     mock_provider: Arc<MockEmbeddingProvider>,
     config: EventDrivenEmbeddingConfig,
@@ -362,7 +362,7 @@ struct EmbeddingIntegrationTest {
 
 impl EmbeddingIntegrationTest {
     async fn new() -> Result<Self> {
-        let vault = TestVault::new().await?;
+        let kiln = TestKiln::new().await?;
         let database = Arc::new(MockEmbeddingDatabase::new());
         let mock_provider = Arc::new(MockEmbeddingProvider::new(384, "test-model".to_string()));
 
@@ -378,7 +378,7 @@ impl EmbeddingIntegrationTest {
         };
 
         Ok(Self {
-            vault,
+            kiln,
             database,
             mock_provider,
             config,
@@ -484,7 +484,7 @@ async fn test_file_event_triggers_automatic_embedding_generation() {
     println!("🚀 Starting comprehensive event-driven embedding integration test");
 
     // Phase 1: Test Setup
-    println!("📁 Setting up test vault and infrastructure...");
+    println!("📁 Setting up test kiln and infrastructure...");
     let test_setup = EmbeddingIntegrationTest::new()
         .await
         .expect("Failed to setup test infrastructure");
@@ -492,7 +492,7 @@ async fn test_file_event_triggers_automatic_embedding_generation() {
     // Phase 2: Create test documents
     println!("📄 Creating test markdown documents...");
     let file_paths = test_setup
-        .vault
+        .kiln
         .create_test_documents()
         .await
         .expect("Failed to create test documents");
@@ -662,7 +662,7 @@ async fn test_file_event_triggers_automatic_embedding_generation() {
     );
 
     // Test with empty file (should still work)
-    let empty_file_path = test_setup.vault.get_documents_path().join("empty.md");
+    let empty_file_path = test_setup.kiln.get_documents_path().join("empty.md");
     tokio::fs::write(&empty_file_path, "")
         .await
         .expect("Failed to create empty test file");
@@ -698,7 +698,7 @@ async fn test_event_batching_and_deduplication() {
 
     // Create test documents
     let file_paths = test_setup
-        .vault
+        .kiln
         .create_test_documents()
         .await
         .expect("Failed to create test documents");
@@ -745,9 +745,9 @@ async fn test_priority_based_embedding_processing() {
         .expect("Failed to setup test infrastructure");
 
     // Create documents with different priority levels
-    let critical_file = test_setup.vault.get_documents_path().join("critical.md");
-    let normal_file = test_setup.vault.get_documents_path().join("normal.md");
-    let low_file = test_setup.vault.get_documents_path().join("low.md");
+    let critical_file = test_setup.kiln.get_documents_path().join("critical.md");
+    let normal_file = test_setup.kiln.get_documents_path().join("normal.md");
+    let low_file = test_setup.kiln.get_documents_path().join("low.md");
 
     // Create test content
     tokio::fs::write(
@@ -819,7 +819,7 @@ async fn test_graceful_shutdown_scenarios() {
 
     // Start processing some events
     let file_paths = test_setup
-        .vault
+        .kiln
         .create_test_documents()
         .await
         .expect("Failed to create test documents");

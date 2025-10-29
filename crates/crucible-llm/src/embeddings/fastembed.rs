@@ -49,7 +49,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use super::error::{EmbeddingError, EmbeddingResult};
-use super::provider::{EmbeddingProvider, EmbeddingResponse, ModelFamily, ModelInfo, ParameterSize};
+use super::provider::{
+    EmbeddingProvider, EmbeddingResponse, ModelFamily, ModelInfo, ParameterSize,
+};
 
 /// Local embedding provider using FastEmbed library
 ///
@@ -69,7 +71,14 @@ impl std::fmt::Debug for FastEmbedProvider {
         f.debug_struct("FastEmbedProvider")
             .field("config", &self.config)
             .field("model_info", &self.model_info)
-            .field("model_loaded", &self.model.try_lock().ok().and_then(|g| g.as_ref().map(|_| true)))
+            .field(
+                "model_loaded",
+                &self
+                    .model
+                    .try_lock()
+                    .ok()
+                    .and_then(|g| g.as_ref().map(|_| true)),
+            )
             .finish()
     }
 }
@@ -151,20 +160,36 @@ impl FastEmbedProvider {
             "bge-large-en-v1.5" | "baai/bge-large-en-v1.5" => EmbeddingModel::BGELargeENV15,
 
             // MiniLM models
-            "all-minilm-l6-v2" | "sentence-transformers/all-minilm-l6-v2" => EmbeddingModel::AllMiniLML6V2,
-            "all-minilm-l12-v2" | "sentence-transformers/all-minilm-l12-v2" => EmbeddingModel::AllMiniLML12V2,
+            "all-minilm-l6-v2" | "sentence-transformers/all-minilm-l6-v2" => {
+                EmbeddingModel::AllMiniLML6V2
+            }
+            "all-minilm-l12-v2" | "sentence-transformers/all-minilm-l12-v2" => {
+                EmbeddingModel::AllMiniLML12V2
+            }
 
             // Nomic models
-            "nomic-embed-text-v1" | "nomic-ai/nomic-embed-text-v1" => EmbeddingModel::NomicEmbedTextV1,
-            "nomic-embed-text-v1.5" | "nomic-ai/nomic-embed-text-v1.5" => EmbeddingModel::NomicEmbedTextV15,
+            "nomic-embed-text-v1" | "nomic-ai/nomic-embed-text-v1" => {
+                EmbeddingModel::NomicEmbedTextV1
+            }
+            "nomic-embed-text-v1.5" | "nomic-ai/nomic-embed-text-v1.5" => {
+                EmbeddingModel::NomicEmbedTextV15
+            }
 
             // E5 models
-            "multilingual-e5-large" | "intfloat/multilingual-e5-large" => EmbeddingModel::MultilingualE5Large,
-            "multilingual-e5-base" | "intfloat/multilingual-e5-base" => EmbeddingModel::MultilingualE5Base,
-            "multilingual-e5-small" | "intfloat/multilingual-e5-small" => EmbeddingModel::MultilingualE5Small,
+            "multilingual-e5-large" | "intfloat/multilingual-e5-large" => {
+                EmbeddingModel::MultilingualE5Large
+            }
+            "multilingual-e5-base" | "intfloat/multilingual-e5-base" => {
+                EmbeddingModel::MultilingualE5Base
+            }
+            "multilingual-e5-small" | "intfloat/multilingual-e5-small" => {
+                EmbeddingModel::MultilingualE5Small
+            }
 
             // Other models
-            "mxbai-embed-large-v1" | "mixedbread-ai/mxbai-embed-large-v1" => EmbeddingModel::MxbaiEmbedLargeV1,
+            "mxbai-embed-large-v1" | "mixedbread-ai/mxbai-embed-large-v1" => {
+                EmbeddingModel::MxbaiEmbedLargeV1
+            }
             "paraphrase-minilm-l12-v2" | "sentence-transformers/paraphrase-minilm-l12-v2" => {
                 EmbeddingModel::ParaphraseMLMiniLML12V2
             }
@@ -258,18 +283,16 @@ impl FastEmbedProvider {
             }
 
             // Load model (this runs in blocking thread pool via tokio::task::spawn_blocking)
-            let model = tokio::task::spawn_blocking(move || {
-                TextEmbedding::try_new(init_options)
-            })
-            .await
-            .map_err(|e| EmbeddingError::ProviderError {
-                provider: "FastEmbed".to_string(),
-                message: format!("Failed to spawn model loading task: {}", e),
-            })?
-            .map_err(|e| EmbeddingError::ProviderError {
-                provider: "FastEmbed".to_string(),
-                message: format!("Failed to load model: {}", e),
-            })?;
+            let model = tokio::task::spawn_blocking(move || TextEmbedding::try_new(init_options))
+                .await
+                .map_err(|e| EmbeddingError::ProviderError {
+                    provider: "FastEmbed".to_string(),
+                    message: format!("Failed to spawn model loading task: {}", e),
+                })?
+                .map_err(|e| EmbeddingError::ProviderError {
+                    provider: "FastEmbed".to_string(),
+                    message: format!("Failed to load model: {}", e),
+                })?;
 
             *model_guard = Some(model);
             tracing::info!("FastEmbed model loaded successfully");
@@ -287,28 +310,29 @@ impl FastEmbedProvider {
         let batch_size = self.config.batch_size;
 
         // Run embedding in blocking thread pool
-        let embeddings = tokio::task::spawn_blocking(move || -> Result<Vec<Vec<f32>>, fastembed::Error> {
-            // Get lock inside the blocking task
-            let mut model_guard = model_arc.blocking_lock();
-            let model = model_guard.as_mut().ok_or_else(|| {
-                fastembed::Error::msg("Model not loaded")
+        let embeddings =
+            tokio::task::spawn_blocking(move || -> Result<Vec<Vec<f32>>, fastembed::Error> {
+                // Get lock inside the blocking task
+                let mut model_guard = model_arc.blocking_lock();
+                let model = model_guard
+                    .as_mut()
+                    .ok_or_else(|| fastembed::Error::msg("Model not loaded"))?;
+
+                // Convert to references for fastembed API
+                let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+
+                // Generate embeddings
+                model.embed(text_refs, batch_size)
+            })
+            .await
+            .map_err(|e| EmbeddingError::ProviderError {
+                provider: "FastEmbed".to_string(),
+                message: format!("Failed to spawn embedding task: {}", e),
+            })?
+            .map_err(|e| EmbeddingError::ProviderError {
+                provider: "FastEmbed".to_string(),
+                message: format!("Failed to generate embeddings: {}", e),
             })?;
-
-            // Convert to references for fastembed API
-            let text_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
-
-            // Generate embeddings
-            model.embed(text_refs, batch_size)
-        })
-        .await
-        .map_err(|e| EmbeddingError::ProviderError {
-            provider: "FastEmbed".to_string(),
-            message: format!("Failed to spawn embedding task: {}", e),
-        })?
-        .map_err(|e| EmbeddingError::ProviderError {
-            provider: "FastEmbed".to_string(),
-            message: format!("Failed to generate embeddings: {}", e),
-        })?;
 
         Ok(embeddings)
     }
@@ -323,12 +347,14 @@ impl EmbeddingProvider for FastEmbedProvider {
 
         let embeddings = self.embed_internal(vec![text.to_string()]).await?;
 
-        let embedding = embeddings.into_iter().next().ok_or_else(|| {
-            EmbeddingError::ProviderError {
-                provider: "FastEmbed".to_string(),
-                message: "No embedding returned".to_string(),
-            }
-        })?;
+        let embedding =
+            embeddings
+                .into_iter()
+                .next()
+                .ok_or_else(|| EmbeddingError::ProviderError {
+                    provider: "FastEmbed".to_string(),
+                    message: "No embedding returned".to_string(),
+                })?;
 
         Ok(EmbeddingResponse::new(
             embedding,
@@ -345,9 +371,7 @@ impl EmbeddingProvider for FastEmbedProvider {
 
         let responses = embeddings
             .into_iter()
-            .map(|embedding| {
-                EmbeddingResponse::new(embedding, self.model_info.name.clone())
-            })
+            .map(|embedding| EmbeddingResponse::new(embedding, self.model_info.name.clone()))
             .collect();
 
         Ok(responses)

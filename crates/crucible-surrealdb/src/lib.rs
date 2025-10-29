@@ -28,14 +28,14 @@
 //! ```
 
 pub mod database;
+pub mod kiln_integration;
+pub mod kiln_pipeline_connector;
+pub mod kiln_processor;
+pub mod kiln_scanner;
 pub mod query;
 pub mod schema_types;
 pub mod surreal_client;
 pub mod types;
-pub mod vault_integration;
-pub mod vault_pipeline_connector;
-pub mod vault_processor;
-pub mod vault_scanner;
 
 // Embedding modules
 pub mod embedding;
@@ -44,8 +44,8 @@ pub mod embedding_pipeline;
 pub mod embedding_pool;
 
 pub use database::SurrealEmbeddingDatabase;
-pub use surreal_client::SurrealClient;
 pub use schema_types::*;
+pub use surreal_client::SurrealClient;
 pub use types::*;
 
 // Re-export embedding functionality with specific exports to avoid conflicts
@@ -56,21 +56,21 @@ pub use embedding_config::{
 pub use embedding_pipeline::EmbeddingPipeline;
 pub use embedding_pool::EmbeddingThreadPool;
 
-// Vault scanner exports
-pub use vault_processor::{
-    process_document_embeddings, process_incremental_changes, process_vault_delta,
-    process_vault_files, process_vault_files_with_error_handling, scan_vault_directory,
+// Kiln scanner exports
+pub use kiln_processor::{
+    process_document_embeddings, process_incremental_changes, process_kiln_delta,
+    process_kiln_files, process_kiln_files_with_error_handling, scan_kiln_directory,
 };
-pub use vault_scanner::{
-    create_vault_scanner, create_vault_scanner_with_embeddings, parse_file_to_document,
-    validate_vault_scanner_config, ChangeDetectionMethod, ErrorHandlingMode, VaultFileInfo,
-    VaultProcessError, VaultProcessResult, VaultScanError, VaultScanResult, VaultScanner,
-    VaultScannerConfig, VaultScannerErrorType, VaultScannerMetrics, VaultScannerState,
+pub use kiln_scanner::{
+    create_kiln_scanner, create_kiln_scanner_with_embeddings, parse_file_to_document,
+    validate_kiln_scanner_config, ChangeDetectionMethod, ErrorHandlingMode, KilnFileInfo,
+    KilnProcessError, KilnProcessResult, KilnScanError, KilnScanResult, KilnScanner,
+    KilnScannerConfig, KilnScannerErrorType, KilnScannerMetrics, KilnScannerState,
 };
 
-// Vault pipeline connector exports
-pub use vault_pipeline_connector::{
+// Kiln pipeline connector exports
+pub use kiln_pipeline_connector::{
     generate_document_id_from_path, get_parsed_documents_from_scan,
     transform_parsed_document_to_embedding_inputs, BatchProcessingResult, DocumentProcessingResult,
-    VaultPipelineConfig, VaultPipelineConnector,
+    KilnPipelineConfig, KilnPipelineConnector,
 };

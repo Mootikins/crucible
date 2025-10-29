@@ -8,14 +8,14 @@
 //! ### Using Individual Tool Functions
 //!
 //! ```rust
-//! use crucible_tools::{search_tools, vault_tools};
+//! use crucible_tools::{search_tools, kiln_tools};
 //! use serde_json::json;
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     // Get tool functions directly
 //!     let search_fn = search_tools::search_documents();
-//!     let vault_fn = vault_tools::get_kiln_stats();
+//!     let kiln_fn = kiln_tools::get_kiln_stats();
 //!
 //!     // Execute tools with the unified ToolFunction signature
 //!     let search_result = search_fn(
@@ -25,7 +25,7 @@
 //!         Some("session456".to_string()),
 //!     ).await?;
 //!
-//!     let vault_stats = vault_fn(
+//!     let kiln_stats = kiln_fn(
 //!         "get_kiln_stats".to_string(),
 //!         json!({}),
 //!         Some("user123".to_string()),
@@ -33,7 +33,7 @@
 //!     ).await?;
 //!
 //!     println!("Search successful: {}", search_result.success);
-//!     println!("Vault has {} notes", vault_stats.data.unwrap()["total_notes"]);
+//!     println!("Kiln has {} notes", kiln_stats.data.unwrap()["total_notes"]);
 //!
 //!     Ok(())
 //! }
@@ -73,7 +73,7 @@
 //! The library provides 25 tools across 4 categories:
 //!
 //! - **System Tools** (5): `system_info`, `execute_command`, `list_files`, `read_file`, `get_environment`
-//! - **Vault Tools** (8): `search_by_properties`, `search_by_tags`, `search_by_folder`, `create_note`, `update_note`, `delete_note`, `get_kiln_stats`, `list_tags`
+//! - **Kiln Tools** (8): `search_by_properties`, `search_by_tags`, `search_by_folder`, `create_note`, `update_note`, `delete_note`, `get_kiln_stats`, `list_tags`
 //! - **Database Tools** (7): `semantic_search`, `search_by_content`, `search_by_filename`, `update_note_properties`, `index_document`, `get_document_stats`, `sync_metadata`
 //! - **Search Tools** (5): `search_documents`, `rebuild_index`, `get_index_stats`, `optimize_index`, `advanced_search`
 
@@ -82,19 +82,19 @@
 #![deny(clippy::pedantic)]
 
 pub mod database_tools;
+pub mod kiln_tools;
 pub mod search_tools;
 pub mod system_tools;
 pub mod types;
-pub mod vault_tools;
 
-// Vault parsing modules - Phase 1A TDD Implementation
-pub mod vault_change_detection;
-pub mod vault_parser;
-pub mod vault_scanner;
-pub mod vault_types;
+// Kiln parsing modules - Phase 1A TDD Implementation
+pub mod kiln_change_detection;
+pub mod kiln_parser;
+pub mod kiln_scanner;
+pub mod kiln_types;
 
-// Real vault operations - Phase 1B Implementation
-pub mod vault_operations;
+// Real kiln operations - Phase 1B Implementation
+pub mod kiln_operations;
 
 // ===== PUBLIC API EXPORTS =====
 // Simple async function composition interface
@@ -148,7 +148,7 @@ pub fn library_info() -> LibraryInfo {
             "direct_async_functions".to_string(),
             "database_tools".to_string(),
             "search_tools".to_string(),
-            "vault_tools".to_string(),
+            "kiln_tools".to_string(),
             "system_tools".to_string(),
             "unified_interface".to_string(),
             "25_tools_registered".to_string(),

@@ -171,7 +171,7 @@ impl SystemToolGroup {
             },
         );
 
-        // Vault tools
+        // Kiln tools
         schemas.insert("search_by_properties".to_string(), ToolSchema {
             name: "search_by_properties".to_string(),
             description: "Search kiln notes by frontmatter properties".to_string(),
@@ -829,15 +829,28 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         let err_msg = err.to_string();
-        assert!(err_msg.contains("path (string)"), "Error should mention parameter name and type: {}", err_msg);
-        assert!(err_msg.contains(":help list_files"), "Error should suggest help command: {}", err_msg);
+        assert!(
+            err_msg.contains("path (string)"),
+            "Error should mention parameter name and type: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains(":help list_files"),
+            "Error should suggest help command: {}",
+            err_msg
+        );
 
         // Test with too many arguments
-        let result = tool_group.convert_args_to_params("list_files", &["path1".to_string(), "path2".to_string()]);
+        let result = tool_group
+            .convert_args_to_params("list_files", &["path1".to_string(), "path2".to_string()]);
         assert!(result.is_err());
         let err = result.unwrap_err();
         let err_msg = err.to_string();
-        assert!(err_msg.contains("path (string)"), "Error should mention parameter name and type: {}", err_msg);
+        assert!(
+            err_msg.contains("path (string)"),
+            "Error should mention parameter name and type: {}",
+            err_msg
+        );
     }
 
     #[test]
@@ -849,25 +862,54 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         let err_msg = err.to_string();
-        assert!(err_msg.contains("path (string)"), "Error should mention missing path: {}", err_msg);
-        assert!(err_msg.contains("title (string)"), "Error should mention missing title: {}", err_msg);
-        assert!(err_msg.contains("content (string)"), "Error should mention missing content: {}", err_msg);
-        assert!(err_msg.contains(":help create_note"), "Error should suggest help command: {}", err_msg);
+        assert!(
+            err_msg.contains("path (string)"),
+            "Error should mention missing path: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("title (string)"),
+            "Error should mention missing title: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("content (string)"),
+            "Error should mention missing content: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains(":help create_note"),
+            "Error should suggest help command: {}",
+            err_msg
+        );
 
         // Test with one argument
         let result = tool_group.convert_args_to_params("create_note", &["path".to_string()]);
         assert!(result.is_err());
         let err = result.unwrap_err();
         let err_msg = err.to_string();
-        assert!(err_msg.contains("title (string)"), "Error should mention missing title: {}", err_msg);
-        assert!(err_msg.contains("content (string)"), "Error should mention missing content: {}", err_msg);
+        assert!(
+            err_msg.contains("title (string)"),
+            "Error should mention missing title: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("content (string)"),
+            "Error should mention missing content: {}",
+            err_msg
+        );
 
         // Test with two arguments
-        let result = tool_group.convert_args_to_params("create_note", &["path".to_string(), "title".to_string()]);
+        let result = tool_group
+            .convert_args_to_params("create_note", &["path".to_string(), "title".to_string()]);
         assert!(result.is_err());
         let err = result.unwrap_err();
         let err_msg = err.to_string();
-        assert!(err_msg.contains("content (string)"), "Error should mention missing content: {}", err_msg);
+        assert!(
+            err_msg.contains("content (string)"),
+            "Error should mention missing content: {}",
+            err_msg
+        );
     }
 
     #[test]
@@ -879,9 +921,21 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         let err_msg = err.to_string();
-        assert!(err_msg.contains("tags (array of strings)"), "Error should mention parameter type: {}", err_msg);
-        assert!(err_msg.contains("at least one tag"), "Error should explain the requirement: {}", err_msg);
-        assert!(err_msg.contains(":help search_by_tags"), "Error should suggest help command: {}", err_msg);
+        assert!(
+            err_msg.contains("tags (array of strings)"),
+            "Error should mention parameter type: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("at least one tag"),
+            "Error should explain the requirement: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains(":help search_by_tags"),
+            "Error should suggest help command: {}",
+            err_msg
+        );
     }
 
     #[test]
@@ -893,9 +947,21 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         let err_msg = err.to_string();
-        assert!(err_msg.contains("query (string)"), "Error should mention required parameter: {}", err_msg);
-        assert!(err_msg.contains("Optional: limit (integer)"), "Error should mention optional parameters: {}", err_msg);
-        assert!(err_msg.contains(":help semantic_search"), "Error should suggest help command: {}", err_msg);
+        assert!(
+            err_msg.contains("query (string)"),
+            "Error should mention required parameter: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("Optional: limit (integer)"),
+            "Error should mention optional parameters: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains(":help semantic_search"),
+            "Error should suggest help command: {}",
+            err_msg
+        );
     }
 
     #[test]
@@ -907,8 +973,16 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         let err_msg = err.to_string();
-        assert!(err_msg.contains("takes no arguments"), "Error should explain no arguments needed: {}", err_msg);
-        assert!(err_msg.contains(":help system_info"), "Error should suggest help command: {}", err_msg);
+        assert!(
+            err_msg.contains("takes no arguments"),
+            "Error should explain no arguments needed: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains(":help system_info"),
+            "Error should suggest help command: {}",
+            err_msg
+        );
     }
 
     #[test]
@@ -924,7 +998,11 @@ mod tests {
         // Test create_note with all required arguments
         let result = tool_group.convert_args_to_params(
             "create_note",
-            &["path".to_string(), "title".to_string(), "content".to_string()],
+            &[
+                "path".to_string(),
+                "title".to_string(),
+                "content".to_string(),
+            ],
         );
         assert!(result.is_ok());
         let params = result.unwrap();

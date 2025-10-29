@@ -86,9 +86,9 @@ pub async fn semantic_search(
 }
 
 #[tauri::command]
-pub async fn index_vault(_force: bool) -> std::result::Result<serde_json::Value, String> {
+pub async fn index_kiln(_force: bool) -> std::result::Result<serde_json::Value, String> {
     // MCP functionality has been removed - please use crucible-services instead
-    Err("Vault indexing functionality has been moved to crucible-services".to_string())
+    Err("Kiln indexing functionality has been moved to crucible-services".to_string())
 }
 
 #[tauri::command]

@@ -14,7 +14,7 @@
 /// Test context for end-to-end REPL tests
 struct ReplTestContext {
     temp_dir: TempDir,
-    vault_path: PathBuf,
+    kiln_path: PathBuf,
     tool_dir: PathBuf,
     db_path: PathBuf,
 }
@@ -22,17 +22,17 @@ struct ReplTestContext {
 impl ReplTestContext {
     fn new() -> Result<Self> {
         let temp_dir = TempDir::new()?;
-        let vault_path = temp_dir.path().join("vault");
+        let kiln_path = temp_dir.path().join("kiln");
         let tool_dir = temp_dir.path().join("tools");
         let db_path = temp_dir.path().join("test.db");
 
         // Create directories
-        std::fs::create_dir_all(&vault_path)?;
+        std::fs::create_dir_all(&kiln_path)?;
         std::fs::create_dir_all(&tool_dir)?;
 
         Ok(Self {
             temp_dir,
-            vault_path,
+            kiln_path,
             tool_dir,
             db_path,
         })
@@ -55,8 +55,8 @@ impl ReplTestContext {
         // Build the command with proper environment and arguments
         let mut child = Command::new(cli_path)
             .arg("repl")
-            .arg("--vault-path")
-            .arg(&self.vault_path)
+            .arg("--kiln-path")
+            .arg(&self.kiln_path)
             .arg("--db-path")
             .arg(&self.db_path)
             .arg("--tool-dir")
@@ -473,7 +473,7 @@ async fn test_repl_infrastructure_smoke_test() -> Result<()> {
     let context = ReplTestContext::new()?;
 
     // Verify directories exist
-    assert!(context.vault_path.exists(), "Vault path should exist");
+    assert!(context.kiln_path.exists(), "Kiln path should exist");
     assert!(context.tool_dir.exists(), "Tool directory should exist");
 
     // Verify CLI path exists (might not in all test environments)

@@ -95,7 +95,7 @@ impl ScrollState {
 /// Status bar state
 #[derive(Debug)]
 pub struct StatusBar {
-    pub vault_path: PathBuf,
+    pub kiln_path: PathBuf,
     pub db_type: String,
     pub doc_count: u64,
     pub db_size: u64,
@@ -105,7 +105,7 @@ pub struct StatusBar {
 impl Default for StatusBar {
     fn default() -> Self {
         Self {
-            vault_path: PathBuf::from("~"),
+            kiln_path: PathBuf::from("~"),
             db_type: "Unknown".to_string(),
             doc_count: 0,
             db_size: 0,
@@ -117,8 +117,8 @@ impl Default for StatusBar {
 impl StatusBar {
     /// Apply a partial status update
     pub fn apply_update(&mut self, update: StatusUpdate) {
-        if let Some(path) = update.vault_path {
-            self.vault_path = path;
+        if let Some(path) = update.kiln_path {
+            self.kiln_path = path;
         }
         if let Some(db_type) = update.db_type {
             self.db_type = db_type;
@@ -399,7 +399,7 @@ Built-in Commands:
   :quit, :q       - Exit daemon
   :help, :h       - Show this help
   :clear          - Clear REPL output
-  :stats          - Show vault statistics
+  :stats          - Show kiln statistics
   :tools          - List available tools
   :log <level>    - Set log level
 
@@ -468,12 +468,12 @@ mod tests {
         let mut status = StatusBar::default();
 
         let update = StatusUpdate::new()
-            .with_vault_path(PathBuf::from("/vault"))
+            .with_kiln_path(PathBuf::from("/kiln"))
             .with_doc_count(42);
 
         status.apply_update(update);
 
-        assert_eq!(status.vault_path, PathBuf::from("/vault"));
+        assert_eq!(status.kiln_path, PathBuf::from("/kiln"));
         assert_eq!(status.doc_count, 42);
         assert_eq!(status.db_type, "Unknown"); // Unchanged
     }

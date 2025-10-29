@@ -154,7 +154,7 @@ IntegrationTestConfig {
     sustained_load_duration: Duration::from_secs(300), // 5 minutes
     test_dataset_size: 1000,
     detailed_tracing: false,
-    vault_path: None,
+    kiln_path: None,
     db_config: DatabaseTestConfig {
         use_memory_db: true,
         connection_url: None,

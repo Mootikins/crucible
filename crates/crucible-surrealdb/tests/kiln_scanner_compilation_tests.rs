@@ -1,33 +1,33 @@
-//! Vault Scanner Compilation Tests
+//! Kiln Scanner Compilation Tests
 //!
-//! Minimal tests to verify vault scanner compiles and basic functionality works
+//! Minimal tests to verify kiln scanner compiles and basic functionality works
 
 use crucible_core::parser::{
     DocumentContent, Frontmatter, FrontmatterFormat, Heading, ParsedDocument, Tag,
 };
-use crucible_surrealdb::vault_scanner;
+use crucible_surrealdb::kiln_scanner;
+use kiln_scanner::{create_kiln_scanner, KilnScannerConfig};
 use std::path::PathBuf;
 use tempfile::TempDir;
-use vault_scanner::{create_vault_scanner, VaultScannerConfig};
 
 #[tokio::test]
-async fn test_vault_scanner_compilation() {
-    // Test that we can create a vault scanner configuration
-    let config = VaultScannerConfig::default();
+async fn test_kiln_scanner_compilation() {
+    // Test that we can create a kiln scanner configuration
+    let config = KilnScannerConfig::default();
     assert!(config.max_file_size_bytes > 0);
     assert!(config.max_recursion_depth > 0);
     assert!(config.recursive_scan);
 }
 
 #[tokio::test]
-async fn test_vault_scanner_creation() {
-    let config = VaultScannerConfig::default();
-    let scanner_result = create_vault_scanner(config).await;
+async fn test_kiln_scanner_creation() {
+    let config = KilnScannerConfig::default();
+    let scanner_result = create_kiln_scanner(config).await;
     assert!(scanner_result.is_ok());
 }
 
 #[tokio::test]
-async fn test_vault_scanner_basic_scan() {
+async fn test_kiln_scanner_basic_scan() {
     // Create temporary directory with test files
     let temp_dir = TempDir::new().unwrap();
     let test_path = temp_dir.path().to_path_buf();
@@ -44,10 +44,10 @@ async fn test_vault_scanner_basic_scan() {
         .unwrap();
 
     // Test scanning
-    let config = VaultScannerConfig::default();
-    let mut scanner = create_vault_scanner(config).await.unwrap();
+    let config = KilnScannerConfig::default();
+    let mut scanner = create_kiln_scanner(config).await.unwrap();
 
-    let result = scanner.scan_vault_directory(&test_path).await.unwrap();
+    let result = scanner.scan_kiln_directory(&test_path).await.unwrap();
 
     // Verify results
     assert!(result.total_files_found >= 1); // At least 1 markdown file
@@ -56,9 +56,9 @@ async fn test_vault_scanner_basic_scan() {
 }
 
 #[tokio::test]
-async fn test_vault_scanner_configuration() {
+async fn test_kiln_scanner_configuration() {
     // Test default configuration
-    let config = VaultScannerConfig::default();
+    let config = KilnScannerConfig::default();
     assert_eq!(config.max_file_size_bytes, 50 * 1024 * 1024);
     assert_eq!(config.max_recursion_depth, 10);
     assert!(config.recursive_scan);
@@ -72,35 +72,35 @@ async fn test_vault_scanner_configuration() {
     assert!(config.process_wikilinks);
 
     // Test configuration presets
-    let large_config = VaultScannerConfig::for_large_vault();
+    let large_config = KilnScannerConfig::for_large_kiln();
     assert!(large_config.parallel_processing >= 8);
     assert!(large_config.batch_size >= 32);
     assert!(large_config.enable_incremental);
 
-    let small_config = VaultScannerConfig::for_small_vault();
+    let small_config = KilnScannerConfig::for_small_kiln();
     assert_eq!(small_config.parallel_processing, 1);
     assert_eq!(small_config.batch_size, 4);
     assert!(!small_config.enable_incremental);
 
-    let resource_config = VaultScannerConfig::for_resource_constrained();
+    let resource_config = KilnScannerConfig::for_resource_constrained();
     assert_eq!(resource_config.parallel_processing, 1);
     assert_eq!(resource_config.batch_size, 2);
     assert!(!resource_config.enable_embeddings);
 }
 
 #[tokio::test]
-async fn test_vault_scanner_config_serialization() {
+async fn test_kiln_scanner_config_serialization() {
     // Test configuration serialization/deserialization
-    let default_config = VaultScannerConfig::default();
+    let default_config = KilnScannerConfig::default();
     let serialized = serde_json::to_string(&default_config).unwrap();
-    let deserialized: VaultScannerConfig = serde_json::from_str(&serialized).unwrap();
+    let deserialized: KilnScannerConfig = serde_json::from_str(&serialized).unwrap();
     assert_eq!(default_config, deserialized);
 }
 
 #[tokio::test]
-async fn test_vault_scanner_metrics() {
-    let config = VaultScannerConfig::default();
-    let scanner = create_vault_scanner(config).await.unwrap();
+async fn test_kiln_scanner_metrics() {
+    let config = KilnScannerConfig::default();
+    let scanner = create_kiln_scanner(config).await.unwrap();
 
     let metrics = scanner.get_performance_metrics().await;
     assert!(metrics.memory_usage_mb > 0);

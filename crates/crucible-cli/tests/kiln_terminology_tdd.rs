@@ -1,7 +1,7 @@
-//! TDD RED Phase: CLI Terminology Tests for Kiln (instead of Vault)
+//! TDD RED Phase: CLI Terminology Tests for Kiln (instead of Kiln)
 //!
 //! These tests are written to FAIL first to drive the implementation
-//! of CLI terminology changes from "vault" to "kiln".
+//! of CLI terminology changes from "kiln" to "kiln".
 //!
 //! ALL TESTS SHOULD FAIL INITIALLY - this is the RED phase of TDD
 //! These tests provide specification for terminology updates
@@ -117,18 +117,18 @@ async fn create_test_kiln() -> Result<TempDir> {
 }
 
 // ===== TDD RED PHASE: HELP TEXT TERMINOLOGY TESTS =====
-// These tests FAIL until help text uses "kiln" instead of "vault"
+// These tests FAIL until help text uses "kiln" instead of "kiln"
 
 #[tokio::test]
-async fn test_help_text_uses_kiln_not_vault() -> Result<()> {
+async fn test_help_text_uses_kiln_not_kiln() -> Result<()> {
     // WHEN: User requests help
     let result = run_cli_command(vec!["--help"]).await?;
 
-    // THEN: Help text should use "kiln" terminology, not "vault"
-    // This test FAILS because help text currently uses "vault"
+    // THEN: Help text should use "kiln" terminology, not "kiln"
+    // This test FAILS because help text currently uses "kiln"
     assert!(
-        !result.contains("vault"),
-        "Help text should not contain 'vault' terminology, but got: {}",
+        !result.contains("kiln"),
+        "Help text should not contain 'kiln' terminology, but got: {}",
         result
     );
     assert!(
@@ -137,14 +137,14 @@ async fn test_help_text_uses_kiln_not_vault() -> Result<()> {
         result
     );
 
-    // Check for specific vault terminology that should be replaced with kiln
+    // Check for specific kiln terminology that should be replaced with kiln
     assert!(
-        !result.contains("vault statistics"),
-        "Should say 'kiln statistics' not 'vault statistics'"
+        !result.contains("kiln statistics"),
+        "Should say 'kiln statistics' not 'kiln statistics'"
     );
     assert!(
-        !result.contains("vault path"),
-        "Should say 'kiln path' not 'vault path'"
+        !result.contains("kiln path"),
+        "Should say 'kiln path' not 'kiln path'"
     );
 
     Ok(())
@@ -156,10 +156,10 @@ async fn test_search_help_text_uses_kiln_terminology() -> Result<()> {
     let result = run_cli_command(vec!["search", "--help"]).await?;
 
     // THEN: Search help should use "kiln" terminology
-    // This test FAILS because search help currently uses "vault"
+    // This test FAILS because search help currently uses "kiln"
     assert!(
-        !result.contains("vault"),
-        "Search help should not contain 'vault' terminology, but got: {}",
+        !result.contains("kiln"),
+        "Search help should not contain 'kiln' terminology, but got: {}",
         result
     );
     assert!(
@@ -177,10 +177,10 @@ async fn test_semantic_help_text_uses_kiln_terminology() -> Result<()> {
     let result = run_cli_command(vec!["semantic", "--help"]).await?;
 
     // THEN: Semantic search help should use "kiln" terminology
-    // This test FAILS because semantic help currently uses "vault"
+    // This test FAILS because semantic help currently uses "kiln"
     assert!(
-        !result.contains("vault"),
-        "Semantic help should not contain 'vault' terminology, but got: {}",
+        !result.contains("kiln"),
+        "Semantic help should not contain 'kiln' terminology, but got: {}",
         result
     );
     assert!(
@@ -198,10 +198,10 @@ async fn test_stats_help_text_uses_kiln_terminology() -> Result<()> {
     let result = run_cli_command(vec!["stats", "--help"]).await?;
 
     // THEN: Stats help should use "kiln" terminology
-    // This test FAILS because stats help currently uses "vault"
+    // This test FAILS because stats help currently uses "kiln"
     assert!(
-        !result.contains("vault"),
-        "Stats help should not contain 'vault' terminology, but got: {}",
+        !result.contains("kiln"),
+        "Stats help should not contain 'kiln' terminology, but got: {}",
         result
     );
     assert!(
@@ -214,17 +214,17 @@ async fn test_stats_help_text_uses_kiln_terminology() -> Result<()> {
 }
 
 // ===== TDD RED PHASE: ERROR MESSAGE TERMINOLOGY TESTS =====
-// These tests FAIL until error messages use "kiln" instead of "vault"
+// These tests FAIL until error messages use "kiln" instead of "kiln"
 
 #[tokio::test]
 async fn test_error_messages_use_kiln_terminology() -> Result<()> {
     // WHEN: Help text is displayed
     let result = run_cli_command_allow_failure(vec!["--help"]).await?;
 
-    // THEN: Help text should use "kiln" terminology, not "vault"
+    // THEN: Help text should use "kiln" terminology, not "kiln"
     assert!(
-        !result.contains("vault"),
-        "Help text should not contain 'vault' terminology, but got: {}",
+        !result.contains("kiln"),
+        "Help text should not contain 'kiln' terminology, but got: {}",
         result
     );
 
@@ -243,10 +243,10 @@ async fn test_search_error_with_invalid_kiln_path() -> Result<()> {
     // WHEN: User requests search help
     let result = run_cli_command_allow_failure(vec!["search", "--help"]).await?;
 
-    // THEN: Help should use kiln terminology, not vault
+    // THEN: Help should use kiln terminology, not kiln
     assert!(
-        !result.contains("vault"),
-        "Help should not mention 'vault', but got: {}",
+        !result.contains("kiln"),
+        "Help should not mention 'kiln', but got: {}",
         result
     );
 
@@ -258,10 +258,10 @@ async fn test_semantic_error_with_invalid_kiln_path() -> Result<()> {
     // WHEN: User requests semantic search help
     let result = run_cli_command_allow_failure(vec!["semantic", "--help"]).await?;
 
-    // THEN: Help should use kiln terminology, not vault
+    // THEN: Help should use kiln terminology, not kiln
     assert!(
-        !result.contains("vault"),
-        "Help should not mention 'vault', but got: {}",
+        !result.contains("kiln"),
+        "Help should not mention 'kiln', but got: {}",
         result
     );
 
@@ -269,7 +269,7 @@ async fn test_semantic_error_with_invalid_kiln_path() -> Result<()> {
 }
 
 // ===== TDD RED PHASE: COMMAND OUTPUT TERMINOLOGY TESTS =====
-// These tests FAIL until command output uses "kiln" instead of "vault"
+// These tests FAIL until command output uses "kiln" instead of "kiln"
 
 #[tokio::test]
 async fn test_command_output_uses_kiln_terminology() -> Result<()> {
@@ -278,8 +278,8 @@ async fn test_command_output_uses_kiln_terminology() -> Result<()> {
 
     // THEN: Help output should use "kiln" terminology
     assert!(
-        !result.contains("vault"),
-        "Stats help should not contain 'vault' terminology, but got: {}",
+        !result.contains("kiln"),
+        "Stats help should not contain 'kiln' terminology, but got: {}",
         result
     );
 
@@ -291,13 +291,13 @@ async fn test_search_success_output_uses_kiln_terminology() -> Result<()> {
     // WHEN: User requests search help
     let result = run_cli_command(vec!["search", "--help"]).await?;
 
-    // THEN: Help output should not contain "vault" terminology
+    // THEN: Help output should not contain "kiln" terminology
     assert!(
-        !result.contains("vault"),
-        "Search help should not contain 'vault' terminology, but got: {}",
+        !result.contains("kiln"),
+        "Search help should not contain 'kiln' terminology, but got: {}",
         result
     );
-    // Note: Help output might not explicitly mention "kiln" - focus is on removing "vault"
+    // Note: Help output might not explicitly mention "kiln" - focus is on removing "kiln"
 
     Ok(())
 }
@@ -307,10 +307,10 @@ async fn test_semantic_search_output_uses_kiln_terminology() -> Result<()> {
     // WHEN: User requests semantic search help
     let result = run_cli_command_allow_failure(vec!["semantic", "--help"]).await?;
 
-    // THEN: Help output should not contain "vault" terminology
+    // THEN: Help output should not contain "kiln" terminology
     assert!(
-        !result.contains("vault"),
-        "Semantic search help should not contain 'vault' terminology, but got: {}",
+        !result.contains("kiln"),
+        "Semantic search help should not contain 'kiln' terminology, but got: {}",
         result
     );
 
@@ -336,11 +336,11 @@ async fn test_all_help_commands_use_kiln_terminology() -> Result<()> {
         // WHEN: User requests help for each command
         let result = run_cli_command(args.clone()).await?;
 
-        // THEN: All help text should use "kiln" terminology, not "vault"
-        // This test FAILS because help text currently uses "vault"
+        // THEN: All help text should use "kiln" terminology, not "kiln"
+        // This test FAILS because help text currently uses "kiln"
         assert!(
-            !result.contains("vault"),
-            "Help for {:?} should not contain 'vault' terminology, but got: {}",
+            !result.contains("kiln"),
+            "Help for {:?} should not contain 'kiln' terminology, but got: {}",
             args,
             result
         );
@@ -365,11 +365,10 @@ async fn test_environment_variable_references_updated() -> Result<()> {
     let result = run_cli_command(vec!["config", "--help"]).await?;
 
     // THEN: Should reference kiln in environment variable descriptions
-    // This test FAILS because env var docs currently mention vault
+    // This test FAILS because env var docs currently mention kiln
     assert!(
-        !result.contains("vault path")
-            || (result.contains("kiln") && result.contains("vault path")),
-        "Environment variable help should prioritize 'kiln' over 'vault', but got: {}",
+        !result.contains("kiln path") || (result.contains("kiln") && result.contains("kiln path")),
+        "Environment variable help should prioritize 'kiln' over 'kiln', but got: {}",
         result
     );
 
@@ -383,8 +382,8 @@ async fn test_error_recovery_messages_use_kiln_terminology() -> Result<()> {
 
     // THEN: Help messages should use kiln terminology
     assert!(
-        !result.contains("vault"),
-        "Help should not contain 'vault' terminology, but got: {}",
+        !result.contains("kiln"),
+        "Help should not contain 'kiln' terminology, but got: {}",
         result
     );
 
@@ -396,10 +395,10 @@ async fn test_json_output_uses_kiln_terminology() -> Result<()> {
     // WHEN: User requests help with JSON format option visible
     let result = run_cli_command_allow_failure(vec!["search", "--help"]).await?;
 
-    // THEN: Help output should not contain vault terminology
+    // THEN: Help output should not contain kiln terminology
     assert!(
-        !result.contains("vault"),
-        "Help should not contain 'vault' terminology, but got: {}",
+        !result.contains("kiln"),
+        "Help should not contain 'kiln' terminology, but got: {}",
         result
     );
 
@@ -414,10 +413,10 @@ async fn test_config_show_output_uses_kiln_terminology() -> Result<()> {
     // WHEN: User requests config help
     let result = run_cli_command(vec!["config", "--help"]).await?;
 
-    // THEN: Help output should not contain vault terminology
+    // THEN: Help output should not contain kiln terminology
     assert!(
-        !result.contains("vault"),
-        "Config help should not contain 'vault' terminology, but got: {}",
+        !result.contains("kiln"),
+        "Config help should not contain 'kiln' terminology, but got: {}",
         result
     );
 
@@ -429,10 +428,10 @@ async fn test_config_init_output_uses_kiln_terminology() -> Result<()> {
     // WHEN: User requests config help
     let result = run_cli_command_allow_failure(vec!["config", "--help"]).await?;
 
-    // THEN: Config help should not contain vault terminology
+    // THEN: Config help should not contain kiln terminology
     assert!(
-        !result.contains("vault"),
-        "Config help should not contain 'vault' terminology, but got: {}",
+        !result.contains("kiln"),
+        "Config help should not contain 'kiln' terminology, but got: {}",
         result
     );
 
@@ -456,16 +455,16 @@ async fn test_comprehensive_kiln_terminology_verification() -> Result<()> {
         (vec!["config", "--help"], "config help"),
     ];
 
-    let mut vault_terminology_found = false;
+    let mut kiln_terminology_found = false;
     let mut kiln_terminology_found = false;
 
     for (args, description) in test_cases {
         let result = run_cli_command(args).await?;
 
-        // Check for vault terminology (should not exist)
-        if result.contains("vault") {
-            vault_terminology_found = true;
-            println!("FOUND VAULT TERMINOLOGY in {}: {}", description, result);
+        // Check for kiln terminology (should not exist)
+        if result.contains("kiln") {
+            kiln_terminology_found = true;
+            println!("FOUND KILN TERMINOLOGY in {}: {}", description, result);
         }
 
         // Check for kiln terminology (should exist in most cases)
@@ -473,20 +472,20 @@ async fn test_comprehensive_kiln_terminology_verification() -> Result<()> {
             kiln_terminology_found = true;
         }
 
-        // All help text should use kiln and never vault
+        // All help text should use kiln and never kiln
         assert!(
-            !result.contains("vault"),
-            "Help text for {} should not contain 'vault', but got: {}",
+            !result.contains("kiln"),
+            "Help text for {} should not contain 'kiln', but got: {}",
             description,
             result
         );
     }
 
     // THEN: Overall verification
-    // All help text should not contain vault terminology
+    // All help text should not contain kiln terminology
     assert!(
-        !vault_terminology_found,
-        "CLI should not contain any 'vault' terminology in help text"
+        !kiln_terminology_found,
+        "CLI should not contain any 'kiln' terminology in help text"
     );
     assert!(
         kiln_terminology_found,

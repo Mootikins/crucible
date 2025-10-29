@@ -254,8 +254,16 @@ async fn test_concurrent_reads_and_writes() -> Result<()> {
     .expect("Mixed operations should not deadlock")?;
 
     // Verify: All operations should succeed
-    assert_eq!(read_count.load(Ordering::SeqCst), 5, "All 5 reads should succeed");
-    assert_eq!(write_count.load(Ordering::SeqCst), 5, "All 5 writes should succeed");
+    assert_eq!(
+        read_count.load(Ordering::SeqCst),
+        5,
+        "All 5 reads should succeed"
+    );
+    assert_eq!(
+        write_count.load(Ordering::SeqCst),
+        5,
+        "All 5 writes should succeed"
+    );
 
     Ok(())
 }
@@ -611,8 +619,16 @@ async fn test_read_during_write_same_document() -> Result<()> {
     .await
     .expect("Concurrent reads and writes should not deadlock")?;
 
-    assert_eq!(read_count.load(Ordering::SeqCst), 5, "All reads should complete");
-    assert_eq!(write_count.load(Ordering::SeqCst), 5, "All writes should complete");
+    assert_eq!(
+        read_count.load(Ordering::SeqCst),
+        5,
+        "All reads should complete"
+    );
+    assert_eq!(
+        write_count.load(Ordering::SeqCst),
+        5,
+        "All writes should complete"
+    );
 
     Ok(())
 }
@@ -672,7 +688,10 @@ async fn test_multiple_operations_after_error() -> Result<()> {
     db.store_embedding_data(&embedding).await?;
 
     let retrieved = db.get_embedding(doc_id).await?;
-    assert!(retrieved.is_some(), "Database should still work after errors");
+    assert!(
+        retrieved.is_some(),
+        "Database should still work after errors"
+    );
 
     Ok(())
 }
@@ -693,10 +712,7 @@ async fn test_error_isolation_between_operations() -> Result<()> {
         let error_occurred_clone = error_occurred.clone();
 
         handles.push(tokio::spawn(async move {
-            match db_clone
-                .get_embedding(&format!("nonexistent-{}", i))
-                .await
-            {
+            match db_clone.get_embedding(&format!("nonexistent-{}", i)).await {
                 Ok(None) => {
                     // Expected: document doesn't exist
                     Ok(())
@@ -1181,7 +1197,11 @@ async fn test_high_concurrency_stress() -> Result<()> {
     .await
     .expect("High concurrency stress test should complete")?;
 
-    assert_eq!(results.len(), total_operations, "All operations should complete");
+    assert_eq!(
+        results.len(),
+        total_operations,
+        "All operations should complete"
+    );
 
     let final_success = success_count.load(Ordering::SeqCst);
     assert!(

@@ -19,10 +19,10 @@ use tokio::time::sleep;
 async fn test_complete_embedding_pipeline_integration() -> Result<()> {
     // Create temporary directory for test files
     let temp_dir = TempDir::new()?;
-    let vault_path = temp_dir.path().to_path_buf();
+    let kiln_path = temp_dir.path().to_path_buf();
 
     // Create test markdown file
-    let test_file_path = vault_path.join("test_document.md");
+    let test_file_path = kiln_path.join("test_document.md");
     let test_content = r#"# Test Document
 
 This is a test document for verifying the embedding pipeline integration.
@@ -44,12 +44,12 @@ The system should be able to process this content and store it in the database w
     let mut config = DaemonConfig::default();
 
     // Set up database configuration for SurrealDB
-    config.database.connection.connection_string = format!("memory://{}", vault_path.display());
+    config.database.connection.connection_string = format!("memory://{}", kiln_path.display());
     config.database.connection.database_type = crucible_daemon::config::DatabaseType::SurrealDB;
 
     // Configure file watching
     config.filesystem.watch_paths.push(WatchPath {
-        path: vault_path.clone(),
+        path: kiln_path.clone(),
         recursive: true,
         mode: WatchMode::All,
         filters: Some(vec![
@@ -91,7 +91,7 @@ The system should be able to process this content and store it in the database w
     sleep(Duration::from_millis(500)).await;
 
     // Create a second test file to trigger file watching
-    let second_file_path = vault_path.join("second_document.md");
+    let second_file_path = kiln_path.join("second_document.md");
     let second_content = r#"# Second Test Document
 
 This is another test document to verify the file watching system detects new files.
@@ -184,7 +184,7 @@ The system should be able to process this updated content and update the embeddi
 async fn test_surrealdb_service_standalone() -> Result<()> {
     let config = SurrealDbConfig {
         namespace: "test_crucible".to_string(),
-        database: "test_vault".to_string(),
+        database: "test_kiln".to_string(),
         path: "memory".to_string(),
         max_connections: Some(5),
         timeout_seconds: Some(30),
@@ -298,11 +298,11 @@ async fn test_daemon_config_validation() -> Result<()> {
 #[tokio::test]
 async fn test_file_watching_configuration() -> Result<()> {
     let temp_dir = TempDir::new()?;
-    let vault_path = temp_dir.path().to_path_buf();
+    let kiln_path = temp_dir.path().to_path_buf();
 
     let mut config = DaemonConfig::default();
     config.filesystem.watch_paths.push(WatchPath {
-        path: vault_path.clone(),
+        path: kiln_path.clone(),
         recursive: true,
         mode: WatchMode::All,
         filters: Some(vec![

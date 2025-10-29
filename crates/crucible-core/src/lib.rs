@@ -15,8 +15,8 @@ pub use agent::{
 };
 pub use canvas::{CanvasEdge, CanvasNode};
 pub use config::{
-    ConfigChange, ConfigManager, CrucibleConfig, ServiceDatabaseConfig, FeatureConfig, LoggingConfig,
-    NetworkConfig, PerformanceConfig, ServiceConfig,
+    ConfigChange, ConfigManager, CrucibleConfig, FeatureConfig, LoggingConfig, NetworkConfig,
+    PerformanceConfig, ServiceConfig, ServiceDatabaseConfig,
 };
 pub use crucible_core::CrucibleCore;
 pub use database::{

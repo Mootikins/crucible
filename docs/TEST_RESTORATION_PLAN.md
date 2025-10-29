@@ -221,7 +221,7 @@ async fn test_file_change_triggers_embedding() {
 **Files:**
 - `tool_registry.rs` (20k lines!)
 - `daemon_event_integration_tests.rs`
-- `vault_integration_tests.rs`
+- `kiln_integration_tests.rs`
 
 **Why Skip:**
 - Tested removed `crucible_services` architecture
@@ -254,7 +254,7 @@ async fn test_file_change_triggers_embedding() {
 **Files:**
 - `binary_safety_tdd.rs` - Binary detection (specific feature)
 - `test_chat.rs` - Chat interface (moved/changed?)
-- `vault_processing_integration_tdd.rs` - Vault terminology (deprecated)
+- `kiln_processing_integration_tdd.rs` - Kiln terminology (deprecated)
 
 **Action:** Review if features still exist, otherwise skip
 
@@ -434,7 +434,7 @@ async fn test_daemon_full_workflow() {
 ```
 tests/fixtures/
 ├── semantic-corpus/      # For search quality tests
-├── test-vault/           # For vault processing tests
+├── test-kiln/           # For kiln processing tests
 └── test-kiln/           # For kiln terminology tests
 ```
 

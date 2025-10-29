@@ -1,9 +1,9 @@
 pub mod chat;
 pub mod config;
-pub mod process;
 pub mod fuzzy;
 pub mod migration;
 pub mod note;
+pub mod process;
 pub mod repl;
 pub mod rune;
 pub mod search;

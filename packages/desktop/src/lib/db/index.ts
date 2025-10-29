@@ -40,8 +40,8 @@ export async function semanticSearch(query: string, topK: number = 10) {
   return await invoke('semantic_search', { query, topK });
 }
 
-export async function indexVault(force: boolean = false) {
-  return await invoke('index_vault', { force });
+export async function indexKiln(force: boolean = false) {
+  return await invoke('index_kiln', { force });
 }
 
 export async function getNoteMetadata(path: string) {

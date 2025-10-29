@@ -1,4 +1,4 @@
-//! Vault Integration Tests
+//! Kiln Integration Tests
 //!
 //! These tests verify the integration between the parser system and SurrealDB.
 //! This follows TDD principles - we write failing tests first, then implement.
@@ -6,7 +6,7 @@
 use crucible_core::parser::{
     DocumentContent, Frontmatter, FrontmatterFormat, Heading, ParsedDocument, Tag, Wikilink,
 };
-use crucible_surrealdb::{vault_integration, vault_scanner, SurrealClient};
+use crucible_surrealdb::{kiln_integration, kiln_scanner, SurrealClient};
 
 // Import consolidated test utilities
 mod common;
@@ -15,20 +15,20 @@ use common::DocumentTestUtils;
 use filetime;
 use std::borrow::Cow;
 use std::path::PathBuf;
-use vault_integration::{
+use kiln_integration::{
     create_embed_relationships, create_tag_associations, create_wikilink_edges,
     find_all_placeholders_for_target, find_document_by_title, get_documents_by_tag,
     get_embed_metadata, get_embed_relations, get_embed_with_metadata, get_embedded_documents,
     get_embedded_documents_by_type, get_embedding_documents, get_linked_documents,
     get_placeholder_metadata, get_wikilink_relations, get_wikilinked_documents,
-    initialize_vault_schema, retrieve_parsed_document, store_parsed_document, EmbedMetadata,
+    initialize_kiln_schema, retrieve_parsed_document, store_parsed_document, EmbedMetadata,
     EmbedRelation, LinkRelation, PlaceholderMetadata,
 };
-use vault_scanner::{
-    create_vault_scanner, create_vault_scanner_with_embeddings, parse_file_to_document,
-    validate_vault_scanner_config, ChangeDetectionMethod, ErrorHandlingMode, VaultFileInfo,
-    VaultProcessResult, VaultScanResult, VaultScanner, VaultScannerConfig, VaultScannerErrorType,
-    VaultScannerMetrics,
+use kiln_scanner::{
+    create_kiln_scanner, create_kiln_scanner_with_embeddings, parse_file_to_document,
+    validate_kiln_scanner_config, ChangeDetectionMethod, ErrorHandlingMode, KilnFileInfo,
+    KilnProcessResult, KilnScanResult, KilnScanner, KilnScannerConfig, KilnScannerErrorType,
+    KilnScannerMetrics,
 };
 
 // =============================================================================
@@ -46,7 +46,7 @@ async fn test_store_parsed_document_in_surrealdb() {
     let client = SurrealClient::new_memory().await.unwrap();
 
     // Initialize the database schema (this will need to be implemented)
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     // Store the document (this will need to be implemented)
     let stored_id = store_parsed_document(&client, &test_doc).await.unwrap();
@@ -67,7 +67,7 @@ async fn test_create_wikilink_relationships() {
     let test_doc = create_test_document_with_wikilinks();
 
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     // Store the main document
     let doc_id = store_parsed_document(&client, &test_doc).await.unwrap();
@@ -93,7 +93,7 @@ async fn test_tag_associations_from_parsed_document() {
     let test_doc = create_test_document_with_tags();
 
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     // Store the document
     let doc_id = store_parsed_document(&client, &test_doc).await.unwrap();
@@ -112,34 +112,34 @@ async fn test_tag_associations_from_parsed_document() {
     assert!(docs_with_ai_tag.iter().any(|d| d.path == test_doc.path));
 }
 
-/// Test: Full vault processing workflow
+/// Test: Full kiln processing workflow
 #[tokio::test]
 #[ignore] // This will fail until we implement the functionality
-async fn test_process_vault_directory_incrementally() {
-    // Create a temporary vault structure
-    let temp_vault = create_test_vault_directory().await;
+async fn test_process_kiln_directory_incrementally() {
+    // Create a temporary kiln structure
+    let temp_kiln = create_test_kiln_directory().await;
 
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
-    // Process the vault (this will need to be implemented)
-    let processed_count = process_vault_directory(&client, &temp_vault).await.unwrap();
+    // Process the kiln (this will need to be implemented)
+    let processed_count = process_kiln_directory(&client, &temp_kiln).await.unwrap();
 
     // Should have processed all markdown files
-    assert_eq!(processed_count, 3); // Our test vault has 3 files
+    assert_eq!(processed_count, 3); // Our test kiln has 3 files
 
     // Verify all documents were stored
     let all_docs = get_all_documents(&client).await.unwrap();
     assert_eq!(all_docs.len(), 3);
 
     // Modify a file and test incremental update
-    modify_test_file(&temp_vault, "note1.md").await.unwrap();
+    modify_test_file(&temp_kiln, "note1.md").await.unwrap();
 
-    let updated_count = process_vault_directory(&client, &temp_vault).await.unwrap();
+    let updated_count = process_kiln_directory(&client, &temp_kiln).await.unwrap();
     assert_eq!(updated_count, 1); // Only 1 file should be updated
 
     // Verify the content was updated
-    let updated_doc = find_document_by_path(&client, &temp_vault.join("note1.md"))
+    let updated_doc = find_document_by_path(&client, &temp_kiln.join("note1.md"))
         .await
         .unwrap();
     assert!(updated_doc.content.plain_text.contains("updated content"));
@@ -156,7 +156,7 @@ async fn test_create_embed_relationships() {
     let test_doc = create_test_document_with_embeds();
 
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     // Store the main document
     let doc_id = store_parsed_document(&client, &test_doc).await.unwrap();
@@ -241,7 +241,7 @@ async fn test_embed_vs_wikilink_separation() {
     let test_doc = create_test_document_with_mixed_links();
 
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     // Store the main document
     let doc_id = store_parsed_document(&client, &test_doc).await.unwrap();
@@ -316,7 +316,7 @@ async fn test_get_embedded_documents() {
     let test_doc = create_test_document_with_varied_embeds();
 
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     // Store the main document
     let doc_id = store_parsed_document(&client, &test_doc).await.unwrap();
@@ -373,7 +373,7 @@ async fn test_embed_placeholder_creation() {
     let test_doc = create_test_document_with_nonexistent_embeds();
 
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     // Store the main document
     let doc_id = store_parsed_document(&client, &test_doc).await.unwrap();
@@ -457,12 +457,12 @@ async fn test_embed_placeholder_creation() {
 // HELPER FUNCTIONS
 // =============================================================================
 
-async fn process_vault_directory(
+async fn process_kiln_directory(
     _client: &SurrealClient,
-    _vault_path: &PathBuf,
+    _kiln_path: &PathBuf,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     // TODO: This will be implemented in Phase 2
-    unimplemented!("Vault processing not yet implemented")
+    unimplemented!("Kiln processing not yet implemented")
 }
 
 async fn get_all_documents(
@@ -598,12 +598,12 @@ It covers topics related to #programming/tutorial concepts."#;
     doc
 }
 
-async fn create_test_vault_directory() -> PathBuf {
+async fn create_test_kiln_directory() -> PathBuf {
     use std::fs;
     use tempfile::TempDir;
 
     let temp_dir = TempDir::new().unwrap();
-    let vault_path = temp_dir.path().to_path_buf();
+    let kiln_path = temp_dir.path().to_path_buf();
 
     // Create test files
     let note1_content = r#"---
@@ -613,7 +613,7 @@ tags: [test, intro]
 
 # First Note
 
-This is the first note in our test vault."#;
+This is the first note in our test kiln."#;
 
     let note2_content = r#"---
 title: "Second Note"
@@ -630,22 +630,22 @@ This is a simple note without frontmatter.
 
 It links to [[Second Note]] and has #tags inline."#;
 
-    fs::write(vault_path.join("note1.md"), note1_content).unwrap();
-    fs::write(vault_path.join("note2.md"), note2_content).unwrap();
-    fs::write(vault_path.join("note3.md"), note3_content).unwrap();
+    fs::write(kiln_path.join("note1.md"), note1_content).unwrap();
+    fs::write(kiln_path.join("note2.md"), note2_content).unwrap();
+    fs::write(kiln_path.join("note3.md"), note3_content).unwrap();
 
     // Note: TempDir will be cleaned up when it goes out of scope
     // For tests, we might need to use a different approach or extend the lifetime
-    vault_path
+    kiln_path
 }
 
 async fn modify_test_file(
-    vault_path: &PathBuf,
+    kiln_path: &PathBuf,
     filename: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::fs;
 
-    let file_path = vault_path.join(filename);
+    let file_path = kiln_path.join(filename);
     let updated_content = r#"---
 title: "First Note Updated"
 tags: [test, intro, updated]
@@ -653,7 +653,7 @@ tags: [test, intro, updated]
 
 # First Note
 
-This is the first note in our test vault with updated content."#;
+This is the first note in our test kiln with updated content."#;
 
     fs::write(file_path, updated_content)?;
     Ok(())
@@ -1038,7 +1038,7 @@ async fn test_bulk_embedding_processing() {
 
     // Store documents in database first
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     let mut document_ids = Vec::new();
     for doc in &test_documents {
@@ -1137,7 +1137,7 @@ async fn test_incremental_embedding_updates() {
     let mut test_doc = create_incremental_test_document("incremental_doc", "Original content");
 
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     // Store and process initial document
     let doc_id = store_parsed_document(&client, &test_doc).await.unwrap();
@@ -1249,7 +1249,7 @@ async fn test_embedding_error_handling() {
     ];
 
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     let mut doc_ids = Vec::new();
     for doc in &test_documents {
@@ -2011,23 +2011,23 @@ pub async fn get_document_embeddings(
 }
 
 // =============================================================================
-// VAULT SCANNER TESTS (PHASE 2 - TDD)
+// KILN SCANNER TESTS (PHASE 2 - TDD)
 // =============================================================================
 
-/// Test: Basic vault scanner functionality with real file system
-/// This should initially FAIL, then we implement the vault scanner
+/// Test: Basic kiln scanner functionality with real file system
+/// This should initially FAIL, then we implement the kiln scanner
 #[tokio::test]
-#[ignore] // This will fail until we implement the vault scanner
-async fn test_vault_scanner_basic_functionality() {
-    // Create a temporary vault directory structure
-    let test_vault = create_comprehensive_test_vault().await;
+#[ignore] // This will fail until we implement the kiln scanner
+async fn test_kiln_scanner_basic_functionality() {
+    // Create a temporary kiln directory structure
+    let test_kiln = create_comprehensive_test_kiln().await;
 
-    // Create vault scanner with default configuration
-    let scanner_config = VaultScannerConfig::default();
-    let mut scanner = create_vault_scanner(scanner_config).await.unwrap();
+    // Create kiln scanner with default configuration
+    let scanner_config = KilnScannerConfig::default();
+    let mut scanner = create_kiln_scanner(scanner_config).await.unwrap();
 
-    // Scan the vault directory
-    let scan_result = scanner.scan_vault_directory(&test_vault).await.unwrap();
+    // Scan the kiln directory
+    let scan_result = scanner.scan_kiln_directory(&test_kiln).await.unwrap();
 
     // Verify file discovery results
     assert_eq!(scan_result.total_files_found, 8); // We'll create 8 markdown files
@@ -2043,7 +2043,7 @@ async fn test_vault_scanner_basic_functionality() {
     let has_subdir_files = scan_result
         .discovered_files
         .iter()
-        .any(|f| f.path.starts_with(&test_vault.join("subdir")));
+        .any(|f| f.path.starts_with(&test_kiln.join("subdir")));
     assert!(has_subdir_files, "Should discover files in subdirectories");
 
     // Verify file metadata was captured
@@ -2056,7 +2056,7 @@ async fn test_vault_scanner_basic_functionality() {
 
     // Process the discovered files
     let process_result = scanner
-        .process_vault_files(&scan_result.discovered_files)
+        .process_kiln_files(&scan_result.discovered_files)
         .await
         .unwrap();
 
@@ -2068,7 +2068,7 @@ async fn test_vault_scanner_basic_functionality() {
 
     // Verify documents were stored in database
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     // Process documents through the full pipeline
     let mut stored_documents = Vec::new();
@@ -2087,7 +2087,7 @@ async fn test_vault_scanner_basic_functionality() {
     assert_eq!(scanner_state.files_scanned, 6);
     assert_eq!(scanner_state.files_processed, 6);
     assert!(scanner_state.last_scan_time > chrono::DateTime::UNIX_EPOCH);
-    assert_eq!(scanner_state.current_vault_path, Some(test_vault));
+    assert_eq!(scanner_state.current_kiln_path, Some(test_kiln));
 
     // Verify scanner maintains file index
     let file_index = scanner.get_file_index().await;
@@ -2099,25 +2099,25 @@ async fn test_vault_scanner_basic_functionality() {
     }
 }
 
-/// Test: End-to-end vault processing with embeddings
+/// Test: End-to-end kiln processing with embeddings
 /// This should initially FAIL, then we implement the full pipeline
 #[tokio::test]
 #[ignore] // This will fail until we implement end-to-end processing
-async fn test_vault_scanner_with_embeddings() {
-    // Create a test vault with rich content for embedding
-    let test_vault = create_embedding_test_vault().await;
+async fn test_kiln_scanner_with_embeddings() {
+    // Create a test kiln with rich content for embedding
+    let test_kiln = create_embedding_test_kiln().await;
 
     // Setup database and embedding thread pool
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     let embedding_config = EmbeddingConfig::default();
     let embedding_pool = create_embedding_thread_pool(embedding_config)
         .await
         .unwrap();
 
-    // Create vault scanner with embedding integration
-    let scanner_config = VaultScannerConfig {
+    // Create kiln scanner with embedding integration
+    let scanner_config = KilnScannerConfig {
         enable_embeddings: true,
         recursive_scan: true,
         process_embeds: true,
@@ -2128,12 +2128,12 @@ async fn test_vault_scanner_with_embeddings() {
     };
 
     let mut scanner =
-        create_vault_scanner_with_embeddings(scanner_config, &client, &embedding_pool)
+        create_kiln_scanner_with_embeddings(scanner_config, &client, &embedding_pool)
             .await
             .unwrap();
 
-    // Run complete vault processing pipeline
-    let pipeline_result = scanner.scan_and_process_vault(&test_vault).await.unwrap();
+    // Run complete kiln processing pipeline
+    let pipeline_result = scanner.scan_and_process_kiln(&test_kiln).await.unwrap();
 
     // Verify pipeline results
     assert_eq!(pipeline_result.files_found, 5);
@@ -2195,29 +2195,29 @@ async fn test_vault_scanner_with_embeddings() {
     );
 }
 
-/// Test: Incremental vault updates and change detection
+/// Test: Incremental kiln updates and change detection
 /// This should initially FAIL, then we implement incremental scanning
 #[tokio::test]
 #[ignore] // This will fail until we implement incremental updates
-async fn test_vault_scanner_incremental_updates() {
-    // Create initial vault structure
-    let test_vault = create_incremental_test_vault().await;
+async fn test_kiln_scanner_incremental_updates() {
+    // Create initial kiln structure
+    let test_kiln = create_incremental_test_kiln().await;
 
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     // Create scanner with incremental tracking
-    let scanner_config = VaultScannerConfig {
+    let scanner_config = KilnScannerConfig {
         enable_incremental: true,
         track_file_changes: true,
         change_detection_method: ChangeDetectionMethod::ContentHash,
         ..Default::default()
     };
 
-    let mut scanner = create_vault_scanner(scanner_config).await.unwrap();
+    let mut scanner = create_kiln_scanner(scanner_config).await.unwrap();
 
     // Perform initial scan
-    let initial_scan = scanner.scan_incremental(&test_vault).await.unwrap();
+    let initial_scan = scanner.scan_incremental(&test_kiln).await.unwrap();
 
     // Verify initial scan
     assert_eq!(initial_scan.files_found, 4);
@@ -2231,19 +2231,19 @@ async fn test_vault_scanner_incremental_updates() {
     assert_eq!(initial_state.tracked_files.len(), 4);
 
     // Modify an existing file
-    let file_to_modify = test_vault.join("document1.md");
+    let file_to_modify = test_kiln.join("document1.md");
     modify_file_content(&file_to_modify, "Modified content with new information")
         .await
         .unwrap();
 
     // Add a new file
-    let new_file = test_vault.join("new_document.md");
+    let new_file = test_kiln.join("new_document.md");
     create_test_file(&new_file, NEW_DOCUMENT_CONTENT)
         .await
         .unwrap();
 
     // Perform incremental scan
-    let incremental_scan = scanner.scan_incremental(&test_vault).await.unwrap();
+    let incremental_scan = scanner.scan_incremental(&test_kiln).await.unwrap();
 
     // Verify incremental scan results
     assert_eq!(incremental_scan.files_found, 5); // 4 original + 1 new
@@ -2264,9 +2264,9 @@ async fn test_vault_scanner_incremental_updates() {
     assert!(new_doc.content.plain_text.contains("New document content"));
 
     // Delete a file and scan again
-    std::fs::remove_file(&test_vault.join("document2.md")).unwrap();
+    std::fs::remove_file(&test_kiln.join("document2.md")).unwrap();
 
-    let deletion_scan = scanner.scan_incremental(&test_vault).await.unwrap();
+    let deletion_scan = scanner.scan_incremental(&test_kiln).await.unwrap();
     assert_eq!(deletion_scan.files_found, 4); // One file deleted
     assert_eq!(deletion_scan.files_deleted, 1);
     assert_eq!(deletion_scan.files_processed, 0); // No content changes
@@ -2276,17 +2276,17 @@ async fn test_vault_scanner_incremental_updates() {
     assert_eq!(incremental_state.tracked_files.len(), 4); // 3 existing + 1 deleted
     let deleted_entry = incremental_state
         .tracked_files
-        .get(&test_vault.join("document2.md"))
+        .get(&test_kiln.join("document2.md"))
         .unwrap();
     assert!(deleted_entry.is_deleted);
     assert!(deleted_entry.deleted_at.is_some());
 
     // Test file move/rename detection
-    let old_path = test_vault.join("document3.md");
-    let new_path = test_vault.join("renamed_document.md");
+    let old_path = test_kiln.join("document3.md");
+    let new_path = test_kiln.join("renamed_document.md");
     std::fs::rename(&old_path, &new_path).unwrap();
 
-    let rename_scan = scanner.scan_incremental(&test_vault).await.unwrap();
+    let rename_scan = scanner.scan_incremental(&test_kiln).await.unwrap();
     assert_eq!(rename_scan.files_moved, 1);
     assert_eq!(rename_scan.files_processed, 1); // Moved file needs reprocessing
 
@@ -2296,13 +2296,13 @@ async fn test_vault_scanner_incremental_updates() {
     assert!(rename_state.tracked_files.contains_key(&new_path));
 
     // Test content hash calculation accuracy
-    let unchanged_file = test_vault.join("document4.md");
+    let unchanged_file = test_kiln.join("document4.md");
     let original_content = std::fs::read_to_string(&unchanged_file).unwrap();
 
     // Write same content back (should be detected as unchanged)
     std::fs::write(&unchanged_file, &original_content).unwrap();
 
-    let unchanged_scan = scanner.scan_incremental(&test_vault).await.unwrap();
+    let unchanged_scan = scanner.scan_incremental(&test_kiln).await.unwrap();
     assert_eq!(unchanged_scan.files_skipped, 4); // All files unchanged
     assert_eq!(unchanged_scan.files_processed, 0);
 
@@ -2314,24 +2314,24 @@ async fn test_vault_scanner_incremental_updates() {
     let new_modified_time = modified_time + std::time::Duration::from_secs(1);
     filetime::set_file_mtime(&unchanged_file, new_modified_time).unwrap();
 
-    let timestamp_scan = scanner.scan_incremental(&test_vault).await.unwrap();
+    let timestamp_scan = scanner.scan_incremental(&test_kiln).await.unwrap();
     assert_eq!(timestamp_scan.files_skipped, 4); // Should still be skipped
     assert_eq!(timestamp_scan.files_processed, 0);
 }
 
-/// Test: Vault scanner error handling and recovery
+/// Test: Kiln scanner error handling and recovery
 /// This should initially FAIL, then we implement robust error handling
 #[tokio::test]
 #[ignore] // This will fail until we implement error handling
-async fn test_vault_scanner_error_handling() {
-    // Create a vault with various problematic files
-    let test_vault = create_error_prone_test_vault().await;
+async fn test_kiln_scanner_error_handling() {
+    // Create a kiln with various problematic files
+    let test_kiln = create_error_prone_test_kiln().await;
 
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     // Create scanner with error handling configuration
-    let scanner_config = VaultScannerConfig {
+    let scanner_config = KilnScannerConfig {
         error_handling_mode: ErrorHandlingMode::ContinueOnError,
         max_error_count: 10,
         error_retry_attempts: 2,
@@ -2341,10 +2341,10 @@ async fn test_vault_scanner_error_handling() {
         ..Default::default()
     };
 
-    let mut scanner = create_vault_scanner(scanner_config).await.unwrap();
+    let mut scanner = create_kiln_scanner(scanner_config).await.unwrap();
 
-    // Scan the problematic vault
-    let scan_result = scanner.scan_vault_directory(&test_vault).await.unwrap();
+    // Scan the problematic kiln
+    let scan_result = scanner.scan_kiln_directory(&test_kiln).await.unwrap();
 
     // Verify error handling during scan
     assert!(scan_result.total_files_found >= 8); // Including problematic files
@@ -2358,14 +2358,14 @@ async fn test_vault_scanner_error_handling() {
         .map(|e| &e.error_type)
         .collect();
 
-    assert!(error_types.contains(&VaultScannerErrorType::PermissionDenied));
-    assert!(error_types.contains(&VaultScannerErrorType::InvalidMarkdown));
-    assert!(error_types.contains(&VaultScannerErrorType::MalformedFrontmatter));
-    assert!(error_types.contains(&VaultScannerErrorType::FileTooLarge));
+    assert!(error_types.contains(&KilnScannerErrorType::PermissionDenied));
+    assert!(error_types.contains(&KilnScannerErrorType::InvalidMarkdown));
+    assert!(error_types.contains(&KilnScannerErrorType::MalformedFrontmatter));
+    assert!(error_types.contains(&KilnScannerErrorType::FileTooLarge));
 
     // Process files with error recovery
     let process_result = scanner
-        .process_vault_files_with_error_handling(&scan_result.discovered_files)
+        .process_kiln_files_with_error_handling(&scan_result.discovered_files)
         .await
         .unwrap();
 
@@ -2378,7 +2378,7 @@ async fn test_vault_scanner_error_handling() {
     for error in &process_result.errors {
         assert!(!error.file_path.to_string_lossy().is_empty());
         assert!(!error.error_message.is_empty());
-        assert!(error.error_type != VaultScannerErrorType::Unknown);
+        assert!(error.error_type != KilnScannerErrorType::Unknown);
         assert!(error.timestamp > chrono::DateTime::UNIX_EPOCH);
 
         // Verify retry attempts were made
@@ -2411,9 +2411,9 @@ async fn test_vault_scanner_error_handling() {
     );
 
     // Verify graceful degradation with permission errors
-    let permission_vault = create_permission_denied_vault().await;
+    let permission_kiln = create_permission_denied_kiln().await;
     let permission_result = scanner
-        .scan_vault_directory(&permission_vault)
+        .scan_kiln_directory(&permission_kiln)
         .await
         .unwrap();
 
@@ -2422,18 +2422,18 @@ async fn test_vault_scanner_error_handling() {
     assert!(permission_result
         .scan_errors
         .iter()
-        .any(|e| e.error_type == VaultScannerErrorType::PermissionDenied));
+        .any(|e| e.error_type == KilnScannerErrorType::PermissionDenied));
 
     // Test timeout handling for large files
-    let timeout_config = VaultScannerConfig {
+    let timeout_config = KilnScannerConfig {
         max_file_size_bytes: 1024 * 1024, // 1MB limit
         processing_timeout_ms: 1000,      // 1 second timeout
         ..Default::default()
     };
 
-    let mut timeout_scanner = create_vault_scanner(timeout_config).await.unwrap();
+    let mut timeout_scanner = create_kiln_scanner(timeout_config).await.unwrap();
     let timeout_result = timeout_scanner
-        .scan_vault_directory(&test_vault)
+        .scan_kiln_directory(&test_kiln)
         .await
         .unwrap();
 
@@ -2441,22 +2441,22 @@ async fn test_vault_scanner_error_handling() {
     assert!(timeout_result
         .scan_errors
         .iter()
-        .any(|e| e.error_type == VaultScannerErrorType::FileTooLarge));
+        .any(|e| e.error_type == KilnScannerErrorType::FileTooLarge));
 
     // Test circuit breaker for repeated failures
-    let circuit_breaker_config = VaultScannerConfig {
+    let circuit_breaker_config = KilnScannerConfig {
         error_threshold_circuit_breaker: 3,
         circuit_breaker_timeout_ms: 5000,
         ..Default::default()
     };
 
-    let mut circuit_scanner = create_vault_scanner(circuit_breaker_config).await.unwrap();
+    let mut circuit_scanner = create_kiln_scanner(circuit_breaker_config).await.unwrap();
 
-    // Create multiple problematic vaults to trigger circuit breaker
+    // Create multiple problematic kilns to trigger circuit breaker
     for i in 0..5 {
-        let problematic_vault = create_problematic_vault_iteration(i).await;
+        let problematic_kiln = create_problematic_kiln_iteration(i).await;
         let result = circuit_scanner
-            .scan_vault_directory(&problematic_vault)
+            .scan_kiln_directory(&problematic_kiln)
             .await
             .unwrap();
 
@@ -2478,9 +2478,9 @@ async fn test_vault_scanner_error_handling() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // After timeout, circuit breaker should allow operations
-    let recovery_vault = create_simple_test_vault().await;
+    let recovery_kiln = create_simple_test_kiln().await;
     let recovery_result = circuit_scanner
-        .scan_vault_directory(&recovery_vault)
+        .scan_kiln_directory(&recovery_kiln)
         .await
         .unwrap();
 
@@ -2496,13 +2496,13 @@ async fn test_vault_scanner_error_handling() {
     assert!(error_stats.error_rate <= 1.0);
 }
 
-/// Test: Vault scanner configuration and optimization
+/// Test: Kiln scanner configuration and optimization
 /// This should initially FAIL, then we implement configuration management
 #[tokio::test]
 #[ignore] // This will fail until we implement configuration system
-async fn test_vault_scanner_configuration() {
+async fn test_kiln_scanner_configuration() {
     // Test default configuration
-    let default_config = VaultScannerConfig::default();
+    let default_config = KilnScannerConfig::default();
     assert_eq!(default_config.max_file_size_bytes, 50 * 1024 * 1024); // 50MB
     assert_eq!(default_config.max_recursion_depth, 10);
     assert!(default_config.recursive_scan);
@@ -2517,58 +2517,58 @@ async fn test_vault_scanner_configuration() {
     // Test configuration validation
     let invalid_configs = vec![
         // Invalid: zero parallel workers
-        VaultScannerConfig {
+        KilnScannerConfig {
             parallel_processing: 0,
             ..Default::default()
         },
         // Invalid: zero batch size
-        VaultScannerConfig {
+        KilnScannerConfig {
             batch_size: 0,
             ..Default::default()
         },
         // Invalid: empty file extensions
-        VaultScannerConfig {
+        KilnScannerConfig {
             file_extensions: vec![],
             ..Default::default()
         },
         // Invalid: zero max file size
-        VaultScannerConfig {
+        KilnScannerConfig {
             max_file_size_bytes: 0,
             ..Default::default()
         },
         // Invalid: zero recursion depth
-        VaultScannerConfig {
+        KilnScannerConfig {
             max_recursion_depth: 0,
             ..Default::default()
         },
     ];
 
     for invalid_config in invalid_configs {
-        let result = validate_vault_scanner_config(&invalid_config).await;
+        let result = validate_kiln_scanner_config(&invalid_config).await;
         assert!(result.is_err(), "Should reject invalid configuration");
     }
 
     // Test configuration presets for different use cases
-    let large_vault_config = VaultScannerConfig::for_large_vault();
-    assert!(large_vault_config.parallel_processing >= 8);
-    assert!(large_vault_config.batch_size >= 32);
-    assert!(large_vault_config.max_file_size_bytes >= 100 * 1024 * 1024);
+    let large_kiln_config = KilnScannerConfig::for_large_kiln();
+    assert!(large_kiln_config.parallel_processing >= 8);
+    assert!(large_kiln_config.batch_size >= 32);
+    assert!(large_kiln_config.max_file_size_bytes >= 100 * 1024 * 1024);
     assert_eq!(
-        large_vault_config.change_detection_method,
+        large_kiln_config.change_detection_method,
         ChangeDetectionMethod::ContentHash
     );
 
-    let small_vault_config = VaultScannerConfig::for_small_vault();
-    assert_eq!(small_vault_config.parallel_processing, 1);
-    assert_eq!(small_vault_config.batch_size, 4);
-    assert!(small_vault_config.enable_incremental == false);
+    let small_kiln_config = KilnScannerConfig::for_small_kiln();
+    assert_eq!(small_kiln_config.parallel_processing, 1);
+    assert_eq!(small_kiln_config.batch_size, 4);
+    assert!(small_kiln_config.enable_incremental == false);
 
-    let resource_constrained_config = VaultScannerConfig::for_resource_constrained();
+    let resource_constrained_config = KilnScannerConfig::for_resource_constrained();
     assert_eq!(resource_constrained_config.parallel_processing, 1);
     assert_eq!(resource_constrained_config.batch_size, 2);
     assert!(resource_constrained_config.max_file_size_bytes <= 10 * 1024 * 1024);
 
-    let development_config = VaultScannerConfig::for_development();
+    let development_config = KilnScannerConfig::for_development();
     assert!(development_config.include_hidden_files);
     assert!(development_config.log_errors_detailed);
     assert_eq!(
@@ -2577,14 +2577,14 @@ async fn test_vault_scanner_configuration() {
     );
 
     // Test configuration for specific machine specs
-    let high_spec_config = VaultScannerConfig::for_machine_specs(
+    let high_spec_config = KilnScannerConfig::for_machine_specs(
         num_cpus::get() * 2,     // Double cores
         16 * 1024 * 1024 * 1024, // 16GB memory
     );
     assert!(high_spec_config.parallel_processing >= num_cpus::get());
     assert!(high_spec_config.batch_size >= 32);
 
-    let low_spec_config = VaultScannerConfig::for_machine_specs(
+    let low_spec_config = KilnScannerConfig::for_machine_specs(
         2,                      // 2 cores
         2 * 1024 * 1024 * 1024, // 2GB memory
     );
@@ -2592,8 +2592,8 @@ async fn test_vault_scanner_configuration() {
     assert!(low_spec_config.batch_size <= 8);
 
     // Test configuration overrides and merging
-    let base_config = VaultScannerConfig::default();
-    let overrides = VaultScannerConfig {
+    let base_config = KilnScannerConfig::default();
+    let overrides = KilnScannerConfig {
         parallel_processing: 4,
         batch_size: 8,
         enable_embeddings: true,
@@ -2612,21 +2612,21 @@ async fn test_vault_scanner_configuration() {
 
     // Test configuration serialization/deserialization
     let serialized = serde_json::to_string(&default_config).unwrap();
-    let deserialized: VaultScannerConfig = serde_json::from_str(&serialized).unwrap();
+    let deserialized: KilnScannerConfig = serde_json::from_str(&serialized).unwrap();
     assert_eq!(default_config, deserialized);
 
     // Test configuration validation for different scenarios
-    let test_vault = create_configuration_test_vault().await;
+    let test_kiln = create_configuration_test_kiln().await;
 
     // Test with different configurations
     let configs = vec![
-        large_vault_config,
-        small_vault_config,
+        large_kiln_config,
+        small_kiln_config,
         resource_constrained_config,
     ];
 
     for config in configs {
-        let mut scanner = create_vault_scanner(config.clone()).await.unwrap();
+        let mut scanner = create_kiln_scanner(config.clone()).await.unwrap();
 
         // Verify scanner respects configuration
         let scanner_state = scanner.get_config().await;
@@ -2641,9 +2641,9 @@ async fn test_vault_scanner_configuration() {
         );
 
         // Test scanning with different configurations
-        let scan_result = scanner.scan_vault_directory(&test_vault).await.unwrap();
+        let scan_result = scanner.scan_kiln_directory(&test_kiln).await.unwrap();
 
-        // All configurations should successfully scan the test vault
+        // All configurations should successfully scan the test kiln
         assert!(scan_result.successful_files > 0);
         assert!(scan_result.scan_duration.as_millis() > 0);
 
@@ -2659,19 +2659,19 @@ async fn test_vault_scanner_configuration() {
     }
 
     // Test configuration hot-reloading
-    let mut hot_reload_scanner = create_vault_scanner(VaultScannerConfig::default())
+    let mut hot_reload_scanner = create_kiln_scanner(KilnScannerConfig::default())
         .await
         .unwrap();
 
     // Perform initial scan
     let initial_result = hot_reload_scanner
-        .scan_vault_directory(&test_vault)
+        .scan_kiln_directory(&test_kiln)
         .await
         .unwrap();
     assert!(initial_result.successful_files > 0);
 
     // Update configuration
-    let new_config = VaultScannerConfig {
+    let new_config = KilnScannerConfig {
         parallel_processing: 2,
         batch_size: 4,
         ..Default::default()
@@ -2689,7 +2689,7 @@ async fn test_vault_scanner_configuration() {
 
     // Scan with new configuration
     let updated_result = hot_reload_scanner
-        .scan_vault_directory(&test_vault)
+        .scan_kiln_directory(&test_kiln)
         .await
         .unwrap();
     assert!(updated_result.successful_files > 0);
@@ -2713,52 +2713,52 @@ tags: [new, document]
 This is a newly created document."#;
 
 // Missing test helper functions that are referenced in the tests
-async fn create_comprehensive_test_vault() -> PathBuf {
-    // This would create a comprehensive test vault structure
-    // For now, return the basic test vault
-    create_test_vault_directory().await
+async fn create_comprehensive_test_kiln() -> PathBuf {
+    // This would create a comprehensive test kiln structure
+    // For now, return the basic test kiln
+    create_test_kiln_directory().await
 }
 
-async fn create_embedding_test_vault() -> PathBuf {
-    // This would create a test vault optimized for embedding tests
-    // For now, return the basic test vault
-    create_test_vault_directory().await
+async fn create_embedding_test_kiln() -> PathBuf {
+    // This would create a test kiln optimized for embedding tests
+    // For now, return the basic test kiln
+    create_test_kiln_directory().await
 }
 
-async fn create_incremental_test_vault() -> PathBuf {
-    // This would create a test vault for incremental testing
-    // For now, return the basic test vault
-    create_test_vault_directory().await
+async fn create_incremental_test_kiln() -> PathBuf {
+    // This would create a test kiln for incremental testing
+    // For now, return the basic test kiln
+    create_test_kiln_directory().await
 }
 
-async fn create_error_prone_test_vault() -> PathBuf {
-    // This would create a test vault with problematic files
-    // For now, return the basic test vault
-    create_test_vault_directory().await
+async fn create_error_prone_test_kiln() -> PathBuf {
+    // This would create a test kiln with problematic files
+    // For now, return the basic test kiln
+    create_test_kiln_directory().await
 }
 
-async fn create_permission_denied_vault() -> PathBuf {
-    // This would create a test vault with permission issues
-    // For now, return the basic test vault
-    create_test_vault_directory().await
+async fn create_permission_denied_kiln() -> PathBuf {
+    // This would create a test kiln with permission issues
+    // For now, return the basic test kiln
+    create_test_kiln_directory().await
 }
 
-async fn create_problematic_vault_iteration(_i: usize) -> PathBuf {
-    // This would create problematic vaults for testing
-    // For now, return the basic test vault
-    create_test_vault_directory().await
+async fn create_problematic_kiln_iteration(_i: usize) -> PathBuf {
+    // This would create problematic kilns for testing
+    // For now, return the basic test kiln
+    create_test_kiln_directory().await
 }
 
-async fn create_simple_test_vault() -> PathBuf {
-    // This would create a simple test vault
-    // For now, return the basic test vault
-    create_test_vault_directory().await
+async fn create_simple_test_kiln() -> PathBuf {
+    // This would create a simple test kiln
+    // For now, return the basic test kiln
+    create_test_kiln_directory().await
 }
 
-async fn create_configuration_test_vault() -> PathBuf {
-    // This would create a test vault for configuration testing
-    // For now, return the basic test vault
-    create_test_vault_directory().await
+async fn create_configuration_test_kiln() -> PathBuf {
+    // This would create a test kiln for configuration testing
+    // For now, return the basic test kiln
+    create_test_kiln_directory().await
 }
 
 async fn modify_file_content(

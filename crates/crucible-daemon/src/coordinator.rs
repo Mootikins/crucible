@@ -10,7 +10,7 @@ use crate::services::{ServiceManager, SimpleEventService, SimpleFileService, Sim
 use crate::surrealdb_service::{create_surrealdb_from_config, SurrealDBService};
 use anyhow::Result;
 use crucible_surrealdb::embedding_pool::EmbeddingThreadPool;
-use crucible_surrealdb::{vault_processor, vault_scanner::VaultScannerConfig};
+use crucible_surrealdb::{kiln_processor, kiln_scanner::KilnScannerConfig};
 use crucible_watch::{EmbeddingEvent, EmbeddingEventHandler, EventDrivenEmbeddingProcessor};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -587,31 +587,31 @@ impl DataCoordinator {
         self.service_manager.clone()
     }
 
-    /// Process the vault exactly once using the existing vault processing infrastructure
-    pub async fn process_vault_once(&mut self) -> Result<()> {
-        info!("Starting one-shot vault processing");
+    /// Process the kiln exactly once using the existing kiln processing infrastructure
+    pub async fn process_kiln_once(&mut self) -> Result<()> {
+        info!("Starting one-shot kiln processing");
 
         let config = self.config.read().await;
-        let vault_path = match std::env::var("OBSIDIAN_VAULT_PATH") {
+        let kiln_path = match std::env::var("OBSIDIAN_KILN_PATH") {
             Ok(path) => PathBuf::from(path),
             Err(_) => {
                 return Err(anyhow::anyhow!(
-                    "OBSIDIAN_VAULT_PATH environment variable is required"
+                    "OBSIDIAN_KILN_PATH environment variable is required"
                 ));
             }
         };
 
-        if !vault_path.exists() || !vault_path.is_dir() {
+        if !kiln_path.exists() || !kiln_path.is_dir() {
             return Err(anyhow::anyhow!(
-                "Vault path does not exist or is not a directory: {}",
-                vault_path.display()
+                "Kiln path does not exist or is not a directory: {}",
+                kiln_path.display()
             ));
         }
 
-        info!("Processing vault at: {}", vault_path.display());
+        info!("Processing kiln at: {}", kiln_path.display());
 
-        // Create vault scanner configuration
-        let scan_config = VaultScannerConfig {
+        // Create kiln scanner configuration
+        let scan_config = KilnScannerConfig {
             max_file_size_bytes: 10 * 1024 * 1024, // 10MB
             max_recursion_depth: 10,
             recursive_scan: true,
@@ -626,9 +626,9 @@ impl DataCoordinator {
             enable_incremental: true,
             track_file_changes: true,
             change_detection_method:
-                crucible_surrealdb::vault_scanner::ChangeDetectionMethod::ContentHash,
+                crucible_surrealdb::kiln_scanner::ChangeDetectionMethod::ContentHash,
             error_handling_mode:
-                crucible_surrealdb::vault_scanner::ErrorHandlingMode::ContinueOnError,
+                crucible_surrealdb::kiln_scanner::ErrorHandlingMode::ContinueOnError,
             max_error_count: 100,
             error_retry_attempts: 3,
             error_retry_delay_ms: 1000,
@@ -639,30 +639,30 @@ impl DataCoordinator {
             processing_timeout_ms: 30000,
         };
 
-        // Scan the vault for files
-        info!("Scanning vault for files...");
+        // Scan the kiln for files
+        info!("Scanning kiln for files...");
         let discovered_files =
-            match vault_processor::scan_vault_directory(&vault_path, &scan_config).await {
+            match kiln_processor::scan_kiln_directory(&kiln_path, &scan_config).await {
                 Ok(files) => {
-                    info!("Discovered {} files in vault", files.len());
+                    info!("Discovered {} files in kiln", files.len());
                     files
                 }
                 Err(e) => {
-                    error!("Failed to scan vault directory: {}", e);
-                    return Err(anyhow::anyhow!("Vault scanning failed: {}", e));
+                    error!("Failed to scan kiln directory: {}", e);
+                    return Err(anyhow::anyhow!("Kiln scanning failed: {}", e));
                 }
             };
 
         if discovered_files.is_empty() {
-            warn!("No files found to process in vault");
-            info!("One-shot vault processing completed (no files to process)");
+            warn!("No files found to process in kiln");
+            info!("One-shot kiln processing completed (no files to process)");
             return Ok(());
         }
 
         // For now, we'll implement a simplified processing that doesn't require
         // direct database access - this leverages the existing event-driven
         // embedding infrastructure for one-time processing
-        info!("Processing vault files using event-driven infrastructure...");
+        info!("Processing kiln files using event-driven infrastructure...");
 
         // Simulate processing all discovered files by triggering file events
         let mut processed_count = 0;
@@ -708,7 +708,7 @@ impl DataCoordinator {
         }
 
         info!(
-            "One-shot vault processing completed: {} files queued for processing, {} failed",
+            "One-shot kiln processing completed: {} files queued for processing, {} failed",
             processed_count, failed_count
         );
 

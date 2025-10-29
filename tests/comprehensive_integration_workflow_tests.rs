@@ -6,14 +6,14 @@
 //! ## Test Coverage
 //!
 //! 1. **Complete Pipeline Integration**
-//!    - Vault scanning → parsing → embedding → search workflow
+//!    - Kiln scanning → parsing → embedding → search workflow
 //!    - File system changes detection and re-indexing
 //!    - Error handling and recovery across the pipeline
-//!    - Performance testing with realistic vault sizes
+//!    - Performance testing with realistic kiln sizes
 //!
 //! 2. **CLI Integration Workflows**
 //!    - `crucible search` command with various query types
-//!    - `crucible index` command for vault processing
+//!    - `crucible index` command for kiln processing
 //!    - `crucible repl` command integration
 //!    - CLI error handling and user feedback
 //!
@@ -57,17 +57,17 @@ use tracing::{info, warn, debug};
 // Test Infrastructure
 // ============================================================================
 
-/// Comprehensive test vault with realistic content
+/// Comprehensive test kiln with realistic content
 #[derive(Debug, Clone)]
-pub struct ComprehensiveTestVault {
-    vault_dir: TempDir,
+pub struct ComprehensiveTestKiln {
+    kiln_dir: TempDir,
     files: HashMap<String, String>,
 }
 
-impl ComprehensiveTestVault {
-    /// Create a comprehensive test vault with 11 realistic markdown files
+impl ComprehensiveTestKiln {
+    /// Create a comprehensive test kiln with 11 realistic markdown files
     pub async fn create() -> Result<Self> {
-        let vault_dir = TempDir::new()?;
+        let kiln_dir = TempDir::new()?;
         let mut files = HashMap::new();
 
         // 1. Research Note with Complex Frontmatter
@@ -1473,9 +1473,9 @@ weather_expectation: "Spring (15-25°C)"
 - Keep emergency cash separate from main wallet
 "#.to_string());
 
-        // Write all files to the vault
+        // Write all files to the kiln
         for (path, content) in &files {
-            let full_path = vault_dir.path().join(path);
+            let full_path = kiln_dir.path().join(path);
             if let Some(parent) = full_path.parent() {
                 fs::create_dir_all(parent).await?;
             }
@@ -1483,12 +1483,12 @@ weather_expectation: "Spring (15-25°C)"
             info!("Created test file: {}", path);
         }
 
-        Ok(Self { vault_dir, files })
+        Ok(Self { kiln_dir, files })
     }
 
-    /// Get the vault directory path
+    /// Get the kiln directory path
     pub fn path(&self) -> &Path {
-        self.vault_dir.path()
+        self.kiln_dir.path()
     }
 
     /// Get list of all file paths
@@ -1550,19 +1550,19 @@ pub struct ExpectedResults {
 
 /// Test harness for CLI interface integration
 pub struct CliTestHarness {
-    vault_dir: TempDir,
-    test_vault: ComprehensiveTestVault,
+    kiln_dir: TempDir,
+    test_kiln: ComprehensiveTestKiln,
 }
 
 impl CliTestHarness {
     /// Create a new CLI test harness
     pub async fn new() -> Result<Self> {
-        let test_vault = ComprehensiveTestVault::create().await?;
-        let vault_dir = test_vault.path().to_owned();
+        let test_kiln = ComprehensiveTestKiln::create().await?;
+        let kiln_dir = test_kiln.path().to_owned();
 
         Ok(Self {
-            vault_dir: vault_dir.to_owned(),
-            test_vault,
+            kiln_dir: kiln_dir.to_owned(),
+            test_kiln,
         })
     }
 
@@ -1572,8 +1572,8 @@ impl CliTestHarness {
 
         let output = Command::new(env!("CARGO_BIN_EXE_crucible-cli"))
             .args(args)
-            .current_dir(self.vault_dir)
-            .env("CRUCIBLE_VAULT_PATH", self.vault_dir.to_str().unwrap())
+            .current_dir(self.kiln_dir)
+            .env("CRUCIBLE_KILN_PATH", self.kiln_dir.to_str().unwrap())
             .output()
             .map_err(|e| anyhow!("Failed to execute CLI command: {}", e))?;
 
@@ -1591,10 +1591,10 @@ impl CliTestHarness {
     pub async fn test_indexing_workflow(&self) -> Result<()> {
         println!("🧪 Testing CLI indexing workflow");
 
-        // Test vault indexing
+        // Test kiln indexing
         let result = self.execute_cli_command(&[
             "index",
-            "--path", self.vault_dir.to_str().unwrap(),
+            "--path", self.kiln_dir.to_str().unwrap(),
             "--glob", "**/*.md"
         ])?;
 
@@ -1699,25 +1699,25 @@ pub struct CommandResult {
 
 /// Test harness for REPL interface integration
 pub struct ReplTestHarness {
-    vault_dir: TempDir,
-    test_vault: ComprehensiveTestVault,
+    kiln_dir: TempDir,
+    test_kiln: ComprehensiveTestKiln,
 }
 
 impl ReplTestHarness {
     /// Create a new REPL test harness
     pub async fn new() -> Result<Self> {
-        let test_vault = ComprehensiveTestVault::create().await?;
-        let vault_dir = test_vault.path().to_owned();
+        let test_kiln = ComprehensiveTestKiln::create().await?;
+        let kiln_dir = test_kiln.path().to_owned();
 
         Ok(Self {
-            vault_dir: vault_dir.to_owned(),
-            test_vault,
+            kiln_dir: kiln_dir.to_owned(),
+            test_kiln,
         })
     }
 
     /// Spawn a REPL process for testing
     pub fn spawn_repl(&self) -> Result<ReplTestProcess> {
-        ReplTestProcess::spawn(&self.vault_dir)
+        ReplTestProcess::spawn(&self.kiln_dir)
     }
 
     /// Test REPL tool discovery and execution workflow
@@ -1790,21 +1790,21 @@ impl ReplTestHarness {
 /// Interactive REPL test process
 pub struct ReplTestProcess {
     process: Child,
-    vault_dir: PathBuf,
+    kiln_dir: PathBuf,
 }
 
 impl ReplTestProcess {
     /// Spawn a REPL process for testing
-    pub fn spawn(vault_dir: &Path) -> Result<Self> {
-        let db_path = vault_dir.join("test.db");
-        let tool_dir = vault_dir.join("tools");
+    pub fn spawn(kiln_dir: &Path) -> Result<Self> {
+        let db_path = kiln_dir.join("test.db");
+        let tool_dir = kiln_dir.join("tools");
 
         // Create tools directory
         std::fs::create_dir_all(&tool_dir)?;
 
         let mut process = Command::new(env!("CARGO_BIN_EXE_crucible-cli"))
             .args([
-                "--vault-path", vault_dir.to_str().unwrap(),
+                "--kiln-path", kiln_dir.to_str().unwrap(),
                 "--db-path", db_path.to_str().unwrap(),
                 "--tool-dir", tool_dir.to_str().unwrap()
             ])
@@ -1818,7 +1818,7 @@ impl ReplTestProcess {
 
         Ok(Self {
             process,
-            vault_dir: vault_dir.to_owned(),
+            kiln_dir: kiln_dir.to_owned(),
         })
     }
 
@@ -1890,18 +1890,18 @@ impl Drop for ReplTestProcess {
 
 /// Test cross-interface consistency across CLI, REPL, and tools
 pub struct ConsistencyTestHarness {
-    vault_dir: TempDir,
-    test_vault: ComprehensiveTestVault,
+    kiln_dir: TempDir,
+    test_kiln: ComprehensiveTestKiln,
 }
 
 impl ConsistencyTestHarness {
     /// Create a new consistency test harness
     pub async fn new() -> Result<Self> {
-        let test_vault = ComprehensiveTestVault::create().await?;
+        let test_kiln = ComprehensiveTestKiln::create().await?;
 
         Ok(Self {
-            vault_dir: test_vault.path().to_owned(),
-            test_vault,
+            kiln_dir: test_kiln.path().to_owned(),
+            test_kiln,
         })
     }
 
@@ -1931,7 +1931,7 @@ impl ConsistencyTestHarness {
             assert!(cli_result.exit_code == 0, "CLI search should succeed for: {}", query);
             assert!(!repl_result.is_empty(), "REPL search should return results for: {}", query);
 
-            // Both interfaces should find some results (for our test vault)
+            // Both interfaces should find some results (for our test kiln)
             assert!(!cli_result.stdout.is_empty(), "CLI should find results for: {}", query);
 
             println!("✅ Consistency test passed for query: {}", query);
@@ -1985,18 +1985,18 @@ impl ConsistencyTestHarness {
 
 /// Test realistic user workflows and scenarios
 pub struct RealWorldTestHarness {
-    vault_dir: TempDir,
-    test_vault: ComprehensiveTestVault,
+    kiln_dir: TempDir,
+    test_kiln: ComprehensiveTestKiln,
 }
 
 impl RealWorldTestHarness {
     /// Create a new real-world test harness
     pub async fn new() -> Result<Self> {
-        let test_vault = ComprehensiveTestVault::create().await?;
+        let test_kiln = ComprehensiveTestKiln::create().await?;
 
         Ok(Self {
-            vault_dir: test_vault.path().to_owned(),
-            test_vault,
+            kiln_dir: test_kiln.path().to_owned(),
+            test_kiln,
         })
     }
 
@@ -2067,7 +2067,7 @@ impl RealWorldTestHarness {
 
         // Get project statistics
         let stats_result = repl.send_command(":run get_kiln_stats")?;
-        assert!(!stats_result.is_empty(), "Should get vault statistics");
+        assert!(!stats_result.is_empty(), "Should get kiln statistics");
 
         repl.quit()?;
 
@@ -2210,11 +2210,11 @@ impl ComprehensiveIntegrationTestSuite {
 
         let section_start = Instant::now();
 
-        // Test pipeline: vault creation → indexing → search → retrieval
-        let test_vault = ComprehensiveTestVault::create().await?;
+        // Test pipeline: kiln creation → indexing → search → retrieval
+        let test_kiln = ComprehensiveTestKiln::create().await?;
 
-        // Verify vault creation
-        assert!(!test_vault.file_paths().is_empty(), "Test vault should contain files");
+        // Verify kiln creation
+        assert!(!test_kiln.file_paths().is_empty(), "Test kiln should contain files");
 
         // Test indexing through CLI
         let cli_harness = CliTestHarness::new().await?;
@@ -2412,8 +2412,8 @@ async fn test_comprehensive_integration_workflow() -> Result<()> {
 async fn test_complete_pipeline_integration() -> Result<()> {
     println!("🧪 Testing complete pipeline integration");
 
-    let test_vault = ComprehensiveTestVault::create().await?;
-    assert!(!test_vault.file_paths().is_empty(), "Test vault should contain files");
+    let test_kiln = ComprehensiveTestKiln::create().await?;
+    assert!(!test_kiln.file_paths().is_empty(), "Test kiln should contain files");
 
     let cli_harness = CliTestHarness::new().await?;
     cli_harness.test_indexing_workflow().await?;
@@ -2512,7 +2512,7 @@ pub fn validate_binary_availability() -> Result<()> {
 pub async fn run_performance_benchmarks() -> Result<HashMap<String, Duration>> {
     let mut results = HashMap::new();
 
-    let test_vault = ComprehensiveTestVault::create().await?;
+    let test_kiln = ComprehensiveTestKiln::create().await?;
 
     // Benchmark CLI search
     let cli_harness = CliTestHarness::new().await?;

@@ -1,6 +1,6 @@
-//! Realistic vault scenario integration tests
+//! Realistic kiln scenario integration tests
 //!
-//! These tests verify complete workflows with realistic vault structures,
+//! These tests verify complete workflows with realistic kiln structures,
 //! simulating actual user workflows and edge cases.
 //!
 //! ## Test Coverage
@@ -11,7 +11,7 @@
 //! - Tag extraction (inline, frontmatter, nested, mixed)
 //! - Error handling (malformed content, unicode, edge cases)
 //!
-//! Run with: `cargo test -p crucible-daemon --test vault_realistic`
+//! Run with: `cargo test -p crucible-daemon --test kiln_realistic`
 
 use anyhow::Result;
 use crucible_core::parser::{MarkdownParser, PulldownParser, SurrealDBAdapter};
@@ -24,47 +24,47 @@ use tokio::fs;
 // Test Harness
 // ============================================================================
 
-/// Test harness for realistic vault scenarios
+/// Test harness for realistic kiln scenarios
 ///
 /// Provides a complete test environment with:
-/// - Temporary vault directory
+/// - Temporary kiln directory
 /// - In-memory SurrealDB database
 /// - Markdown parser
 /// - SurrealDB adapter
 ///
 /// Files are manually processed (no file watcher) for deterministic testing.
-struct VaultTestHarness {
-    vault_dir: TempDir,
+struct KilnTestHarness {
+    kiln_dir: TempDir,
     db: SurrealEmbeddingDatabase,
     parser: PulldownParser,
     adapter: SurrealDBAdapter,
 }
 
-impl VaultTestHarness {
+impl KilnTestHarness {
     /// Create a new test harness
     async fn new() -> Result<Self> {
-        let vault_dir = TempDir::new()?;
+        let kiln_dir = TempDir::new()?;
         let db = SurrealEmbeddingDatabase::new_memory();
         db.initialize().await?;
 
         Ok(Self {
-            vault_dir,
+            kiln_dir,
             db,
             parser: PulldownParser::new(),
             adapter: SurrealDBAdapter::new().with_full_content(),
         })
     }
 
-    /// Create a note in the vault and index it
+    /// Create a note in the kiln and index it
     ///
     /// # Arguments
-    /// - `path`: Relative path from vault root (e.g., "Projects/note.md")
+    /// - `path`: Relative path from kiln root (e.g., "Projects/note.md")
     /// - `content`: Markdown content
     ///
     /// # Returns
     /// Absolute path to the created file
     async fn create_note(&self, path: &str, content: &str) -> Result<PathBuf> {
-        let note_path = self.vault_dir.path().join(path);
+        let note_path = self.kiln_dir.path().join(path);
 
         // Create parent directories
         if let Some(parent) = note_path.parent() {
@@ -116,7 +116,7 @@ impl VaultTestHarness {
     /// Check if a file exists in the database
     async fn file_exists(&self, path: &str) -> Result<bool> {
         let full_path = self
-            .vault_dir
+            .kiln_dir
             .path()
             .join(path)
             .to_string_lossy()
@@ -127,7 +127,7 @@ impl VaultTestHarness {
     /// Get file metadata from database
     async fn get_metadata(&self, path: &str) -> Result<Option<EmbeddingMetadata>> {
         let full_path = self
-            .vault_dir
+            .kiln_dir
             .path()
             .join(path)
             .to_string_lossy()
@@ -139,12 +139,12 @@ impl VaultTestHarness {
     /// Create a wikilink relation between two files
     async fn create_relation(&self, from: &str, to: &str, rel_type: &str) -> Result<()> {
         let from_path = self
-            .vault_dir
+            .kiln_dir
             .path()
             .join(from)
             .to_string_lossy()
             .to_string();
-        let to_path = self.vault_dir.path().join(to).to_string_lossy().to_string();
+        let to_path = self.kiln_dir.path().join(to).to_string_lossy().to_string();
         self.db
             .create_relation(&from_path, &to_path, rel_type, None)
             .await
@@ -153,7 +153,7 @@ impl VaultTestHarness {
     /// Get related files
     async fn get_related(&self, path: &str, rel_type: Option<&str>) -> Result<Vec<String>> {
         let full_path = self
-            .vault_dir
+            .kiln_dir
             .path()
             .join(path)
             .to_string_lossy()
@@ -181,7 +181,7 @@ impl VaultTestHarness {
 async fn test_nested_folder_structure() -> Result<()> {
     // Test Flow:
     // 1. Create harness
-    // 2. Create nested vault structure:
+    // 2. Create nested kiln structure:
     //    - Projects/Crucible/Architecture/design.md
     //    - Projects/Crucible/Implementation/code.md
     //    - Daily/2025-01/2025-01-15.md
@@ -191,7 +191,7 @@ async fn test_nested_folder_structure() -> Result<()> {
     // 4. Verify folder metadata correct
     // 5. Query by folder patterns
 
-    let harness = VaultTestHarness::new().await?;
+    let harness = KilnTestHarness::new().await?;
 
     // Create nested structure
     harness
@@ -319,7 +319,7 @@ async fn test_complex_wikilink_graph() -> Result<()> {
     // 4. Query graph in both directions
     // 5. Verify heading references work
 
-    let harness = VaultTestHarness::new().await?;
+    let harness = KilnTestHarness::new().await?;
 
     // Create notes with wikilinks
     harness
@@ -454,7 +454,7 @@ async fn test_frontmatter_variations() -> Result<()> {
     // 3. Verify all parse correctly
     // 4. Verify metadata searchable
 
-    let harness = VaultTestHarness::new().await?;
+    let harness = KilnTestHarness::new().await?;
 
     // Full frontmatter
     harness
@@ -638,7 +638,7 @@ async fn test_tag_extraction_comprehensive() -> Result<()> {
     // 4. Verify tag search works
     // 5. Verify nested tags indexed
 
-    let harness = VaultTestHarness::new().await?;
+    let harness = KilnTestHarness::new().await?;
 
     // Frontmatter tags only
     harness
@@ -804,7 +804,7 @@ async fn test_error_handling_edge_cases() -> Result<()> {
     // 4. Verify valid notes still indexed
     // 5. Verify error reporting works
 
-    let harness = VaultTestHarness::new().await?;
+    let harness = KilnTestHarness::new().await?;
 
     // No frontmatter (plain markdown)
     harness
@@ -942,7 +942,7 @@ async fn test_malformed_frontmatter_recovery() -> Result<()> {
     // Test that malformed frontmatter doesn't crash the parser
     // and that content is still extracted
 
-    let harness = VaultTestHarness::new().await?;
+    let harness = KilnTestHarness::new().await?;
 
     // Malformed YAML (unclosed array)
     let malformed = harness
@@ -995,7 +995,7 @@ Parser should recover and continue working.
 async fn test_wikilink_variations() -> Result<()> {
     // Test various wikilink formats
 
-    let harness = VaultTestHarness::new().await?;
+    let harness = KilnTestHarness::new().await?;
 
     harness
         .create_note(
