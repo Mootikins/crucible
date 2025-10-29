@@ -1,12 +1,11 @@
-//! TDD RED Phase: CLI Terminology Tests for Kiln (instead of Kiln)
-//!
-//! These tests are written to FAIL first to drive the implementation
-//! of CLI terminology changes from "kiln" to "kiln".
-//!
-//! ALL TESTS SHOULD FAIL INITIALLY - this is the RED phase of TDD
-//! These tests provide specification for terminology updates
+//! Terminology regression tests for the CLI. Ensure user-facing output refers to the
+//! workspace as a "kiln" and no longer mentions the legacy "vault" wording.
 
-/// Helper function to get CLI binary path
+use anyhow::{Context, Result};
+use std::{path::PathBuf, process::Command, time::Duration};
+use tempfile::TempDir;
+use tokio::time::timeout;
+
 fn cli_binary_path() -> PathBuf {
     let base_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| {
         std::env::current_dir()
@@ -27,17 +26,45 @@ fn cli_binary_path() -> PathBuf {
     }
 }
 
-/// Helper to run CLI command with proper environment
-async fn run_cli_command(args: Vec<&str>) -> Result<String> {
+fn assert_not_contains_vault(output: &str) {
+    let lower = output.to_lowercase();
+    assert!(
+        !lower.contains("vault"),
+        "Output should not reference legacy 'vault' terminology, got: {}",
+        output
+    );
+}
+
+fn assert_mentions_kiln_and_not_vault(output: &str) {
+    let lower = output.to_lowercase();
+    assert!(
+        lower.contains("kiln"),
+        "Expected output to reference 'kiln', got: {}",
+        output
+    );
+    assert_not_contains_vault(output);
+}
+
+async fn run_cli_command(args: &[&str]) -> Result<String> {
     let binary_path = cli_binary_path();
     let mut cmd = Command::new(binary_path);
     cmd.args(args);
 
-    let output_result = timeout(Duration::from_secs(30), cmd.output())
-        .await
-        .map_err(|_| anyhow::anyhow!("Command timed out"))?;
+    // Isolate CLI from user environment so it can create config/history files safely.
+    let temp_home = TempDir::new().context("Failed to create temporary HOME directory")?;
+    cmd.env("HOME", temp_home.path());
+    cmd.env("XDG_CONFIG_HOME", temp_home.path());
+    cmd.env("XDG_DATA_HOME", temp_home.path());
 
-    let output = output_result.map_err(|e| anyhow::anyhow!("Command execution failed: {}", e))?;
+    let output = timeout(Duration::from_secs(30), async move {
+        let _guard = temp_home; // Keep temp directory alive while command runs
+        tokio::task::spawn_blocking(move || cmd.output())
+            .await
+            .map_err(|e| anyhow::anyhow!("Task join error: {}", e))?
+            .map_err(|e| anyhow::anyhow!("Command execution failed: {}", e))
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("Command timed out"))??;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -46,313 +73,95 @@ async fn run_cli_command(args: Vec<&str>) -> Result<String> {
         return Err(anyhow::anyhow!("CLI command failed: {}", stderr));
     }
 
-    // Include stderr in output for commands that print errors but exit successfully
-    let combined_output = if !stderr.is_empty() {
-        format!("{}{}", stderr, stdout)
-    } else {
+    Ok(if stderr.is_empty() {
         stdout
-    };
-
-    Ok(combined_output)
+    } else {
+        format!("{}{}", stderr, stdout)
+    })
 }
 
-/// Helper to run CLI command and allow failure (captures error output)
-async fn run_cli_command_allow_failure(args: Vec<&str>) -> Result<String> {
+async fn run_cli_command_allow_failure(args: &[&str]) -> Result<String> {
     let binary_path = cli_binary_path();
     let mut cmd = Command::new(binary_path);
     cmd.args(args);
 
-    let output_result = timeout(Duration::from_secs(30), cmd.output())
-        .await
-        .map_err(|_| anyhow::anyhow!("Command timed out"))?;
+    let temp_home = TempDir::new().context("Failed to create temporary HOME directory")?;
+    cmd.env("HOME", temp_home.path());
+    cmd.env("XDG_CONFIG_HOME", temp_home.path());
+    cmd.env("XDG_DATA_HOME", temp_home.path());
 
-    let output = output_result.map_err(|e| anyhow::anyhow!("Command execution failed: {}", e))?;
+    let output = timeout(Duration::from_secs(30), async move {
+        let _guard = temp_home;
+        tokio::task::spawn_blocking(move || cmd.output())
+            .await
+            .map_err(|e| anyhow::anyhow!("Task join error: {}", e))?
+            .map_err(|e| anyhow::anyhow!("Command execution failed: {}", e))
+    })
+    .await
+    .map_err(|_| anyhow::anyhow!("Command timed out"))??;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-    // Include stderr in output for error cases
-    let combined_output = if !stderr.is_empty() {
-        format!("{}{}", stderr, stdout)
-    } else {
+    Ok(if stderr.is_empty() {
         stdout
-    };
-
-    Ok(combined_output)
+    } else {
+        format!("{}{}", stderr, stdout)
+    })
 }
 
-/// Helper to create a test kiln with sample content
-#[allow(dead_code)]
-async fn create_test_kiln() -> Result<TempDir> {
-    let temp_dir = TempDir::new()?;
-    let kiln_path = temp_dir.path();
+#[tokio::test]
+async fn help_command_mentions_kiln_not_vault() -> Result<()> {
+    let output = run_cli_command(&["--help"]).await?;
+    assert_mentions_kiln_and_not_vault(&output);
+    Ok(())
+}
 
-    // Create .obsidian directory for Obsidian kiln
-    std::fs::create_dir_all(kiln_path.join(".obsidian"))?;
+#[tokio::test]
+async fn search_help_mentions_kiln_not_vault() -> Result<()> {
+    let output = run_cli_command(&["search", "--help"]).await?;
+    assert_mentions_kiln_and_not_vault(&output);
+    Ok(())
+}
 
-    // Create sample markdown files
-    let test_files = vec![
-        (
-            "Getting Started.md",
-            "# Getting Started\n\nThis is a getting started guide for the kiln.",
-        ),
-        (
-            "Project Architecture.md",
-            "# Project Architecture\n\nThis document describes the architecture.",
-        ),
-        ("Testing Notes.md", "# Testing\n\nSome testing notes here."),
-        ("README.md", "# README\n\nThis is the main README file."),
-        (
-            "Development.md",
-            "# Development\n\nDevelopment documentation.",
-        ),
+#[tokio::test]
+async fn semantic_help_mentions_kiln_not_vault() -> Result<()> {
+    let output = run_cli_command(&["semantic", "--help"]).await?;
+    assert_mentions_kiln_and_not_vault(&output);
+    Ok(())
+}
+
+#[tokio::test]
+async fn stats_help_mentions_kiln_not_vault() -> Result<()> {
+    let output = run_cli_command(&["stats", "--help"]).await?;
+    assert_mentions_kiln_and_not_vault(&output);
+    Ok(())
+}
+
+#[tokio::test]
+async fn config_help_does_not_reference_vault() -> Result<()> {
+    let output = run_cli_command(&["config", "--help"]).await?;
+    assert_not_contains_vault(&output);
+    Ok(())
+}
+
+#[tokio::test]
+async fn primary_help_commands_consistently_use_kiln() -> Result<()> {
+    let commands: &[(&[&str], bool)] = &[
+        (&["--help"], true),
+        (&["search", "--help"], true),
+        (&["semantic", "--help"], true),
+        (&["stats", "--help"], true),
+        (&["config", "--help"], false),
+        (&["note", "--help"], false),
     ];
 
-    for (filename, content) in test_files {
-        let file_path = kiln_path.join(filename);
-        std::fs::write(file_path, content)?;
-    }
-
-    Ok(temp_dir)
-}
-
-// ===== TDD RED PHASE: HELP TEXT TERMINOLOGY TESTS =====
-// These tests FAIL until help text uses "kiln" instead of "kiln"
-
-#[tokio::test]
-async fn test_help_text_uses_kiln_not_kiln() -> Result<()> {
-    // WHEN: User requests help
-    let result = run_cli_command(vec!["--help"]).await?;
-
-    // THEN: Help text should use "kiln" terminology, not "kiln"
-    // This test FAILS because help text currently uses "kiln"
-    assert!(
-        !result.contains("kiln"),
-        "Help text should not contain 'kiln' terminology, but got: {}",
-        result
-    );
-    assert!(
-        result.contains("kiln") || result.contains("Kiln"),
-        "Help text should contain 'kiln' terminology, but got: {}",
-        result
-    );
-
-    // Check for specific kiln terminology that should be replaced with kiln
-    assert!(
-        !result.contains("kiln statistics"),
-        "Should say 'kiln statistics' not 'kiln statistics'"
-    );
-    assert!(
-        !result.contains("kiln path"),
-        "Should say 'kiln path' not 'kiln path'"
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_search_help_text_uses_kiln_terminology() -> Result<()> {
-    // WHEN: User requests search help
-    let result = run_cli_command(vec!["search", "--help"]).await?;
-
-    // THEN: Search help should use "kiln" terminology
-    // This test FAILS because search help currently uses "kiln"
-    assert!(
-        !result.contains("kiln"),
-        "Search help should not contain 'kiln' terminology, but got: {}",
-        result
-    );
-    assert!(
-        result.contains("kiln") || result.contains("kiln"),
-        "Search help should contain 'kiln' terminology, but got: {}",
-        result
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_semantic_help_text_uses_kiln_terminology() -> Result<()> {
-    // WHEN: User requests semantic search help
-    let result = run_cli_command(vec!["semantic", "--help"]).await?;
-
-    // THEN: Semantic search help should use "kiln" terminology
-    // This test FAILS because semantic help currently uses "kiln"
-    assert!(
-        !result.contains("kiln"),
-        "Semantic help should not contain 'kiln' terminology, but got: {}",
-        result
-    );
-    assert!(
-        result.contains("kiln") || result.contains("kiln"),
-        "Semantic help should contain 'kiln' terminology, but got: {}",
-        result
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_stats_help_text_uses_kiln_terminology() -> Result<()> {
-    // WHEN: User requests stats help
-    let result = run_cli_command(vec!["stats", "--help"]).await?;
-
-    // THEN: Stats help should use "kiln" terminology
-    // This test FAILS because stats help currently uses "kiln"
-    assert!(
-        !result.contains("kiln"),
-        "Stats help should not contain 'kiln' terminology, but got: {}",
-        result
-    );
-    assert!(
-        result.contains("kiln") || result.contains("kiln"),
-        "Stats help should contain 'kiln' terminology, but got: {}",
-        result
-    );
-
-    Ok(())
-}
-
-// ===== TDD RED PHASE: ERROR MESSAGE TERMINOLOGY TESTS =====
-// These tests FAIL until error messages use "kiln" instead of "kiln"
-
-#[tokio::test]
-async fn test_error_messages_use_kiln_terminology() -> Result<()> {
-    // WHEN: Help text is displayed
-    let result = run_cli_command_allow_failure(vec!["--help"]).await?;
-
-    // THEN: Help text should use "kiln" terminology, not "kiln"
-    assert!(
-        !result.contains("kiln"),
-        "Help text should not contain 'kiln' terminology, but got: {}",
-        result
-    );
-
-    // Should mention kiln somewhere in help
-    assert!(
-        result.contains("kiln") || result.contains("Kiln"),
-        "Help should mention 'kiln' terminology, but got: {}",
-        result
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_search_error_with_invalid_kiln_path() -> Result<()> {
-    // WHEN: User requests search help
-    let result = run_cli_command_allow_failure(vec!["search", "--help"]).await?;
-
-    // THEN: Help should use kiln terminology, not kiln
-    assert!(
-        !result.contains("kiln"),
-        "Help should not mention 'kiln', but got: {}",
-        result
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_semantic_error_with_invalid_kiln_path() -> Result<()> {
-    // WHEN: User requests semantic search help
-    let result = run_cli_command_allow_failure(vec!["semantic", "--help"]).await?;
-
-    // THEN: Help should use kiln terminology, not kiln
-    assert!(
-        !result.contains("kiln"),
-        "Help should not mention 'kiln', but got: {}",
-        result
-    );
-
-    Ok(())
-}
-
-// ===== TDD RED PHASE: COMMAND OUTPUT TERMINOLOGY TESTS =====
-// These tests FAIL until command output uses "kiln" instead of "kiln"
-
-#[tokio::test]
-async fn test_command_output_uses_kiln_terminology() -> Result<()> {
-    // WHEN: User requests stats help
-    let result = run_cli_command(vec!["stats", "--help"]).await?;
-
-    // THEN: Help output should use "kiln" terminology
-    assert!(
-        !result.contains("kiln"),
-        "Stats help should not contain 'kiln' terminology, but got: {}",
-        result
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_search_success_output_uses_kiln_terminology() -> Result<()> {
-    // WHEN: User requests search help
-    let result = run_cli_command(vec!["search", "--help"]).await?;
-
-    // THEN: Help output should not contain "kiln" terminology
-    assert!(
-        !result.contains("kiln"),
-        "Search help should not contain 'kiln' terminology, but got: {}",
-        result
-    );
-    // Note: Help output might not explicitly mention "kiln" - focus is on removing "kiln"
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_semantic_search_output_uses_kiln_terminology() -> Result<()> {
-    // WHEN: User requests semantic search help
-    let result = run_cli_command_allow_failure(vec!["semantic", "--help"]).await?;
-
-    // THEN: Help output should not contain "kiln" terminology
-    assert!(
-        !result.contains("kiln"),
-        "Semantic search help should not contain 'kiln' terminology, but got: {}",
-        result
-    );
-
-    Ok(())
-}
-
-// ===== TDD RED PHASE: COMPREHENSIVE TERMINOLOGY COVERAGE TESTS =====
-// These tests FAIL until all CLI areas consistently use "kiln" terminology
-
-#[tokio::test]
-async fn test_all_help_commands_use_kiln_terminology() -> Result<()> {
-    // Test all major help commands to ensure comprehensive coverage
-    let commands_to_test = vec![
-        vec!["--help"],
-        vec!["search", "--help"],
-        vec!["semantic", "--help"],
-        vec!["stats", "--help"],
-        vec!["config", "--help"],
-        vec!["note", "--help"],
-    ];
-
-    for args in commands_to_test {
-        // WHEN: User requests help for each command
-        let result = run_cli_command(args.clone()).await?;
-
-        // THEN: All help text should use "kiln" terminology, not "kiln"
-        // This test FAILS because help text currently uses "kiln"
-        assert!(
-            !result.contains("kiln"),
-            "Help for {:?} should not contain 'kiln' terminology, but got: {}",
-            args,
-            result
-        );
-
-        // Most help commands should mention kiln somewhere
-        if args.len() == 1 && args[0] == "--help" {
-            // Main help should definitely mention kiln
-            assert!(
-                result.contains("kiln") || result.contains("Kiln"),
-                "Main help should contain 'kiln' terminology, but got: {}",
-                result
-            );
+    for (args, expect_kiln) in commands {
+        let output = run_cli_command(args).await?;
+        if *expect_kiln {
+            assert_mentions_kiln_and_not_vault(&output);
+        } else {
+            assert_not_contains_vault(&output);
         }
     }
 
@@ -360,142 +169,9 @@ async fn test_all_help_commands_use_kiln_terminology() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_environment_variable_references_updated() -> Result<()> {
-    // Test that environment variable documentation is updated to mention kiln
-    let result = run_cli_command(vec!["config", "--help"]).await?;
-
-    // THEN: Should reference kiln in environment variable descriptions
-    // This test FAILS because env var docs currently mention kiln
-    assert!(
-        !result.contains("kiln path") || (result.contains("kiln") && result.contains("kiln path")),
-        "Environment variable help should prioritize 'kiln' over 'kiln', but got: {}",
-        result
-    );
-
+async fn error_output_uses_kiln_not_vault() -> Result<()> {
+    // Trigger an error by running semantic search without arguments.
+    let output = run_cli_command_allow_failure(&["semantic"]).await?;
+    assert_not_contains_vault(&output);
     Ok(())
 }
-
-#[tokio::test]
-async fn test_error_recovery_messages_use_kiln_terminology() -> Result<()> {
-    // Test that help text uses kiln terminology consistently
-    let result = run_cli_command_allow_failure(vec!["--help"]).await?;
-
-    // THEN: Help messages should use kiln terminology
-    assert!(
-        !result.contains("kiln"),
-        "Help should not contain 'kiln' terminology, but got: {}",
-        result
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_json_output_uses_kiln_terminology() -> Result<()> {
-    // WHEN: User requests help with JSON format option visible
-    let result = run_cli_command_allow_failure(vec!["search", "--help"]).await?;
-
-    // THEN: Help output should not contain kiln terminology
-    assert!(
-        !result.contains("kiln"),
-        "Help should not contain 'kiln' terminology, but got: {}",
-        result
-    );
-
-    Ok(())
-}
-
-// ===== TDD RED PHASE: CONFIGURATION TERMINOLOGY TESTS =====
-// These tests FAIL until configuration uses "kiln" terminology
-
-#[tokio::test]
-async fn test_config_show_output_uses_kiln_terminology() -> Result<()> {
-    // WHEN: User requests config help
-    let result = run_cli_command(vec!["config", "--help"]).await?;
-
-    // THEN: Help output should not contain kiln terminology
-    assert!(
-        !result.contains("kiln"),
-        "Config help should not contain 'kiln' terminology, but got: {}",
-        result
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_config_init_output_uses_kiln_terminology() -> Result<()> {
-    // WHEN: User requests config help
-    let result = run_cli_command_allow_failure(vec!["config", "--help"]).await?;
-
-    // THEN: Config help should not contain kiln terminology
-    assert!(
-        !result.contains("kiln"),
-        "Config help should not contain 'kiln' terminology, but got: {}",
-        result
-    );
-
-    Ok(())
-}
-
-// ===== TDD RED PHASE: MAIN TERMINOLOGY VERIFICATION TEST =====
-// This is the main test that verifies the overall terminology transition
-
-#[tokio::test]
-async fn test_comprehensive_kiln_terminology_verification() -> Result<()> {
-    // This test verifies that the CLI has been fully updated to use "kiln" terminology
-    // It tests multiple help scenarios to ensure comprehensive coverage
-
-    let test_cases = vec![
-        // Help text scenarios
-        (vec!["--help"], "help text"),
-        (vec!["search", "--help"], "search help"),
-        (vec!["semantic", "--help"], "semantic help"),
-        (vec!["stats", "--help"], "stats help"),
-        (vec!["config", "--help"], "config help"),
-    ];
-
-    let mut kiln_terminology_found = false;
-    let mut kiln_terminology_found = false;
-
-    for (args, description) in test_cases {
-        let result = run_cli_command(args).await?;
-
-        // Check for kiln terminology (should not exist)
-        if result.contains("kiln") {
-            kiln_terminology_found = true;
-            println!("FOUND KILN TERMINOLOGY in {}: {}", description, result);
-        }
-
-        // Check for kiln terminology (should exist in most cases)
-        if result.contains("kiln") || result.contains("Kiln") {
-            kiln_terminology_found = true;
-        }
-
-        // All help text should use kiln and never kiln
-        assert!(
-            !result.contains("kiln"),
-            "Help text for {} should not contain 'kiln', but got: {}",
-            description,
-            result
-        );
-    }
-
-    // THEN: Overall verification
-    // All help text should not contain kiln terminology
-    assert!(
-        !kiln_terminology_found,
-        "CLI should not contain any 'kiln' terminology in help text"
-    );
-    assert!(
-        kiln_terminology_found,
-        "CLI should contain 'kiln' terminology in at least one help text"
-    );
-
-    Ok(())
-}
-use anyhow::Result;
-use std::path::PathBuf;
-use tempfile::TempDir;
-use tokio::process::Command;
-use tokio::time::{timeout, Duration};

@@ -54,7 +54,7 @@ pub use embedding_config::{
     PrivacyMode, ThreadPoolMetrics,
 };
 pub use embedding_pipeline::EmbeddingPipeline;
-pub use embedding_pool::EmbeddingThreadPool;
+pub use embedding_pool::{EmbeddingSignature, EmbeddingThreadPool};
 
 // Kiln scanner exports
 pub use kiln_processor::{
