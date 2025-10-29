@@ -465,8 +465,9 @@ pub fn generate_document_id_from_path(path: &Path, kiln_root: &Path) -> String {
             ':' | ';' | ',' | '.' => '_',
             '!' | '?' | '*' | '#' | '@' | '$' | '%' | '^' | '&' => '_',
             '+' | '=' | '|' | '<' | '>' => '_',
-            // Keep alphanumerics, hyphens, and underscores
-            c if c.is_alphanumeric() || c == '-' || c == '_' => c,
+            // Keep alphanumerics and underscores; convert hyphens to underscores for SurrealDB compatibility
+            '-' => '_',
+            c if c.is_alphanumeric() || c == '_' => c,
             // Convert other characters to underscore
             _ => '_',
         })
