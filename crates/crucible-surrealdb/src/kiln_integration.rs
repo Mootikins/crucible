@@ -246,10 +246,10 @@ pub async fn store_parsed_document(
     }
     record_data.insert("metadata".to_string(), serde_json::Value::Object(metadata));
 
-    // Store the record with explicit ID - use UPDATE for upsert behavior
-    // This allows both creating new records and updating existing ones
+    // Store the record with explicit ID - use CREATE for upsert behavior
+    // CREATE in SurrealDB creates new records or replaces existing ones
     let json_data = serde_json::to_string(&record_data)?;
-    let update_sql = format!("UPDATE notes:⟨{}⟩ CONTENT {}", relative_id, json_data);
+    let update_sql = format!("CREATE notes:⟨{}⟩ CONTENT {}", relative_id, json_data);
 
     client
         .query(&update_sql, &[])
@@ -667,11 +667,12 @@ async fn find_or_create_target_document(
 
 async fn ensure_tag_exists(client: &SurrealClient, tag_name: &str) -> Result<()> {
     let normalized_name = normalize_tag_name(tag_name);
-    // SurrealDB: Use IF NOT EXISTS or upsert with UPDATE
-    let create_sql = format!(
-        "UPDATE tag:{} SET name = '{}', created_at = time::now() WHERE created_at IS NONE",
-        normalized_name, tag_name
-    );
+    // Use CREATE for proper upsert behavior - creates or replaces the tag
+    let tag_data = serde_json::json!({
+        "name": tag_name,
+        "created_at": "time::now()"
+    });
+    let create_sql = format!("CREATE tag:{} CONTENT {}", normalized_name, tag_data);
 
     client.query(&create_sql, &[]).await?;
     Ok(())

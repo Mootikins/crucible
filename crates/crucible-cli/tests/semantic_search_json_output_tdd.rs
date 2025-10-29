@@ -331,7 +331,9 @@ mod semantic_search_json_output_tdd_tests {
 
                     // Check for real file content
                     if let Some(id) = result.get("id").and_then(|id| id.as_str()) {
-                        if id.ends_with(".md") || id.contains("test-kiln") {
+                        // Accept SurrealDB record IDs (e.g., "notes:Ideas_Brainstorming_md")
+                        // as well as traditional file paths
+                        if id.ends_with(".md") || id.contains("test-kiln") || id.ends_with("_md") {
                             has_real_files = true;
                             println!("✅ Found real file: {}", id);
                         }
