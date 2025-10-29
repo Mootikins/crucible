@@ -244,7 +244,7 @@ pub enum Command {
         args: Vec<String>,
     },
 
-    /// :stats - Show vault statistics
+    /// :stats - Show kiln statistics
     ShowStats,
 
     /// :config - Display configuration

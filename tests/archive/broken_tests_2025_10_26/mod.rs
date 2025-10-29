@@ -54,7 +54,7 @@ mod semantic_search_daemonless_tdd;
 mod semantic_search_json_output_tdd;
 mod semantic_search_real_integration_tdd;
 mod surrealdb_client_integration_tdd;
-mod vault_processing_integration_tdd;
+mod kiln_processing_integration_tdd;
 
 // NOTE: The following TDD and research test modules have been archived to reduce compilation noise:
 // - embedding_pipeline_tdd (embedding generation pipeline - depends on removed service architecture)

@@ -11,24 +11,24 @@ use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 
 use crate::comprehensive_integration_workflow_tests::{
-    ComprehensiveTestVault, CliTestHarness, CommandResult
+    ComprehensiveTestKiln, CliTestHarness, CommandResult
 };
 
 /// Extended CLI workflow test harness
 pub struct ExtendedCliTestHarness {
-    vault_dir: TempDir,
-    test_vault: ComprehensiveTestVault,
+    kiln_dir: TempDir,
+    test_kiln: ComprehensiveTestKiln,
 }
 
 impl ExtendedCliTestHarness {
     /// Create a new extended CLI test harness
     pub async fn new() -> Result<Self> {
-        let test_vault = ComprehensiveTestVault::create().await?;
-        let vault_dir = test_vault.path().to_owned();
+        let test_kiln = ComprehensiveTestKiln::create().await?;
+        let kiln_dir = test_kiln.path().to_owned();
 
         Ok(Self {
-            vault_dir: vault_dir.to_owned(),
-            test_vault,
+            kiln_dir: kiln_dir.to_owned(),
+            test_kiln,
         })
     }
 
@@ -38,8 +38,8 @@ impl ExtendedCliTestHarness {
 
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_crucible-cli"));
         cmd.args(args)
-           .current_dir(&self.vault_dir)
-           .env("CRUCIBLE_VAULT_PATH", self.vault_dir.to_str().unwrap());
+           .current_dir(&self.kiln_dir)
+           .env("CRUCIBLE_KILN_PATH", self.kiln_dir.to_str().unwrap());
 
         // Add environment variables
         for (key, value) in env_vars {
@@ -133,7 +133,7 @@ impl ExtendedCliTestHarness {
         // Test 1: Basic indexing
         let result = self.execute_cli_command(&[
             "index",
-            "--path", self.vault_dir.to_str().unwrap(),
+            "--path", self.kiln_dir.to_str().unwrap(),
             "--glob", "**/*.md"
         ])?;
 
@@ -144,7 +144,7 @@ impl ExtendedCliTestHarness {
         // Test 2: Force re-indexing
         let result = self.execute_cli_command(&[
             "index",
-            "--path", self.vault_dir.to_str().unwrap(),
+            "--path", self.kiln_dir.to_str().unwrap(),
             "--force",
             "--glob", "**/*.md"
         ])?;
@@ -154,7 +154,7 @@ impl ExtendedCliTestHarness {
         // Test 3: Index with custom glob pattern
         let result = self.execute_cli_command(&[
             "index",
-            "--path", self.vault_dir.to_str().unwrap(),
+            "--path", self.kiln_dir.to_str().unwrap(),
             "--glob", "code/**/*.md"
         ])?;
 
@@ -163,7 +163,7 @@ impl ExtendedCliTestHarness {
         // Test 4: Index specific subdirectory
         let result = self.execute_cli_command(&[
             "index",
-            "--path", self.vault_dir.join("research").to_str().unwrap()
+            "--path", self.kiln_dir.join("research").to_str().unwrap()
         ])?;
 
         assert!(result.exit_code == 0, "Subdirectory indexing should succeed");

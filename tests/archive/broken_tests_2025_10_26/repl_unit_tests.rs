@@ -7,7 +7,7 @@
 /// Test context for REPL unit tests
 struct ReplUnitTestContext {
     temp_dir: TempDir,
-    vault_path: PathBuf,
+    kiln_path: PathBuf,
     tool_dir: PathBuf,
     db_path: PathBuf,
 }
@@ -15,25 +15,25 @@ struct ReplUnitTestContext {
 impl ReplUnitTestContext {
     fn new() -> Result<Self> {
         let temp_dir = TempDir::new()?;
-        let vault_path = temp_dir.path().join("vault");
+        let kiln_path = temp_dir.path().join("kiln");
         let tool_dir = temp_dir.path().join("tools");
         let db_path = temp_dir.path().join("test.db");
 
         // Create directories
-        std::fs::create_dir_all(&vault_path)?;
+        std::fs::create_dir_all(&kiln_path)?;
         std::fs::create_dir_all(&tool_dir)?;
 
         Ok(Self {
             temp_dir,
-            vault_path,
+            kiln_path,
             tool_dir,
             db_path,
         })
     }
 
-    /// Get vault path for testing
-    fn get_vault_path(&self) -> &str {
-        self.vault_path.to_str().unwrap()
+    /// Get kiln path for testing
+    fn get_kiln_path(&self) -> &str {
+        self.kiln_path.to_str().unwrap()
     }
 }
 
@@ -388,7 +388,7 @@ async fn test_repl_config_initialization() -> Result<()> {
     let context = ReplUnitTestContext::new()?;
 
     // Test path components for REPL config
-    assert!(context.vault_path.exists(), "Vault path should exist");
+    assert!(context.kiln_path.exists(), "Kiln path should exist");
     assert!(context.tool_dir.exists(), "Tool directory should exist");
     assert!(
         context.db_path.to_str().is_some(),

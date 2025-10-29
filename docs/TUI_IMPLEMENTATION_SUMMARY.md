@@ -289,9 +289,9 @@ All skeleton code is located at:
 
        /// Run the Crucible daemon with TUI
        Daemon {
-           /// Vault path to watch
+           /// Kiln path to watch
            #[arg(short, long)]
-           vault: Option<PathBuf>,
+           kiln: Option<PathBuf>,
        },
    }
    ```
@@ -305,7 +305,7 @@ All skeleton code is located at:
 1. Add SurrealDB connection to daemon
 2. Wire parser → indexer pipeline
 3. Send status updates on successful index
-4. Test with real vault files
+4. Test with real kiln files
 
 ### Phase 3: REPL Executor
 

@@ -2,7 +2,7 @@
  * API Specification for Obsidian Plugin HTTP Server
  *
  * The plugin runs an HTTP server on localhost:27123 that provides
- * REST API access to vault operations for the MCP server.
+ * REST API access to kiln operations for the MCP server.
  */
 
 export interface APISpec {
@@ -11,7 +11,7 @@ export interface APISpec {
   endpoints: {
     // File operations
     "GET /api/files": {
-      description: "List all markdown files in the vault";
+      description: "List all markdown files in the kiln";
       response: { files: FileInfo[] };
     };
     "GET /api/file/:path": {

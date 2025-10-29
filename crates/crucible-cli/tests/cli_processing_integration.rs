@@ -7,23 +7,23 @@
 //! 1. User runs semantic search command
 //! 2. CLI detects no embeddings exist
 //! 3. CLI automatically starts daemon in background
-//! 4. Daemon processes vault and generates embeddings
+//! 4. Daemon processes kiln and generates embeddings
 //! 5. Semantic search returns meaningful results
 //!
 //! CONFIGURATION: Tests use CliConfig::builder() pattern (v0.2.0+) for programmatic
 //! configuration. Environment variable support was removed in v0.2.0.
 
 use anyhow::Result;
-use crucible_llm::embeddings::create_mock_provider;
 use crucible_cli::config::CliConfig;
-use crucible_surrealdb::{vault_integration::semantic_search, SurrealClient, SurrealDbConfig};
-use crucible_tools::vault_change_detection::ChangeDetector;
+use crucible_llm::embeddings::create_mock_provider;
+use crucible_surrealdb::{kiln_integration::semantic_search, SurrealClient, SurrealDbConfig};
+use crucible_tools::kiln_change_detection::ChangeDetector;
 use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::{Duration, Instant};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tempfile::TempDir;
 use tokio::process::Command as AsyncCommand;
 use tokio::time::timeout;
@@ -128,29 +128,29 @@ track changes over time.
     ),
 ];
 
-/// Creates a temporary test vault with sample markdown files
-async fn create_test_vault() -> Result<TempDir> {
+/// Creates a temporary test kiln with sample markdown files
+async fn create_test_kiln() -> Result<TempDir> {
     let temp_dir = TempDir::new()?;
-    let vault_path = temp_dir.path();
+    let kiln_path = temp_dir.path();
 
     // Create .crucible directory structure
-    let crucible_dir = vault_path.join(".crucible");
+    let crucible_dir = kiln_path.join(".crucible");
     std::fs::create_dir_all(&crucible_dir)?;
 
     // Create sample markdown files with meaningful content
     for (filename, content) in SAMPLE_MARKDOWN_CONTENTS {
-        let file_path = vault_path.join(filename);
+        let file_path = kiln_path.join(filename);
         std::fs::write(&file_path, content)?;
         println!("Created test file: {}", file_path.display());
     }
 
-    // Create a tools directory (expected by vault structure)
-    let tools_dir = vault_path.join("tools");
+    // Create a tools directory (expected by kiln structure)
+    let tools_dir = kiln_path.join("tools");
     std::fs::create_dir_all(&tools_dir)?;
 
-    println!("Created test vault at: {}", vault_path.display());
+    println!("Created test kiln at: {}", kiln_path.display());
     println!(
-        "Test vault contains {} markdown files",
+        "Test kiln contains {} markdown files",
         SAMPLE_MARKDOWN_CONTENTS.len()
     );
 
@@ -158,11 +158,11 @@ async fn create_test_vault() -> Result<TempDir> {
 }
 
 /// Creates test configuration programmatically (no environment variables)
-fn create_test_config(vault_path: &Path) -> Result<CliConfig> {
+fn create_test_config(kiln_path: &Path) -> Result<CliConfig> {
     // Build config directly using builder pattern (v0.2.0+ approach)
     // Use mock provider for fast, deterministic testing
     CliConfig::builder()
-        .kiln_path(vault_path)
+        .kiln_path(kiln_path)
         .embedding_url("mock")
         .embedding_model("mock-test-model")
         .build()
@@ -183,7 +183,7 @@ fn cleanup_test_environment() {
 async fn check_embeddings_exist(config: &CliConfig) -> Result<bool> {
     let db_config = SurrealDbConfig {
         namespace: "crucible".to_string(),
-        database: "vault".to_string(),
+        database: "kiln".to_string(),
         path: config.database_path_str()?,
         max_connections: Some(10),
         timeout_seconds: Some(30),
@@ -239,7 +239,7 @@ async fn execute_semantic_search_with_metrics(
             // Now check the database for results
             let db_config = SurrealDbConfig {
                 namespace: "crucible".to_string(),
-                database: "vault".to_string(),
+                database: "kiln".to_string(),
                 path: config.database_path_str()?,
                 max_connections: Some(10),
                 timeout_seconds: Some(30),
@@ -297,7 +297,7 @@ async fn spawn_daemon_from_path(
     let child = AsyncCommand::new(daemon_path)
         .arg("daemon")
         .arg("start")
-        .env("OBSIDIAN_VAULT_PATH", &config.kiln.path)
+        .env("OBSIDIAN_KILN_PATH", &config.kiln.path)
         .env("CRUCIBLE_TEST_MODE", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -339,13 +339,13 @@ async fn test_semantic_search_auto_starts_daemon() -> Result<()> {
 /// Core test logic for auto-start daemon functionality
 async fn run_auto_start_test() -> Result<()> {
     // 1. Set up test environment with configuration
-    println!("\n📁 Step 1: Creating test vault with sample files");
-    let temp_vault = create_test_vault().await?;
+    println!("\n📁 Step 1: Creating test kiln with sample files");
+    let temp_kiln = create_test_kiln().await?;
     setup_test_environment();
 
     // Create config programmatically
     println!("\n🔒 Step 2: Creating test configuration");
-    let config = create_test_config(temp_vault.path())?;
+    let config = create_test_config(temp_kiln.path())?;
 
     // 2. Verify no embeddings exist initially
     println!("\n📊 Step 3: Checking initial state (no embeddings)");
@@ -495,34 +495,34 @@ async fn run_auto_start_test() -> Result<()> {
     Ok(())
 }
 
-/// Security-focused test to ensure vault path is never exposed in CLI arguments
+/// Security-focused test to ensure kiln path is never exposed in CLI arguments
 #[tokio::test]
-async fn test_security_vault_path_not_in_cli_arguments() -> Result<()> {
-    println!("🔒 Testing security: vault path should not be in CLI arguments");
+async fn test_security_kiln_path_not_in_cli_arguments() -> Result<()> {
+    println!("🔒 Testing security: kiln path should not be in CLI arguments");
 
-    let temp_vault = create_test_vault().await?;
-    let vault_path = temp_vault.path().to_path_buf();
+    let temp_kiln = create_test_kiln().await?;
+    let kiln_path = temp_kiln.path().to_path_buf();
     setup_test_environment();
 
     // Create config using builder (programmatic, not CLI arguments)
-    let config = create_test_config(&vault_path)?;
+    let config = create_test_config(&kiln_path)?;
 
     // Verify the configuration was set correctly
     assert_eq!(
-        config.kiln.path, vault_path,
-        "Vault path should match builder configuration"
+        config.kiln.path, kiln_path,
+        "Kiln path should match builder configuration"
     );
 
     // Additional security checks
     let current_dir = env::current_dir()?;
     assert_ne!(
         config.kiln.path, current_dir,
-        "Vault path should not default to current directory"
+        "Kiln path should not default to current directory"
     );
 
     cleanup_test_environment();
 
-    println!("✅ Security validation passed: vault path set via builder pattern");
+    println!("✅ Security validation passed: kiln path set via builder pattern");
 
     Ok(())
 }
@@ -532,10 +532,10 @@ async fn test_security_vault_path_not_in_cli_arguments() -> Result<()> {
 async fn test_auto_start_performance_requirements() -> Result<()> {
     println!("⚡ Testing auto-start performance requirements");
 
-    let temp_vault = create_test_vault().await?;
+    let temp_kiln = create_test_kiln().await?;
     setup_test_environment();
 
-    let config = create_test_config(temp_vault.path())?;
+    let config = create_test_config(temp_kiln.path())?;
     let start_time = std::time::Instant::now();
 
     // This should fail initially but we measure the time
@@ -567,31 +567,34 @@ const DELTA_PROCESSING_TIMEOUT_SECS: u64 = 1; // Single file change should be un
 const DELTA_PROCESSING_QUERY: &str = "machine learning algorithms";
 const MODIFIED_FILE_INDEX: usize = 1; // Which file to modify (0-based index from SAMPLE_MARKDOWN_CONTENTS)
 
-/// Mock processing time for full vault (simulated)
-const FULL_VAULT_PROCESSING_TIME_SECS: u64 = 2;
+/// Mock processing time for full kiln (simulated)
+const FULL_KILN_PROCESSING_TIME_SECS: u64 = 2;
 
-/// Comprehensive security test for secure vault path configuration
+/// Comprehensive security test for secure kiln path configuration
 ///
 /// CONFIGURATION APPROACH: Tests use CliConfig::builder() pattern for programmatic
 /// configuration (v0.2.0+). Environment variable support was removed.
 ///
 /// This test validates:
 /// 1. Builder pattern provides explicit, programmatic configuration
-/// 2. CLI arguments do not contain vault path information
+/// 2. CLI arguments do not contain kiln path information
 /// 3. Both CLI and daemon use builder-based configuration
-/// 4. Vault path is never exposed in command line or process listing
+/// 4. Kiln path is never exposed in command line or process listing
 /// 5. Configuration is clear and maintainable
 ///
-/// SECURITY: Builder pattern ensures vault paths are configured programmatically,
+/// SECURITY: Builder pattern ensures kiln paths are configured programmatically,
 /// not through CLI arguments that could be exposed in process listings
 #[tokio::test]
-async fn test_secure_vault_path_configuration() -> Result<()> {
-    println!("🔒 Starting comprehensive secure vault path configuration test");
+async fn test_secure_kiln_path_configuration() -> Result<()> {
+    println!("🔒 Starting comprehensive secure kiln path configuration test");
     println!("{}", "=".repeat(70));
 
     // Test scenarios to cover all configuration requirements
     let test_scenarios = vec![
-        ("valid_builder_config", "Scenario 1: Valid builder configuration"),
+        (
+            "valid_builder_config",
+            "Scenario 1: Valid builder configuration",
+        ),
         (
             "missing_env_var",
             "Scenario 2: Default configuration behavior",
@@ -602,7 +605,7 @@ async fn test_secure_vault_path_configuration() -> Result<()> {
         ),
         (
             "cli_args_not_exposed",
-            "Scenario 4: Vault path not in CLI arguments",
+            "Scenario 4: Kiln path not in CLI arguments",
         ),
     ];
 
@@ -631,7 +634,7 @@ async fn test_secure_vault_path_configuration() -> Result<()> {
 
     println!("\n✅ Configuration approach validated:");
     println!("   ✅ Builder pattern provides explicit configuration");
-    println!("   ✅ No vault paths exposed in CLI arguments");
+    println!("   ✅ No kiln paths exposed in CLI arguments");
     println!("   ✅ Configuration is programmatic and maintainable");
     println!("   ✅ Tests use clear, explicit configuration");
 
@@ -640,23 +643,23 @@ async fn test_secure_vault_path_configuration() -> Result<()> {
 
 /// Test Scenario 1: Valid builder-based configuration
 async fn test_valid_environment_variable() -> Result<()> {
-    println!("   📁 Setting up test vault with builder configuration");
-    let temp_vault = create_test_vault().await?;
-    let vault_path = temp_vault.path().to_path_buf();
+    println!("   📁 Setting up test kiln with builder configuration");
+    let temp_kiln = create_test_kiln().await?;
+    let kiln_path = temp_kiln.path().to_path_buf();
 
     setup_test_environment();
 
     println!("   🔍 Testing CLI configuration from builder");
 
     // Create config using builder pattern
-    let config = create_test_config(&vault_path)?;
+    let config = create_test_config(&kiln_path)?;
 
-    // Verify vault path matches what we configured
+    // Verify kiln path matches what we configured
     assert_eq!(
-        config.kiln.path, vault_path,
-        "CLI vault path should match builder configuration"
+        config.kiln.path, kiln_path,
+        "CLI kiln path should match builder configuration"
     );
-    println!("     ✅ CLI correctly uses vault path from builder");
+    println!("     ✅ CLI correctly uses kiln path from builder");
 
     // Test daemon configuration
     test_daemon_secure_configuration(&config).await?;
@@ -679,10 +682,13 @@ async fn test_missing_environment_variable() -> Result<()> {
     match cli_config_result {
         Ok(config) => {
             // Default config uses current_dir, which is valid behavior
-            println!("     ✅ CLI uses current_dir as default: {:?}", config.kiln.path);
+            println!(
+                "     ✅ CLI uses current_dir as default: {:?}",
+                config.kiln.path
+            );
 
             // This is expected - builder pattern requires explicit configuration
-            println!("     ✅ Builder pattern requires explicit vault path configuration");
+            println!("     ✅ Builder pattern requires explicit kiln path configuration");
         }
         Err(e) => {
             println!("     ⚠️  CLI failed with default config: {}", e);
@@ -703,7 +709,7 @@ async fn test_invalid_path_environment_variable() -> Result<()> {
     // Builder pattern accepts invalid paths (validation happens when using the path)
     let invalid_paths = vec![
         "/nonexistent/path/that/does/not/exist",
-        "/dev/null/invalid/vault",
+        "/dev/null/invalid/kiln",
         "/root/.crucible", // Permission likely denied
     ];
 
@@ -734,19 +740,19 @@ async fn test_invalid_path_environment_variable() -> Result<()> {
 
 /// Test Scenario 4: Builder configuration is not exposed in CLI arguments
 async fn test_cli_flag_ignored() -> Result<()> {
-    println!("   🚫 Testing that vault path is not exposed in CLI arguments");
+    println!("   🚫 Testing that kiln path is not exposed in CLI arguments");
 
-    let temp_vault = create_test_vault().await?;
-    let vault_path = temp_vault.path().to_path_buf();
+    let temp_kiln = create_test_kiln().await?;
+    let kiln_path = temp_kiln.path().to_path_buf();
 
     setup_test_environment();
 
     // Create config using builder (programmatic, not CLI arguments)
-    let config = create_test_config(&vault_path)?;
+    let config = create_test_config(&kiln_path)?;
 
     // Verify config uses builder configuration
     assert_eq!(
-        config.kiln.path, vault_path,
+        config.kiln.path, kiln_path,
         "Config should use builder configuration"
     );
 
@@ -771,7 +777,7 @@ async fn test_daemon_secure_configuration(config: &CliConfig) -> Result<()> {
         Ok(mut child) => {
             println!("     ✅ Daemon started successfully with builder configuration");
 
-            // Inspect daemon process arguments to ensure no vault path is exposed
+            // Inspect daemon process arguments to ensure no kiln path is exposed
             if let Some(pid) = child.id() {
                 inspect_process_arguments_security(pid).await?;
             }
@@ -800,7 +806,7 @@ async fn test_daemon_secure_configuration(config: &CliConfig) -> Result<()> {
     Ok(())
 }
 
-/// Test process argument security to ensure vault paths are not exposed
+/// Test process argument security to ensure kiln paths are not exposed
 async fn test_process_argument_security(config: &CliConfig) -> Result<()> {
     println!("     🔍 Testing process argument security");
 
@@ -816,7 +822,7 @@ async fn test_process_argument_security(config: &CliConfig) -> Result<()> {
     // Try to spawn CLI process and inspect its arguments
     let mut child = AsyncCommand::new(&cli_path)
         .arg("help") // Use help command to avoid needing full setup
-        .env("OBSIDIAN_VAULT_PATH", &config.kiln.path)
+        .env("OBSIDIAN_KILN_PATH", &config.kiln.path)
         .env("CRUCIBLE_TEST_MODE", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -838,7 +844,7 @@ async fn test_process_argument_security(config: &CliConfig) -> Result<()> {
     Ok(())
 }
 
-/// Inspect process arguments to ensure vault path is not exposed
+/// Inspect process arguments to ensure kiln path is not exposed
 async fn inspect_process_arguments_security(pid: u32) -> Result<()> {
     println!(
         "       🔍 Inspecting process {} arguments for security",
@@ -853,9 +859,9 @@ async fn inspect_process_arguments_security(pid: u32) -> Result<()> {
             Ok(cmdline) => {
                 println!("         Process command line: {}", cmdline);
 
-                // Vault paths should not appear in command line arguments
+                // Kiln paths should not appear in command line arguments
                 // since we use builder pattern, not CLI args
-                println!("         ✅ Process uses builder-based config (no vault path in args)");
+                println!("         ✅ Process uses builder-based config (no kiln path in args)");
             }
             Err(e) => {
                 println!("         ⚠️  Could not read process command line: {}", e);
@@ -878,7 +884,7 @@ async fn inspect_process_arguments_security(pid: u32) -> Result<()> {
 ///
 /// CURRENT EXPECTED BEHAVIOR: This test should FAIL because:
 /// - Delta processing logic doesn't exist yet
-/// - CLI may re-process entire vault instead of just changed files
+/// - CLI may re-process entire kiln instead of just changed files
 /// - Change detection integration is not implemented
 #[tokio::test]
 async fn test_delta_processing_single_file_change() -> Result<()> {
@@ -909,10 +915,10 @@ async fn test_delta_processing_single_file_change() -> Result<()> {
 /// Core test logic for delta processing functionality
 async fn run_delta_processing_test() -> Result<()> {
     // 1. Set up test environment with configuration
-    println!("\n📁 Step 1: Creating test vault with sample files");
-    let temp_vault = create_test_vault().await?;
+    println!("\n📁 Step 1: Creating test kiln with sample files");
+    let temp_kiln = create_test_kiln().await?;
     setup_test_environment();
-    let config = create_test_config(temp_vault.path())?;
+    let config = create_test_config(temp_kiln.path())?;
 
     // Initialize change detector
     let change_detector = ChangeDetector::new();
@@ -922,7 +928,7 @@ async fn run_delta_processing_test() -> Result<()> {
     let mut initial_hashes = HashMap::new();
 
     for (filename, _content) in SAMPLE_MARKDOWN_CONTENTS {
-        let file_path = temp_vault.path().join(filename);
+        let file_path = temp_kiln.path().join(filename);
         let hash = change_detector
             .calculate_file_hash(file_path.to_str().unwrap())
             .await?;
@@ -930,13 +936,13 @@ async fn run_delta_processing_test() -> Result<()> {
         initial_hashes.insert(filename.to_string(), hash);
     }
 
-    // 3. Simulate initial full vault processing
-    println!("\n⚙️  Step 3: Simulating initial vault processing (all files)");
+    // 3. Simulate initial full kiln processing
+    println!("\n⚙️  Step 3: Simulating initial kiln processing (all files)");
     let initial_processing_start = Instant::now();
 
     // Simulate the time it would take to process all files
     let initial_files_count = SAMPLE_MARKDOWN_CONTENTS.len();
-    let simulated_initial_time = Duration::from_secs(FULL_VAULT_PROCESSING_TIME_SECS);
+    let simulated_initial_time = Duration::from_secs(FULL_KILN_PROCESSING_TIME_SECS);
 
     println!(
         "   Processing {} files (simulated {:?})",
@@ -979,7 +985,7 @@ async fn run_delta_processing_test() -> Result<()> {
     println!("\n✏️  Step 5: Modifying single file to test change detection");
 
     let modified_filename = SAMPLE_MARKDOWN_CONTENTS[MODIFIED_FILE_INDEX].0;
-    let modified_file_path = temp_vault.path().join(modified_filename);
+    let modified_file_path = temp_kiln.path().join(modified_filename);
     let original_hash = initial_hashes.get(modified_filename).unwrap();
 
     println!("   Modifying file: {}", modified_filename);
@@ -1024,7 +1030,7 @@ async fn run_delta_processing_test() -> Result<()> {
             continue; // Skip the modified file
         }
 
-        let file_path = temp_vault.path().join(filename);
+        let file_path = temp_kiln.path().join(filename);
         let _current_hash = change_detector
             .calculate_file_hash(file_path.to_str().unwrap())
             .await?;
@@ -1044,14 +1050,14 @@ async fn run_delta_processing_test() -> Result<()> {
     let delta_processing_start = Instant::now();
 
     // Test delta processing directly (bypass CLI overhead)
+    use crucible_surrealdb::kiln_processor::process_kiln_delta;
+    use crucible_surrealdb::kiln_scanner::KilnScannerConfig;
     use crucible_surrealdb::{SurrealClient, SurrealDbConfig};
-    use crucible_surrealdb::vault_processor::process_vault_delta;
-    use crucible_surrealdb::vault_scanner::VaultScannerConfig;
 
     // Create database client
     let db_config = SurrealDbConfig {
         namespace: "crucible".to_string(),
-        database: "vault".to_string(),
+        database: "kiln".to_string(),
         path: config.database_path_str()?,
         max_connections: Some(10),
         timeout_seconds: Some(30),
@@ -1060,15 +1066,16 @@ async fn run_delta_processing_test() -> Result<()> {
 
     // Call delta processing directly with the modified file
     let changed_files = vec![modified_file_path.clone()];
-    let scanner_config = VaultScannerConfig::default();
+    let scanner_config = KilnScannerConfig::default();
 
-    let _result = process_vault_delta(
+    let _result = process_kiln_delta(
         changed_files,
         &client,
         &scanner_config,
         None, // No embedding pool needed with mock provider
-        temp_vault.path(),
-    ).await?;
+        temp_kiln.path(),
+    )
+    .await?;
 
     let delta_processing_duration = delta_processing_start.elapsed();
     println!(
@@ -1102,5 +1109,4 @@ async fn run_delta_processing_test() -> Result<()> {
             delta_processing_duration
         ));
     }
-
 }

@@ -40,28 +40,28 @@ const FILE_OPERATION_DELAY: Duration = Duration::from_millis(500);
 /// Test harness for watcher integration tests
 struct WatcherTestHarness {
     pub temp_dir: TempDir,
-    pub vault_path: std::path::PathBuf,
+    pub kiln_path: std::path::PathBuf,
     pub database: std::sync::Arc<SurrealEmbeddingDatabase>,
 }
 
 impl WatcherTestHarness {
     async fn new() -> Result<Self> {
         let temp_dir = TempDir::new()?;
-        let vault_path = temp_dir.path().join("test_vault");
-        fs::create_dir_all(&vault_path).await?;
+        let kiln_path = temp_dir.path().join("test_kiln");
+        fs::create_dir_all(&kiln_path).await?;
 
         // Initialize in-memory database
         let database = std::sync::Arc::new(SurrealEmbeddingDatabase::new_memory());
 
         Ok(Self {
             temp_dir,
-            vault_path,
+            kiln_path,
             database,
         })
     }
 
     async fn create_test_file(&self, filename: &str, content: &str) -> Result<std::path::PathBuf> {
-        let file_path = self.vault_path.join(filename);
+        let file_path = self.kiln_path.join(filename);
         fs::write(&file_path, content).await?;
         sleep(FILE_OPERATION_DELAY).await; // Allow file system to settle
         Ok(file_path)
@@ -74,7 +74,7 @@ impl WatcherTestHarness {
     }
 
     async fn verify_file_has_embedding(&self, filename: &str) -> Result<bool> {
-        let file_path = self.vault_path.join(filename);
+        let file_path = self.kiln_path.join(filename);
         let embedding = self.database.get_embedding(&file_path.to_string_lossy()).await
             .map_err(|e| anyhow::anyhow!("Failed to query embeddings for file: {}", e))?;
         Ok(embedding.is_some())
@@ -98,7 +98,7 @@ async fn test_daemon_watcher_creates_embedding_events() -> Result<()> {
     // Create test configuration with file watching enabled
     let mut config = DaemonConfig::default();
     config.filesystem.watch_paths.push(WatchPath {
-        path: harness.vault_path.clone(),
+        path: harness.kiln_path.clone(),
         recursive: true,
         mode: WatchMode::All,
         events: None,

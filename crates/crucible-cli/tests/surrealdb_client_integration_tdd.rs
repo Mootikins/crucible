@@ -25,7 +25,7 @@
 use anyhow::Result;
 use crucible_cli::config::{CliConfig, KilnConfig};
 // Import the crates we need to test
-use crucible_surrealdb::{vault_integration::get_database_stats, SurrealClient, SurrealDbConfig};
+use crucible_surrealdb::{kiln_integration::get_database_stats, SurrealClient, SurrealDbConfig};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
@@ -62,7 +62,7 @@ async fn create_test_context() -> Result<SurrealDbTestContext> {
     // Create database configuration for persistent storage
     let db_config = SurrealDbConfig {
         namespace: "test_crucible".to_string(),
-        database: "test_vault".to_string(),
+        database: "test_kiln".to_string(),
         path: db_path.to_string_lossy().to_string(),
         max_connections: Some(5),
         timeout_seconds: Some(30),
@@ -171,7 +171,7 @@ async fn run_cli_semantic_search_with_database(
         .arg("3")
         .arg("--format")
         .arg("json")
-        .env("OBSIDIAN_VAULT_PATH", kiln_path.to_string_lossy().as_ref())
+        .env("OBSIDIAN_KILN_PATH", kiln_path.to_string_lossy().as_ref())
         .env("CRUCIBLE_DB_PATH", db_path.to_string_lossy().as_ref())
         .output()
         .await?;

@@ -24,12 +24,12 @@ use crucible_cli::{
 // =============================================================================
 
 #[tokio::test]
-async fn test_search_with_invalid_vault_path() {
-    // Test: System should handle invalid vault paths gracefully
+async fn test_search_with_invalid_kiln_path() {
+    // Test: System should handle invalid kiln paths gracefully
 
     let config = create_test_config_with_invalid_path();
 
-    // This should fail because the vault path doesn't exist
+    // This should fail because the kiln path doesn't exist
     let result = search::execute(
         config,
         Some("test query".to_string()),
@@ -40,14 +40,14 @@ async fn test_search_with_invalid_vault_path() {
 
     // TODO: After implementing error recovery, this should provide a helpful error message
     // and potentially fall back to alternative functionality
-    assert!(result.is_err(), "Expected search to fail with invalid vault path");
+    assert!(result.is_err(), "Expected search to fail with invalid kiln path");
 
     let error = result.unwrap_err();
     let error_msg = error.to_string();
 
     // TODO: These assertions will guide implementation of better error messages
-    assert!(error_msg.contains("kiln") || error_msg.contains("vault") || error_msg.contains("path"),
-           "Error message should mention vault/kiln/path issue, got: {}", error_msg);
+    assert!(error_msg.contains("kiln") || error_msg.contains("kiln") || error_msg.contains("path"),
+           "Error message should mention kiln/kiln/path issue, got: {}", error_msg);
 }
 
 #[tokio::test]
@@ -246,15 +246,15 @@ async fn test_missing_environment_variables() {
     // TODO: This test will guide implementation of environment variable validation
 
     // Temporarily clear environment variables if they exist
-    let original_vault_path = std::env::var("OBSIDIAN_VAULT_PATH").ok();
-    std::env::remove_var("OBSIDIAN_VAULT_PATH");
+    let original_kiln_path = std::env::var("OBSIDIAN_KILN_PATH").ok();
+    std::env::remove_var("OBSIDIAN_KILN_PATH");
 
     // Try to create config without environment variable
     let _config_result = create_test_config_from_env();
 
     // Restore environment variable
-    if let Some(path) = original_vault_path {
-        std::env::set_var("OBSIDIAN_VAULT_PATH", path);
+    if let Some(path) = original_kiln_path {
+        std::env::set_var("OBSIDIAN_KILN_PATH", path);
     }
 
     // TODO: Should handle missing environment variable gracefully

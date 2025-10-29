@@ -47,7 +47,7 @@
 
       "env_vars": {
         "RUST_LOG": "info",
-        "OBSIDIAN_VAULT_PATH": "./vault"
+        "OBSIDIAN_KILN_PATH": "./kiln"
       },
 
       "settings": {

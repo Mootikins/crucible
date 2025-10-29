@@ -28,7 +28,7 @@ export class TFile {
   }
 }
 
-export class Vault {
+export class Kiln {
   getMarkdownFiles = vi.fn(() => []);
   read = vi.fn(async (file: TFile) => "# Test\n\nContent");
   modify = vi.fn(async (file: TFile, data: string) => {});
@@ -48,7 +48,7 @@ export class MetadataCache {
 }
 
 export class App {
-  vault = new Vault();
+  kiln = new Kiln();
   metadataCache = new MetadataCache();
 }
 

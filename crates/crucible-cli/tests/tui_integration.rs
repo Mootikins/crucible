@@ -519,7 +519,7 @@ async fn test_daemon_status_updates() {
     //
     // Expected behavior:
     // - StatusUpdate with doc_count should update counter
-    // - StatusUpdate with vault_path should update path
+    // - StatusUpdate with kiln_path should update path
     // - Partial updates should only change specified fields
     // - header_dirty flag should be set
     // - Status throttling should be respected (if enabled)
@@ -529,15 +529,15 @@ async fn test_daemon_status_updates() {
     config.status_throttle_ms = 0; // No throttling
     let mut app = App::new(log_rx, status_rx, config);
 
-    // Send status update with vault_path
-    let update = StatusUpdate::new().with_vault_path(PathBuf::from("/test/vault"));
+    // Send status update with kiln_path
+    let update = StatusUpdate::new().with_kiln_path(PathBuf::from("/test/kiln"));
     status_tx.send(update).await.unwrap();
 
     if let Ok(status) = app.status_rx.try_recv() {
         app.handle_event(UiEvent::Status(status)).await.unwrap();
     }
 
-    assert_eq!(app.status.vault_path, PathBuf::from("/test/vault"));
+    assert_eq!(app.status.kiln_path, PathBuf::from("/test/kiln"));
     assert!(app.render_state.header_dirty);
 
     // Clear dirty flag
@@ -552,7 +552,7 @@ async fn test_daemon_status_updates() {
     }
 
     assert_eq!(app.status.doc_count, 42);
-    assert_eq!(app.status.vault_path, PathBuf::from("/test/vault")); // Partial update preserved
+    assert_eq!(app.status.kiln_path, PathBuf::from("/test/kiln")); // Partial update preserved
     assert!(app.render_state.header_dirty);
 
     // Send db_type update

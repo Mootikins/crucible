@@ -9,7 +9,7 @@ The `SurrealClient` in `multi_client.rs` is **actually a mock** (in-memory HashM
 ```
 SurrealClient (production)
   └── Wraps surrealdb::Surreal<Db>
-  └── Used by all vault operations
+  └── Used by all kiln operations
   └── Supports file/memory/remote backends
 
 MockSurrealClient (testing)
@@ -31,7 +31,7 @@ No Real Client Exists!
 
 ## Impact
 
-- **Production code uses a mock** - All vault operations run against HashMap, not real DB
+- **Production code uses a mock** - All kiln operations run against HashMap, not real DB
 - **Mock complexity spiraled** - Trying to emulate SurrealDB led to complex SQL parsing
 - **Testing is backwards** - Can't test against real DB because there's no real client
 - **Performance unknown** - Haven't validated actual SurrealDB performance
@@ -40,10 +40,10 @@ No Real Client Exists!
 ## Files Affected
 
 Core dependencies on current mock "SurrealClient":
-- `src/vault_integration.rs` - All vault database operations
-- `src/vault_processor.rs` - Document processing pipeline
-- `src/vault_scanner.rs` - Vault scanning and indexing
-- `src/vault_pipeline_connector.rs` - Pipeline coordination
+- `src/kiln_integration.rs` - All kiln database operations
+- `src/kiln_processor.rs` - Document processing pipeline
+- `src/kiln_scanner.rs` - Kiln scanning and indexing
+- `src/kiln_pipeline_connector.rs` - Pipeline coordination
 - `src/embedding_pipeline.rs` - Embedding storage
 
 ## Refactoring Plan
@@ -84,10 +84,10 @@ pub struct MockSurrealClient {  // Renamed!
 ### Phase 3: Update All Usages
 
 Update imports in:
-- vault_integration.rs
-- vault_processor.rs
-- vault_scanner.rs
-- vault_pipeline_connector.rs
+- kiln_integration.rs
+- kiln_processor.rs
+- kiln_scanner.rs
+- kiln_pipeline_connector.rs
 - embedding_pipeline.rs
 
 Change from:
@@ -110,7 +110,7 @@ Tests currently in `archived-mock/`:
 ## Current Workaround
 
 The mock is still in place (`multi_client.rs`) because:
-1. Removing it breaks all vault operations
+1. Removing it breaks all kiln operations
 2. Creating a real client is a separate large task
 3. Tests using the mock have been archived to `archived-mock/`
 

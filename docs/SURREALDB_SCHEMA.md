@@ -1,8 +1,8 @@
-# SurrealDB Schema Design for Crucible Knowledge Vault
+# SurrealDB Schema Design for Crucible Knowledge Kiln
 
 > **Status**: Design Document
 > **Created**: 2025-10-19
-> **Purpose**: Define the graph database schema for indexing and querying the knowledge vault
+> **Purpose**: Define the graph database schema for indexing and querying the knowledge kiln
 
 ## Table of Contents
 
@@ -27,7 +27,7 @@ SurrealDB's native graph capabilities are leveraged throughout this schema. Unli
 
 ### Schema Flexibility for Frontmatter
 
-Knowledge vault documents have heterogeneous frontmatter properties. The schema handles this via:
+Knowledge kiln documents have heterogeneous frontmatter properties. The schema handles this via:
 
 1. **Core Fields**: Strongly-typed fields for common properties (path, title, tags)
 2. **Metadata Object**: Flexible JSON object for custom frontmatter properties
@@ -99,7 +99,7 @@ Benefits:
 
 ### 1. Notes Table
 
-Primary table for all markdown documents in the vault.
+Primary table for all markdown documents in the kiln.
 
 ```surql
 DEFINE TABLE notes SCHEMAFULL;
@@ -147,7 +147,7 @@ DEFINE INDEX unique_path ON TABLE notes COLUMNS path UNIQUE;
 
 ### 2. Tags Table
 
-Metadata and hierarchy for tags used across the vault.
+Metadata and hierarchy for tags used across the kiln.
 
 ```surql
 DEFINE TABLE tags SCHEMAFULL;
@@ -347,7 +347,7 @@ DEFINE INDEX embedding_idx ON TABLE notes COLUMNS embedding
 - **SEARCH indexes**: BM25 algorithm for relevance ranking
 - **MTREE on embeddings**: Metric tree for vector similarity (HNSW under the hood)
 - **Array index on tags**: Optimizes `CONTAINS` and `CONTAINSALL` queries
-- **Skip metadata indexes initially**: JSON queries acceptable for small-medium vaults
+- **Skip metadata indexes initially**: JSON queries acceptable for small-medium kilns
 
 ### When to Add More Indexes
 
@@ -667,7 +667,7 @@ DEFINE FIELD new_field ON TABLE notes TYPE string DEFAULT "default_value";
 
 1. **Schema Snapshots**: Export schema before migrations
    ```bash
-   surreal export --ns crucible --db vault schema_backup.surql
+   surreal export --ns crucible --db kiln schema_backup.surql
    ```
 
 2. **Transaction-based Migrations**: Wrap in `BEGIN TRANSACTION` / `COMMIT`
@@ -698,7 +698,7 @@ SELECT path, ->wikilink->notes.* FROM notes;
 
 ### Storage Optimization
 
-1. **Embedding Compression**: Consider quantization (float32 → int8) for large vaults
+1. **Embedding Compression**: Consider quantization (float32 → int8) for large kilns
 2. **Content Deduplication**: Store content in separate table if same content appears multiple times
 3. **Archival Strategy**: Move old/rarely-accessed notes to cold storage table
 

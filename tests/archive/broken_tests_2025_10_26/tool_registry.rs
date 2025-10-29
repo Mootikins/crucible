@@ -223,7 +223,7 @@ async fn test_load_valid_rune_script() -> Result<()> {
 
     // Create well-formed Rune script with documentation
     test_reg.create_tool("documented_tool", r#"
-        //! Count total notes in vault
+        //! Count total notes in kiln
         //!
         //! This tool queries the database and returns the total count.
 
@@ -287,7 +287,7 @@ async fn test_handle_invalid_rune_syntax() -> Result<()> {
 
 /// Test: Tool can access database connection
 ///
-/// Rune tools need database access to query vault data. Verify that db parameter
+/// Rune tools need database access to query kiln data. Verify that db parameter
 /// is properly injected and queries execute successfully.
 #[tokio::test]
 async fn test_tool_with_database_access() -> Result<()> {
@@ -510,7 +510,7 @@ async fn test_list_tools_with_metadata() -> Result<()> {
     "#).await?;
 
     test_reg.create_tool("stats", r#"
-        //! Show vault statistics
+        //! Show kiln statistics
 
         pub fn main() {
             "Stats here"

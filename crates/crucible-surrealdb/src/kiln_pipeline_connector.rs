@@ -1,4 +1,4 @@
-//! Vault Pipeline Connector
+//! Kiln Pipeline Connector
 //!
 //! This module implements the connection between Phase 1 ParsedDocument structures
 //! and Phase 2.1 embedding pipeline for Phase 2.2 Task 4.
@@ -21,13 +21,13 @@ use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::embedding_pool::EmbeddingThreadPool;
+use crate::kiln_scanner::KilnScanResult;
 use crate::SurrealClient;
-use crate::vault_scanner::VaultScanResult;
 use crucible_core::parser::ParsedDocument;
 
-/// Configuration for vault pipeline connector
+/// Configuration for kiln pipeline connector
 #[derive(Debug, Clone)]
-pub struct VaultPipelineConfig {
+pub struct KilnPipelineConfig {
     /// Maximum chunk size for document content
     pub max_chunk_size: usize,
     /// Overlap between chunks
@@ -40,7 +40,7 @@ pub struct VaultPipelineConfig {
     pub enable_change_detection: bool,
 }
 
-impl Default for VaultPipelineConfig {
+impl Default for KilnPipelineConfig {
     fn default() -> Self {
         Self {
             max_chunk_size: 4000,
@@ -91,30 +91,34 @@ pub struct BatchProcessingResult {
 }
 
 /// Main connector between Phase 1 ParsedDocuments and Phase 2.1 embedding pipeline
-pub struct VaultPipelineConnector {
+pub struct KilnPipelineConnector {
     /// Embedding thread pool
     thread_pool: EmbeddingThreadPool,
     /// Configuration
-    config: VaultPipelineConfig,
+    config: KilnPipelineConfig,
     /// Document ID cache for consistency
     document_id_cache: HashMap<PathBuf, String>,
     /// Kiln root path (for generating relative document IDs)
     kiln_root: PathBuf,
 }
 
-impl VaultPipelineConnector {
-    /// Create a new vault pipeline connector
+impl KilnPipelineConnector {
+    /// Create a new kiln pipeline connector
     pub fn new(thread_pool: EmbeddingThreadPool, kiln_root: PathBuf) -> Self {
         Self {
             thread_pool,
-            config: VaultPipelineConfig::default(),
+            config: KilnPipelineConfig::default(),
             document_id_cache: HashMap::new(),
             kiln_root,
         }
     }
 
     /// Create connector with custom configuration
-    pub fn with_config(thread_pool: EmbeddingThreadPool, config: VaultPipelineConfig, kiln_root: PathBuf) -> Self {
+    pub fn with_config(
+        thread_pool: EmbeddingThreadPool,
+        config: KilnPipelineConfig,
+        kiln_root: PathBuf,
+    ) -> Self {
         Self {
             thread_pool,
             config,
@@ -396,7 +400,7 @@ impl VaultPipelineConnector {
 }
 
 // Implement Clone for parallel processing
-impl Clone for VaultPipelineConnector {
+impl Clone for KilnPipelineConnector {
     fn clone(&self) -> Self {
         Self {
             thread_pool: self.thread_pool.clone(),
@@ -535,7 +539,7 @@ fn generate_document_id_from_path_cached(
 /// **TDD Function**: Implements ParsedDocument → (document_id, content) transformation
 pub fn transform_parsed_document_to_embedding_inputs(
     document: &ParsedDocument,
-    config: &VaultPipelineConfig,
+    config: &KilnPipelineConfig,
     kiln_root: &Path,
 ) -> Vec<(String, String)> {
     let mut inputs = Vec::new();
@@ -659,7 +663,7 @@ async fn store_embedding_in_database_with_vector(
     _content_hash: &str,
     embedding_vector: Vec<f32>,
 ) -> Result<()> {
-    use crate::vault_integration::store_embedding;
+    use crate::kiln_integration::store_embedding;
 
     // Create the note_id from document_id
     // document_id is the relative path like "Projects_file_md"
@@ -680,8 +684,8 @@ async fn store_embedding_in_database_with_vector(
         client,
         &note_id,
         embedding_vector,
-        "fastembed",         // embedding model
-        1000,                // chunk_size
+        "fastembed", // embedding model
+        1000,        // chunk_size
         chunk_position,
     )
     .await?;
@@ -694,19 +698,19 @@ async fn store_embedding_in_database_with_vector(
     Ok(())
 }
 
-/// Get parsed documents from vault scan result
+/// Get parsed documents from kiln scan result
 ///
 /// **TDD Function**: Retrieves ParsedDocuments from scan results for integration testing
 pub async fn get_parsed_documents_from_scan(
     _client: &SurrealClient,
-    scan_result: &VaultScanResult,
+    scan_result: &KilnScanResult,
 ) -> Vec<ParsedDocument> {
     let mut documents = Vec::new();
 
     for file_info in &scan_result.discovered_files {
         if file_info.is_markdown && file_info.is_accessible {
             // Parse the file to get ParsedDocument
-            match crate::vault_scanner::parse_file_to_document(&file_info.path).await {
+            match crate::kiln_scanner::parse_file_to_document(&file_info.path).await {
                 Ok(document) => documents.push(document),
                 Err(e) => {
                     warn!("Failed to parse document {:?}: {}", file_info.path, e);
@@ -728,11 +732,11 @@ mod tests {
     async fn test_document_id_generation() {
         let kiln_root = PathBuf::from("/");
         let test_cases = vec![
-            ("/vault/document.md", "vault_document_md"),
-            ("/vault/nested/document.md", "vault_nested_document_md"),
+            ("/kiln/document.md", "kiln_document_md"),
+            ("/kiln/nested/document.md", "kiln_nested_document_md"),
             (
-                "/vault/with spaces/document.md",
-                "vault_with_spaces_document_md",
+                "/kiln/with spaces/document.md",
+                "kiln_with_spaces_document_md",
             ),
         ];
 
@@ -754,7 +758,7 @@ mod tests {
         let mut document = ParsedDocument::new(PathBuf::from("/test/doc.md"));
         document.content.plain_text = "Test content".to_string();
 
-        let config = VaultPipelineConfig::default();
+        let config = KilnPipelineConfig::default();
         let inputs = transform_parsed_document_to_embedding_inputs(&document, &config, &kiln_root);
 
         assert!(!inputs.is_empty());

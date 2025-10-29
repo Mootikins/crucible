@@ -6,8 +6,8 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      FILE SYSTEM (Vault)                        │
-│  ~/vault/Projects/crucible.md modified                          │
+│                      FILE SYSTEM (Kiln)                        │
+│  ~/kiln/Projects/crucible.md modified                          │
 └──────────────────────────┬──────────────────────────────────────┘
                            │ (inotify/FSEvents)
                            ▼
@@ -421,7 +421,7 @@ End-to-End:           60ms / 180ms / 250ms
 └─────────────────────────────────────────────────────────────────┘
 
 1. User edits file in nvim
-   File: ~/vault/Projects/crucible.md
+   File: ~/kiln/Projects/crucible.md
    ───────────────────────────────────────
    ---
    title: Crucible Architecture
@@ -437,7 +437,7 @@ End-to-End:           60ms / 180ms / 250ms
 
 2. FileWatcher detects change (inotify)
    Event: Modified
-   Path: /home/user/vault/Projects/crucible.md
+   Path: /home/user/kiln/Projects/crucible.md
    Timestamp: 2025-10-19T14:32:15Z
 
 3. Debouncer waits 100ms (user still typing?)
@@ -446,7 +446,7 @@ End-to-End:           60ms / 180ms / 250ms
 
 4. Parser worker parses file
    ParsedDocument {
-     path: "/home/user/vault/Projects/crucible.md",
+     path: "/home/user/kiln/Projects/crucible.md",
      frontmatter: Some(Frontmatter {
        raw: "title: Crucible...",
        format: Yaml,
@@ -481,7 +481,7 @@ End-to-End:           60ms / 180ms / 250ms
    Logger Sink:
    ────────────
    2025-10-19 14:32:15 INFO Document parsed
-     path=/home/user/vault/Projects/crucible.md
+     path=/home/user/kiln/Projects/crucible.md
      wikilinks=2 tags=1
 
    DB Sink:

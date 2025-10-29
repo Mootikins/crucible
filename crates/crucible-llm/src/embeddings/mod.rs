@@ -29,9 +29,9 @@ pub mod provider;
 pub mod mock;
 
 pub use candle::CandleProvider;
-pub use fastembed::FastEmbedProvider;
 pub use config::{EmbeddingConfig, EmbeddingProviderType, ProviderType};
 pub use error::{EmbeddingError, EmbeddingResult};
+pub use fastembed::FastEmbedProvider;
 pub use mock::MockEmbeddingProvider;
 pub use ollama::OllamaProvider;
 pub use openai::OpenAIProvider;

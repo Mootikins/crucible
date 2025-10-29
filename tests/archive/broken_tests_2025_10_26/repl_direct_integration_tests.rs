@@ -104,7 +104,7 @@ fn create_test_config(kiln: &TestKiln) -> Result<CliConfig> {
     let temp_dir = TempDir::new()?;
 
     // Set required environment variable for security
-    env::set_var("OBSIDIAN_VAULT_PATH", &kiln.kiln_path_str());
+    env::set_var("OBSIDIAN_KILN_PATH", &kiln.kiln_path_str());
     let config_content = format!(
         r#"
 kiln:

@@ -341,7 +341,7 @@ impl EmbeddingPipeline {
         _client: &SurrealClient,
         _document_id: &str,
     ) -> Result<Option<ParsedDocument>> {
-        // This would be implemented in the vault_integration module
+        // This would be implemented in the kiln_integration module
         // For now, return None to indicate document not found
         Ok(None)
     }
@@ -488,10 +488,18 @@ impl EmbeddingPipeline {
             Ok(result) => {
                 if result.processed {
                     // Incremental processing doesn't return embeddings directly
-                    Ok(RetryProcessingResult::success(1, start_time.elapsed(), Vec::new()))
+                    Ok(RetryProcessingResult::success(
+                        1,
+                        start_time.elapsed(),
+                        Vec::new(),
+                    ))
                 } else {
                     // Document was skipped, which is a form of success
-                    Ok(RetryProcessingResult::success(1, start_time.elapsed(), Vec::new()))
+                    Ok(RetryProcessingResult::success(
+                        1,
+                        start_time.elapsed(),
+                        Vec::new(),
+                    ))
                 }
             }
             Err(e) => {
@@ -564,7 +572,7 @@ pub async fn update_document_content(
     _document_id: &str,
     _document: &ParsedDocument,
 ) -> Result<()> {
-    // This would be implemented in the vault_integration module
+    // This would be implemented in the kiln_integration module
     info!("Updating content for document {}", _document_id);
     Ok(())
 }

@@ -302,7 +302,10 @@ impl ConfigMigrator {
             let model =
                 std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "nomic-embed-text".to_string());
 
-            provider_config = Some(EmbeddingProviderConfig::ollama(Some(ollama_url), Some(model)));
+            provider_config = Some(EmbeddingProviderConfig::ollama(
+                Some(ollama_url),
+                Some(model),
+            ));
             result.add_info("Migrated Ollama embedding provider from environment");
         }
 

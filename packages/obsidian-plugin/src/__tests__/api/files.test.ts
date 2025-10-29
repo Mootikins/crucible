@@ -22,7 +22,7 @@ describe("FilesHandler", () => {
 
   it("should list all markdown files", async () => {
     const files = [new TFile("test1.md"), new TFile("test2.md")];
-    app.vault.getMarkdownFiles.mockReturnValue(files);
+    app.kiln.getMarkdownFiles.mockReturnValue(files);
 
     const req = {} as IncomingMessage;
     const res = {
@@ -36,8 +36,8 @@ describe("FilesHandler", () => {
     expect(res.end).toHaveBeenCalled();
   });
 
-  it("should return empty list for empty vault", async () => {
-    app.vault.getMarkdownFiles.mockReturnValue([]);
+  it("should return empty list for empty kiln", async () => {
+    app.kiln.getMarkdownFiles.mockReturnValue([]);
 
     const req = {} as IncomingMessage;
     const res = {
@@ -53,8 +53,8 @@ describe("FilesHandler", () => {
 
   it("should get file content", async () => {
     const file = new TFile("test.md");
-    app.vault.getAbstractFileByPath.mockReturnValue(file);
-    app.vault.read.mockResolvedValue("# Test\n\nContent");
+    app.kiln.getAbstractFileByPath.mockReturnValue(file);
+    app.kiln.read.mockResolvedValue("# Test\n\nContent");
 
     const req = {} as IncomingMessage;
     const res = {
@@ -64,13 +64,13 @@ describe("FilesHandler", () => {
 
     await handler.getFile("test.md", req, res);
 
-    expect(app.vault.read).toHaveBeenCalled();
+    expect(app.kiln.read).toHaveBeenCalled();
     const response = JSON.parse(res.end.mock.calls[0][0]);
     expect(response.content).toBe("# Test\n\nContent");
   });
 
   it("should handle missing file gracefully", async () => {
-    app.vault.getAbstractFileByPath.mockReturnValue(null);
+    app.kiln.getAbstractFileByPath.mockReturnValue(null);
 
     const req = {} as IncomingMessage;
     const res = {
@@ -102,7 +102,7 @@ describe("FilesHandler", () => {
       new TFile("test.md"),
       new TFile("image.png"), // Should be filtered
     ];
-    app.vault.getMarkdownFiles.mockReturnValue([files[0]]);
+    app.kiln.getMarkdownFiles.mockReturnValue([files[0]]);
 
     const req = {} as IncomingMessage;
     const res = {

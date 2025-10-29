@@ -103,7 +103,7 @@ SELECT title, tags FROM notes WHERE tags CONTAINS '#project';
 -- REPL built-in commands
 :tools          # List available tools
 :run search-tool "query"
-:stats          # Show vault statistics
+:stats          # Show kiln statistics
 :config         # Show configuration
 :help           # Show help
 ```

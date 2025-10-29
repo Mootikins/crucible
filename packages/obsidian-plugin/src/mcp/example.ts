@@ -22,7 +22,7 @@ async function basicExample() {
   // Create the client
   const client = new McpClient({
     serverPath: "/path/to/crucible-mcp", // This no longer exists
-    serverArgs: ["--db-path", "/path/to/vault.db"],
+    serverArgs: ["--db-path", "/path/to/kiln.db"],
     clientName: "example-client",
     clientVersion: "1.0.0",
     debug: true,

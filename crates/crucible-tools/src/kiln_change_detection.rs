@@ -1,13 +1,13 @@
-//! Vault Change Detection - Phase 1A TDD Implementation
+//! Kiln Change Detection - Phase 1A TDD Implementation
 //!
 //! This module provides change detection functionality using SHA256 hashing.
 //! Implemented to make the failing tests pass with minimal functionality.
 
-use crate::vault_types::{VaultError, VaultResult};
+use crate::kiln_types::{KilnError, KilnResult};
 use sha2::{Digest, Sha256};
 use std::fs;
 
-/// Change detector for vault files using SHA256 hashing
+/// Change detector for kiln files using SHA256 hashing
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct ChangeDetector {
@@ -31,13 +31,13 @@ impl ChangeDetector {
     }
 
     /// Calculate SHA256 hash for a file
-    pub async fn calculate_file_hash(&self, file_path: &str) -> VaultResult<String> {
+    pub async fn calculate_file_hash(&self, file_path: &str) -> KilnResult<String> {
         let file_path = file_path.to_string();
 
         // Read file content in blocking task
         let content = tokio::task::spawn_blocking(move || fs::read_to_string(&file_path))
             .await
-            .map_err(|e| VaultError::HashError(format!("Task join error: {}", e)))??;
+            .map_err(|e| KilnError::HashError(format!("Task join error: {}", e)))??;
 
         // Calculate hash
         Ok(self.calculate_content_hash(&content))
@@ -58,11 +58,7 @@ impl ChangeDetector {
     }
 
     /// Check if file has changed by comparing hashes
-    pub async fn file_has_changed(
-        &self,
-        file_path: &str,
-        previous_hash: &str,
-    ) -> VaultResult<bool> {
+    pub async fn file_has_changed(&self, file_path: &str, previous_hash: &str) -> KilnResult<bool> {
         let current_hash = self.calculate_file_hash(file_path).await?;
         Ok(current_hash != previous_hash)
     }
@@ -93,7 +89,7 @@ impl ChangeDetector {
     }
 
     /// Get file size in bytes
-    pub async fn get_file_size(&self, file_path: &str) -> VaultResult<u64> {
+    pub async fn get_file_size(&self, file_path: &str) -> KilnResult<u64> {
         let file_path = file_path.to_string();
 
         tokio::task::spawn_blocking(move || {
@@ -101,14 +97,14 @@ impl ChangeDetector {
             Ok(metadata.len())
         })
         .await
-        .map_err(|e| VaultError::HashError(format!("Task join error: {}", e)))?
+        .map_err(|e| KilnError::HashError(format!("Task join error: {}", e)))?
     }
 
     /// Get file modification time
     pub async fn get_file_modified_time(
         &self,
         file_path: &str,
-    ) -> VaultResult<chrono::DateTime<chrono::Utc>> {
+    ) -> KilnResult<chrono::DateTime<chrono::Utc>> {
         let file_path = file_path.to_string();
 
         tokio::task::spawn_blocking(move || {
@@ -117,7 +113,7 @@ impl ChangeDetector {
             Ok(chrono::DateTime::from(modified))
         })
         .await
-        .map_err(|e| VaultError::HashError(format!("Task join error: {}", e)))?
+        .map_err(|e| KilnError::HashError(format!("Task join error: {}", e)))?
     }
 }
 
@@ -221,7 +217,7 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            VaultError::IoError(_) => {} // Expected
+            KilnError::IoError(_) => {} // Expected
             other => panic!("Expected IoError, got: {:?}", other),
         }
     }

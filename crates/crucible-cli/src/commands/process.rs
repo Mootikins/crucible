@@ -26,7 +26,10 @@ pub async fn execute(config: CliConfig, command: ProcessCommands) -> Result<()> 
 
 /// Execute start command
 async fn execute_start_command(config: CliConfig, wait: bool, background: bool) -> Result<()> {
-    info!("Starting processor for kiln: {}", config.kiln.path.display());
+    info!(
+        "Starting processor for kiln: {}",
+        config.kiln.path.display()
+    );
 
     println!("🚀 Starting kiln processor...");
     println!("📁 Kiln path: {}", config.kiln.path.display());
@@ -37,10 +40,7 @@ async fn execute_start_command(config: CliConfig, wait: bool, background: bool) 
         println!("🔄 Starting processor in background mode...");
         // For now, we'll use the existing process_kiln method
         // In the future, this could start a persistent background processor
-        match processor_manager
-            .process_kiln(&config.kiln.path)
-            .await
-        {
+        match processor_manager.process_kiln(&config.kiln.path).await {
             Ok(result) => {
                 println!("✅ {}", result.status_message());
                 println!("📊 {}", result.processing_info());
@@ -52,10 +52,7 @@ async fn execute_start_command(config: CliConfig, wait: bool, background: bool) 
         }
     } else {
         println!("🔄 Starting processor in one-shot mode...");
-        match processor_manager
-            .process_kiln(&config.kiln.path)
-            .await
-        {
+        match processor_manager.process_kiln(&config.kiln.path).await {
             Ok(result) => {
                 println!("✅ {}", result.status_message());
                 println!("📊 {}", result.processing_info());
@@ -111,7 +108,7 @@ async fn execute_status_command(config: CliConfig) -> Result<()> {
     // Initialize database connection to check embeddings
     let db_config = crucible_surrealdb::SurrealDbConfig {
         namespace: "crucible".to_string(),
-        database: "vault".to_string(),
+        database: "kiln".to_string(),
         path: config.database_path_str()?,
         max_connections: Some(10),
         timeout_seconds: Some(30),

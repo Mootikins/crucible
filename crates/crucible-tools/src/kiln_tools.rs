@@ -1,11 +1,11 @@
-//! Vault operation tools - Phase 1B Real Implementation
+//! Kiln operation tools - Phase 1B Real Implementation
 //!
-//! This module provides real async functions for interacting with Obsidian vaults,
+//! This module provides real async functions for interacting with Obsidian kilns,
 //! including file operations, metadata management, and indexing. Uses the Phase 1A
-//! parsing system to provide actual vault data instead of mock responses.
+//! parsing system to provide actual kiln data instead of mock responses.
 
+use crate::kiln_operations::RealKilnOperations;
 use crate::types::{ToolError, ToolFunction, ToolResult};
-use crate::vault_operations::RealVaultOperations;
 use serde_json::{json, Value};
 use tracing::info;
 
@@ -19,16 +19,16 @@ pub fn search_by_properties() -> ToolFunction {
 
             info!("Searching for files with properties: {:?}", properties);
 
-            // Use real vault operations
-            let vault_ops = RealVaultOperations::new();
-            match vault_ops.search_by_properties(properties).await {
+            // Use real kiln operations
+            let kiln_ops = RealKilnOperations::new();
+            match kiln_ops.search_by_properties(properties).await {
                 Ok(matching_files) => {
                     let result_data = json!({
                         "matching_files": matching_files,
                         "count": matching_files.len(),
                         "user_id": user_id,
                         "session_id": session_id,
-                        "vault_path": vault_ops.vault_path()
+                        "kiln_path": kiln_ops.kiln_path()
                     });
 
                     Ok(ToolResult::success_with_duration(
@@ -37,7 +37,7 @@ pub fn search_by_properties() -> ToolFunction {
                         start_time.elapsed().as_millis() as u64,
                     ))
                 }
-                Err(e) => Err(ToolError::Other(format!("Vault search failed: {}", e))),
+                Err(e) => Err(ToolError::Other(format!("Kiln search failed: {}", e))),
             }
         })
     }
@@ -62,16 +62,16 @@ pub fn search_by_tags() -> ToolFunction {
 
             info!("Searching for files with tags: {:?}", tags);
 
-            // Use real vault operations
-            let vault_ops = RealVaultOperations::new();
-            match vault_ops.search_by_tags(tags).await {
+            // Use real kiln operations
+            let kiln_ops = RealKilnOperations::new();
+            match kiln_ops.search_by_tags(tags).await {
                 Ok(matching_files) => {
                     let result_data = json!({
                         "matching_files": matching_files,
                         "count": matching_files.len(),
                         "user_id": user_id,
                         "session_id": session_id,
-                        "vault_path": vault_ops.vault_path()
+                        "kiln_path": kiln_ops.kiln_path()
                     });
 
                     Ok(ToolResult::success_with_duration(
@@ -104,9 +104,9 @@ pub fn search_by_folder() -> ToolFunction {
 
             info!("Searching in folder: {} (recursive: {})", path, recursive);
 
-            // Use real vault operations
-            let vault_ops = RealVaultOperations::new();
-            match vault_ops.search_by_folder(path, recursive).await {
+            // Use real kiln operations
+            let kiln_ops = RealKilnOperations::new();
+            match kiln_ops.search_by_folder(path, recursive).await {
                 Ok(files) => {
                     let result_data = json!({
                         "files": files,
@@ -115,7 +115,7 @@ pub fn search_by_folder() -> ToolFunction {
                         "count": files.len(),
                         "user_id": user_id,
                         "session_id": session_id,
-                        "vault_path": vault_ops.vault_path()
+                        "kiln_path": kiln_ops.kiln_path()
                     });
 
                     Ok(ToolResult::success_with_duration(
@@ -130,7 +130,7 @@ pub fn search_by_folder() -> ToolFunction {
     }
 }
 
-/// Create a new note in the vault - Phase 2.1 ToolFunction
+/// Create a new note in the kiln - Phase 2.1 ToolFunction
 pub fn create_note() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -214,7 +214,7 @@ pub fn update_note() -> ToolFunction {
     }
 }
 
-/// Delete a note from the vault - Phase 2.1 ToolFunction
+/// Delete a note from the kiln - Phase 2.1 ToolFunction
 pub fn delete_note() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -252,9 +252,9 @@ pub fn get_kiln_stats() -> ToolFunction {
 
             info!("Getting kiln statistics");
 
-            // Use real vault operations
-            let vault_ops = RealVaultOperations::new();
-            match vault_ops.get_kiln_stats().await {
+            // Use real kiln operations
+            let kiln_ops = RealKilnOperations::new();
+            match kiln_ops.get_kiln_stats().await {
                 Ok(mut stats) => {
                     // Add user and session info
                     if let Some(user_id) = user_id {
@@ -279,17 +279,17 @@ pub fn get_kiln_stats() -> ToolFunction {
     }
 }
 
-/// List all tags in the vault - Real Implementation using Phase 1A parsing
+/// List all tags in the kiln - Real Implementation using Phase 1A parsing
 pub fn list_tags() -> ToolFunction {
     |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            info!("Listing all vault tags");
+            info!("Listing all kiln tags");
 
-            // Use real vault operations
-            let vault_ops = RealVaultOperations::new();
-            match vault_ops.list_tags().await {
+            // Use real kiln operations
+            let kiln_ops = RealKilnOperations::new();
+            match kiln_ops.list_tags().await {
                 Ok(mut result_data) => {
                     // Add user and session info
                     if let Some(user_id) = user_id {
@@ -399,7 +399,7 @@ mod tests {
 
         let data = result.data.unwrap();
         assert!(data.get("total_notes").is_some());
-        assert!(data.get("vault_type").is_some());
+        assert!(data.get("kiln_type").is_some());
     }
 
     #[tokio::test]

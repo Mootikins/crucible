@@ -3,7 +3,7 @@
 //! Provides local reranking using ONNX models via the FastEmbed library.
 //! Supports multiple reranker models with different speed/quality trade-offs.
 
-use super::{Reranker, RerankResult, RerankerModelInfo};
+use super::{RerankResult, Reranker, RerankerModelInfo};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use std::path::PathBuf;
@@ -128,7 +128,8 @@ impl FastEmbedReranker {
             let loaded_model = tokio::task::spawn_blocking(move || -> Result<TextRerank> {
                 let mut init_options = RerankInitOptions::default();
                 init_options.model_name = model;
-                init_options.cache_dir = cache_dir.unwrap_or_else(|| PathBuf::from("./.fastembed_cache"));
+                init_options.cache_dir =
+                    cache_dir.unwrap_or_else(|| PathBuf::from("./.fastembed_cache"));
                 init_options.show_download_progress = show_download;
                 init_options.max_length = 512;
 
@@ -176,19 +177,19 @@ impl Reranker for FastEmbedReranker {
         let batch_size = self.config.batch_size;
 
         // Run reranking in blocking thread pool
-        let reranked = tokio::task::spawn_blocking(move || -> Result<Vec<fastembed::RerankResult>> {
-            let mut model_guard = model_arc
-                .blocking_lock();
-            let model = model_guard
-                .as_mut()
-                .ok_or_else(|| anyhow!("Reranker model not loaded"))?;
+        let reranked =
+            tokio::task::spawn_blocking(move || -> Result<Vec<fastembed::RerankResult>> {
+                let mut model_guard = model_arc.blocking_lock();
+                let model = model_guard
+                    .as_mut()
+                    .ok_or_else(|| anyhow!("Reranker model not loaded"))?;
 
-            model
-                .rerank(query_owned, doc_texts, true, batch_size)
-                .map_err(|e| anyhow!("Reranking failed: {}", e))
-        })
-        .await
-        .map_err(|e| anyhow!("Failed to spawn reranking task: {}", e))??;
+                model
+                    .rerank(query_owned, doc_texts, true, batch_size)
+                    .map_err(|e| anyhow!("Reranking failed: {}", e))
+            })
+            .await
+            .map_err(|e| anyhow!("Failed to spawn reranking task: {}", e))??;
 
         // Combine rerank scores with original document data
         let mut results: Vec<RerankResult> = reranked
@@ -206,7 +207,11 @@ impl Reranker for FastEmbedReranker {
             .collect();
 
         // Sort by rerank score (descending - highest relevance first)
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Apply top_n limit if specified
         if let Some(n) = top_n {
@@ -318,10 +323,7 @@ mod tests {
         let config = FastEmbedRerankerConfig::default();
         let reranker = FastEmbedReranker::new(config).unwrap();
 
-        let results = reranker
-            .rerank("test query", vec![], None)
-            .await
-            .unwrap();
+        let results = reranker.rerank("test query", vec![], None).await.unwrap();
 
         assert!(results.is_empty());
     }

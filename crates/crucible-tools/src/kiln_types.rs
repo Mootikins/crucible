@@ -1,6 +1,6 @@
-//! Vault File Types - Phase 1A TDD Implementation
+//! Kiln File Types - Phase 1A TDD Implementation
 //!
-//! This module contains the core data structures for vault file parsing.
+//! This module contains the core data structures for kiln file parsing.
 //! Implemented to make the failing tests pass with minimal functionality.
 
 use chrono::{DateTime, Utc};
@@ -9,10 +9,10 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// Represents a vault file with metadata and content
+/// Represents a kiln file with metadata and content
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VaultFile {
-    /// File path relative to vault root
+pub struct KilnFile {
+    /// File path relative to kiln root
     pub path: PathBuf,
     /// File metadata
     pub metadata: FileMetadata,
@@ -22,7 +22,7 @@ pub struct VaultFile {
     pub hash: String,
 }
 
-/// Metadata extracted from vault files
+/// Metadata extracted from kiln files
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileMetadata {
     /// Title extracted from filename or first heading
@@ -83,10 +83,10 @@ impl Default for FileMetadata {
     }
 }
 
-/// Vault-specific error types
-/// Errors that can occur during vault operations
+/// Kiln-specific error types
+/// Errors that can occur during kiln operations
 #[derive(Debug, thiserror::Error)]
-pub enum VaultError {
+pub enum KilnError {
     /// File not found at the specified path
     #[error("File not found: {0}")]
     FileNotFound(String),
@@ -112,11 +112,11 @@ pub enum VaultError {
     InvalidPath(String),
 }
 
-/// Result type for vault operations
-pub type VaultResult<T> = Result<T, VaultError>;
+/// Result type for kiln operations
+pub type KilnResult<T> = Result<T, KilnError>;
 
-impl VaultFile {
-    /// Create a new vault file
+impl KilnFile {
+    /// Create a new kiln file
     pub fn new(path: PathBuf, content: String, hash: String) -> Self {
         let size = content.len() as u64;
         let mut metadata = FileMetadata::new();

@@ -26,7 +26,7 @@ These options are available with all commands:
 | Option | Short | Long | Description |
 |--------|-------|------|-------------|
 | Config File | `-C` | `--config <path>` | Config file path (default: ~/.config/crucible/config.toml) |
-| Vault Path | `-p` | `--vault-path <path>` | Vault path (overrides config file) |
+| Kiln Path | `-p` | `--kiln-path <path>` | Kiln path (overrides config file) |
 | Embedding URL | | `--embedding-url <url>` | Embedding service URL (overrides config) |
 | Embedding Model | | `--embedding-model <model>` | Embedding model name (overrides config) |
 | Database Path | | `--db-path <path>` | Database path to use (overrides config) |
@@ -70,7 +70,7 @@ Once in the REPL, you can use these built-in commands:
 | `:tools` | List available tools |
 | `:run <tool> [args...]` | Execute a tool |
 | `:rune <script> [args...]` | Run a Rune script |
-| `:stats` | Show vault statistics |
+| `:stats` | Show kiln statistics |
 | `:config` | Display configuration |
 | `:log <level>` | Set log level (trace|debug|info|warn|error) |
 | `:format <fmt>` | Set output format (table|json|csv) |
@@ -318,7 +318,7 @@ crucible-cli note update project.md -p '{
 
 #### `note list` - List Notes
 
-**Description**: List all notes in the vault
+**Description**: List all notes in the kiln
 
 **Usage**:
 ```bash
@@ -342,11 +342,11 @@ crucible-cli note list --format json | jq '.[] | select(.tags | contains(["#proj
 crucible-cli note list --format plain
 ```
 
-### Vault Operations
+### Kiln Operations
 
-#### `index` - Index Vault
+#### `index` - Index Kiln
 
-**Description**: Index vault for search and embeddings
+**Description**: Index kiln for search and embeddings
 
 **Usage**:
 ```bash
@@ -361,11 +361,11 @@ crucible-cli index [path] [options]
 
 **Examples**:
 ```bash
-# Index current vault
+# Index current kiln
 crucible-cli index
 
 # Index specific path
-crucible-cli index ~/Documents/vault
+crucible-cli index ~/Documents/kiln
 
 # Force re-indexing
 crucible-cli index --force
@@ -377,9 +377,9 @@ crucible-cli index --glob "**/*.md" --glob "**/*.txt"
 crucible-cli index --glob "notes/**/*.md"
 ```
 
-#### `stats` - Vault Statistics
+#### `stats` - Kiln Statistics
 
-**Description**: Display comprehensive vault statistics
+**Description**: Display comprehensive kiln statistics
 
 **Usage**:
 ```bash
@@ -388,7 +388,7 @@ crucible-cli stats
 
 **Examples**:
 ```bash
-# Show vault statistics
+# Show kiln statistics
 crucible-cli stats
 
 # Export statistics as JSON
@@ -398,7 +398,7 @@ crucible-cli stats --format json | jq '.total_notes'
 **Output includes**:
 - Total number of notes
 - Notes with embeddings
-- Vault size
+- Kiln size
 - Last indexed date
 - Database statistics
 - Tag distribution
@@ -562,7 +562,7 @@ crucible-cli config show
 crucible-cli config show --format json
 
 # Export specific section
-crucible-cli config show --format json | jq '.vault'
+crucible-cli config show --format json | jq '.kiln'
 ```
 
 ## Service Management Commands
@@ -1080,14 +1080,14 @@ The CLI uses a hierarchical configuration system:
 
 1. **Defaults**: Built-in sensible defaults
 2. **Config File**: `~/.config/crucible/config.toml`
-3. **Environment Variables**: `CRUCIBLE_VAULT_PATH`, etc.
+3. **Environment Variables**: `CRUCIBLE_KILN_PATH`, etc.
 4. **Command Line Arguments**: Highest priority
 
 ### Sample Configuration
 
 ```toml
-[vault]
-path = "~/Documents/vault"
+[kiln]
+path = "~/Documents/kiln"
 
 [llm]
 provider = "ollama"

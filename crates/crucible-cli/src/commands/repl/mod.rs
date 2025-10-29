@@ -257,7 +257,7 @@ impl Repl {
                     self.show_help(None);
                     Ok(())
                 }
-            }
+            },
             Command::ShowHistory(limit) => {
                 self.show_history(limit);
                 Ok(())
@@ -455,7 +455,11 @@ impl Repl {
                     let clean_msg = err_str
                         .strip_prefix("Parameter conversion failed: ")
                         .unwrap_or(&err_str);
-                    eprintln!("\n{} {}\n", "❌ Tool Execution Failed:".red().bold(), clean_msg);
+                    eprintln!(
+                        "\n{} {}\n",
+                        "❌ Tool Execution Failed:".red().bold(),
+                        clean_msg
+                    );
                 } else {
                     eprintln!("\n{} {}\n", "❌ Tool Error:".red(), err_str);
                 }
@@ -747,7 +751,11 @@ fn format_tool_schema(schema: &tools::ToolSchema) -> String {
     output.push_str(&format!("{}\n", bottom_border.cyan()));
 
     // Parameters section
-    if let Some(properties) = schema.input_schema.get("properties").and_then(|p| p.as_object()) {
+    if let Some(properties) = schema
+        .input_schema
+        .get("properties")
+        .and_then(|p| p.as_object())
+    {
         output.push_str(&format!("\n{}:\n", "Parameters".bold().green()));
 
         // Get required fields

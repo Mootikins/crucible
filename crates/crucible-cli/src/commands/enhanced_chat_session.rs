@@ -106,7 +106,7 @@ impl EnhancedChatSession {
 
         // Add kiln paths for agent discovery
         if let Ok(kiln_path) = config.kiln_path_str() {
-            agent_registry.add_vault_path(std::path::Path::new(&kiln_path));
+            agent_registry.add_kiln_path(std::path::Path::new(&kiln_path));
         }
 
         // Load agents

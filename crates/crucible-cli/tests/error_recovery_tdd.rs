@@ -66,10 +66,7 @@ embedding_url = "http://localhost:11434
     let result = CliConfig::from_file_or_default(Some(config_path));
 
     // Should fail with TOML parse error
-    assert!(
-        result.is_err(),
-        "Should fail to parse invalid TOML"
-    );
+    assert!(result.is_err(), "Should fail to parse invalid TOML");
 
     let error_msg = result.unwrap_err().to_string();
     assert!(
@@ -83,7 +80,7 @@ embedding_url = "http://localhost:11434
 
 #[test]
 fn test_config_with_invalid_kiln_path() -> Result<()> {
-    // Test: Config with non-existent vault path should be created but operations should fail gracefully
+    // Test: Config with non-existent kiln path should be created but operations should fail gracefully
     let temp_dir = TempDir::new()?;
     let config_path = temp_dir.path().join("config.toml");
 
@@ -91,7 +88,7 @@ fn test_config_with_invalid_kiln_path() -> Result<()> {
         &config_path,
         r#"
 [kiln]
-path = "/nonexistent/vault/path"
+path = "/nonexistent/kiln/path"
 embedding_url = "http://localhost:11434"
 "#,
     )?;
@@ -100,7 +97,7 @@ embedding_url = "http://localhost:11434"
     let config = CliConfig::from_file_or_default(Some(config_path))?;
 
     // Verify the path is set (even though it doesn't exist)
-    assert_eq!(config.kiln.path.to_string_lossy(), "/nonexistent/vault/path");
+    assert_eq!(config.kiln.path.to_string_lossy(), "/nonexistent/kiln/path");
 
     // Operations using this config should fail gracefully
     // (tested in other integration tests)
@@ -142,7 +139,7 @@ fn test_config_with_partial_sections() -> Result<()> {
         &config_path,
         r#"
 [kiln]
-path = "/tmp/vault"
+path = "/tmp/kiln"
 
 [llm]
 chat_model = "custom-model"
@@ -170,13 +167,13 @@ chat_model = "custom-model"
 
 #[test]
 fn test_kiln_path_validation_nonexistent() -> Result<()> {
-    // Test: Accessing non-existent vault path should fail clearly
+    // Test: Accessing non-existent kiln path should fail clearly
     let mut config = CliConfig::default();
-    config.kiln.path = PathBuf::from("/definitely/does/not/exist/vault");
+    config.kiln.path = PathBuf::from("/definitely/does/not/exist/kiln");
 
     // Config is valid, but path doesn't exist
     let kiln_str = config.kiln_path_str()?;
-    assert_eq!(kiln_str, "/definitely/does/not/exist/vault");
+    assert_eq!(kiln_str, "/definitely/does/not/exist/kiln");
 
     // Attempting to use this path should fail (tested in integration tests)
     Ok(())
@@ -184,26 +181,26 @@ fn test_kiln_path_validation_nonexistent() -> Result<()> {
 
 #[test]
 fn test_kiln_path_with_special_characters() -> Result<()> {
-    // Test: Vault paths with special characters should be handled
+    // Test: Kiln paths with special characters should be handled
     let temp_dir = TempDir::new()?;
-    let special_dir = temp_dir.path().join("vault with spaces");
+    let special_dir = temp_dir.path().join("kiln with spaces");
     fs::create_dir(&special_dir)?;
 
     let mut config = CliConfig::default();
     config.kiln.path = special_dir.clone();
 
     let kiln_str = config.kiln_path_str()?;
-    assert!(kiln_str.contains("vault with spaces"));
+    assert!(kiln_str.contains("kiln with spaces"));
 
     Ok(())
 }
 
 #[test]
 fn test_kiln_path_symlink_handling() -> Result<()> {
-    // Test: Vault path can be a symlink
+    // Test: Kiln path can be a symlink
     let temp_dir = TempDir::new()?;
-    let real_dir = temp_dir.path().join("real_vault");
-    let symlink_dir = temp_dir.path().join("symlink_vault");
+    let real_dir = temp_dir.path().join("real_kiln");
+    let symlink_dir = temp_dir.path().join("symlink_kiln");
 
     fs::create_dir(&real_dir)?;
     #[cfg(unix)]
@@ -216,7 +213,7 @@ fn test_kiln_path_symlink_handling() -> Result<()> {
 
         // Should accept symlink path
         let kiln_str = config.kiln_path_str()?;
-        assert!(kiln_str.contains("symlink_vault"));
+        assert!(kiln_str.contains("symlink_kiln"));
     }
 
     Ok(())
@@ -272,7 +269,11 @@ fn test_search_with_empty_query_handling() {
     assert_eq!(query.len(), 0, "Empty query should be detectable");
 
     let query = "   ";
-    assert_eq!(query.trim().len(), 0, "Whitespace-only query should be detectable");
+    assert_eq!(
+        query.trim().len(),
+        0,
+        "Whitespace-only query should be detectable"
+    );
 }
 
 #[test]
@@ -304,10 +305,7 @@ fn test_error_display_messages() {
 
     let timeout_error = EmbeddingError::Timeout { timeout_secs: 30 };
     let msg = timeout_error.to_string();
-    assert!(
-        msg.contains("30"),
-        "Timeout error should mention duration"
-    );
+    assert!(msg.contains("30"), "Timeout error should mention duration");
     assert!(
         msg.to_lowercase().contains("timeout") || msg.to_lowercase().contains("timed out"),
         "Error should mention timeout"
@@ -406,7 +404,7 @@ fn test_partial_config_merging() -> Result<()> {
         &config_path,
         r#"
 [kiln]
-path = "/tmp/vault"
+path = "/tmp/kiln"
 
 [llm]
 temperature = 0.9
@@ -567,7 +565,7 @@ fn test_environment_variable_handling() -> Result<()> {
     // This is a documentation test of expected behavior
 
     // Save original env vars
-    let orig_vault = std::env::var("CRUCIBLE_KILN_PATH").ok();
+    let orig_kiln = std::env::var("CRUCIBLE_KILN_PATH").ok();
     let orig_db = std::env::var("CRUCIBLE_DATABASE_URL").ok();
 
     // Test with missing env vars
@@ -577,12 +575,12 @@ fn test_environment_variable_handling() -> Result<()> {
     let config = CliConfig::default();
 
     // Should work with defaults (kiln_path_str may fail if path is invalid, which is OK)
-    let _ = config.kiln_path_str();  // Just test it doesn't panic
+    let _ = config.kiln_path_str(); // Just test it doesn't panic
     let db_path = config.database_path();
     assert!(db_path != PathBuf::new());
 
     // Restore env vars
-    if let Some(val) = orig_vault {
+    if let Some(val) = orig_kiln {
         std::env::set_var("CRUCIBLE_KILN_PATH", val);
     }
     if let Some(val) = orig_db {
@@ -653,11 +651,11 @@ path = "/valid/path"
 
 #[tokio::test]
 async fn test_search_command_with_invalid_kiln_path() {
-    // Test: search command should handle non-existent vault path gracefully
+    // Test: search command should handle non-existent kiln path gracefully
     use crucible_cli::commands::search;
 
     let mut config = CliConfig::default();
-    config.kiln.path = PathBuf::from("/definitely/does/not/exist/vault");
+    config.kiln.path = PathBuf::from("/definitely/does/not/exist/kiln");
 
     // This should fail gracefully with a helpful error message
     let result = search::execute(
@@ -671,7 +669,7 @@ async fn test_search_command_with_invalid_kiln_path() {
 
     assert!(
         result.is_err(),
-        "Search should fail when vault path doesn't exist"
+        "Search should fail when kiln path doesn't exist"
     );
 
     let error = result.unwrap_err();
@@ -680,7 +678,7 @@ async fn test_search_command_with_invalid_kiln_path() {
     // Should provide helpful error message mentioning the path issue
     assert!(
         error_msg.contains("kiln")
-            || error_msg.contains("vault")
+            || error_msg.contains("kiln")
             || error_msg.contains("path")
             || error_msg.contains("not found")
             || error_msg.contains("does not exist"),

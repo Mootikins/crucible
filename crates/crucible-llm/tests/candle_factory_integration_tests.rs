@@ -169,7 +169,8 @@ async fn test_factory_candle_from_env() {
 async fn test_factory_candle_vs_other_providers() {
     // Test that factory correctly routes to different providers
 
-    let candle_config = EmbeddingConfig::candle(Some("all-MiniLM-L6-v2".to_string()), None, None, None);
+    let candle_config =
+        EmbeddingConfig::candle(Some("all-MiniLM-L6-v2".to_string()), None, None, None);
     let candle_provider = create_provider(candle_config).await.unwrap();
     assert_eq!(candle_provider.provider_name(), "Candle");
 

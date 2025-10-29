@@ -187,7 +187,7 @@ pub enum FrontmatterFormat {
 
 /// Wikilink reference [[target|alias]]
 ///
-/// Represents a link to another note in the vault.
+/// Represents a link to another note in the kiln.
 /// Supports both simple [[target]] and aliased [[target|alias]] forms,
 /// as well as embeds ![[target]].
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

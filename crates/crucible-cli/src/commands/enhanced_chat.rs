@@ -452,9 +452,9 @@ impl EnhancedAgentRegistry {
         }
     }
 
-    /// Add vault path for agent card discovery
-    pub fn add_vault_path<P: AsRef<std::path::Path>>(&mut self, path: P) {
-        self.card_registry.add_vault_path(path);
+    /// Add kiln path for agent card discovery
+    pub fn add_kiln_path<P: AsRef<std::path::Path>>(&mut self, path: P) {
+        self.card_registry.add_kiln_path(path);
     }
 
     /// Load agents from both systems

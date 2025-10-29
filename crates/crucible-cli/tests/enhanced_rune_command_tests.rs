@@ -169,7 +169,10 @@ pub fn main(first, second) {
         .execute_tool("combine", &["foo".to_string(), "bar".to_string()])
         .await?;
 
-    assert!(result.is_success(), "Script with multiple args should succeed");
+    assert!(
+        result.is_success(),
+        "Script with multiple args should succeed"
+    );
     assert!(result.output.contains("foo"), "Should contain first arg");
     assert!(result.output.contains("bar"), "Should contain second arg");
 
@@ -318,10 +321,7 @@ async fn test_rune_discover_empty_directory() -> Result<()> {
     let tools = registry.discover_tools().await?;
 
     // Should return empty list for empty directory
-    assert!(
-        tools.is_empty(),
-        "Empty directory should have no tools"
-    );
+    assert!(tools.is_empty(), "Empty directory should have no tools");
 
     Ok(())
 }
@@ -438,12 +438,7 @@ pub fn main() {
     let script_path = context.create_script("cli_test", script_content)?;
 
     // Execute via CLI command (simplified execution)
-    let result = rune::execute(
-        config,
-        script_path.to_string_lossy().to_string(),
-        None,
-    )
-    .await;
+    let result = rune::execute(config, script_path.to_string_lossy().to_string(), None).await;
 
     // In Phase 2, execute() does basic validation, not full execution
     assert!(result.is_ok(), "CLI execute should succeed");

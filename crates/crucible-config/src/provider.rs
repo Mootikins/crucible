@@ -194,7 +194,9 @@ impl EmbeddingProviderConfig {
 
     /// Get the endpoint URL for this provider.
     pub fn endpoint(&self) -> String {
-        self.api.base_url.clone()
+        self.api
+            .base_url
+            .clone()
             .or_else(|| self.provider_type.default_base_url())
             .unwrap_or_else(|| "http://localhost:11434".to_string())
     }
@@ -264,7 +266,10 @@ pub enum EmbeddingProviderType {
 impl EmbeddingProviderType {
     /// Check if this provider type requires an API key.
     pub fn requires_api_key(&self) -> bool {
-        !matches!(self, Self::Ollama | Self::Candle | Self::FastEmbed | Self::Mock)
+        !matches!(
+            self,
+            Self::Ollama | Self::Candle | Self::FastEmbed | Self::Mock
+        )
     }
 
     /// Get the default base URL for the provider.

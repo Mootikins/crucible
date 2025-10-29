@@ -1,7 +1,7 @@
 //! Semantic search commands for CLI with real vector search integration
 //!
 //! This module provides CLI commands for semantic search using real vector similarity
-//! search from Phase 2.1. Integrates with vault_integration::semantic_search()
+//! search from Phase 2.1. Integrates with kiln_integration::semantic_search()
 //! instead of using mock tool execution.
 
 use crate::config::CliConfig;
@@ -10,9 +10,9 @@ use anyhow::Result;
 use crucible_config::{ApiConfig, EmbeddingProviderConfig, EmbeddingProviderType, ModelConfig};
 use crucible_surrealdb::{
     embedding_pool::{create_embedding_thread_pool_with_crucible_config, EmbeddingThreadPool},
-    vault_integration::{get_database_stats, retrieve_parsed_document},
-    vault_processor::{process_vault_delta, process_vault_files, scan_vault_directory},
-    vault_scanner::{create_vault_scanner, VaultScannerConfig, VaultProcessResult},
+    kiln_integration::{get_database_stats, retrieve_parsed_document},
+    kiln_processor::{process_kiln_delta, process_kiln_files, scan_kiln_directory},
+    kiln_scanner::{create_kiln_scanner, KilnProcessResult, KilnScannerConfig},
     EmbeddingConfig, SurrealClient, SurrealDbConfig,
 };
 use indicatif::{ProgressBar, ProgressStyle};
@@ -46,7 +46,7 @@ pub async fn execute(
     // Initialize database connection
     let db_config = SurrealDbConfig {
         namespace: "crucible".to_string(),
-        database: "vault".to_string(),
+        database: "kiln".to_string(),
         path: config.database_path_str()?,
         max_connections: Some(10),
         timeout_seconds: Some(30),
@@ -59,7 +59,10 @@ pub async fn execute(
         }
         Err(e) => {
             pb.finish_with_message("Database connection failed");
-            let error_msg = format!("Failed to connect to kiln database: {}. Make sure your kiln has been processed.", e);
+            let error_msg = format!(
+                "Failed to connect to kiln database: {}. Make sure your kiln has been processed.",
+                e
+            );
             if format == "json" {
                 let json_error = json!({
                     "error": true,
@@ -95,8 +98,8 @@ pub async fn execute(
             println!("🚀 Starting kiln processing...\n");
         }
 
-        // Process vault synchronously (daemon handles background processing)
-        match process_vault_integrated(&client, &config.kiln.path, &pb, &config).await {
+        // Process kiln synchronously (daemon handles background processing)
+        match process_kiln_integrated(&client, &config.kiln.path, &pb, &config).await {
             Ok(process_result) => {
                 if format != "json" {
                     println!("✅ Processing completed successfully");
@@ -156,14 +159,17 @@ pub async fn execute(
     } else {
         eprintln!("DEBUG SEMANTIC: Taking DELTA processing path (embeddings exist)");
         // Embeddings exist - use delta processing for any changed files
-        pb.set_message("Checking for vault changes...");
+        pb.set_message("Checking for kiln changes...");
 
-        eprintln!("DEBUG SEMANTIC: About to call process_vault_delta_if_needed");
-        match process_vault_delta_if_needed(&client, &config.kiln.path, &pb, &config).await {
+        eprintln!("DEBUG SEMANTIC: About to call process_kiln_delta_if_needed");
+        match process_kiln_delta_if_needed(&client, &config.kiln.path, &pb, &config).await {
             Ok(delta_result) => {
                 if delta_result.processed_count > 0 {
                     if format != "json" {
-                        println!("🔄 Detected {} changed files, updated embeddings", delta_result.processed_count);
+                        println!(
+                            "🔄 Detected {} changed files, updated embeddings",
+                            delta_result.processed_count
+                        );
                     }
                     pb.set_message("Embeddings updated, performing semantic search...");
                 } else {
@@ -173,7 +179,10 @@ pub async fn execute(
             Err(e) => {
                 // Delta processing failed - log but continue with search
                 // The embeddings that exist should still be valid
-                eprintln!("⚠️  Delta processing check failed (continuing with existing data): {}", e);
+                eprintln!(
+                    "⚠️  Delta processing check failed (continuing with existing data): {}",
+                    e
+                );
                 pb.set_message("Performing semantic search with existing data...");
             }
         }
@@ -183,7 +192,10 @@ pub async fn execute(
     eprintln!("DEBUG: Creating embedding provider for query embeddings");
     let embedding_provider = match create_embedding_provider_from_cli_config(&config).await {
         Ok(provider) => {
-            eprintln!("DEBUG: Created embedding provider: {}", provider.provider_name());
+            eprintln!(
+                "DEBUG: Created embedding provider: {}",
+                provider.provider_name()
+            );
             provider
         }
         Err(e) => {
@@ -225,12 +237,15 @@ pub async fn execute(
         pb.set_message("Performing semantic search with reranking...");
         eprintln!("DEBUG: About to call semantic_search_with_reranking with initial_limit={}, final_limit={}", initial_limit, final_limit);
     } else {
-        eprintln!("DEBUG: Reranker is None, calling with both limits={}", initial_limit);
+        eprintln!(
+            "DEBUG: Reranker is None, calling with both limits={}",
+            initial_limit
+        );
     }
 
     // Perform semantic search with optional reranking
     eprintln!("DEBUG: Calling semantic_search_with_reranking NOW");
-    let search_results = match crucible_surrealdb::vault_integration::semantic_search_with_reranking(
+    let search_results = match crucible_surrealdb::kiln_integration::semantic_search_with_reranking(
         &client,
         &query,
         initial_limit,
@@ -288,7 +303,7 @@ pub async fn execute(
             println!("   • There was an issue during processing");
             println!("\n💡 If you believe there should be results, try:");
             println!("   • Running semantic search again to trigger re-processing");
-            println!("   • Checking that OBSIDIAN_VAULT_PATH points to the correct kiln");
+            println!("   • Checking that OBSIDIAN_KILN_PATH points to the correct kiln");
         }
         return Ok(());
     }
@@ -358,7 +373,7 @@ async fn convert_vector_search_results(
     let mut cli_results = Vec::new();
 
     for (document_id, similarity_score) in search_results {
-        // Retrieve document details from database using vault_integration
+        // Retrieve document details from database using kiln_integration
         match retrieve_parsed_document(client, &document_id).await {
             Ok(parsed_document) => {
                 // Extract title and content from the parsed document
@@ -430,30 +445,30 @@ async fn check_embeddings_exist(client: &SurrealClient) -> Result<bool> {
 }
 
 /// Process kiln using integrated functionality (no external daemon)
-async fn process_vault_integrated(
+async fn process_kiln_integrated(
     client: &SurrealClient,
-    vault_path: &std::path::Path,
+    kiln_path: &std::path::Path,
     pb: &ProgressBar,
     config: &CliConfig,
-) -> Result<crucible_surrealdb::vault_scanner::VaultProcessResult> {
+) -> Result<crucible_surrealdb::kiln_scanner::KilnProcessResult> {
     // Validate kiln path exists
-    if !vault_path.exists() {
+    if !kiln_path.exists() {
         return Err(anyhow::anyhow!(
             "Kiln path '{}' does not exist or is not accessible",
-            vault_path.display()
+            kiln_path.display()
         ));
     }
 
     // Initialize database schema (tables, indexes, etc.)
     pb.set_message("Initializing database schema...");
-    crucible_surrealdb::vault_integration::initialize_vault_schema(client)
+    crucible_surrealdb::kiln_integration::initialize_kiln_schema(client)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to initialize database schema: {}", e))?;
 
     pb.set_message("Scanning kiln directory...");
 
     // Create kiln scanner configuration
-    let scanner_config = VaultScannerConfig {
+    let scanner_config = KilnScannerConfig {
         max_file_size_bytes: 50 * 1024 * 1024, // 50MB
         max_recursion_depth: 10,
         recursive_scan: true,
@@ -470,8 +485,8 @@ async fn process_vault_integrated(
         enable_incremental: false, // Process all files for simplicity
         track_file_changes: true,
         change_detection_method:
-            crucible_surrealdb::vault_scanner::ChangeDetectionMethod::ContentHash,
-        error_handling_mode: crucible_surrealdb::vault_scanner::ErrorHandlingMode::ContinueOnError,
+            crucible_surrealdb::kiln_scanner::ChangeDetectionMethod::ContentHash,
+        error_handling_mode: crucible_surrealdb::kiln_scanner::ErrorHandlingMode::ContinueOnError,
         max_error_count: 100,
         error_retry_attempts: 3,
         error_retry_delay_ms: 500,
@@ -483,39 +498,50 @@ async fn process_vault_integrated(
     };
 
     // Create kiln scanner and scan directory
-    let mut scanner = create_vault_scanner(scanner_config.clone())
+    let mut scanner = create_kiln_scanner(scanner_config.clone())
         .await
         .map_err(|e| anyhow::anyhow!("Failed to create kiln scanner: {}", e))?;
 
     pb.set_message("Discovering files to process...");
 
-    let vault_path_buf = PathBuf::from(vault_path);
+    let kiln_path_buf = PathBuf::from(kiln_path);
 
-    // DEBUG: Log the vault path being scanned
-    eprintln!("DEBUG: Scanning vault path: {:?}", vault_path_buf);
-    eprintln!("DEBUG: Path exists: {}", vault_path_buf.exists());
-    eprintln!("DEBUG: Is directory: {}", vault_path_buf.is_dir());
+    // DEBUG: Log the kiln path being scanned
+    eprintln!("DEBUG: Scanning kiln path: {:?}", kiln_path_buf);
+    eprintln!("DEBUG: Path exists: {}", kiln_path_buf.exists());
+    eprintln!("DEBUG: Is directory: {}", kiln_path_buf.is_dir());
 
     let scan_result = scanner
-        .scan_vault_directory(&vault_path_buf)
+        .scan_kiln_directory(&kiln_path_buf)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to scan kiln directory: {}", e))?;
 
     // DEBUG: Log scan results
-    eprintln!("DEBUG: Total files found: {}", scan_result.total_files_found);
-    eprintln!("DEBUG: Markdown files found: {}", scan_result.markdown_files_found);
-    eprintln!("DEBUG: Discovered files count: {}", scan_result.discovered_files.len());
+    eprintln!(
+        "DEBUG: Total files found: {}",
+        scan_result.total_files_found
+    );
+    eprintln!(
+        "DEBUG: Markdown files found: {}",
+        scan_result.markdown_files_found
+    );
+    eprintln!(
+        "DEBUG: Discovered files count: {}",
+        scan_result.discovered_files.len()
+    );
     eprintln!("DEBUG: Scan errors: {}", scan_result.scan_errors.len());
 
     for (i, file) in scan_result.discovered_files.iter().enumerate().take(5) {
-        eprintln!("DEBUG: File {}: {:?} (markdown={}, accessible={})",
-                  i, file.path, file.is_markdown, file.is_accessible);
+        eprintln!(
+            "DEBUG: File {}: {:?} (markdown={}, accessible={})",
+            i, file.path, file.is_markdown, file.is_accessible
+        );
     }
 
     if scan_result.discovered_files.is_empty() {
         return Err(anyhow::anyhow!(
             "No markdown files found in kiln directory: {}",
-            vault_path.display()
+            kiln_path.display()
         ));
     }
 
@@ -529,12 +555,12 @@ async fn process_vault_integrated(
     // Process files with integrated pipeline
     pb.set_message("Processing files and generating embeddings...");
 
-    let process_result = process_vault_files(
+    let process_result = process_kiln_files(
         &scan_result.discovered_files,
         client,
         &scanner_config,
         Some(&embedding_pool),
-        vault_path,
+        kiln_path,
     )
     .await
     .map_err(|e| anyhow::anyhow!("Failed to process kiln files: {}", e))?;
@@ -584,9 +610,9 @@ async fn create_embedding_provider_from_cli_config(
         .map_err(|e| anyhow::anyhow!("Failed to create embedding provider: {}", e))
 }
 
-/// Process vault using delta processing to only update changed files
+/// Process kiln using delta processing to only update changed files
 ///
-/// This function scans the vault directory and uses hash comparison to identify
+/// This function scans the kiln directory and uses hash comparison to identify
 /// which files have changed since last processing. Only changed files are reprocessed,
 /// which significantly improves performance for subsequent searches.
 ///
@@ -594,39 +620,39 @@ async fn create_embedding_provider_from_cli_config(
 /// - Single file change: ≤1 second
 ///
 /// # Process Flow
-/// 1. Scan vault directory to discover all files
-/// 2. Use process_vault_delta to detect changes via hash comparison
+/// 1. Scan kiln directory to discover all files
+/// 2. Use process_kiln_delta to detect changes via hash comparison
 /// 3. Only reprocess files that have actually changed
 /// 4. Return processing statistics
 ///
 /// # Arguments
 /// * `client` - SurrealDB client connection
-/// * `vault_path` - Path to the vault directory
+/// * `kiln_path` - Path to the kiln directory
 /// * `pb` - Progress bar for user feedback
 /// * `config` - CLI configuration
 ///
 /// # Returns
-/// VaultProcessResult with processing statistics (0 processed if no changes)
-async fn process_vault_delta_if_needed(
+/// KilnProcessResult with processing statistics (0 processed if no changes)
+async fn process_kiln_delta_if_needed(
     client: &SurrealClient,
-    vault_path: &std::path::Path,
+    kiln_path: &std::path::Path,
     pb: &ProgressBar,
     config: &CliConfig,
-) -> Result<VaultProcessResult> {
-    eprintln!("DEBUG DELTA: Entered process_vault_delta_if_needed");
+) -> Result<KilnProcessResult> {
+    eprintln!("DEBUG DELTA: Entered process_kiln_delta_if_needed");
 
     // Validate kiln path exists
-    if !vault_path.exists() {
+    if !kiln_path.exists() {
         return Err(anyhow::anyhow!(
             "Kiln path '{}' does not exist or is not accessible",
-            vault_path.display()
+            kiln_path.display()
         ));
     }
 
     pb.set_message("Scanning kiln for changes...");
 
     // Create kiln scanner configuration
-    let scanner_config = VaultScannerConfig {
+    let scanner_config = KilnScannerConfig {
         max_file_size_bytes: 50 * 1024 * 1024, // 50MB
         max_recursion_depth: 10,
         recursive_scan: true,
@@ -643,8 +669,8 @@ async fn process_vault_delta_if_needed(
         enable_incremental: true, // Enable incremental for delta processing
         track_file_changes: true,
         change_detection_method:
-            crucible_surrealdb::vault_scanner::ChangeDetectionMethod::ContentHash,
-        error_handling_mode: crucible_surrealdb::vault_scanner::ErrorHandlingMode::ContinueOnError,
+            crucible_surrealdb::kiln_scanner::ChangeDetectionMethod::ContentHash,
+        error_handling_mode: crucible_surrealdb::kiln_scanner::ErrorHandlingMode::ContinueOnError,
         max_error_count: 100,
         error_retry_attempts: 3,
         error_retry_delay_ms: 500,
@@ -655,20 +681,18 @@ async fn process_vault_delta_if_needed(
         processing_timeout_ms: 30000,
     };
 
-    // Scan vault directory to discover all files
-    let vault_path_buf = PathBuf::from(vault_path);
-    let mut discovered_files = scan_vault_directory(&vault_path_buf, &scanner_config)
+    // Scan kiln directory to discover all files
+    let kiln_path_buf = PathBuf::from(kiln_path);
+    let mut discovered_files = scan_kiln_directory(&kiln_path_buf, &scanner_config)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to scan kiln directory: {}", e))?;
 
     // Filter out .crucible directory files (database, internal files)
-    discovered_files.retain(|f| {
-        !f.path.components().any(|c| c.as_os_str() == ".crucible")
-    });
+    discovered_files.retain(|f| !f.path.components().any(|c| c.as_os_str() == ".crucible"));
 
     if discovered_files.is_empty() {
         pb.set_message("No markdown files found in kiln");
-        return Ok(VaultProcessResult {
+        return Ok(KilnProcessResult {
             processed_count: 0,
             failed_count: 0,
             errors: Vec::new(),
@@ -690,15 +714,15 @@ async fn process_vault_delta_if_needed(
     pb.set_message("Processing changed files...");
 
     // Use delta processing - will detect changes and only process what changed
-    let process_result = process_vault_delta(
+    let process_result = process_kiln_delta(
         file_paths,
         client,
         &scanner_config,
         Some(&embedding_pool),
-        vault_path,
+        kiln_path,
     )
     .await
-    .map_err(|e| anyhow::anyhow!("Failed to process vault delta: {}", e))?;
+    .map_err(|e| anyhow::anyhow!("Failed to process kiln delta: {}", e))?;
 
     pb.set_message("Delta processing completed");
 
@@ -719,10 +743,7 @@ async fn create_reranker_from_config(
         return Ok(None);
     }
 
-    let provider = reranking_config
-        .provider
-        .as_deref()
-        .unwrap_or("fastembed");
+    let provider = reranking_config.provider.as_deref().unwrap_or("fastembed");
 
     match provider {
         "fastembed" => {
@@ -739,7 +760,9 @@ async fn create_reranker_from_config(
                 "bge-reranker-base" => RerankerModel::BGERerankerBase,
                 "bge-reranker-v2-m3" => RerankerModel::BGERerankerV2M3,
                 "jina-reranker-v1-turbo-en" => RerankerModel::JINARerankerV1TurboEn,
-                "jina-reranker-v2-base-multilingual" => RerankerModel::JINARerankerV2BaseMultiligual,
+                "jina-reranker-v2-base-multilingual" => {
+                    RerankerModel::JINARerankerV2BaseMultiligual
+                }
                 _ => {
                     eprintln!(
                         "⚠️  Unknown reranker model '{}', using default bge-reranker-base",
@@ -765,7 +788,9 @@ async fn create_reranker_from_config(
             }
 
             let reranker = FastEmbedReranker::new(reranker_config)?;
-            Ok(Some(std::sync::Arc::new(reranker) as std::sync::Arc<dyn crucible_llm::Reranker>))
+            Ok(Some(
+                std::sync::Arc::new(reranker) as std::sync::Arc<dyn crucible_llm::Reranker>
+            ))
         }
         _ => {
             eprintln!(

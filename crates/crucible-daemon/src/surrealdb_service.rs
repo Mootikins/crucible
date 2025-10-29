@@ -320,7 +320,7 @@ pub async fn create_surrealdb_from_config(
             connection_parts[connection_parts.len() - 1].to_string(),
         )
     } else {
-        ("crucible".to_string(), "vault".to_string())
+        ("crucible".to_string(), "kiln".to_string())
     };
 
     let surreal_config = SurrealDbConfig {

@@ -22,18 +22,18 @@ use crucible_watch::{
     EventProcessorMetrics,
 };
 
-/// Test vault structure for embedding integration tests
-struct TestVault {
+/// Test kiln structure for embedding integration tests
+struct TestKiln {
     temp_dir: TempDir,
-    vault_path: PathBuf,
+    kiln_path: PathBuf,
     documents_path: PathBuf,
 }
 
-impl TestVault {
+impl TestKiln {
     async fn new() -> Result<Self> {
         let temp_dir = TempDir::new().map_err(|e| Error::Io(e))?;
-        let vault_path = temp_dir.path().to_path_buf();
-        let documents_path = vault_path.join("documents");
+        let kiln_path = temp_dir.path().to_path_buf();
+        let documents_path = kiln_path.join("documents");
 
         // Create directory structure
         tokio::fs::create_dir_all(&documents_path)
@@ -42,7 +42,7 @@ impl TestVault {
 
         Ok(Self {
             temp_dir,
-            vault_path,
+            kiln_path,
             documents_path,
         })
     }
@@ -116,12 +116,12 @@ async fn test_file_event_triggers_automatic_embedding_generation_missing_integra
     println!("🚀 Starting comprehensive event-driven embedding integration test (SHOULD FAIL)");
 
     // Phase 1: Test Setup
-    println!("📁 Setting up test vault and infrastructure...");
-    let test_vault = TestVault::new().await.expect("Failed to setup test vault");
+    println!("📁 Setting up test kiln and infrastructure...");
+    let test_kiln = TestKiln::new().await.expect("Failed to setup test kiln");
 
     // Phase 2: Create test documents
     println!("📄 Creating test markdown documents...");
-    let file_paths = test_vault
+    let file_paths = test_kiln
         .create_test_documents()
         .await
         .expect("Failed to create test documents");
@@ -302,9 +302,9 @@ async fn attempt_get_metrics() -> Result<EventProcessorMetrics> {
 async fn test_missing_file_event_to_embedding_integration() {
     println!("🔗 Testing missing file event to embedding integration");
 
-    let test_vault = TestVault::new().await.expect("Failed to setup test vault");
+    let test_kiln = TestKiln::new().await.expect("Failed to setup test kiln");
 
-    let file_paths = test_vault
+    let file_paths = test_kiln
         .create_test_documents()
         .await
         .expect("Failed to create test documents");
@@ -377,9 +377,9 @@ async fn test_missing_event_handler_integration() {
             println!("✅ EmbeddingEventHandler created: {}", handler.name());
 
             // But handling events should fail because the underlying processor is not implemented
-            let test_vault = TestVault::new().await.expect("Failed to setup test vault");
+            let test_kiln = TestKiln::new().await.expect("Failed to setup test kiln");
 
-            let file_paths = test_vault
+            let file_paths = test_kiln
                 .create_test_documents()
                 .await
                 .expect("Failed to create test documents");

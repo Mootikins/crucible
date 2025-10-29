@@ -20,7 +20,7 @@ This test suite provides thorough validation of search functionality including:
 - `search_validation_comprehensive.rs` - Core test harness and metadata/text content tests
 - `search_validation_extended.rs` - Semantic, tool, link, parity, and performance tests
 - `search_validation_test_runner.rs` - Organized test execution and reporting
-- `tests/test-kiln/` - Comprehensive static test vault with 11 realistic markdown files
+- `tests/test-kiln/` - Comprehensive static test kiln with 11 realistic markdown files
 
 ### Test Categories
 
@@ -147,12 +147,12 @@ This test suite provides thorough validation of search functionality including:
 - Ranking quality
 - System resilience
 
-## Test Vault
+## Test Kiln
 
-The test suite uses a comprehensive static test vault located in `tests/test-kiln/` containing:
+The test suite uses a comprehensive static test kiln located in `tests/test-kiln/` containing:
 
 ### Documents (11 files)
-- **README - Test Vault Structure.md** - Meta documentation and testing guide
+- **README - Test Kiln Structure.md** - Meta documentation and testing guide
 - **Knowledge Management Hub.md** - Central linking node
 - **Project Management.md** - Tasks, timelines, project tracking
 - **Research Methods.md** - Academic content and methodology
@@ -274,7 +274,7 @@ cargo test -p crucible-daemon test_semantic_search_performance -- --nocapture
 ### Validation Approach
 
 #### Deterministic Testing
-- All tests use deterministic data from the static test vault
+- All tests use deterministic data from the static test kiln
 - Expected results are validated against known document properties
 - Search scores are checked for valid ranges and ordering
 
@@ -397,7 +397,7 @@ async fn test_descriptive_name() -> Result<()> {
 ### Common Issues
 
 #### Test Failures
-1. **Missing Test Data**: Ensure test vault is properly set up
+1. **Missing Test Data**: Ensure test kiln is properly set up
 2. **Index Issues**: Rebuild search indexes before running tests
 3. **Timeout Issues**: Increase timeout values for slow systems
 4. **Environment Issues**: Check for required dependencies

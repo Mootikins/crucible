@@ -66,7 +66,7 @@ use utils::harness::DaemonEmbeddingHarness;
 /// Test basic note creation pipeline with simple markdown
 ///
 /// Verifies:
-/// - File is created in vault directory
+/// - File is created in kiln directory
 /// - Content is stored in database
 /// - Embedding is generated and stored
 /// - Metadata is extracted correctly

@@ -46,10 +46,10 @@ To fix this architectural issue:
 
 ### Phase 3: Update All Usages
 Files that need updating:
-- `vault_integration.rs` - All vault operations
-- `vault_processor.rs` - Vault processing pipeline
-- `vault_scanner.rs` - Document scanning
-- `vault_pipeline_connector.rs` - Pipeline coordination
+- `kiln_integration.rs` - All kiln operations
+- `kiln_processor.rs` - Kiln processing pipeline
+- `kiln_scanner.rs` - Document scanning
+- `kiln_pipeline_connector.rs` - Pipeline coordination
 - `embedding_pipeline.rs` - Embedding storage
 
 ### Phase 4: Restore Tests

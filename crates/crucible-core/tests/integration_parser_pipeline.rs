@@ -310,12 +310,12 @@ async fn test_file_watching_parser_database_flow() -> Result<()> {
     // This test will verify the complete IndexingHandler integration
     // when we replace the stub implementation
 
-    // Create temporary vault directory
+    // Create temporary kiln directory
     let temp_dir = TempDir::new()?;
-    let vault_path = temp_dir.path();
+    let kiln_path = temp_dir.path();
 
     // Create test file with frontmatter
-    let file_path = vault_path.join("watched.md");
+    let file_path = kiln_path.join("watched.md");
     let test_content = r#"---
 title: Watched Document
 ---

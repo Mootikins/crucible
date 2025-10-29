@@ -7,7 +7,7 @@ export class FilesHandler {
 
   async listFiles(req: IncomingMessage, res: ServerResponse) {
     try {
-      const files = this.app.vault.getMarkdownFiles();
+      const files = this.app.kiln.getMarkdownFiles();
       const fileInfos = files.map((file) => this.fileToInfo(file));
       this.sendJSON(res, 200, { files: fileInfos });
     } catch (error) {
@@ -20,7 +20,7 @@ export class FilesHandler {
 
   async getFile(filePath: string, req: IncomingMessage, res: ServerResponse) {
     try {
-      const file = this.app.vault.getAbstractFileByPath(filePath);
+      const file = this.app.kiln.getAbstractFileByPath(filePath);
 
       if (!file || !(file instanceof TFile)) {
         this.sendJSON(res, 404, {
@@ -30,7 +30,7 @@ export class FilesHandler {
         return;
       }
 
-      const content = await this.app.vault.read(file);
+      const content = await this.app.kiln.read(file);
       this.sendJSON(res, 200, {
         content,
         path: filePath,

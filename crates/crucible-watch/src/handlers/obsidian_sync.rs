@@ -15,8 +15,8 @@ use tracing::{debug, error, info};
 
 /// Handler for synchronizing with Obsidian and handling API changes.
 pub struct ObsidianSyncHandler {
-    /// Obsidian vault configuration
-    vault_config: Arc<RwLock<Option<ObsidianVaultConfig>>>,
+    /// Obsidian kiln configuration
+    kiln_config: Arc<RwLock<Option<ObsidianKilnConfig>>>,
     /// Sync configuration
     sync_config: SyncConfig,
     /// Last sync state
@@ -25,11 +25,11 @@ pub struct ObsidianSyncHandler {
     supported_extensions: Vec<String>,
 }
 
-/// Configuration for an Obsidian vault.
+/// Configuration for an Obsidian kiln.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ObsidianVaultConfig {
-    /// Path to the vault
-    pub vault_path: PathBuf,
+pub struct ObsidianKilnConfig {
+    /// Path to the kiln
+    pub kiln_path: PathBuf,
     /// Obsidian installation path
     pub obsidian_path: Option<PathBuf>,
     /// API port for Obsidian
@@ -92,17 +92,17 @@ impl ObsidianSyncHandler {
     /// Create a new Obsidian sync handler.
     pub fn new() -> Result<Self> {
         Ok(Self {
-            vault_config: Arc::new(RwLock::new(None)),
+            kiln_config: Arc::new(RwLock::new(None)),
             sync_config: SyncConfig::default(),
             sync_state: Arc::new(RwLock::new(SyncState::default())),
             supported_extensions: vec!["md".to_string()],
         })
     }
 
-    /// Create a handler with vault configuration.
-    pub fn with_vault_config(self, config: ObsidianVaultConfig) -> Result<Self> {
+    /// Create a handler with kiln configuration.
+    pub fn with_kiln_config(self, config: ObsidianKilnConfig) -> Result<Self> {
         let mut handler = Self::new()?;
-        handler.vault_config = Arc::new(RwLock::new(Some(config)));
+        handler.kiln_config = Arc::new(RwLock::new(Some(config)));
         Ok(handler)
     }
 
@@ -124,19 +124,19 @@ impl ObsidianSyncHandler {
         state.stats.clone()
     }
 
-    /// Update vault configuration.
-    pub async fn update_vault_config(&self, config: ObsidianVaultConfig) {
-        let mut vault_config = self.vault_config.write().await;
-        *vault_config = Some(config);
-        info!("Obsidian vault configuration updated");
+    /// Update kiln configuration.
+    pub async fn update_kiln_config(&self, config: ObsidianKilnConfig) {
+        let mut kiln_config = self.kiln_config.write().await;
+        *kiln_config = Some(config);
+        info!("Obsidian kiln configuration updated");
     }
 
-    async fn get_vault_config(&self) -> Result<ObsidianVaultConfig> {
-        let vault_config = self.vault_config.read().await;
-        vault_config
+    async fn get_kiln_config(&self) -> Result<ObsidianKilnConfig> {
+        let kiln_config = self.kiln_config.read().await;
+        kiln_config
             .as_ref()
             .cloned()
-            .ok_or_else(|| Error::Config("Obsidian vault configuration not set".to_string()))
+            .ok_or_else(|| Error::Config("Obsidian kiln configuration not set".to_string()))
     }
 
     fn should_sync_file(&self, path: &PathBuf) -> bool {
@@ -151,26 +151,26 @@ impl ObsidianSyncHandler {
     async fn sync_file_change(&self, event: &FileEvent) -> Result<()> {
         debug!("Syncing file change: {:?}", event);
 
-        let vault_config = self.get_vault_config().await?;
-        let vault_path = &vault_config.vault_path;
+        let kiln_config = self.get_kiln_config().await?;
+        let kiln_path = &kiln_config.kiln_path;
 
-        // Ensure file is within vault
-        if !event.path.starts_with(vault_path) {
-            debug!("File outside vault, skipping: {}", event.path.display());
+        // Ensure file is within kiln
+        if !event.path.starts_with(kiln_path) {
+            debug!("File outside kiln, skipping: {}", event.path.display());
             return Ok(());
         }
 
         match &event.kind {
             crate::events::FileEventKind::Created | crate::events::FileEventKind::Modified => {
-                self.handle_file_modification(&event.path, &vault_config)
+                self.handle_file_modification(&event.path, &kiln_config)
                     .await?;
             }
             crate::events::FileEventKind::Deleted => {
-                self.handle_file_deletion(&event.path, &vault_config)
+                self.handle_file_deletion(&event.path, &kiln_config)
                     .await?;
             }
             crate::events::FileEventKind::Moved { from, to } => {
-                self.handle_file_move(from, to, &vault_config).await?;
+                self.handle_file_move(from, to, &kiln_config).await?;
             }
             _ => {
                 debug!("Unsupported event type for sync: {:?}", event.kind);
@@ -183,7 +183,7 @@ impl ObsidianSyncHandler {
     async fn handle_file_modification(
         &self,
         path: &PathBuf,
-        config: &ObsidianVaultConfig,
+        config: &ObsidianKilnConfig,
     ) -> Result<()> {
         debug!("Handling file modification: {}", path.display());
 
@@ -196,18 +196,18 @@ impl ObsidianSyncHandler {
         Ok(())
     }
 
-    async fn sync_via_api(&self, path: &PathBuf, config: &ObsidianVaultConfig) -> Result<()> {
+    async fn sync_via_api(&self, path: &PathBuf, config: &ObsidianKilnConfig) -> Result<()> {
         // Implementation for Obsidian local API sync
         let api_port = config
             .api_port
             .ok_or_else(|| Error::Config("Obsidian API port not configured".to_string()))?;
 
         let relative_path = path
-            .strip_prefix(&config.vault_path)
+            .strip_prefix(&config.kiln_path)
             .map_err(|e| Error::Internal(format!("Failed to get relative path: {}", e)))?;
 
         let url = format!(
-            "http://localhost:{}/api/vault/{}",
+            "http://localhost:{}/api/kiln/{}",
             api_port,
             relative_path.display()
         );
@@ -221,7 +221,7 @@ impl ObsidianSyncHandler {
     async fn sync_via_file_system(
         &self,
         path: &PathBuf,
-        _config: &ObsidianVaultConfig,
+        _config: &ObsidianKilnConfig,
     ) -> Result<()> {
         // Implementation for file system based sync
         // This could involve updating Obsidian's internal cache files
@@ -236,7 +236,7 @@ impl ObsidianSyncHandler {
     async fn handle_file_deletion(
         &self,
         path: &PathBuf,
-        config: &ObsidianVaultConfig,
+        config: &ObsidianKilnConfig,
     ) -> Result<()> {
         debug!("Handling file deletion: {}", path.display());
 
@@ -261,7 +261,7 @@ impl ObsidianSyncHandler {
         &self,
         from: &PathBuf,
         to: &PathBuf,
-        config: &ObsidianVaultConfig,
+        config: &ObsidianKilnConfig,
     ) -> Result<()> {
         debug!("Handling file move: {} -> {}", from.display(), to.display());
 
@@ -277,7 +277,7 @@ impl ObsidianSyncHandler {
     }
 
     #[allow(dead_code)]
-    async fn trigger_obsidian_reindex(&self, config: &ObsidianVaultConfig) -> Result<()> {
+    async fn trigger_obsidian_reindex(&self, config: &ObsidianKilnConfig) -> Result<()> {
         if !self.sync_config.trigger_reindex {
             return Ok(());
         }

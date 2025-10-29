@@ -1,11 +1,11 @@
-//! Test-Driven Development Tests for Vault Embedding Pipeline
+//! Test-Driven Development Tests for Kiln Embedding Pipeline
 //!
 //! This test file implements TDD methodology for Phase 2.2 Task 4:
 //! Connect Phase 1 Parsed Documents to Embedding Pipeline.
 //!
 //! Tests are written to FAIL first, then implementation will make them pass.
 //!
-//! **Phase 1 Input**: ParsedDocument structures from vault scanning
+//! **Phase 1 Input**: ParsedDocument structures from kiln scanning
 //! **Phase 2.1 Input Required**: (document_id: String, content: String) for embedding thread pool
 //! **Goal**: End-to-end pipeline: ParsedDocument → transform → embed → store → search
 
@@ -13,9 +13,9 @@ use crucible_core::parser::types::*;
 use crucible_core::parser::ParsedDocument;
 use crucible_surrealdb::embedding_config::*;
 use crucible_surrealdb::embedding_pool::*;
+use crucible_surrealdb::kiln_pipeline_connector::*;
+use crucible_surrealdb::kiln_scanner::*;
 use crucible_surrealdb::SurrealClient;
-use crucible_surrealdb::vault_pipeline_connector::*;
-use crucible_surrealdb::vault_scanner::*;
 use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -115,7 +115,7 @@ async fn create_test_document_batch() -> Vec<ParsedDocument> {
 }
 
 #[cfg(test)]
-mod tdd_vault_embedding_pipeline_tests {
+mod tdd_kiln_embedding_pipeline_tests {
 
     use super::*;
 
@@ -133,7 +133,7 @@ mod tdd_vault_embedding_pipeline_tests {
 
         // Act & Assert (This should fail initially)
         let kiln_root = test_kiln_root();
-        let connector = VaultPipelineConnector::new(thread_pool.clone(), kiln_root);
+        let connector = KilnPipelineConnector::new(thread_pool.clone(), kiln_root);
         let result = connector
             .process_document_to_embedding(&client, &test_doc)
             .await;
@@ -169,7 +169,7 @@ mod tdd_vault_embedding_pipeline_tests {
 
         // Act & Assert (This should fail initially)
         let kiln_root = test_kiln_root();
-        let connector = VaultPipelineConnector::new(thread_pool.clone(), kiln_root);
+        let connector = KilnPipelineConnector::new(thread_pool.clone(), kiln_root);
         let result = connector
             .process_documents_to_embeddings(&client, &test_documents)
             .await;
@@ -193,10 +193,10 @@ mod tdd_vault_embedding_pipeline_tests {
     async fn test_tdd_document_id_generation() {
         // Arrange
         let test_paths = vec![
-            PathBuf::from("/vault/document.md"),
-            PathBuf::from("/vault/nested/document.md"),
-            PathBuf::from("/vault/with spaces/document.md"),
-            PathBuf::from("/vault/with-special-chars/document_1.md"),
+            PathBuf::from("/kiln/document.md"),
+            PathBuf::from("/kiln/nested/document.md"),
+            PathBuf::from("/kiln/with spaces/document.md"),
+            PathBuf::from("/kiln/with-special-chars/document_1.md"),
         ];
 
         // Act & Assert (This should fail initially)
@@ -237,9 +237,10 @@ mod tdd_vault_embedding_pipeline_tests {
         let test_doc = create_test_document_batch().await.pop().unwrap();
 
         // Act & Assert (This should fail initially)
-        let config = VaultPipelineConfig::default();
+        let config = KilnPipelineConfig::default();
         let kiln_root = test_kiln_root();
-        let embedding_inputs = transform_parsed_document_to_embedding_inputs(&test_doc, &config, &kiln_root);
+        let embedding_inputs =
+            transform_parsed_document_to_embedding_inputs(&test_doc, &config, &kiln_root);
 
         // TDD: This should fail because no transformation exists yet
         assert!(
@@ -273,7 +274,7 @@ mod tdd_vault_embedding_pipeline_tests {
 
         let mut test_doc = create_test_document_batch().await.pop().unwrap();
         let kiln_root = test_kiln_root();
-        let connector = VaultPipelineConnector::new(thread_pool.clone(), kiln_root);
+        let connector = KilnPipelineConnector::new(thread_pool.clone(), kiln_root);
 
         // Act: Initial processing
         let initial_result = connector
@@ -324,7 +325,7 @@ mod tdd_vault_embedding_pipeline_tests {
                 .await;
 
         let kiln_root = test_kiln_root();
-        let connector = VaultPipelineConnector::new(thread_pool.clone(), kiln_root);
+        let connector = KilnPipelineConnector::new(thread_pool.clone(), kiln_root);
 
         // Act & Assert (This should fail initially)
         let result = connector
@@ -397,7 +398,7 @@ Final section with concluding remarks for document {}.
         }
 
         let kiln_root = test_kiln_root();
-        let connector = VaultPipelineConnector::new(thread_pool.clone(), kiln_root);
+        let connector = KilnPipelineConnector::new(thread_pool.clone(), kiln_root);
         let start_time = std::time::Instant::now();
 
         // Act & Assert (This should fail initially)
@@ -431,25 +432,25 @@ Final section with concluding remarks for document {}.
         thread_pool.shutdown().await.unwrap();
     }
 
-    /// **TDD TEST 8**: Integration with existing vault scanner
+    /// **TDD TEST 8**: Integration with existing kiln scanner
     ///
-    /// **Expected Failure**: No integration with vault scanner exists
+    /// **Expected Failure**: No integration with kiln scanner exists
     #[tokio::test]
-    async fn test_tdd_vault_scanner_integration() {
+    async fn test_tdd_kiln_scanner_integration() {
         // Arrange
         let temp_dir = TempDir::new().unwrap();
-        let vault_path = temp_dir.path().to_path_buf();
+        let kiln_path = temp_dir.path().to_path_buf();
 
         // Create test files
-        fs::write(vault_path.join("doc1.md"), "# Doc 1\nContent 1")
+        fs::write(kiln_path.join("doc1.md"), "# Doc 1\nContent 1")
             .await
             .unwrap();
-        fs::write(vault_path.join("doc2.md"), "# Doc 2\nContent 2")
+        fs::write(kiln_path.join("doc2.md"), "# Doc 2\nContent 2")
             .await
             .unwrap();
 
         // Create subdirectory
-        let subdir = vault_path.join("subdir");
+        let subdir = kiln_path.join("subdir");
         fs::create_dir(&subdir).await.unwrap();
         fs::write(subdir.join("doc3.md"), "# Doc 3\nContent 3")
             .await
@@ -460,15 +461,15 @@ Final section with concluding remarks for document {}.
         let thread_pool = EmbeddingThreadPool::new(config).await.unwrap();
         let client = SurrealClient::new_memory().await.unwrap();
         let kiln_root = test_kiln_root();
-        let connector = VaultPipelineConnector::new(thread_pool.clone(), kiln_root);
+        let connector = KilnPipelineConnector::new(thread_pool.clone(), kiln_root);
 
-        // Scan vault
-        let scanner_config = VaultScannerConfig::default();
+        // Scan kiln
+        let scanner_config = KilnScannerConfig::default();
         let mut scanner =
-            create_vault_scanner_with_embeddings(scanner_config, &client, &thread_pool)
+            create_kiln_scanner_with_embeddings(scanner_config, &client, &thread_pool)
                 .await
                 .unwrap();
-        let scan_result = scanner.scan_vault_directory(&vault_path).await.unwrap();
+        let scan_result = scanner.scan_kiln_directory(&kiln_path).await.unwrap();
 
         // Act & Assert (This should fail initially)
         // Get the actual parsed documents (this would need to be implemented)
@@ -486,7 +487,7 @@ Final section with concluding remarks for document {}.
         // TDD: This should fail because no integration exists yet
         assert!(
             embedding_result.is_ok(),
-            "Vault scanner integration should be implemented"
+            "Kiln scanner integration should be implemented"
         );
 
         let embedding_batch_result = embedding_result.unwrap();
@@ -508,41 +509,41 @@ Final section with concluding remarks for document {}.
         // Arrange: Test problematic paths
         let edge_cases = vec![
             // Special characters
-            PathBuf::from("/vault/file with spaces.md"),
-            PathBuf::from("/vault/file-with-dashes.md"),
-            PathBuf::from("/vault/file_with_underscores.md"),
-            PathBuf::from("/vault/file.with.dots.md"),
-            PathBuf::from("/vault/file(with)parentheses.md"),
-            PathBuf::from("/vault/file[with]brackets.md"),
-            PathBuf::from("/vault/file{with}braces.md"),
-            PathBuf::from("/vault/file'with'quotes.md"),
-            PathBuf::from("/vault/file\"with\"quotes.md"),
-            PathBuf::from("/vault/file#with#hashes.md"),
-            PathBuf::from("/vault/file@with@ats.md"),
-            PathBuf::from("/vault/file%with%percents.md"),
-            PathBuf::from("/vault/file+with+plus.md"),
-            PathBuf::from("/vault/file=with=equals.md"),
-            PathBuf::from("/vault/file&with&ampersands.md"),
-            PathBuf::from("/vault/file;with;semicolons.md"),
-            PathBuf::from("/vault/file:with:colons.md"),
-            PathBuf::from("/vault/file!with!exclamation.md"),
-            PathBuf::from("/vault/file?with?question.md"),
-            PathBuf::from("/vault/file*with*asterisks.md"),
-            PathBuf::from("/vault/file$with$dollars.md"),
-            PathBuf::from("/vault/file^with^carets.md"),
-            PathBuf::from("/vault/file`with`backticks.md"),
-            PathBuf::from("/vault/file~with~tildes.md"),
-            PathBuf::from("/vault/file|with|pipes.md"),
-            PathBuf::from("/vault/file<with>angles.md"),
+            PathBuf::from("/kiln/file with spaces.md"),
+            PathBuf::from("/kiln/file-with-dashes.md"),
+            PathBuf::from("/kiln/file_with_underscores.md"),
+            PathBuf::from("/kiln/file.with.dots.md"),
+            PathBuf::from("/kiln/file(with)parentheses.md"),
+            PathBuf::from("/kiln/file[with]brackets.md"),
+            PathBuf::from("/kiln/file{with}braces.md"),
+            PathBuf::from("/kiln/file'with'quotes.md"),
+            PathBuf::from("/kiln/file\"with\"quotes.md"),
+            PathBuf::from("/kiln/file#with#hashes.md"),
+            PathBuf::from("/kiln/file@with@ats.md"),
+            PathBuf::from("/kiln/file%with%percents.md"),
+            PathBuf::from("/kiln/file+with+plus.md"),
+            PathBuf::from("/kiln/file=with=equals.md"),
+            PathBuf::from("/kiln/file&with&ampersands.md"),
+            PathBuf::from("/kiln/file;with;semicolons.md"),
+            PathBuf::from("/kiln/file:with:colons.md"),
+            PathBuf::from("/kiln/file!with!exclamation.md"),
+            PathBuf::from("/kiln/file?with?question.md"),
+            PathBuf::from("/kiln/file*with*asterisks.md"),
+            PathBuf::from("/kiln/file$with$dollars.md"),
+            PathBuf::from("/kiln/file^with^carets.md"),
+            PathBuf::from("/kiln/file`with`backticks.md"),
+            PathBuf::from("/kiln/file~with~tildes.md"),
+            PathBuf::from("/kiln/file|with|pipes.md"),
+            PathBuf::from("/kiln/file<with>angles.md"),
             // Very long path
-            PathBuf::from("/vault/this/is/a/very/long/path/with/many/directories/to/test/id_generation/limits/document.md"),
+            PathBuf::from("/kiln/this/is/a/very/long/path/with/many/directories/to/test/id_generation/limits/document.md"),
             // Unicode characters
-            PathBuf::from("/vault/文档.md"), // Chinese
-            PathBuf::from("/vault/документ.md"), // Russian
-            PathBuf::from("/vault/ドキュメント.md"), // Japanese
-            PathBuf::from("/vault/مستند.md"), // Arabic
+            PathBuf::from("/kiln/文档.md"), // Chinese
+            PathBuf::from("/kiln/документ.md"), // Russian
+            PathBuf::from("/kiln/ドキュメント.md"), // Japanese
+            PathBuf::from("/kiln/مستند.md"), // Arabic
             // Mixed
-            PathBuf::from("/vault/mixed path with 中文 and русский and emoji 🚀.md"),
+            PathBuf::from("/kiln/mixed path with 中文 and русский and emoji 🚀.md"),
         ];
 
         // Act & Assert (This should fail initially)
@@ -606,9 +607,10 @@ Final section with concluding remarks for document {}.
         assert!(!test_doc.content_hash.is_empty());
 
         // Act & Assert (This should fail initially)
-        let config = VaultPipelineConfig::default();
+        let config = KilnPipelineConfig::default();
         let kiln_root = test_kiln_root();
-        let embedding_inputs = transform_parsed_document_to_embedding_inputs(&test_doc, &config, &kiln_root);
+        let embedding_inputs =
+            transform_parsed_document_to_embedding_inputs(&test_doc, &config, &kiln_root);
 
         // TDD: This should fail because no metadata preservation exists yet
         assert!(!embedding_inputs.is_empty());

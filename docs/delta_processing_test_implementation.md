@@ -21,21 +21,21 @@ The test implements the comprehensive TDD baseline for delta processing:
 const DELTA_PROCESSING_TIMEOUT_SECS: u64 = 1; // Single file change should be under 1 second
 const DELTA_PROCESSING_QUERY: &str = "machine learning algorithms";
 const MODIFIED_FILE_INDEX: usize = 1; // Which file to modify
-const FULL_VAULT_PROCESSING_TIME_SECS: u64 = 2; // Mock processing time for full vault
+const FULL_KILN_PROCESSING_TIME_SECS: u64 = 2; // Mock processing time for full kiln
 ```
 
 ### 2. Test Steps
 
 1. **Setup Test Environment**
-   - Creates temporary test vault with sample markdown files
-   - Sets up secure configuration (OBSIDIAN_VAULT_PATH environment variable only)
+   - Creates temporary test kiln with sample markdown files
+   - Sets up secure configuration (OBSIDIAN_KILN_PATH environment variable only)
 
 2. **Calculate Initial File Hashes**
    - Uses existing `ChangeDetector` from `crucible-tools`
    - Calculates SHA256 hashes for all test files
    - Stores in HashMap for later comparison
 
-3. **Simulate Initial Full Vault Processing**
+3. **Simulate Initial Full Kiln Processing**
    - Simulates 2-second processing time for all files
    - Establishes baseline performance expectations
 
@@ -75,20 +75,20 @@ The test correctly fails with:
 Error: TDD BASELINE: Delta processing not implemented efficiently.
 Expected single file change processing <= 1s, got 39.009µs.
 Current behavior: 3 files processed (should be 1 file).
-This indicates full vault re-processing instead of delta processing.
+This indicates full kiln re-processing instead of delta processing.
 Implement delta processing with change detection to make this test pass.
 ```
 
 ## Key Features Implemented
 
 ### 1. Change Detection Integration
-- Leverages existing `ChangeDetector` from `crucible-tools/src/vault_change_detection.rs`
+- Leverages existing `ChangeDetector` from `crucible-tools/src/kiln_change_detection.rs`
 - Uses SHA256 hashing for reliable change detection
 - Validates hash-based identification of modified files
 
 ### 2. Performance Requirements
 - **Target**: Single file changes processed in < 1 second
-- **Baseline**: Full vault processing simulated at 2 seconds
+- **Baseline**: Full kiln processing simulated at 2 seconds
 - **Efficiency**: Expected 2x+ improvement with delta processing
 
 ### 3. TDD Validation
@@ -98,8 +98,8 @@ Implement delta processing with change detection to make this test pass.
 - Detailed logging of each test step
 
 ### 4. Security Compliance
-- Uses only `OBSIDIAN_VAULT_PATH` environment variable
-- No CLI arguments with vault paths
+- Uses only `OBSIDIAN_KILN_PATH` environment variable
+- No CLI arguments with kiln paths
 - Follows existing security patterns from other tests
 
 ## Test Output Example
@@ -108,7 +108,7 @@ Implement delta processing with change detection to make this test pass.
 🔄 Starting delta processing integration test
 ============================================================
 
-📁 Step 1: Creating test vault with sample files
+📁 Step 1: Creating test kiln with sample files
 ✅ Environment variables configured securely
 ✅ Secure configuration loaded from environment variables
 
@@ -117,7 +117,7 @@ Implement delta processing with change detection to make this test pass.
    data-science-tools.md -> e8fa2204
    software-engineering.md -> c5f6acd0
 
-⚙️  Step 3: Simulating initial vault processing (all files)
+⚙️  Step 3: Simulating initial kiln processing (all files)
    Processing 3 files (simulated 2s)
    ✅ Initial processing completed in 2.000926552s
 
@@ -134,7 +134,7 @@ Implement delta processing with change detection to make this test pass.
 
 ## Dependencies Used
 
-- **Change Detection**: `crucible_tools::vault_change_detection::ChangeDetector`
+- **Change Detection**: `crucible_tools::kiln_change_detection::ChangeDetector`
 - **SHA256 Hashing**: Existing implementation in crucible-tools
 - **Test Framework**: Tokio test with proper timeout handling
 - **Timing**: `std::time::Instant` for precise measurements
@@ -144,7 +144,7 @@ Implement delta processing with change detection to make this test pass.
 
 When implementing delta processing to make this test pass:
 
-1. **Integrate Change Detection**: Embed `ChangeDetector` into the vault processing pipeline
+1. **Integrate Change Detection**: Embed `ChangeDetector` into the kiln processing pipeline
 2. **Hash Storage**: Store file hashes in database for change tracking
 3. **Selective Processing**: Only process files with changed hashes
 4. **Performance Optimization**: Ensure sub-second processing for single file changes
@@ -158,4 +158,4 @@ When implementing delta processing to make this test pass:
 4. **Integration Testing**: Tests the complete end-to-end flow
 5. **Maintainable**: Well-documented with clear error messages
 
-This test provides the foundation for implementing efficient delta processing that will significantly improve the user experience when working with large vaults where only a few files change between searches.
+This test provides the foundation for implementing efficient delta processing that will significantly improve the user experience when working with large kilns where only a few files change between searches.

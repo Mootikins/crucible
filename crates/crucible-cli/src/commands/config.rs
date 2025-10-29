@@ -74,7 +74,10 @@ async fn show(format: String) -> Result<()> {
 
 /// Migrate environment variable configuration to config file
 async fn migrate_env_vars(output: Option<PathBuf>, dry_run: bool) -> Result<()> {
-    println!("{}", "🔍 Scanning for environment variables...".cyan().bold());
+    println!(
+        "{}",
+        "🔍 Scanning for environment variables...".cyan().bold()
+    );
     println!();
 
     let mut found_vars = Vec::new();
@@ -89,7 +92,11 @@ async fn migrate_env_vars(output: Option<PathBuf>, dry_run: bool) -> Result<()> 
 
     // Check for embedding configuration
     if let Ok(endpoint) = std::env::var("EMBEDDING_ENDPOINT") {
-        println!("  {} EMBEDDING_ENDPOINT = {}", "✓".green(), endpoint.yellow());
+        println!(
+            "  {} EMBEDDING_ENDPOINT = {}",
+            "✓".green(),
+            endpoint.yellow()
+        );
         config = config.embedding_url(&endpoint);
         found_vars.push(("EMBEDDING_ENDPOINT", endpoint));
     }
@@ -114,13 +121,21 @@ async fn migrate_env_vars(output: Option<PathBuf>, dry_run: bool) -> Result<()> 
     }
     if let Ok(tokens) = std::env::var("CRUCIBLE_MAX_TOKENS") {
         if let Ok(tokens_u32) = tokens.parse::<u32>() {
-            println!("  {} CRUCIBLE_MAX_TOKENS = {}", "✓".green(), tokens.yellow());
+            println!(
+                "  {} CRUCIBLE_MAX_TOKENS = {}",
+                "✓".green(),
+                tokens.yellow()
+            );
             config = config.max_tokens(tokens_u32);
             found_vars.push(("CRUCIBLE_MAX_TOKENS", tokens));
         }
     }
     if let Ok(prompt) = std::env::var("CRUCIBLE_SYSTEM_PROMPT") {
-        println!("  {} CRUCIBLE_SYSTEM_PROMPT = {}", "✓".green(), prompt.yellow());
+        println!(
+            "  {} CRUCIBLE_SYSTEM_PROMPT = {}",
+            "✓".green(),
+            prompt.yellow()
+        );
         config = config.system_prompt(&prompt);
         found_vars.push(("CRUCIBLE_SYSTEM_PROMPT", prompt));
     }
@@ -167,7 +182,10 @@ async fn migrate_env_vars(output: Option<PathBuf>, dry_run: bool) -> Result<()> 
     let migrated_config = config.build()?;
 
     if dry_run {
-        println!("{}", "Dry run mode - no files will be written".yellow().bold());
+        println!(
+            "{}",
+            "Dry run mode - no files will be written".yellow().bold()
+        );
         println!();
         println!("{}", "Config that would be written:".bold());
         println!("{}", "─".repeat(50).dimmed());
@@ -187,7 +205,10 @@ async fn migrate_env_vars(output: Option<PathBuf>, dry_run: bool) -> Result<()> 
                 "⚠️ Warning:".yellow().bold(),
                 config_path.display()
             );
-            println!("{}", "The migration will be merged with your existing config.".dimmed());
+            println!(
+                "{}",
+                "The migration will be merged with your existing config.".dimmed()
+            );
             println!();
         } else {
             // Create parent directory if it doesn't exist
@@ -206,7 +227,10 @@ async fn migrate_env_vars(output: Option<PathBuf>, dry_run: bool) -> Result<()> 
             config_path.display()
         );
         println!();
-        println!("{}", "You can now remove these environment variables:".bold());
+        println!(
+            "{}",
+            "You can now remove these environment variables:".bold()
+        );
         for (var_name, _) in &found_vars {
             println!("  unset {}", var_name.yellow());
         }

@@ -1,7 +1,7 @@
 //! Markdown parsing infrastructure for Crucible
 //!
 //! This module provides the core parsing traits and types for extracting structured
-//! data from markdown files in the vault.
+//! data from markdown files in the kiln.
 
 pub mod adapter;
 pub mod error;

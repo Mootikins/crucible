@@ -100,7 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Semantic Search**: AI-powered search using embeddings with similarity scoring
 - **AI Chat Integration**: Multi-agent chat system with predefined agents (researcher, writer, etc.)
 - **Note Management**: Complete CRUD operations for notes with metadata support
-- **Vault Statistics**: Comprehensive vault analytics and file information
+- **Kiln Statistics**: Comprehensive kiln analytics and file information
 - **Rune Script Execution**: Run custom Rune scripts as CLI commands
 - **Configuration Management**: Hierarchical configuration with environment support
 

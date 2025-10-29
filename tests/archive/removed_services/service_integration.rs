@@ -585,12 +585,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tool_event = DaemonEvent::new(
         EventType::Mcp(crucible_services::events::core::McpEventType::ToolCall {
             tool_name: "file-read".to_string(),
-            parameters: serde_json::json!({"path": "/vault/example.md"}),
+            parameters: serde_json::json!({"path": "/kiln/example.md"}),
         }),
         EventSource::external("api-client".to_string()),
         EventPayload::json(serde_json::json!({
             "tool": "file-read",
-            "parameters": {"path": "/vault/example.md"}
+            "parameters": {"path": "/kiln/example.md"}
         })),
     ).with_target(crucible_services::events::core::ServiceTarget::new("mcp-gateway".to_string()));
 

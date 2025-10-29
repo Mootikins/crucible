@@ -9,12 +9,12 @@
 //! 2. After implementation, these tests should PASS when real vector similarity is used
 
 use crucible_llm::embeddings::{create_mock_provider, EmbeddingProvider};
-use std::sync::Arc;
-use crucible_surrealdb::{embedding_config::DocumentEmbedding, vault_integration, SurrealClient};
-use vault_integration::{
-    get_database_stats, get_document_embeddings, initialize_vault_schema, semantic_search,
+use crucible_surrealdb::{embedding_config::DocumentEmbedding, kiln_integration, SurrealClient};
+use kiln_integration::{
+    get_database_stats, get_document_embeddings, initialize_kiln_schema, semantic_search,
     store_document_embedding,
 };
+use std::sync::Arc;
 
 // =============================================================================
 // TEST DATA GENERATION HELPERS
@@ -124,7 +124,7 @@ fn calculate_cosine_similarity(vec_a: &[f32], vec_b: &[f32]) -> f64 {
 #[tokio::test]
 async fn test_cosine_similarity_calculation_basic() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -155,7 +155,7 @@ async fn test_cosine_similarity_calculation_basic() {
 #[tokio::test]
 async fn test_cosine_similarity_different_dimensions() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -203,7 +203,7 @@ async fn test_cosine_similarity_different_dimensions() {
 #[tokio::test]
 async fn test_cosine_similarity_edge_cases() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -249,7 +249,7 @@ async fn test_cosine_similarity_edge_cases() {
 #[tokio::test]
 async fn test_query_embedding_generation_mock_provider() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -301,7 +301,7 @@ async fn test_query_embedding_generation_mock_provider() {
 #[tokio::test]
 async fn test_query_embedding_batch_generation() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -360,7 +360,7 @@ async fn test_query_embedding_batch_generation() {
 #[tokio::test]
 async fn test_semantic_search_basic_vector_similarity() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -419,7 +419,7 @@ async fn test_semantic_search_basic_vector_similarity() {
 #[tokio::test]
 async fn test_semantic_search_ranking_accuracy() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -438,9 +438,10 @@ async fn test_semantic_search_ranking_accuracy() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Perform semantic search
-    let search_results = semantic_search(&client, "machine learning", 10, create_mock_provider(768))
-        .await
-        .expect("Semantic search should succeed");
+    let search_results =
+        semantic_search(&client, "machine learning", 10, create_mock_provider(768))
+            .await
+            .expect("Semantic search should succeed");
 
     // Calculate expected similarities using reference implementation
     let mut expected_similarities = Vec::new();
@@ -469,7 +470,7 @@ async fn test_semantic_search_ranking_accuracy() {
 #[tokio::test]
 async fn test_semantic_search_different_embedding_dimensions() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -511,7 +512,7 @@ async fn test_semantic_search_different_embedding_dimensions() {
 #[tokio::test]
 async fn test_semantic_search_similarity_threshold_filtering() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -563,7 +564,7 @@ async fn test_semantic_search_similarity_threshold_filtering() {
 #[tokio::test]
 async fn test_batch_similarity_search_multiple_queries() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -644,7 +645,7 @@ async fn test_batch_similarity_search_multiple_queries() {
 #[tokio::test]
 async fn test_semantic_search_empty_database() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -662,7 +663,7 @@ async fn test_semantic_search_empty_database() {
 #[tokio::test]
 async fn test_semantic_search_empty_query() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -699,7 +700,7 @@ async fn test_semantic_search_empty_query() {
 #[tokio::test]
 async fn test_semantic_search_missing_embeddings() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -736,7 +737,7 @@ async fn test_semantic_search_missing_embeddings() {
 #[tokio::test]
 async fn test_semantic_search_malformed_embeddings() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -788,7 +789,7 @@ async fn test_semantic_search_malformed_embeddings() {
 #[tokio::test]
 async fn test_semantic_search_performance_large_dataset() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -820,9 +821,14 @@ async fn test_semantic_search_performance_large_dataset() {
 
     // Perform semantic search and measure performance
     let search_start = std::time::Instant::now();
-    let search_results = semantic_search(&client, "performance test query", 10, create_mock_provider(768))
-        .await
-        .expect("Semantic search should succeed");
+    let search_results = semantic_search(
+        &client,
+        "performance test query",
+        10,
+        create_mock_provider(768),
+    )
+    .await
+    .expect("Semantic search should succeed");
     let search_duration = search_start.elapsed();
 
     println!(
@@ -856,7 +862,7 @@ async fn test_semantic_search_performance_large_dataset() {
 #[tokio::test]
 async fn test_semantic_search_concurrent_queries() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -885,7 +891,9 @@ async fn test_semantic_search_concurrent_queries() {
 
     for query in queries {
         let client_clone = client.clone();
-        let task = tokio::spawn(async move { semantic_search(&client_clone, query, 5, create_mock_provider(768)).await });
+        let task = tokio::spawn(async move {
+            semantic_search(&client_clone, query, 5, create_mock_provider(768)).await
+        });
         search_tasks.push(task);
     }
 
@@ -934,7 +942,7 @@ async fn test_semantic_search_concurrent_queries() {
 #[tokio::test]
 async fn test_vector_search_integration_with_database_stats() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -992,7 +1000,7 @@ async fn test_vector_search_integration_with_database_stats() {
 #[tokio::test]
 async fn test_vector_search_integration_with_embedding_retrieval() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 
@@ -1017,9 +1025,10 @@ async fn test_vector_search_integration_with_embedding_retrieval() {
     );
 
     // Perform semantic search
-    let search_results = semantic_search(&client, "machine learning", 10, create_mock_provider(768))
-        .await
-        .expect("Semantic search should succeed");
+    let search_results =
+        semantic_search(&client, "machine learning", 10, create_mock_provider(768))
+            .await
+            .expect("Semantic search should succeed");
 
     // Search should find doc1 in results
     let doc1_found = search_results.iter().any(|(doc_id, _)| doc_id == "doc1");
@@ -1046,7 +1055,7 @@ async fn test_vector_search_integration_with_embedding_retrieval() {
 #[tokio::test]
 async fn test_current_implementation_is_mock_text_search() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client)
+    initialize_kiln_schema(&client)
         .await
         .expect("Failed to initialize schema");
 

@@ -13,7 +13,7 @@ use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 
 use crate::comprehensive_integration_workflow_tests::{
-    ComprehensiveTestVault, CliTestHarness, ReplTestHarness, CommandResult
+    ComprehensiveTestKiln, CliTestHarness, ReplTestHarness, CommandResult
 };
 use crate::cli_workflow_integration_tests::ExtendedCliTestHarness;
 use crate::repl_interactive_workflow_tests::ExtendedReplTestHarness;
@@ -21,19 +21,19 @@ use crate::tool_api_integration_tests::ToolApiTestHarness;
 
 /// Cross-interface consistency test harness
 pub struct CrossInterfaceTestHarness {
-    vault_dir: TempDir,
-    test_vault: ComprehensiveTestVault,
+    kiln_dir: TempDir,
+    test_kiln: ComprehensiveTestKiln,
 }
 
 impl CrossInterfaceTestHarness {
     /// Create a new cross-interface test harness
     pub async fn new() -> Result<Self> {
-        let test_vault = ComprehensiveTestVault::create().await?;
-        let vault_dir = test_vault.path().to_owned();
+        let test_kiln = ComprehensiveTestKiln::create().await?;
+        let kiln_dir = test_kiln.path().to_owned();
 
         Ok(Self {
-            vault_dir: vault_dir.to_owned(),
-            test_vault,
+            kiln_dir: kiln_dir.to_owned(),
+            test_kiln,
         })
     }
 
@@ -320,7 +320,7 @@ impl CrossInterfaceTestHarness {
         let cli_harness = CliTestHarness::new().await?;
         let index_result = cli_harness.execute_cli_command(&[
             "index",
-            "--path", self.vault_dir.to_str().unwrap(),
+            "--path", self.kiln_dir.to_str().unwrap(),
             "--glob", "**/*.md"
         ])?;
         assert!(index_result.exit_code == 0, "CLI indexing should succeed");

@@ -117,8 +117,8 @@ async fn test_config_with_new_sections() -> Result<()> {
 
     // Create a test config
     let config_content = r#"
-[vault]
-path = "/tmp/test-vault"
+[kiln]
+path = "/tmp/test-kiln"
 embedding_url = "http://localhost:11434"
 embedding_model = "test-model"
 
@@ -226,8 +226,8 @@ async fn test_configuration_validation() -> Result<()> {
 
     // Create an invalid config
     let config_content = r#"
-[vault]
-path = "/tmp/test-vault"
+[kiln]
+path = "/tmp/test-kiln"
 
 [services.script_engine]
 enabled = true

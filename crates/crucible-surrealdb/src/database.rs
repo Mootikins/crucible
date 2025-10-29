@@ -84,7 +84,8 @@ impl SurrealEmbeddingDatabase {
             metadata: metadata.clone(),
         };
 
-        let mut storage = self.storage
+        let mut storage = self
+            .storage
             .lock()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         storage.insert(file_path.to_string(), data);
@@ -94,7 +95,8 @@ impl SurrealEmbeddingDatabase {
 
     /// Store an embedding using EmbeddingData struct (for edge case tests)
     pub async fn store_embedding_data(&self, data: &EmbeddingData) -> Result<()> {
-        let mut storage = self.storage
+        let mut storage = self
+            .storage
             .lock()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         storage.insert(data.file_path.clone(), data.clone());
@@ -108,7 +110,8 @@ impl SurrealEmbeddingDatabase {
         file_path: &str,
         metadata: &EmbeddingMetadata,
     ) -> Result<()> {
-        let mut storage = self.storage
+        let mut storage = self
+            .storage
             .lock()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
 
@@ -127,7 +130,8 @@ impl SurrealEmbeddingDatabase {
         file_path: &str,
         properties: HashMap<String, serde_json::Value>,
     ) -> Result<bool> {
-        let mut storage = self.storage
+        let mut storage = self
+            .storage
             .lock()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
 
@@ -144,7 +148,8 @@ impl SurrealEmbeddingDatabase {
 
     /// Check if a file exists in the database
     pub async fn file_exists(&self, file_path: &str) -> Result<bool> {
-        let storage = self.storage
+        let storage = self
+            .storage
             .lock()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         Ok(storage.contains_key(file_path))
@@ -152,7 +157,8 @@ impl SurrealEmbeddingDatabase {
 
     /// Get embedding data for a file
     pub async fn get_embedding(&self, file_path: &str) -> Result<Option<EmbeddingData>> {
-        let storage = self.storage
+        let storage = self
+            .storage
             .lock()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         Ok(storage.get(file_path).cloned())
@@ -165,7 +171,8 @@ impl SurrealEmbeddingDatabase {
         query_embedding: &[f32],
         top_k: u32,
     ) -> Result<Vec<SearchResultWithScore>> {
-        let storage = self.storage
+        let storage = self
+            .storage
             .lock()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         let mut results = Vec::new();
@@ -208,7 +215,8 @@ impl SurrealEmbeddingDatabase {
 
     /// Search files by tags
     pub async fn search_by_tags(&self, tags: &[String]) -> Result<Vec<String>> {
-        let storage = self.storage
+        let storage = self
+            .storage
             .lock()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         let mut results = Vec::new();
@@ -233,7 +241,8 @@ impl SurrealEmbeddingDatabase {
         &self,
         properties: &HashMap<String, serde_json::Value>,
     ) -> Result<Vec<String>> {
-        let storage = self.storage
+        let storage = self
+            .storage
             .lock()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         let mut results = Vec::new();
@@ -273,7 +282,8 @@ impl SurrealEmbeddingDatabase {
         &self,
         query: &SearchQuery,
     ) -> Result<Vec<SearchResultWithScore>> {
-        let storage = self.storage
+        let storage = self
+            .storage
             .lock()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         let mut results = Vec::new();
@@ -392,7 +402,8 @@ impl SurrealEmbeddingDatabase {
 
     /// Get all files in the database
     pub async fn list_files(&self) -> Result<Vec<String>> {
-        let storage = self.storage
+        let storage = self
+            .storage
             .lock()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         let mut files: Vec<String> = storage.keys().cloned().collect();
@@ -402,7 +413,8 @@ impl SurrealEmbeddingDatabase {
 
     /// Delete a file from the database
     pub async fn delete_file(&self, file_path: &str) -> Result<bool> {
-        let mut storage = self.storage
+        let mut storage = self
+            .storage
             .lock()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
 
@@ -462,7 +474,8 @@ impl SurrealEmbeddingDatabase {
 
     /// Get comprehensive database statistics
     pub async fn get_stats(&self) -> Result<DatabaseStats> {
-        let storage = self.storage
+        let storage = self
+            .storage
             .lock()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
 
@@ -501,7 +514,8 @@ impl SurrealEmbeddingDatabase {
         relation_type: &str,
         properties: Option<HashMap<String, serde_json::Value>>,
     ) -> Result<()> {
-        let mut relations = self.relations
+        let mut relations = self
+            .relations
             .lock()
             .expect("Relations lock poisoned - document links may be corrupted");
 
@@ -528,7 +542,8 @@ impl SurrealEmbeddingDatabase {
         properties: HashMap<String, serde_json::Value>,
     ) -> Result<bool> {
         // Check if both files exist
-        let storage = self.storage
+        let storage = self
+            .storage
             .lock()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         if !storage.contains_key(from_file) || !storage.contains_key(to_file) {
@@ -536,7 +551,8 @@ impl SurrealEmbeddingDatabase {
         }
         drop(storage);
 
-        let mut relations = self.relations
+        let mut relations = self
+            .relations
             .lock()
             .expect("Relations lock poisoned - document links may be corrupted");
         relations.push((
@@ -560,7 +576,8 @@ impl SurrealEmbeddingDatabase {
         to_file: &str,
         relation_type: &str,
     ) -> Result<bool> {
-        let mut relations = self.relations
+        let mut relations = self
+            .relations
             .lock()
             .expect("Relations lock poisoned - document links may be corrupted");
         let initial_len = relations.len();
@@ -585,7 +602,8 @@ impl SurrealEmbeddingDatabase {
         file_path: &str,
         relation_type: Option<&str>,
     ) -> Result<Vec<String>> {
-        let relations = self.relations
+        let relations = self
+            .relations
             .lock()
             .expect("Relations lock poisoned - document links may be corrupted");
         let mut related_files = Vec::new();

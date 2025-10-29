@@ -1,6 +1,6 @@
 // Header widget rendering
 //
-// Renders the status bar showing vault info and statistics.
+// Renders the status bar showing kiln info and statistics.
 
 use crate::tui::app::App;
 use ratatui::{
@@ -12,13 +12,13 @@ use ratatui::{
 
 /// Render the header status bar
 ///
-/// Format: "Crucible v0.1.0 | /path/to/vault | SurrealDB | 43 docs | 2.3MB"
+/// Format: "Crucible v0.1.0 | /path/to/kiln | SurrealDB | 43 docs | 2.3MB"
 pub fn render_header(app: &App, frame: &mut Frame, area: Rect) {
     let status = &app.status;
 
-    // Format vault path (shorten if too long)
-    let vault_path = status
-        .vault_path
+    // Format kiln path (shorten if too long)
+    let kiln_path = status
+        .kiln_path
         .to_string_lossy()
         .chars()
         .take(40)
@@ -31,7 +31,7 @@ pub fn render_header(app: &App, frame: &mut Frame, area: Rect) {
     let text = format!(
         "Crucible v{} | {} | {} | {} docs | {}",
         env!("CARGO_PKG_VERSION"),
-        vault_path,
+        kiln_path,
         status.db_type,
         status.doc_count,
         db_size,

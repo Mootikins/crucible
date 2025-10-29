@@ -21,20 +21,20 @@ use tokio::process::Command;
 /// Test harness for edge case scenarios
 pub struct EdgeCaseTestHarness {
     pub temp_dir: TempDir,
-    pub vault_path: PathBuf,
+    pub kiln_path: PathBuf,
 }
 
 impl EdgeCaseTestHarness {
     pub async fn new() -> Result<Self> {
         let temp_dir = TempDir::new()?;
-        let vault_path = temp_dir.path().to_path_buf();
+        let kiln_path = temp_dir.path().to_path_buf();
 
         // Create .obsidian directory
-        std::fs::create_dir_all(vault_path.join(".obsidian"))?;
+        std::fs::create_dir_all(kiln_path.join(".obsidian"))?;
 
         Ok(Self {
             temp_dir,
-            vault_path,
+            kiln_path,
         })
     }
 
@@ -44,15 +44,15 @@ impl EdgeCaseTestHarness {
         let large_content = "# Large Document\n\n".to_string() +
             &"This is a repeated sentence. ".repeat(10000) +
             "\n\nEnd of large document.";
-        std::fs::write(self.vault_path.join("large-document.md"), large_content)?;
+        std::fs::write(self.kiln_path.join("large-document.md"), large_content)?;
 
         // 2. File with only frontmatter, no content
         let frontmatter_only = "---\ntitle: Frontmatter Only\ntags: [test, empty]\ncreated: 2025-01-01\n---\n\n";
-        std::fs::write(self.vault_path.join("frontmatter-only.md"), frontmatter_only)?;
+        std::fs::write(self.kiln_path.join("frontmatter-only.md"), frontmatter_only)?;
 
         // 3. File with special characters and encoding issues
         let special_chars = "# Special Characters Test\n\nTest content: café, naïve, résumé, 北京, Москва\nMath: α, β, γ, p < 0.05, μ = 78.4\nQuotes: \"smart quotes\", 'single quotes', \`backticks\`\nSymbols: @#$%^&*()[]{}|\\:;\"'<>?,./";
-        std::fs::write(self.vault_path.join("special-chars.md"), special_chars)?;
+        std::fs::write(self.kiln_path.join("special-chars.md"), special_chars)?;
 
         // 4. File with deeply nested structure simulation
         let nested_content = "# Deep Nesting\n\n";
@@ -61,13 +61,13 @@ impl EdgeCaseTestHarness {
             nested += &format!("\nLevel {}: ", i);
             nested += &"* Item ".repeat(i);
         }
-        std::fs::write(self.vault_path.join("nested-content.md"), nested)?;
+        std::fs::write(self.kiln_path.join("nested-content.md"), nested)?;
 
         // 5. File with minimal content
-        std::fs::write(self.vault_path.join("minimal.md"), "# Min\n\na")?;
+        std::fs::write(self.kiln_path.join("minimal.md"), "# Min\n\na")?;
 
         // 6. File with only whitespace and newlines
-        std::fs::write(self.vault_path.join("whitespace.md"), "   \n\n\t\t   \n   \n")?;
+        std::fs::write(self.kiln_path.join("whitespace.md"), "   \n\n\t\t   \n   \n")?;
 
         // 7. File with code blocks and special syntax
         let code_content = r#"# Code Test
@@ -95,7 +95,7 @@ Links: [[Wikilink]], [[Link|Alias]], [External](https://example.com)
 
 Images: ![Alt text](image.png "Title")
 "#;
-        std::fs::write(self.vault_path.join("code-syntax.md"), code_content)?;
+        std::fs::write(self.kiln_path.join("code-syntax.md"), code_content)?;
 
         Ok(())
     }
@@ -104,11 +104,11 @@ Images: ![Alt text](image.png "Title")
     pub async fn create_encoding_test_files(&self) -> Result<()> {
         // UTF-8 BOM (should be handled properly)
         let bom_content = "\u{FEFF}# BOM Test\n\nContent with UTF-8 BOM";
-        std::fs::write(self.vault_path.join("bom-test.md"), bom_content)?;
+        std::fs::write(self.kiln_path.join("bom-test.md"), bom_content)?;
 
         // Mixed encoding simulation (create invalid UTF-8 sequences)
         let mixed_content = b"# Mixed Encoding\n\nInvalid UTF-8: \xff\xfe \x80\x81\nValid part: This is valid UTF-8 text.";
-        std::fs::write(self.vault_path.join("mixed-encoding.md"), mixed_content)?;
+        std::fs::write(self.kiln_path.join("mixed-encoding.md"), mixed_content)?;
 
         Ok(())
     }
@@ -136,7 +136,7 @@ Content with knowledge management
 Content with Knowledge Management
 Content with kNoWlEdGe MaNaGeMeNt
 "#;
-        std::fs::write(harness.vault_path.join("case-test.md"), test_content)?;
+        std::fs::write(harness.kiln_path.join("case-test.md"), test_content)?;
 
         let test_cases = vec![
             ("KNOWLEDGE MANAGEMENT", "Should find all variations"),
@@ -149,7 +149,7 @@ Content with kNoWlEdGe MaNaGeMeNt
         for (query, _desc) in test_cases {
             let result = run_cli_command(
                 vec!["search", &query, "--limit", "20"],
-                vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+                vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
             ).await?;
 
             result_counts.push(result.matches("case-test.md").count());
@@ -185,12 +185,12 @@ Content with kNoWlEdGe MaNaGeMeNt
         ];
 
         for (filename, content) in files {
-            std::fs::write(harness.vault_path.join(filename), content)?;
+            std::fs::write(harness.kiln_path.join(filename), content)?;
         }
 
         let result = run_cli_command(
             vec!["search", "Search Query", "--limit", "10", "--format", "json"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
 
         // Parse JSON results to verify scoring
@@ -220,7 +220,7 @@ Content with kNoWlEdGe MaNaGeMeNt
         // Test very large file search
         let result = run_cli_command(
             vec!["search", "repeated sentence", "--limit", "5"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
 
         assert!(result.contains("large-document.md"), "Should search in large files");
@@ -229,7 +229,7 @@ Content with kNoWlEdGe MaNaGeMeNt
         // Test minimal content file
         let result = run_cli_command(
             vec!["search", "a", "--limit", "5"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
 
         assert!(result.contains("minimal.md") || result.contains("matches"), "Should handle minimal content");
@@ -237,7 +237,7 @@ Content with kNoWlEdGe MaNaGeMeNt
         // Test empty/whitespace-only file
         let result = run_cli_command(
             vec!["search", "any", "--limit", "5"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
 
         // Should not crash or return problematic content from whitespace-only file
@@ -266,7 +266,7 @@ mod file_system_edge_cases {
             Duration::from_secs(10),
             run_cli_command(
                 vec!["search", "repeated sentence", "--limit", "1"],
-                vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+                vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
             )
         ).await;
 
@@ -295,7 +295,7 @@ mod file_system_edge_cases {
         // Search in files with encoding issues
         let result = run_cli_command(
             vec!["search", "content", "--limit", "10"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
 
         // Should not crash on encoding issues
@@ -304,7 +304,7 @@ mod file_system_edge_cases {
         // Search for BOM content
         let result = run_cli_command(
             vec!["search", "BOM", "--limit", "10"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
 
         // Should handle BOM properly
@@ -322,7 +322,7 @@ mod file_system_edge_cases {
         // Search for nested content
         let result = run_cli_command(
             vec!["search", "Level 10", "--limit", "5"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
 
         assert!(result.contains("nested-content.md"), "Should find nested content");
@@ -330,7 +330,7 @@ mod file_system_edge_cases {
         // Search for deeply nested content
         let result = run_cli_command(
             vec!["search", "Level 20", "--limit", "5"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
 
         assert!(result.contains("nested-content.md"), "Should find deeply nested content");
@@ -345,7 +345,7 @@ mod file_system_edge_cases {
         harness.create_problematic_files().await?;
 
         // Create a file and make it unreadable (if permissions allow)
-        let test_file = harness.vault_path.join("unreadable.md");
+        let test_file = harness.kiln_path.join("unreadable.md");
         std::fs::write(&test_file, "# Unreadable\n\nThis file should be unreadable")?;
 
         // Try to make file unreadable (this may not work on all systems)
@@ -360,7 +360,7 @@ mod file_system_edge_cases {
         // Search should not crash on unreadable files
         let result = run_cli_command(
             vec!["search", "unreadable", "--limit", "10"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
 
         // Should handle permission errors gracefully
@@ -396,7 +396,7 @@ mod search_query_edge_cases {
         // Empty query
         let result = run_cli_command(
             vec!["search", "", "--limit", "10"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
 
         // Should handle empty query gracefully
@@ -408,7 +408,7 @@ mod search_query_edge_cases {
         for char_query in single_chars {
             let result = run_cli_command(
                 vec!["search", char_query, "--limit", "5"],
-                vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+                vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
             ).await?;
 
             // Should not crash on single character queries
@@ -446,7 +446,7 @@ mod search_query_edge_cases {
         for query in special_queries {
             let result = run_cli_command(
                 vec!["search", query, "--limit", "5"],
-                vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+                vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
             ).await?;
 
             // Should not crash on special characters
@@ -474,7 +474,7 @@ mod search_query_edge_cases {
                 Duration::from_secs(5),
                 run_cli_command(
                     vec!["search", long_query, "--limit", "5"],
-                    vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+                    vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
                 )
             ).await;
 
@@ -512,7 +512,7 @@ Special: café naïve résumé Beijing Москва
 Arrows: ← → ↑ ↓ ↔
 Symbols: © ® ™ § ¶ † ‡ • …
 "#;
-        std::fs::write(harness.vault_path.join("unicode-emoji.md"), unicode_content)?;
+        std::fs::write(harness.kiln_path.join("unicode-emoji.md"), unicode_content)?;
 
         let unicode_queries = vec![
             "🚀", "rocket emoji",
@@ -526,7 +526,7 @@ Symbols: © ® ™ § ¶ † ‡ • …
         for query in unicode_queries {
             let result = run_cli_command(
                 vec!["search", query, "--limit", "5"],
-                vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+                vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
             ).await?;
 
             // Should handle Unicode/emoji queries
@@ -549,7 +549,7 @@ Symbols: © ® ™ § ¶ † ‡ • …
         ];
 
         for (filename, content) in test_files {
-            std::fs::write(harness.vault_path.join(filename), content)?;
+            std::fs::write(harness.kiln_path.join(filename), content)?;
         }
 
         // Search for terms that appear in filenames but not content
@@ -558,7 +558,7 @@ Symbols: © ® ™ § ¶ † ‡ • …
         for query in filename_queries {
             let result = run_cli_command(
                 vec!["search", query, "--limit", "5"],
-                vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+                vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
             ).await?;
 
             // Should find files matching the query in filename or content
@@ -587,7 +587,7 @@ mod output_format_tests {
         // Test JSON output with special characters
         let result = run_cli_command(
             vec!["search", "special", "--format", "json", "--limit", "5"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
 
         // Should be valid JSON
@@ -627,7 +627,7 @@ mod output_format_tests {
         // Test content preview with very long content
         let result = run_cli_command(
             vec!["search", "repeated", "--show-content", "--limit", "3"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
 
         // Content should be truncated in preview
@@ -636,7 +636,7 @@ mod output_format_tests {
         // Test content preview with Unicode
         let result = run_cli_command(
             vec!["search", "café", "--show-content", "--limit", "3"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
 
         // Should handle Unicode in content preview
@@ -666,13 +666,13 @@ mod output_format_tests {
 
         for filename in problem_names {
             let content = format!("# {}\n\nContent of {}", filename, filename);
-            std::fs::write(harness.vault_path.join(filename), content)?;
+            std::fs::write(harness.kiln_path.join(filename), content)?;
         }
 
         // Search for content and verify file paths are handled correctly
         let result = run_cli_command(
             vec!["search", "Content of", "--format", "json", "--limit", "20"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
 
         // Parse JSON and verify file paths
@@ -708,14 +708,14 @@ mod performance_tests {
         for i in 1..=100 {
             let content = format!("# Document {}\n\nContent for document {} with search terms.", i, i);
             let filename = format!("document-{:03}.md", i);
-            std::fs::write(harness.vault_path.join(filename), content)?;
+            std::fs::write(harness.kiln_path.join(filename), content)?;
         }
 
         // Time search performance
         let start = std::time::Instant::now();
         let result = run_cli_command(
             vec!["search", "search terms", "--limit", "50"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
         let duration = start.elapsed();
 
@@ -735,7 +735,7 @@ mod performance_tests {
         // Search in large file should not cause memory issues
         let result = run_cli_command(
             vec!["search", "sentence", "--show-content", "--limit", "1"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
 
         // Output should be reasonably sized (indicating proper memory management)
@@ -752,17 +752,17 @@ mod performance_tests {
         // Create test files
         for i in 1..=10 {
             let content = format!("# File {}\n\nContent {}", i, i);
-            std::fs::write(harness.vault_path.join(format!("file{}.md", i)), content)?;
+            std::fs::write(harness.kiln_path.join(format!("file{}.md", i)), content)?;
         }
 
         // Run multiple searches concurrently
         let mut handles = Vec::new();
         for i in 1..=5 {
-            let vault_path = harness.vault_path.clone();
+            let kiln_path = harness.kiln_path.clone();
             let handle = tokio::spawn(async move {
                 run_cli_command(
                     vec!["search", &format!("Content {}", i), "--limit", "5"],
-                    vec![("OBSIDIAN_VAULT_PATH", vault_path.to_string_lossy().as_ref())]
+                    vec![("OBSIDIAN_KILN_PATH", kiln_path.to_string_lossy().as_ref())]
                 ).await
             });
             handles.push(handle);
@@ -795,21 +795,21 @@ mod performance_tests {
 mod reliability_tests {
     use super::*;
 
-    /// Test search behavior with corrupted vault structure
+    /// Test search behavior with corrupted kiln structure
     #[tokio::test]
-    async fn test_corrupted_vault_handling() -> Result<()> {
+    async fn test_corrupted_kiln_handling() -> Result<()> {
         let harness = EdgeCaseTestHarness::new().await?;
 
         // Create invalid file in .obsidian directory
-        std::fs::write(harness.vault_path.join(".obsidian/invalid"), "invalid content")?;
+        std::fs::write(harness.kiln_path.join(".obsidian/invalid"), "invalid content")?;
 
-        // Search should still work despite vault corruption
+        // Search should still work despite kiln corruption
         let result = run_cli_command(
             vec!["search", "test", "--limit", "5"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
 
-        assert!(result.len() > 0, "Should handle corrupted vault gracefully");
+        assert!(result.len() > 0, "Should handle corrupted kiln gracefully");
 
         Ok(())
     }
@@ -824,13 +824,13 @@ mod reliability_tests {
             use std::os::unix::fs::symlink;
 
             // Create a broken symlink
-            let symlink_path = harness.vault_path.join("broken-symlink.md");
+            let symlink_path = harness.kiln_path.join("broken-symlink.md");
             symlink("nonexistent-file.md", &symlink_path)?;
 
             // Search should not crash on broken symlinks
             let result = run_cli_command(
                 vec!["search", "test", "--limit", "5"],
-                vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+                vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
             ).await?;
 
             assert!(result.len() > 0, "Should handle broken symlinks gracefully");
@@ -845,17 +845,17 @@ mod reliability_tests {
         let harness = EdgeCaseTestHarness::new().await?;
 
         // Create some valid files
-        std::fs::write(harness.vault_path.join("valid1.md"), "# Valid 1\n\nContent")?;
-        std::fs::write(harness.vault_path.join("valid2.md"), "# Valid 2\n\nContent")?;
+        std::fs::write(harness.kiln_path.join("valid1.md"), "# Valid 1\n\nContent")?;
+        std::fs::write(harness.kiln_path.join("valid2.md"), "# Valid 2\n\nContent")?;
 
         // Create problematic conditions
-        std::fs::write(harness.vault_path.join("empty.md"), "")?;
-        std::fs::write(harness.vault_path.join("binary.md"), b"\x00\x01\x02\x03\x04\x05")?;
+        std::fs::write(harness.kiln_path.join("empty.md"), "")?;
+        std::fs::write(harness.kiln_path.join("binary.md"), b"\x00\x01\x02\x03\x04\x05")?;
 
         // Search should work and skip problematic files
         let result = run_cli_command(
             vec!["search", "Content", "--limit", "10"],
-            vec![("OBSIDIAN_VAULT_PATH", harness.vault_path.to_string_lossy().as_ref())]
+            vec![("OBSIDIAN_KILN_PATH", harness.kiln_path.to_string_lossy().as_ref())]
         ).await?;
 
         assert!(result.contains("valid1.md") || result.contains("valid2.md"),
