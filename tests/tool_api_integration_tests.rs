@@ -13,24 +13,24 @@ use serde::{Deserialize, Serialize};
 use tokio::fs;
 
 use crate::comprehensive_integration_workflow_tests::{
-    ComprehensiveTestVault, CliTestHarness, ReplTestHarness
+    ComprehensiveTestKiln, CliTestHarness, ReplTestHarness
 };
 
 /// Tool API test harness for comprehensive tool testing
 pub struct ToolApiTestHarness {
-    vault_dir: TempDir,
-    test_vault: ComprehensiveTestVault,
+    kiln_dir: TempDir,
+    test_kiln: ComprehensiveTestKiln,
 }
 
 impl ToolApiTestHarness {
     /// Create a new tool API test harness
     pub async fn new() -> Result<Self> {
-        let test_vault = ComprehensiveTestVault::create().await?;
-        let vault_dir = test_vault.path().to_owned();
+        let test_kiln = ComprehensiveTestKiln::create().await?;
+        let kiln_dir = test_kiln.path().to_owned();
 
         Ok(Self {
-            vault_dir: vault_dir.to_owned(),
-            test_vault,
+            kiln_dir: kiln_dir.to_owned(),
+            test_kiln,
         })
     }
 
@@ -95,10 +95,10 @@ impl ToolApiTestHarness {
         assert!(!search_docs.is_empty(), "Search documents tool should produce output");
         assert!(!search_docs.contains("❌"), "Search documents should not error");
 
-        // Test 4: Get vault stats tool (no parameters)
-        let vault_stats = repl.send_command(":run get_kiln_stats")?;
-        assert!(!vault_stats.is_empty(), "Vault stats tool should produce output");
-        assert!(!vault_stats.contains("❌"), "Vault stats should not error");
+        // Test 4: Get kiln stats tool (no parameters)
+        let kiln_stats = repl.send_command(":run get_kiln_stats")?;
+        assert!(!kiln_stats.is_empty(), "Kiln stats tool should produce output");
+        assert!(!kiln_stats.contains("❌"), "Kiln stats should not error");
 
         // Test 5: Tool with multiple parameters
         let multi_param = repl.send_command(":run search_by_tags project management")?;
@@ -176,7 +176,7 @@ impl ToolApiTestHarness {
         let analysis = repl.send_command(":run search_documents \"tasks deadlines milestones\"")?;
         assert!(!analysis.is_empty(), "Analysis step should find task-related content");
 
-        // Step 3: Get vault statistics for context
+        // Step 3: Get kiln statistics for context
         let statistics = repl.send_command(":run get_kiln_stats")?;
         assert!(!statistics.is_empty(), "Statistics step should provide context");
 

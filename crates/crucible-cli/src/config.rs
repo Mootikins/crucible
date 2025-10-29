@@ -479,9 +479,9 @@ impl Default for MigrationConfig {
 impl Default for FileWatcherConfig {
     fn default() -> Self {
         Self {
-            enabled: true,  // ON by default (industry standard)
-            debounce_ms: 500,  // Match cargo-watch default
-            exclude_patterns: Vec::new(),  // Built-in defaults are hardcoded
+            enabled: true,                // ON by default (industry standard)
+            debounce_ms: 500,             // Match cargo-watch default
+            exclude_patterns: Vec::new(), // Built-in defaults are hardcoded
         }
     }
 }
@@ -789,7 +789,8 @@ max_performance_degradation = 20.0
         // Check if we're in test mode or mock provider requested
         if std::env::var("CRUCIBLE_TEST_MODE").is_ok()
             || self.kiln.embedding_model.as_ref().map(|m| m.as_str()) == Some("mock")
-            || self.kiln.embedding_model.as_ref().map(|m| m.as_str()) == Some("mock-test-model") {
+            || self.kiln.embedding_model.as_ref().map(|m| m.as_str()) == Some("mock-test-model")
+        {
             return Ok(EmbeddingConfig::mock());
         }
 
@@ -807,8 +808,13 @@ max_performance_degradation = 20.0
     }
 
     /// Convert from new [embedding] section format
-    fn to_embedding_config_from_new_format(&self, embedding: &EmbeddingConfigSection) -> Result<EmbeddingConfig> {
-        let model = embedding.model.as_ref()
+    fn to_embedding_config_from_new_format(
+        &self,
+        embedding: &EmbeddingConfigSection,
+    ) -> Result<EmbeddingConfig> {
+        let model = embedding
+            .model
+            .as_ref()
             .or(self.kiln.embedding_model.as_ref())
             .ok_or_else(|| {
                 anyhow::anyhow!(
@@ -822,15 +828,20 @@ max_performance_degradation = 20.0
         let provider = embedding.provider.as_deref().unwrap_or("fastembed");
 
         match provider.to_lowercase().as_str() {
-            "fastembed" => {
-                Ok(EmbeddingConfig::fastembed(
-                    Some(model.clone()),
-                    embedding.fastembed.cache_dir.as_ref().map(|p| p.to_string_lossy().to_string()),
-                    embedding.fastembed.batch_size,
-                ))
-            }
+            "fastembed" => Ok(EmbeddingConfig::fastembed(
+                Some(model.clone()),
+                embedding
+                    .fastembed
+                    .cache_dir
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string()),
+                embedding.fastembed.batch_size,
+            )),
             "ollama" => {
-                let url = embedding.ollama.url.as_ref()
+                let url = embedding
+                    .ollama
+                    .url
+                    .as_ref()
                     .or(Some(&self.kiln.embedding_url))
                     .ok_or_else(|| anyhow::anyhow!("Ollama URL not configured"))?;
                 Ok(EmbeddingConfig::ollama(
@@ -845,10 +856,7 @@ max_performance_degradation = 20.0
                     std::env::var("OPENAI_API_KEY")
                         .map_err(|_| anyhow::anyhow!("OpenAI API key not configured"))?
                 };
-                Ok(EmbeddingConfig::openai(
-                    api_key,
-                    Some(model.clone()),
-                ))
+                Ok(EmbeddingConfig::openai(api_key, Some(model.clone())))
             }
             "candle" => {
                 Ok(EmbeddingConfig::candle(
@@ -858,12 +866,10 @@ max_performance_degradation = 20.0
                     None, // device
                 ))
             }
-            _ => {
-                Err(anyhow::anyhow!(
-                    "Unknown embedding provider: {}. Valid options: fastembed, ollama, openai, candle",
-                    provider
-                ))
-            }
+            _ => Err(anyhow::anyhow!(
+                "Unknown embedding provider: {}. Valid options: fastembed, ollama, openai, candle",
+                provider
+            )),
         }
     }
 
@@ -888,24 +894,15 @@ max_performance_degradation = 20.0
         };
 
         match provider_type {
-            "fastembed" => {
-                Ok(EmbeddingConfig::fastembed(
-                    Some(model.clone()),
-                    None,
-                    None,
-                ))
-            }
+            "fastembed" => Ok(EmbeddingConfig::fastembed(Some(model.clone()), None, None)),
             "openai" => {
-                let api_key = std::env::var("OPENAI_API_KEY")
-                    .unwrap_or_default();
+                let api_key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
                 Ok(EmbeddingConfig::openai(api_key, Some(model.clone())))
             }
-            _ => {
-                Ok(EmbeddingConfig::ollama(
-                    Some(self.kiln.embedding_url.clone()),
-                    Some(model.clone()),
-                ))
-            }
+            _ => Ok(EmbeddingConfig::ollama(
+                Some(self.kiln.embedding_url.clone()),
+                Some(model.clone()),
+            )),
         }
     }
 
@@ -1254,15 +1251,15 @@ mod tests {
         let kiln_path = temp.path().join("kiln");
 
         // Use builder to create config with explicit kiln path
-        let config = CliConfig::builder()
-            .kiln_path(&kiln_path)
-            .build()
-            .unwrap();
+        let config = CliConfig::builder().kiln_path(&kiln_path).build().unwrap();
 
         let expected_db = kiln_path.join(".crucible/kiln.db");
 
         // The config should use the path we set via builder
-        assert_eq!(&config.kiln.path, &kiln_path, "Config kiln path should match builder");
+        assert_eq!(
+            &config.kiln.path, &kiln_path,
+            "Config kiln path should match builder"
+        );
         assert_eq!(config.database_path(), expected_db);
     }
 
@@ -1272,15 +1269,15 @@ mod tests {
         let kiln_path = temp.path().join("kiln");
 
         // Use builder to create config with explicit kiln path
-        let config = CliConfig::builder()
-            .kiln_path(&kiln_path)
-            .build()
-            .unwrap();
+        let config = CliConfig::builder().kiln_path(&kiln_path).build().unwrap();
 
         let expected_tools = kiln_path.join("tools");
 
         // The config should use the path we set via builder
-        assert_eq!(&config.kiln.path, &kiln_path, "Config kiln path should match builder");
+        assert_eq!(
+            &config.kiln.path, &kiln_path,
+            "Config kiln path should match builder"
+        );
         assert_eq!(config.tools_path(), expected_tools);
     }
 
@@ -1397,10 +1394,16 @@ timeout_secs = 60
             .build()
             .unwrap();
 
-        assert_eq!(config.kiln.path, std::path::PathBuf::from("/tmp/builder-test"));
+        assert_eq!(
+            config.kiln.path,
+            std::path::PathBuf::from("/tmp/builder-test")
+        );
         assert_eq!(config.chat_model(), "builder-model");
         assert_eq!(config.temperature(), 0.9);
-        assert_eq!(config.ollama_endpoint(), "https://builder-ollama.example.com");
+        assert_eq!(
+            config.ollama_endpoint(),
+            "https://builder-ollama.example.com"
+        );
     }
 
     #[test]
@@ -1464,7 +1467,10 @@ timeout_secs = 60
         let embedding_config = config.to_embedding_config().unwrap();
         assert_eq!(embedding_config.model_name(), "nomic-embed-text");
         assert_eq!(embedding_config.provider_type, ProviderType::Ollama);
-        assert_eq!(embedding_config.endpoint(), "https://llama.terminal.krohnos.io");
+        assert_eq!(
+            embedding_config.endpoint(),
+            "https://llama.terminal.krohnos.io"
+        );
     }
 
     #[test]

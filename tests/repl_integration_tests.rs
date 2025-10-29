@@ -196,13 +196,13 @@ fn test_repl_run_command_executes_system_tools() -> Result<()> {
     println!("📋 REPL :run get_kiln_stats output:\n{}", output2);
 
     // Verify get_kiln_stats provides meaningful output
-    let vault_stats_assertions = vec![
+    let kiln_stats_assertions = vec![
         ("Stats output", !output2.is_empty()),
         ("No tool errors", !output2.contains("Tool Error") && !output2.contains("not found")),
         ("Execution completed", output2.len() > 10), // Should have some content
     ];
 
-    for (description, assertion) in vault_stats_assertions {
+    for (description, assertion) in kiln_stats_assertions {
         assert!(assertion, "❌ {}: {}", description, output2);
         println!("✅ {}: {}", description, if assertion { "PASS" } else { "FAIL" });
     }

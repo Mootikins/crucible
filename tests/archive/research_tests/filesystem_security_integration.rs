@@ -17,33 +17,33 @@ use crucible_cli::commands::search::{
 /// Test setup for security scenarios
 struct SecurityTestSetup {
     temp_dir: TempDir,
-    vault_path: PathBuf,
+    kiln_path: PathBuf,
 }
 
 impl SecurityTestSetup {
     fn new() -> Result<Self> {
         let temp_dir = TempDir::new()?;
-        let vault_path = temp_dir.path().to_path_buf();
+        let kiln_path = temp_dir.path().to_path_buf();
 
         Ok(Self {
             temp_dir,
-            vault_path,
+            kiln_path,
         })
     }
 
     fn create_test_scenario(&self) -> Result<()> {
         // Create normal files
-        fs::write(self.vault_path.join("normal1.md"), "# Normal File 1\nContent 1")?;
-        fs::write(self.vault_path.join("normal2.md"), "# Normal File 2\nContent 2")?;
+        fs::write(self.kiln_path.join("normal1.md"), "# Normal File 1\nContent 1")?;
+        fs::write(self.kiln_path.join("normal2.md"), "# Normal File 2\nContent 2")?;
 
         // Create subdirectory with files
-        let subdir = self.vault_path.join("subdir");
+        let subdir = self.kiln_path.join("subdir");
         fs::create_dir(&subdir)?;
         fs::write(subdir.join("subfile.md"), "# Sub File\nContent in subdirectory")?;
 
         // Create file with special characters
         fs::write(
-            self.vault_path.join("unicode_测试.md"),
+            self.kiln_path.join("unicode_测试.md"),
             "# Unicode Test\n测试内容"
         )?;
 
@@ -60,7 +60,7 @@ fn test_secure_vs_legacy_file_discovery() -> Result<()> {
 
     // Test legacy approach (may have security issues)
     println!("\n--- LEGACY APPROACH ---");
-    match get_markdown_files_legacy(&setup.vault_path) {
+    match get_markdown_files_legacy(&setup.kiln_path) {
         Ok(legacy_files) => {
             println!("Legacy found {} files:", legacy_files.len());
             for file in &legacy_files {
@@ -74,7 +74,7 @@ fn test_secure_vs_legacy_file_discovery() -> Result<()> {
 
     // Test secure approach
     println!("\n--- SECURE APPROACH ---");
-    match get_markdown_files(&setup.vault_path) {
+    match get_markdown_files(&setup.kiln_path) {
         Ok(secure_files) => {
             println!("Secure found {} files:", secure_files.len());
             for file in &secure_files {
@@ -106,7 +106,7 @@ fn test_file_content_security() -> Result<()> {
     println!("\n=== TESTING FILE CONTENT SECURITY ===");
 
     // Test reading normal file
-    let normal_file = setup.vault_path.join("normal1.md").to_string_lossy().to_string();
+    let normal_file = setup.kiln_path.join("normal1.md").to_string_lossy().to_string();
     match get_file_content(&normal_file) {
         Ok(content) => {
             println!("✅ Successfully read normal file: {}", content.trim());
@@ -119,7 +119,7 @@ fn test_file_content_security() -> Result<()> {
     }
 
     // Test reading Unicode file
-    let unicode_file = setup.vault_path.join("unicode_测试.md").to_string_lossy().to_string();
+    let unicode_file = setup.kiln_path.join("unicode_测试.md").to_string_lossy().to_string();
     match get_file_content(&unicode_file) {
         Ok(content) => {
             println!("✅ Successfully read Unicode file: {}", content.trim());
@@ -132,7 +132,7 @@ fn test_file_content_security() -> Result<()> {
     }
 
     // Test reading non-existent file (should fail gracefully)
-    let nonexistent_file = setup.vault_path.join("nonexistent.md").to_string_lossy().to_string();
+    let nonexistent_file = setup.kiln_path.join("nonexistent.md").to_string_lossy().to_string();
     match get_file_content(&nonexistent_file) {
         Ok(_) => {
             println!("❌ Unexpectedly succeeded reading non-existent file");
@@ -154,7 +154,7 @@ fn test_search_security() -> Result<()> {
     println!("\n=== TESTING SEARCH SECURITY ===");
 
     // Test normal search query (case-insensitive)
-    match search_files_in_kiln(&setup.vault_path, "content", 10, false) {
+    match search_files_in_kiln(&setup.kiln_path, "content", 10, false) {
         Ok(results) => {
             println!("✅ Search for 'Content' found {} results:", results.len());
             for result in &results {
@@ -169,7 +169,7 @@ fn test_search_security() -> Result<()> {
     }
 
     // Test search with Unicode
-    match search_files_in_kiln(&setup.vault_path, "测试", 10, false) {
+    match search_files_in_kiln(&setup.kiln_path, "测试", 10, false) {
         Ok(results) => {
             println!("✅ Search for '测试' found {} results:", results.len());
             for result in &results {
@@ -194,7 +194,7 @@ fn test_permission_handling() -> Result<()> {
     println!("\n=== TESTING PERMISSION HANDLING ===");
 
     // Create a file with no read permissions
-    let restricted_file = setup.vault_path.join("restricted.md");
+    let restricted_file = setup.kiln_path.join("restricted.md");
     fs::write(&restricted_file, "# Restricted File\nThis should not be readable")?;
 
     // Remove read permissions
@@ -203,7 +203,7 @@ fn test_permission_handling() -> Result<()> {
     fs::set_permissions(&restricted_file, perms)?;
 
     // Test secure walker handles permission errors gracefully
-    match get_markdown_files(&setup.vault_path) {
+    match get_markdown_files(&setup.kiln_path) {
         Ok(files) => {
             println!("✅ Secure walker found {} files despite permission issues:", files.len());
 
@@ -241,15 +241,15 @@ fn test_large_file_handling() -> Result<()> {
     println!("\n=== TESTING LARGE FILE HANDLING ===");
 
     // Create a file that exceeds size limits (15MB > 10MB limit)
-    let large_file = setup.vault_path.join("large.md");
+    let large_file = setup.kiln_path.join("large.md");
     let large_content = "# Large File\n".to_string() + &"x".repeat(15 * 1024 * 1024);
     fs::write(&large_file, large_content)?;
 
     // Also create a normal file
-    fs::write(setup.vault_path.join("normal.md"), "# Normal File\nNormal content")?;
+    fs::write(setup.kiln_path.join("normal.md"), "# Normal File\nNormal content")?;
 
     // Test secure walker includes large file in discovery
-    match get_markdown_files(&setup.vault_path) {
+    match get_markdown_files(&setup.kiln_path) {
         Ok(files) => {
             println!("✅ Secure walker found {} files (including large file):", files.len());
             assert!(files.iter().any(|f| f.contains("normal.md")));
@@ -275,7 +275,7 @@ fn test_large_file_handling() -> Result<()> {
     }
 
     // Test reading normal file (should work)
-    let normal_path = setup.vault_path.join("normal.md").to_string_lossy().to_string();
+    let normal_path = setup.kiln_path.join("normal.md").to_string_lossy().to_string();
     match get_file_content(&normal_path) {
         Ok(content) => {
             println!("✅ Successfully read normal file: {}", content.trim());
@@ -296,15 +296,15 @@ fn test_security_boundary_enforcement() -> Result<()> {
 
     println!("\n=== TESTING SECURITY BOUNDARY ENFORCEMENT ===");
 
-    // Create a symlink pointing outside the vault
+    // Create a symlink pointing outside the kiln
     let outside_file = PathBuf::from("/tmp/crucible_security_test.md");
     fs::write(&outside_file, "# Outside File\nThis should not be accessible")?;
 
-    let symlink_path = setup.vault_path.join("outside_link.md");
+    let symlink_path = setup.kiln_path.join("outside_link.md");
     std::os::unix::fs::symlink(&outside_file, &symlink_path)?;
 
     // Test secure walker doesn't follow external symlinks
-    match get_markdown_files(&setup.vault_path) {
+    match get_markdown_files(&setup.kiln_path) {
         Ok(files) => {
             println!("✅ Secure walker found {} files:", files.len());
 
@@ -351,10 +351,10 @@ fn test_overall_security_improvements() -> Result<()> {
     println!("\n=== OVERALL SECURITY IMPROVEMENTS SUMMARY ===");
 
     // Test all secure operations work together
-    let files = get_markdown_files(&setup.vault_path)?;
+    let files = get_markdown_files(&setup.kiln_path)?;
     println!("✅ Secure file discovery: {} files found", files.len());
 
-    let search_results = search_files_in_kiln(&setup.vault_path, "Content", 10, false)?;
+    let search_results = search_files_in_kiln(&setup.kiln_path, "Content", 10, false)?;
     println!("✅ Secure search: {} results found", search_results.len());
 
     for file in &files {

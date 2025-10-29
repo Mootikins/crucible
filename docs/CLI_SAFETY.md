@@ -24,7 +24,7 @@ Crucible CLI includes built-in safety protections to ensure reliable performance
 **Example**:
 ```bash
 # Large file automatically skipped
-crucible-cli search "query"  # in vault with 50MB file
+crucible-cli search "query"  # in kiln with 50MB file
 # Output: Files processed successfully, large file skipped with warning
 ```
 
@@ -131,7 +131,7 @@ Error: File too large (16MB > 10MB limit): /path/to/large-file.md
 
 ### Memory Usage
 
-- **Constant Memory**: CLI uses consistent memory regardless of vault size
+- **Constant Memory**: CLI uses consistent memory regardless of kiln size
 - **Streaming Processing**: Large files processed without loading entire content into memory
 - **Buffer Management**: 8KB buffers balance performance and memory usage
 - **Garbage Collection**: Efficient memory cleanup after each file
@@ -188,7 +188,7 @@ echo " café résumé 🚀" | hexdump -C
 # ✅ Should show proper UTF-8 encoding
 ```
 
-#### Memory Issues on Large Vaults
+#### Memory Issues on Large Kilns
 **Problem**: System running out of memory with many files
 **Solution**: Use limits and filters to reduce processing scope
 ```bash

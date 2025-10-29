@@ -249,7 +249,7 @@ impl CrucibleToolManager {
                 || tool.starts_with("delete_")
                 || tool.starts_with("list_")
             {
-                "vault".to_string()
+                "kiln".to_string()
             } else if tool.contains("document")
                 || tool.contains("content")
                 || tool.contains("filename")

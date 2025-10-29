@@ -47,9 +47,7 @@ pub use embeddings::{
     OllamaProvider, OpenAIProvider,
 };
 
-pub use reranking::{
-    FastEmbedReranker, Reranker, RerankResult, RerankerModelInfo,
-};
+pub use reranking::{FastEmbedReranker, RerankResult, Reranker, RerankerModelInfo};
 
 pub use text_generation::{
     create_text_provider, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,

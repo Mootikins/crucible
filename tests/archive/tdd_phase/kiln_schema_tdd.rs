@@ -1,18 +1,18 @@
 //! TDD Tests for Database Schema with Kiln Terminology
 //!
 //! This test suite implements Test-Driven Development methodology for migrating
-//! the database schema from vault terminology to kiln terminology. The tests will
+//! the database schema from kiln terminology to kiln terminology. The tests will
 //! initially FAIL (RED phase) to drive the implementation of proper schema
 //! terminology changes.
 //!
 //! ## Current State Analysis
 //!
-//! The current schema uses vault terminology throughout:
+//! The current schema uses kiln terminology throughout:
 //! - Table names: `notes`, `tags`, `metadata` (should be `kiln_notes`, `kiln_tags`, `kiln_metadata`)
-//! - Column names: `path` refers to vault paths (should be `kiln_path`)
-//! - Comments and references: "knowledge vault" terminology (should be "knowledge kiln")
-//! - Function names: vault-specific naming (should be kiln-specific)
-//! - Index names: vault-based prefixes (should be kiln-based prefixes)
+//! - Column names: `path` refers to kiln paths (should be `kiln_path`)
+//! - Comments and references: "knowledge kiln" terminology (should be "knowledge kiln")
+//! - Function names: kiln-specific naming (should be kiln-specific)
+//! - Index names: kiln-based prefixes (should be kiln-based prefixes)
 //!
 //! ## Test Goals
 //!
@@ -23,7 +23,7 @@
 //! 4. Function names using kiln terminology
 //! 5. View names and stored procedures with kiln terminology
 //! 6. Error messages and comments with kiln terminology
-//! 7. Migration scripts from vault schema to kiln schema
+//! 7. Migration scripts from kiln schema to kiln schema
 //! 8. Data integrity during migration process
 
 use std::time::{Duration, Instant};
@@ -100,7 +100,7 @@ async fn test_database_tables_use_kiln_naming() {
     let result = ctx.client.query("INFO FOR TABLE kiln_metadata", &[]).await;
     assert!(result.is_ok(), "kiln_metadata table should exist");
 
-    // Check that old vault-based tables don't exist
+    // Check that old kiln-based tables don't exist
     let result = ctx.client.query("INFO FOR TABLE notes", &[]).await;
     assert!(result.is_err(), "Old 'notes' table should not exist");
 
@@ -340,20 +340,20 @@ async fn test_kiln_function_names_use_proper_terminology() {
 }
 
 // ============================================================================
-// TEST 7: Schema Migration from Vault to Kiln
+// TEST 7: Schema Migration from Kiln to Kiln
 // ============================================================================
 
 #[tokio::test]
 #[ignore] // Ignored until we implement migration
-async fn test_schema_migration_from_vault_to_kiln() {
+async fn test_schema_migration_from_kiln_to_kiln() {
     let ctx = KilnSchemaTestContext::new().await.expect("Failed to create test context");
 
-    // Test migration from old vault schema to new kiln schema
+    // Test migration from old kiln schema to new kiln schema
     // This should fail until migration is implemented
 
     // Test migration command exists
     let migrate_query = r#"
-    CALL kiln::migrate_from_vault()
+    CALL kiln::migrate_from_kiln()
     "#;
 
     let result = ctx.client.query(migrate_query, &[]).await;
@@ -372,7 +372,7 @@ async fn test_schema_migration_from_vault_to_kiln() {
     let integrity_check = r#"
     SELECT kiln_path, title, content
     FROM kiln_notes
-    WHERE kiln_path = 'old/vault_note.md'
+    WHERE kiln_path = 'old/kiln_note.md'
     LIMIT 1
     "#;
 
@@ -417,7 +417,7 @@ async fn test_error_messages_use_kiln_terminology() {
     // Check that error message mentions kiln_path, not path
     let error_string = format!("{:?}", result.unwrap_err());
     assert!(error_string.contains("kiln_path"), "Error should mention 'kiln_path', not 'path'");
-    assert!(!error_string.contains(" vault "), "Error should not mention 'vault'");
+    assert!(!error_string.contains(" kiln "), "Error should not mention 'kiln'");
 
     ctx.cleanup().await.expect("Failed to cleanup");
 }
@@ -562,7 +562,7 @@ pub async fn run_all_kiln_schema_tests() -> Result<(), Box<dyn std::error::Error
         "Embedding Storage with Kiln Terminology",
         "Kiln Indexes and Constraints Use Proper Naming",
         "Kiln Function Names Use Proper Terminology",
-        "Schema Migration from Vault to Kiln",
+        "Schema Migration from Kiln to Kiln",
         "Error Messages Use Kiln Terminology",
         "Kiln Schema Version Tracking",
         "Performance with Kiln Schema",

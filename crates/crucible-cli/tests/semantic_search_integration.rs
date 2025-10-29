@@ -1,8 +1,8 @@
-//! Comprehensive integration tests for semantic search using the existing test vault
+//! Comprehensive integration tests for semantic search using the existing test kiln
 //!
-//! This test file uses the rich test vault at /home/moot/crucible/tests/test-kiln/ which contains
+//! This test file uses the rich test kiln at /home/moot/crucible/tests/test-kiln/ which contains
 //! 12 realistic markdown files with diverse content types, frontmatter properties, and linking patterns.
-//! The test vault provides 150+ search scenarios for comprehensive validation of the semantic search
+//! The test kiln provides 150+ search scenarios for comprehensive validation of the semantic search
 //! integration with crucible-surrealdb functionality.
 //!
 //! These tests verify:
@@ -22,11 +22,11 @@ fn simple_hash(content: &str) -> u64 {
 }
 
 use anyhow::Result;
-use crucible_llm::embeddings::create_mock_provider;
 use crucible_cli::{commands::semantic, config::CliConfig};
 use crucible_core::parser::ParsedDocument;
+use crucible_llm::embeddings::create_mock_provider;
 use crucible_surrealdb::{
-    vault_integration::{
+    kiln_integration::{
         self, get_database_stats, semantic_search, store_document_embedding, store_parsed_document,
     },
     DocumentEmbedding, SurrealClient, SurrealDbConfig,
@@ -34,30 +34,30 @@ use crucible_surrealdb::{
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
-use tokio::time::timeout;
 use tempfile::TempDir;
+use tokio::time::timeout;
 
-/// Test vault path using the existing comprehensive test vault
-const TEST_VAULT_PATH: &str = "/home/moot/crucible/tests/test-kiln";
+/// Test kiln path using the existing comprehensive test kiln
+const TEST_KILN_PATH: &str = "/home/moot/crucible/tests/test-kiln";
 
-/// Test vault utilities using the existing test data
-pub struct ExistingTestVault {
-    pub vault_path: PathBuf,
+/// Test kiln utilities using the existing test data
+pub struct ExistingTestKiln {
+    pub kiln_path: PathBuf,
     pub db_path: PathBuf,
     pub client: SurrealClient,
     _temp_dir: TempDir, // Keep TempDir alive to prevent cleanup
 }
 
-impl ExistingTestVault {
-    /// Create a test vault using the existing comprehensive test vault
+impl ExistingTestKiln {
+    /// Create a test kiln using the existing comprehensive test kiln
     pub async fn new() -> Result<Self> {
-        let vault_path = PathBuf::from(TEST_VAULT_PATH);
+        let kiln_path = PathBuf::from(TEST_KILN_PATH);
 
-        // Verify test vault exists
-        if !vault_path.exists() {
+        // Verify test kiln exists
+        if !kiln_path.exists() {
             return Err(anyhow::anyhow!(
-                "Test vault not found at {}. Ensure the test vault exists.",
-                vault_path.display()
+                "Test kiln not found at {}. Ensure the test kiln exists.",
+                kiln_path.display()
             ));
         }
 
@@ -76,22 +76,22 @@ impl ExistingTestVault {
 
         let client = SurrealClient::new(db_config).await?;
 
-        // Initialize vault schema
-        vault_integration::initialize_vault_schema(&client).await?;
+        // Initialize kiln schema
+        kiln_integration::initialize_kiln_schema(&client).await?;
 
         Ok(Self {
-            vault_path,
+            kiln_path,
             db_path: temp_db_path,
             client,
             _temp_dir: temp_dir,
         })
     }
 
-    /// Get all markdown files in the test vault
+    /// Get all markdown files in the test kiln
     pub fn get_test_files(&self) -> Result<Vec<PathBuf>> {
         let mut files = Vec::new();
 
-        for entry in std::fs::read_dir(&self.vault_path)? {
+        for entry in std::fs::read_dir(&self.kiln_path)? {
             let entry = entry?;
             let path = entry.path();
 
@@ -104,13 +104,13 @@ impl ExistingTestVault {
         Ok(files)
     }
 
-    /// Process the entire test vault and generate embeddings
-    pub async fn process_vault(&self) -> Result<VaultProcessResult> {
+    /// Process the entire test kiln and generate embeddings
+    pub async fn process_kiln(&self) -> Result<KilnProcessResult> {
         let files = self.get_test_files()?;
         let start_time = Instant::now();
 
         println!(
-            "Processing {} test files from comprehensive test vault...",
+            "Processing {} test files from comprehensive test kiln...",
             files.len()
         );
 
@@ -132,7 +132,7 @@ impl ExistingTestVault {
 
         let processing_time = start_time.elapsed();
 
-        Ok(VaultProcessResult {
+        Ok(KilnProcessResult {
             processed_count,
             total_size,
             processing_time,
@@ -153,7 +153,7 @@ impl ExistingTestVault {
         doc.file_size = content.len() as u64;
 
         // Store document
-        let doc_id = store_parsed_document(&self.client, &doc, &self.vault_path).await?;
+        let doc_id = store_parsed_document(&self.client, &doc, &self.kiln_path).await?;
 
         // Generate and store embedding (simplified for testing)
         let embedding_vector = self.generate_test_embedding(&content).await?;
@@ -197,25 +197,25 @@ impl ExistingTestVault {
     }
 
     /// Get database statistics
-    pub async fn get_stats(&self) -> Result<vault_integration::DatabaseStats> {
+    pub async fn get_stats(&self) -> Result<kiln_integration::DatabaseStats> {
         get_database_stats(&self.client).await
     }
 }
 
-/// Result of vault processing
+/// Result of kiln processing
 #[derive(Debug)]
-pub struct VaultProcessResult {
+pub struct KilnProcessResult {
     pub processed_count: usize,
     pub total_size: u64,
     pub processing_time: Duration,
     pub errors: Vec<String>,
 }
 
-/// Test scenarios based on the comprehensive test vault content
+/// Test scenarios based on the comprehensive test kiln content
 pub struct TestScenarios;
 
 impl TestScenarios {
-    /// Semantic search queries that should produce relevant results from the test vault
+    /// Semantic search queries that should produce relevant results from the test kiln
     pub fn semantic_search_queries() -> Vec<(&'static str, Vec<&'static str>)> {
         vec![
             // Technical content queries
@@ -326,14 +326,14 @@ mod semantic_search_integration_tests {
     use super::*;
 
     #[tokio::test]
-    /// Test comprehensive semantic search with the existing test vault
-    /// This test processes the full test vault and validates semantic search accuracy
+    /// Test comprehensive semantic search with the existing test kiln
+    /// This test processes the full test kiln and validates semantic search accuracy
     async fn test_comprehensive_semantic_search_integration() -> Result<()> {
-        let test_vault = ExistingTestVault::new().await?;
+        let test_kiln = ExistingTestKiln::new().await?;
 
-        // Process the entire test vault
-        println!("Processing comprehensive test vault...");
-        let process_result = test_vault.process_vault().await?;
+        // Process the entire test kiln
+        println!("Processing comprehensive test kiln...");
+        let process_result = test_kiln.process_kiln().await?;
 
         println!(
             "✅ Processed {} documents in {:.2}s",
@@ -352,7 +352,7 @@ mod semantic_search_integration_tests {
         );
 
         // Verify embeddings were created
-        let stats = test_vault.get_stats().await?;
+        let stats = test_kiln.get_stats().await?;
         assert!(
             stats.total_embeddings > 0,
             "Should have embeddings after processing"
@@ -371,7 +371,7 @@ mod semantic_search_integration_tests {
 
             let search_result = timeout(
                 Duration::from_secs(10),
-                semantic_search(&test_vault.client, query, 5, create_mock_provider(768)),
+                semantic_search(&test_kiln.client, query, 5, create_mock_provider(768)),
             )
             .await;
 
@@ -435,10 +435,10 @@ mod semantic_search_integration_tests {
     #[tokio::test]
     /// Test semantic search performance and result diversity
     async fn test_semantic_search_performance_and_diversity() -> Result<()> {
-        let test_vault = ExistingTestVault::new().await?;
+        let test_kiln = ExistingTestKiln::new().await?;
 
-        // Process test vault
-        test_vault.process_vault().await?;
+        // Process test kiln
+        test_kiln.process_kiln().await?;
 
         // Test diversity queries
         let diversity_queries = TestScenarios::diversity_test_queries();
@@ -449,7 +449,7 @@ mod semantic_search_integration_tests {
 
             let search_result = timeout(
                 Duration::from_secs(5),
-                semantic_search(&test_vault.client, query, 3, create_mock_provider(768)),
+                semantic_search(&test_kiln.client, query, 3, create_mock_provider(768)),
             )
             .await;
 
@@ -503,16 +503,16 @@ mod semantic_search_integration_tests {
     }
 
     #[tokio::test]
-    /// Test CLI semantic search command integration with test vault
-    async fn test_cli_semantic_search_with_test_vault() -> Result<()> {
-        let test_vault = ExistingTestVault::new().await?;
+    /// Test CLI semantic search command integration with test kiln
+    async fn test_cli_semantic_search_with_test_kiln() -> Result<()> {
+        let test_kiln = ExistingTestKiln::new().await?;
 
-        // Process test vault first
-        test_vault.process_vault().await?;
+        // Process test kiln first
+        test_kiln.process_kiln().await?;
 
-        // Create CLI config pointing to test vault
+        // Create CLI config pointing to test kiln
         let config = CliConfig::default(); // Will use default database path
-                                           // We'll set the vault path through environment or config override if needed
+                                           // We'll set the kiln path through environment or config override if needed
 
         // Test CLI semantic search command
         let test_queries = vec![
@@ -559,25 +559,32 @@ mod semantic_search_integration_tests {
     #[tokio::test]
     /// Test error handling and edge cases with comprehensive test data
     async fn test_semantic_search_error_handling() -> Result<()> {
-        let test_vault = ExistingTestVault::new().await?;
+        let test_kiln = ExistingTestKiln::new().await?;
 
-        // Test search before processing vault
-        let empty_result = semantic_search(&test_vault.client, "test query", 5, create_mock_provider(768)).await;
+        // Test search before processing kiln
+        let empty_result = semantic_search(
+            &test_kiln.client,
+            "test query",
+            5,
+            create_mock_provider(768),
+        )
+        .await;
         assert!(
             empty_result.is_err() || empty_result.unwrap().is_empty(),
             "Should return empty results or error when no embeddings exist"
         );
 
-        // Process partial vault (just a few files)
-        let files = test_vault.get_test_files()?;
+        // Process partial kiln (just a few files)
+        let files = test_kiln.get_test_files()?;
         if files.len() >= 2 {
             for file_path in files.iter().take(2) {
-                test_vault.process_single_file(file_path).await?;
+                test_kiln.process_single_file(file_path).await?;
             }
         }
 
         // Test search with partial data
-        let partial_result = semantic_search(&test_vault.client, "test", 5, create_mock_provider(768)).await;
+        let partial_result =
+            semantic_search(&test_kiln.client, "test", 5, create_mock_provider(768)).await;
         assert!(partial_result.is_ok(), "Should work with partial data");
 
         // Test edge case queries
@@ -588,7 +595,8 @@ mod semantic_search_integration_tests {
         ];
 
         for query in edge_queries {
-            let result = semantic_search(&test_vault.client, query, 5, create_mock_provider(768)).await;
+            let result =
+                semantic_search(&test_kiln.client, query, 5, create_mock_provider(768)).await;
             match result {
                 Ok(results) => {
                     println!("Edge query '{}' returned {} results", query, results.len());
@@ -607,14 +615,14 @@ mod semantic_search_integration_tests {
     #[tokio::test]
     /// Test embedding generation and storage validation
     async fn test_embedding_generation_and_storage() -> Result<()> {
-        let test_vault = ExistingTestVault::new().await?;
+        let test_kiln = ExistingTestKiln::new().await?;
 
         // Process a few files for embedding testing
-        let files = test_vault.get_test_files()?;
+        let files = test_kiln.get_test_files()?;
         let test_files: Vec<_> = files.iter().take(3).cloned().collect();
 
         for file_path in &test_files {
-            let process_result = test_vault.process_single_file(file_path).await;
+            let process_result = test_kiln.process_single_file(file_path).await;
             assert!(
                 process_result.is_ok(),
                 "Should successfully process file: {:?}",
@@ -623,14 +631,20 @@ mod semantic_search_integration_tests {
         }
 
         // Verify embeddings were stored
-        let stats = test_vault.get_stats().await?;
+        let stats = test_kiln.get_stats().await?;
         assert!(
             stats.total_embeddings >= test_files.len() as u64,
             "Should have embeddings for processed files"
         );
 
         // Test that embeddings can be retrieved through search
-        let search_results = semantic_search(&test_vault.client, "test content", 10, create_mock_provider(768)).await?;
+        let search_results = semantic_search(
+            &test_kiln.client,
+            "test content",
+            10,
+            create_mock_provider(768),
+        )
+        .await?;
         assert!(
             !search_results.is_empty(),
             "Should find results with stored embeddings"
@@ -654,13 +668,13 @@ mod semantic_search_integration_tests {
     #[tokio::test]
     /// Test integration workflow from file processing to search
     async fn test_end_to_end_integration_workflow() -> Result<()> {
-        let test_vault = ExistingTestVault::new().await?;
+        let test_kiln = ExistingTestKiln::new().await?;
 
         println!("🔄 Testing end-to-end integration workflow...");
 
-        // Step 1: Process vault
+        // Step 1: Process kiln
         let start_time = Instant::now();
-        let process_result = test_vault.process_vault().await?;
+        let process_result = test_kiln.process_kiln().await?;
         let processing_time = start_time.elapsed();
 
         println!(
@@ -670,7 +684,7 @@ mod semantic_search_integration_tests {
         );
 
         // Step 2: Verify database state
-        let stats = test_vault.get_stats().await?;
+        let stats = test_kiln.get_stats().await?;
         assert!(
             stats.total_embeddings > 0,
             "Should have embeddings after processing"
@@ -697,7 +711,8 @@ mod semantic_search_integration_tests {
             println!("Step 3: Testing workflow - {}", description);
 
             let search_start = Instant::now();
-            let results = semantic_search(&test_vault.client, query, 5, create_mock_provider(768)).await?;
+            let results =
+                semantic_search(&test_kiln.client, query, 5, create_mock_provider(768)).await?;
             let search_time = search_start.elapsed();
 
             println!(

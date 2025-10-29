@@ -890,7 +890,7 @@ async fn test_reembedding_large_content() -> Result<()> {
 ///
 /// Verifies:
 /// - Document count doesn't change (re-embedding, not creating new)
-/// - Stats accurately reflect vault state
+/// - Stats accurately reflect kiln state
 #[tokio::test]
 async fn test_reembedding_stats_consistency() -> Result<()> {
     let harness = DaemonEmbeddingHarness::new_default().await?;

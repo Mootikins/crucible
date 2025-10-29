@@ -18,7 +18,7 @@ This directory contains Test-Driven Development (TDD) tests that were intentiona
 - `semantic_search_json_output_tdd.rs` - Semantic search JSON output format tests ✅ RESTORED
 - `semantic_search_real_integration_tdd.rs` - Real-world semantic search integration tests ✅ RESTORED
 - `surrealdb_client_integration_tdd.rs` - SurrealDB client integration tests ✅ RESTORED
-- `vault_processing_integration_tdd.rs` - Vault processing integration tests ✅ RESTORED
+- `kiln_processing_integration_tdd.rs` - Kiln processing integration tests ✅ RESTORED
 
 ## Purpose of These Tests
 
@@ -29,7 +29,7 @@ All tests in this directory were designed to **FAIL** to drive implementation of
 2. **Memory Protection**: Proper handling of large files and memory limits
 3. **Error Recovery**: Graceful handling of service failures and network issues
 4. **Integration Gaps**: End-to-end functionality between components
-5. **Schema Migration**: Migration from vault to kiln terminology
+5. **Schema Migration**: Migration from kiln to kiln terminology
 6. **Security Boundaries**: Protection against path traversal and symlink attacks
 
 ### Implementation Guidance

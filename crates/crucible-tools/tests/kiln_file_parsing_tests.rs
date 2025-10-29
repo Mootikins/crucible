@@ -1,6 +1,6 @@
-//! Vault File Parsing Tests - Phase 1A TDD Implementation
+//! Kiln File Parsing Tests - Phase 1A TDD Implementation
 //!
-//! This file contains comprehensive tests for vault file parsing functionality.
+//! This file contains comprehensive tests for kiln file parsing functionality.
 //! Tests are written FIRST and will initially FAIL before implementation.
 //!
 //! TDD Process:
@@ -12,21 +12,21 @@
 use chrono::Datelike;
 use serde_json::Value;
 
-/// Test vault path for integration testing
-const TEST_VAULT_PATH: &str = "/home/moot/Documents/crucible-testing";
+/// Test kiln path for integration testing
+const TEST_KILN_PATH: &str = "/home/moot/Documents/crucible-testing";
 
 #[tokio::test]
-async fn test_vault_scanner_finds_markdown_files() {
+async fn test_kiln_scanner_finds_markdown_files() {
     // This test should FAIL initially before implementation
-    // Tests that vault scanner can discover markdown files in directory
+    // Tests that kiln scanner can discover markdown files in directory
 
-    let scanner = crucible_tools::vault_scanner::VaultScanner::new(TEST_VAULT_PATH);
+    let scanner = crucible_tools::kiln_scanner::KilnScanner::new(TEST_KILN_PATH);
     let markdown_files = scanner.scan_markdown_files().await.unwrap();
 
-    // Verify we found markdown files in the test vault
+    // Verify we found markdown files in the test kiln
     assert!(
         !markdown_files.is_empty(),
-        "Should find markdown files in test vault"
+        "Should find markdown files in test kiln"
     );
 
     // Verify all entries are markdown files
@@ -38,20 +38,20 @@ async fn test_vault_scanner_finds_markdown_files() {
         );
     }
 
-    // Verify we found expected files from the test vault
+    // Verify we found expected files from the test kiln
     let file_paths: Vec<String> = markdown_files
         .iter()
         .map(|p| p.to_string_lossy().to_string())
         .collect();
 
-    // Should find known files in the test vault
+    // Should find known files in the test kiln
     assert!(
         file_paths.iter().any(|p| p.contains("PRIME.md")),
-        "Should find PRIME.md in test vault"
+        "Should find PRIME.md in test kiln"
     );
     assert!(
         file_paths.iter().any(|p| p.contains("Rune MCP")),
-        "Should find Rune MCP files in test vault"
+        "Should find Rune MCP files in test kiln"
     );
 }
 
@@ -60,24 +60,24 @@ async fn test_frontmatter_parsing_extracts_metadata() {
     // This test should FAIL initially before implementation
     // Tests that markdown parser can extract YAML frontmatter
 
-    let parser = crucible_tools::vault_parser::VaultParser::new();
+    let parser = crucible_tools::kiln_parser::KilnParser::new();
 
-    // Test with a real file from the test vault
-    let test_file_path = format!("{}/PRIME.md", TEST_VAULT_PATH);
-    let vault_file = parser.parse_file(&test_file_path).await.unwrap();
+    // Test with a real file from the test kiln
+    let test_file_path = format!("{}/PRIME.md", TEST_KILN_PATH);
+    let kiln_file = parser.parse_file(&test_file_path).await.unwrap();
 
     // Verify frontmatter was extracted
     assert!(
-        vault_file.metadata.frontmatter.contains_key("type"),
+        kiln_file.metadata.frontmatter.contains_key("type"),
         "Should extract 'type' field from frontmatter"
     );
     assert!(
-        vault_file.metadata.frontmatter.contains_key("tags"),
+        kiln_file.metadata.frontmatter.contains_key("tags"),
         "Should extract 'tags' field from frontmatter"
     );
 
     // Verify specific values from PRIME.md
-    let frontmatter_type = vault_file.metadata.frontmatter.get("type").unwrap();
+    let frontmatter_type = kiln_file.metadata.frontmatter.get("type").unwrap();
     assert_eq!(
         frontmatter_type,
         &Value::String("meta".to_string()),
@@ -85,11 +85,11 @@ async fn test_frontmatter_parsing_extracts_metadata() {
     );
 
     // Verify tags array
-    let tags = vault_file.metadata.frontmatter.get("tags").unwrap();
+    let tags = kiln_file.metadata.frontmatter.get("tags").unwrap();
     if let Value::Array(tag_array) = tags {
         assert!(
-            tag_array.contains(&Value::String("vault-config".to_string())),
-            "Should contain 'vault-config' tag"
+            tag_array.contains(&Value::String("kiln-config".to_string())),
+            "Should contain 'kiln-config' tag"
         );
         assert!(
             tag_array.contains(&Value::String("instructions".to_string())),
@@ -105,10 +105,10 @@ async fn test_file_change_detection_via_hashing() {
     // This test should FAIL initially before implementation
     // Tests that file change detection works via SHA256 hashing
 
-    let change_detector = crucible_tools::vault_change_detection::ChangeDetector::new();
+    let change_detector = crucible_tools::kiln_change_detection::ChangeDetector::new();
 
     // Test file path
-    let test_file_path = format!("{}/PRIME.md", TEST_VAULT_PATH);
+    let test_file_path = format!("{}/PRIME.md", TEST_KILN_PATH);
 
     // Get initial hash
     let initial_hash = change_detector
@@ -133,7 +133,7 @@ async fn test_file_change_detection_via_hashing() {
     );
 
     // Test with different file (should have different hash)
-    let different_file_path = format!("{}/Projects/Rune MCP/Rune MCP - MoC.md", TEST_VAULT_PATH);
+    let different_file_path = format!("{}/Projects/Rune MCP/Rune MCP - MoC.md", TEST_KILN_PATH);
     let different_hash = change_detector
         .calculate_file_hash(&different_file_path)
         .await
@@ -145,13 +145,13 @@ async fn test_file_change_detection_via_hashing() {
 }
 
 #[tokio::test]
-async fn test_vault_parsing_integration_with_real_files() {
+async fn test_kiln_parsing_integration_with_real_files() {
     // This test should FAIL initially before implementation
     // Tests full integration: scanning + parsing + metadata extraction
 
-    let vault_path = TEST_VAULT_PATH;
-    let scanner = crucible_tools::vault_scanner::VaultScanner::new(vault_path);
-    let parser = crucible_tools::vault_parser::VaultParser::new();
+    let kiln_path = TEST_KILN_PATH;
+    let scanner = crucible_tools::kiln_scanner::KilnScanner::new(kiln_path);
+    let parser = crucible_tools::kiln_parser::KilnParser::new();
 
     // Scan for markdown files
     let markdown_files = scanner.scan_markdown_files().await.unwrap();
@@ -162,17 +162,17 @@ async fn test_vault_parsing_integration_with_real_files() {
     let mut prime_file_found = false;
 
     for file_path in markdown_files.iter() {
-        let absolute_path = format!("{}/{}", vault_path, file_path.to_string_lossy());
-        let vault_file = parser.parse_file(&absolute_path).await.unwrap();
+        let absolute_path = format!("{}/{}", kiln_path, file_path.to_string_lossy());
+        let kiln_file = parser.parse_file(&absolute_path).await.unwrap();
 
         // Always include PRIME.md if found
         if file_path.to_string_lossy().contains("PRIME.md") {
             prime_file_found = true;
-            parsed_files.push(vault_file);
+            parsed_files.push(kiln_file);
         }
         // Include other files up to 5 total
         else if parsed_files.len() < 5 {
-            parsed_files.push(vault_file);
+            parsed_files.push(kiln_file);
         }
 
         // Stop once we have PRIME.md + up to 4 other files
@@ -182,23 +182,20 @@ async fn test_vault_parsing_integration_with_real_files() {
     }
 
     // Verify all files have required fields
-    for vault_file in &parsed_files {
+    for kiln_file in &parsed_files {
         assert!(
-            !vault_file.path.to_string_lossy().is_empty(),
+            !kiln_file.path.to_string_lossy().is_empty(),
             "File path should not be empty"
         );
+        assert!(!kiln_file.content.is_empty(), "Content should not be empty");
+        assert!(!kiln_file.hash.is_empty(), "Hash should not be empty");
         assert!(
-            !vault_file.content.is_empty(),
-            "Content should not be empty"
-        );
-        assert!(!vault_file.hash.is_empty(), "Hash should not be empty");
-        assert!(
-            vault_file.metadata.size > 0,
+            kiln_file.metadata.size > 0,
             "File size should be greater than 0"
         );
 
         // Verify frontmatter structure
-        let frontmatter = &vault_file.metadata.frontmatter;
+        let frontmatter = &kiln_file.metadata.frontmatter;
         if frontmatter.contains_key("type") {
             let file_type = frontmatter.get("type").unwrap();
             assert!(file_type.is_string(), "Type should be a string");
@@ -221,7 +218,7 @@ async fn test_vault_parsing_integration_with_real_files() {
         &Value::String("meta".to_string())
     );
     assert!(
-        prime_file.content.contains("# Vault Primer"),
+        prime_file.content.contains("# Kiln Primer"),
         "Content should contain expected markdown"
     );
 }
@@ -231,15 +228,15 @@ async fn test_error_handling_missing_file() {
     // This test should FAIL initially before implementation
     // Tests error handling for non-existent files
 
-    let parser = crucible_tools::vault_parser::VaultParser::new();
-    let nonexistent_path = format!("{}/nonexistent_file.md", TEST_VAULT_PATH);
+    let parser = crucible_tools::kiln_parser::KilnParser::new();
+    let nonexistent_path = format!("{}/nonexistent_file.md", TEST_KILN_PATH);
 
     let result = parser.parse_file(&nonexistent_path).await;
 
     assert!(result.is_err(), "Should return error for missing file");
 
     match result.unwrap_err() {
-        crucible_tools::vault_types::VaultError::FileNotFound(path) => {
+        crucible_tools::kiln_types::KilnError::FileNotFound(path) => {
             assert!(
                 path.contains("nonexistent_file.md"),
                 "Error should mention missing file"
@@ -256,23 +253,23 @@ async fn test_error_handling_malformed_frontmatter() {
 
     // We'll need to create a temporary file with malformed frontmatter
     // For now, this is a placeholder for the test structure
-    let parser = crucible_tools::vault_parser::VaultParser::new();
+    let parser = crucible_tools::kiln_parser::KilnParser::new();
 
     // This test would require creating a temp file with bad YAML
     // Implementation to follow after basic structure is in place
 
     // For now, just verify the error type exists
     let _error_type =
-        crucible_tools::vault_types::VaultError::FrontmatterParseError("test error".to_string());
+        crucible_tools::kiln_types::KilnError::FrontmatterParseError("test error".to_string());
 }
 
 #[tokio::test]
-async fn test_vault_scanner_recursive_directory_traversal() {
+async fn test_kiln_scanner_recursive_directory_traversal() {
     // This test should FAIL initially before implementation
     // Tests that scanner properly traverses subdirectories
 
-    let vault_path = TEST_VAULT_PATH;
-    let scanner = crucible_tools::vault_scanner::VaultScanner::new(vault_path);
+    let kiln_path = TEST_KILN_PATH;
+    let scanner = crucible_tools::kiln_scanner::KilnScanner::new(kiln_path);
 
     // Test recursive scanning (default behavior)
     let all_files = scanner.scan_markdown_files().await.unwrap();
@@ -297,11 +294,11 @@ async fn test_vault_scanner_recursive_directory_traversal() {
 }
 
 #[tokio::test]
-async fn test_vault_metadata_extraction_various_frontmatter_types() {
+async fn test_kiln_metadata_extraction_various_frontmatter_types() {
     // This test should FAIL initially before implementation
     // Tests parsing different frontmatter field types
 
-    let parser = crucible_tools::vault_parser::VaultParser::new();
+    let parser = crucible_tools::kiln_parser::KilnParser::new();
 
     // Parse files with different frontmatter structures
     let test_files = vec![
@@ -311,10 +308,10 @@ async fn test_vault_metadata_extraction_various_frontmatter_types() {
     ];
 
     for file_name in test_files {
-        let full_path = format!("{}/{}", TEST_VAULT_PATH, file_name);
-        let vault_file = parser.parse_file(&full_path).await.unwrap();
+        let full_path = format!("{}/{}", TEST_KILN_PATH, file_name);
+        let kiln_file = parser.parse_file(&full_path).await.unwrap();
 
-        let frontmatter = &vault_file.metadata.frontmatter;
+        let frontmatter = &kiln_file.metadata.frontmatter;
 
         // Verify common fields exist and have correct types
         if frontmatter.contains_key("tags") {
@@ -337,7 +334,7 @@ async fn test_vault_metadata_extraction_various_frontmatter_types() {
 
         // Verify content extraction worked
         assert!(
-            vault_file.content.contains("#"),
+            kiln_file.content.contains("#"),
             "Content should contain markdown headers"
         );
     }
@@ -345,17 +342,17 @@ async fn test_vault_metadata_extraction_various_frontmatter_types() {
 
 // ===== PHASE 1B: FAILING TESTS FOR MOCK TOOL REPLACEMENT =====
 // These tests should FAIL initially because mock tools return hardcoded mock data,
-// not real data from the test vault at /home/moot/Documents/crucible-testing
+// not real data from the test kiln at /home/moot/Documents/crucible-testing
 
 #[tokio::test]
-async fn test_search_by_properties_returns_real_vault_data_not_mock_data() {
+async fn test_search_by_properties_returns_real_kiln_data_not_mock_data() {
     // This test should FAIL initially because search_by_properties returns mock data
-    // instead of real data from the test vault
+    // instead of real data from the test kiln
 
-    use crucible_tools::vault_tools;
+    use crucible_tools::kiln_tools;
     use serde_json::json;
 
-    let tool_fn = vault_tools::search_by_properties();
+    let tool_fn = kiln_tools::search_by_properties();
     let parameters = json!({
         "properties": {
             "type": "meta"
@@ -376,16 +373,16 @@ async fn test_search_by_properties_returns_real_vault_data_not_mock_data() {
     let matching_files = data.get("matching_files").unwrap().as_array().unwrap();
 
     // This should FAIL because mock implementation returns hardcoded "projects/project1.md"
-    // but we expect real files from the test vault like "PRIME.md"
+    // but we expect real files from the test kiln like "PRIME.md"
     assert!(
         !matching_files.is_empty(),
         "Should find files with type=meta"
     );
 
-    // Check if any result contains real vault file (not mock data)
-    let has_real_vault_file = matching_files.iter().any(|file| {
+    // Check if any result contains real kiln file (not mock data)
+    let has_real_kiln_file = matching_files.iter().any(|file| {
         if let Some(path) = file.get("path").and_then(|p| p.as_str()) {
-            // Mock data returns "projects/project1.md" - real vault should have different paths
+            // Mock data returns "projects/project1.md" - real kiln should have different paths
             path.contains("PRIME.md") || path.contains("Rune MCP") || path.contains("Sessions/")
         } else {
             false
@@ -394,23 +391,23 @@ async fn test_search_by_properties_returns_real_vault_data_not_mock_data() {
 
     // This assertion should FAIL initially (mock data vs real data)
     assert!(
-        has_real_vault_file,
-        "Expected real vault files like PRIME.md, but got mock data. Found files: {:?}",
+        has_real_kiln_file,
+        "Expected real kiln files like PRIME.md, but got mock data. Found files: {:?}",
         matching_files
     );
 }
 
 #[tokio::test]
-async fn test_search_by_tags_finds_real_vault_files_not_mock_data() {
+async fn test_search_by_tags_finds_real_kiln_files_not_mock_data() {
     // This test should FAIL initially because search_by_tags returns mock data
-    // instead of real tagged files from the test vault
+    // instead of real tagged files from the test kiln
 
-    use crucible_tools::vault_tools;
+    use crucible_tools::kiln_tools;
     use serde_json::json;
 
-    let tool_fn = vault_tools::search_by_tags();
+    let tool_fn = kiln_tools::search_by_tags();
     let parameters = json!({
-        "tags": ["vault-config", "instructions"]
+        "tags": ["kiln-config", "instructions"]
     });
 
     let result = tool_fn(
@@ -426,7 +423,7 @@ async fn test_search_by_tags_finds_real_vault_files_not_mock_data() {
     let data = result.data.unwrap();
     let matching_files = data.get("matching_files").unwrap().as_array().unwrap();
 
-    // Mock returns "knowledge/ai.md" but real vault should have PRIME.md with these tags
+    // Mock returns "knowledge/ai.md" but real kiln should have PRIME.md with these tags
     let has_prime_file = matching_files.iter().any(|file| {
         if let Some(path) = file.get("path").and_then(|p| p.as_str()) {
             path.contains("PRIME.md")
@@ -438,20 +435,20 @@ async fn test_search_by_tags_finds_real_vault_files_not_mock_data() {
     // This should FAIL initially (mock data vs real data)
     assert!(
         has_prime_file,
-        "Expected PRIME.md with vault-config and instructions tags, but got mock data. Found: {:?}",
+        "Expected PRIME.md with kiln-config and instructions tags, but got mock data. Found: {:?}",
         matching_files
     );
 }
 
 #[tokio::test]
-async fn test_search_by_folder_returns_real_files_from_test_vault() {
+async fn test_search_by_folder_returns_real_files_from_test_kiln() {
     // This test should FAIL initially because search_by_folder returns mock data
-    // instead of real files from the test vault folders
+    // instead of real files from the test kiln folders
 
-    use crucible_tools::vault_tools;
+    use crucible_tools::kiln_tools;
     use serde_json::json;
 
-    let tool_fn = vault_tools::search_by_folder();
+    let tool_fn = kiln_tools::search_by_folder();
     let parameters = json!({
         "path": "Projects",
         "recursive": true
@@ -470,7 +467,7 @@ async fn test_search_by_folder_returns_real_files_from_test_vault() {
     let data = result.data.unwrap();
     let files = data.get("files").unwrap().as_array().unwrap();
 
-    // Mock returns "projects/active/project1.md" but real vault should have different structure
+    // Mock returns "projects/active/project1.md" but real kiln should have different structure
     let has_rune_mcp_files = files.iter().any(|file| {
         if let Some(path) = file.get("path").and_then(|p| p.as_str()) {
             path.contains("Rune MCP") || path.contains("Multi-Agent")
@@ -490,12 +487,12 @@ async fn test_search_by_folder_returns_real_files_from_test_vault() {
 #[tokio::test]
 async fn test_get_kiln_stats_calculates_real_statistics_not_mock_numbers() {
     // This test should FAIL initially because get_kiln_stats returns hardcoded mock numbers
-    // instead of real statistics from the test vault
+    // instead of real statistics from the test kiln
 
-    use crucible_tools::vault_tools;
+    use crucible_tools::kiln_tools;
     use serde_json::json;
 
-    let tool_fn = vault_tools::get_kiln_stats();
+    let tool_fn = kiln_tools::get_kiln_stats();
     let parameters = json!({});
 
     let result = tool_fn("get_kiln_stats".to_string(), parameters, None, None)
@@ -505,26 +502,26 @@ async fn test_get_kiln_stats_calculates_real_statistics_not_mock_numbers() {
     assert!(result.success);
     let data = result.data.unwrap();
 
-    // Mock returns hardcoded 1250 total_notes, but real vault should have different count
+    // Mock returns hardcoded 1250 total_notes, but real kiln should have different count
     let total_notes = data.get("total_notes").unwrap().as_u64().unwrap();
     let total_size_mb = data.get("total_size_mb").unwrap().as_f64().unwrap();
 
-    // Mock returns exactly 156.7 for size - real vault should be different
+    // Mock returns exactly 156.7 for size - real kiln should be different
     // This should FAIL initially because we expect real calculation, not mock values
     assert_ne!(
         total_notes, 1250,
-        "Expected real vault note count, not mock value of 1250. Got: {}",
+        "Expected real kiln note count, not mock value of 1250. Got: {}",
         total_notes
     );
     assert_ne!(
         total_size_mb, 156.7,
-        "Expected real vault size calculation, not mock value of 156.7. Got: {}",
+        "Expected real kiln size calculation, not mock value of 156.7. Got: {}",
         total_size_mb
     );
 
-    // Real vault should have specific structure indicators
-    if let Some(vault_type) = data.get("vault_type").and_then(|v| v.as_str()) {
-        assert_eq!(vault_type, "obsidian", "Vault type should be obsidian");
+    // Real kiln should have specific structure indicators
+    if let Some(kiln_type) = data.get("kiln_type").and_then(|v| v.as_str()) {
+        assert_eq!(kiln_type, "obsidian", "Kiln type should be obsidian");
     }
 
     // Real stats should not be perfect round numbers like mock data
@@ -532,20 +529,20 @@ async fn test_get_kiln_stats_calculates_real_statistics_not_mock_numbers() {
     let is_perfect_round_number = total_size_mb * 10.0 == (total_size_mb * 10.0).round();
     assert!(
         !is_perfect_round_number,
-        "Real vault size should not be a perfect round number like mock data. Got: {}",
+        "Real kiln size should not be a perfect round number like mock data. Got: {}",
         total_size_mb
     );
 }
 
 #[tokio::test]
-async fn test_list_tags_extracts_real_tags_from_vault_frontmatter() {
+async fn test_list_tags_extracts_real_tags_from_kiln_frontmatter() {
     // This test should FAIL initially because list_tags returns hardcoded mock tags
-    // instead of extracting real tags from test vault frontmatter
+    // instead of extracting real tags from test kiln frontmatter
 
-    use crucible_tools::vault_tools;
+    use crucible_tools::kiln_tools;
     use serde_json::json;
 
-    let tool_fn = vault_tools::list_tags();
+    let tool_fn = kiln_tools::list_tags();
     let parameters = json!({});
 
     let result = tool_fn("list_tags".to_string(), parameters, None, None)
@@ -557,25 +554,27 @@ async fn test_list_tags_extracts_real_tags_from_vault_frontmatter() {
     let tags = data.get("tags").unwrap().as_array().unwrap();
 
     // Mock returns hardcoded tags: ["ai", "research", "project"]
-    // Real vault should have different tags like "vault-config", "instructions", "ai-guide"
-    let has_vault_config_tag = tags.iter().any(|tag| {
+    // Real kiln should have different tags like "kiln-config", "instructions", "ai-guide"
+    let has_kiln_config_tag = tags.iter().any(|tag| {
         if let Some(name) = tag.get("name").and_then(|n| n.as_str()) {
-            name == "vault-config" || name == "ai-guide" || name == "instructions"
+            name == "kiln-config" || name == "ai-guide" || name == "instructions"
         } else {
             false
         }
     });
 
-    // This should now pass with real vault tags
-    assert!(has_vault_config_tag,
-           "Expected real vault tags like 'vault-config' from PRIME.md, but got mock tags. Found: {:?}",
-           tags);
+    // This should now pass with real kiln tags
+    assert!(
+        has_kiln_config_tag,
+        "Expected real kiln tags like 'kiln-config' from PRIME.md, but got mock tags. Found: {:?}",
+        tags
+    );
 
     // Check that counts are realistic (not perfect round numbers like mock data)
     let total_tags = data.get("total_tags").unwrap().as_u64().unwrap();
     assert_ne!(
         total_tags, 3,
-        "Expected real tag count from vault, not mock value of 3. Got: {}",
+        "Expected real tag count from kiln, not mock value of 3. Got: {}",
         total_tags
     );
 }
@@ -587,14 +586,14 @@ async fn test_list_tags_extracts_real_tags_from_vault_frontmatter() {
 async fn test_metadata_extraction_normalizes_tags_and_dates() {
     // This test should FAIL because metadata normalization is not implemented
 
-    use crucible_tools::vault_parser::VaultParser;
+    use crucible_tools::kiln_parser::KilnParser;
 
-    let parser = VaultParser::new();
-    let test_file_path = format!("{}/PRIME.md", TEST_VAULT_PATH);
-    let vault_file = parser.parse_file(&test_file_path).await.unwrap();
+    let parser = KilnParser::new();
+    let test_file_path = format!("{}/PRIME.md", TEST_KILN_PATH);
+    let kiln_file = parser.parse_file(&test_file_path).await.unwrap();
 
     // Test tag normalization (lowercase, hyphen-separated)
-    let tags = vault_file.get_tags();
+    let tags = kiln_file.get_tags();
     assert!(!tags.is_empty(), "Should extract tags from PRIME.md");
 
     // Tags should be normalized (letters should be lowercase, hyphens are allowed)
@@ -618,7 +617,7 @@ async fn test_metadata_extraction_normalizes_tags_and_dates() {
     }
 
     // Test date parsing - PRIME.md has created date
-    if let Some(created_date) = vault_file.metadata.created {
+    if let Some(created_date) = kiln_file.metadata.created {
         assert!(
             created_date.year() >= 2020,
             "Created date should be realistic"
@@ -634,9 +633,9 @@ async fn test_metadata_extraction_normalizes_tags_and_dates() {
 async fn test_metadata_extraction_handles_various_frontmatter_formats() {
     // This test should FAIL because flexible frontmatter parsing is not fully implemented
 
-    use crucible_tools::vault_parser::VaultParser;
+    use crucible_tools::kiln_parser::KilnParser;
 
-    let parser = VaultParser::new();
+    let parser = KilnParser::new();
     let test_files = vec![
         "PRIME.md",
         "Projects/Rune MCP/Rune MCP - MoC.md",
@@ -644,19 +643,19 @@ async fn test_metadata_extraction_handles_various_frontmatter_formats() {
     ];
 
     for file_name in test_files {
-        let full_path = format!("{}/{}", TEST_VAULT_PATH, file_name);
+        let full_path = format!("{}/{}", TEST_KILN_PATH, file_name);
         if std::path::Path::new(&full_path).exists() {
-            let vault_file = parser.parse_file(&full_path).await.unwrap();
+            let kiln_file = parser.parse_file(&full_path).await.unwrap();
 
             // Each file should have proper frontmatter extraction
             assert!(
-                !vault_file.metadata.frontmatter.is_empty(),
+                !kiln_file.metadata.frontmatter.is_empty(),
                 "{} should have frontmatter",
                 file_name
             );
 
             // Should extract tags properly regardless of format
-            let tags = vault_file.get_tags();
+            let tags = kiln_file.get_tags();
             // Some files might not have tags, but parsing should not fail
             if !tags.is_empty() {
                 for tag in &tags {
@@ -671,25 +670,22 @@ async fn test_metadata_extraction_handles_various_frontmatter_formats() {
 async fn test_metadata_extraction_calculates_content_metrics() {
     // This test should FAIL because content analysis is not implemented
 
-    use crucible_tools::vault_parser::VaultParser;
+    use crucible_tools::kiln_parser::KilnParser;
 
-    let parser = VaultParser::new();
-    let test_file_path = format!("{}/PRIME.md", TEST_VAULT_PATH);
-    let vault_file = parser.parse_file(&test_file_path).await.unwrap();
+    let parser = KilnParser::new();
+    let test_file_path = format!("{}/PRIME.md", TEST_KILN_PATH);
+    let kiln_file = parser.parse_file(&test_file_path).await.unwrap();
 
     // Content should be analyzed for basic metrics
-    assert!(
-        !vault_file.content.is_empty(),
-        "Content should not be empty"
-    );
+    assert!(!kiln_file.content.is_empty(), "Content should not be empty");
 
     // Should calculate word count (this feature doesn't exist yet)
-    let word_count = vault_file.content.split_whitespace().count();
+    let word_count = kiln_file.content.split_whitespace().count();
     assert!(word_count > 0, "Should calculate word count from content");
     assert!(word_count > 50, "PRIME.md should have substantial content");
 
     // Should extract structure information (headers, etc.)
-    let has_headers = vault_file
+    let has_headers = kiln_file
         .content
         .lines()
         .any(|line| line.trim().starts_with('#'));
@@ -700,21 +696,21 @@ async fn test_metadata_extraction_calculates_content_metrics() {
 async fn test_metadata_extraction_handles_relationships_and_links() {
     // This test should FAIL because relationship extraction is not implemented
 
-    use crucible_tools::vault_parser::VaultParser;
+    use crucible_tools::kiln_parser::KilnParser;
 
-    let parser = VaultParser::new();
-    let test_file_path = format!("{}/Projects/Rune MCP/Rune MCP - MoC.md", TEST_VAULT_PATH);
+    let parser = KilnParser::new();
+    let test_file_path = format!("{}/Projects/Rune MCP/Rune MCP - MoC.md", TEST_KILN_PATH);
 
     if std::path::Path::new(&test_file_path).exists() {
-        let vault_file = parser.parse_file(&test_file_path).await.unwrap();
+        let kiln_file = parser.parse_file(&test_file_path).await.unwrap();
 
         // Should detect internal links (wikilinks)
-        let has_wikilinks = vault_file.content.contains("[[") && vault_file.content.contains("]]");
+        let has_wikilinks = kiln_file.content.contains("[[") && kiln_file.content.contains("]]");
         // This might fail if the file doesn't have wikilinks, but parsing should work
 
         // Should extract document relationships (not implemented yet)
         // This is a placeholder for the test structure
-        let content_lines: Vec<&str> = vault_file.content.lines().collect();
+        let content_lines: Vec<&str> = kiln_file.content.lines().collect();
         assert!(
             !content_lines.is_empty(),
             "Should have content lines to analyze"
@@ -723,11 +719,11 @@ async fn test_metadata_extraction_handles_relationships_and_links() {
 }
 
 // ===== FILE ENCODING TESTS =====
-// These tests document the CRITICAL limitation that vault parser only supports UTF-8.
+// These tests document the CRITICAL limitation that kiln parser only supports UTF-8.
 // Files encoded in UTF-16 (common on Windows), Latin-1, Windows-1252, or other encodings
 // will either fail with "invalid UTF-8" error or produce garbage characters.
 //
-// Current implementation: `crates/crucible-tools/src/vault_parser.rs:42`
+// Current implementation: `crates/crucible-tools/src/kiln_parser.rs:42`
 //   let content = fs::read_to_string(&full_path)?;  // Only handles UTF-8!
 //
 // These tests serve dual purposes:
@@ -788,8 +784,8 @@ mod encoding_tests {
     fn create_malformed_utf8_file(path: &Path) -> Result<(), std::io::Error> {
         // Invalid UTF-8 sequence: Start of 3-byte sequence but missing continuation bytes
         let invalid_utf8 = vec![
-            b'#', b' ', b'T', b'e', b's', b't', b'\n', b'\n',
-            0xE0, 0x80, // Invalid: incomplete 3-byte sequence
+            b'#', b' ', b'T', b'e', b's', b't', b'\n', b'\n', 0xE0,
+            0x80, // Invalid: incomplete 3-byte sequence
             b'c', b'o', b'n', b't', b'e', b'n', b't',
         ];
         fs::write(path, invalid_utf8)
@@ -840,10 +836,8 @@ Japanese: こんにちは世界 (Hello World)
         create_encoded_file(&file_path, UTF16_TEST_CONTENT, encoding_rs::UTF_16LE).unwrap();
 
         // Try to parse
-        let parser = crucible_tools::vault_parser::VaultParser::new();
-        let result = parser
-            .parse_file(file_path.to_str().unwrap())
-            .await;
+        let parser = crucible_tools::kiln_parser::KilnParser::new();
+        let result = parser.parse_file(file_path.to_str().unwrap()).await;
 
         // Current expected behavior: FAIL with UTF-8 error
         // Future expected behavior: SUCCESS with auto-detection
@@ -858,7 +852,9 @@ Japanese: こんにちは世界 (Hello World)
                 eprintln!("⚠️  UTF-16 LE not yet supported: {:?}", e);
                 let error_msg = e.to_string().to_lowercase();
                 assert!(
-                    error_msg.contains("utf") || error_msg.contains("invalid") || error_msg.contains("stream"),
+                    error_msg.contains("utf")
+                        || error_msg.contains("invalid")
+                        || error_msg.contains("stream"),
                     "Error should mention encoding issue, got: {}",
                     e
                 );
@@ -876,10 +872,8 @@ Japanese: こんにちは世界 (Hello World)
         create_encoded_file(&file_path, UTF16_TEST_CONTENT, encoding_rs::UTF_16BE).unwrap();
 
         // Try to parse
-        let parser = crucible_tools::vault_parser::VaultParser::new();
-        let result = parser
-            .parse_file(file_path.to_str().unwrap())
-            .await;
+        let parser = crucible_tools::kiln_parser::KilnParser::new();
+        let result = parser.parse_file(file_path.to_str().unwrap()).await;
 
         match result {
             Ok(doc) => {
@@ -890,7 +884,9 @@ Japanese: こんにちは世界 (Hello World)
                 eprintln!("⚠️  UTF-16 BE not yet supported: {:?}", e);
                 let error_msg = e.to_string().to_lowercase();
                 assert!(
-                    error_msg.contains("utf") || error_msg.contains("invalid") || error_msg.contains("stream"),
+                    error_msg.contains("utf")
+                        || error_msg.contains("invalid")
+                        || error_msg.contains("stream"),
                     "Error should mention encoding issue, got: {}",
                     e
                 );
@@ -908,10 +904,8 @@ Japanese: こんにちは世界 (Hello World)
         create_utf16_bom_file(&file_path, UTF16_TEST_CONTENT, true).unwrap();
 
         // Try to parse
-        let parser = crucible_tools::vault_parser::VaultParser::new();
-        let result = parser
-            .parse_file(file_path.to_str().unwrap())
-            .await;
+        let parser = crucible_tools::kiln_parser::KilnParser::new();
+        let result = parser.parse_file(file_path.to_str().unwrap()).await;
 
         match result {
             Ok(doc) => {
@@ -923,7 +917,9 @@ Japanese: こんにちは世界 (Hello World)
                 eprintln!("⚠️  UTF-16 with BOM not yet supported: {:?}", e);
                 let error_msg = e.to_string().to_lowercase();
                 assert!(
-                    error_msg.contains("utf") || error_msg.contains("invalid") || error_msg.contains("stream"),
+                    error_msg.contains("utf")
+                        || error_msg.contains("invalid")
+                        || error_msg.contains("stream"),
                     "Error should mention encoding issue, got: {}",
                     e
                 );
@@ -941,10 +937,8 @@ Japanese: こんにちは世界 (Hello World)
         create_encoded_file(&file_path, UTF16_TEST_CONTENT, encoding_rs::UTF_16LE).unwrap();
 
         // Try to parse
-        let parser = crucible_tools::vault_parser::VaultParser::new();
-        let result = parser
-            .parse_file(file_path.to_str().unwrap())
-            .await;
+        let parser = crucible_tools::kiln_parser::KilnParser::new();
+        let result = parser.parse_file(file_path.to_str().unwrap()).await;
 
         match result {
             Ok(doc) => {
@@ -969,7 +963,9 @@ Japanese: こんにちは世界 (Hello World)
                 eprintln!("⚠️  UTF-16 frontmatter parsing not yet supported: {:?}", e);
                 let error_msg = e.to_string().to_lowercase();
                 assert!(
-                    error_msg.contains("utf") || error_msg.contains("invalid") || error_msg.contains("stream"),
+                    error_msg.contains("utf")
+                        || error_msg.contains("invalid")
+                        || error_msg.contains("stream"),
                     "Error should mention encoding issue, got: {}",
                     e
                 );
@@ -989,10 +985,8 @@ Japanese: こんにちは世界 (Hello World)
         create_encoded_file(&file_path, LEGACY_TEST_CONTENT, encoding_rs::WINDOWS_1252).unwrap();
 
         // Try to parse
-        let parser = crucible_tools::vault_parser::VaultParser::new();
-        let result = parser
-            .parse_file(file_path.to_str().unwrap())
-            .await;
+        let parser = crucible_tools::kiln_parser::KilnParser::new();
+        let result = parser.parse_file(file_path.to_str().unwrap()).await;
 
         match result {
             Ok(doc) => {
@@ -1007,7 +1001,9 @@ Japanese: こんにちは世界 (Hello World)
                 eprintln!("⚠️  Latin-1 not yet supported: {:?}", e);
                 let error_msg = e.to_string().to_lowercase();
                 assert!(
-                    error_msg.contains("utf") || error_msg.contains("invalid") || error_msg.contains("stream"),
+                    error_msg.contains("utf")
+                        || error_msg.contains("invalid")
+                        || error_msg.contains("stream"),
                     "Error should mention encoding issue, got: {}",
                     e
                 );
@@ -1025,10 +1021,8 @@ Japanese: こんにちは世界 (Hello World)
         create_encoded_file(&file_path, LEGACY_TEST_CONTENT, encoding_rs::WINDOWS_1252).unwrap();
 
         // Try to parse
-        let parser = crucible_tools::vault_parser::VaultParser::new();
-        let result = parser
-            .parse_file(file_path.to_str().unwrap())
-            .await;
+        let parser = crucible_tools::kiln_parser::KilnParser::new();
+        let result = parser.parse_file(file_path.to_str().unwrap()).await;
 
         match result {
             Ok(doc) => {
@@ -1042,7 +1036,9 @@ Japanese: こんにちは世界 (Hello World)
                 eprintln!("⚠️  Windows-1252 not yet supported: {:?}", e);
                 let error_msg = e.to_string().to_lowercase();
                 assert!(
-                    error_msg.contains("utf") || error_msg.contains("invalid") || error_msg.contains("stream"),
+                    error_msg.contains("utf")
+                        || error_msg.contains("invalid")
+                        || error_msg.contains("stream"),
                     "Error should mention encoding issue, got: {}",
                     e
                 );
@@ -1069,10 +1065,8 @@ UTF-8 content with BOM marker.
         create_utf8_bom_file(&file_path, content).unwrap();
 
         // Try to parse
-        let parser = crucible_tools::vault_parser::VaultParser::new();
-        let result = parser
-            .parse_file(file_path.to_str().unwrap())
-            .await;
+        let parser = crucible_tools::kiln_parser::KilnParser::new();
+        let result = parser.parse_file(file_path.to_str().unwrap()).await;
 
         match result {
             Ok(doc) => {
@@ -1085,7 +1079,11 @@ UTF-8 content with BOM marker.
                 // KNOWN BUG: UTF-8 BOM breaks frontmatter parsing
                 // The BOM (U+FEFF) at the start of the file causes the YAML parser to fail
                 // because it sees "---" with a BOM prefix instead of pure "---"
-                let title = doc.metadata.frontmatter.get("title").and_then(|v| v.as_str());
+                let title = doc
+                    .metadata
+                    .frontmatter
+                    .get("title")
+                    .and_then(|v| v.as_str());
 
                 if title.is_some() {
                     // If frontmatter was parsed, BOM handling was added!
@@ -1114,8 +1112,8 @@ UTF-8 content with BOM marker.
     // ===== PRIORITY 3: MIXED CONTENT TESTS (3 tests) =====
 
     #[tokio::test]
-    async fn test_parse_mixed_encoding_vault() {
-        // Tests vault with both UTF-8 and UTF-16 files
+    async fn test_parse_mixed_encoding_kiln() {
+        // Tests kiln with both UTF-8 and UTF-16 files
         let temp_dir = TempDir::new().unwrap();
 
         // Create UTF-8 file
@@ -1124,28 +1122,32 @@ UTF-8 content with BOM marker.
 
         // Create UTF-16 file
         let utf16_file = temp_dir.path().join("utf16_file.md");
-        create_encoded_file(&utf16_file, "# UTF-16 File\n\nContent in UTF-16", encoding_rs::UTF_16LE)
-            .unwrap();
+        create_encoded_file(
+            &utf16_file,
+            "# UTF-16 File\n\nContent in UTF-16",
+            encoding_rs::UTF_16LE,
+        )
+        .unwrap();
 
-        let parser = crucible_tools::vault_parser::VaultParser::new();
+        let parser = crucible_tools::kiln_parser::KilnParser::new();
 
         // UTF-8 should work
         let utf8_result = parser.parse_file(utf8_file.to_str().unwrap()).await;
         assert!(utf8_result.is_ok(), "UTF-8 file should parse successfully");
 
         // UTF-16 currently fails (expected)
-        let utf16_result = parser
-            .parse_file(utf16_file.to_str().unwrap())
-            .await;
+        let utf16_result = parser.parse_file(utf16_file.to_str().unwrap()).await;
         match utf16_result {
             Ok(_) => {
-                println!("✓ Mixed encoding vault is now supported!");
+                println!("✓ Mixed encoding kiln is now supported!");
             }
             Err(e) => {
                 eprintln!("⚠️  Mixed encoding not yet fully supported: {:?}", e);
                 let error_msg = e.to_string().to_lowercase();
                 assert!(
-                    error_msg.contains("utf") || error_msg.contains("invalid") || error_msg.contains("stream"),
+                    error_msg.contains("utf")
+                        || error_msg.contains("invalid")
+                        || error_msg.contains("stream"),
                     "Error should mention encoding issue, got: {}",
                     e
                 );
@@ -1163,22 +1165,19 @@ UTF-8 content with BOM marker.
         create_malformed_utf8_file(&file_path).unwrap();
 
         // Try to parse
-        let parser = crucible_tools::vault_parser::VaultParser::new();
-        let result = parser
-            .parse_file(file_path.to_str().unwrap())
-            .await;
+        let parser = crucible_tools::kiln_parser::KilnParser::new();
+        let result = parser.parse_file(file_path.to_str().unwrap()).await;
 
         // Should fail with UTF-8 error
-        assert!(
-            result.is_err(),
-            "Malformed UTF-8 should produce an error"
-        );
+        assert!(result.is_err(), "Malformed UTF-8 should produce an error");
 
         match result {
             Err(e) => {
                 let error_msg = e.to_string().to_lowercase();
                 assert!(
-                    error_msg.contains("utf") || error_msg.contains("invalid") || error_msg.contains("stream"),
+                    error_msg.contains("utf")
+                        || error_msg.contains("invalid")
+                        || error_msg.contains("stream"),
                     "Error should mention UTF-8 issue, got: {}",
                     e
                 );
@@ -1200,7 +1199,7 @@ UTF-8 content with BOM marker.
         fs::write(&file_path, content).unwrap();
 
         // Try to parse
-        let parser = crucible_tools::vault_parser::VaultParser::new();
+        let parser = crucible_tools::kiln_parser::KilnParser::new();
         let result = parser
             .parse_file(file_path.to_str().unwrap())
             .await
@@ -1231,10 +1230,8 @@ Various emoji: 😀 🎉 🚀 ✨ 💡 🔥 ⚡ 🌟
         create_encoded_file(&file_path, content, encoding_rs::UTF_16LE).unwrap();
 
         // Try to parse
-        let parser = crucible_tools::vault_parser::VaultParser::new();
-        let result = parser
-            .parse_file(file_path.to_str().unwrap())
-            .await;
+        let parser = crucible_tools::kiln_parser::KilnParser::new();
+        let result = parser.parse_file(file_path.to_str().unwrap()).await;
 
         match result {
             Ok(doc) => {
@@ -1246,7 +1243,9 @@ Various emoji: 😀 🎉 🚀 ✨ 💡 🔥 ⚡ 🌟
                 eprintln!("⚠️  Emoji in UTF-16 not yet supported: {:?}", e);
                 let error_msg = e.to_string().to_lowercase();
                 assert!(
-                    error_msg.contains("utf") || error_msg.contains("invalid") || error_msg.contains("stream"),
+                    error_msg.contains("utf")
+                        || error_msg.contains("invalid")
+                        || error_msg.contains("stream"),
                     "Error should mention encoding issue, got: {}",
                     e
                 );
@@ -1264,10 +1263,8 @@ Various emoji: 😀 🎉 🚀 ✨ 💡 🔥 ⚡ 🌟
         create_encoded_file(&file_path, MULTILINGUAL_CONTENT, encoding_rs::UTF_16LE).unwrap();
 
         // Try to parse
-        let parser = crucible_tools::vault_parser::VaultParser::new();
-        let result = parser
-            .parse_file(file_path.to_str().unwrap())
-            .await;
+        let parser = crucible_tools::kiln_parser::KilnParser::new();
+        let result = parser.parse_file(file_path.to_str().unwrap()).await;
 
         match result {
             Ok(doc) => {
@@ -1280,7 +1277,9 @@ Various emoji: 😀 🎉 🚀 ✨ 💡 🔥 ⚡ 🌟
                 eprintln!("⚠️  Multilingual UTF-16 not yet supported: {:?}", e);
                 let error_msg = e.to_string().to_lowercase();
                 assert!(
-                    error_msg.contains("utf") || error_msg.contains("invalid") || error_msg.contains("stream"),
+                    error_msg.contains("utf")
+                        || error_msg.contains("invalid")
+                        || error_msg.contains("stream"),
                     "Error should mention encoding issue, got: {}",
                     e
                 );
@@ -1308,10 +1307,8 @@ Arrows: ← → ↑ ↓ ↔ ⇐ ⇒ ⇔
         create_encoded_file(&file_path, content, encoding_rs::UTF_16LE).unwrap();
 
         // Try to parse
-        let parser = crucible_tools::vault_parser::VaultParser::new();
-        let result = parser
-            .parse_file(file_path.to_str().unwrap())
-            .await;
+        let parser = crucible_tools::kiln_parser::KilnParser::new();
+        let result = parser.parse_file(file_path.to_str().unwrap()).await;
 
         match result {
             Ok(doc) => {
@@ -1324,7 +1321,9 @@ Arrows: ← → ↑ ↓ ↔ ⇐ ⇒ ⇔
                 eprintln!("⚠️  Special Unicode in UTF-16 not yet supported: {:?}", e);
                 let error_msg = e.to_string().to_lowercase();
                 assert!(
-                    error_msg.contains("utf") || error_msg.contains("invalid") || error_msg.contains("stream"),
+                    error_msg.contains("utf")
+                        || error_msg.contains("invalid")
+                        || error_msg.contains("stream"),
                     "Error should mention encoding issue, got: {}",
                     e
                 );
@@ -1349,7 +1348,7 @@ Arrows: ← → ↑ ↓ ↔ ⇐ ⇒ ⇔
 // - test_parse_utf8_with_bom
 //
 // Priority 3 - Mixed Content Tests (3):
-// - test_parse_mixed_encoding_vault
+// - test_parse_mixed_encoding_kiln
 // - test_parse_malformed_utf8
 // - test_parse_replacement_characters
 //
@@ -1373,7 +1372,7 @@ Arrows: ← → ↑ ↓ ↔ ⇐ ⇒ ⇔
 // 5. Silent failures or garbage output for non-UTF-8
 //
 // FUTURE ENHANCEMENT PATH:
-// To add encoding support, implement encoding auto-detection in vault_parser.rs:
+// To add encoding support, implement encoding auto-detection in kiln_parser.rs:
 //
 // ```rust
 // use encoding_rs::Encoding;

@@ -54,7 +54,7 @@ impl ReplProcess {
             "--bin",
             "crucible",
             "--",
-            "--vault-path",
+            "--kiln-path",
             kiln_path,
             "--format",
             "table", // Use table format for easier testing
@@ -373,7 +373,7 @@ async fn test_repl_run_kiln_stats() -> Result<()> {
     // Wait for kiln statistics output
     let found = repl
         .wait_for_output("total_notes", 15)
-        .context("Vault stats command did not produce expected output")?;
+        .context("Kiln stats command did not produce expected output")?;
     assert!(found, "Should see total_notes in output");
 
     // Get output and validate content
@@ -392,7 +392,7 @@ async fn test_repl_run_kiln_stats() -> Result<()> {
     // Clean up
     repl.quit()?;
 
-    println!("✓ Vault stats tool executed successfully via REPL");
+    println!("✓ Kiln stats tool executed successfully via REPL");
     Ok(())
 }
 

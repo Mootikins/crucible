@@ -1082,29 +1082,29 @@ impl DaemonConfig {
     pub fn from_env() -> Result<Self, ConfigError> {
         let mut config = Self::default();
 
-        // Read OBSIDIAN_VAULT_PATH for secure configuration
-        if let Ok(vault_path) = std::env::var("OBSIDIAN_VAULT_PATH") {
-            let vault_path = std::path::PathBuf::from(vault_path);
+        // Read OBSIDIAN_KILN_PATH for secure configuration
+        if let Ok(kiln_path) = std::env::var("OBSIDIAN_KILN_PATH") {
+            let kiln_path = std::path::PathBuf::from(kiln_path);
 
-            // Set up filesystem watching for the vault
+            // Set up filesystem watching for the kiln
             config.filesystem.watch_paths.push(WatchPath {
-                path: vault_path.clone(),
+                path: kiln_path.clone(),
                 recursive: true,
                 mode: WatchMode::All,
                 filters: None,
                 events: None,
             });
 
-            // Set database connection to use vault's .crucible directory
+            // Set database connection to use kiln's .crucible directory
             // Use the same database path, namespace, and database as the CLI for consistency
             config.database.connection.connection_string = format!(
-                "file://{}/.crucible/kiln.db/crucible/vault",
-                vault_path.display()
+                "file://{}/.crucible/kiln.db/crucible/kiln",
+                kiln_path.display()
             );
         } else {
-            // SECURITY: Require OBSIDIAN_VAULT_PATH to be set
+            // SECURITY: Require OBSIDIAN_KILN_PATH to be set
             return Err(ConfigError::InvalidValue {
-                field: "OBSIDIAN_VAULT_PATH".to_string(),
+                field: "OBSIDIAN_KILN_PATH".to_string(),
                 value: "missing".to_string(),
             });
         }

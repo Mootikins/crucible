@@ -4,7 +4,7 @@ Obsidian plugin that provides an HTTP API for MCP (Model Context Protocol) serve
 
 ## Overview
 
-This plugin enables AI assistants (like Claude) to interact with your Obsidian vault through an MCP server. The plugin runs a local HTTP server that exposes vault operations via a REST API.
+This plugin enables AI assistants (like Claude) to interact with your Obsidian kiln through an MCP server. The plugin runs a local HTTP server that exposes kiln operations via a REST API.
 
 ## Features
 
@@ -19,14 +19,14 @@ This plugin enables AI assistants (like Claude) to interact with your Obsidian v
 
 ### Manual Installation
 
-1. Copy the plugin files to your vault's plugins directory:
+1. Copy the plugin files to your kiln's plugins directory:
 
 ```bash
-mkdir -p /path/to/vault/.obsidian/plugins/obsidian-mcp-plugin
+mkdir -p /path/to/kiln/.obsidian/plugins/obsidian-mcp-plugin
 cd packages/obsidian-plugin
 npm install
 npm run build
-cp main.js manifest.json /path/to/vault/.obsidian/plugins/obsidian-mcp-plugin/
+cp main.js manifest.json /path/to/kiln/.obsidian/plugins/obsidian-mcp-plugin/
 ```
 
 2. Enable the plugin in Obsidian → Settings → Community Plugins
@@ -69,7 +69,7 @@ The plugin exposes the following HTTP endpoints on `localhost:27123`:
 
 #### `GET /api/files`
 
-List all markdown files in the vault.
+List all markdown files in the kiln.
 
 **Response:**
 ```json

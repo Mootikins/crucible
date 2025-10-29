@@ -6,7 +6,7 @@ use chrono::Utc;
 use crucible_core::parser::{
     DocumentContent, Frontmatter, FrontmatterFormat, Heading, ParsedDocument, Wikilink,
 };
-use crucible_surrealdb::{vault_integration, SurrealClient};
+use crucible_surrealdb::{kiln_integration, SurrealClient};
 use std::path::PathBuf;
 
 #[tokio::test]
@@ -42,22 +42,22 @@ This document has an embed: ![[Target Document]]"#;
     let client = SurrealClient::new_memory().await.unwrap();
 
     // Initialize the database schema
-    vault_integration::initialize_vault_schema(&client)
+    kiln_integration::initialize_kiln_schema(&client)
         .await
         .unwrap();
 
     // Store the main document
-    let doc_id = vault_integration::store_parsed_document(&client, &doc, &kiln_root)
+    let doc_id = kiln_integration::store_parsed_document(&client, &doc, &kiln_root)
         .await
         .unwrap();
 
     // Create embed relationships
-    vault_integration::create_embed_relationships(&client, &doc_id, &doc)
+    kiln_integration::create_embed_relationships(&client, &doc_id, &doc)
         .await
         .unwrap();
 
     // Query embed relationships
-    let embedded_docs = vault_integration::get_embedded_documents(&client, &doc_id)
+    let embedded_docs = kiln_integration::get_embedded_documents(&client, &doc_id)
         .await
         .unwrap();
 
@@ -66,7 +66,7 @@ This document has an embed: ![[Target Document]]"#;
     assert_eq!(embedded_docs[0].title(), "Target Document");
 
     // Query embed metadata
-    let embed_metadata = vault_integration::get_embed_metadata(&client, &doc_id)
+    let embed_metadata = kiln_integration::get_embed_metadata(&client, &doc_id)
         .await
         .unwrap();
     assert_eq!(embed_metadata.len(), 1);
@@ -108,17 +108,17 @@ async fn test_find_document_by_title() {
     let client = SurrealClient::new_memory().await.unwrap();
 
     // Initialize the database schema
-    vault_integration::initialize_vault_schema(&client)
+    kiln_integration::initialize_kiln_schema(&client)
         .await
         .unwrap();
 
     // Store the document
-    let doc_id = vault_integration::store_parsed_document(&client, &doc, &kiln_root)
+    let doc_id = kiln_integration::store_parsed_document(&client, &doc, &kiln_root)
         .await
         .unwrap();
 
     // Find the document by title
-    let found_doc = vault_integration::find_document_by_title(&client, "Findable Document")
+    let found_doc = kiln_integration::find_document_by_title(&client, "Findable Document")
         .await
         .unwrap();
 
@@ -127,11 +127,13 @@ async fn test_find_document_by_title() {
     assert_eq!(found.title(), "Findable Document");
     // Path comparison - the stored path may be relative
     let found_path_str = found.path.to_str().unwrap();
-    assert!(found_path_str.ends_with("find_test.md"),
-        "Found document path should end with find_test.md");
+    assert!(
+        found_path_str.ends_with("find_test.md"),
+        "Found document path should end with find_test.md"
+    );
 
     // Try to find a non-existent document
-    let not_found = vault_integration::find_document_by_title(&client, "Nonexistent Document")
+    let not_found = kiln_integration::find_document_by_title(&client, "Nonexistent Document")
         .await
         .unwrap();
     assert!(not_found.is_none());

@@ -37,9 +37,9 @@ pub async fn execute(config: CliConfig, command: AgentCommands) -> Result<()> {
 async fn execute_list_agents(config: CliConfig, format: String, detailed: bool) -> Result<()> {
     let mut agent_registry = EnhancedAgentRegistry::new();
 
-    // Add vault paths for agent discovery
-    if let Ok(vault_path) = config.kiln_path_str() {
-        agent_registry.add_vault_path(std::path::Path::new(&vault_path));
+    // Add kiln paths for agent discovery
+    if let Ok(kiln_path) = config.kiln_path_str() {
+        agent_registry.add_kiln_path(std::path::Path::new(&kiln_path));
     }
 
     // Load agents
@@ -135,9 +135,9 @@ async fn execute_list_agents(config: CliConfig, format: String, detailed: bool) 
 async fn execute_show_rankings(config: CliConfig, limit: usize, sort_by: String) -> Result<()> {
     let mut agent_registry = EnhancedAgentRegistry::new();
 
-    // Add vault paths for agent discovery
-    if let Ok(vault_path) = config.kiln_path_str() {
-        agent_registry.add_vault_path(std::path::Path::new(&vault_path));
+    // Add kiln paths for agent discovery
+    if let Ok(kiln_path) = config.kiln_path_str() {
+        agent_registry.add_kiln_path(std::path::Path::new(&kiln_path));
     }
 
     // Load agents
@@ -175,9 +175,9 @@ async fn execute_show_rankings(config: CliConfig, limit: usize, sort_by: String)
 async fn execute_show_performance(config: CliConfig, agent_name: String, show_insights: bool) -> Result<()> {
     let mut agent_registry = EnhancedAgentRegistry::new();
 
-    // Add vault paths for agent discovery
-    if let Ok(vault_path) = config.kiln_path_str() {
-        agent_registry.add_vault_path(std::path::Path::new(&vault_path));
+    // Add kiln paths for agent discovery
+    if let Ok(kiln_path) = config.kiln_path_str() {
+        agent_registry.add_kiln_path(std::path::Path::new(&kiln_path));
     }
 
     // Load agents
@@ -264,9 +264,9 @@ async fn execute_suggest_agents(
 ) -> Result<()> {
     let mut agent_registry = EnhancedAgentRegistry::new();
 
-    // Add vault paths for agent discovery
-    if let Ok(vault_path) = config.kiln_path_str() {
-        agent_registry.add_vault_path(std::path::Path::new(&vault_path));
+    // Add kiln paths for agent discovery
+    if let Ok(kiln_path) = config.kiln_path_str() {
+        agent_registry.add_kiln_path(std::path::Path::new(&kiln_path));
     }
 
     // Load agents

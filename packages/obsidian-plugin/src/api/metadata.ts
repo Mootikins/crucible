@@ -7,7 +7,7 @@ export class MetadataHandler {
 
   async getMetadata(filePath: string, req: IncomingMessage, res: ServerResponse) {
     try {
-      const file = this.app.vault.getAbstractFileByPath(filePath);
+      const file = this.app.kiln.getAbstractFileByPath(filePath);
 
       if (!file || !(file instanceof TFile)) {
         this.sendJSON(res, 404, {
@@ -56,7 +56,7 @@ export class MetadataHandler {
       }
 
       // Read content for word count
-      const content = await this.app.vault.read(file);
+      const content = await this.app.kiln.read(file);
       const wordCount = this.countWords(content);
 
       const metadata: FileMetadata = {

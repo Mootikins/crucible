@@ -134,7 +134,7 @@ async fn test_embedding_basic_generation() -> Result<()> {
 
 ### ✅ Maintained from Existing Tests
 1. **Storage integration** - Already in `embedding_storage_tests.rs`
-2. **Database operations** - Already in `vault_embedding_pipeline_tests.rs`
+2. **Database operations** - Already in `kiln_embedding_pipeline_tests.rs`
 3. **End-to-end flow** - Already in `integration_embedding_pipeline.rs`
 
 ### ⚠️ Deferred (Not Core to Embedding Pipeline)
@@ -181,8 +181,8 @@ These new tests complement existing embedding test coverage:
    - Chunked embeddings
    - Storage consistency
 
-3. **`vault_embedding_pipeline_tests.rs`** (613 lines)
-   - Vault scanning to embedding
+3. **`kiln_embedding_pipeline_tests.rs`** (613 lines)
+   - Kiln scanning to embedding
    - ParsedDocument transformation
    - Full pipeline with metadata
 
@@ -223,7 +223,7 @@ These new tests complement existing embedding test coverage:
 ### Maintained (No Changes):
 - `/home/moot/crucible/crates/crucible-daemon/tests/integration_embedding_pipeline.rs`
 - `/home/moot/crucible/crates/crucible-surrealdb/tests/embedding_storage_tests.rs`
-- `/home/moot/crucible/crates/crucible-surrealdb/tests/vault_embedding_pipeline_tests.rs`
+- `/home/moot/crucible/crates/crucible-surrealdb/tests/kiln_embedding_pipeline_tests.rs`
 - `/home/moot/crucible/crates/crucible-daemon/tests/utils/embedding_helpers.rs`
 
 ## Conclusion

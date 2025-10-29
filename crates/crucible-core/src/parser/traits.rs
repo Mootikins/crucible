@@ -205,8 +205,8 @@ pub struct ParserRequirements {
 }
 
 impl ParserRequirements {
-    /// Requirements for Crucible vault parsing (all features)
-    pub fn crucible_vault() -> Self {
+    /// Requirements for Crucible kiln parsing (all features)
+    pub fn crucible_kiln() -> Self {
         Self {
             yaml_frontmatter: true,
             toml_frontmatter: false, // Optional
@@ -239,7 +239,7 @@ mod tests {
     #[test]
     fn test_capabilities_supports_all() {
         let caps = ParserCapabilities::full();
-        let reqs = ParserRequirements::crucible_vault();
+        let reqs = ParserRequirements::crucible_kiln();
 
         assert!(caps.supports_all(&reqs));
     }
@@ -247,7 +247,7 @@ mod tests {
     #[test]
     fn test_minimal_capabilities() {
         let caps = ParserCapabilities::minimal();
-        let reqs = ParserRequirements::crucible_vault();
+        let reqs = ParserRequirements::crucible_kiln();
 
         // Minimal caps don't support all crucible requirements
         assert!(!caps.supports_all(&reqs));

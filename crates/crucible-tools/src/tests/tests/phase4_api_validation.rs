@@ -6,8 +6,8 @@
 #[cfg(test)]
 mod tests {
     use crate::{
-        database_tools, execute_tool, init, library_info, load_all_tools, search_tools,
-        system_tools, tool_loader_info, vault_tools, ToolError, ToolFunction, ToolResult, VERSION,
+        database_tools, execute_tool, init, kiln_tools, library_info, load_all_tools, search_tools,
+        system_tools, tool_loader_info, ToolError, ToolFunction, ToolResult, VERSION,
     };
     use serde_json::json;
 
@@ -49,7 +49,7 @@ mod tests {
 
         // Test 6: Direct tool function access works
         let search_fn = search_tools::search_documents();
-        let vault_fn = vault_tools::get_kiln_stats();
+        let kiln_fn = kiln_tools::get_kiln_stats();
         let system_fn = system_tools::get_system_info();
         let db_fn = database_tools::semantic_search();
 
@@ -63,7 +63,7 @@ mod tests {
         .await
         .unwrap();
 
-        let _vault_result = vault_fn(
+        let _kiln_result = kiln_fn(
             "get_kiln_stats".to_string(),
             json!({}),
             Some("test_user".to_string()),
@@ -123,7 +123,7 @@ mod tests {
 
         // Example 2: Using individual tool functions
         let search_fn = search_tools::search_documents();
-        let vault_fn = vault_tools::get_kiln_stats();
+        let kiln_fn = kiln_tools::get_kiln_stats();
 
         let search_result = search_fn(
             "search_documents".to_string(),
@@ -134,7 +134,7 @@ mod tests {
         .await
         .unwrap();
 
-        let vault_stats = vault_fn(
+        let kiln_stats = kiln_fn(
             "get_kiln_stats".to_string(),
             json!({}),
             Some("user123".to_string()),
@@ -145,6 +145,6 @@ mod tests {
 
         // Both should work
         assert!(search_result.success || search_result.error.is_some()); // May fail if no search index, but should not panic
-        assert!(vault_stats.success || vault_stats.error.is_some()); // May fail if no vault, but should not panic
+        assert!(kiln_stats.success || kiln_stats.error.is_some()); // May fail if no kiln, but should not panic
     }
 }

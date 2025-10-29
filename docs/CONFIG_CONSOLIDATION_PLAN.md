@@ -180,7 +180,7 @@ rg "std::env::var|env::var|std::env::set_var" --type rust crates/
 
 **Common Env Vars to Remove:**
 - `OBSIDIAN_KILN_PATH` → Config file only
-- `OBSIDIAN_VAULT_PATH` → Deprecated, use KILN
+- `OBSIDIAN_KILN_PATH` → Deprecated, use KILN
 - `CRUCIBLE_CHAT_MODEL` → Config file only
 - `CRUCIBLE_TEMPERATURE` → Config file only
 - `OLLAMA_ENDPOINT` → Config file only
@@ -1227,8 +1227,8 @@ git checkout HEAD~1 -- crates/crucible-config/src/provider.rs
 ### crucible-surrealdb (SIMPLIFY)
 - EmbeddingConfig (use canonical)
 - SurrealDbConfig (specialized - keep)
-- VaultPipelineConfig (evaluate)
-- VaultScannerConfig (evaluate)
+- KilnPipelineConfig (evaluate)
+- KilnScannerConfig (evaluate)
 
 ---
 

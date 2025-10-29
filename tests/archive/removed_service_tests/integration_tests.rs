@@ -863,8 +863,8 @@ async fn test_configuration_integration() -> Result<()> {
     let config_path = temp_dir.path().join("integration_config.toml");
 
     let config_content = r#"
-[vault]
-path = "/tmp/integration_test_vault"
+[kiln]
+path = "/tmp/integration_test_kiln"
 embedding_url = "https://integration-test-embedding.com"
 embedding_model = "integration-test-model"
 

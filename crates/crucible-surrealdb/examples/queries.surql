@@ -1,5 +1,5 @@
 -- ============================================================================
--- Crucible Knowledge Vault - Example Queries
+-- Crucible Knowledge Kiln - Example Queries
 -- ============================================================================
 -- Demonstrates common query patterns for:
 -- 1. Tag filtering
@@ -489,7 +489,7 @@ ORDER BY month ASC;
 -- 6. ANALYTICAL QUERIES (Statistics & Insights)
 -- ============================================================================
 
--- Vault statistics
+-- Kiln statistics
 SELECT
     count() AS total_notes,
     count(CASE WHEN embedding IS NOT NONE THEN 1 END) AS notes_with_embeddings,
@@ -624,7 +624,7 @@ SET usage_count = (
 );
 
 -- Create similarity edges for all notes (batch precomputation)
--- Warning: Expensive operation for large vaults
+-- Warning: Expensive operation for large kilns
 FOR $note IN (SELECT id, embedding FROM notes WHERE embedding IS NOT NONE) {
     LET $similar = (
         SELECT id, vector::distance::cosine(embedding, $note.embedding) AS score

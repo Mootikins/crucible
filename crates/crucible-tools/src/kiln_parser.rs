@@ -1,9 +1,9 @@
-//! Vault Parser - Phase 1A TDD Implementation
+//! Kiln Parser - Phase 1A TDD Implementation
 //!
 //! This module provides functionality to parse markdown files and extract frontmatter.
 //! Implemented to make the failing tests pass with minimal functionality.
 
-use crate::vault_types::{VaultError, VaultFile, VaultResult};
+use crate::kiln_types::{KilnError, KilnFile, KilnResult};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
@@ -11,13 +11,13 @@ use std::fs;
 /// Parser for markdown files with YAML frontmatter
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-pub struct VaultParser {
+pub struct KilnParser {
     /// Whether to validate frontmatter strictly
     strict_mode: bool,
 }
 
-impl VaultParser {
-    /// Create a new vault parser
+impl KilnParser {
+    /// Create a new kiln parser
     pub fn new() -> Self {
         Self { strict_mode: false }
     }
@@ -28,12 +28,12 @@ impl VaultParser {
     }
 
     /// Parse a markdown file and extract metadata
-    pub async fn parse_file(&self, file_path: &str) -> VaultResult<VaultFile> {
+    pub async fn parse_file(&self, file_path: &str) -> KilnResult<KilnFile> {
         let file_path = file_path.to_string();
 
         // Check if file exists first
         if !std::path::Path::new(&file_path).exists() {
-            return Err(VaultError::FileNotFound(file_path));
+            return Err(KilnError::FileNotFound(file_path));
         }
 
         // Read file content in blocking task
@@ -42,7 +42,7 @@ impl VaultParser {
             move || fs::read_to_string(&file_path)
         })
         .await
-        .map_err(|e| VaultError::HashError(format!("Task join error: {}", e)))??;
+        .map_err(|e| KilnError::HashError(format!("Task join error: {}", e)))??;
 
         // Parse the content
         self.parse_content(file_path, content).await
@@ -53,7 +53,7 @@ impl VaultParser {
         &self,
         file_path: String,
         mut content: String,
-    ) -> VaultResult<VaultFile> {
+    ) -> KilnResult<KilnFile> {
         // Strip UTF-8 BOM if present (U+FEFF)
         // Windows editors (Notepad, some IDEs) often add this, which breaks frontmatter detection
         if content.starts_with('\u{FEFF}') {
@@ -66,7 +66,7 @@ impl VaultParser {
         let parsed_frontmatter = self.parse_frontmatter_yaml(&frontmatter)?;
 
         // Create metadata
-        let mut metadata = crate::vault_types::FileMetadata::new();
+        let mut metadata = crate::kiln_types::FileMetadata::new();
 
         // Normalize frontmatter (tags, dates, etc.)
         let normalized_frontmatter = self.normalize_frontmatter(&parsed_frontmatter);
@@ -89,20 +89,20 @@ impl VaultParser {
         // Calculate hash
         let hash = self.calculate_content_hash(&content);
 
-        // Create vault file
+        // Create kiln file
         let path = std::path::PathBuf::from(file_path);
-        let vault_file = VaultFile {
+        let kiln_file = KilnFile {
             path,
             metadata,
             content: markdown_content,
             hash,
         };
 
-        Ok(vault_file)
+        Ok(kiln_file)
     }
 
     /// Extract frontmatter and content from markdown
-    fn extract_frontmatter(&self, content: &str) -> VaultResult<(String, String)> {
+    fn extract_frontmatter(&self, content: &str) -> KilnResult<(String, String)> {
         // Check if content starts with frontmatter delimiter
         if !content.starts_with("---") {
             // No frontmatter, return empty frontmatter and full content
@@ -112,7 +112,7 @@ impl VaultParser {
         // Find the end of frontmatter
         let lines: Vec<&str> = content.lines().collect();
         if lines.len() < 2 {
-            return Err(VaultError::FrontmatterParseError(
+            return Err(KilnError::FrontmatterParseError(
                 "Frontmatter is incomplete".to_string(),
             ));
         }
@@ -155,14 +155,13 @@ impl VaultParser {
     }
 
     /// Parse YAML frontmatter into structured data
-    fn parse_frontmatter_yaml(&self, frontmatter: &str) -> VaultResult<HashMap<String, Value>> {
+    fn parse_frontmatter_yaml(&self, frontmatter: &str) -> KilnResult<HashMap<String, Value>> {
         if frontmatter.trim().is_empty() {
             return Ok(HashMap::new());
         }
 
-        let parsed: serde_yaml::Value = serde_yaml::from_str(frontmatter).map_err(|e| {
-            VaultError::FrontmatterParseError(format!("YAML parsing failed: {}", e))
-        })?;
+        let parsed: serde_yaml::Value = serde_yaml::from_str(frontmatter)
+            .map_err(|e| KilnError::FrontmatterParseError(format!("YAML parsing failed: {}", e)))?;
 
         // Convert YAML value to JSON value
         let json_value: Value = serde_yaml_to_json(&parsed);
@@ -171,7 +170,7 @@ impl VaultParser {
         if let Value::Object(map) = json_value {
             Ok(map.into_iter().collect())
         } else {
-            Err(VaultError::FrontmatterParseError(
+            Err(KilnError::FrontmatterParseError(
                 "Frontmatter must be a mapping/object".to_string(),
             ))
         }
@@ -338,7 +337,7 @@ fn serde_yaml_to_json(yaml_value: &serde_yaml::Value) -> Value {
     }
 }
 
-impl Default for VaultParser {
+impl Default for KilnParser {
     fn default() -> Self {
         Self::new()
     }
@@ -350,16 +349,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_parser_creates_successfully() {
-        let parser = VaultParser::new();
+        let parser = KilnParser::new();
         assert!(!parser.strict_mode);
 
-        let strict_parser = VaultParser::strict();
+        let strict_parser = KilnParser::strict();
         assert!(strict_parser.strict_mode);
     }
 
     #[tokio::test]
     async fn test_parse_content_without_frontmatter() {
-        let parser = VaultParser::new();
+        let parser = KilnParser::new();
         let content = "# Simple Note\n\nThis is a note without frontmatter.";
 
         let result = parser
@@ -377,7 +376,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_content_with_frontmatter() {
-        let parser = VaultParser::new();
+        let parser = KilnParser::new();
         let content = r#"---
 type: meta
 tags: [test, example]
@@ -404,12 +403,12 @@ This is a note with frontmatter."#;
 
     #[tokio::test]
     async fn test_parse_file_not_found() {
-        let parser = VaultParser::new();
+        let parser = KilnParser::new();
         let result = parser.parse_file("/nonexistent/file.md").await;
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            VaultError::FileNotFound(_) => {} // Expected
+            KilnError::FileNotFound(_) => {} // Expected
             other => panic!("Expected FileNotFound, got: {:?}", other),
         }
     }

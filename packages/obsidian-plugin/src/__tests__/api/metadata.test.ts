@@ -22,7 +22,7 @@ describe("MetadataHandler", () => {
 
   it("should extract frontmatter properties", async () => {
     const file = new TFile("test.md");
-    app.vault.getAbstractFileByPath.mockReturnValue(file);
+    app.kiln.getAbstractFileByPath.mockReturnValue(file);
     app.metadataCache.getFileCache.mockReturnValue({
       frontmatter: {
         status: "active",
@@ -32,7 +32,7 @@ describe("MetadataHandler", () => {
     });
     app.metadataCache.getBacklinksForFile = vi.fn(() => new Map());
 
-    app.vault.read.mockResolvedValue("# Test\n\nContent");
+    app.kiln.read.mockResolvedValue("# Test\n\nContent");
 
     const req = {} as IncomingMessage;
     const res = {
@@ -49,14 +49,14 @@ describe("MetadataHandler", () => {
 
   it("should extract tags from frontmatter and content", async () => {
     const file = new TFile("test.md");
-    app.vault.getAbstractFileByPath.mockReturnValue(file);
+    app.kiln.getAbstractFileByPath.mockReturnValue(file);
     app.metadataCache.getFileCache.mockReturnValue({
       frontmatter: { tags: ["yaml-tag"] },
       tags: [{ tag: "#inline-tag" }],
     });
     app.metadataCache.getBacklinksForFile = vi.fn(() => new Map());
 
-    app.vault.read.mockResolvedValue("# Test\n\nContent");
+    app.kiln.read.mockResolvedValue("# Test\n\nContent");
 
     const req = {} as IncomingMessage;
     const res = {
@@ -73,13 +73,13 @@ describe("MetadataHandler", () => {
 
   it("should handle files without frontmatter", async () => {
     const file = new TFile("simple.md");
-    app.vault.getAbstractFileByPath.mockReturnValue(file);
+    app.kiln.getAbstractFileByPath.mockReturnValue(file);
     app.metadataCache.getFileCache.mockReturnValue({
       // No frontmatter
     });
     app.metadataCache.getBacklinksForFile = vi.fn(() => new Map());
 
-    app.vault.read.mockResolvedValue("# Simple\n\nNo frontmatter");
+    app.kiln.read.mockResolvedValue("# Simple\n\nNo frontmatter");
 
     const req = {} as IncomingMessage;
     const res = {
@@ -96,13 +96,13 @@ describe("MetadataHandler", () => {
 
   it("should extract links", async () => {
     const file = new TFile("test.md");
-    app.vault.getAbstractFileByPath.mockReturnValue(file);
+    app.kiln.getAbstractFileByPath.mockReturnValue(file);
     app.metadataCache.getFileCache.mockReturnValue({
       links: [{ link: "other-note.md" }, { link: "another.md" }],
     });
     app.metadataCache.getBacklinksForFile = vi.fn(() => new Map());
 
-    app.vault.read.mockResolvedValue("# Test\n\nContent");
+    app.kiln.read.mockResolvedValue("# Test\n\nContent");
 
     const req = {} as IncomingMessage;
     const res = {
@@ -123,11 +123,11 @@ describe("MetadataHandler", () => {
     file.stat.ctime = 1696000000000;
     file.stat.mtime = 1696100000000;
 
-    app.vault.getAbstractFileByPath.mockReturnValue(file);
+    app.kiln.getAbstractFileByPath.mockReturnValue(file);
     app.metadataCache.getFileCache.mockReturnValue({});
     app.metadataCache.getBacklinksForFile = vi.fn(() => new Map());
 
-    app.vault.read.mockResolvedValue("# Test\n\nThis has five words.");
+    app.kiln.read.mockResolvedValue("# Test\n\nThis has five words.");
 
     const req = {} as IncomingMessage;
     const res = {
@@ -143,7 +143,7 @@ describe("MetadataHandler", () => {
   });
 
   it("should handle missing file", async () => {
-    app.vault.getAbstractFileByPath.mockReturnValue(null);
+    app.kiln.getAbstractFileByPath.mockReturnValue(null);
 
     const req = {} as IncomingMessage;
     const res = {

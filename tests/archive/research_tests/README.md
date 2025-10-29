@@ -12,7 +12,7 @@ This directory contains research tests and edge case validations that were moved
 ## Purpose of These Tests
 
 ### Security Validation
-- **Path Traversal Protection**: Tests for preventing access outside vault boundaries
+- **Path Traversal Protection**: Tests for preventing access outside kiln boundaries
 - **Symlink Handling**: Circular symlinks, broken symlinks, and external symlinks
 - **Permission Errors**: Graceful handling of files with restricted permissions
 - **Input Sanitization**: Validation of user-provided paths and inputs

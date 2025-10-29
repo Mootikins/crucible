@@ -1,13 +1,13 @@
 -- ============================================================================
--- Crucible Knowledge Vault - SurrealDB Schema
+-- Crucible Knowledge Kiln - SurrealDB Schema
 -- ============================================================================
 -- Version: 1.0.0
 -- Created: 2025-10-19
--- Purpose: Define tables, relations, and indexes for knowledge vault indexing
+-- Purpose: Define tables, relations, and indexes for knowledge kiln indexing
 --
 -- Usage:
 --   surreal import --conn http://localhost:8000 --user root --pass root \
---     --ns crucible --db vault schema.surql
+--     --ns crucible --db kiln schema.surql
 -- ============================================================================
 
 -- Namespace and Database
@@ -28,7 +28,7 @@ DEFINE ANALYZER title_analyzer
 -- ============================================================================
 -- TABLE: notes
 -- ============================================================================
--- Primary table for all markdown documents in the vault
+-- Primary table for all markdown documents in the kiln
 
 DEFINE TABLE notes SCHEMAFULL;
 
@@ -312,7 +312,7 @@ CREATE metadata:system SET
 -- OPTIONAL: metadata_index table
 -- ============================================================================
 -- Uncomment if you need fast queries on specific frontmatter properties
--- for large vaults (>10K documents)
+-- for large kilns (>10K documents)
 
 /*
 DEFINE TABLE metadata_index SCHEMAFULL;

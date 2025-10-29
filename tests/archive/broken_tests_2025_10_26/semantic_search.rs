@@ -10,7 +10,7 @@
 //!
 //! - **Basic tests**: Simple queries, result ordering, score validation
 //! - **Corpus tests**: Realistic search using pre-generated embeddings
-//! - **Edge cases**: Empty vaults, non-matching queries, extreme inputs
+//! - **Edge cases**: Empty kilns, non-matching queries, extreme inputs
 //! - **Multi-document tests**: Clustering and relevance ranking
 //!
 //! ## Usage
@@ -391,15 +391,15 @@ async fn test_semantic_search_full_corpus() -> Result<()> {
 // Empty and Edge Cases
 // ============================================================================
 
-/// Test semantic search with no documents in vault
+/// Test semantic search with no documents in kiln
 #[tokio::test]
-async fn test_semantic_search_empty_vault() -> Result<()> {
+async fn test_semantic_search_empty_kiln() -> Result<()> {
     let harness = DaemonEmbeddingHarness::new_default().await?;
 
     // Search with no documents
     let results = harness.semantic_search("test query", 5).await?;
 
-    assert!(results.is_empty(), "Should return empty results for empty vault");
+    assert!(results.is_empty(), "Should return empty results for empty kiln");
 
     Ok(())
 }
@@ -601,7 +601,7 @@ async fn test_semantic_search_unrelated_scores() -> Result<()> {
 
 /// Test creating and searching large number of documents
 #[tokio::test]
-async fn test_semantic_search_large_vault() -> Result<()> {
+async fn test_semantic_search_large_kiln() -> Result<()> {
     let harness = DaemonEmbeddingHarness::new_default().await?;
 
     // Create 50 documents with varying content

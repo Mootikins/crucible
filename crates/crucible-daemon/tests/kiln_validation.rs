@@ -1,16 +1,16 @@
-//! Real Vault Validation Test
+//! Real Kiln Validation Test
 //!
-//! This test scans and validates the user's actual vault, providing comprehensive
+//! This test scans and validates the user's actual kiln, providing comprehensive
 //! statistics and validation of the parsing infrastructure.
 //!
 //! ## Usage
 //!
 //! ```bash
-//! # Run with default vault path (~/Documents/crucible-testing)
-//! CRUCIBLE_TEST_VAULT=1 cargo test -p crucible-daemon --test vault_validation -- --ignored --nocapture
+//! # Run with default kiln path (~/Documents/crucible-testing)
+//! CRUCIBLE_TEST_KILN=1 cargo test -p crucible-daemon --test kiln_validation -- --ignored --nocapture
 //!
-//! # Run with custom vault path
-//! CRUCIBLE_TEST_VAULT=/path/to/vault cargo test -p crucible-daemon --test vault_validation -- --ignored --nocapture
+//! # Run with custom kiln path
+//! CRUCIBLE_TEST_KILN=/path/to/kiln cargo test -p crucible-daemon --test kiln_validation -- --ignored --nocapture
 //! ```
 //!
 //! ## Features
@@ -43,10 +43,10 @@ impl KilnTestConfig {
     /// Get kiln path for testing
     ///
     /// Checks for kiln path in order:
-    /// 1. CRUCIBLE_TEST_VAULT env var (if set to "1", uses ~/Documents/crucible-testing)
+    /// 1. CRUCIBLE_TEST_KILN env var (if set to "1", uses ~/Documents/crucible-testing)
     /// 2. Returns None to skip test if not configured
     fn from_env() -> Option<Self> {
-        match std::env::var("CRUCIBLE_TEST_VAULT") {
+        match std::env::var("CRUCIBLE_TEST_KILN") {
             Ok(val) if val == "1" => {
                 // Use default kiln path
                 dirs::home_dir().map(|home| Self {
@@ -84,9 +84,9 @@ struct ParseError {
     error: String,
 }
 
-/// Comprehensive vault statistics
+/// Comprehensive kiln statistics
 #[derive(Debug, Default)]
-struct VaultStats {
+struct KilnStats {
     // File counts
     total_files: usize,
     successful: Vec<ParsedFile>,
@@ -126,7 +126,7 @@ struct VaultStats {
     max_parse_time_ms: u64,
 }
 
-impl VaultStats {
+impl KilnStats {
     /// Add a successfully parsed file
     fn add_successful(
         &mut self,
@@ -243,10 +243,10 @@ impl VaultStats {
 // Core Functions
 // ============================================================================
 
-/// Recursively scan vault for all markdown files
-async fn scan_markdown_files(vault_path: &Path) -> Result<Vec<PathBuf>> {
+/// Recursively scan kiln for all markdown files
+async fn scan_markdown_files(kiln_path: &Path) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
-    let mut queue = vec![vault_path.to_path_buf()];
+    let mut queue = vec![kiln_path.to_path_buf()];
 
     while let Some(dir) = queue.pop() {
         let mut entries = fs::read_dir(&dir)
@@ -281,9 +281,9 @@ async fn scan_markdown_files(vault_path: &Path) -> Result<Vec<PathBuf>> {
 }
 
 /// Parse all files and collect statistics
-async fn parse_all_files(files: &[PathBuf]) -> Result<VaultStats> {
+async fn parse_all_files(files: &[PathBuf]) -> Result<KilnStats> {
     let parser = PulldownParser::new();
-    let mut stats = VaultStats::default();
+    let mut stats = KilnStats::default();
     stats.total_files = files.len();
 
     for path in files {
@@ -396,9 +396,9 @@ fn create_metadata(doc: &ParsedDocument) -> crucible_surrealdb::EmbeddingMetadat
 // ============================================================================
 
 /// Print comprehensive validation report
-fn print_validation_report(stats: &VaultStats, db_stats: &DatabaseIndexStats) {
+fn print_validation_report(stats: &KilnStats, db_stats: &DatabaseIndexStats) {
     println!("\n═══════════════════════════════════════════════════");
-    println!("  Crucible Vault Validation Report");
+    println!("  Crucible Kiln Validation Report");
     println!("═══════════════════════════════════════════════════\n");
 
     // Files section
@@ -499,7 +499,7 @@ fn print_validation_report(stats: &VaultStats, db_stats: &DatabaseIndexStats) {
 }
 
 /// Print sample parsed documents
-fn print_sample_documents(stats: &VaultStats, count: usize) {
+fn print_sample_documents(stats: &KilnStats, count: usize) {
     println!(
         "📄 SAMPLE PARSED DOCUMENTS (showing {}):\n",
         count.min(stats.successful.len())
@@ -582,8 +582,8 @@ async fn test_validate_real_kiln() -> Result<()> {
     // Get kiln configuration
     let Some(config) = KilnTestConfig::from_env() else {
         println!("\n⏭️  Test skipped");
-        println!("   Set CRUCIBLE_TEST_VAULT=1 to run with default kiln");
-        println!("   Or set CRUCIBLE_TEST_VAULT=/path/to/kiln for custom path\n");
+        println!("   Set CRUCIBLE_TEST_KILN=1 to run with default kiln");
+        println!("   Or set CRUCIBLE_TEST_KILN=/path/to/kiln for custom path\n");
         return Ok(());
     };
 
@@ -606,7 +606,7 @@ async fn test_validate_real_kiln() -> Result<()> {
     );
 
     if files.is_empty() {
-        println!("⚠️  No markdown files found in vault");
+        println!("⚠️  No markdown files found in kiln");
         return Ok(());
     }
 

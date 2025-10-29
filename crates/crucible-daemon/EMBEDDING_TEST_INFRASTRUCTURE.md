@@ -23,10 +23,10 @@ The embedding test infrastructure provides a complete testing framework for:
 
 #### DaemonEmbeddingHarness (`tests/utils/harness.rs`)
 - Complete integration test environment
-- Temporary vault + in-memory SurrealDB
+- Temporary kiln + in-memory SurrealDB
 - Automatic embedding generation on note creation
 - Semantic search with configurable providers
-- VaultTestHarness API compatibility
+- KilnTestHarness API compatibility
 
 ### Feature Flags
 

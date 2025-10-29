@@ -17,7 +17,7 @@ This document identifies edge case gaps in test coverage for **existing, already
 ### Analysis Scope
 Four major areas analyzed:
 1. **CLI Commands** - Search, Config, REPL, Rune, Semantic
-2. **File Processing** - Vault parsing, binary detection, markdown processing
+2. **File Processing** - Kiln parsing, binary detection, markdown processing
 3. **Error Handling** - Network errors, database errors, resource exhaustion
 4. **Embedding Operations** - Generation, batching, storage, retrieval
 
@@ -57,17 +57,17 @@ Four major areas analyzed:
 // HIGH PRIORITY: Empty results test
 #[test]
 fn test_search_returns_empty_results_gracefully() {
-    let vault = create_test_vault();
+    let kiln = create_test_kiln();
     create_file("test.md", "No matching content");
 
-    let results = search_files_in_kiln(&vault, "nonexistent", 10, false)?;
+    let results = search_files_in_kiln(&kiln, "nonexistent", 10, false)?;
     assert_eq!(results.len(), 0);
 }
 
 // HIGH PRIORITY: Query length validation
 #[test]
 fn test_search_rejects_oversized_query() {
-    let vault = create_test_vault();
+    let kiln = create_test_kiln();
     let huge_query = "x".repeat(1001);
 
     let result = validate_search_query(&huge_query, &validator);
@@ -230,9 +230,9 @@ async fn test_semantic_search_top_k_zero() {
 
 ## 2. File Processing - Edge Case Gaps
 
-### 2.1 Vault/Kiln File Processing (`crates/crucible-tools/src/vault_*.rs`)
+### 2.1 Kiln/Kiln File Processing (`crates/crucible-tools/src/kiln_*.rs`)
 
-**Current Test File**: `/home/moot/crucible/crates/crucible-tools/tests/vault_file_parsing_tests.rs` (724 lines)
+**Current Test File**: `/home/moot/crucible/crates/crucible-tools/tests/kiln_file_parsing_tests.rs` (724 lines)
 
 #### Critical Gaps (HIGH PRIORITY)
 
@@ -240,7 +240,7 @@ async fn test_semantic_search_top_k_zero() {
    - Current: Only UTF-8 tested
    - Missing: UTF-16 (common on Windows), UTF-16 LE/BE, Latin-1, Windows-1252
    - Impact: Files from Windows users may fail silently
-   - Implementation: `vault_parser.rs:42` uses `fs::read_to_string()` (UTF-8 only)
+   - Implementation: `kiln_parser.rs:42` uses `fs::read_to_string()` (UTF-8 only)
 
 2. **Large Files Edge Cases**
    - Missing: Files near 10MB limit, files >100MB, very long lines (>10,000 chars)
@@ -253,7 +253,7 @@ async fn test_semantic_search_top_k_zero() {
 
 #### Medium Priority Gaps
 
-5. **Symlink Handling** - Circular symlinks, symlinks outside vault
+5. **Symlink Handling** - Circular symlinks, symlinks outside kiln
 6. **Empty/Minimal Files** - Zero-byte files, only frontmatter
 7. **Mixed Line Endings** - CRLF/LF/CR mixed
 
@@ -262,7 +262,7 @@ async fn test_semantic_search_top_k_zero() {
 ```rust
 #[tokio::test]
 async fn test_parse_utf16_encoded_file() -> Result<()> {
-    let parser = VaultParser::new();
+    let parser = KilnParser::new();
 
     // Create temp file with UTF-16 content
     let content_utf16: Vec<u16> = "---\ntitle: UTF-16 Test\n---\n# Content".encode_utf16().collect();
@@ -274,7 +274,7 @@ async fn test_parse_utf16_encoded_file() -> Result<()> {
 
 #[tokio::test]
 async fn test_parse_malformed_yaml_frontmatter() -> Result<()> {
-    let parser = VaultParser::new();
+    let parser = KilnParser::new();
 
     let content = r#"---
 title: "Unclosed quote
@@ -284,7 +284,7 @@ created: 2025-13-45
 # Content"#;
 
     let result = parser.parse_content("test.md".into(), content.into()).await;
-    assert!(matches!(result.unwrap_err(), VaultError::FrontmatterParseError(_)));
+    assert!(matches!(result.unwrap_err(), KilnError::FrontmatterParseError(_)));
 }
 ```
 
@@ -990,7 +990,7 @@ async fn test_search_with_zero_vector() {
    - NEW FILE: `crates/crucible-surrealdb/tests/database_concurrency_tests.rs`
 
 4. **File Encoding Support** (UTF-16, etc.) - 300 LOC, 10 tests
-   - ENHANCE: `crates/crucible-tools/tests/vault_file_parsing_tests.rs`
+   - ENHANCE: `crates/crucible-tools/tests/kiln_file_parsing_tests.rs`
 
 5. **Disk Full During Write** - 350 LOC, 12 tests
    - ENHANCE: `crates/crucible-cli/tests/filesystem_edge_case_tdd.rs`

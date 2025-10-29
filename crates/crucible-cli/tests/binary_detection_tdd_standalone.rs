@@ -12,25 +12,25 @@
 /// Test harness for binary safety TDD tests
 pub struct BinarySafetyTestHarness {
     pub temp_dir: TempDir,
-    pub vault_path: PathBuf,
+    pub kiln_path: PathBuf,
 }
 
 impl BinarySafetyTestHarness {
     /// Create a new test harness with temporary directory
     pub fn new() -> Result<Self> {
         let temp_dir = TempDir::new()?;
-        let vault_path = temp_dir.path().join("vault");
-        fs::create_dir_all(&vault_path)?;
+        let kiln_path = temp_dir.path().join("kiln");
+        fs::create_dir_all(&kiln_path)?;
 
         Ok(Self {
             temp_dir,
-            vault_path,
+            kiln_path,
         })
     }
 
     /// Create a test file with binary content
     pub fn create_binary_file(&self, relative_path: &str, content: &[u8]) -> Result<String> {
-        let full_path = self.vault_path.join(relative_path);
+        let full_path = self.kiln_path.join(relative_path);
 
         // Create parent directories
         if let Some(parent) = full_path.parent() {
@@ -43,7 +43,7 @@ impl BinarySafetyTestHarness {
 
     /// Create a test file with text content
     pub fn create_text_file(&self, relative_path: &str, content: &str) -> Result<String> {
-        let full_path = self.vault_path.join(relative_path);
+        let full_path = self.kiln_path.join(relative_path);
 
         // Create parent directories
         if let Some(parent) = full_path.parent() {
@@ -54,9 +54,9 @@ impl BinarySafetyTestHarness {
         Ok(full_path.to_string_lossy().to_string())
     }
 
-    /// Get the vault path for testing
-    pub fn vault_path(&self) -> &Path {
-        &self.vault_path
+    /// Get the kiln path for testing
+    pub fn kiln_path(&self) -> &Path {
+        &self.kiln_path
     }
 }
 
@@ -282,7 +282,7 @@ mod binary_detection_tests {
         harness.create_binary_file("binary.md", &png_header)?;
 
         // Search should find legitimate content but skip binary
-        let results = search_files_in_kiln(harness.vault_path(), "searchable", 10, false)?;
+        let results = search_files_in_kiln(harness.kiln_path(), "searchable", 10, false)?;
 
         assert!(!results.is_empty(), "Should find legitimate content");
 
@@ -578,8 +578,8 @@ mod integration_tests {
         harness.create_binary_file("binary3.md", &[0x00, 0x00, 0x00, 0x00])?;
 
         // Search should find text files but skip binary files
-        let alpha_results = search_files_in_kiln(harness.vault_path(), "alpha", 10, false)?;
-        let beta_results = search_files_in_kiln(harness.vault_path(), "beta", 10, false)?;
+        let alpha_results = search_files_in_kiln(harness.kiln_path(), "alpha", 10, false)?;
+        let beta_results = search_files_in_kiln(harness.kiln_path(), "beta", 10, false)?;
 
         assert_eq!(alpha_results.len(), 2, "Should find 2 files with 'alpha'");
         assert_eq!(beta_results.len(), 1, "Should find 1 file with 'beta'");
@@ -624,7 +624,7 @@ mod integration_tests {
         harness.create_text_file("final_text.md", "# Final Text\nLast searchable content")?;
 
         // Search should process all text files despite binary files
-        let results = search_files_in_kiln(harness.vault_path(), "searchable", 10, false)?;
+        let results = search_files_in_kiln(harness.kiln_path(), "searchable", 10, false)?;
 
         assert_eq!(
             results.len(),

@@ -131,4 +131,4 @@ Planned improvements to the knowledge management system:
 
 ---
 
-*This hub note serves as the primary navigation and organizational center for the test vault, demonstrating comprehensive Obsidian compatibility features.*
+*This hub note serves as the primary navigation and organizational center for the test kiln, demonstrating comprehensive Obsidian compatibility features.*

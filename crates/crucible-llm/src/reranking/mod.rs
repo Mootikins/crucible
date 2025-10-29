@@ -4,8 +4,8 @@
 //! vector search to improve result relevance. Rerankers use cross-attention models
 //! that better understand query-document relationships compared to vector similarity.
 
-use async_trait::async_trait;
 use anyhow::Result;
+use async_trait::async_trait;
 
 pub mod fastembed;
 

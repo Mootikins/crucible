@@ -6,13 +6,13 @@
 
 ## Executive Summary
 
-This document defines the async Rust architecture for Crucible's file-watching pipeline that watches vault files, parses markdown content, and distributes parsed data to multiple outputs (SurrealDB + Logger). The design prioritizes **zero-allocation hot paths**, **backpressure handling**, and **async-first concurrency patterns**.
+This document defines the async Rust architecture for Crucible's file-watching pipeline that watches kiln files, parses markdown content, and distributes parsed data to multiple outputs (SurrealDB + Logger). The design prioritizes **zero-allocation hot paths**, **backpressure handling**, and **async-first concurrency patterns**.
 
 ## Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     FILE SYSTEM (Vault)                         │
+│                     FILE SYSTEM (Kiln)                         │
 └───────────────────────┬─────────────────────────────────────────┘
                         │
                         ▼
@@ -157,7 +157,7 @@ pub enum PipelineError {
 - **Zero-copy iteration** over markdown tokens
 - **Incremental parsing** (memory-efficient for large files)
 - **Extensible** via custom event processing for wikilinks
-- **Performance**: Processes ~50 MB/s on typical vault files
+- **Performance**: Processes ~50 MB/s on typical kiln files
 
 **Extension Strategy** (Wikilinks/Tags):
 ```rust
@@ -599,7 +599,7 @@ pub struct DocumentPipeline {
 }
 
 pub struct PipelineConfig {
-    pub vault_path: PathBuf,
+    pub kiln_path: PathBuf,
     pub file_buffer_size: usize,        // Default: 256
     pub parsed_buffer_size: usize,      // Default: 1024
     pub parser_workers: usize,          // Default: num_cpus
@@ -641,10 +641,10 @@ impl DocumentPipeline {
     pub async fn start(&mut self) -> Result<()> {
         // Start watcher with event forwarding
         let file_tx = self.file_tx.clone();
-        let vault_path = self.config.vault_path.clone();
+        let kiln_path = self.config.kiln_path.clone();
 
         // Configure watcher to send events to our channel
-        let watch_config = WatchConfig::new("vault-watch")
+        let watch_config = WatchConfig::new("kiln-watch")
             .with_recursive(true)
             .with_filter(
                 EventFilter::new()
@@ -652,7 +652,7 @@ impl DocumentPipeline {
                     .with_extension("markdown")
             );
 
-        self.watcher.add_watch(vault_path, watch_config).await?;
+        self.watcher.add_watch(kiln_path, watch_config).await?;
 
         // Spawn sink tasks
         for sink in &self.sinks {
@@ -775,7 +775,7 @@ impl DocumentPipeline {
 | DB connection pool | ~1 MB |
 | Total | **~3.1 MB** |
 
-**Scalability**: Memory bounded regardless of vault size.
+**Scalability**: Memory bounded regardless of kiln size.
 
 ## Testing Strategy
 
@@ -832,15 +832,15 @@ mod tests {
 #[tokio::test]
 async fn test_pipeline_end_to_end() {
     let temp_dir = tempfile::tempdir().unwrap();
-    let vault_path = temp_dir.path().to_path_buf();
+    let kiln_path = temp_dir.path().to_path_buf();
 
-    // Create test vault
-    let note_path = vault_path.join("test.md");
+    // Create test kiln
+    let note_path = kiln_path.join("test.md");
     tokio::fs::write(&note_path, "---\ntitle: Test\n---\nSee [[Other]]").await.unwrap();
 
     // Set up pipeline
     let config = PipelineConfig {
-        vault_path: vault_path.clone(),
+        kiln_path: kiln_path.clone(),
         ..Default::default()
     };
 
@@ -881,11 +881,11 @@ impl OutputSink for TestSink {
 // Benchmark: 1000 notes, concurrent modifications
 #[tokio::test]
 async fn bench_high_volume_parsing() {
-    let vault = create_test_vault(1000).await;
-    let pipeline = setup_pipeline(&vault).await;
+    let kiln = create_test_kiln(1000).await;
+    let pipeline = setup_pipeline(&kiln).await;
 
     let start = Instant::now();
-    simulate_concurrent_edits(&vault, 100).await;
+    simulate_concurrent_edits(&kiln, 100).await;
     wait_for_pipeline_idle(&pipeline, Duration::from_secs(10)).await;
 
     let elapsed = start.elapsed();
@@ -943,4 +943,4 @@ async fn bench_high_volume_parsing() {
 
 ---
 
-**Next Steps**: Implement Phase 1 (Core Infrastructure) and validate parser performance with real vault data.
+**Next Steps**: Implement Phase 1 (Core Infrastructure) and validate parser performance with real kiln data.

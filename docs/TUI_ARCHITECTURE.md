@@ -128,7 +128,7 @@ struct RenderState {
 │  ┌────────────────────────────────────────────────────┐  │
 │  │  App State (single ownership)                      │  │
 │  │  - LogBuffer (VecDeque<LogEntry>)                  │  │
-│  │  - StatusBar (vault info, stats)                   │  │
+│  │  - StatusBar (kiln info, stats)                   │  │
 │  │  - ReplState (input, history, cursor)              │  │
 │  │  - RenderState (dirty flags)                       │  │
 │  └────────────────────┬───────────────────────────────┘  │
@@ -203,7 +203,7 @@ struct LogEntry {
 
 /// Status bar information
 struct StatusUpdate {
-    vault_path: Option<PathBuf>,
+    kiln_path: Option<PathBuf>,
     db_type: Option<String>,
     doc_count: Option<u64>,
     db_size: Option<u64>,
@@ -268,7 +268,7 @@ pub struct LogBuffer {
 
 /// Status bar information
 pub struct StatusBar {
-    vault_path: PathBuf,
+    kiln_path: PathBuf,
     db_type: String,
     doc_count: u64,
     db_size: u64,
@@ -619,17 +619,17 @@ fn render(app: &mut App, frame: &mut Frame) {
 
 ### Header Widget
 
-**Design**: Single-line status bar with vault info and stats.
+**Design**: Single-line status bar with kiln info and stats.
 
 ```rust
 fn render_header(app: &App, frame: &mut Frame, area: Rect) {
     let status = &app.status;
 
-    // Format: "Crucible v0.1.0 | /path/to/vault | SurrealDB | 43 docs | 2.3MB"
+    // Format: "Crucible v0.1.0 | /path/to/kiln | SurrealDB | 43 docs | 2.3MB"
     let text = format!(
         "Crucible v{} | {} | {} | {} docs | {}",
         env!("CARGO_PKG_VERSION"),
-        status.vault_path.display(),
+        status.kiln_path.display(),
         status.db_type,
         status.doc_count,
         format_bytes(status.db_size),
@@ -899,7 +899,7 @@ fn setup_logging(log_tx: mpsc::Sender<LogEntry>) -> anyhow::Result<()> {
 ```rust
 // In watcher thread:
 async fn watch_loop(
-    vault_path: PathBuf,
+    kiln_path: PathBuf,
     log_tx: mpsc::Sender<LogEntry>,
     status_tx: mpsc::Sender<StatusUpdate>,
 ) {

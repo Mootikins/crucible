@@ -9,7 +9,7 @@ A powerful command-line interface for the Crucible knowledge management system, 
 - 🖥️ **Interactive REPL**: Full-featured REPL with SurrealQL support, syntax highlighting, and tool execution
 - 🤖 **AI Chat**: Interactive chat with multiple AI agents (researcher, writer, etc.)
 - 📝 **Note Management**: Create, update, and list notes with full metadata support
-- 📊 **Statistics**: Comprehensive vault statistics and analytics
+- 📊 **Statistics**: Comprehensive kiln statistics and analytics
 - 🔧 **Rune Scripting**: Execute custom Rune scripts as commands
 - ⚡ **Performance**: Fast, responsive CLI with async operations
 
@@ -32,7 +32,7 @@ crucible-cli
 # Show help and available commands
 crucible-cli --help
 
-# Show vault statistics
+# Show kiln statistics
 crucible-cli stats
 
 # Search notes interactively
@@ -172,13 +172,13 @@ crucible-cli chat [options]
 ```bash
 crucible-cli stats
 ```
-Shows comprehensive vault statistics including note count, embeddings status, and metadata.
+Shows comprehensive kiln statistics including note count, embeddings status, and metadata.
 
-#### Index Vault
+#### Index Kiln
 ```bash
 crucible-cli index [path] [options]
 ```
-- `path`: Vault path (optional)
+- `path`: Kiln path (optional)
 - `-f, --force`: Force re-indexing
 - `-g, --glob <pattern>`: File pattern (default: "**/*.md")
 
@@ -208,14 +208,14 @@ The CLI uses a hierarchical configuration system:
 
 1. **Defaults**: Built-in sensible defaults
 2. **Config File**: `~/.config/crucible/config.toml`
-3. **Environment Variables**: `CRUCIBLE_VAULT_PATH`, etc.
+3. **Environment Variables**: `CRUCIBLE_KILN_PATH`, etc.
 4. **Command Line Arguments**: Highest priority
 
 ### Sample Configuration
 
 ```toml
-[vault]
-path = "~/Documents/vault"
+[kiln]
+path = "~/Documents/kiln"
 
 [llm]
 provider = "ollama"

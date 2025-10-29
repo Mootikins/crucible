@@ -155,12 +155,12 @@ The tests integrate with:
    - AppMode (Running, Input, Scrolling, Exiting)
    - RenderState (dirty flags for optimization)
    - ScrollState (log scroll management)
-   - StatusBar (vault stats display)
+   - StatusBar (kiln stats display)
 
 2. **Events** (`crucible-cli/src/tui/events.rs`)
    - UiEvent (Input, Log, Status, ReplResult, Shutdown)
    - LogEntry (structured logs with timestamp, level, message)
-   - StatusUpdate (partial vault stats updates)
+   - StatusUpdate (partial kiln stats updates)
    - ReplResult (Success, Error, Table)
 
 3. **Log Buffer** (`crucible-cli/src/tui/log_buffer.rs`)

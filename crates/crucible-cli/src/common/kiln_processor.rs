@@ -1,7 +1,7 @@
 //! Kiln processing utilities for CLI
 //!
 //! Provides functionality to spawn and manage the kiln processor process
-//! for one-shot vault processing when embeddings are missing.
+//! for one-shot kiln processing when embeddings are missing.
 
 use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -29,7 +29,7 @@ impl KilnProcessor {
     ) -> Result<bool> {
         info!("Checking if embeddings exist in database...");
 
-        match crucible_surrealdb::vault_integration::get_database_stats(client).await {
+        match crucible_surrealdb::kiln_integration::get_database_stats(client).await {
             Ok(stats) => {
                 info!("Found {} embeddings in database", stats.total_embeddings);
                 Ok(stats.total_embeddings > 0)
@@ -60,17 +60,14 @@ impl KilnProcessor {
     }
 
     /// Spawn daemon for one-shot processing with progress feedback
-    pub async fn process_kiln(
-        &mut self,
-        vault_path: &std::path::Path,
-    ) -> Result<ProcessingResult> {
+    pub async fn process_kiln(&mut self, kiln_path: &std::path::Path) -> Result<ProcessingResult> {
         info!("Starting daemon for one-shot kiln processing...");
 
         // Validate kiln path exists
-        if !vault_path.exists() {
+        if !kiln_path.exists() {
             return Err(anyhow::anyhow!(
                 "Kiln path '{}' does not exist or is not accessible",
-                vault_path.display()
+                kiln_path.display()
             ));
         }
 
@@ -82,7 +79,7 @@ impl KilnProcessor {
                 .unwrap()
                 .progress_chars("#>-"),
         );
-        pb.set_message("Starting vault processing...");
+        pb.set_message("Starting kiln processing...");
         pb.enable_steady_tick(Duration::from_millis(100));
         self.progress_bar = Some(pb);
 
@@ -119,14 +116,14 @@ impl KilnProcessor {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .env("OBSIDIAN_VAULT_PATH", vault_path.to_string_lossy().as_ref())
+            .env("OBSIDIAN_KILN_PATH", kiln_path.to_string_lossy().as_ref())
             // Inherit all relevant environment variables for security
             .env_clear()
             .envs(std::env::vars().filter(|(k, _)| {
                 // Keep only essential environment variables for security
                 matches!(
                     k.as_str(),
-                    "OBSIDIAN_VAULT_PATH"
+                    "OBSIDIAN_KILN_PATH"
                         | "EMBEDDING_ENDPOINT"
                         | "EMBEDDING_MODEL"
                         | "HOME"
@@ -147,7 +144,7 @@ impl KilnProcessor {
             })?;
 
         if let Some(pb) = &self.progress_bar {
-            pb.set_message("Processing vault files... (this may take a few minutes)");
+            pb.set_message("Processing kiln files... (this may take a few minutes)");
         }
 
         // Wait for the daemon to complete
@@ -170,7 +167,7 @@ impl KilnProcessor {
                     exit_code: status.code(),
                     processing_time: elapsed,
                     wait_time: wait_elapsed,
-                    vault_path: Some(vault_path.to_string_lossy().to_string()),
+                    kiln_path: Some(kiln_path.to_string_lossy().to_string()),
                 };
 
                 if result.success {
@@ -181,7 +178,7 @@ impl KilnProcessor {
                     Ok(result)
                 } else {
                     let error_msg = match result.exit_code {
-                        Some(1) => "Configuration error (missing OBSIDIAN_VAULT_PATH)",
+                        Some(1) => "Configuration error (missing OBSIDIAN_KILN_PATH)",
                         Some(2) => "Processing error (file parsing/validation failed)",
                         Some(3) => "Database error (connection/query failed)",
                         Some(4) => "Other error",
@@ -239,8 +236,8 @@ pub struct ProcessingResult {
     pub processing_time: Duration,
     /// Time spent waiting for process
     pub wait_time: Duration,
-    /// Vault path that was processed
-    pub vault_path: Option<String>,
+    /// Kiln path that was processed
+    pub kiln_path: Option<String>,
 }
 
 impl ProcessingResult {
@@ -248,7 +245,7 @@ impl ProcessingResult {
     pub fn status_message(&self) -> String {
         if self.success {
             format!(
-                "Vault processed successfully ({:.1}s)",
+                "Kiln processed successfully ({:.1}s)",
                 self.processing_time.as_secs_f64()
             )
         } else {
@@ -258,9 +255,9 @@ impl ProcessingResult {
 
     /// Get detailed processing information
     pub fn processing_info(&self) -> String {
-        match &self.vault_path {
+        match &self.kiln_path {
             Some(path) => format!(
-                "Processed vault: {} (took {:.1}s)",
+                "Processed kiln: {} (took {:.1}s)",
                 path,
                 self.processing_time.as_secs_f64()
             ),
@@ -272,7 +269,7 @@ impl ProcessingResult {
     }
 }
 
-/// Ensure file watcher is running for the vault
+/// Ensure file watcher is running for the kiln
 ///
 /// Spawns a background task that watches for file changes and queues them for processing.
 /// Follows industry best practices: enabled by default, graceful degradation on failure.
@@ -281,9 +278,9 @@ impl ProcessingResult {
 pub async fn ensure_watcher_running(
     config: &crate::config::CliConfig,
 ) -> Result<std::sync::Arc<std::sync::RwLock<std::collections::HashSet<std::path::PathBuf>>>> {
-    use crate::watcher::{SimpleFileWatcher, get_fix_instructions};
-    use std::sync::{Arc, RwLock};
+    use crate::watcher::{get_fix_instructions, SimpleFileWatcher};
     use std::collections::HashSet;
+    use std::sync::{Arc, RwLock};
 
     // Check if enabled in config (default: true)
     if !config.file_watching.enabled {
@@ -291,21 +288,24 @@ pub async fn ensure_watcher_running(
         return Ok(Arc::new(RwLock::new(HashSet::new())));
     }
 
-    info!("Initializing file watcher for: {}", config.kiln.path.display());
+    info!(
+        "Initializing file watcher for: {}",
+        config.kiln.path.display()
+    );
 
     // Create shared queue for pending files
     let pending_files = Arc::new(RwLock::new(HashSet::new()));
     let pending_files_clone = Arc::clone(&pending_files);
 
     // Spawn the entire watcher + event handling in a background task
-    let vault_path = config.kiln.path.clone();
+    let kiln_path = config.kiln.path.clone();
     let watcher_config = config.file_watching.clone();
 
     std::thread::spawn(move || {
         // Create a new Tokio runtime for this thread
         let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
         rt.block_on(async move {
-            run_file_watcher(vault_path, watcher_config, pending_files_clone).await;
+            run_file_watcher(kiln_path, watcher_config, pending_files_clone).await;
         });
     });
 
@@ -317,11 +317,11 @@ pub async fn ensure_watcher_running(
 
 /// Run file watcher in background task
 async fn run_file_watcher(
-    vault_path: std::path::PathBuf,
+    kiln_path: std::path::PathBuf,
     watcher_config: crate::config::FileWatcherConfig,
     pending_files: std::sync::Arc<std::sync::RwLock<std::collections::HashSet<std::path::PathBuf>>>,
 ) {
-    use crate::watcher::{SimpleFileWatcher, get_fix_instructions};
+    use crate::watcher::{get_fix_instructions, SimpleFileWatcher};
 
     let debounce_ms = watcher_config.debounce_ms;
 
@@ -329,7 +329,7 @@ async fn run_file_watcher(
     let (event_tx, event_rx) = mpsc::unbounded_channel();
 
     // Create watcher (with pre-flight checks)
-    match SimpleFileWatcher::new(&vault_path, watcher_config, event_tx) {
+    match SimpleFileWatcher::new(&kiln_path, watcher_config, event_tx) {
         Ok(_watcher) => {
             info!("✓ File watching enabled (debounce: {}ms)", debounce_ms);
 
@@ -356,7 +356,9 @@ async fn run_file_watcher(
 /// Handle watch events in background task - queues files for processing
 async fn handle_watch_events(
     mut event_rx: mpsc::UnboundedReceiver<crate::watcher::WatchEvent>,
-    pending_files_queue: std::sync::Arc<std::sync::RwLock<std::collections::HashSet<std::path::PathBuf>>>,
+    pending_files_queue: std::sync::Arc<
+        std::sync::RwLock<std::collections::HashSet<std::path::PathBuf>>,
+    >,
 ) -> Result<()> {
     use std::collections::HashSet;
     use tokio::time::{sleep, Duration};
@@ -421,9 +423,10 @@ async fn handle_watch_events(
     }
 }
 
-
 /// Convert CLI configuration to crucible-config provider configuration
-fn create_provider_config_from_cli(config: &crate::config::CliConfig) -> Result<crucible_config::EmbeddingProviderConfig> {
+fn create_provider_config_from_cli(
+    config: &crate::config::CliConfig,
+) -> Result<crucible_config::EmbeddingProviderConfig> {
     // Use the unified config conversion method that handles both new [embedding] section
     // and legacy kiln.embedding_* format
     // Note: to_embedding_config() already returns EmbeddingProviderConfig (re-exported as EmbeddingConfig)
@@ -441,12 +444,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_missing_vault_path_error() {
+    async fn test_missing_kiln_path_error() {
         let mut manager = KilnProcessor::new();
 
         // Temporarily clear the environment variable
-        let original_path = std::env::var("OBSIDIAN_VAULT_PATH").ok();
-        std::env::remove_var("OBSIDIAN_VAULT_PATH");
+        let original_path = std::env::var("OBSIDIAN_KILN_PATH").ok();
+        std::env::remove_var("OBSIDIAN_KILN_PATH");
 
         let result = manager
             .process_kiln(std::path::Path::new("/nonexistent"))
@@ -459,7 +462,7 @@ mod tests {
 
         // Restore original value
         if let Some(path) = original_path {
-            std::env::set_var("OBSIDIAN_VAULT_PATH", path);
+            std::env::set_var("OBSIDIAN_KILN_PATH", path);
         }
     }
 
@@ -470,16 +473,16 @@ mod tests {
             exit_code: Some(0),
             processing_time: Duration::from_secs(5),
             wait_time: Duration::from_secs(5),
-            vault_path: Some("/test/vault".to_string()),
+            kiln_path: Some("/test/kiln".to_string()),
         };
 
         assert!(result.success);
         assert_eq!(
             result.status_message(),
-            "Vault processed successfully (5.0s)"
+            "Kiln processed successfully (5.0s)"
         );
         assert!(result
             .processing_info()
-            .contains("Processed vault: /test/vault"));
+            .contains("Processed kiln: /test/kiln"));
     }
 }

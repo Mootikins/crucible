@@ -96,7 +96,7 @@ fn convert_args_to_parameters(tool_name: &str, args: &[String]) -> serde_json::V
             }
         }
 
-        // Vault tools
+        // Kiln tools
         "search_by_properties" | "search_by_tags" | "search_by_folder" => {
             if args.is_empty() {
                 serde_json::json!({})
@@ -539,10 +539,7 @@ impl UnifiedToolRegistry {
     }
 
     /// Get schema information for a specific tool
-    pub async fn get_tool_schema(
-        &self,
-        tool_name: &str,
-    ) -> Result<Option<super::ToolSchema>> {
+    pub async fn get_tool_schema(&self, tool_name: &str) -> Result<Option<super::ToolSchema>> {
         if self.use_unified {
             // Try to get schema from the group registry
             self.group_registry

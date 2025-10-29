@@ -5,7 +5,7 @@
 /// 2. GREEN Phase: Implementation will make tests pass by adding safety measures
 ///
 /// Security Requirements:
-/// - No path traversal outside vault directory
+/// - No path traversal outside kiln directory
 /// - No infinite loops from circular symlinks
 /// - Graceful handling of permission errors
 /// - Proper sanitization of user input
@@ -14,24 +14,24 @@
 /// Test setup helper to create complex filesystem scenarios
 pub struct FileSystemTestSetup {
     temp_dir: TempDir,
-    vault_path: PathBuf,
+    kiln_path: PathBuf,
     test_files: Vec<String>,
 }
 
 impl FileSystemTestSetup {
     fn new() -> Result<Self> {
         let temp_dir = TempDir::new()?;
-        let vault_path = temp_dir.path().to_path_buf();
+        let kiln_path = temp_dir.path().to_path_buf();
 
         Ok(Self {
             temp_dir,
-            vault_path,
+            kiln_path,
             test_files: Vec::new(),
         })
     }
 
     fn create_nested_structure(&mut self, depth: usize) -> Result<PathBuf> {
-        let mut current_path = self.vault_path.clone();
+        let mut current_path = self.kiln_path.clone();
 
         for i in 0..depth {
             current_path = current_path.join(format!("level_{}", i));
@@ -52,27 +52,27 @@ impl FileSystemTestSetup {
 
     fn create_symlink_scenarios(&mut self) -> Result<()> {
         // Create normal file
-        let normal_file = self.vault_path.join("normal.md");
+        let normal_file = self.kiln_path.join("normal.md");
         fs::write(&normal_file, "# Normal File\nContent")?;
         self.test_files
             .push(normal_file.to_string_lossy().to_string());
 
         // Create broken symlink (dangling link)
-        let broken_link = self.vault_path.join("broken_link.md");
-        let nonexistent_target = self.vault_path.join("nonexistent.md");
+        let broken_link = self.kiln_path.join("broken_link.md");
+        let nonexistent_target = self.kiln_path.join("nonexistent.md");
         std::os::unix::fs::symlink(&nonexistent_target, &broken_link)?;
 
         // Create circular symlinks (A -> B -> A)
-        let link_a = self.vault_path.join("link_a.md");
-        let link_b = self.vault_path.join("link_b.md");
+        let link_a = self.kiln_path.join("link_a.md");
+        let link_b = self.kiln_path.join("link_b.md");
         // Create symlinks pointing to each other (circular reference)
         std::os::unix::fs::symlink(&link_b, &link_a)?;
         std::os::unix::fs::symlink(&link_a, &link_b)?;
 
-        // Create symlink pointing outside vault (security boundary test)
+        // Create symlink pointing outside kiln (security boundary test)
         // Use a file INSIDE the temp dir to avoid conflicts with other tests
-        let outside_link = self.vault_path.join("outside_link.md");
-        let outside_file = self.temp_dir.path().join("outside_vault.md");
+        let outside_link = self.kiln_path.join("outside_link.md");
+        let outside_file = self.temp_dir.path().join("outside_kiln.md");
         fs::write(
             &outside_file,
             "# Outside File\nThis should not be accessible",
@@ -80,18 +80,18 @@ impl FileSystemTestSetup {
         std::os::unix::fs::symlink(&outside_file, &outside_link)?;
 
         // Create symlink chain that eventually points outside
-        let chain_link1 = self.vault_path.join("chain_link1.md");
-        let chain_link2 = self.vault_path.join("chain_link2.md");
+        let chain_link1 = self.kiln_path.join("chain_link1.md");
+        let chain_link2 = self.kiln_path.join("chain_link2.md");
         std::os::unix::fs::symlink(&chain_link2, &chain_link1)?;
         std::os::unix::fs::symlink(&outside_file, &chain_link2)?;
 
         // Create directory symlink
-        let target_dir = self.vault_path.join("target_dir");
+        let target_dir = self.kiln_path.join("target_dir");
         fs::create_dir(&target_dir)?;
         let dir_file = target_dir.join("dir_file.md");
         fs::write(&dir_file, "# Directory File\nContent")?;
 
-        let dir_symlink = self.vault_path.join("dir_symlink");
+        let dir_symlink = self.kiln_path.join("dir_symlink");
         std::os::unix::fs::symlink(&target_dir, &dir_symlink)?;
 
         Ok(())
@@ -99,14 +99,14 @@ impl FileSystemTestSetup {
 
     fn create_permission_scenarios(&mut self) -> Result<()> {
         // Create file with no read permissions
-        let no_read_file = self.vault_path.join("no_read.md");
+        let no_read_file = self.kiln_path.join("no_read.md");
         fs::write(&no_read_file, "# No Read File\nThis should not be readable")?;
         let mut perms = fs::metadata(&no_read_file)?.permissions();
         perms.set_mode(0o000); // No permissions
         fs::set_permissions(&no_read_file, perms)?;
 
         // Create directory with no execute permissions
-        let no_exec_dir = self.vault_path.join("no_exec_dir");
+        let no_exec_dir = self.kiln_path.join("no_exec_dir");
         fs::create_dir(&no_exec_dir)?;
         let no_exec_file = no_exec_dir.join("file.md");
         fs::write(
@@ -118,7 +118,7 @@ impl FileSystemTestSetup {
         fs::set_permissions(&no_exec_dir, dir_perms)?;
 
         // Create file with unusual permissions
-        let unusual_perms_file = self.vault_path.join("unusual_perms.md");
+        let unusual_perms_file = self.kiln_path.join("unusual_perms.md");
         fs::write(
             &unusual_perms_file,
             "# Unusual Permissions\nSticky bit and setuid",
@@ -147,7 +147,7 @@ impl FileSystemTestSetup {
         ];
 
         for name in special_names {
-            let file_path = self.vault_path.join(name);
+            let file_path = self.kiln_path.join(name);
             // Use ignore for files that may fail due to filesystem restrictions
             let _ = fs::write(
                 &file_path,
@@ -164,12 +164,12 @@ impl FileSystemTestSetup {
 
     fn create_large_file_scenarios(&mut self) -> Result<()> {
         // Create very large markdown file (15MB - exceeds 10MB limit)
-        let large_file = self.vault_path.join("large_file.md");
+        let large_file = self.kiln_path.join("large_file.md");
         let large_content = "# Large File\n".to_string() + &"x".repeat(15 * 1024 * 1024);
         fs::write(&large_file, large_content)?;
 
         // Create directory with many files
-        let many_files_dir = self.vault_path.join("many_files");
+        let many_files_dir = self.kiln_path.join("many_files");
         fs::create_dir(&many_files_dir)?;
 
         for i in 0..1000 {
@@ -192,28 +192,24 @@ fn test_path_traversal_prevention() -> Result<()> {
     let mut setup = FileSystemTestSetup::new()?;
     setup.create_nested_structure(5)?;
 
-    // Create a file outside the vault to test security boundary
+    // Create a file outside the kiln to test security boundary
     let outside_temp = TempDir::new()?;
     let outside_file = outside_temp.path().join("secret.md");
     fs::write(&outside_file, "# Secret\nThis should not be accessible")?;
 
-    // Test that get_file_content doesn't allow reading files outside vault
-    // (Note: get_file_content doesn't currently enforce vault boundaries,
+    // Test that get_file_content doesn't allow reading files outside kiln
+    // (Note: get_file_content doesn't currently enforce kiln boundaries,
     // but the secure walker should prevent these files from being discovered)
 
     // Test that search_files_in_kiln works correctly with normal queries
     // (Path traversal strings as queries should just be treated as search text)
-    let traversal_queries = vec![
-        "../../../etc/passwd",
-        "/etc/passwd",
-        "normal/../etc/passwd",
-    ];
+    let traversal_queries = vec!["../../../etc/passwd", "/etc/passwd", "normal/../etc/passwd"];
 
     for query in traversal_queries {
         println!("Testing path traversal query: {}", query);
 
         // These should succeed (empty results) - they're just search queries
-        let result = search_files_in_kiln(&setup.vault_path, query, 10, false);
+        let result = search_files_in_kiln(&setup.kiln_path, query, 10, false);
 
         // Search should complete successfully (though likely with no results)
         assert!(
@@ -222,24 +218,24 @@ fn test_path_traversal_prevention() -> Result<()> {
             query
         );
 
-        // Verify no results contain paths outside the vault
+        // Verify no results contain paths outside the kiln
         if let Ok(results) = &result {
             for r in results {
                 assert!(
-                    r.id.starts_with(setup.vault_path.to_str().unwrap()),
-                    "Result path should be within vault: {}",
+                    r.id.starts_with(setup.kiln_path.to_str().unwrap()),
+                    "Result path should be within kiln: {}",
                     r.id
                 );
             }
         }
     }
 
-    // Test that the secure file walker doesn't traverse outside vault boundaries
-    let files = get_markdown_files(&setup.vault_path)?;
+    // Test that the secure file walker doesn't traverse outside kiln boundaries
+    let files = get_markdown_files(&setup.kiln_path)?;
     for file in files {
         assert!(
-            file.starts_with(setup.vault_path.to_str().unwrap()),
-            "File walker should not find files outside vault: {}",
+            file.starts_with(setup.kiln_path.to_str().unwrap()),
+            "File walker should not find files outside kiln: {}",
             file
         );
     }
@@ -253,7 +249,7 @@ fn test_symlink_security_validation() -> Result<()> {
     setup.create_symlink_scenarios()?;
 
     // RED Phase: Test broken symlink handling (using legacy function)
-    let broken_link = setup.vault_path.join("broken_link.md");
+    let broken_link = setup.kiln_path.join("broken_link.md");
     let result = get_file_content(broken_link.to_str().unwrap());
     assert!(
         result.is_err(),
@@ -261,47 +257,49 @@ fn test_symlink_security_validation() -> Result<()> {
     );
 
     // RED Phase: Test circular symlink detection (should not cause infinite loops with legacy)
-    let files = get_markdown_files_legacy(&setup.vault_path)?;
+    let files = get_markdown_files_legacy(&setup.kiln_path)?;
     println!("Files found with legacy: {:?}", files);
 
     // GREEN Phase: Test secure walker handles circular symlinks properly
-    let secure_files = get_markdown_files(&setup.vault_path)?;
+    let secure_files = get_markdown_files(&setup.kiln_path)?;
     println!("Files found with secure walker: {:?}", secure_files);
     assert!(
         !secure_files.is_empty(),
         "Secure walker should find valid files"
     );
 
-    // Test symlink outside vault boundary
-    // Note: get_file_content doesn't enforce vault boundaries at the read level,
+    // Test symlink outside kiln boundary
+    // Note: get_file_content doesn't enforce kiln boundaries at the read level,
     // but the secure file walker prevents these files from being discovered.
     // The symlink should still be readable if you have the path.
-    let outside_link = setup.vault_path.join("outside_link.md");
+    let outside_link = setup.kiln_path.join("outside_link.md");
     let result = get_file_content(outside_link.to_str().unwrap());
-    // This may succeed since get_file_content doesn't check vault boundaries
+    // This may succeed since get_file_content doesn't check kiln boundaries
     // Security is enforced at the file discovery level (walker) not the read level
     match result {
-        Ok(_) => println!("Symlink outside vault was readable (vault boundary not enforced at read level)"),
-        Err(e) => println!("Symlink outside vault failed to read: {}", e),
+        Ok(_) => {
+            println!("Symlink outside kiln was readable (kiln boundary not enforced at read level)")
+        }
+        Err(e) => println!("Symlink outside kiln failed to read: {}", e),
     }
 
     // Test symlink chains that point outside
-    let chain_link1 = setup.vault_path.join("chain_link1.md");
+    let chain_link1 = setup.kiln_path.join("chain_link1.md");
     let result = get_file_content(chain_link1.to_str().unwrap());
     // Similar to above - may succeed since read-level checks aren't implemented
     match result {
-        Ok(_) => println!("Symlink chain was readable (vault boundary not enforced at read level)"),
+        Ok(_) => println!("Symlink chain was readable (kiln boundary not enforced at read level)"),
         Err(e) => println!("Symlink chain failed to read: {}", e),
     }
 
     // The important security check: secure walker should not discover these symlinks
-    // when traversing the vault
-    let discovered_files = get_markdown_files(&setup.vault_path)?;
+    // when traversing the kiln
+    let discovered_files = get_markdown_files(&setup.kiln_path)?;
     for file in &discovered_files {
-        // Verify discovered files are within vault boundaries
+        // Verify discovered files are within kiln boundaries
         assert!(
-            file.starts_with(setup.vault_path.to_str().unwrap()),
-            "Secure walker should only discover files within vault: {}",
+            file.starts_with(setup.kiln_path.to_str().unwrap()),
+            "Secure walker should only discover files within kiln: {}",
             file
         );
     }
@@ -315,14 +313,14 @@ fn test_permission_error_handling() -> Result<()> {
     setup.create_permission_scenarios()?;
 
     // Create a normal file that should be accessible
-    let normal_file = setup.vault_path.join("normal_accessible.md");
+    let normal_file = setup.kiln_path.join("normal_accessible.md");
     fs::write(
         &normal_file,
         "# Normal Accessible File\nThis should be readable",
     )?;
 
     // Test file without read permissions
-    let no_read_file = setup.vault_path.join("no_read.md");
+    let no_read_file = setup.kiln_path.join("no_read.md");
     let result = get_file_content(no_read_file.to_str().unwrap());
     assert!(
         result.is_err(),
@@ -330,7 +328,7 @@ fn test_permission_error_handling() -> Result<()> {
     );
 
     // GREEN Phase: Test secure walker continues processing despite permission errors
-    let files = get_markdown_files(&setup.vault_path)?;
+    let files = get_markdown_files(&setup.kiln_path)?;
     println!("Files found with secure walker: {:?}", files);
 
     // Should find the normal file even with permission issues
@@ -344,7 +342,7 @@ fn test_permission_error_handling() -> Result<()> {
     );
 
     // Test unusual permission handling
-    let unusual_perms_file = setup.vault_path.join("unusual_perms.md");
+    let unusual_perms_file = setup.kiln_path.join("unusual_perms.md");
     let result = get_file_content(unusual_perms_file.to_str().unwrap());
     // The secure reader may or may not accept unusual permissions based on the OS
     // What's important is that it doesn't crash and handles it gracefully
@@ -362,22 +360,25 @@ fn test_special_characters_in_filenames() -> Result<()> {
     setup.create_special_character_filenames()?;
 
     // Test that special characters are handled properly
-    let files = get_markdown_files(&setup.vault_path)?;
+    let files = get_markdown_files(&setup.kiln_path)?;
     println!("Files with special characters: {:?}", files);
 
     // Unicode handling
-    let unicode_file = setup.vault_path.join("unicode_😀_emoji.md");
+    let unicode_file = setup.kiln_path.join("unicode_😀_emoji.md");
     let result = get_file_content(unicode_file.to_str().unwrap());
     assert!(result.is_ok(), "Unicode filenames should be supported");
 
     // Control character handling
-    let control_file = setup.vault_path.join("control\x01\x02character.md");
+    let control_file = setup.kiln_path.join("control\x01\x02character.md");
     let _result = get_file_content(control_file.to_str().unwrap());
     // TODO: Should handle control characters safely
 
     // Very long filename handling (200 chars + path)
     // Check that we have a file with the long filename pattern
-    let long_name_files: Vec<_> = files.iter().filter(|f| f.contains("very_long_filename_")).collect();
+    let long_name_files: Vec<_> = files
+        .iter()
+        .filter(|f| f.contains("very_long_filename_"))
+        .collect();
     assert!(
         !long_name_files.is_empty(),
         "Long filename test file should be created and found"
@@ -392,7 +393,7 @@ fn test_file_system_edge_cases() -> Result<()> {
     setup.create_large_file_scenarios()?;
 
     // Test large file handling (should enforce size limits)
-    let large_file = setup.vault_path.join("large_file.md");
+    let large_file = setup.kiln_path.join("large_file.md");
     let result = get_file_content(large_file.to_str().unwrap());
     assert!(
         result.is_err(),
@@ -400,7 +401,7 @@ fn test_file_system_edge_cases() -> Result<()> {
     );
 
     // Test directory with many files (should not exhaust memory)
-    let many_files_dir = setup.vault_path.join("many_files");
+    let many_files_dir = setup.kiln_path.join("many_files");
     let start_time = std::time::Instant::now();
     let files = get_markdown_files(&many_files_dir)?;
     let duration = start_time.elapsed();
@@ -425,7 +426,7 @@ fn test_concurrent_file_modifications() -> Result<()> {
     let setup = FileSystemTestSetup::new()?;
 
     // Create a file
-    let test_file = setup.vault_path.join("test.md");
+    let test_file = setup.kiln_path.join("test.md");
     fs::write(&test_file, "# Initial Content\nOriginal content")?;
 
     // Start reading the file
@@ -451,13 +452,13 @@ fn test_readonly_filesystem_handling() -> Result<()> {
     let setup = FileSystemTestSetup::new()?;
 
     // Create a test file
-    let test_file = setup.vault_path.join("readonly_test.md");
+    let test_file = setup.kiln_path.join("readonly_test.md");
     fs::write(&test_file, "# Readonly Test\nContent")?;
 
     // Simulate readonly filesystem by changing directory permissions
-    let mut perms = fs::metadata(&setup.vault_path)?.permissions();
+    let mut perms = fs::metadata(&setup.kiln_path)?.permissions();
     perms.set_readonly(true);
-    fs::set_permissions(&setup.vault_path, perms)?;
+    fs::set_permissions(&setup.kiln_path, perms)?;
 
     // Try to read the file
     let result = get_file_content(test_file.to_str().unwrap());
@@ -475,14 +476,14 @@ fn test_memory_limits_and_resource_management() -> Result<()> {
 
     // Create multiple large files to test memory management
     for i in 0..5 {
-        let file_path = setup.vault_path.join(format!("large_{}.md", i));
+        let file_path = setup.kiln_path.join(format!("large_{}.md", i));
         let content = format!("# Large File {}\n{}", i, "x".repeat(2 * 1024 * 1024)); // 2MB each
         fs::write(&file_path, content)?;
     }
 
     // Test that memory limits are enforced during search
     let start_time = std::time::Instant::now();
-    let results = search_files_in_kiln(&setup.vault_path, "content", 10, false)?;
+    let results = search_files_in_kiln(&setup.kiln_path, "content", 10, false)?;
     let duration = start_time.elapsed();
 
     println!(
@@ -510,7 +511,7 @@ fn test_filesystem_test_setup() -> Result<()> {
     setup.create_large_file_scenarios()?;
 
     // Verify test setup worked correctly
-    let files = get_markdown_files(&setup.vault_path)?;
+    let files = get_markdown_files(&setup.kiln_path)?;
     println!("Total files created for testing: {}", files.len());
     assert!(!files.is_empty(), "Test setup should create files");
 
@@ -526,23 +527,23 @@ fn test_current_security_gaps() -> Result<()> {
     println!("=== CURRENT SECURITY GAPS DEMONSTRATION ===");
 
     // Gap 1: Path traversal not properly validated
-    let malicious_path = format!("{}/../../../etc/passwd", setup.vault_path.display());
+    let malicious_path = format!("{}/../../../etc/passwd", setup.kiln_path.display());
     println!("Testing malicious path: {}", malicious_path);
 
-    // Gap 2: Symlinks outside vault not blocked
-    let outside_link = setup.vault_path.join("outside_link.md");
+    // Gap 2: Symlinks outside kiln not blocked
+    let outside_link = setup.kiln_path.join("outside_link.md");
     if outside_link.exists() {
         println!("Outside symlink exists and may be accessible");
     }
 
     // Gap 3: Circular symlinks may cause infinite loops
-    let circular_link = setup.vault_path.join("link_a.md");
+    let circular_link = setup.kiln_path.join("link_a.md");
     if circular_link.exists() {
         println!("Circular symlinks exist and may cause infinite loops");
     }
 
     // Gap 4: Permission errors not handled gracefully
-    let no_read_file = setup.vault_path.join("no_read.md");
+    let no_read_file = setup.kiln_path.join("no_read.md");
     if no_read_file.exists() {
         println!("Permission-restricted files exist and may cause crashes");
     }
@@ -558,7 +559,7 @@ fn test_search_with_malicious_queries() -> Result<()> {
     let setup = FileSystemTestSetup::new()?;
 
     // Create legitimate content
-    let legit_file = setup.vault_path.join("legit.md");
+    let legit_file = setup.kiln_path.join("legit.md");
     fs::write(
         &legit_file,
         "# Legitimate Document\nContent about security testing",
@@ -580,7 +581,7 @@ fn test_search_with_malicious_queries() -> Result<()> {
         println!("Testing malicious query: {:?}", query);
 
         // Should handle malicious queries gracefully
-        let result = search_files_in_kiln(&setup.vault_path, query, 10, false);
+        let result = search_files_in_kiln(&setup.kiln_path, query, 10, false);
 
         // TODO: Should either return empty results or handle error gracefully
         // Should not crash or cause security issues
@@ -599,17 +600,17 @@ fn test_search_performance_under_attack() -> Result<()> {
 
     // Create attack scenario: many files with symlinks and special cases
     for i in 0..100 {
-        let file_path = setup.vault_path.join(format!("attack_{}.md", i));
+        let file_path = setup.kiln_path.join(format!("attack_{}.md", i));
         fs::write(&file_path, format!("# Attack File {}\nContent", i))?;
 
         // Create corresponding symlinks
-        let link_path = setup.vault_path.join(format!("link_{}.md", i));
+        let link_path = setup.kiln_path.join(format!("link_{}.md", i));
         std::os::unix::fs::symlink(&file_path, &link_path)?;
     }
 
     // Test search performance under these conditions
     let start_time = std::time::Instant::now();
-    let results = search_files_in_kiln(&setup.vault_path, "Content", 50, false)?;
+    let results = search_files_in_kiln(&setup.kiln_path, "Content", 50, false)?;
     let duration = start_time.elapsed();
 
     println!(

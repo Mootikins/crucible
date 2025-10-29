@@ -1,21 +1,21 @@
-//! TDD RED Phase: Vault Processing Integration Tests
+//! TDD RED Phase: Kiln Processing Integration Tests
 //!
-//! This test suite demonstrates the configuration integration gaps in vault processing.
+//! This test suite demonstrates the configuration integration gaps in kiln processing.
 //! These tests are designed to FAIL initially (RED phase) to drive proper implementation
-//! of CLI configuration flow to vault processing.
+//! of CLI configuration flow to kiln processing.
 //!
 //! **Key Issues Demonstrated:**
-//! 1. Current vault processing uses `EmbeddingConfig::default()` instead of CLI configuration
+//! 1. Current kiln processing uses `EmbeddingConfig::default()` instead of CLI configuration
 //! 2. CLI embedding configuration (embedding_url, embedding_model) is ignored during processing
 //! 3. Embedding generation may use mock providers instead of real configured providers
-//! 4. Configuration flow from CLI arguments to vault processing is broken
+//! 4. Configuration flow from CLI arguments to kiln processing is broken
 //!
 //! **Expected Test Results (RED Phase):**
 //! - All tests should FAIL initially
 //! - Test failures should clearly demonstrate the configuration integration gaps
 //! - Test failures should provide specification for implementing proper configuration flow
 
-// Import CLI and vault processing components
+// Import CLI and kiln processing components
 use crate::test_utilities::{
     AssertUtils, MemoryUsage, PerformanceMeasurement, TestContext, TestDataGenerator,
 };
@@ -23,9 +23,9 @@ use anyhow::Result;
 use crucible_cli::config::CliConfig;
 use crucible_surrealdb::{
     embedding_pool::EmbeddingThreadPool,
-    vault_integration::{self, get_database_stats},
-    vault_processor::process_vault_files,
-    vault_scanner::VaultScannerConfig,
+    kiln_integration::{self, get_database_stats},
+    kiln_processor::process_kiln_files,
+    kiln_scanner::KilnScannerConfig,
     EmbeddingConfig, SurrealClient, SurrealDbConfig,
 };
 use std::collections::HashMap;
@@ -34,21 +34,21 @@ use std::time::{Duration, Instant};
 
 // Import CLI config types
 
-/// Test vault path using the existing comprehensive test vault
-const TEST_VAULT_PATH: &str = "/home/moot/crucible/tests/test-kiln";
+/// Test kiln path using the existing comprehensive test kiln
+const TEST_KILN_PATH: &str = "/home/moot/crucible/tests/test-kiln";
 
 /// Test configuration for TDD validation
-pub struct VaultProcessingTestContext {
-    pub vault_path: PathBuf,
+pub struct KilnProcessingTestContext {
+    pub kiln_path: PathBuf,
     pub db_path: PathBuf,
     pub client: SurrealClient,
     pub original_env_vars: HashMap<String, Option<String>>,
 }
 
-impl VaultProcessingTestContext {
-    /// Create a test context for vault processing TDD tests
+impl KilnProcessingTestContext {
+    /// Create a test context for kiln processing TDD tests
     pub async fn new() -> Result<Self> {
-        let vault_path = PathBuf::from(TEST_VAULT_PATH);
+        let kiln_path = PathBuf::from(TEST_KILN_PATH);
 
         // Store original environment variables for cleanup
         let mut original_env_vars = HashMap::new();
@@ -69,23 +69,23 @@ impl VaultProcessingTestContext {
             std::env::var("CRUCIBLE_TEST_MODE").ok(),
         );
 
-        // Verify test vault exists
-        if !vault_path.exists() {
+        // Verify test kiln exists
+        if !kiln_path.exists() {
             return Err(anyhow::anyhow!(
-                "Test vault not found at {}. Ensure the test vault exists.",
-                vault_path.display()
+                "Test kiln not found at {}. Ensure the test kiln exists.",
+                kiln_path.display()
             ));
         }
 
         // Create temporary database for testing
         let temp_db_path =
-            std::env::temp_dir().join(format!("crucible_vault_tdd_{}", std::process::id()));
+            std::env::temp_dir().join(format!("crucible_kiln_tdd_{}", std::process::id()));
         std::fs::create_dir_all(&temp_db_path)?;
 
         // Initialize database configuration
         let db_config = SurrealDbConfig {
             namespace: "crucible".to_string(),
-            database: "vault_tdd_test".to_string(),
+            database: "kiln_tdd_test".to_string(),
             path: temp_db_path.join("test.db").to_string_lossy().to_string(),
             max_connections: Some(10),
             timeout_seconds: Some(30),
@@ -93,11 +93,11 @@ impl VaultProcessingTestContext {
 
         let client = SurrealClient::new(db_config).await?;
 
-        // Initialize vault schema
-        vault_integration::initialize_vault_schema(&client).await?;
+        // Initialize kiln schema
+        kiln_integration::initialize_kiln_schema(&client).await?;
 
         Ok(Self {
-            vault_path,
+            kiln_path,
             db_path: temp_db_path,
             client,
             original_env_vars,
@@ -113,8 +113,8 @@ impl VaultProcessingTestContext {
         // Set test mode to avoid loading user config
         std::env::set_var("CRUCIBLE_TEST_MODE", "1");
 
-        // Set vault path to test vault
-        std::env::set_var("OBSIDIAN_KILN_PATH", &self.vault_path);
+        // Set kiln path to test kiln
+        std::env::set_var("OBSIDIAN_KILN_PATH", &self.kiln_path);
 
         // Set custom embedding configuration if provided
         if let Some(url) = embedding_url {
@@ -138,8 +138,8 @@ impl VaultProcessingTestContext {
     ) -> Result<CliConfig> {
         let mut config = CliConfig::default();
 
-        // Set vault path to test vault
-        config.kiln.path = self.vault_path.clone();
+        // Set kiln path to test kiln
+        config.kiln.path = self.kiln_path.clone();
 
         // Set custom embedding configuration
         config.kiln.embedding_url = embedding_url.to_string();
@@ -148,16 +148,16 @@ impl VaultProcessingTestContext {
         Ok(config)
     }
 
-    /// Get test files as VaultFileInfo structures
-    pub fn get_test_files(&self) -> Result<Vec<crucible_surrealdb::vault_scanner::VaultFileInfo>> {
+    /// Get test files as KilnFileInfo structures
+    pub fn get_test_files(&self) -> Result<Vec<crucible_surrealdb::kiln_scanner::KilnFileInfo>> {
         let mut files = Vec::new();
 
-        for entry in std::fs::read_dir(&self.vault_path)? {
+        for entry in std::fs::read_dir(&self.kiln_path)? {
             let entry = entry?;
             let path = entry.path();
 
             if path.extension().map_or(false, |ext| ext == "md") {
-                // Create a VaultFileInfo structure
+                // Create a KilnFileInfo structure
                 let metadata = std::fs::metadata(&path)?;
                 let modified_time = metadata.modified()?;
                 let file_size = metadata.len();
@@ -172,12 +172,12 @@ impl VaultProcessingTestContext {
 
                 // Get relative path
                 let relative_path = path
-                    .strip_prefix(&self.vault_path)
+                    .strip_prefix(&self.kiln_path)
                     .unwrap_or(&path)
                     .to_string_lossy()
                     .to_string();
 
-                files.push(crucible_surrealdb::vault_scanner::VaultFileInfo {
+                files.push(crucible_surrealdb::kiln_scanner::KilnFileInfo {
                     path: path.clone(),
                     relative_path,
                     file_size,
@@ -199,7 +199,7 @@ impl VaultProcessingTestContext {
     }
 }
 
-impl Drop for VaultProcessingTestContext {
+impl Drop for KilnProcessingTestContext {
     fn drop(&mut self) {
         // Restore original environment variables
         for (key, value) in &self.original_env_vars {
@@ -217,9 +217,9 @@ impl Drop for VaultProcessingTestContext {
 }
 
 #[tokio::test]
-async fn test_vault_processing_uses_cli_embedding_configuration() {
+async fn test_kiln_processing_uses_cli_embedding_configuration() {
     // ARRANGE: Create test context with custom embedding configuration
-    let mut test_ctx = VaultProcessingTestContext::new()
+    let mut test_ctx = KilnProcessingTestContext::new()
         .await
         .expect("Failed to create test context");
 
@@ -233,11 +233,11 @@ async fn test_vault_processing_uses_cli_embedding_configuration() {
         .create_test_cli_config(custom_embedding_url, custom_embedding_model)
         .expect("Failed to create test CLI config");
 
-    // ACT: Process vault using integrated functionality (current implementation)
+    // ACT: Process kiln using integrated functionality (current implementation)
     let test_files = test_ctx.get_test_files().expect("Failed to get test files");
 
-    // Create vault scanner configuration
-    let scanner_config = VaultScannerConfig {
+    // Create kiln scanner configuration
+    let scanner_config = KilnScannerConfig {
         max_file_size_bytes: 50 * 1024 * 1024, // 50MB
         max_recursion_depth: 10,
         recursive_scan: true,
@@ -252,8 +252,8 @@ async fn test_vault_processing_uses_cli_embedding_configuration() {
         enable_incremental: false,
         track_file_changes: true,
         change_detection_method:
-            crucible_surrealdb::vault_scanner::ChangeDetectionMethod::ContentHash,
-        error_handling_mode: crucible_surrealdb::vault_scanner::ErrorHandlingMode::ContinueOnError,
+            crucible_surrealdb::kiln_scanner::ChangeDetectionMethod::ContentHash,
+        error_handling_mode: crucible_surrealdb::kiln_scanner::ErrorHandlingMode::ContinueOnError,
         max_error_count: 100,
         error_retry_attempts: 3,
         error_retry_delay_ms: 500,
@@ -272,15 +272,15 @@ async fn test_vault_processing_uses_cli_embedding_configuration() {
         .await
         .expect("Failed to create embedding thread pool");
 
-    // Process vault files
-    let process_result = process_vault_files(
+    // Process kiln files
+    let process_result = process_kiln_files(
         &test_files,
         &test_ctx.client,
         &scanner_config,
         Some(&embedding_pool),
     )
     .await
-    .expect("Failed to process vault files");
+    .expect("Failed to process kiln files");
 
     // ASSERT: Verify that CLI configuration was used (this should FAIL in RED phase)
 
@@ -298,7 +298,7 @@ async fn test_vault_processing_uses_cli_embedding_configuration() {
     // Verify embeddings were generated
     assert!(
         db_stats.total_embeddings > 0,
-        "No embeddings were generated during vault processing"
+        "No embeddings were generated during kiln processing"
     );
 
     // TDD RED PHASE: This assertion should FAIL because the current implementation
@@ -310,7 +310,7 @@ async fn test_vault_processing_uses_cli_embedding_configuration() {
     // In the current implementation, this will FAIL because EmbeddingConfig::default() is used
     assert!(
         false, // ❌ DELIBERATELY FAILING IN RED PHASE
-        "TDD RED PHASE: Vault processing should use CLI embedding configuration (url: {}, model: {}), \
+        "TDD RED PHASE: Kiln processing should use CLI embedding configuration (url: {}, model: {}), \
         but currently uses EmbeddingConfig::default(). This test demonstrates the configuration integration gap.",
         custom_embedding_url,
         custom_embedding_model
@@ -318,9 +318,9 @@ async fn test_vault_processing_uses_cli_embedding_configuration() {
 }
 
 #[tokio::test]
-async fn test_vault_processing_generates_real_embeddings() {
+async fn test_kiln_processing_generates_real_embeddings() {
     // ARRANGE: Create test context with embedding configuration
-    let mut test_ctx = VaultProcessingTestContext::new()
+    let mut test_ctx = KilnProcessingTestContext::new()
         .await
         .expect("Failed to create test context");
 
@@ -330,11 +330,11 @@ async fn test_vault_processing_generates_real_embeddings() {
 
     test_ctx.set_test_env_vars(Some(embedding_url), Some(embedding_model));
 
-    // ACT: Process vault and generate embeddings
+    // ACT: Process kiln and generate embeddings
     let test_files = test_ctx.get_test_files().expect("Failed to get test files");
 
-    // Create vault scanner configuration
-    let scanner_config = VaultScannerConfig {
+    // Create kiln scanner configuration
+    let scanner_config = KilnScannerConfig {
         max_file_size_bytes: 50 * 1024 * 1024,
         max_recursion_depth: 10,
         recursive_scan: true,
@@ -349,8 +349,8 @@ async fn test_vault_processing_generates_real_embeddings() {
         enable_incremental: false,
         track_file_changes: true,
         change_detection_method:
-            crucible_surrealdb::vault_scanner::ChangeDetectionMethod::ContentHash,
-        error_handling_mode: crucible_surrealdb::vault_scanner::ErrorHandlingMode::ContinueOnError,
+            crucible_surrealdb::kiln_scanner::ChangeDetectionMethod::ContentHash,
+        error_handling_mode: crucible_surrealdb::kiln_scanner::ErrorHandlingMode::ContinueOnError,
         max_error_count: 100,
         error_retry_attempts: 3,
         error_retry_delay_ms: 500,
@@ -367,15 +367,15 @@ async fn test_vault_processing_generates_real_embeddings() {
         .await
         .expect("Failed to create embedding thread pool");
 
-    // Process vault files
-    let process_result = process_vault_files(
+    // Process kiln files
+    let process_result = process_kiln_files(
         &test_files,
         &test_ctx.client,
         &scanner_config,
         Some(&embedding_pool),
     )
     .await
-    .expect("Failed to process vault files");
+    .expect("Failed to process kiln files");
 
     // ASSERT: Verify that real embeddings were generated
 
@@ -417,7 +417,7 @@ async fn test_vault_processing_generates_real_embeddings() {
             // TDD RED PHASE: This assertion demonstrates the need to verify real embedding generation
             assert!(
                 false, // ❌ DELIBERATELY FAILING IN RED PHASE
-                "TDD RED PHASE: Vault processing should generate real embeddings using configured provider ({}/{}), \
+                "TDD RED PHASE: Kiln processing should generate real embeddings using configured provider ({}/{}), \
                 but currently may use mock embeddings. This test demonstrates the need for real embedding provider integration. \
                 Found embedding data: {:?}",
                 embedding_url,
@@ -429,19 +429,19 @@ async fn test_vault_processing_generates_real_embeddings() {
 }
 
 #[tokio::test]
-async fn test_vault_processing_without_external_daemon() {
+async fn test_kiln_processing_without_external_daemon() {
     // ARRANGE: Create test context
-    let mut test_ctx = VaultProcessingTestContext::new()
+    let mut test_ctx = KilnProcessingTestContext::new()
         .await
         .expect("Failed to create test context");
 
     test_ctx.set_test_env_vars(None, None);
 
-    // ACT: Process vault using integrated functionality only (no external daemon)
+    // ACT: Process kiln using integrated functionality only (no external daemon)
     let test_files = test_ctx.get_test_files().expect("Failed to get test files");
 
-    // Create vault scanner configuration
-    let scanner_config = VaultScannerConfig {
+    // Create kiln scanner configuration
+    let scanner_config = KilnScannerConfig {
         max_file_size_bytes: 50 * 1024 * 1024,
         max_recursion_depth: 10,
         recursive_scan: true,
@@ -456,8 +456,8 @@ async fn test_vault_processing_without_external_daemon() {
         enable_incremental: false,
         track_file_changes: true,
         change_detection_method:
-            crucible_surrealdb::vault_scanner::ChangeDetectionMethod::ContentHash,
-        error_handling_mode: crucible_surrealdb::vault_scanner::ErrorHandlingMode::ContinueOnError,
+            crucible_surrealdb::kiln_scanner::ChangeDetectionMethod::ContentHash,
+        error_handling_mode: crucible_surrealdb::kiln_scanner::ErrorHandlingMode::ContinueOnError,
         max_error_count: 100,
         error_retry_attempts: 3,
         error_retry_delay_ms: 500,
@@ -474,23 +474,23 @@ async fn test_vault_processing_without_external_daemon() {
         .await
         .expect("Failed to create embedding thread pool");
 
-    // Process vault files using integrated functionality
+    // Process kiln files using integrated functionality
     let start_time = Instant::now();
-    let process_result = process_vault_files(
+    let process_result = process_kiln_files(
         &test_files,
         &test_ctx.client,
         &scanner_config,
         Some(&embedding_pool),
     )
     .await
-    .expect("Failed to process vault files");
+    .expect("Failed to process kiln files");
 
     let processing_time = start_time.elapsed();
 
-    // ASSERT: Verify vault processing works without external daemon
+    // ASSERT: Verify kiln processing works without external daemon
 
     // This test should PASS since current implementation is already daemonless
-    // It validates that integrated vault processing works correctly
+    // It validates that integrated kiln processing works correctly
 
     assert!(
         process_result.processed_count > 0,
@@ -545,7 +545,7 @@ async fn test_vault_processing_without_external_daemon() {
     );
 
     // SUCCESS: This test should pass, confirming daemonless processing works
-    println!("✅ Vault processing successfully completed without external daemon:");
+    println!("✅ Kiln processing successfully completed without external daemon:");
     println!(
         "   📁 Processed {} files in {:?}",
         process_result.processed_count, processing_time
@@ -557,7 +557,7 @@ async fn test_vault_processing_without_external_daemon() {
 #[tokio::test]
 async fn test_cli_embedding_configuration_conversion() {
     // ARRANGE: Create test CLI configuration
-    let test_ctx = VaultProcessingTestContext::new()
+    let test_ctx = KilnProcessingTestContext::new()
         .await
         .expect("Failed to create test context");
 
@@ -592,17 +592,17 @@ async fn test_cli_embedding_configuration_conversion() {
     );
 
     // TDD RED PHASE: This demonstrates that CLI configuration conversion works
-    // but the converted configuration is not used in vault processing
+    // but the converted configuration is not used in kiln processing
     println!("✅ CLI configuration conversion works correctly:");
     println!("   🔗 Endpoint: {}", embedding_config.endpoint);
     println!("   🤖 Model: {}", embedding_config.model);
-    println!("   ❌ BUT: This configuration is ignored in vault processing (uses EmbeddingConfig::default())");
+    println!("   ❌ BUT: This configuration is ignored in kiln processing (uses EmbeddingConfig::default())");
 }
 
 #[tokio::test]
-async fn test_embedding_configuration_flow_to_vault_processing() {
+async fn test_embedding_configuration_flow_to_kiln_processing() {
     // ARRANGE: Set up complete configuration flow test
-    let mut test_ctx = VaultProcessingTestContext::new()
+    let mut test_ctx = KilnProcessingTestContext::new()
         .await
         .expect("Failed to create test context");
 
@@ -620,7 +620,7 @@ async fn test_embedding_configuration_flow_to_vault_processing() {
         .to_embedding_config()
         .expect("Failed to convert CLI config to embedding config");
 
-    // ACT: Simulate what vault processing should do (but currently doesn't)
+    // ACT: Simulate what kiln processing should do (but currently doesn't)
 
     // Current implementation (buggy):
     let current_embedding_config = EmbeddingConfig::default(); // ❌ Ignores CLI config
@@ -657,7 +657,7 @@ async fn test_embedding_configuration_flow_to_vault_processing() {
     // This assertion represents the core issue that needs to be fixed
     assert!(
         false, // ❌ DELIBERATELY FAILING IN RED PHASE
-        "TDD RED PHASE: Vault processing should use CLI embedding configuration \
+        "TDD RED PHASE: Kiln processing should use CLI embedding configuration \
         (provider: {:?}, endpoint: {}, model: {}) but currently uses default configuration \
         (model_type: {:?}). This demonstrates the critical configuration integration gap.",
         proper_embedding_config.provider,

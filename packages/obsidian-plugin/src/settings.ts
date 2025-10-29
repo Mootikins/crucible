@@ -144,7 +144,7 @@ export class SettingsTab extends PluginSettingTab {
         .setDesc("Command-line arguments for the MCP server (comma-separated)")
         .addText((text) =>
           text
-            .setPlaceholder("--db-path, /path/to/vault.db")
+            .setPlaceholder("--db-path, /path/to/kiln.db")
             .setValue(this.plugin.settings.mcp.serverArgs.join(", "))
             .onChange(async (value) => {
               this.plugin.settings.mcp.serverArgs = value

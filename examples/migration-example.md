@@ -32,7 +32,7 @@ This guide is for historical reference. For current configuration, see `examples
       "args": [],
       "env": {
         "RUST_LOG": "info",
-        "OBSIDIAN_VAULT_PATH": "/path/to/vault",
+        "OBSIDIAN_KILN_PATH": "/path/to/kiln",
 
         "EMBEDDING_PROVIDER": "ollama",
         "EMBEDDING_ENDPOINT": "https://llama.example.com",
@@ -58,7 +58,7 @@ This guide is for historical reference. For current configuration, see `examples
 | `EMBEDDING_TIMEOUT_SECS` | `embedding_provider.api.timeout_seconds` | Request timeout |
 | `EMBEDDING_MAX_RETRIES` | `embedding_provider.api.retry_attempts` | Retry attempts |
 | `EMBEDDING_BATCH_SIZE` | `embedding_provider.options.batch_size` | Batch processing size |
-| `OBSIDIAN_VAULT_PATH` | `custom_settings.obsidian.vault_path` | Obsidian vault path |
+| `OBSIDIAN_KILN_PATH` | `custom_settings.obsidian.kiln_path` | Obsidian kiln path |
 | `RUST_LOG` | `logging.level` | Logging level |
 
 ## Migration Steps
@@ -198,7 +198,7 @@ crucible-mcp-server
 # setup-dev.sh
 
 export RUST_LOG=debug
-export OBSIDIAN_VAULT_PATH=/home/user/Documents/vault
+export OBSIDIAN_KILN_PATH=/home/user/Documents/kiln
 export EMBEDDING_PROVIDER=ollama
 export EMBEDDING_ENDPOINT=http://localhost:11434
 export EMBEDDING_MODEL=nomic-embed-text
@@ -236,11 +236,11 @@ profiles:
 
     env_vars:
       RUST_LOG: "debug"
-      OBSIDIAN_VAULT_PATH: "/home/user/Documents/vault"
+      OBSIDIAN_KILN_PATH: "/home/user/Documents/kiln"
 
     settings:
       obsidian:
-        vault_path: "/home/user/Documents/vault"
+        kiln_path: "/home/user/Documents/kiln"
 
 # New startup command:
 # CRUCIBLE_CONFIG_PATH=./crucible-dev.yaml crucible-mcp-server
@@ -536,9 +536,9 @@ cat >> "$NEW_CONFIG_FILE" << EOF
     env_vars:
 EOF
 
-if [ -n "$OBSIDIAN_VAULT_PATH" ]; then
+if [ -n "$OBSIDIAN_KILN_PATH" ]; then
     cat >> "$NEW_CONFIG_FILE" << EOF
-      OBSIDIAN_VAULT_PATH: "$OBSIDIAN_VAULT_PATH"
+      OBSIDIAN_KILN_PATH: "$OBSIDIAN_KILN_PATH"
 EOF
 fi
 

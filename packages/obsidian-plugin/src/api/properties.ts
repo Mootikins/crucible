@@ -6,7 +6,7 @@ export class PropertiesHandler {
 
   async updateProperties(filePath: string, req: IncomingMessage, res: ServerResponse) {
     try {
-      const file = this.app.vault.getAbstractFileByPath(filePath);
+      const file = this.app.kiln.getAbstractFileByPath(filePath);
 
       if (!file || !(file instanceof TFile)) {
         this.sendJSON(res, 404, {
@@ -22,13 +22,13 @@ export class PropertiesHandler {
       const newProperties = body.properties || {};
 
       // Read current file content
-      const content = await this.app.vault.read(file);
+      const content = await this.app.kiln.read(file);
 
       // Update frontmatter
       const updatedContent = this.updateFrontmatter(content, newProperties);
 
       // Write back to file
-      await this.app.vault.modify(file, updatedContent);
+      await this.app.kiln.modify(file, updatedContent);
 
       this.sendJSON(res, 200, { success: true });
     } catch (error) {

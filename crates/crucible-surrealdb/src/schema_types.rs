@@ -48,14 +48,14 @@ impl<T> std::fmt::Display for RecordId<T> {
 // Notes Table
 // ============================================================================
 
-/// A note/document in the knowledge vault
+/// A note/document in the knowledge kiln
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Note {
     /// Record ID (format: "notes:path/to/file.md")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<RecordId<Note>>,
 
-    /// File path (relative to vault root)
+    /// File path (relative to kiln root)
     pub path: String,
 
     /// Document title (extracted from frontmatter or first heading)
@@ -434,9 +434,9 @@ pub struct GraphNode {
     pub edge_weight: Option<f32>,
 }
 
-/// Statistics about the vault
+/// Statistics about the kiln
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VaultStats {
+pub struct KilnStats {
     /// Total number of notes
     pub total_notes: i64,
 

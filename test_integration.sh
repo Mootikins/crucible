@@ -8,14 +8,14 @@ set -e
 echo "🧪 Testing CLI Integration with One-Shot Daemon"
 echo "=================================================="
 
-# Check if OBSIDIAN_VAULT_PATH is set
-if [ -z "$OBSIDIAN_VAULT_PATH" ]; then
-    echo "❌ OBSIDIAN_VAULT_PATH environment variable is not set"
-    echo "💡 Set it to test with real vault: export OBSIDIAN_VAULT_PATH=/path/to/your/vault"
+# Check if OBSIDIAN_KILN_PATH is set
+if [ -z "$OBSIDIAN_KILN_PATH" ]; then
+    echo "❌ OBSIDIAN_KILN_PATH environment variable is not set"
+    echo "💡 Set it to test with real kiln: export OBSIDIAN_KILN_PATH=/path/to/your/kiln"
     echo "🔧 For now, testing with mock workflow..."
     TEST_MODE="mock"
 else
-    echo "✅ OBSIDIAN_VAULT_PATH is set to: $OBSIDIAN_VAULT_PATH"
+    echo "✅ OBSIDIAN_KILN_PATH is set to: $OBSIDIAN_KILN_PATH"
     TEST_MODE="real"
 fi
 
@@ -39,7 +39,7 @@ echo ""
 echo "🔍 Test 1: Semantic search with no embeddings (should trigger daemon)"
 
 if [ "$TEST_MODE" = "real" ]; then
-    # Test with real vault path
+    # Test with real kiln path
     CRUCIBLE_DB_PATH="$TEST_DB" cargo run -p crucible-cli -- semantic "architecture" --top-k 3 2>&1 | tee test_output.log
 
     # Check if daemon was triggered and processing occurred
@@ -50,7 +50,7 @@ if [ "$TEST_MODE" = "real" ]; then
         exit 1
     fi
 
-    if grep -q "Starting vault processing" test_output.log; then
+    if grep -q "Starting kiln processing" test_output.log; then
         echo "✅ Correctly triggered daemon processing"
     else
         echo "❌ Failed to trigger daemon processing"
@@ -69,20 +69,20 @@ if [ "$TEST_MODE" = "real" ]; then
     if grep -q "Found [1-9][0-9]* results" test_output.log; then
         echo "✅ Semantic search returned results after processing"
     else
-        echo "⚠️  Semantic search returned no results (may be expected depending on vault content)"
+        echo "⚠️  Semantic search returned no results (may be expected depending on kiln content)"
     fi
 
 else
-    echo "⚠️  Skipping real test - no OBSIDIAN_VAULT_PATH set"
-    echo "💡 The CLI should handle missing vault path gracefully"
+    echo "⚠️  Skipping real test - no OBSIDIAN_KILN_PATH set"
+    echo "💡 The CLI should handle missing kiln path gracefully"
 
-    # Test error handling for missing vault path
+    # Test error handling for missing kiln path
     CRUCIBLE_DB_PATH="$TEST_DB" cargo run -p crucible-cli -- semantic "test" 2>&1 | tee test_output.log || true
 
-    if grep -q "OBSIDIAN_VAULT_PATH" test_output.log; then
-        echo "✅ Correctly handled missing OBSIDIAN_VAULT_PATH"
+    if grep -q "OBSIDIAN_KILN_PATH" test_output.log; then
+        echo "✅ Correctly handled missing OBSIDIAN_KILN_PATH"
     else
-        echo "❌ Did not properly handle missing vault path"
+        echo "❌ Did not properly handle missing kiln path"
         exit 1
     fi
 fi
@@ -98,7 +98,7 @@ if [ "$TEST_MODE" = "real" ]; then
     CRUCIBLE_DB_PATH="$TEST_DB" cargo run -p crucible-cli -- semantic "architecture" --top-k 2 2>&1 | tee test_output2.log
 
     # Should NOT trigger daemon again
-    if grep -q "Starting vault processing" test_output2.log; then
+    if grep -q "Starting kiln processing" test_output2.log; then
         echo "❌ Unexpectedly triggered daemon again"
         exit 1
     else
@@ -119,14 +119,14 @@ echo "🔍 Test 3: Error handling scenarios"
 
 echo "💡 Testing daemon startup failure handling..."
 
-# Test with invalid vault path to check error handling
-INVALID_VAULT_PATH="/nonexistent/path/to/vault"
-OBSIDIAN_VAULT_PATH="$INVALID_VAULT_PATH" CRUCIBLE_DB_PATH="$TEST_DB" cargo run -p crucible-cli -- semantic "test" 2>&1 | tee test_error_output.log || true
+# Test with invalid kiln path to check error handling
+INVALID_KILN_PATH="/nonexistent/path/to/kiln"
+OBSIDIAN_KILN_PATH="$INVALID_KILN_PATH" CRUCIBLE_DB_PATH="$TEST_DB" cargo run -p crucible-cli -- semantic "test" 2>&1 | tee test_error_output.log || true
 
 if grep -q "does not exist or is not accessible" test_error_output.log; then
-    echo "✅ Correctly handled invalid vault path"
+    echo "✅ Correctly handled invalid kiln path"
 else
-    echo "⚠️  May not have properly handled invalid vault path"
+    echo "⚠️  May not have properly handled invalid kiln path"
 fi
 
 echo ""
@@ -173,7 +173,7 @@ if [ "$TEST_MODE" = "real" ]; then
     fi
 
     ((TESTS_TOTAL++))
-    if grep -q "Starting vault processing" test_output.log 2>/dev/null; then
+    if grep -q "Starting kiln processing" test_output.log 2>/dev/null; then
         ((TESTS_PASSED++))
         echo "✅ Daemon triggering: PASSED"
     else
@@ -189,7 +189,7 @@ if [ "$TEST_MODE" = "real" ]; then
     fi
 
     ((TESTS_TOTAL++))
-    if grep -q "Starting vault processing" test_output2.log 2>/dev/null; then
+    if grep -q "Starting kiln processing" test_output2.log 2>/dev/null; then
         echo "❌ Skip daemon when embeddings exist: FAILED"
     else
         ((TESTS_PASSED++))
@@ -205,19 +205,19 @@ if [ "$TEST_MODE" = "real" ]; then
     fi
 else
     ((TESTS_TOTAL++))
-    if grep -q "OBSIDIAN_VAULT_PATH" test_output.log 2>/dev/null; then
+    if grep -q "OBSIDIAN_KILN_PATH" test_output.log 2>/dev/null; then
         ((TESTS_PASSED++))
-        echo "✅ Missing vault path handling: PASSED"
+        echo "✅ Missing kiln path handling: PASSED"
     else
-        echo "❌ Missing vault path handling: FAILED"
+        echo "❌ Missing kiln path handling: FAILED"
     fi
 
     ((TESTS_TOTAL++))
     if grep -q "does not exist or is not accessible" test_error_output.log 2>/dev/null; then
         ((TESTS_PASSED++))
-        echo "✅ Invalid vault path handling: PASSED"
+        echo "✅ Invalid kiln path handling: PASSED"
     else
-        echo "❌ Invalid vault path handling: FAILED"
+        echo "❌ Invalid kiln path handling: FAILED"
     fi
 fi
 
@@ -234,12 +234,12 @@ if [ $TESTS_PASSED -eq $TESTS_TOTAL ]; then
     echo "  ✓ Progress feedback during processing"
     echo "  ✓ Error handling for various scenarios"
     echo "  ✓ JSON output format support"
-    echo "  ✓ Security (no CLI arguments for vault path)"
+    echo "  ✓ Security (no CLI arguments for kiln path)"
 
     if [ "$TEST_MODE" = "real" ]; then
         echo "  ✓ Complete end-to-end workflow"
     else
-        echo "  ⚠️  Run with OBSIDIAN_VAULT_PATH set for full end-to-end testing"
+        echo "  ⚠️  Run with OBSIDIAN_KILN_PATH set for full end-to-end testing"
     fi
 
     exit_code=0

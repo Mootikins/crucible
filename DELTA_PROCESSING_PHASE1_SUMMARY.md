@@ -2,14 +2,14 @@
 
 ## Overview
 
-Successfully implemented hash-based delta processing for the Crucible vault processing pipeline. This feature dramatically improves performance by only reprocessing files that have actually changed, rather than reprocessing the entire vault on every update.
+Successfully implemented hash-based delta processing for the Crucible kiln processing pipeline. This feature dramatically improves performance by only reprocessing files that have actually changed, rather than reprocessing the entire kiln on every update.
 
 ## Implementation Details
 
 ### Core Functions Implemented
 
 #### 1. `delete_document_embeddings()`
-**Location**: `/home/moot/crucible/crates/crucible-surrealdb/src/vault_integration.rs`
+**Location**: `/home/moot/crucible/crates/crucible-surrealdb/src/kiln_integration.rs`
 
 Deletes all embeddings for a specific document before reprocessing.
 
@@ -25,7 +25,7 @@ pub async fn delete_document_embeddings(
 - Handles non-existent documents gracefully
 
 #### 2. `bulk_query_document_hashes()`
-**Location**: `/home/moot/crucible/crates/crucible-surrealdb/src/vault_processor.rs`
+**Location**: `/home/moot/crucible/crates/crucible-surrealdb/src/kiln_processor.rs`
 
 Efficiently queries content hashes for multiple files in a single database call.
 
@@ -41,14 +41,14 @@ async fn bulk_query_document_hashes(
 - Returns HashMap mapping paths to stored hashes
 
 #### 3. `convert_paths_to_file_infos()`
-**Location**: `/home/moot/crucible/crates/crucible-surrealdb/src/vault_processor.rs`
+**Location**: `/home/moot/crucible/crates/crucible-surrealdb/src/kiln_processor.rs`
 
-Converts file paths to VaultFileInfo structures with metadata and hashes.
+Converts file paths to KilnFileInfo structures with metadata and hashes.
 
 ```rust
 async fn convert_paths_to_file_infos(
     paths: &[PathBuf],
-) -> Result<Vec<VaultFileInfo>>
+) -> Result<Vec<KilnFileInfo>>
 ```
 
 - Reads file metadata asynchronously
@@ -56,37 +56,37 @@ async fn convert_paths_to_file_infos(
 - Handles missing files gracefully
 
 #### 4. `detect_changed_files()`
-**Location**: `/home/moot/crucible/crates/crucible-surrealdb/src/vault_processor.rs`
+**Location**: `/home/moot/crucible/crates/crucible-surrealdb/src/kiln_processor.rs`
 
 Detects which files have actually changed by comparing content hashes.
 
 ```rust
 async fn detect_changed_files(
     client: &SurrealClient,
-    file_infos: &[VaultFileInfo],
-) -> Result<Vec<VaultFileInfo>>
+    file_infos: &[KilnFileInfo],
+) -> Result<Vec<KilnFileInfo>>
 ```
 
 - Uses bulk_query_document_hashes() for efficiency
 - In-memory hash comparison (fast)
 - Returns files where hash mismatches OR not in database
 
-#### 5. `process_vault_delta()` (Main Entry Point)
-**Location**: `/home/moot/crucible/crates/crucible-surrealdb/src/vault_processor.rs`
+#### 5. `process_kiln_delta()` (Main Entry Point)
+**Location**: `/home/moot/crucible/crates/crucible-surrealdb/src/kiln_processor.rs`
 
 Main delta processing function that orchestrates the entire workflow.
 
 ```rust
-pub async fn process_vault_delta(
+pub async fn process_kiln_delta(
     changed_files: Vec<PathBuf>,
     client: &SurrealClient,
-    config: &VaultScannerConfig,
+    config: &KilnScannerConfig,
     embedding_pool: Option<&EmbeddingThreadPool>,
-) -> Result<VaultProcessResult>
+) -> Result<KilnProcessResult>
 ```
 
 **Process Flow:**
-1. Convert paths to VaultFileInfo (read metadata, calculate hashes)
+1. Convert paths to KilnFileInfo (read metadata, calculate hashes)
 2. Detect which files actually changed via bulk hash comparison
 3. Delete old embeddings for changed files
 4. Process changed files using existing pipeline
@@ -141,13 +141,13 @@ The integration test `test_delta_processing_single_file_change` in `/home/moot/c
 Exported in `crucible-surrealdb` crate:
 
 ```rust
-pub use vault_processor::{
+pub use kiln_processor::{
     process_document_embeddings,
     process_incremental_changes,
-    process_vault_delta,  // NEW
-    process_vault_files,
-    process_vault_files_with_error_handling,
-    scan_vault_directory,
+    process_kiln_delta,  // NEW
+    process_kiln_files,
+    process_kiln_files_with_error_handling,
+    scan_kiln_directory,
 };
 ```
 
@@ -184,34 +184,34 @@ All public functions have comprehensive rustdoc comments including:
 
 To complete the integration test, Phase 2 should:
 
-1. Wire `process_vault_delta()` into daemon workflow
+1. Wire `process_kiln_delta()` into daemon workflow
 2. Implement automatic delta detection on file watch events
 3. Add CLI command for manual delta processing
-4. Update daemon to prefer delta over full vault reprocessing
+4. Update daemon to prefer delta over full kiln reprocessing
 5. Add metrics/logging for delta vs full processing decisions
 
 ## Files Modified
 
-- `/home/moot/crucible/crates/crucible-surrealdb/src/vault_integration.rs`
+- `/home/moot/crucible/crates/crucible-surrealdb/src/kiln_integration.rs`
   - Added `delete_document_embeddings()` function
 
-- `/home/moot/crucible/crates/crucible-surrealdb/src/vault_processor.rs`
+- `/home/moot/crucible/crates/crucible-surrealdb/src/kiln_processor.rs`
   - Added `bulk_query_document_hashes()`
   - Added `convert_paths_to_file_infos()`
   - Added `detect_changed_files()`
-  - Added `process_vault_delta()`
+  - Added `process_kiln_delta()`
   - Fixed SQL injection in `needs_processing()`
   - Fixed SQL injection in `find_document_id_by_path()`
 
 - `/home/moot/crucible/crates/crucible-surrealdb/src/lib.rs`
-  - Exported `process_vault_delta` in public API
+  - Exported `process_kiln_delta` in public API
 
 - `/home/moot/crucible/crates/crucible-surrealdb/tests/delta_processing_tests.rs`
   - New file with 8 comprehensive unit tests
 
 ## Success Criteria Met
 
-- ✅ `process_vault_delta()` implemented and tested
+- ✅ `process_kiln_delta()` implemented and tested
 - ✅ Single file processing completes in ≤1 second
 - ✅ SQL injection vulnerabilities fixed
 - ✅ All unit tests pass (8/8)
@@ -222,4 +222,4 @@ To complete the integration test, Phase 2 should:
 
 ## Conclusion
 
-Phase 1 of delta processing is complete and ready for Phase 2 integration. The implementation provides a solid foundation for efficient incremental vault processing with strong performance characteristics and comprehensive test coverage.
+Phase 1 of delta processing is complete and ready for Phase 2 integration. The implementation provides a solid foundation for efficient incremental kiln processing with strong performance characteristics and comprehensive test coverage.

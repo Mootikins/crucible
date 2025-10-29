@@ -119,7 +119,7 @@ impl ReplDatabase {
                 data: {
                     let mut map = HashMap::new();
                     map.insert("title".to_string(), json!("Quick Start Guide"));
-                    map.insert("content".to_string(), json!("Get started with Crucible by creating your first vault and adding notes."));
+                    map.insert("content".to_string(), json!("Get started with Crucible by creating your first kiln and adding notes."));
                     map.insert("folder".to_string(), json!("docs"));
                     map.insert("created_at".to_string(), json!(Utc::now().to_rfc3339()));
                     map.insert("tags".to_string(), json!(["tutorial", "getting-started"]));

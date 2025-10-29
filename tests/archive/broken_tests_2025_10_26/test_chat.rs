@@ -18,7 +18,7 @@ fn test_chat_with_agent_flag() {
     let kiln = TestKiln::new().unwrap();
 
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path")
+    cmd.arg("--kiln-path")
         .arg(kiln.kiln_path_str())
         .arg("--database")
         .arg(kiln.db_path_str())
@@ -38,7 +38,7 @@ fn test_chat_with_model_override() {
     let kiln = TestKiln::new().unwrap();
 
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path")
+    cmd.arg("--kiln-path")
         .arg(kiln.kiln_path_str())
         .arg("--database")
         .arg(kiln.db_path_str())
@@ -57,7 +57,7 @@ fn test_chat_with_temperature() {
     let kiln = TestKiln::new().unwrap();
 
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path")
+    cmd.arg("--kiln-path")
         .arg(kiln.kiln_path_str())
         .arg("--database")
         .arg(kiln.db_path_str())
@@ -76,7 +76,7 @@ fn test_chat_with_max_tokens() {
     let kiln = TestKiln::new().unwrap();
 
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path")
+    cmd.arg("--kiln-path")
         .arg(kiln.kiln_path_str())
         .arg("--database")
         .arg(kiln.db_path_str())
@@ -95,7 +95,7 @@ fn test_chat_no_stream_flag() {
     let kiln = TestKiln::new().unwrap();
 
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path")
+    cmd.arg("--kiln-path")
         .arg(kiln.kiln_path_str())
         .arg("--database")
         .arg(kiln.db_path_str())
@@ -116,7 +116,7 @@ fn test_chat_conversation_history_save_load() {
     // First session - create history
     {
         let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-        cmd.arg("--vault-path")
+        cmd.arg("--kiln-path")
             .arg(kiln.kiln_path_str())
             .arg("--database")
             .arg(kiln.db_path_str())
@@ -153,7 +153,7 @@ fn test_chat_with_unknown_agent() {
 
     // Should fallback to default agent
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path")
+    cmd.arg("--kiln-path")
         .arg(kiln.kiln_path_str())
         .arg("--database")
         .arg(kiln.db_path_str())
@@ -172,7 +172,7 @@ fn test_chat_start_message() {
     let kiln = TestKiln::new().unwrap();
 
     let mut cmd = Command::cargo_bin("crucible-cli").unwrap();
-    cmd.arg("--vault-path")
+    cmd.arg("--kiln-path")
         .arg(kiln.kiln_path_str())
         .arg("--database")
         .arg(kiln.db_path_str())

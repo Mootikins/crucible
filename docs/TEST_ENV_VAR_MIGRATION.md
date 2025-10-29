@@ -84,10 +84,10 @@ async fn run_cli_command(args: Vec<&str>, env_vars: Vec<(&str, &str)>) -> Result
 
 #[tokio::test]
 async fn test_search() -> Result<()> {
-    let vault_dir = create_test_vault().await?;
+    let kiln_dir = create_test_kiln().await?;
     let result = run_cli_command(
         vec!["search", "query"],
-        vec![("OBSIDIAN_VAULT_PATH", vault_dir.path().to_string_lossy().as_ref())],
+        vec![("OBSIDIAN_KILN_PATH", kiln_dir.path().to_string_lossy().as_ref())],
     ).await?;
     // assertions...
 }
@@ -209,8 +209,8 @@ async fn test_daemon() -> Result<()> {
 
 **Before:**
 ```rust
-fn get_vault_path() -> Option<PathBuf> {
-    match std::env::var("CRUCIBLE_TEST_VAULT") {
+fn get_kiln_path() -> Option<PathBuf> {
+    match std::env::var("CRUCIBLE_TEST_KILN") {
         Ok(val) if val == "1" => dirs::home_dir().map(|h| h.join("Documents/crucible-testing")),
         Ok(val) => Some(PathBuf::from(val)),
         _ => None,
@@ -219,12 +219,12 @@ fn get_vault_path() -> Option<PathBuf> {
 
 #[tokio::test]
 #[ignore]
-async fn test_real_vault() -> Result<()> {
-    let Some(vault_path) = get_vault_path() else {
-        println!("Test skipped - set CRUCIBLE_TEST_VAULT");
+async fn test_real_kiln() -> Result<()> {
+    let Some(kiln_path) = get_kiln_path() else {
+        println!("Test skipped - set CRUCIBLE_TEST_KILN");
         return Ok(());
     };
-    // test with vault_path...
+    // test with kiln_path...
 }
 ```
 
@@ -236,7 +236,7 @@ struct KilnTestConfig {
 
 impl KilnTestConfig {
     fn from_env() -> Option<Self> {
-        match std::env::var("CRUCIBLE_TEST_VAULT") {
+        match std::env::var("CRUCIBLE_TEST_KILN") {
             Ok(val) if val == "1" => {
                 dirs::home_dir().map(|home| Self {
                     kiln_path: home.join("Documents/crucible-testing"),
@@ -256,7 +256,7 @@ impl KilnTestConfig {
 #[ignore]
 async fn test_real_kiln() -> Result<()> {
     let Some(config) = KilnTestConfig::from_env() else {
-        println!("Test skipped - set CRUCIBLE_TEST_VAULT");
+        println!("Test skipped - set CRUCIBLE_TEST_KILN");
         return Ok(());
     };
     // test with config.kiln_path...
@@ -269,7 +269,7 @@ Some environment variables are acceptable and should be kept:
 
 1. **`CARGO_MANIFEST_DIR`** - Build-time constant, not a race condition source
 2. **`OPENAI_API_KEY`** - External opt-in for real API tests (read-only check)
-3. **`CRUCIBLE_TEST_VAULT`** - Opt-in for ignored real kiln validation tests
+3. **`CRUCIBLE_TEST_KILN`** - Opt-in for ignored real kiln validation tests
 
 Pattern for opt-in tests with external dependencies:
 
@@ -302,16 +302,16 @@ When migrating a test file:
 - [ ] Replace `std::env::set_var()` calls with config struct creation
 - [ ] Update helper functions to accept `&Config` or config structs
 - [ ] Replace `env::var()` reads with config.get() or struct fields
-- [ ] Change "vault" terminology to "kiln"
+- [ ] Change "kiln" terminology to "kiln"
 - [ ] Keep temp directories alive for test duration
-- [ ] Update test names if they reference "vault"
+- [ ] Update test names if they reference "kiln"
 
 ## Files Updated
 
 ### Completed
 - ✅ `crates/crucible-config/src/test_utils.rs` - New test infrastructure
 - ✅ `crates/crucible-config/src/config.rs` - Added `kiln_path()` methods
-- ✅ `crates/crucible-daemon/tests/vault_validation.rs` - Config struct pattern
+- ✅ `crates/crucible-daemon/tests/kiln_validation.rs` - Config struct pattern
 - ✅ `crates/crucible-daemon/tests/unified_event_flow_test.rs` - Config struct
 - ✅ `crates/crucible-daemon/tests/utils/embedding_helpers.rs` - Params instead of env vars
 

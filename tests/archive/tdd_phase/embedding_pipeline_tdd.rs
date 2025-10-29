@@ -17,7 +17,7 @@
 //!
 //! These tests will drive the implementation of:
 //! 1. Real embedding generation using Candle provider integration
-//! 2. Proper database storage with kiln terminology (not vault)
+//! 2. Proper database storage with kiln terminology (not kiln)
 //! 3. End-to-end pipeline functionality
 //! 4. Error handling and recovery scenarios
 //! 5. Performance characteristics for production use
@@ -332,7 +332,7 @@ async fn test_candle_provider_embedding_generation() {
 /// **EXPECTED TO FAIL** until database schema is updated
 ///
 /// This test verifies that:
-/// 1. Embeddings are stored using kiln terminology (not vault)
+/// 1. Embeddings are stored using kiln terminology (not kiln)
 /// 2. Database schema supports proper embedding metadata
 /// 3. Retrieval operations work correctly
 /// 4. Storage operations are atomic and consistent

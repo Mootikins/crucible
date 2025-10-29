@@ -45,8 +45,8 @@ use tokio::time::{sleep, Duration};
 // Test Helpers
 // ============================================================================
 
-/// Test helper: Create temporary vault directory with sample structure
-fn create_test_vault() -> Result<TempDir> {
+/// Test helper: Create temporary kiln directory with sample structure
+fn create_test_kiln() -> Result<TempDir> {
     let temp_dir = TempDir::new()?;
 
     // Create a sample markdown file for initial tests
@@ -78,9 +78,9 @@ async fn setup_test_db() -> Result<SurrealEmbeddingDatabase> {
     Ok(db)
 }
 
-/// Test helper: Create markdown file in vault
-async fn create_markdown_file(vault: &Path, relative_path: &str, content: &str) -> Result<PathBuf> {
-    let file_path = vault.join(relative_path);
+/// Test helper: Create markdown file in kiln
+async fn create_markdown_file(kiln: &Path, relative_path: &str, content: &str) -> Result<PathBuf> {
+    let file_path = kiln.join(relative_path);
 
     // Create parent directories if needed
     if let Some(parent) = file_path.parent() {
@@ -264,8 +264,8 @@ impl EventHandler for PipelineEventHandler {
 
 #[tokio::test]
 async fn test_watch_detects_new_file() {
-    // 1. Setup: Create vault, database, watcher with handler
-    let vault = create_test_vault().unwrap();
+    // 1. Setup: Create kiln, database, watcher with handler
+    let kiln = create_test_kiln().unwrap();
     let db = Arc::new(setup_test_db().await.unwrap());
     let (tx, mut rx) = mpsc::unbounded_channel();
     let handler = Arc::new(PipelineEventHandler::new(db.clone(), tx));
@@ -274,7 +274,7 @@ async fn test_watch_detects_new_file() {
     manager.register_handler(handler).await.unwrap();
     manager.start().await.unwrap();
     manager
-        .add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch"))
+        .add_watch(kiln.path().to_path_buf(), WatchConfig::new("test-watch"))
         .await
         .unwrap();
 
@@ -284,9 +284,9 @@ async fn test_watch_detects_new_file() {
     // Give watcher time to initialize
     sleep(Duration::from_millis(100)).await;
 
-    // 2. Action: Create new markdown file in vault
+    // 2. Action: Create new markdown file in kiln
     let file_path =
-        create_markdown_file(vault.path(), "new_file.md", "# New File\n\nContent here.")
+        create_markdown_file(kiln.path(), "new_file.md", "# New File\n\nContent here.")
             .await
             .unwrap();
 
@@ -304,8 +304,8 @@ async fn test_watch_detects_new_file() {
 
 #[tokio::test]
 async fn test_watch_detects_file_modification() {
-    // 1. Setup: Create vault with existing file, database, watcher
-    let vault = create_test_vault().unwrap();
+    // 1. Setup: Create kiln with existing file, database, watcher
+    let kiln = create_test_kiln().unwrap();
     let db = Arc::new(setup_test_db().await.unwrap());
     let (tx, mut rx) = mpsc::unbounded_channel();
     let handler = Arc::new(PipelineEventHandler::new(db.clone(), tx));
@@ -314,14 +314,14 @@ async fn test_watch_detects_file_modification() {
     manager.register_handler(handler).await.unwrap();
     manager.start().await.unwrap();
     manager
-        .add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch"))
+        .add_watch(kiln.path().to_path_buf(), WatchConfig::new("test-watch"))
         .await
         .unwrap();
 
     // Give watcher time to initialize
     sleep(Duration::from_millis(100)).await;
 
-    let file_path = vault.path().join("sample.md");
+    let file_path = kiln.path().join("sample.md");
 
     // 2. Action: Modify the markdown file content
     modify_markdown_file(&file_path, "# Modified\n\nUpdated content.")
@@ -338,8 +338,8 @@ async fn test_watch_detects_file_modification() {
 
 #[tokio::test]
 async fn test_watch_detects_file_deletion() {
-    // 1. Setup: Create vault with existing file, database, watcher
-    let vault = create_test_vault().unwrap();
+    // 1. Setup: Create kiln with existing file, database, watcher
+    let kiln = create_test_kiln().unwrap();
     let db = Arc::new(setup_test_db().await.unwrap());
     let (tx, mut rx) = mpsc::unbounded_channel();
     let handler = Arc::new(PipelineEventHandler::new(db.clone(), tx));
@@ -348,14 +348,14 @@ async fn test_watch_detects_file_deletion() {
     manager.register_handler(handler).await.unwrap();
     manager.start().await.unwrap();
     manager
-        .add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch"))
+        .add_watch(kiln.path().to_path_buf(), WatchConfig::new("test-watch"))
         .await
         .unwrap();
 
     // Give watcher time to initialize
     sleep(Duration::from_millis(100)).await;
 
-    let file_path = vault.path().join("sample.md");
+    let file_path = kiln.path().join("sample.md");
 
     // 2. Action: Delete the markdown file
     delete_markdown_file(&file_path).await.unwrap();
@@ -370,8 +370,8 @@ async fn test_watch_detects_file_deletion() {
 
 #[tokio::test]
 async fn test_watch_ignores_non_markdown() {
-    // 1. Setup: Create vault, database, watcher with .md filter
-    let vault = create_test_vault().unwrap();
+    // 1. Setup: Create kiln, database, watcher with .md filter
+    let kiln = create_test_kiln().unwrap();
     let db = Arc::new(setup_test_db().await.unwrap());
     let (tx, mut rx) = mpsc::unbounded_channel();
     let handler = Arc::new(PipelineEventHandler::new(db.clone(), tx));
@@ -380,15 +380,15 @@ async fn test_watch_ignores_non_markdown() {
     manager.register_handler(handler).await.unwrap();
     manager.start().await.unwrap();
     manager
-        .add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch"))
+        .add_watch(kiln.path().to_path_buf(), WatchConfig::new("test-watch"))
         .await
         .unwrap();
 
     // Give watcher time to initialize
     sleep(Duration::from_millis(100)).await;
 
-    // 2. Action: Create .txt file in vault
-    create_markdown_file(vault.path(), "test.txt", "Not markdown")
+    // 2. Action: Create .txt file in kiln
+    create_markdown_file(kiln.path(), "test.txt", "Not markdown")
         .await
         .unwrap();
 
@@ -405,8 +405,8 @@ async fn test_watch_ignores_non_markdown() {
 
 #[tokio::test]
 async fn test_watch_handles_hidden_files() {
-    // 1. Setup: Create vault, database, watcher
-    let vault = create_test_vault().unwrap();
+    // 1. Setup: Create kiln, database, watcher
+    let kiln = create_test_kiln().unwrap();
     let db = Arc::new(setup_test_db().await.unwrap());
     let (tx, mut rx) = mpsc::unbounded_channel();
     let handler = Arc::new(PipelineEventHandler::new(db.clone(), tx));
@@ -415,7 +415,7 @@ async fn test_watch_handles_hidden_files() {
     manager.register_handler(handler).await.unwrap();
     manager.start().await.unwrap();
     manager
-        .add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch"))
+        .add_watch(kiln.path().to_path_buf(), WatchConfig::new("test-watch"))
         .await
         .unwrap();
 
@@ -423,7 +423,7 @@ async fn test_watch_handles_hidden_files() {
     sleep(Duration::from_millis(100)).await;
 
     // 2. Action: Create .hidden.md file (starts with dot)
-    create_markdown_file(vault.path(), ".hidden.md", "# Hidden")
+    create_markdown_file(kiln.path(), ".hidden.md", "# Hidden")
         .await
         .unwrap();
 
@@ -442,7 +442,7 @@ async fn test_watch_handles_hidden_files() {
 #[tokio::test]
 async fn test_parse_and_index_simple_note() {
     // New file → parsed → inserted to DB
-    let vault = create_test_vault().unwrap();
+    let kiln = create_test_kiln().unwrap();
     let db = Arc::new(setup_test_db().await.unwrap());
     let (tx, mut rx) = mpsc::unbounded_channel();
     let handler = Arc::new(PipelineEventHandler::new(db.clone(), tx));
@@ -451,7 +451,7 @@ async fn test_parse_and_index_simple_note() {
     manager.register_handler(handler).await.unwrap();
     manager.start().await.unwrap();
     manager
-        .add_watch(vault.path().to_path_buf(), WatchConfig::new("test-watch"))
+        .add_watch(kiln.path().to_path_buf(), WatchConfig::new("test-watch"))
         .await
         .unwrap();
 
@@ -459,7 +459,7 @@ async fn test_parse_and_index_simple_note() {
     sleep(Duration::from_millis(100)).await;
 
     let file_path = create_markdown_file(
-        vault.path(),
+        kiln.path(),
         "simple.md",
         "# Simple Note\n\nThis is a test note with no frontmatter.",
     )
@@ -473,7 +473,7 @@ async fn test_parse_and_index_simple_note() {
     let exists = db.file_exists(&file_path.to_string_lossy()).await.unwrap();
     assert!(exists, "Note should exist in database");
 
-    // 1. Setup: Create vault, database, watcher with pipeline handler
+    // 1. Setup: Create kiln, database, watcher with pipeline handler
     // 2. Fixture: Create simple markdown file:
     //    ```markdown
     //    # Simple Note
@@ -491,7 +491,7 @@ async fn test_parse_and_index_with_wikilinks() {
     // TODO: Implement File with [[links]] → edges created
     // For now, just verify the pipeline compiles
 
-    // 1. Setup: Create vault, database, watcher
+    // 1. Setup: Create kiln, database, watcher
     // 2. Fixture: Create file with wikilinks:
     //    ```markdown
     //    # Note with Links
@@ -511,7 +511,7 @@ async fn test_parse_and_index_with_tags() {
     // TODO: Implement File with #tags → tag relations created
     // For now, just verify the pipeline compiles
 
-    // 1. Setup: Create vault, database, watcher
+    // 1. Setup: Create kiln, database, watcher
     // 2. Fixture: Create file with tags:
     //    ```markdown
     //    # Tagged Note
@@ -530,7 +530,7 @@ async fn test_parse_frontmatter_metadata() {
     // TODO: Implement File with YAML frontmatter → metadata indexed
     // For now, just verify the pipeline compiles
 
-    // 1. Setup: Create vault, database, watcher
+    // 1. Setup: Create kiln, database, watcher
     // 2. Fixture: Create file with frontmatter:
     //    ```markdown
     //    ---
@@ -555,7 +555,7 @@ async fn test_parse_complex_document() {
     // TODO: Implement File with everything (frontmatter, links, tags, headings) → all components indexed
     // For now, just verify the pipeline compiles
 
-    // 1. Setup: Create vault, database, watcher
+    // 1. Setup: Create kiln, database, watcher
     // 2. Fixture: Create comprehensive markdown file:
     //    ```markdown
     //    ---
@@ -593,7 +593,7 @@ async fn test_update_note_content() {
     // TODO: Implement Modify file → DB record updated
     // For now, just verify the pipeline compiles
 
-    // 1. Setup: Create vault with existing file, database, watcher
+    // 1. Setup: Create kiln with existing file, database, watcher
     // 2. Initial: File has "Original content"
     // 3. Assert: Database has original content
     // 4. Action: Modify file to "Updated content"
@@ -655,7 +655,7 @@ async fn test_handle_invalid_markdown() {
     // TODO: Implement Malformed markdown → graceful error, pipeline continues
     // For now, just verify the pipeline compiles
 
-    // 1. Setup: Create vault, database, watcher
+    // 1. Setup: Create kiln, database, watcher
     // 2. Fixture: Create file with malformed content:
     //    - Unclosed code blocks
     //    - Invalid UTF-8 sequences (if possible)
@@ -674,7 +674,7 @@ async fn test_handle_invalid_frontmatter() {
     // TODO: Implement Bad YAML → parse with warning, continue
     // For now, just verify the pipeline compiles
 
-    // 1. Setup: Create vault, database, watcher
+    // 1. Setup: Create kiln, database, watcher
     // 2. Fixture: Create file with invalid YAML frontmatter:
     //    ```markdown
     //    ---
@@ -696,7 +696,7 @@ async fn test_handle_filesystem_errors() {
     // TODO: Implement Permission denied → log error, continue
     // For now, just verify the pipeline compiles
 
-    // 1. Setup: Create vault, database, watcher
+    // 1. Setup: Create kiln, database, watcher
     // 2. Fixture: Create file with restricted permissions (read-only directory)
     //    - This may require platform-specific handling
     //    - On Unix: chmod 000
@@ -704,7 +704,7 @@ async fn test_handle_filesystem_errors() {
     // 3. Action: Try to watch or parse the file
     // 4. Assert: Error logged with context
     // 5. Assert: Watcher continues running
-    // 6. Assert: Other files in vault still process correctly
+    // 6. Assert: Other files in kiln still process correctly
     // 7. Cleanup: Restore permissions
 }
 
@@ -717,7 +717,7 @@ async fn test_handle_rapid_file_changes() {
     // TODO: Implement Multiple edits in quick succession → debounced correctly
     // For now, just verify the pipeline compiles
 
-    // 1. Setup: Create vault, database, watcher with debouncing enabled
+    // 1. Setup: Create kiln, database, watcher with debouncing enabled
     // 2. Action: Modify same file 10 times rapidly (within debounce window)
     // 3. Wait: Allow debounce period + processing
     // 4. Assert: Handler received < 10 events (debouncing worked)
@@ -731,7 +731,7 @@ async fn test_handle_bulk_import() {
     // TODO: Implement Add 100 files → all indexed without crashes
     // For now, just verify the pipeline compiles
 
-    // 1. Setup: Create vault, database, watcher
+    // 1. Setup: Create kiln, database, watcher
     // 2. Action: Create 100 markdown files with varying complexity:
     //    - 30 simple files (just content)
     //    - 40 files with wikilinks
@@ -749,7 +749,7 @@ async fn test_concurrent_modifications() {
     // TODO: Implement Multiple files modified simultaneously → all processed
     // For now, just verify the pipeline compiles
 
-    // 1. Setup: Create vault with 20 existing files, database, watcher
+    // 1. Setup: Create kiln with 20 existing files, database, watcher
     // 2. Action: Spawn 20 concurrent tasks, each modifying different file
     // 3. All modifications happen simultaneously (use barrier/latch)
     // 4. Wait: Allow pipeline to process all events
@@ -798,7 +798,7 @@ async fn test_concurrent_modifications() {
 
 // #[tokio::test]
 // async fn test_incremental_reindex() {
-//     // Only reindex changed files, not entire vault
+//     // Only reindex changed files, not entire kiln
 // }
 
 // #[tokio::test]

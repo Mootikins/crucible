@@ -96,8 +96,8 @@ pub struct IntegrationTestConfig {
     pub test_dataset_size: usize,
     /// Whether to enable detailed tracing
     pub detailed_tracing: bool,
-    /// Path to vault directory for testing
-    pub vault_path: Option<PathBuf>,
+    /// Path to kiln directory for testing
+    pub kiln_path: Option<PathBuf>,
     /// Database connection configuration
     pub db_config: DatabaseTestConfig,
 }
@@ -416,15 +416,15 @@ impl IntegrationTestRunner {
     async fn initialize_test_environment(&self) -> Result<()> {
         info!("Initializing test environment");
 
-        // Setup test vault directory
-        let vault_path = if let Some(ref path) = self.config.vault_path {
+        // Setup test kiln directory
+        let kiln_path = if let Some(ref path) = self.config.kiln_path {
             path.clone()
         } else {
-            self.test_dir.path().join("test_vault")
+            self.test_dir.path().join("test_kiln")
         };
 
-        tokio::fs::create_dir_all(&vault_path).await
-            .context("Failed to create test vault directory")?;
+        tokio::fs::create_dir_all(&kiln_path).await
+            .context("Failed to create test kiln directory")?;
 
         // Initialize test database
         self.setup_test_database().await?;
@@ -672,7 +672,7 @@ pub fn default_test_config() -> IntegrationTestConfig {
         sustained_load_duration: Duration::from_secs(60),
         test_dataset_size: 1000,
         detailed_tracing: std::env::var("RUST_LOG").unwrap_or_default() == "debug",
-        vault_path: None,
+        kiln_path: None,
         db_config: DatabaseTestConfig {
             use_memory_db: true,
             connection_url: None,

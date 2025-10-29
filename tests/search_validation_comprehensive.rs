@@ -8,7 +8,7 @@
 //! - Link structure search (backlinks, embeds, orphans, graph traversal)
 //! - Interface parity testing (CLI vs REPL vs tool APIs)
 //!
-//! Tests use the comprehensive static test vault with 11 realistic markdown files
+//! Tests use the comprehensive static test kiln with 11 realistic markdown files
 //! containing 45+ frontmatter properties and diverse content types.
 
 use std::collections::HashMap;
@@ -18,13 +18,13 @@ use serde_json::json;
 use tempfile::TempDir;
 use tokio::time::{sleep, Duration};
 
-use crate::common::{CrucibleToolManager, TestVaultManager};
+use crate::common::{CrucibleToolManager, TestKilnManager};
 use crate::utils::test_assertions::{assert_search_results, assert_metadata_matches};
 
 /// Test harness for comprehensive search validation
 pub struct SearchTestHarness {
     pub temp_dir: TempDir,
-    pub vault_manager: TestVaultManager,
+    pub kiln_manager: TestKilnManager,
     test_documents: HashMap<String, TestDocument>,
 }
 
@@ -41,20 +41,20 @@ pub struct TestDocument {
 }
 
 impl SearchTestHarness {
-    /// Create a new search test harness with the comprehensive test vault
+    /// Create a new search test harness with the comprehensive test kiln
     pub async fn new() -> Result<Self> {
         let temp_dir = TempDir::new()?;
-        let mut vault_manager = TestVaultManager::new(temp_dir.path());
+        let mut kiln_manager = TestKilnManager::new(temp_dir.path());
 
-        // Initialize the comprehensive test vault
-        vault_manager.setup_comprehensive_test_vault().await?;
+        // Initialize the comprehensive test kiln
+        kiln_manager.setup_comprehensive_test_kiln().await?;
 
         // Ensure crucible-tools are initialized
         CrucibleToolManager::ensure_initialized_global().await?;
 
         let mut harness = Self {
             temp_dir,
-            vault_manager,
+            kiln_manager,
             test_documents: HashMap::new(),
         };
 
@@ -64,14 +64,14 @@ impl SearchTestHarness {
         Ok(harness)
     }
 
-    /// Index all documents in the test vault for search validation
+    /// Index all documents in the test kiln for search validation
     async fn index_test_documents(&mut self) -> Result<()> {
-        // Get all files in the test vault
-        let files = self.vault_manager.list_all_markdown_files().await?;
+        // Get all files in the test kiln
+        let files = self.kiln_manager.list_all_markdown_files().await?;
 
         for file_path in files {
-            let content = self.vault_manager.read_file(&file_path).await?;
-            let metadata = self.vault_manager.extract_frontmatter(&content).await?;
+            let content = self.kiln_manager.read_file(&file_path).await?;
+            let metadata = self.kiln_manager.extract_frontmatter(&content).await?;
 
             // Parse links from content
             let links = self.extract_links(&content);

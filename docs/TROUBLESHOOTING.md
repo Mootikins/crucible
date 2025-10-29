@@ -202,7 +202,7 @@ export RUSTFLAGS="-C link-arg=-fuse-ld=lld"
 
 3. **Use environment variables**:
    ```bash
-   export CRUCIBLE_VAULT_PATH=/path/to/vault
+   export CRUCIBLE_KILN_PATH=/path/to/kiln
    export CRUCIBLE_LOG_LEVEL=debug
    ```
 
@@ -309,15 +309,15 @@ export RUSTFLAGS="-C link-arg=-fuse-ld=lld"
    crucible-cli index --rebuild
    ```
 
-2. **Check vault path**:
+2. **Check kiln path**:
    ```bash
-   crucible-cli --vault-path /path/to/vault search "query"
+   crucible-cli --kiln-path /path/to/kiln search "query"
    ```
 
 3. **Check file permissions**:
    ```bash
-   ls -la /path/to/vault
-   chmod -R 644 /path/to/vault/*
+   ls -la /path/to/kiln
+   chmod -R 644 /path/to/kiln/*
    ```
 
 ## Performance Issues
@@ -375,14 +375,14 @@ export RUSTFLAGS="-C link-arg=-fuse-ld=lld"
    crucible-cli --no-auto-index
    ```
 
-2. **Use smaller vault**:
+2. **Use smaller kiln**:
    ```bash
-   crucible-cli --vault-path ~/small-vault
+   crucible-cli --kiln-path ~/small-kiln
    ```
 
 3. **Check for corrupted files**:
    ```bash
-   crucible-cli check --vault
+   crucible-cli check --kiln
    ```
 
 ## Development Issues

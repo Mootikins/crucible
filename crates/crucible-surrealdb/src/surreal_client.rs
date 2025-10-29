@@ -19,7 +19,7 @@
 //!     let client = SurrealClient::new_memory().await?;
 //!
 //!     // File-based database
-//!     let client = SurrealClient::new_file("./data/vault.db").await?;
+//!     let client = SurrealClient::new_file("./data/kiln.db").await?;
 //!
 //!     // Execute queries
 //!     let result = client.query("SELECT * FROM notes", &[]).await?;
@@ -73,7 +73,10 @@ impl SurrealClient {
         } else {
             // File-based RocksDB database
             Surreal::new::<RocksDb>(&config.path).await.map_err(|e| {
-                DbError::Connection(format!("Failed to create file database at {}: {}", config.path, e))
+                DbError::Connection(format!(
+                    "Failed to create file database at {}: {}",
+                    config.path, e
+                ))
             })?
         };
 
@@ -121,7 +124,7 @@ impl SurrealClient {
     pub async fn new_file(path: &str) -> DbResult<Self> {
         let config = SurrealDbConfig {
             namespace: "crucible".to_string(),
-            database: "vault".to_string(),
+            database: "kiln".to_string(),
             path: path.to_string(),
             max_connections: Some(10),
             timeout_seconds: Some(30),
@@ -152,25 +155,26 @@ impl SurrealClient {
     /// Returns an error if the query fails to execute or parse.
     pub async fn query(&self, sql: &str, _params: &[Value]) -> DbResult<QueryResult> {
         // Execute the query
-        let response = self.db.query(sql).await.map_err(|e| {
-            DbError::Query(format!("Query execution failed: {}", e))
-        })?;
+        let response = self
+            .db
+            .query(sql)
+            .await
+            .map_err(|e| DbError::Query(format!("Query execution failed: {}", e)))?;
 
         // Check the response for errors
-        let mut response = response.check().map_err(|e| {
-            DbError::Query(format!("Query returned error: {}", e))
-        })?;
+        let mut response = response
+            .check()
+            .map_err(|e| DbError::Query(format!("Query returned error: {}", e)))?;
 
         // Extract the first result set as SurrealDB's Value type
-        let surreal_value: surrealdb::Value = response.take(0).map_err(|e| {
-            DbError::Query(format!("Failed to extract query results: {}", e))
-        })?;
+        let surreal_value: surrealdb::Value = response
+            .take(0)
+            .map_err(|e| DbError::Query(format!("Failed to extract query results: {}", e)))?;
 
         // Convert SurrealDB Value to JSON by serializing and deserializing
         // This handles all the enum variants properly
-        let json_string = serde_json::to_string(&surreal_value).map_err(|e| {
-            DbError::Query(format!("Failed to serialize SurrealDB value: {}", e))
-        })?;
+        let json_string = serde_json::to_string(&surreal_value)
+            .map_err(|e| DbError::Query(format!("Failed to serialize SurrealDB value: {}", e)))?;
 
         let json_value: Value = serde_json::from_str(&json_string).map_err(|e| {
             DbError::Query(format!("Failed to parse JSON from SurrealDB value: {}", e))
@@ -242,9 +246,8 @@ impl SurrealClient {
         let id_str = record.id.as_ref().map(|id| id.0.as_str());
 
         // Convert data to JSON for the query
-        let data_json = serde_json::to_string(&record.data).map_err(|e| {
-            DbError::Query(format!("Failed to serialize record data: {}", e))
-        })?;
+        let data_json = serde_json::to_string(&record.data)
+            .map_err(|e| DbError::Query(format!("Failed to serialize record data: {}", e)))?;
 
         let sql = if let Some(id) = id_str {
             // Extract just the ID part (after the colon)
@@ -320,7 +323,9 @@ impl SurrealClient {
                 } else if let Some(thing) = obj.remove("Thing") {
                     // Handle Thing (record ID) variant: {"tb": "test", "id": {"Number": 1}} or {"tb": "test", "id": {"String": "abc"}}
                     if let Value::Object(mut thing_obj) = thing {
-                        let tb = thing_obj.remove("tb").and_then(|v| v.as_str().map(String::from));
+                        let tb = thing_obj
+                            .remove("tb")
+                            .and_then(|v| v.as_str().map(String::from));
                         let id_wrapped = thing_obj.remove("id");
 
                         if let (Some(table), Some(id_val_wrapped)) = (tb, id_wrapped) {
@@ -482,7 +487,10 @@ mod tests {
 
         assert_eq!(result.records.len(), 1);
         let record = &result.records[0];
-        assert_eq!(record.data.get("name").and_then(|v| v.as_str()), Some("Alice"));
+        assert_eq!(
+            record.data.get("name").and_then(|v| v.as_str()),
+            Some("Alice")
+        );
         assert_eq!(record.data.get("age").and_then(|v| v.as_i64()), Some(30));
     }
 
@@ -493,7 +501,10 @@ mod tests {
         // Create a record using insert
         let mut data = HashMap::new();
         data.insert("title".to_string(), Value::String("Test Note".to_string()));
-        data.insert("content".to_string(), Value::String("Hello World".to_string()));
+        data.insert(
+            "content".to_string(),
+            Value::String("Hello World".to_string()),
+        );
 
         let record = Record {
             id: Some(RecordId("notes:test123".to_string())),

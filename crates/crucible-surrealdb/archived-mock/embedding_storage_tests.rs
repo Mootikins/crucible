@@ -4,9 +4,9 @@
 //! These tests verify that embedding vectors are actually stored and retrieved from SurrealDB.
 //! Tests should initially fail if storage functions are stubbed, then pass after implementation.
 
-use crucible_surrealdb::{embedding_config::EmbeddingModel, vault_integration, SurrealClient};
-use vault_integration::{
-    clear_document_embeddings, get_document_embeddings, initialize_vault_schema,
+use crucible_surrealdb::{embedding_config::EmbeddingModel, kiln_integration, SurrealClient};
+use kiln_integration::{
+    clear_document_embeddings, get_document_embeddings, initialize_kiln_schema,
     store_document_embedding, update_document_processed_timestamp,
 };
 
@@ -34,7 +34,7 @@ use common::{EmbeddingAssertions, EmbeddingTestUtils};
 async fn test_store_single_document_embedding() {
     // Setup
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     let document_id = "test-doc-1";
     let test_embedding = EmbeddingTestUtils::create_document_embedding(document_id, 768);
@@ -70,7 +70,7 @@ async fn test_store_single_document_embedding() {
 async fn test_store_chunked_embeddings() {
     // Setup
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     let document_id = "test-doc-chunked";
     let chunk_count = 5;
@@ -119,7 +119,7 @@ async fn test_store_chunked_embeddings() {
 async fn test_store_mixed_embeddings() {
     // Setup
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     let document_id = "test-doc-mixed";
 
@@ -183,7 +183,7 @@ async fn test_store_mixed_embeddings() {
 async fn test_store_multiple_document_embeddings() {
     // Setup
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     let document_ids = vec!["doc-1", "doc-2", "doc-3"];
     let embeddings_per_doc = 2;
@@ -225,7 +225,7 @@ async fn test_store_multiple_document_embeddings() {
 async fn test_batch_embedding_performance() {
     // Setup
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     let document_count = 10;
     let embeddings_per_doc = 5;
@@ -297,7 +297,7 @@ async fn test_batch_embedding_performance() {
 async fn test_clear_document_embeddings() {
     // Setup
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     let document_id = "test-doc-clear";
 
@@ -340,12 +340,12 @@ async fn test_clear_document_embeddings() {
 async fn test_update_document_processed_timestamp() {
     // Setup
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     // First, we need to store a document in the notes table
     let test_doc = create_test_parsed_document();
     let kiln_root = test_kiln_root();
-    let doc_id = vault_integration::store_parsed_document(&client, &test_doc, &kiln_root)
+    let doc_id = kiln_integration::store_parsed_document(&client, &test_doc, &kiln_root)
         .await
         .unwrap();
 
@@ -364,7 +364,7 @@ async fn test_update_document_processed_timestamp() {
 async fn test_document_update_workflow() {
     // Setup
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     let document_id = "test-doc-update";
 
@@ -431,7 +431,7 @@ async fn test_document_update_workflow() {
 async fn test_get_embeddings_nonexistent_document() {
     // Setup
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     let non_existent_id = "non-existent-document";
 
@@ -451,7 +451,7 @@ async fn test_get_embeddings_nonexistent_document() {
 async fn test_store_invalid_embedding() {
     // Setup
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     // Create embedding with empty vector (should be invalid)
     let mut invalid_embedding = EmbeddingTestUtils::create_document_embedding("invalid-doc", 256);
@@ -485,7 +485,7 @@ async fn test_store_invalid_embedding() {
 async fn test_large_embedding_storage() {
     // Setup
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     let document_id = "large-embedding-doc";
     let large_dimensions = 4096; // Very large embedding
@@ -516,7 +516,7 @@ async fn test_large_embedding_storage() {
 async fn test_concurrent_embedding_storage() {
     // Setup
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     let document_count = 10;
     let embeddings_per_doc = 3;
@@ -578,7 +578,7 @@ async fn test_concurrent_embedding_storage() {
 #[tokio::test]
 async fn test_vector_indexing_dimensions() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     // Test different embedding dimensions from different models
     let test_cases = vec![
@@ -616,7 +616,7 @@ async fn test_vector_indexing_dimensions() {
 #[tokio::test]
 async fn test_semantic_search_functionality() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     // Store documents with different content themes
     let documents = vec![
@@ -637,7 +637,7 @@ async fn test_semantic_search_functionality() {
     }
 
     // Test semantic search (this uses the current mock implementation)
-    let search_results = vault_integration::semantic_search(&client, "rust programming", 5)
+    let search_results = kiln_integration::semantic_search(&client, "rust programming", 5)
         .await
         .unwrap();
 
@@ -661,10 +661,10 @@ async fn test_semantic_search_functionality() {
 #[tokio::test]
 async fn test_database_statistics() {
     let client = SurrealClient::new_memory().await.unwrap();
-    initialize_vault_schema(&client).await.unwrap();
+    initialize_kiln_schema(&client).await.unwrap();
 
     // Get initial statistics
-    let initial_stats = vault_integration::get_database_stats(&client)
+    let initial_stats = kiln_integration::get_database_stats(&client)
         .await
         .unwrap();
     assert_eq!(
@@ -684,7 +684,7 @@ async fn test_database_statistics() {
     for i in 0..doc_count {
         let doc_id = format!("stats-doc-{}", i);
         let doc = create_test_parsed_document();
-        let _stored_id = vault_integration::store_parsed_document(&client, &doc, &kiln_root)
+        let _stored_id = kiln_integration::store_parsed_document(&client, &doc, &kiln_root)
             .await
             .unwrap();
 
@@ -705,7 +705,7 @@ async fn test_database_statistics() {
     }
 
     // Check updated statistics
-    let final_stats = vault_integration::get_database_stats(&client)
+    let final_stats = kiln_integration::get_database_stats(&client)
         .await
         .unwrap();
     assert_eq!(
@@ -757,7 +757,7 @@ async fn test_embedding_storage_initialization() {
     let client = SurrealClient::new_memory().await.unwrap();
 
     // Initialize schema should not fail
-    let result = initialize_vault_schema(&client).await;
+    let result = initialize_kiln_schema(&client).await;
     assert!(
         result.is_ok(),
         "Schema initialization should succeed: {:?}",
@@ -765,7 +765,7 @@ async fn test_embedding_storage_initialization() {
     );
 
     // Database should be ready for embedding operations
-    let stats = vault_integration::get_database_stats(&client)
+    let stats = kiln_integration::get_database_stats(&client)
         .await
         .unwrap();
     assert_eq!(stats.total_documents, 0, "Should start with empty database");

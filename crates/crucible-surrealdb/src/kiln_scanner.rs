@@ -1,6 +1,6 @@
-//! Vault Scanner Module
+//! Kiln Scanner Module
 //!
-//! This module provides comprehensive vault scanning functionality for the Crucible knowledge
+//! This module provides comprehensive kiln scanning functionality for the Crucible knowledge
 //! management system. It implements recursive file discovery, change detection, and processing
 //! with robust error handling and configuration management.
 
@@ -16,13 +16,13 @@ use tracing::{debug, warn};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::embedding_pool::EmbeddingThreadPool;
-use crate::vault_integration::*;
+use crate::kiln_integration::*;
 use crate::SurrealClient;
 use crucible_core::parser::ParsedDocument;
 
-/// Configuration for vault scanning operations
+/// Configuration for kiln scanning operations
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct VaultScannerConfig {
+pub struct KilnScannerConfig {
     pub max_file_size_bytes: u64,
     pub max_recursion_depth: usize,
     pub recursive_scan: bool,
@@ -48,7 +48,7 @@ pub struct VaultScannerConfig {
     pub processing_timeout_ms: u64,
 }
 
-impl Default for VaultScannerConfig {
+impl Default for KilnScannerConfig {
     fn default() -> Self {
         Self {
             max_file_size_bytes: 50 * 1024 * 1024, // 50MB
@@ -78,8 +78,8 @@ impl Default for VaultScannerConfig {
     }
 }
 
-impl VaultScannerConfig {
-    pub fn for_large_vault() -> Self {
+impl KilnScannerConfig {
+    pub fn for_large_kiln() -> Self {
         Self {
             parallel_processing: (num_cpus::get() * 2).max(8),
             batch_size: 64,
@@ -91,7 +91,7 @@ impl VaultScannerConfig {
         }
     }
 
-    pub fn for_small_vault() -> Self {
+    pub fn for_small_kiln() -> Self {
         Self {
             parallel_processing: 1,
             batch_size: 4,
@@ -136,8 +136,8 @@ impl VaultScannerConfig {
         }
     }
 
-    pub fn merge_with(self, overrides: VaultScannerConfig) -> VaultScannerConfig {
-        VaultScannerConfig {
+    pub fn merge_with(self, overrides: KilnScannerConfig) -> KilnScannerConfig {
+        KilnScannerConfig {
             max_file_size_bytes: if overrides.max_file_size_bytes != 50 * 1024 * 1024 {
                 overrides.max_file_size_bytes
             } else {
@@ -225,9 +225,9 @@ pub enum ErrorHandlingMode {
     PanicOnError,
 }
 
-/// Vault scanner error types
+/// Kiln scanner error types
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum VaultScannerErrorType {
+pub enum KilnScannerErrorType {
     PermissionDenied,
     FileNotFound,
     InvalidMarkdown,
@@ -242,13 +242,13 @@ pub enum VaultScannerErrorType {
     Unknown,
 }
 
-/// Main vault scanner implementation
+/// Main kiln scanner implementation
 #[derive(Debug, Clone)]
-pub struct VaultScanner {
-    config: VaultScannerConfig,
+pub struct KilnScanner {
+    config: KilnScannerConfig,
     client: Option<SurrealClient>,
     embedding_pool: Option<EmbeddingThreadPool>,
-    state: VaultScannerState,
+    state: KilnScannerState,
     error_count: u32,
     circuit_breaker_triggered: bool,
     circuit_breaker_time: Option<DateTime<Utc>>,
@@ -256,16 +256,16 @@ pub struct VaultScanner {
 
 /// Scanner state tracking
 #[derive(Debug, Clone, PartialEq)]
-pub struct VaultScannerState {
+pub struct KilnScannerState {
     pub files_scanned: usize,
     pub files_processed: usize,
     pub last_scan_time: DateTime<Utc>,
-    pub current_vault_path: Option<PathBuf>,
+    pub current_kiln_path: Option<PathBuf>,
 }
 
 /// File information discovered during scanning
 #[derive(Debug, Clone, PartialEq)]
-pub struct VaultFileInfo {
+pub struct KilnFileInfo {
     pub path: PathBuf,
     pub relative_path: String,
     pub file_size: u64,
@@ -275,15 +275,15 @@ pub struct VaultFileInfo {
     pub is_accessible: bool,
 }
 
-/// Result of a vault scan operation
+/// Result of a kiln scan operation
 #[derive(Debug, Clone, PartialEq)]
-pub struct VaultScanResult {
+pub struct KilnScanResult {
     pub total_files_found: usize,
     pub markdown_files_found: usize,
     pub directories_scanned: usize,
     pub successful_files: usize,
-    pub discovered_files: Vec<VaultFileInfo>,
-    pub scan_errors: Vec<VaultScanError>,
+    pub discovered_files: Vec<KilnFileInfo>,
+    pub scan_errors: Vec<KilnScanError>,
     pub scan_duration: Duration,
     pub circuit_breaker_triggered: bool,
     pub early_termination: bool,
@@ -291,9 +291,9 @@ pub struct VaultScanResult {
 
 /// Error information for scanning operations
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct VaultScanError {
+pub struct KilnScanError {
     pub file_path: PathBuf,
-    pub error_type: VaultScannerErrorType,
+    pub error_type: KilnScannerErrorType,
     pub error_message: String,
     pub timestamp: DateTime<Utc>,
     pub retry_attempts: u32,
@@ -301,22 +301,22 @@ pub struct VaultScanError {
     pub final_error_message: Option<String>,
 }
 
-/// Result of processing vault files
+/// Result of processing kiln files
 #[derive(Debug, Clone, PartialEq)]
-pub struct VaultProcessResult {
+pub struct KilnProcessResult {
     pub processed_count: usize,
     pub failed_count: usize,
-    pub errors: Vec<VaultProcessError>,
+    pub errors: Vec<KilnProcessError>,
     pub total_processing_time: Duration,
     pub average_processing_time_per_document: Duration,
 }
 
 /// Error information for processing operations
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct VaultProcessError {
+pub struct KilnProcessError {
     pub file_path: PathBuf,
     pub error_message: String,
-    pub error_type: VaultScannerErrorType,
+    pub error_type: KilnScannerErrorType,
     pub timestamp: DateTime<Utc>,
     pub retry_attempts: u32,
     pub recovered: bool,
@@ -325,7 +325,7 @@ pub struct VaultProcessError {
 
 /// Performance metrics for the scanner
 #[derive(Debug, Clone, PartialEq)]
-pub struct VaultScannerMetrics {
+pub struct KilnScannerMetrics {
     pub files_scanned: usize,
     pub files_processed: usize,
     pub average_scan_time_per_file: Duration,
@@ -334,19 +334,19 @@ pub struct VaultScannerMetrics {
     pub last_scan_time: DateTime<Utc>,
 }
 
-/// Create a new vault scanner with the given configuration
-pub async fn create_vault_scanner(config: VaultScannerConfig) -> Result<VaultScanner> {
-    validate_vault_scanner_config(&config).await?;
+/// Create a new kiln scanner with the given configuration
+pub async fn create_kiln_scanner(config: KilnScannerConfig) -> Result<KilnScanner> {
+    validate_kiln_scanner_config(&config).await?;
 
-    Ok(VaultScanner {
+    Ok(KilnScanner {
         config,
         client: None,
         embedding_pool: None,
-        state: VaultScannerState {
+        state: KilnScannerState {
             files_scanned: 0,
             files_processed: 0,
             last_scan_time: Utc::now(),
-            current_vault_path: None,
+            current_kiln_path: None,
         },
         error_count: 0,
         circuit_breaker_triggered: false,
@@ -354,20 +354,20 @@ pub async fn create_vault_scanner(config: VaultScannerConfig) -> Result<VaultSca
     })
 }
 
-/// Create a new vault scanner with embedding integration
-pub async fn create_vault_scanner_with_embeddings(
-    config: VaultScannerConfig,
+/// Create a new kiln scanner with embedding integration
+pub async fn create_kiln_scanner_with_embeddings(
+    config: KilnScannerConfig,
     client: &SurrealClient,
     embedding_pool: &EmbeddingThreadPool,
-) -> Result<VaultScanner> {
-    let mut scanner = create_vault_scanner(config).await?;
+) -> Result<KilnScanner> {
+    let mut scanner = create_kiln_scanner(config).await?;
     scanner.client = Some(client.clone());
     scanner.embedding_pool = Some(embedding_pool.clone());
     Ok(scanner)
 }
 
-/// Validate vault scanner configuration
-pub async fn validate_vault_scanner_config(config: &VaultScannerConfig) -> Result<()> {
+/// Validate kiln scanner configuration
+pub async fn validate_kiln_scanner_config(config: &KilnScannerConfig) -> Result<()> {
     if config.parallel_processing == 0 {
         return Err(anyhow!("parallel_processing must be greater than 0"));
     }
@@ -391,15 +391,15 @@ pub async fn validate_vault_scanner_config(config: &VaultScannerConfig) -> Resul
     Ok(())
 }
 
-impl VaultScanner {
+impl KilnScanner {
     /// Get the current configuration
-    pub async fn get_config(&self) -> VaultScannerConfig {
+    pub async fn get_config(&self) -> KilnScannerConfig {
         self.config.clone()
     }
 
     /// Get performance metrics
-    pub async fn get_performance_metrics(&self) -> VaultScannerMetrics {
-        VaultScannerMetrics {
+    pub async fn get_performance_metrics(&self) -> KilnScannerMetrics {
+        KilnScannerMetrics {
             files_scanned: self.state.files_scanned,
             files_processed: self.state.files_processed,
             average_scan_time_per_file: Duration::from_millis(10), // Mock value
@@ -410,14 +410,14 @@ impl VaultScanner {
     }
 
     /// Update configuration
-    pub async fn update_config(&mut self, new_config: VaultScannerConfig) -> Result<()> {
-        validate_vault_scanner_config(&new_config).await?;
+    pub async fn update_config(&mut self, new_config: KilnScannerConfig) -> Result<()> {
+        validate_kiln_scanner_config(&new_config).await?;
         self.config = new_config;
         Ok(())
     }
 
-    /// Scan a vault directory for files
-    pub async fn scan_vault_directory(&mut self, vault_path: &PathBuf) -> Result<VaultScanResult> {
+    /// Scan a kiln directory for files
+    pub async fn scan_kiln_directory(&mut self, kiln_path: &PathBuf) -> Result<KilnScanResult> {
         let start_time = SystemTime::now();
         let mut discovered_files = Vec::new();
         let mut scan_errors = Vec::new();
@@ -431,14 +431,14 @@ impl VaultScanner {
             return Err(anyhow!("Circuit breaker is active"));
         }
 
-        self.state.current_vault_path = Some(vault_path.clone());
+        self.state.current_kiln_path = Some(kiln_path.clone());
 
         let walkdir = if self.config.recursive_scan {
-            WalkDir::new(vault_path)
+            WalkDir::new(kiln_path)
                 .max_depth(self.config.max_recursion_depth)
                 .follow_links(false)
         } else {
-            WalkDir::new(vault_path).max_depth(1).follow_links(false)
+            WalkDir::new(kiln_path).max_depth(1).follow_links(false)
         };
 
         for entry in walkdir.into_iter() {
@@ -451,7 +451,7 @@ impl VaultScanner {
 
                     total_files += 1;
 
-                    match self.process_entry(&entry, vault_path).await {
+                    match self.process_entry(&entry, kiln_path).await {
                         Ok(file_info) => {
                             if file_info.is_markdown {
                                 markdown_files += 1;
@@ -462,9 +462,9 @@ impl VaultScanner {
                             }
                         }
                         Err(e) => {
-                            let scan_error = VaultScanError {
+                            let scan_error = KilnScanError {
                                 file_path: entry.path().to_path_buf(),
-                                error_type: VaultScannerErrorType::IoError,
+                                error_type: KilnScannerErrorType::IoError,
                                 error_message: e.to_string(),
                                 timestamp: Utc::now(),
                                 retry_attempts: 0,
@@ -481,9 +481,9 @@ impl VaultScanner {
                     }
                 }
                 Err(e) => {
-                    let scan_error = VaultScanError {
-                        file_path: vault_path.clone(),
-                        error_type: VaultScannerErrorType::IoError,
+                    let scan_error = KilnScanError {
+                        file_path: kiln_path.clone(),
+                        error_type: KilnScannerErrorType::IoError,
                         error_message: e.to_string(),
                         timestamp: Utc::now(),
                         retry_attempts: 0,
@@ -503,7 +503,7 @@ impl VaultScanner {
         self.state.files_scanned = discovered_files.len();
         self.state.last_scan_time = Utc::now();
 
-        Ok(VaultScanResult {
+        Ok(KilnScanResult {
             total_files_found: total_files,
             markdown_files_found: markdown_files,
             directories_scanned: directories,
@@ -517,21 +517,21 @@ impl VaultScanner {
     }
 
     /// Perform incremental scan
-    pub async fn scan_incremental(&mut self, vault_path: &PathBuf) -> Result<VaultScanResult> {
+    pub async fn scan_incremental(&mut self, kiln_path: &PathBuf) -> Result<KilnScanResult> {
         if !self.config.enable_incremental {
-            return self.scan_vault_directory(vault_path).await;
+            return self.scan_kiln_directory(kiln_path).await;
         }
 
         // For now, delegate to regular scan
         // In a full implementation, this would check for changes since last scan
-        self.scan_vault_directory(vault_path).await
+        self.scan_kiln_directory(kiln_path).await
     }
 
-    /// Process discovered vault files
-    pub async fn process_vault_files(
+    /// Process discovered kiln files
+    pub async fn process_kiln_files(
         &mut self,
-        files: &[VaultFileInfo],
-    ) -> Result<VaultProcessResult> {
+        files: &[KilnFileInfo],
+    ) -> Result<KilnProcessResult> {
         let start_time = SystemTime::now();
         let mut processed_count = 0;
         let mut failed_count = 0;
@@ -551,10 +551,10 @@ impl VaultScanner {
                 Ok(_) => processed_count += 1,
                 Err(e) => {
                     failed_count += 1;
-                    let process_error = VaultProcessError {
+                    let process_error = KilnProcessError {
                         file_path: file_info.path.clone(),
                         error_message: e.to_string(),
-                        error_type: VaultScannerErrorType::ParseError,
+                        error_type: KilnScannerErrorType::ParseError,
                         timestamp: Utc::now(),
                         retry_attempts: 0,
                         recovered: false,
@@ -577,7 +577,7 @@ impl VaultScanner {
 
         self.state.files_processed = processed_count;
 
-        Ok(VaultProcessResult {
+        Ok(KilnProcessResult {
             processed_count,
             failed_count,
             errors,
@@ -587,28 +587,28 @@ impl VaultScanner {
     }
 
     /// Process files with error handling
-    pub async fn process_vault_files_with_error_handling(
+    pub async fn process_kiln_files_with_error_handling(
         &mut self,
-        files: &[VaultFileInfo],
-    ) -> Result<VaultProcessResult> {
+        files: &[KilnFileInfo],
+    ) -> Result<KilnProcessResult> {
         // For now, delegate to regular processing
         // In a full implementation, this would implement retry logic
-        self.process_vault_files(files).await
+        self.process_kiln_files(files).await
     }
 
     // Private helper methods
 
-    async fn process_entry(&self, entry: &DirEntry, vault_path: &Path) -> Result<VaultFileInfo> {
+    async fn process_entry(&self, entry: &DirEntry, kiln_path: &Path) -> Result<KilnFileInfo> {
         let path = entry.path();
 
         // Skip hidden files if not included
         if !self.config.include_hidden_files {
             if let Some(name) = path.file_name() {
                 if name.to_string_lossy().starts_with('.') {
-                    return Ok(VaultFileInfo {
+                    return Ok(KilnFileInfo {
                         path: path.to_path_buf(),
                         relative_path: path
-                            .strip_prefix(vault_path)
+                            .strip_prefix(kiln_path)
                             .unwrap_or(path)
                             .to_string_lossy()
                             .to_string(),
@@ -650,12 +650,12 @@ impl VaultScanner {
         };
 
         let relative_path = path
-            .strip_prefix(vault_path)
+            .strip_prefix(kiln_path)
             .unwrap_or(path)
             .to_string_lossy()
             .to_string();
 
-        Ok(VaultFileInfo {
+        Ok(KilnFileInfo {
             path: path.to_path_buf(),
             relative_path,
             file_size,
@@ -676,17 +676,17 @@ impl VaultScanner {
     async fn process_single_file(
         &self,
         client: &SurrealClient,
-        file_info: &VaultFileInfo,
+        file_info: &KilnFileInfo,
     ) -> Result<()> {
         // Parse the file
         let document = parse_file_to_document(&file_info.path).await?;
 
-        // Get kiln root from state (set during scan_vault_directory)
+        // Get kiln root from state (set during scan_kiln_directory)
         let kiln_root = self
             .state
-            .current_vault_path
+            .current_kiln_path
             .as_ref()
-            .ok_or_else(|| anyhow!("Vault path not set in scanner state"))?;
+            .ok_or_else(|| anyhow!("Kiln path not set in scanner state"))?;
 
         // Store the document
         let doc_id = store_parsed_document(client, &document, kiln_root).await?;
@@ -763,14 +763,14 @@ mod tests {
     use tempfile::TempDir;
 
     #[tokio::test]
-    async fn test_vault_scanner_creation() {
-        let config = VaultScannerConfig::default();
-        let scanner = create_vault_scanner(config).await;
+    async fn test_kiln_scanner_creation() {
+        let config = KilnScannerConfig::default();
+        let scanner = create_kiln_scanner(config).await;
         assert!(scanner.is_ok());
     }
 
     #[tokio::test]
-    async fn test_vault_scanner_basic_scan() {
+    async fn test_kiln_scanner_basic_scan() {
         // Create temporary directory with test files
         let temp_dir = TempDir::new().unwrap();
         let test_path = temp_dir.path().to_path_buf();
@@ -797,10 +797,10 @@ mod tests {
         .unwrap();
 
         // Test scanning
-        let config = VaultScannerConfig::default();
-        let mut scanner = create_vault_scanner(config).await.unwrap();
+        let config = KilnScannerConfig::default();
+        let mut scanner = create_kiln_scanner(config).await.unwrap();
 
-        let result = scanner.scan_vault_directory(&test_path).await.unwrap();
+        let result = scanner.scan_kiln_directory(&test_path).await.unwrap();
 
         // Verify results
         assert!(result.total_files_found >= 2); // At least 2 markdown files
@@ -819,9 +819,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_vault_scanner_configuration() {
+    async fn test_kiln_scanner_configuration() {
         // Test default configuration
-        let config = VaultScannerConfig::default();
+        let config = KilnScannerConfig::default();
         assert_eq!(config.max_file_size_bytes, 50 * 1024 * 1024);
         assert_eq!(config.max_recursion_depth, 10);
         assert!(config.recursive_scan);
@@ -837,46 +837,46 @@ mod tests {
         assert!(config.process_wikilinks);
 
         // Test configuration presets
-        let large_config = VaultScannerConfig::for_large_vault();
+        let large_config = KilnScannerConfig::for_large_kiln();
         assert!(large_config.parallel_processing >= 8);
         assert!(large_config.batch_size >= 32);
         assert!(large_config.enable_incremental);
 
-        let small_config = VaultScannerConfig::for_small_vault();
+        let small_config = KilnScannerConfig::for_small_kiln();
         assert_eq!(small_config.parallel_processing, 1);
         assert_eq!(small_config.batch_size, 4);
         assert!(!small_config.enable_incremental);
 
-        let resource_config = VaultScannerConfig::for_resource_constrained();
+        let resource_config = KilnScannerConfig::for_resource_constrained();
         assert_eq!(resource_config.parallel_processing, 1);
         assert_eq!(resource_config.batch_size, 2);
         assert!(!resource_config.enable_embeddings);
     }
 
     #[tokio::test]
-    async fn test_vault_scanner_config_validation() {
+    async fn test_kiln_scanner_config_validation() {
         // Test valid configuration
-        let valid_config = VaultScannerConfig::default();
-        assert!(validate_vault_scanner_config(&valid_config).await.is_ok());
+        let valid_config = KilnScannerConfig::default();
+        assert!(validate_kiln_scanner_config(&valid_config).await.is_ok());
 
         // Test invalid configurations
         let invalid_configs = vec![
-            VaultScannerConfig {
+            KilnScannerConfig {
                 parallel_processing: 0,
                 ..Default::default()
             },
-            VaultScannerConfig {
+            KilnScannerConfig {
                 batch_size: 0,
                 ..Default::default()
             },
-            VaultScannerConfig {
+            KilnScannerConfig {
                 file_extensions: vec![],
                 ..Default::default()
             },
         ];
 
         for config in invalid_configs {
-            assert!(validate_vault_scanner_config(&config).await.is_err());
+            assert!(validate_kiln_scanner_config(&config).await.is_err());
         }
     }
 

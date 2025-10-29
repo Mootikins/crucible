@@ -84,8 +84,8 @@ impl LogEntry {
 /// Partial updates are supported - None values mean "don't change".
 #[derive(Debug, Clone, Default)]
 pub struct StatusUpdate {
-    /// Vault root path
-    pub vault_path: Option<PathBuf>,
+    /// Kiln root path
+    pub kiln_path: Option<PathBuf>,
 
     /// Database backend type (e.g., "SurrealDB")
     pub db_type: Option<String>,
@@ -103,9 +103,9 @@ impl StatusUpdate {
         Self::default()
     }
 
-    /// Set vault path
-    pub fn with_vault_path(mut self, path: PathBuf) -> Self {
-        self.vault_path = Some(path);
+    /// Set kiln path
+    pub fn with_kiln_path(mut self, path: PathBuf) -> Self {
+        self.kiln_path = Some(path);
         self
     }
 
@@ -195,11 +195,11 @@ mod tests {
     #[test]
     fn test_status_update_builder() {
         let update = StatusUpdate::new()
-            .with_vault_path(PathBuf::from("/vault"))
+            .with_kiln_path(PathBuf::from("/kiln"))
             .with_db_type("SurrealDB")
             .with_doc_count(42);
 
-        assert!(update.vault_path.is_some());
+        assert!(update.kiln_path.is_some());
         assert_eq!(update.db_type, Some("SurrealDB".to_string()));
         assert_eq!(update.doc_count, Some(42));
         assert!(update.db_size.is_none()); // Partial update

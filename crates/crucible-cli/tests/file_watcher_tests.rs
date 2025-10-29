@@ -1,7 +1,7 @@
 //! Integration tests for file watching and delta processing
 //!
 //! These tests verify that the file watcher correctly:
-//! - Detects file changes in the vault
+//! - Detects file changes in the kiln
 //! - Batches events efficiently
 //! - Triggers delta processing with embeddings
 //! - Handles edge cases gracefully
@@ -13,32 +13,23 @@ use std::time::Duration;
 use tempfile::TempDir;
 use tokio::time::sleep;
 
-/// Helper to create a test vault with sample content
-async fn create_test_vault() -> Result<TempDir> {
+/// Helper to create a test kiln with sample content
+async fn create_test_kiln() -> Result<TempDir> {
     let temp_dir = TempDir::new()?;
-    let vault_path = temp_dir.path();
+    let kiln_path = temp_dir.path();
 
-    // Create .obsidian directory for Obsidian vault
-    fs::create_dir_all(vault_path.join(".obsidian"))?;
+    // Create .obsidian directory for Obsidian kiln
+    fs::create_dir_all(kiln_path.join(".obsidian"))?;
 
     // Create sample markdown files
     let test_files = vec![
-        (
-            "note1.md",
-            "# Test Note 1\n\nThis is the first test note.",
-        ),
-        (
-            "note2.md",
-            "# Test Note 2\n\nThis is the second test note.",
-        ),
-        (
-            "note3.md",
-            "# Test Note 3\n\nThis is the third test note.",
-        ),
+        ("note1.md", "# Test Note 1\n\nThis is the first test note."),
+        ("note2.md", "# Test Note 2\n\nThis is the second test note."),
+        ("note3.md", "# Test Note 3\n\nThis is the third test note."),
     ];
 
     for (filename, content) in test_files {
-        let file_path = vault_path.join(filename);
+        let file_path = kiln_path.join(filename);
         fs::write(file_path, content)?;
     }
 
@@ -46,12 +37,12 @@ async fn create_test_vault() -> Result<TempDir> {
 }
 
 /// Helper to create a minimal CLI config for testing
-fn create_test_config(vault_path: &Path) -> crucible_cli::config::CliConfig {
+fn create_test_config(kiln_path: &Path) -> crucible_cli::config::CliConfig {
     use crucible_cli::config::*;
 
     CliConfig {
         kiln: KilnConfig {
-            path: vault_path.to_path_buf(),
+            path: kiln_path.to_path_buf(),
             embedding_url: "http://localhost:11434".to_string(),
             embedding_model: Some("nomic-embed-text".to_string()),
         },
@@ -78,7 +69,10 @@ async fn test_watcher_config_defaults() -> Result<()> {
     // Verify industry best practices
     assert!(config.enabled, "File watching should be enabled by default");
     assert_eq!(config.debounce_ms, 500, "Default debounce should be 500ms");
-    assert!(config.exclude_patterns.is_empty(), "No extra exclude patterns by default");
+    assert!(
+        config.exclude_patterns.is_empty(),
+        "No extra exclude patterns by default"
+    );
 
     Ok(())
 }
@@ -88,13 +82,13 @@ async fn test_watcher_filters_markdown_only() -> Result<()> {
     use crucible_cli::watcher::SimpleFileWatcher;
     use tokio::sync::mpsc;
 
-    let temp_dir = create_test_vault().await?;
-    let vault_path = temp_dir.path();
+    let temp_dir = create_test_kiln().await?;
+    let kiln_path = temp_dir.path();
 
     // Create non-markdown files
-    fs::write(vault_path.join("test.txt"), "Not markdown")?;
-    fs::write(vault_path.join("test.json"), "{}")?;
-    fs::write(vault_path.join("test.rs"), "fn main() {}")?;
+    fs::write(kiln_path.join("test.txt"), "Not markdown")?;
+    fs::write(kiln_path.join("test.json"), "{}")?;
+    fs::write(kiln_path.join("test.rs"), "fn main() {}")?;
 
     let config = crucible_cli::config::FileWatcherConfig {
         enabled: true,
@@ -105,13 +99,13 @@ async fn test_watcher_filters_markdown_only() -> Result<()> {
     let (tx, mut rx) = mpsc::unbounded_channel();
 
     // Create watcher
-    let _watcher = SimpleFileWatcher::new(vault_path, config, tx)?;
+    let _watcher = SimpleFileWatcher::new(kiln_path, config, tx)?;
 
     // Modify markdown file
-    fs::write(vault_path.join("note1.md"), "# Updated\n\nContent changed")?;
+    fs::write(kiln_path.join("note1.md"), "# Updated\n\nContent changed")?;
 
     // Modify non-markdown file
-    fs::write(vault_path.join("test.txt"), "Updated text")?;
+    fs::write(kiln_path.join("test.txt"), "Updated text")?;
 
     // Wait for events
     sleep(Duration::from_millis(300)).await;
@@ -120,8 +114,8 @@ async fn test_watcher_filters_markdown_only() -> Result<()> {
     let mut md_events = 0;
     while let Ok(event) = rx.try_recv() {
         match event {
-            crucible_cli::watcher::WatchEvent::Changed(path) |
-            crucible_cli::watcher::WatchEvent::Created(path) => {
+            crucible_cli::watcher::WatchEvent::Changed(path)
+            | crucible_cli::watcher::WatchEvent::Created(path) => {
                 if path.extension().and_then(|s| s.to_str()) == Some("md") {
                     md_events += 1;
                 }
@@ -140,15 +134,15 @@ async fn test_watcher_respects_exclude_patterns() -> Result<()> {
     use crucible_cli::watcher::SimpleFileWatcher;
     use tokio::sync::mpsc;
 
-    let temp_dir = create_test_vault().await?;
-    let vault_path = temp_dir.path();
+    let temp_dir = create_test_kiln().await?;
+    let kiln_path = temp_dir.path();
 
     // Create files in excluded directories
-    fs::create_dir_all(vault_path.join(".obsidian/workspace"))?;
-    fs::write(vault_path.join(".obsidian/workspace/test.md"), "Excluded")?;
+    fs::create_dir_all(kiln_path.join(".obsidian/workspace"))?;
+    fs::write(kiln_path.join(".obsidian/workspace/test.md"), "Excluded")?;
 
-    fs::create_dir_all(vault_path.join(".git"))?;
-    fs::write(vault_path.join(".git/config.md"), "Also excluded")?;
+    fs::create_dir_all(kiln_path.join(".git"))?;
+    fs::write(kiln_path.join(".git/config.md"), "Also excluded")?;
 
     let config = crucible_cli::config::FileWatcherConfig {
         enabled: true,
@@ -157,14 +151,14 @@ async fn test_watcher_respects_exclude_patterns() -> Result<()> {
     };
 
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let _watcher = SimpleFileWatcher::new(vault_path, config, tx)?;
+    let _watcher = SimpleFileWatcher::new(kiln_path, config, tx)?;
 
     // Modify excluded files
-    fs::write(vault_path.join(".obsidian/workspace/test.md"), "Updated")?;
-    fs::write(vault_path.join(".git/config.md"), "Updated")?;
+    fs::write(kiln_path.join(".obsidian/workspace/test.md"), "Updated")?;
+    fs::write(kiln_path.join(".git/config.md"), "Updated")?;
 
     // Modify included file
-    fs::write(vault_path.join("note1.md"), "# Updated\n\nNormal file")?;
+    fs::write(kiln_path.join("note1.md"), "# Updated\n\nNormal file")?;
 
     // Wait for events
     sleep(Duration::from_millis(300)).await;
@@ -178,8 +172,8 @@ async fn test_watcher_respects_exclude_patterns() -> Result<()> {
     // Verify no events from excluded directories
     for event in &events {
         match event {
-            crucible_cli::watcher::WatchEvent::Changed(path) |
-            crucible_cli::watcher::WatchEvent::Created(path) => {
+            crucible_cli::watcher::WatchEvent::Changed(path)
+            | crucible_cli::watcher::WatchEvent::Created(path) => {
                 assert!(
                     !path.to_string_lossy().contains(".obsidian/workspace"),
                     "Should not receive events from .obsidian/workspace"
@@ -203,8 +197,8 @@ async fn test_watcher_checks_inotify_capacity() -> Result<()> {
     use crucible_cli::watcher::SimpleFileWatcher;
     use tokio::sync::mpsc;
 
-    let temp_dir = create_test_vault().await?;
-    let vault_path = temp_dir.path();
+    let temp_dir = create_test_kiln().await?;
+    let kiln_path = temp_dir.path();
 
     let config = crucible_cli::config::FileWatcherConfig {
         enabled: true,
@@ -215,7 +209,7 @@ async fn test_watcher_checks_inotify_capacity() -> Result<()> {
     let (tx, _rx) = mpsc::unbounded_channel();
 
     // Should succeed or fail gracefully with clear error message
-    let result = SimpleFileWatcher::new(vault_path, config, tx);
+    let result = SimpleFileWatcher::new(kiln_path, config, tx);
 
     match result {
         Ok(_) => {
@@ -240,8 +234,8 @@ async fn test_watcher_debounces_rapid_changes() -> Result<()> {
     use crucible_cli::watcher::SimpleFileWatcher;
     use tokio::sync::mpsc;
 
-    let temp_dir = create_test_vault().await?;
-    let vault_path = temp_dir.path();
+    let temp_dir = create_test_kiln().await?;
+    let kiln_path = temp_dir.path();
 
     let config = crucible_cli::config::FileWatcherConfig {
         enabled: true,
@@ -250,9 +244,9 @@ async fn test_watcher_debounces_rapid_changes() -> Result<()> {
     };
 
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let _watcher = SimpleFileWatcher::new(vault_path, config, tx)?;
+    let _watcher = SimpleFileWatcher::new(kiln_path, config, tx)?;
 
-    let file_path = vault_path.join("note1.md");
+    let file_path = kiln_path.join("note1.md");
 
     // Make rapid changes (should be debounced)
     for i in 0..10 {
@@ -282,10 +276,10 @@ async fn test_watcher_debounces_rapid_changes() -> Result<()> {
 async fn test_ensure_watcher_running_graceful_degradation() -> Result<()> {
     use crucible_cli::common::kiln_processor;
 
-    // Test with non-existent vault path - should fail gracefully
+    // Test with non-existent kiln path - should fail gracefully
     let config = crucible_cli::config::CliConfig {
         kiln: crucible_cli::config::KilnConfig {
-            path: "/nonexistent/vault/path".into(),
+            path: "/nonexistent/kiln/path".into(),
             embedding_url: "http://localhost:11434".to_string(),
             embedding_model: Some("nomic-embed-text".to_string()),
         },
@@ -306,7 +300,10 @@ async fn test_ensure_watcher_running_graceful_degradation() -> Result<()> {
     let result = kiln_processor::ensure_watcher_running(&config).await;
 
     // Should succeed even if watcher fails (graceful degradation)
-    assert!(result.is_ok(), "ensure_watcher_running should handle errors gracefully");
+    assert!(
+        result.is_ok(),
+        "ensure_watcher_running should handle errors gracefully"
+    );
 
     Ok(())
 }
@@ -315,18 +312,18 @@ async fn test_ensure_watcher_running_graceful_degradation() -> Result<()> {
 async fn test_watcher_disabled_by_config() -> Result<()> {
     use crucible_cli::common::kiln_processor;
 
-    let temp_dir = create_test_vault().await?;
-    let vault_path = temp_dir.path();
+    let temp_dir = create_test_kiln().await?;
+    let kiln_path = temp_dir.path();
 
     let config = crucible_cli::config::CliConfig {
         kiln: crucible_cli::config::KilnConfig {
-            path: vault_path.to_path_buf(),
+            path: kiln_path.to_path_buf(),
             embedding_url: "http://localhost:11434".to_string(),
             embedding_model: Some("nomic-embed-text".to_string()),
         },
         embedding: None,
         file_watching: crucible_cli::config::FileWatcherConfig {
-            enabled: false,  // Disabled
+            enabled: false, // Disabled
             debounce_ms: 500,
             exclude_patterns: vec![],
         },
@@ -351,10 +348,10 @@ async fn test_watcher_disabled_by_config() -> Result<()> {
 async fn test_file_change_triggers_processing() -> Result<()> {
     use crucible_cli::common::kiln_processor;
 
-    let temp_dir = create_test_vault().await?;
-    let vault_path = temp_dir.path();
+    let temp_dir = create_test_kiln().await?;
+    let kiln_path = temp_dir.path();
 
-    let config = create_test_config(vault_path);
+    let config = create_test_config(kiln_path);
 
     // Start watcher
     kiln_processor::ensure_watcher_running(&config).await?;
@@ -363,8 +360,11 @@ async fn test_file_change_triggers_processing() -> Result<()> {
     sleep(Duration::from_millis(200)).await;
 
     // Modify a file
-    let file_path = vault_path.join("note1.md");
-    fs::write(&file_path, "# Updated Content\n\nThis file has been modified")?;
+    let file_path = kiln_path.join("note1.md");
+    fs::write(
+        &file_path,
+        "# Updated Content\n\nThis file has been modified",
+    )?;
 
     // Wait for processing (debounce + batch window + processing time)
     sleep(Duration::from_secs(3)).await;

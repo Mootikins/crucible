@@ -96,7 +96,7 @@ mod tests {
         assert!(!tools.is_empty()); // Should have 25 tools loaded
 
         // Test that we have the expected number of tools
-        assert_eq!(tools.len(), 25); // 5 system + 8 vault + 7 database + 5 search tools
+        assert_eq!(tools.len(), 25); // 5 system + 8 kiln + 7 database + 5 search tools
 
         // Test library info includes current features
         let info = crate::library_info();
@@ -130,7 +130,7 @@ mod tests {
             .contains(&"direct_async_functions".to_string()));
         assert!(info.features.contains(&"database_tools".to_string()));
         assert!(info.features.contains(&"search_tools".to_string()));
-        assert!(info.features.contains(&"vault_tools".to_string()));
+        assert!(info.features.contains(&"kiln_tools".to_string()));
         assert!(info.features.contains(&"system_tools".to_string()));
 
         // Verify specific tools are registered
@@ -171,7 +171,7 @@ mod tests {
             "read_file",
             "get_environment",
         ];
-        let vault_tools = vec![
+        let kiln_tools = vec![
             "search_by_properties",
             "search_by_tags",
             "search_by_folder",
@@ -205,10 +205,10 @@ mod tests {
                 tool
             );
         }
-        for tool in &vault_tools {
+        for tool in &kiln_tools {
             assert!(
                 tools.contains(&tool.to_string()),
-                "Missing vault tool: {}",
+                "Missing kiln tool: {}",
                 tool
             );
         }

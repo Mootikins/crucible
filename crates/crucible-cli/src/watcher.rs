@@ -1,4 +1,4 @@
-//! Simple file watcher for markdown files in the vault
+//! Simple file watcher for markdown files in the kiln
 //!
 //! Provides in-process file watching using notify with these features:
 //! - Auto-respects .gitignore
@@ -9,7 +9,9 @@
 
 use anyhow::Result;
 use notify::{RecommendedWatcher, RecursiveMode};
-use notify_debouncer_mini::{new_debouncer, DebounceEventResult, Debouncer, DebouncedEvent, DebouncedEventKind};
+use notify_debouncer_mini::{
+    new_debouncer, DebounceEventResult, DebouncedEvent, DebouncedEventKind, Debouncer,
+};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -64,37 +66,35 @@ impl SimpleFileWatcher {
     /// Create a new file watcher
     ///
     /// # Arguments
-    /// * `vault_path` - Path to the vault/kiln directory to watch
+    /// * `kiln_path` - Path to the kiln/kiln directory to watch
     /// * `config` - File watcher configuration
     /// * `event_tx` - Channel to send watch events to
     pub fn new(
-        vault_path: impl AsRef<Path>,
+        kiln_path: impl AsRef<Path>,
         config: FileWatcherConfig,
         event_tx: mpsc::UnboundedSender<WatchEvent>,
     ) -> Result<Self, WatcherError> {
-        let vault_path = vault_path.as_ref();
+        let kiln_path = kiln_path.as_ref();
 
         // Pre-flight checks on Linux
-        Self::verify_watch_capacity(vault_path)?;
+        Self::verify_watch_capacity(kiln_path)?;
 
-        debug!("Initializing file watcher for: {}", vault_path.display());
+        debug!("Initializing file watcher for: {}", kiln_path.display());
 
         // Create debouncer with configured delay
         let debounce_duration = Duration::from_millis(config.debounce_ms);
 
         let tx_clone = event_tx.clone();
-        let vault_path_clone = vault_path.to_path_buf();
+        let kiln_path_clone = kiln_path.to_path_buf();
 
-        let mut debouncer = new_debouncer(
-            debounce_duration,
-            move |result: DebounceEventResult| {
-                match result {
+        let mut debouncer =
+            new_debouncer(
+                debounce_duration,
+                move |result: DebounceEventResult| match result {
                     Ok(events) => {
                         for event in events {
-                            if let Some(watch_event) = Self::process_event(
-                                &event,
-                                &vault_path_clone,
-                            ) {
+                            if let Some(watch_event) = Self::process_event(&event, &kiln_path_clone)
+                            {
                                 if let Err(e) = tx_clone.send(watch_event) {
                                     error!("Failed to send watch event: {}", e);
                                 }
@@ -104,19 +104,19 @@ impl SimpleFileWatcher {
                     Err(e) => {
                         error!("Watch error: {:?}", e);
                     }
-                }
-            },
-        )
-        .map_err(|e| WatcherError::InitializationError(e.to_string()))?;
+                },
+            )
+            .map_err(|e| WatcherError::InitializationError(e.to_string()))?;
 
-        // Start watching the vault directory
+        // Start watching the kiln directory
         debouncer
             .watcher()
-            .watch(vault_path, RecursiveMode::Recursive)
+            .watch(kiln_path, RecursiveMode::Recursive)
             .map_err(|e| match e.kind {
                 notify::ErrorKind::Io(ref io_err)
-                    if io_err.kind() == std::io::ErrorKind::PermissionDenied => {
-                    WatcherError::PermissionDenied(vault_path.to_path_buf())
+                    if io_err.kind() == std::io::ErrorKind::PermissionDenied =>
+                {
+                    WatcherError::PermissionDenied(kiln_path.to_path_buf())
                 }
                 _ => WatcherError::Other(e.to_string()),
             })?;
@@ -125,16 +125,16 @@ impl SimpleFileWatcher {
 
         Ok(Self {
             _debouncer: debouncer,
-            watched_path: vault_path.to_path_buf(),
+            watched_path: kiln_path.to_path_buf(),
         })
     }
 
     /// Process a notify event and convert to WatchEvent if relevant
-    fn process_event(event: &DebouncedEvent, vault_path: &Path) -> Option<WatchEvent> {
+    fn process_event(event: &DebouncedEvent, kiln_path: &Path) -> Option<WatchEvent> {
         // Filter: only markdown files
         let path = &event.path;
 
-        if !Self::should_watch_file(path, vault_path) {
+        if !Self::should_watch_file(path, kiln_path) {
             return None;
         }
 
@@ -156,19 +156,19 @@ impl SimpleFileWatcher {
     }
 
     /// Check if a file should be watched
-    fn should_watch_file(path: &Path, vault_path: &Path) -> bool {
+    fn should_watch_file(path: &Path, kiln_path: &Path) -> bool {
         // Must be a markdown file
         if path.extension().and_then(|s| s.to_str()) != Some("md") {
             return false;
         }
 
-        // Must be within vault
-        if !path.starts_with(vault_path) {
+        // Must be within kiln
+        if !path.starts_with(kiln_path) {
             return false;
         }
 
         // Check against exclude patterns
-        let relative_path = match path.strip_prefix(vault_path) {
+        let relative_path = match path.strip_prefix(kiln_path) {
             Ok(p) => p,
             Err(_) => return false,
         };
@@ -190,7 +190,8 @@ impl SimpleFileWatcher {
         if pattern.starts_with("**/") && pattern.ends_with("/**") {
             // Pattern like **/.git/**
             let dir_name = &pattern[3..pattern.len() - 3];
-            path_str.contains(&format!("/{}/", dir_name)) || path_str.starts_with(&format!("{}/", dir_name))
+            path_str.contains(&format!("/{}/", dir_name))
+                || path_str.starts_with(&format!("{}/", dir_name))
         } else if pattern.starts_with("**/") && pattern.ends_with("*") {
             // Pattern like **/.obsidian/workspace*
             let middle = &pattern[3..pattern.len() - 1];
@@ -206,17 +207,17 @@ impl SimpleFileWatcher {
     }
 
     /// Verify sufficient watch capacity (Linux only)
-    fn verify_watch_capacity(vault_path: &Path) -> Result<(), WatcherError> {
+    fn verify_watch_capacity(kiln_path: &Path) -> Result<(), WatcherError> {
         #[cfg(target_os = "linux")]
         {
             // Estimate watches needed (roughly 1 per directory)
-            let estimated_watches = Self::estimate_watch_count(vault_path)?;
+            let estimated_watches = Self::estimate_watch_count(kiln_path)?;
 
             // Read max_user_watches from /proc
             let max_watches = std::fs::read_to_string("/proc/sys/fs/inotify/max_user_watches")
                 .ok()
                 .and_then(|s| s.trim().parse::<usize>().ok())
-                .unwrap_or(8192);  // Default kernel value
+                .unwrap_or(8192); // Default kernel value
 
             if estimated_watches > max_watches {
                 return Err(WatcherError::InsufficientWatches {
@@ -235,8 +236,10 @@ impl SimpleFileWatcher {
                 );
             }
 
-            debug!("inotify check passed: {} watches needed, {} available",
-                   estimated_watches, max_watches);
+            debug!(
+                "inotify check passed: {} watches needed, {} available",
+                estimated_watches, max_watches
+            );
         }
 
         Ok(())
@@ -244,13 +247,13 @@ impl SimpleFileWatcher {
 
     /// Estimate number of watches needed (Linux only)
     #[cfg(target_os = "linux")]
-    fn estimate_watch_count(vault_path: &Path) -> Result<usize, WatcherError> {
+    fn estimate_watch_count(kiln_path: &Path) -> Result<usize, WatcherError> {
         use std::fs;
 
         let mut count = 0;
 
         // Walk directory tree and count directories
-        if let Ok(entries) = fs::read_dir(vault_path) {
+        if let Ok(entries) = fs::read_dir(kiln_path) {
             for entry in entries.flatten() {
                 if let Ok(file_type) = entry.file_type() {
                     if file_type.is_dir() {
@@ -314,7 +317,7 @@ pub fn get_fix_instructions(error: &WatcherError) -> String {
         WatcherError::PermissionDenied(path) => {
             format!(
                 "Fix permissions for: {}\n  \
-                 Check that the vault directory is readable",
+                 Check that the kiln directory is readable",
                 path.display()
             )
         }

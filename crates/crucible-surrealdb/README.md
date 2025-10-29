@@ -1,6 +1,6 @@
 # Crucible SurrealDB Backend
 
-> Graph database schema for Crucible knowledge vault indexing
+> Graph database schema for Crucible knowledge kiln indexing
 
 ## Overview
 
@@ -24,7 +24,7 @@ use crucible_surrealdb::{SurrealDatabase, Note};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Connect to local RocksDB-backed instance
-    let db = SurrealDatabase::new("./vault.db").await?;
+    let db = SurrealDatabase::new("./kiln.db").await?;
 
     // Initialize schema
     db.initialize_schema().await?;
@@ -36,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
 ### 2. Index a Note
 
 ```rust
-let note = Note::new("projects/crucible.md", "# Crucible\n\nKnowledge vault")
+let note = Note::new("projects/crucible.md", "# Crucible\n\nKnowledge kiln")
     .with_title("Crucible")
     .with_tags(vec!["#project".to_string(), "#rust".to_string()])
     .with_metadata("status", serde_json::json!("active"));
@@ -231,7 +231,7 @@ cargo test -p crucible-surrealdb --features integration-tests
 
 # Check schema validity
 surreal import --conn http://localhost:8000 \
-  --user root --pass root --ns crucible --db vault \
+  --user root --pass root --ns crucible --db kiln \
   src/schema.surql
 ```
 
@@ -279,9 +279,9 @@ REPL / MCP Server
 ```yaml
 database:
   backend: "surrealdb"
-  path: "~/.crucible/vault.db"
+  path: "~/.crucible/kiln.db"
   namespace: "crucible"
-  database: "vault"
+  database: "kiln"
   max_connections: 10
 ```
 

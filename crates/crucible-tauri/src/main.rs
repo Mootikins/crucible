@@ -18,7 +18,7 @@ fn main() {
             commands::search_by_tags,
             commands::search_by_properties,
             commands::semantic_search,
-            commands::index_vault,
+            commands::index_kiln,
             commands::get_note_metadata,
             commands::update_note_properties,
         ])

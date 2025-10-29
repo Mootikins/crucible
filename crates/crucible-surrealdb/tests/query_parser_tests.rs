@@ -1,6 +1,6 @@
 use chrono::Utc;
 use crucible_core::parser::{DocumentContent, Frontmatter, FrontmatterFormat, ParsedDocument};
-use crucible_surrealdb::{vault_integration, SurrealClient};
+use crucible_surrealdb::{kiln_integration, SurrealClient};
 use std::path::PathBuf;
 
 #[tokio::test]
@@ -9,7 +9,7 @@ async fn test_record_id_query_parsing() {
     let client = SurrealClient::new_memory().await.unwrap();
 
     // Initialize the database schema (ignore error if already exists)
-    let _ = vault_integration::initialize_vault_schema(&client).await;
+    let _ = kiln_integration::initialize_kiln_schema(&client).await;
 
     // Create a test document
     let mut doc = ParsedDocument::new(PathBuf::from("Projects/Rune_MCP/file.md"));
@@ -27,9 +27,9 @@ async fn test_record_id_query_parsing() {
     doc.content_hash = "test_hash".to_string();
     doc.file_size = 1024;
 
-    // Store the document (vault_root doesn't matter for this test)
-    let vault_root = PathBuf::from("/test/vault");
-    let record_id = vault_integration::store_parsed_document(&client, &doc, &vault_root)
+    // Store the document (kiln_root doesn't matter for this test)
+    let kiln_root = PathBuf::from("/test/kiln");
+    let record_id = kiln_integration::store_parsed_document(&client, &doc, &kiln_root)
         .await
         .unwrap();
 
@@ -41,7 +41,11 @@ async fn test_record_id_query_parsing() {
         .await
         .unwrap();
 
-    assert_eq!(result.records.len(), 1, "Should retrieve exactly one record");
+    assert_eq!(
+        result.records.len(),
+        1,
+        "Should retrieve exactly one record"
+    );
     assert_eq!(
         result.records[0].data.get("title").and_then(|v| v.as_str()),
         Some("Test Document"),
@@ -56,7 +60,11 @@ async fn test_record_id_query_parsing() {
         .await
         .unwrap();
 
-    assert_eq!(result.records.len(), 0, "Should return empty result for non-existent record");
+    assert_eq!(
+        result.records.len(),
+        0,
+        "Should return empty result for non-existent record"
+    );
 
     println!("✓ Non-existent record ID query returns empty result");
 
@@ -66,7 +74,11 @@ async fn test_record_id_query_parsing() {
         .await
         .unwrap();
 
-    assert_eq!(result.records.len(), 1, "Should work with lowercase keywords");
+    assert_eq!(
+        result.records.len(),
+        1,
+        "Should work with lowercase keywords"
+    );
 
     println!("✓ Case-insensitive keyword parsing works");
 }
@@ -74,7 +86,7 @@ async fn test_record_id_query_parsing() {
 #[tokio::test]
 async fn test_record_id_vs_table_name() {
     let client = SurrealClient::new_memory().await.unwrap();
-    let _ = vault_integration::initialize_vault_schema(&client).await;
+    let _ = kiln_integration::initialize_kiln_schema(&client).await;
 
     // Create test documents
     let mut doc1 = ParsedDocument::new(PathBuf::from("doc1.md"));
@@ -97,11 +109,11 @@ async fn test_record_id_vs_table_name() {
     doc2.content_hash = "hash2".to_string();
     doc2.file_size = 512;
 
-    let vault_root = PathBuf::from("/test/vault");
-    vault_integration::store_parsed_document(&client, &doc1, &vault_root)
+    let kiln_root = PathBuf::from("/test/kiln");
+    kiln_integration::store_parsed_document(&client, &doc1, &kiln_root)
         .await
         .unwrap();
-    vault_integration::store_parsed_document(&client, &doc2, &vault_root)
+    kiln_integration::store_parsed_document(&client, &doc2, &kiln_root)
         .await
         .unwrap();
 
@@ -113,7 +125,10 @@ async fn test_record_id_vs_table_name() {
     );
 
     // Test: SELECT * FROM notes:doc1_md should return only the specific record
-    let result = client.query("SELECT * FROM notes:doc1_md", &[]).await.unwrap();
+    let result = client
+        .query("SELECT * FROM notes:doc1_md", &[])
+        .await
+        .unwrap();
     assert_eq!(
         result.records.len(),
         1,
@@ -130,13 +145,21 @@ async fn test_record_id_vs_table_name() {
 #[tokio::test]
 async fn test_record_id_with_complex_ids() {
     let client = SurrealClient::new_memory().await.unwrap();
-    let _ = vault_integration::initialize_vault_schema(&client).await;
+    let _ = kiln_integration::initialize_kiln_schema(&client).await;
 
     // Test with various path formats
     let test_cases = vec![
         ("simple.md", "Simple", "notes:simple_md"),
-        ("Projects/Subfolder/File.md", "Nested", "notes:Projects_Subfolder_File_md"),
-        ("deeply/nested/path/to/file.md", "Deep", "notes:deeply_nested_path_to_file_md"),
+        (
+            "Projects/Subfolder/File.md",
+            "Nested",
+            "notes:Projects_Subfolder_File_md",
+        ),
+        (
+            "deeply/nested/path/to/file.md",
+            "Deep",
+            "notes:deeply_nested_path_to_file_md",
+        ),
     ];
 
     for (path, title, expected_id) in &test_cases {
@@ -150,8 +173,8 @@ async fn test_record_id_with_complex_ids() {
         doc.content_hash = format!("hash_{}", title);
         doc.file_size = 512;
 
-        let vault_root = PathBuf::from("/test/vault");
-        let record_id = vault_integration::store_parsed_document(&client, &doc, &vault_root)
+        let kiln_root = PathBuf::from("/test/kiln");
+        let record_id = kiln_integration::store_parsed_document(&client, &doc, &kiln_root)
             .await
             .unwrap();
 
