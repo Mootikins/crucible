@@ -13,14 +13,14 @@
 //! - Connect change detection to embedding updates
 //! - Provide end-to-end pipeline: ParsedDocument → embed → store → search
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
-use crate::embedding_pool::EmbeddingThreadPool;
+use crate::embedding_pool::{EmbeddingSignature, EmbeddingThreadPool};
 use crate::kiln_scanner::KilnScanResult;
 use crate::SurrealClient;
 use crucible_core::parser::ParsedDocument;
@@ -165,6 +165,8 @@ impl KilnPipelineConnector {
         let mut embeddings_generated = 0;
         let mut errors = Vec::new();
 
+        let signature = self.thread_pool.signature();
+
         for (chunk_id, chunk_content) in embedding_inputs {
             match self
                 .thread_pool
@@ -181,7 +183,8 @@ impl KilnPipelineConnector {
                             client,
                             &chunk_id,
                             &document_id,
-                            &document.content_hash,
+                            &chunk_content,
+                            &signature,
                             embedding_vector,
                         )
                         .await
@@ -660,7 +663,8 @@ async fn store_embedding_in_database_with_vector(
     client: &SurrealClient,
     chunk_id: &str,
     document_id: &str,
-    _content_hash: &str,
+    chunk_content: &str,
+    signature: &EmbeddingSignature,
     embedding_vector: Vec<f32>,
 ) -> Result<()> {
     use crate::kiln_integration::store_embedding;
@@ -678,15 +682,18 @@ async fn store_embedding_in_database_with_vector(
         .unwrap_or(0);
 
     let dimensions = embedding_vector.len();
+    let chunk_size = chunk_content.chars().count();
 
     // Store using the graph-based store_embedding function with REAL embedding vector
+    // Include dimensions for compatibility checking (provider doesn't matter)
     store_embedding(
         client,
         &note_id,
         embedding_vector,
-        "fastembed", // embedding model
-        1000,        // chunk_size
+        &signature.model,
+        chunk_size,
         chunk_position,
+        Some(signature.dimensions),
     )
     .await?;
 
@@ -694,6 +701,18 @@ async fn store_embedding_in_database_with_vector(
         "Stored REAL embedding for chunk {} (document: {}, dims: {})",
         chunk_id, document_id, dimensions
     );
+
+    let provider = signature.provider_name.replace('\'', "''");
+    let provider_type = signature.provider_type_slug().replace('\'', "''");
+    let update_sql = format!(
+        "UPDATE {} SET provider = '{}', provider_type = '{}', vector_dimensions = {}",
+        chunk_id, provider, provider_type, dimensions
+    );
+
+    client
+        .query(&update_sql, &[])
+        .await
+        .map_err(|e| anyhow!("Failed to update embedding metadata: {}", e))?;
 
     Ok(())
 }

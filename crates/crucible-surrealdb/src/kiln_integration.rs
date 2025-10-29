@@ -268,17 +268,28 @@ pub async fn store_parsed_document(
 pub async fn retrieve_parsed_document(client: &SurrealClient, id: &str) -> Result<ParsedDocument> {
     // Direct record ID lookup
     // id should be in format "notes:Projects_file_md" or just "Projects_file_md"
-    let note_id = if id.starts_with("notes:") {
-        id.to_string()
+    let (table, record_id) = if let Some((table, record)) = id.split_once(':') {
+        (table.to_string(), record.to_string())
     } else {
-        format!("notes:{}", id)
+        ("notes".to_string(), id.to_string())
     };
 
-    let sql = format!("SELECT * FROM {}", note_id);
-    let result = client
+    let mut sql = format!("SELECT * FROM {}:⟨{}⟩", table, record_id);
+    let mut result = client
         .query(&sql, &[])
         .await
         .map_err(|e| anyhow::anyhow!("Failed to query document: {}", e))?;
+
+    if result.records.is_empty() {
+        sql = format!(
+            "SELECT * FROM {} WHERE id = type::thing('{}', '{}') LIMIT 1",
+            table, table, record_id
+        );
+        result = client
+            .query(&sql, &[])
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to query document: {}", e))?;
+    }
 
     let record = result
         .records
@@ -287,6 +298,60 @@ pub async fn retrieve_parsed_document(client: &SurrealClient, id: &str) -> Resul
 
     // Convert back to ParsedDocument
     convert_record_to_parsed_document(record).await
+}
+
+/// Remove all stored embeddings and associated edges.
+pub async fn clear_all_embeddings(client: &SurrealClient) -> Result<()> {
+    client
+        .query("DELETE has_embedding", &[])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to clear embedding relations: {}", e))?;
+
+    client
+        .query("DELETE FROM embeddings", &[])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to clear embeddings table: {}", e))?;
+
+    Ok(())
+}
+
+/// Metadata describing the current embedding index.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EmbeddingIndexMetadata {
+    pub model: Option<String>,
+    pub dimensions: Option<usize>,
+}
+
+/// Fetch the metadata for stored embeddings, if any exist.
+pub async fn get_embedding_index_metadata(
+    client: &SurrealClient,
+) -> Result<Option<EmbeddingIndexMetadata>> {
+    let sql = "SELECT embedding_model, vector_dimensions FROM embeddings LIMIT 1";
+    let result = client
+        .query(sql, &[])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to inspect embedding metadata: {}", e))?;
+
+    if let Some(record) = result.records.first() {
+        let model = record
+            .data
+            .get("embedding_model")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let dimensions = record
+            .data
+            .get("vector_dimensions")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize);
+
+        Ok(Some(EmbeddingIndexMetadata {
+            model,
+            dimensions,
+        }))
+    } else {
+        Ok(None)
+    }
 }
 
 /// Create wikilink relationships for a document
@@ -1224,6 +1289,7 @@ pub async fn store_document_embedding(
         embedding.chunk_size,
         chunk_position,
         embedding.chunk_id.as_deref(),
+        None, // dimensions not available in legacy DocumentEmbedding
     )
     .await?;
 
@@ -1247,6 +1313,7 @@ pub async fn store_document_embedding(
 /// * `embedding_model` - Model name used for embedding
 /// * `chunk_size` - Size of the text chunk
 /// * `chunk_position` - Position of this chunk in the document
+/// * `dimensions` - Optional vector dimensions (for compatibility checking)
 ///
 /// # Returns
 /// The deterministic chunk ID (format: "embeddings:Projects_file_md_chunk_0")
@@ -1257,6 +1324,7 @@ pub async fn store_embedding(
     embedding_model: &str,
     chunk_size: usize,
     chunk_position: usize,
+    dimensions: Option<usize>,
 ) -> Result<String> {
     // Extract the relative path ID from the note_id
     // note_id format: "notes:Projects_file_md"
@@ -1300,6 +1368,14 @@ pub async fn store_embedding(
         serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
     );
 
+    // Store vector dimensions if provided (for compatibility checking)
+    if let Some(dims) = dimensions {
+        embedding_data.insert(
+            "vector_dimensions".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(dims)),
+        );
+    }
+
     // Store the embedding record with explicit ID
     let record = Record {
         id: Some(RecordId(chunk_id.clone())),
@@ -1340,6 +1416,7 @@ pub async fn store_embedding(
 /// * `chunk_size` - Size of the text chunk
 /// * `chunk_position` - Position of this chunk in the document
 /// * `logical_chunk_id` - Optional logical chunk identifier (e.g., "chunk-0", "chunk-1")
+/// * `dimensions` - Optional vector dimensions (for compatibility checking)
 ///
 /// # Returns
 /// The deterministic chunk ID (format: "embeddings:Projects_file_md_chunk_0")
@@ -1351,6 +1428,7 @@ pub async fn store_embedding_with_chunk_id(
     chunk_size: usize,
     chunk_position: usize,
     logical_chunk_id: Option<&str>,
+    dimensions: Option<usize>,
 ) -> Result<String> {
     // Extract the relative path ID from the note_id
     // note_id format: "notes:Projects_file_md"
@@ -1406,6 +1484,14 @@ pub async fn store_embedding_with_chunk_id(
         embedding_data.insert(
             "chunk_id".to_string(),
             serde_json::Value::String(logical_id.to_string()),
+        );
+    }
+
+    // Store vector dimensions if provided (for compatibility checking)
+    if let Some(dims) = dimensions {
+        embedding_data.insert(
+            "vector_dimensions".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(dims)),
         );
     }
 
@@ -2327,7 +2413,7 @@ mod tests {
         let vector: Vec<f32> = (0..768).map(|i| i as f32 / 768.0).collect();
 
         // Store embedding with graph relation
-        let chunk_id = store_embedding(&client, &note_id, vector.clone(), "test-model", 1000, 0)
+        let chunk_id = store_embedding(&client, &note_id, vector.clone(), "test-model", 1000, 0, None)
             .await
             .unwrap();
 
@@ -2400,6 +2486,7 @@ mod tests {
                 "test-model",
                 1000,
                 chunk_pos,
+                None,
             )
             .await
             .unwrap();
