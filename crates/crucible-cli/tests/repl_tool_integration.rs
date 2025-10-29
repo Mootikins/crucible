@@ -36,7 +36,7 @@ async fn test_unified_tool_registry_initialization() -> Result<(), Box<dyn std::
     // Check for specific expected system tools
     let expected_tools = vec![
         "system_info",
-        "get_vault_stats",
+        "get_kiln_stats",
         "list_files",
         "search_content",
     ];
@@ -92,7 +92,7 @@ async fn test_tools_by_group_functionality() -> Result<(), Box<dyn std::error::E
     );
 
     // Verify specific tools are in system group
-    let expected_system_tools = vec!["system_info", "get_vault_stats", "list_files"];
+    let expected_system_tools = vec!["system_info", "get_kiln_stats", "list_files"];
 
     let mut found_in_system = 0;
     for tool in expected_system_tools {
@@ -157,11 +157,11 @@ async fn test_tool_execution_integration() -> Result<(), Box<dyn std::error::Err
         tool_result.output.len()
     );
 
-    // Test executing get_vault_stats
-    let vault_result = registry.execute_tool("get_vault_stats", &[]).await;
+    // Test executing get_kiln_stats
+    let vault_result = registry.execute_tool("get_kiln_stats", &[]).await;
     assert!(
         vault_result.is_ok(),
-        "❌ Should be able to execute get_vault_stats tool"
+        "❌ Should be able to execute get_kiln_stats tool"
     );
 
     let vault_tool_result = vault_result.unwrap();
@@ -170,15 +170,15 @@ async fn test_tool_execution_integration() -> Result<(), Box<dyn std::error::Err
             vault_tool_result.status,
             crucible_cli::commands::repl::tools::ToolStatus::Success
         ),
-        "❌ get_vault_stats should execute successfully"
+        "❌ get_kiln_stats should execute successfully"
     );
     assert!(
         !vault_tool_result.output.is_empty(),
-        "❌ get_vault_stats should produce output"
+        "❌ get_kiln_stats should produce output"
     );
 
     println!(
-        "✅ get_vault_stats tool output: {} chars",
+        "✅ get_kiln_stats tool output: {} chars",
         vault_tool_result.output.len()
     );
 
@@ -250,7 +250,7 @@ async fn test_performance_metrics() -> Result<(), Box<dyn std::error::Error>> {
 
     // Execute a few tools to generate metrics
     let _ = registry.execute_tool("system_info", &[]).await;
-    let _ = registry.execute_tool("get_vault_stats", &[]).await;
+    let _ = registry.execute_tool("get_kiln_stats", &[]).await;
 
     // Get updated metrics
     let updated_metrics = registry.get_performance_metrics().await;

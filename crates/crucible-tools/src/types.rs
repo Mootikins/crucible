@@ -361,7 +361,7 @@ async fn register_vault_tools() -> Result<(), ToolError> {
         ("create_note", vault_tools::create_note()),
         ("update_note", vault_tools::update_note()),
         ("delete_note", vault_tools::delete_note()),
-        ("get_vault_stats", vault_tools::get_vault_stats()),
+        ("get_kiln_stats", vault_tools::get_kiln_stats()),
         ("list_tags", vault_tools::list_tags()),
     ];
 

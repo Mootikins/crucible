@@ -16,6 +16,51 @@
 //! 3. Test persistence of semantic search results across multiple runs
 //! 4. Drive implementation of proper semantic search with real embeddings
 
+/// Helper to create a temporary config file for integration tests
+///
+/// Since Phase 2.0 removed environment variable configuration, integration tests
+/// that spawn the CLI binary need to pass configuration via --config flag.
+fn create_temp_config(
+    kiln_path: &PathBuf,
+    embedding_url: Option<&str>,
+    embedding_model: Option<&str>,
+) -> Result<tempfile::NamedTempFile> {
+    let config_content = format!(
+        r#"[kiln]
+path = "{}"
+embedding_url = "{}"
+{}
+
+[embedding]
+provider = "fastembed"
+model = "BAAI/bge-small-en-v1.5"
+
+[embedding.fastembed]
+cache_dir = "/home/moot/crucible/crates/crucible-llm/.fastembed_cache"
+show_download = true
+
+[network]
+timeout_secs = 30
+pool_size = 10
+max_retries = 3
+
+[llm]
+chat_model = "llama3.2"
+temperature = 0.7
+max_tokens = 2048
+"#,
+        kiln_path.display(),
+        embedding_url.unwrap_or("http://localhost:11434"),
+        embedding_model
+            .map(|m| format!("embedding_model = \"{}\"", m))
+            .unwrap_or_default()
+    );
+
+    let temp_file = tempfile::NamedTempFile::new()?;
+    std::fs::write(temp_file.path(), config_content)?;
+    Ok(temp_file)
+}
+
 /// Test helper to create a realistic test vault with diverse content
 async fn create_test_kiln() -> Result<(TempDir, PathBuf)> {
     let temp_dir = TempDir::new()?;
@@ -154,25 +199,48 @@ async fn run_semantic_search_with_config(
     embedding_url: Option<&str>,
     embedding_model: Option<&str>,
 ) -> Result<String> {
+    // Create temporary config file (Phase 2.0: no env var support)
+    let config_file = create_temp_config(kiln_path, embedding_url, embedding_model)?;
+
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_cru"));
-    cmd.arg("semantic")
+    cmd.arg("--config")
+        .arg(config_file.path())
+        .arg("semantic")
         .arg(query)
         .arg("--top-k")
         .arg("5")
         .arg("--format")
-        .arg("json")
-        .env("OBSIDIAN_KILN_PATH", kiln_path.to_string_lossy().as_ref());
-
-    if let Some(url) = embedding_url {
-        cmd.env("EMBEDDING_ENDPOINT", url);
-    }
-
-    if let Some(model) = embedding_model {
-        cmd.env("EMBEDDING_MODEL", model);
-    }
+        .arg("json");
 
     let output = cmd.output().await?;
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    let full_output = String::from_utf8_lossy(&output.stdout).to_string();
+
+    // Extract JSON from output (filter out debug logs)
+    extract_json_from_output(&full_output)
+}
+
+/// Extract JSON object from output that may contain debug logs
+fn extract_json_from_output(output: &str) -> Result<String> {
+    // Find lines that start with '{' (JSON objects)
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('{') {
+            // Found potential JSON, try to parse from here
+            let remaining: Vec<&str> = output
+                .lines()
+                .skip_while(|l| l.trim() != trimmed)
+                .collect();
+            let json_candidate = remaining.join("\n");
+
+            // Validate it's actual JSON
+            if serde_json::from_str::<Value>(&json_candidate).is_ok() {
+                return Ok(json_candidate);
+            }
+        }
+    }
+
+    // If no JSON found, return original output
+    Ok(output.to_string())
 }
 
 /// Helper to run CLI semantic search and return parsed JSON
@@ -190,11 +258,15 @@ async fn check_database_embeddings(kiln_path: &PathBuf) -> Result<bool> {
         return Ok(false);
     }
 
+    // Create temporary config file
+    let config_file = create_temp_config(kiln_path, None, None)?;
+
     // Use CLI to check database stats
     let output = Command::new(env!("CARGO_BIN_EXE_cru"))
+        .arg("--config")
+        .arg(config_file.path())
         .arg("config")
         .arg("--show")
-        .env("OBSIDIAN_KILN_PATH", kiln_path.to_string_lossy().as_ref())
         .output()
         .await?;
 
@@ -206,17 +278,29 @@ async fn check_database_embeddings(kiln_path: &PathBuf) -> Result<bool> {
 async fn process_kiln_for_embeddings(kiln_path: &PathBuf) -> Result<()> {
     println!("🔄 Processing kiln to generate embeddings...");
 
+    // Create temporary config file
+    let config_file = create_temp_config(kiln_path, None, None)?;
+
     let output = Command::new(env!("CARGO_BIN_EXE_cru"))
+        .arg("--config")
+        .arg(config_file.path())
         .arg("semantic")
         .arg("test query")
         .arg("--top-k")
         .arg("1")
-        .env("OBSIDIAN_KILN_PATH", kiln_path.to_string_lossy().as_ref())
         .output()
         .await?;
 
-    // Give some time for processing to complete
-    sleep(Duration::from_millis(500)).await;
+    // Print output for debugging
+    if !output.stdout.is_empty() {
+        println!("Process stdout: {}", String::from_utf8_lossy(&output.stdout));
+    }
+    if !output.stderr.is_empty() {
+        println!("Process stderr: {}", String::from_utf8_lossy(&output.stderr));
+    }
+
+    // Give more time for processing to complete (FastEmbed may download models on first run)
+    sleep(Duration::from_millis(2000)).await;
 
     Ok(())
 }

@@ -178,7 +178,7 @@ mod tests {
             "create_note",
             "update_note",
             "delete_note",
-            "get_vault_stats",
+            "get_kiln_stats",
             "list_tags",
         ];
         let database_tools = vec![

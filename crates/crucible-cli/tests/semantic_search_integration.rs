@@ -34,8 +34,8 @@ use crucible_surrealdb::{
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
-use std::sync::Arc;
 use tokio::time::timeout;
+use tempfile::TempDir;
 
 /// Test vault path using the existing comprehensive test vault
 const TEST_VAULT_PATH: &str = "/home/moot/crucible/tests/test-kiln";
@@ -45,6 +45,7 @@ pub struct ExistingTestVault {
     pub vault_path: PathBuf,
     pub db_path: PathBuf,
     pub client: SurrealClient,
+    _temp_dir: TempDir, // Keep TempDir alive to prevent cleanup
 }
 
 impl ExistingTestVault {
@@ -60,10 +61,9 @@ impl ExistingTestVault {
             ));
         }
 
-        // Create temporary database for testing
-        let temp_db_path =
-            std::env::temp_dir().join(format!("crucible_semantic_test_{}", std::process::id()));
-        std::fs::create_dir_all(&temp_db_path)?;
+        // Create unique temporary database directory for this test
+        let temp_dir = TempDir::new()?;
+        let temp_db_path = temp_dir.path().to_path_buf();
 
         // Initialize database configuration
         let db_config = SurrealDbConfig {
@@ -83,6 +83,7 @@ impl ExistingTestVault {
             vault_path,
             db_path: temp_db_path,
             client,
+            _temp_dir: temp_dir,
         })
     }
 
@@ -380,10 +381,11 @@ mod semantic_search_integration_tests {
                     println!("✅ Found {} results for query: {}", results.len(), query);
 
                     // Verify results contain expected keywords
+                    // Note: Cosine similarity ranges from -1.0 (opposite) to 1.0 (identical)
                     for (doc_id, score) in &results {
                         println!("   - {} (score: {:.4})", doc_id, score);
                         assert!(
-                            *score >= 0.0 && *score <= 1.0,
+                            *score >= -1.0 && *score <= 1.0,
                             "Invalid similarity score: {}",
                             score
                         );
@@ -635,9 +637,10 @@ mod semantic_search_integration_tests {
         );
 
         // Verify embedding quality (scores should be reasonable)
+        // Note: Cosine similarity ranges from -1.0 (opposite) to 1.0 (identical)
         for (doc_id, score) in search_results {
             assert!(
-                score >= 0.0 && score <= 1.0,
+                score >= -1.0 && score <= 1.0,
                 "Embedding similarity score should be valid: {} for {}",
                 score,
                 doc_id
@@ -711,9 +714,10 @@ mod semantic_search_integration_tests {
             );
 
             // Verify result quality
+            // Note: Cosine similarity ranges from -1.0 (opposite) to 1.0 (identical)
             for (doc_id, score) in results {
                 assert!(
-                    score >= 0.0 && score <= 1.0,
+                    score >= -1.0 && score <= 1.0,
                     "Invalid score for query '{}': {}",
                     query,
                     score

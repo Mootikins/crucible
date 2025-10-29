@@ -487,10 +487,11 @@ impl EmbeddingPipeline {
         match self.process_document_incremental(client, document_id).await {
             Ok(result) => {
                 if result.processed {
-                    Ok(RetryProcessingResult::success(1, start_time.elapsed()))
+                    // Incremental processing doesn't return embeddings directly
+                    Ok(RetryProcessingResult::success(1, start_time.elapsed(), Vec::new()))
                 } else {
                     // Document was skipped, which is a form of success
-                    Ok(RetryProcessingResult::success(1, start_time.elapsed()))
+                    Ok(RetryProcessingResult::success(1, start_time.elapsed(), Vec::new()))
                 }
             }
             Err(e) => {

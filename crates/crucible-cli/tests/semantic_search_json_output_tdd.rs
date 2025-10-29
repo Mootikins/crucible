@@ -17,6 +17,44 @@
 //! 3. Test error handling in JSON format
 //! 4. Drive implementation of proper JSON response formatting
 
+/// Helper to create a temporary config file for integration tests
+///
+/// Since Phase 2.0 removed environment variable configuration, integration tests
+/// that spawn the CLI binary need to pass configuration via --config flag.
+fn create_temp_config(
+    kiln_path: &PathBuf,
+) -> Result<tempfile::NamedTempFile> {
+    let config_content = format!(
+        r#"[kiln]
+path = "{}"
+embedding_url = "http://localhost:11434"
+
+[embedding]
+provider = "fastembed"
+model = "BAAI/bge-small-en-v1.5"
+
+[embedding.fastembed]
+cache_dir = "/home/moot/crucible/crates/crucible-llm/.fastembed_cache"
+show_download = true
+
+[network]
+timeout_secs = 30
+pool_size = 10
+max_retries = 3
+
+[llm]
+chat_model = "llama3.2"
+temperature = 0.7
+max_tokens = 2048
+"#,
+        kiln_path.display(),
+    );
+
+    let temp_file = tempfile::NamedTempFile::new()?;
+    std::fs::write(temp_file.path(), config_content)?;
+    Ok(temp_file)
+}
+
 /// Helper function to get CLI binary path
 fn cli_binary_path() -> PathBuf {
     let base_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| {
@@ -45,18 +83,24 @@ async fn run_semantic_search_json(
     additional_args: Vec<&str>,
 ) -> Result<String> {
     let binary_path = cli_binary_path();
+
+    // Create temporary config file (Phase 2.0: no env var support)
+    let config_file = create_temp_config(vault_path)?;
+
     let mut cmd = Command::new(binary_path);
 
-    // Base command
-    cmd.arg("semantic").arg(query).arg("--format").arg("json");
+    // Base command with config file
+    cmd.arg("--config")
+        .arg(config_file.path())
+        .arg("semantic")
+        .arg(query)
+        .arg("--format")
+        .arg("json");
 
     // Add additional arguments
     for arg in additional_args {
         cmd.arg(arg);
     }
-
-    // Set environment variable
-    cmd.env("OBSIDIAN_KILN_PATH", vault_path.to_string_lossy().as_ref());
 
     let output = cmd.output().await?;
 

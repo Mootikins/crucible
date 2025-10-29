@@ -15,7 +15,7 @@
 //! async fn main() -> anyhow::Result<()> {
 //!     // Get tool functions directly
 //!     let search_fn = search_tools::search_documents();
-//!     let vault_fn = vault_tools::get_vault_stats();
+//!     let vault_fn = vault_tools::get_kiln_stats();
 //!
 //!     // Execute tools with the unified ToolFunction signature
 //!     let search_result = search_fn(
@@ -26,7 +26,7 @@
 //!     ).await?;
 //!
 //!     let vault_stats = vault_fn(
-//!         "get_vault_stats".to_string(),
+//!         "get_kiln_stats".to_string(),
 //!         json!({}),
 //!         Some("user123".to_string()),
 //!         Some("session456".to_string()),
@@ -73,7 +73,7 @@
 //! The library provides 25 tools across 4 categories:
 //!
 //! - **System Tools** (5): `system_info`, `execute_command`, `list_files`, `read_file`, `get_environment`
-//! - **Vault Tools** (8): `search_by_properties`, `search_by_tags`, `search_by_folder`, `create_note`, `update_note`, `delete_note`, `get_vault_stats`, `list_tags`
+//! - **Vault Tools** (8): `search_by_properties`, `search_by_tags`, `search_by_folder`, `create_note`, `update_note`, `delete_note`, `get_kiln_stats`, `list_tags`
 //! - **Database Tools** (7): `semantic_search`, `search_by_content`, `search_by_filename`, `update_note_properties`, `index_document`, `get_document_stats`, `sync_metadata`
 //! - **Search Tools** (5): `search_documents`, `rebuild_index`, `get_index_stats`, `optimize_index`, `advanced_search`
 

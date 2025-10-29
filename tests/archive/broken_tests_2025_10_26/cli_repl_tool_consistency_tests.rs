@@ -691,7 +691,7 @@ mod tests {
         // Check for specific expected tools
         let expected_tools = vec![
             "system_info",
-            "get_vault_stats",
+            "get_kiln_stats",
             "list_files",
             "semantic_search",
         ];

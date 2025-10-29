@@ -2066,7 +2066,7 @@ impl RealWorldTestHarness {
         assert!(!dependency_search.is_empty(), "Should find dependency information");
 
         // Get project statistics
-        let stats_result = repl.send_command(":run get_vault_stats")?;
+        let stats_result = repl.send_command(":run get_kiln_stats")?;
         assert!(!stats_result.is_empty(), "Should get vault statistics");
 
         repl.quit()?;

@@ -492,7 +492,7 @@ impl EmbeddingThreadPool {
 
             // Attempt processing
             match self.process_document_internal(document_id, content).await {
-                Ok(_embedding) => {
+                Ok(embedding) => {
                     // Record success
                     {
                         let mut circuit_breaker = self.circuit_breaker.write().await;
@@ -502,6 +502,7 @@ impl EmbeddingThreadPool {
                     return Ok(RetryProcessingResult::success(
                         attempt_count,
                         start_time.elapsed(),
+                        embedding,
                     ));
                 }
                 Err(e) => {
