@@ -66,6 +66,7 @@ md5 = "0.7"
 # Channels (already included above)
 
 [dev-dependencies]
+crucible-config = { workspace = true, features = ["test-utils"] }
 crucible-llm = { path = "../crucible-llm", features = ["test-utils"] }
 tracing-subscriber = "0.3"
 tempfile = { workspace = true }
