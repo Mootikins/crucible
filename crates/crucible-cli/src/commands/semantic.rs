@@ -7,10 +7,13 @@
 use crate::config::CliConfig;
 use crate::interactive::SearchResultWithScore;
 use anyhow::Result;
-use crucible_config::{ApiConfig, EmbeddingProviderConfig, EmbeddingProviderType, ModelConfig};
+use crucible_config::{EmbeddingProviderConfig, EmbeddingProviderType};
+use crucible_llm::embeddings::{create_provider as create_embedding_provider, EmbeddingProvider};
 use crucible_surrealdb::{
     embedding_pool::{create_embedding_thread_pool_with_crucible_config, EmbeddingThreadPool},
-    kiln_integration::{get_database_stats, retrieve_parsed_document},
+    kiln_integration::{
+        clear_all_embeddings, get_embedding_index_metadata, retrieve_parsed_document,
+    },
     kiln_processor::{process_kiln_delta, process_kiln_files, scan_kiln_directory},
     kiln_scanner::{create_kiln_scanner, KilnProcessResult, KilnScannerConfig},
     EmbeddingConfig, SurrealClient, SurrealDbConfig,
@@ -19,6 +22,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::json;
 use std::path::PathBuf;
 use std::time::Duration;
+use tracing::{debug, error, warn};
 
 pub async fn execute(
     config: CliConfig,
@@ -42,6 +46,12 @@ pub async fn execute(
         pb.enable_steady_tick(std::time::Duration::from_millis(100));
         pb
     };
+
+    // Resolve embedding provider configuration up front so we can reuse it for
+    // both indexing and query-time embeddings.
+    let provider_config = create_provider_config_from_cli(&config)?;
+    let expected_model_name = provider_config.model.name.clone();
+    let expected_dimensions = provider_config.model.dimensions;
 
     // Initialize database connection
     let db_config = SurrealDbConfig {
@@ -79,13 +89,52 @@ pub async fn execute(
         }
     };
 
-    // Check if embeddings exist, process kiln if needed
-    let embeddings_exist = check_embeddings_exist(&client).await?;
+    // Inspect existing embeddings to determine if we can reuse them or need to rebuild
+    let metadata = get_embedding_index_metadata(&client).await?;
+    let mut embeddings_exist = metadata.is_some();
 
-    eprintln!("DEBUG SEMANTIC: embeddings_exist = {}", embeddings_exist);
+    if let Some(meta) = &metadata {
+        let model_matches = meta
+            .model
+            .as_ref()
+            .map(|m| m.eq_ignore_ascii_case(&expected_model_name))
+            .unwrap_or(false);
+
+        let dimensions_match = match (meta.dimensions, expected_dimensions) {
+            (Some(actual), Some(expected)) => actual == expected as usize,
+            _ => true, // If dimensions not stored, assume compatible
+        };
+
+        // Only check model name and dimensions - provider doesn't matter
+        if !(model_matches && dimensions_match) {
+            debug!(
+                "Existing embeddings generated with model {:?} ({:?} dims), expected model '{}' ({:?} dims)",
+                meta.model,
+                meta.dimensions,
+                expected_model_name,
+                expected_dimensions
+            );
+
+            if format != "json" {
+                println!("⚠️  Embedding model/dimension mismatch detected");
+                println!("    Stored: {} ({:?} dimensions)",
+                    meta.model.as_deref().unwrap_or("unknown"),
+                    meta.dimensions);
+                println!("    Requested: {} ({:?} dimensions)",
+                    expected_model_name,
+                    expected_dimensions);
+                println!("    Clearing existing embeddings and rebuilding index...\n");
+            }
+
+            clear_all_embeddings(&client).await?;
+            embeddings_exist = false;
+        }
+    }
+
+    debug!("embeddings_exist = {}", embeddings_exist);
 
     if !embeddings_exist {
-        eprintln!("DEBUG SEMANTIC: Taking FULL processing path (no embeddings)");
+        debug!("taking full processing path (no embeddings cached)");
         pb.finish_with_message("No embeddings found, starting processing...");
         pb.set_style(
             ProgressStyle::default_spinner()
@@ -99,7 +148,7 @@ pub async fn execute(
         }
 
         // Process kiln synchronously (daemon handles background processing)
-        match process_kiln_integrated(&client, &config.kiln.path, &pb, &config).await {
+        match process_kiln_integrated(&client, &config.kiln.path, &pb, &provider_config).await {
             Ok(process_result) => {
                 if format != "json" {
                     println!("✅ Processing completed successfully");
@@ -157,12 +206,13 @@ pub async fn execute(
             }
         }
     } else {
-        eprintln!("DEBUG SEMANTIC: Taking DELTA processing path (embeddings exist)");
+        debug!("taking delta processing path (embeddings already indexed)");
         // Embeddings exist - use delta processing for any changed files
         pb.set_message("Checking for kiln changes...");
 
-        eprintln!("DEBUG SEMANTIC: About to call process_kiln_delta_if_needed");
-        match process_kiln_delta_if_needed(&client, &config.kiln.path, &pb, &config).await {
+        debug!("invoking process_kiln_delta_if_needed");
+        match process_kiln_delta_if_needed(&client, &config.kiln.path, &pb, &provider_config).await
+        {
             Ok(delta_result) => {
                 if delta_result.processed_count > 0 {
                     if format != "json" {
@@ -179,8 +229,8 @@ pub async fn execute(
             Err(e) => {
                 // Delta processing failed - log but continue with search
                 // The embeddings that exist should still be valid
-                eprintln!(
-                    "⚠️  Delta processing check failed (continuing with existing data): {}",
+                warn!(
+                    "delta processing check failed (continuing with existing data): {}",
                     e
                 );
                 pb.set_message("Performing semantic search with existing data...");
@@ -189,34 +239,31 @@ pub async fn execute(
     }
 
     // Create embedding provider for query embeddings
-    eprintln!("DEBUG: Creating embedding provider for query embeddings");
-    let embedding_provider = match create_embedding_provider_from_cli_config(&config).await {
+    debug!("creating embedding provider for query embeddings");
+    let embedding_provider = match create_embedding_provider(provider_config.clone()).await {
         Ok(provider) => {
-            eprintln!(
-                "DEBUG: Created embedding provider: {}",
-                provider.provider_name()
-            );
+            debug!("created embedding provider: {}", provider.provider_name());
             provider
         }
         Err(e) => {
-            eprintln!("ERROR: Failed to create embedding provider: {}", e);
-            return Err(e);
+            error!("failed to create embedding provider: {}", e);
+            return Err(e.into());
         }
     };
 
     // Create reranker if enabled in config
-    eprintln!("DEBUG: Attempting to create reranker from config");
+    debug!("attempting to create reranker from config");
     let reranker = match create_reranker_from_config(&config).await {
         Ok(r) => {
             if r.is_some() {
-                eprintln!("DEBUG: Reranker created successfully");
+                debug!("reranker created successfully");
             } else {
-                eprintln!("DEBUG: Reranker is None (disabled in config)");
+                debug!("reranker disabled in config");
             }
             r
         }
         Err(e) => {
-            eprintln!("ERROR: Failed to create reranker: {}", e);
+            error!("failed to create reranker: {}", e);
             return Err(e);
         }
     };
@@ -235,16 +282,17 @@ pub async fn execute(
 
     if reranker.is_some() {
         pb.set_message("Performing semantic search with reranking...");
-        eprintln!("DEBUG: About to call semantic_search_with_reranking with initial_limit={}, final_limit={}", initial_limit, final_limit);
-    } else {
-        eprintln!(
-            "DEBUG: Reranker is None, calling with both limits={}",
-            initial_limit
+        debug!(
+            "about to call semantic_search_with_reranking with initial_limit={}, final_limit={}",
+            initial_limit,
+            final_limit
         );
+    } else {
+        debug!("reranker disabled, using limit {}", initial_limit);
     }
 
     // Perform semantic search with optional reranking
-    eprintln!("DEBUG: Calling semantic_search_with_reranking NOW");
+    debug!("starting semantic_search_with_reranking");
     let search_results = match crucible_surrealdb::kiln_integration::semantic_search_with_reranking(
         &client,
         &query,
@@ -376,30 +424,22 @@ async fn convert_vector_search_results(
         // Retrieve document details from database using kiln_integration
         match retrieve_parsed_document(client, &document_id).await {
             Ok(parsed_document) => {
-                // Extract title and content from the parsed document
-                let title = parsed_document
-                    .frontmatter
-                    .and_then(|fm| fm.get_string("title"))
-                    .unwrap_or_else(|| {
-                        // Fallback to first line of content
-                        parsed_document
-                            .content
-                            .plain_text
-                            .lines()
-                            .next()
-                            .unwrap_or("Untitled Document")
-                            .to_string()
-                    });
+                let display_path = parsed_document.path.display().to_string();
+                let title = parsed_document.title();
 
                 cli_results.push(SearchResultWithScore {
-                    id: document_id.clone(),
+                    id: display_path,
                     title,
                     content: parsed_document.content.plain_text,
                     score: similarity_score,
                 });
             }
-            Err(_) => {
-                // If document not found, create a basic result
+            Err(err) => {
+                warn!(
+                    "Failed to load parsed document {} from database: {}",
+                    document_id, err
+                );
+
                 cli_results.push(SearchResultWithScore {
                     id: document_id.clone(),
                     title: format!("Document {}", document_id),
@@ -422,26 +462,7 @@ async fn convert_vector_search_results(
 
 /// Check if embeddings exist in the database
 async fn check_embeddings_exist(client: &SurrealClient) -> Result<bool> {
-    match get_database_stats(client).await {
-        Ok(stats) => Ok(stats.total_embeddings > 0),
-        Err(_e) => {
-            // Fallback to direct query if stats function fails
-            let embeddings_sql = "SELECT count() as total FROM embeddings LIMIT 1";
-            let result = client
-                .query(embeddings_sql, &[])
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to query embeddings: {}", e))?;
-
-            let embeddings_count = result
-                .records
-                .first()
-                .and_then(|r| r.data.get("total"))
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-
-            Ok(embeddings_count > 0)
-        }
-    }
+    Ok(get_embedding_index_metadata(client).await?.is_some())
 }
 
 /// Process kiln using integrated functionality (no external daemon)
@@ -449,7 +470,7 @@ async fn process_kiln_integrated(
     client: &SurrealClient,
     kiln_path: &std::path::Path,
     pb: &ProgressBar,
-    config: &CliConfig,
+    provider_config: &EmbeddingProviderConfig,
 ) -> Result<crucible_surrealdb::kiln_scanner::KilnProcessResult> {
     // Validate kiln path exists
     if !kiln_path.exists() {
@@ -506,35 +527,30 @@ async fn process_kiln_integrated(
 
     let kiln_path_buf = PathBuf::from(kiln_path);
 
-    // DEBUG: Log the kiln path being scanned
-    eprintln!("DEBUG: Scanning kiln path: {:?}", kiln_path_buf);
-    eprintln!("DEBUG: Path exists: {}", kiln_path_buf.exists());
-    eprintln!("DEBUG: Is directory: {}", kiln_path_buf.is_dir());
+    debug!("scanning kiln path: {:?}", kiln_path_buf);
+    debug!("kiln path exists: {}", kiln_path_buf.exists());
+    debug!("kiln path is directory: {}", kiln_path_buf.is_dir());
 
     let scan_result = scanner
         .scan_kiln_directory(&kiln_path_buf)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to scan kiln directory: {}", e))?;
 
-    // DEBUG: Log scan results
-    eprintln!(
-        "DEBUG: Total files found: {}",
-        scan_result.total_files_found
-    );
-    eprintln!(
-        "DEBUG: Markdown files found: {}",
-        scan_result.markdown_files_found
-    );
-    eprintln!(
-        "DEBUG: Discovered files count: {}",
+    debug!("total files found: {}", scan_result.total_files_found);
+    debug!("markdown files found: {}", scan_result.markdown_files_found);
+    debug!(
+        "discovered files count: {}",
         scan_result.discovered_files.len()
     );
-    eprintln!("DEBUG: Scan errors: {}", scan_result.scan_errors.len());
+    debug!("scan errors: {}", scan_result.scan_errors.len());
 
     for (i, file) in scan_result.discovered_files.iter().enumerate().take(5) {
-        eprintln!(
-            "DEBUG: File {}: {:?} (markdown={}, accessible={})",
-            i, file.path, file.is_markdown, file.is_accessible
+        debug!(
+            "sample file {}: {:?} (markdown={}, accessible={})",
+            i,
+            file.path,
+            file.is_markdown,
+            file.is_accessible
         );
     }
 
@@ -548,7 +564,7 @@ async fn process_kiln_integrated(
     pb.set_message("Found files to process, starting embedding generation...");
 
     // Create embedding thread pool for parallel processing using CLI configuration
-    let embedding_pool = create_embedding_pool_from_cli_config(&config)
+    let embedding_pool = create_embedding_pool_from_config(provider_config)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to create embedding thread pool: {}", e))?;
 
@@ -570,15 +586,13 @@ async fn process_kiln_integrated(
     Ok(process_result)
 }
 
-/// Create embedding thread pool from CLI configuration
-async fn create_embedding_pool_from_cli_config(config: &CliConfig) -> Result<EmbeddingThreadPool> {
-    // Convert CLI embedding config to crucible-config provider config
-    let provider_config = create_provider_config_from_cli(config)?;
+/// Create embedding thread pool from an already-resolved provider configuration
+async fn create_embedding_pool_from_config(
+    provider_config: &EmbeddingProviderConfig,
+) -> Result<EmbeddingThreadPool> {
+    let pool_config = EmbeddingConfig::default();
 
-    // Create thread pool with real provider configuration
-    let pool_config = EmbeddingConfig::default(); // Use default pool config
-
-    create_embedding_thread_pool_with_crucible_config(pool_config, provider_config)
+    create_embedding_thread_pool_with_crucible_config(pool_config, provider_config.clone())
         .await
         .map_err(|e| {
             anyhow::anyhow!(
@@ -596,19 +610,6 @@ fn create_provider_config_from_cli(config: &CliConfig) -> Result<EmbeddingProvid
     config.to_embedding_config()
 }
 
-/// Create embedding provider directly from CLI configuration
-async fn create_embedding_provider_from_cli_config(
-    config: &CliConfig,
-) -> Result<std::sync::Arc<dyn crucible_llm::embeddings::EmbeddingProvider>> {
-    // Convert CLI config to embedding provider config
-    let provider_config = create_provider_config_from_cli(config)?;
-
-    // Create the provider using crucible-llm
-    // Note: crucible_llm::embeddings::EmbeddingConfig is a re-export of crucible_config::EmbeddingProviderConfig
-    crucible_llm::embeddings::create_provider(provider_config)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to create embedding provider: {}", e))
-}
 
 /// Process kiln using delta processing to only update changed files
 ///
@@ -637,9 +638,9 @@ async fn process_kiln_delta_if_needed(
     client: &SurrealClient,
     kiln_path: &std::path::Path,
     pb: &ProgressBar,
-    config: &CliConfig,
+    provider_config: &EmbeddingProviderConfig,
 ) -> Result<KilnProcessResult> {
-    eprintln!("DEBUG DELTA: Entered process_kiln_delta_if_needed");
+    debug!("entered process_kiln_delta_if_needed");
 
     // Validate kiln path exists
     if !kiln_path.exists() {
@@ -707,7 +708,7 @@ async fn process_kiln_delta_if_needed(
     let file_paths: Vec<PathBuf> = discovered_files.iter().map(|f| f.path.clone()).collect();
 
     // Create embedding thread pool for parallel processing
-    let embedding_pool = create_embedding_pool_from_cli_config(&config)
+    let embedding_pool = create_embedding_pool_from_config(provider_config)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to create embedding thread pool: {}", e))?;
 
@@ -764,8 +765,8 @@ async fn create_reranker_from_config(
                     RerankerModel::JINARerankerV2BaseMultiligual
                 }
                 _ => {
-                    eprintln!(
-                        "⚠️  Unknown reranker model '{}', using default bge-reranker-base",
+                    warn!(
+                        "unknown reranker model '{}', using default bge-reranker-base",
                         model_name
                     );
                     RerankerModel::BGERerankerBase
@@ -793,8 +794,8 @@ async fn create_reranker_from_config(
             ))
         }
         _ => {
-            eprintln!(
-                "⚠️  Unsupported reranking provider '{}', reranking disabled",
+            warn!(
+                "unsupported reranking provider '{}', reranking disabled",
                 provider
             );
             Ok(None)
