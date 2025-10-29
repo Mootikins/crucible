@@ -78,8 +78,7 @@ graph LR
         B[crucible-config]
     end
 
-    subgraph "Simplified Service Layer"
-        C[crucible-services]
+    subgraph "Background Services"
         D[crucible-daemon]
         E[crucible-surrealdb]
         F[crucible-llm]
@@ -171,11 +170,9 @@ pub struct CrucibleScriptEngine {
 
 **crucible-config**: Centralized configuration management that handles settings, preferences, and environment-specific configuration across the entire system.
 
-### Simplified Service Layer
+### Background Service Layer
 
-**crucible-services**: **NEW** ScriptEngine service architecture providing secure, isolated script execution with comprehensive monitoring and event-driven coordination. This simplified layer replaces the previous over-engineered service architecture.
-
-**crucible-daemon**: Background service providing terminal interface, REPL capabilities, and real-time service monitoring. Integrates with the new ScriptEngine architecture for centralized service management.
+**crucible-daemon**: Background service providing terminal interface, REPL capabilities, and real-time service monitoring. It now owns the lightweight orchestration responsibilities that previously lived in the removed `crucible-services` crate.
 
 **crucible-surrealdb**: Database integration layer managing SurrealDB connections, queries, and data persistence.
 

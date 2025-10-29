@@ -1,6 +1,8 @@
 # ScriptEngine Service API Documentation
 
 > Comprehensive API reference for the ScriptEngine service architecture
+>
+> **Status:** The `crucible-services` crate—and the ScriptEngine runtime described here—has been removed from the active codebase. This document remains for historical reference only.
 
 ## Overview
 
