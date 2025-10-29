@@ -752,6 +752,63 @@ async fn bulk_query_document_hashes(
     Ok(hash_map)
 }
 
+/// Query document IDs for multiple files in a single database call
+///
+/// This function efficiently retrieves document IDs for multiple file paths using
+/// a single parameterized query with an IN clause, which is much faster than
+/// querying each file individually.
+///
+/// # Arguments
+/// * `client` - SurrealDB client connection
+/// * `relative_paths` - Slice of relative file paths to query
+///
+/// # Returns
+/// A HashMap mapping relative file paths to their document IDs. Files not found
+/// in the database will not be present in the HashMap.
+async fn bulk_query_document_ids(
+    client: &SurrealClient,
+    relative_paths: &[String],
+) -> Result<std::collections::HashMap<String, String>> {
+    use std::collections::HashMap;
+
+    if relative_paths.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    // Build query with IN clause
+    let path_strings: Vec<String> = relative_paths
+        .iter()
+        .map(|p| {
+            let sanitized = p.replace('\'', "''");
+            format!("'{}'", sanitized)
+        })
+        .collect();
+
+    let sql = format!(
+        "SELECT id, path FROM notes WHERE path IN [{}]",
+        path_strings.join(", ")
+    );
+
+    let result = client
+        .query(&sql, &[])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to query document IDs: {}", e))?;
+
+    // Build HashMap from results
+    let mut id_map = HashMap::new();
+    for record in result.records {
+        if let Some(path_value) = record.data.get("path") {
+            if let Some(path_str) = path_value.as_str() {
+                if let Some(id) = &record.id {
+                    id_map.insert(path_str.to_string(), id.0.clone());
+                }
+            }
+        }
+    }
+
+    Ok(id_map)
+}
+
 /// Convert file paths to KilnFileInfo structures
 ///
 /// This helper function reads file metadata for each path and creates KilnFileInfo
@@ -1030,28 +1087,36 @@ pub async fn process_kiln_delta(
     }
 
     // Step 3: Delete old embeddings for changed files
+    // Use bulk query to get all document IDs in one database call
+    let relative_paths: Vec<String> = changed_file_infos
+        .iter()
+        .map(|fi| fi.relative_path.clone())
+        .collect();
+
+    let doc_id_map = bulk_query_document_ids(client, &relative_paths).await?;
+
     let mut total_embeddings_deleted = 0;
     for file_info in &changed_file_infos {
-        // Find document ID by path
-        let doc_id = find_document_id_by_path(client, &file_info.relative_path).await?;
-
-        if !doc_id.is_empty() {
-            // Delete old embeddings
-            match crate::kiln_integration::delete_document_embeddings(client, &doc_id).await {
-                Ok(count) => {
-                    debug!(
-                        "Deleted {} embeddings for {}",
-                        count,
-                        file_info.path.display()
-                    );
-                    total_embeddings_deleted += count;
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to delete embeddings for {}: {}",
-                        file_info.path.display(),
-                        e
-                    );
+        // Look up document ID from bulk query results
+        if let Some(doc_id) = doc_id_map.get(&file_info.relative_path) {
+            if !doc_id.is_empty() {
+                // Delete old embeddings
+                match crate::kiln_integration::delete_document_embeddings(client, doc_id).await {
+                    Ok(count) => {
+                        debug!(
+                            "Deleted {} embeddings for {}",
+                            count,
+                            file_info.path.display()
+                        );
+                        total_embeddings_deleted += count;
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to delete embeddings for {}: {}",
+                            file_info.path.display(),
+                            e
+                        );
+                    }
                 }
             }
         }
