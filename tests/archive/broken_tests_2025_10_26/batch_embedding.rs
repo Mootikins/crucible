@@ -47,12 +47,12 @@
 //!
 //! Run all batch embedding tests:
 //! ```bash
-//! cargo test -p crucible-daemon --test batch_embedding
+//! cargo test -p crucible-daemon (removed) --test batch_embedding
 //! ```
 //!
 //! Run specific test:
 //! ```bash
-//! cargo test -p crucible-daemon --test batch_embedding test_batch_basic_creation
+//! cargo test -p crucible-daemon (removed) --test batch_embedding test_batch_basic_creation
 //! ```
 
 mod fixtures;

@@ -1,3 +1,5 @@
+**Note:** The `crucible-daemon` crate has been removed; references below are archival only.
+
 # Test Coverage Gap Analysis - Existing Features
 
 > Analysis Date: 2025-10-26
@@ -1005,7 +1007,7 @@ async fn test_search_with_zero_vector() {
    - NEW FILE: `crates/crucible-cli/tests/concurrency_edge_cases.rs`
 
 9. **Embedding Generation Extremes** - 300 LOC, 12 tests
-   - ENHANCE: `crates/crucible-daemon/tests/embedding_pipeline.rs`
+   - ENHANCE: `crates/crucible-daemon (removed)/tests/embedding_pipeline.rs`
 
 10. **Provider-Specific Edge Cases** - 500 LOC, 18 tests
     - NEW FILE: `crates/crucible-llm/tests/ollama_edge_cases.rs`
@@ -1015,7 +1017,7 @@ async fn test_search_with_zero_vector() {
     - ENHANCE: `crates/crucible-surrealdb/tests/embedding_storage_tests.rs`
 
 12. **Re-embedding Scenarios** - 300 LOC, 10 tests
-    - NEW FILE: `crates/crucible-daemon/tests/re_embedding_tests.rs`
+    - NEW FILE: `crates/crucible-daemon (removed)/tests/re_embedding_tests.rs`
 
 13. **Resource Exhaustion** - 300 LOC, 12 tests
     - NEW FILE: `crates/crucible-watch/tests/resource_exhaustion_tests.rs`

@@ -1,3 +1,5 @@
+**Note:** The `crucible-daemon` crate has been removed; references below are archival only.
+
 # Archived Service Architecture Tests
 
 This directory contains test files that were archived during the architecture simplification process.
@@ -34,7 +36,7 @@ This directory contains test files that were archived during the architecture si
    - Performance tests for service operations
 
 #### Test Utilities
-4. **test_utilities.rs** (crucible-daemon)
+4. **test_utilities.rs** (crucible-daemon (removed))
    - Mock event router and event bus implementations
    - Test coordinator builders for complex scenarios
    - Event creation and manipulation utilities

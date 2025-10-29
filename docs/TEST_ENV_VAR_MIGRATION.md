@@ -1,3 +1,5 @@
+> **Note:** The `crucible-daemon` crate has been removed; references in this document remain for historical context.
+
 # Test Environment Variable Migration Guide
 
 **⚠️ DEPRECATED**: This migration is complete. Tests no longer use environment variables for configuration.
@@ -311,9 +313,9 @@ When migrating a test file:
 ### Completed
 - ✅ `crates/crucible-config/src/test_utils.rs` - New test infrastructure
 - ✅ `crates/crucible-config/src/config.rs` - Added `kiln_path()` methods
-- ✅ `crates/crucible-daemon/tests/kiln_validation.rs` - Config struct pattern
-- ✅ `crates/crucible-daemon/tests/unified_event_flow_test.rs` - Config struct
-- ✅ `crates/crucible-daemon/tests/utils/embedding_helpers.rs` - Params instead of env vars
+- ✅ `crates/crucible-daemon (removed)/tests/kiln_validation.rs` - Config struct pattern
+- ✅ `crates/crucible-daemon (removed)/tests/unified_event_flow_test.rs` - Config struct
+- ✅ `crates/crucible-daemon (removed)/tests/utils/embedding_helpers.rs` - Params instead of env vars
 
 ### Needs Migration
 - ⏳ `crates/crucible-cli/tests/cli_integration_tests.rs` - Partially updated (helpers done)

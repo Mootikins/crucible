@@ -1,3 +1,5 @@
+**Note:** The `crucible-daemon` crate has been removed; references below are archival only.
+
 # Database Access in Rune Tools
 
 This document describes how to use database access in Rune tools.
@@ -147,7 +149,7 @@ Tests verify:
 
 Run tests with:
 ```bash
-cargo test --package crucible-daemon --test tool_registry test_tool_with_database_access
+cargo test --package crucible-daemon (removed) --test tool_registry test_tool_with_database_access
 ```
 
 ## SurrealQL Reference

@@ -580,13 +580,13 @@ Application experiences significant memory growth under sustained load, eventual
 
 - **OS**: Ubuntu 22.04 LTS
 - **Rust Version**: 1.75.0
-- **Application**: crucible-daemon v2.1.3
+- **Application**: crucible-daemon (removed) v2.1.3
 - **Memory**: 8GB RAM
 - **Load**: 10,000 concurrent requests
 
 ## Reproduction Steps
 
-1. Start crucible-daemon with default config
+1. Start crucible-daemon (removed) with default config
 2. Use `wrk` to generate sustained load:
    ```bash
    wrk -t12 -c400 -d30s http://localhost:8080/api/search
@@ -623,7 +623,7 @@ Memory grows linearly, reaching 2GB+ within 30 minutes, then crashes with OOM er
 
 ```bash
 # Profile memory usage
-valgrind --tool=massif target/release/crucible-daemon
+valgrind --tool=massif target/release/crucible-daemon (removed)
 ms_print massif.out.12345
 ```
 
