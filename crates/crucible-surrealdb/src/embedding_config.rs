@@ -589,16 +589,20 @@ pub struct RetryProcessingResult {
 
     /// Final error if all retries failed
     pub final_error: Option<EmbeddingError>,
+
+    /// The generated embedding vector (if successful)
+    pub embedding: Option<Vec<f32>>,
 }
 
 impl RetryProcessingResult {
     /// Create successful retry result
-    pub fn success(attempt_count: u32, total_time: Duration) -> Self {
+    pub fn success(attempt_count: u32, total_time: Duration, embedding: Vec<f32>) -> Self {
         Self {
             succeeded: true,
             attempt_count,
             total_time,
             final_error: None,
+            embedding: Some(embedding),
         }
     }
 
@@ -609,6 +613,7 @@ impl RetryProcessingResult {
             attempt_count,
             total_time,
             final_error: Some(final_error),
+            embedding: None,
         }
     }
 

@@ -488,17 +488,17 @@ async fn test_search_by_folder_returns_real_files_from_test_vault() {
 }
 
 #[tokio::test]
-async fn test_get_vault_stats_calculates_real_statistics_not_mock_numbers() {
-    // This test should FAIL initially because get_vault_stats returns hardcoded mock numbers
+async fn test_get_kiln_stats_calculates_real_statistics_not_mock_numbers() {
+    // This test should FAIL initially because get_kiln_stats returns hardcoded mock numbers
     // instead of real statistics from the test vault
 
     use crucible_tools::vault_tools;
     use serde_json::json;
 
-    let tool_fn = vault_tools::get_vault_stats();
+    let tool_fn = vault_tools::get_kiln_stats();
     let parameters = json!({});
 
-    let result = tool_fn("get_vault_stats".to_string(), parameters, None, None)
+    let result = tool_fn("get_kiln_stats".to_string(), parameters, None, None)
         .await
         .unwrap();
 

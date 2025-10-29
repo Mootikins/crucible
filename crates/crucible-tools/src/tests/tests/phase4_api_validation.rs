@@ -49,7 +49,7 @@ mod tests {
 
         // Test 6: Direct tool function access works
         let search_fn = search_tools::search_documents();
-        let vault_fn = vault_tools::get_vault_stats();
+        let vault_fn = vault_tools::get_kiln_stats();
         let system_fn = system_tools::get_system_info();
         let db_fn = database_tools::semantic_search();
 
@@ -64,7 +64,7 @@ mod tests {
         .unwrap();
 
         let _vault_result = vault_fn(
-            "get_vault_stats".to_string(),
+            "get_kiln_stats".to_string(),
             json!({}),
             Some("test_user".to_string()),
             Some("test_session".to_string()),
@@ -123,7 +123,7 @@ mod tests {
 
         // Example 2: Using individual tool functions
         let search_fn = search_tools::search_documents();
-        let vault_fn = vault_tools::get_vault_stats();
+        let vault_fn = vault_tools::get_kiln_stats();
 
         let search_result = search_fn(
             "search_documents".to_string(),
@@ -135,7 +135,7 @@ mod tests {
         .unwrap();
 
         let vault_stats = vault_fn(
-            "get_vault_stats".to_string(),
+            "get_kiln_stats".to_string(),
             json!({}),
             Some("user123".to_string()),
             Some("session456".to_string()),

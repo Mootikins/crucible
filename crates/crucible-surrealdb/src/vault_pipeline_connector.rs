@@ -167,21 +167,27 @@ impl VaultPipelineConnector {
                 .process_document_with_retry(&chunk_id, &chunk_content)
                 .await
             {
-                Ok(_) => {
-                    embeddings_generated += 1;
-                    debug!("Successfully processed chunk: {}", chunk_id);
+                Ok(retry_result) => {
+                    if let Some(embedding_vector) = retry_result.embedding {
+                        embeddings_generated += 1;
+                        debug!("Successfully processed chunk: {}", chunk_id);
 
-                    // Store embedding in database
-                    if let Err(e) = store_embedding_in_database(
-                        client,
-                        &chunk_id,
-                        &document_id,
-                        &document.content_hash,
-                    )
-                    .await
-                    {
-                        warn!("Failed to store embedding for chunk {}: {}", chunk_id, e);
-                        errors.push(format!("Storage error for {}: {}", chunk_id, e));
+                        // Store embedding in database with real vector
+                        if let Err(e) = store_embedding_in_database_with_vector(
+                            client,
+                            &chunk_id,
+                            &document_id,
+                            &document.content_hash,
+                            embedding_vector,
+                        )
+                        .await
+                        {
+                            warn!("Failed to store embedding for chunk {}: {}", chunk_id, e);
+                            errors.push(format!("Storage error for {}: {}", chunk_id, e));
+                        }
+                    } else {
+                        warn!("No embedding vector returned for chunk {}", chunk_id);
+                        errors.push(format!("No embedding vector for {}", chunk_id));
                     }
                 }
                 Err(e) => {
@@ -645,12 +651,13 @@ async fn clear_document_embeddings(_client: &SurrealClient, _document_id: &str) 
     Ok(())
 }
 
-/// Store embedding in database
-async fn store_embedding_in_database(
+/// Store embedding in database with real embedding vector
+async fn store_embedding_in_database_with_vector(
     client: &SurrealClient,
     chunk_id: &str,
     document_id: &str,
-    content_hash: &str,
+    _content_hash: &str,
+    embedding_vector: Vec<f32>,
 ) -> Result<()> {
     use crate::vault_integration::store_embedding;
 
@@ -659,18 +666,6 @@ async fn store_embedding_in_database(
     // note_id should be "notes:Projects_file_md"
     let note_id = format!("notes:{}", document_id);
 
-    // Create a mock vector for now
-    // NOTE: In production, this vector would come from the embedding thread pool
-    // For now, we use a mock vector (768 dimensions with random-ish values based on hash)
-    let dimensions = 768;
-    let mock_vector: Vec<f32> = (0..dimensions)
-        .map(|i| {
-            // Generate pseudo-random values based on content hash and position
-            let hash_byte = content_hash.as_bytes().get(i % content_hash.len()).unwrap_or(&0);
-            (*hash_byte as f32 / 255.0) * 2.0 - 1.0  // Normalize to [-1, 1]
-        })
-        .collect();
-
     // Extract chunk position from chunk_id
     // chunk_id might be like "Projects_file_md_chunk_0" or just "Projects_file_md"
     let chunk_position = chunk_id
@@ -678,20 +673,22 @@ async fn store_embedding_in_database(
         .and_then(|(_, pos)| pos.parse::<usize>().ok())
         .unwrap_or(0);
 
-    // Store using the NEW graph-based store_embedding function
+    let dimensions = embedding_vector.len();
+
+    // Store using the graph-based store_embedding function with REAL embedding vector
     store_embedding(
         client,
         &note_id,
-        mock_vector,
-        "nomic-embed-text",  // embedding model
-        1000,                 // chunk_size (mock value)
+        embedding_vector,
+        "fastembed",         // embedding model
+        1000,                // chunk_size
         chunk_position,
     )
     .await?;
 
     debug!(
-        "Stored embedding for chunk {} (document: {}, hash: {}, dims: {})",
-        chunk_id, document_id, content_hash, dimensions
+        "Stored REAL embedding for chunk {} (document: {}, dims: {})",
+        chunk_id, document_id, dimensions
     );
 
     Ok(())

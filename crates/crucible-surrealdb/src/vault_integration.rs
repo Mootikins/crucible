@@ -1685,8 +1685,8 @@ pub async fn document_exists(client: &SurrealClient, document_id: &str) -> Resul
 
 /// Get database statistics for embeddings
 pub async fn get_database_stats(client: &SurrealClient) -> Result<DatabaseStats> {
-    let notes_sql = "SELECT count() as total FROM notes";
-    let embeddings_sql = "SELECT count() as total FROM embeddings";
+    let notes_sql = "SELECT count() as total FROM notes GROUP ALL";
+    let embeddings_sql = "SELECT count() as total FROM embeddings GROUP ALL";
 
     eprintln!("DEBUG STATS: Querying database statistics");
 

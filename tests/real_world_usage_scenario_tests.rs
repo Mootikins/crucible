@@ -105,7 +105,7 @@ impl RealWorldUsageTestHarness {
         println!("  📝 Phase 4: Documentation and Knowledge Capture");
 
         // Create comprehensive research summary using available tools
-        let summary_analysis = repl.send_command(":run get_vault_stats")?;
+        let summary_analysis = repl.send_command(":run get_kiln_stats")?;
         assert!(!summary_analysis.is_empty(), "Should get vault statistics for context");
 
         repl.quit()?;
@@ -211,7 +211,7 @@ impl RealWorldUsageTestHarness {
         println!("  📊 Phase 5: Performance Monitoring");
 
         // Get project statistics and metrics
-        let project_stats = repl.send_command(":run get_vault_stats")?;
+        let project_stats = repl.send_command(":run get_kiln_stats")?;
         assert!(!project_stats.is_empty(), "Should get project statistics");
 
         // Generate comprehensive project overview

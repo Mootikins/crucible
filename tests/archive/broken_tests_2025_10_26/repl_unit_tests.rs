@@ -159,7 +159,7 @@ async fn test_repl_tools_listing_functionality() -> Result<()> {
         "system_info",
         "list_files",
         "search_documents",
-        "get_vault_stats",
+        "get_kiln_stats",
     ];
 
     let mut found_tools = 0;
