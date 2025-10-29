@@ -3,7 +3,12 @@
 //! These tests are written TDD-style - they should fail first,
 //! then drive the implementation to make them pass.
 
+use anyhow::{Context, Result};
 use crucible_config::Config;
+use std::path::PathBuf;
+use std::process::Command;
+use tempfile::TempDir;
+use toml;
 
 /// Helper function to get CLI binary path
 fn cli_binary_path() -> PathBuf {
@@ -32,38 +37,78 @@ async fn run_cli_command(args: Vec<&str>, config: &Config) -> Result<String> {
     let binary_path = cli_binary_path();
     let mut cmd = Command::new(binary_path);
 
-    // Write config to a temporary file and pass it via --config flag
-    // For now, we'll extract kiln path if present and pass it via args
-    // TODO: Update CLI to accept config file parameter
+    // Create a temporary CLI config file if we have a kiln path
     if let Some(kiln_path) = config.kiln_path_opt() {
-        cmd.arg("--kiln-path").arg(kiln_path);
-    }
+        let temp_config = tempfile::Builder::new()
+            .suffix(".toml")
+            .tempfile()
+            .context("Failed to create temp config file")?;
 
-    for arg in args {
-        cmd.arg(arg);
-    }
+        // Write a minimal CLI config with the kiln path
+        let cli_config_toml = format!(
+            "[kiln]\npath = \"{}\"\nembedding_url = \"http://localhost:11434\"\n",
+            kiln_path.replace('\\', "\\\\")  // Escape backslashes for TOML
+        );
 
-    let output_result = timeout(Duration::from_secs(30), cmd.output())
+        std::fs::write(temp_config.path(), cli_config_toml)
+            .context("Failed to write config file")?;
+
+        cmd.arg("--config").arg(temp_config.path());
+
+        // Keep temp file alive until command finishes
+        // Execute command with the config file
+        for arg in args {
+            cmd.arg(arg);
+        }
+
+        let output = tokio::task::spawn_blocking(move || {
+            let _temp = temp_config; // Keep alive
+            cmd.output()
+        })
         .await
-        .map_err(|_| anyhow::anyhow!("Command timed out"))?;
+        .map_err(|e| anyhow::anyhow!("Task join error: {}", e))?
+        .map_err(|e| anyhow::anyhow!("Command execution failed: {}", e))?;
 
-    let output = output_result.map_err(|e| anyhow::anyhow!("Command execution failed: {}", e))?;
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        if !output.status.success() {
+            return Err(anyhow::anyhow!("CLI command failed: {}\n{}", stderr, stdout));
+        }
 
-    if !output.status.success() {
-        return Err(anyhow::anyhow!("CLI command failed: {}", stderr));
-    }
+        let combined_output = if !stderr.is_empty() {
+            format!("{}{}", stderr, stdout)
+        } else {
+            stdout
+        };
 
-    // Include stderr in output for commands that print errors but exit successfully
-    let combined_output = if !stderr.is_empty() {
-        format!("{}{}", stderr, stdout)
+        Ok(combined_output)
     } else {
-        stdout
-    };
+        // No config, just run the command
+        for arg in args {
+            cmd.arg(arg);
+        }
 
-    Ok(combined_output)
+        let output = tokio::task::spawn_blocking(move || cmd.output())
+            .await
+            .map_err(|e| anyhow::anyhow!("Task join error: {}", e))?
+            .map_err(|e| anyhow::anyhow!("Command execution failed: {}", e))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+        if !output.status.success() {
+            return Err(anyhow::anyhow!("CLI command failed: {}\n{}", stderr, stdout));
+        }
+
+        let combined_output = if !stderr.is_empty() {
+            format!("{}{}", stderr, stdout)
+        } else {
+            stdout
+        };
+
+        Ok(combined_output)
+    }
 }
 
 /// Helper to create a test kiln with sample content
@@ -325,32 +370,54 @@ async fn run_cli_command_allow_failure(
     let binary_path = cli_binary_path();
     let mut cmd = Command::new(binary_path);
 
-    // Pass kiln path if present
+    // Create a temporary CLI config file if we have a kiln path
     if let Some(kiln_path) = config.kiln_path_opt() {
-        cmd.arg("--kiln-path").arg(kiln_path);
-    }
+        let temp_config = tempfile::Builder::new()
+            .suffix(".toml")
+            .tempfile()
+            .context("Failed to create temp config file")?;
 
-    for arg in args {
-        cmd.arg(arg);
-    }
+        let cli_config_toml = format!(
+            "[kiln]\npath = \"{}\"\nembedding_url = \"http://localhost:11434\"\n",
+            kiln_path.replace('\\', "\\\\")
+        );
 
-    let output_result = timeout(Duration::from_secs(30), cmd.output())
-        .await
-        .map_err(|_| anyhow::anyhow!("Command timed out"))?;
+        std::fs::write(temp_config.path(), cli_config_toml)?;
+        cmd.arg("--config").arg(temp_config.path());
 
-    let output = output_result.map_err(|e| anyhow::anyhow!("Command execution failed: {}", e))?;
+        for arg in args {
+            cmd.arg(arg);
+        }
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let output = tokio::task::spawn_blocking(move || {
+            let _temp = temp_config;
+            cmd.output()
+        })
+        .await??;
 
-    // Include stderr in output for error cases
-    let combined_output = if !stderr.is_empty() {
-        format!("{}{}", stderr, stdout)
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+        Ok(if !stderr.is_empty() {
+            format!("{}{}", stderr, stdout)
+        } else {
+            stdout
+        })
     } else {
-        stdout
-    };
+        for arg in args {
+            cmd.arg(arg);
+        }
 
-    Ok(combined_output)
+        let output = tokio::task::spawn_blocking(move || cmd.output()).await??;
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+        Ok(if !stderr.is_empty() {
+            format!("{}{}", stderr, stdout)
+        } else {
+            stdout
+        })
+    }
 }
 
 #[tokio::test]
@@ -938,8 +1005,3 @@ async fn test_semantic_search_model_feature_availability() -> Result<()> {
 
     Ok(())
 }
-use anyhow::Result;
-use std::path::PathBuf;
-use tempfile::TempDir;
-use tokio::process::Command;
-use tokio::time::{timeout, Duration};

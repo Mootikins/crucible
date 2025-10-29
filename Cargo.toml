@@ -64,7 +64,7 @@ jsonschema = "0.33"
 schemars = "1.0"
 
 # Rune scripting language
-rune-modules = "0.13"
+rune-modules = "0.14"
 
 # Configuration management
 config = "0.15"
