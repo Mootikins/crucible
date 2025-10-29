@@ -14,7 +14,8 @@ This file provides essential information for AI agents to understand and contrib
 - **Rust Core** (`crates/crucible-core/`): Business logic, CRDT operations, document management
 - **Tauri Backend** (`crates/crucible-tauri/`): Desktop app commands, IPC, system integration
 - **Svelte Frontend** (`packages/web/`): UI components, user interactions, real-time updates
-- **Services Integration** (`crates/crucible-services/`): AI agent tools and service architecture
+
+> **Note:** The legacy `crucible-services` crate has been removed. Service integrations now live directly inside the remaining crates (primarily the CLI and SurrealDB layers).
 
 ### Key Technologies
 - **Rust**: Core performance-critical components
@@ -30,8 +31,7 @@ This file provides essential information for AI agents to understand and contrib
 crucible/
 ├── crates/
 │   ├── crucible-core/           # Core Rust business logic
-│   ├── crucible-tauri/          # Tauri desktop backend
-│   └── crucible-services/       # Service architecture for AI integration
+│   └── crucible-tauri/          # Tauri desktop backend
 ├── packages/
 │   └── web/                     # Svelte frontend application
 ├── docs/                        # Human documentation
