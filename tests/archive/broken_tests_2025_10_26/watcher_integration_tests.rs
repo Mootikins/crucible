@@ -1,4 +1,4 @@
-//! Comprehensive integration tests for crucible-daemon file watching functionality
+//! Comprehensive integration tests for crucible-daemon (removed) file watching functionality
 //!
 //! Phase 1.2 TDD: Create failing tests that demonstrate missing integration
 //! between daemon's file watcher and embedding system.

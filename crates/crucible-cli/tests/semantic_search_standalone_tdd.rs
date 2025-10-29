@@ -8,7 +8,7 @@
 //! **Current Issue Analysis:**
 //! - CLI `cru semantic` command: Uses integrated kiln_integration::semantic_search() ✓
 //! - REPL `:run semantic_search` tool: Uses mock crucible_tools implementation ❌
-//! - Some code paths may still attempt to spawn crucible-daemon process ❌
+//! - Some code paths may still attempt to spawn the legacy `crucible-daemon` process ❌
 //!
 //! **Test Objectives:**
 //! 1. Demonstrate current inconsistency in semantic search behavior
@@ -53,7 +53,7 @@ async fn run_cli_semantic_search(kiln_path: &PathBuf, query: &str) -> Result<Str
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-/// Helper to check if crucible-daemon binary exists
+/// Helper to check if the legacy crucible-daemon binary exists
 fn daemon_binary_exists() -> bool {
     let crate_root = env!("CARGO_MANIFEST_DIR");
     let daemon_debug = PathBuf::from(crate_root).join("../../target/debug/crucible-daemon");

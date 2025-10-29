@@ -1,3 +1,5 @@
+**Note:** The `crucible-daemon` crate has been removed; references below are archival only.
+
 # Search Validation Test Suite
 
 Comprehensive test suite for validating the Crucible knowledge management system's search capabilities across all dimensions.
@@ -186,13 +188,13 @@ The test suite uses a comprehensive static test kiln located in `tests/test-kiln
 
 ```bash
 # Run specific test modules
-cargo test -p crucible-daemon metadata_search_tests
-cargo test -p crucible-daemon text_content_search_tests
-cargo test -p crucible-daemon semantic_search_tests
-cargo test -p crucible-daemon tool_search_integration_tests
-cargo test -p crucible-daemon link_structure_search_tests
-cargo test -p crucible-daemon interface_parity_tests
-cargo test -p crucible-daemon performance_validation_tests
+cargo test -p crucible-daemon (removed) metadata_search_tests
+cargo test -p crucible-daemon (removed) text_content_search_tests
+cargo test -p crucible-daemon (removed) semantic_search_tests
+cargo test -p crucible-daemon (removed) tool_search_integration_tests
+cargo test -p crucible-daemon (removed) link_structure_search_tests
+cargo test -p crucible-daemon (removed) interface_parity_tests
+cargo test -p crucible-daemon (removed) performance_validation_tests
 ```
 
 ### Using the Test Runner
@@ -218,10 +220,10 @@ let results = runner.run_all_tests().await?;
 
 ```bash
 # Run with performance benchmarks enabled
-RUST_LOG=debug cargo test -p crucible-daemon performance_validation_tests -- --nocapture
+RUST_LOG=debug cargo test -p crucible-daemon (removed) performance_validation_tests -- --nocapture
 
 # Run semantic search performance tests
-cargo test -p crucible-daemon test_semantic_search_performance -- --nocapture
+cargo test -p crucible-daemon (removed) test_semantic_search_performance -- --nocapture
 ```
 
 ## Expected Outcomes
@@ -334,11 +336,11 @@ jobs:
           toolchain: stable
       - name: Run search validation tests
         run: |
-          cargo test -p crucible-daemon search_validation_comprehensive
-          cargo test -p crucible-daemon search_validation_extended
+          cargo test -p crucible-daemon (removed) search_validation_comprehensive
+          cargo test -p crucible-daemon (removed) search_validation_extended
       - name: Run performance benchmarks
         run: |
-          cargo test -p crucible-daemon performance_validation_tests --release
+          cargo test -p crucible-daemon (removed) performance_validation_tests --release
 ```
 
 ### Test Reports
@@ -417,7 +419,7 @@ async fn test_descriptive_name() -> Result<()> {
 Enable debug output for detailed test execution:
 
 ```bash
-RUST_LOG=debug cargo test -p crucible-daemon search_validation -- --nocapture
+RUST_LOG=debug cargo test -p crucible-daemon (removed) search_validation -- --nocapture
 ```
 
 ### Isolated Testing
@@ -425,7 +427,7 @@ RUST_LOG=debug cargo test -p crucible-daemon search_validation -- --nocapture
 Run individual tests to isolate issues:
 
 ```bash
-cargo test -p crucible-daemon test_specific_function_name -- --exact --nocapture
+cargo test -p crucible-daemon (removed) test_specific_function_name -- --exact --nocapture
 ```
 
 ---

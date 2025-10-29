@@ -48,12 +48,12 @@
 //!
 //! Run all re-embedding tests:
 //! ```bash
-//! cargo test -p crucible-daemon --test re_embedding
+//! cargo test -p crucible-daemon (removed) --test re_embedding
 //! ```
 //!
 //! Run specific test:
 //! ```bash
-//! cargo test -p crucible-daemon --test re_embedding test_reembedding_content_update
+//! cargo test -p crucible-daemon (removed) --test re_embedding test_reembedding_content_update
 //! ```
 
 mod fixtures;

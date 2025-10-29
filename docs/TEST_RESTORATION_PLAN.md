@@ -1,3 +1,5 @@
+> **Note:** The `crucible-daemon` crate has been removed; references in this document remain for historical context.
+
 # Test Restoration Plan - Post Phase 2
 
 **Status:** Planning Document
@@ -392,11 +394,11 @@ async fn test_embedding_pipeline_end_to_end() {
 ```
 
 ### End-to-End Tests (Slowest, Critical Path Only)
-**Location:** `crates/crucible-daemon/tests/*.rs`
+**Location:** `crates/crucible-daemon (removed)/tests/*.rs`
 **Coverage:** Full system, real files, real database
 **Example:**
 ```rust
-// crates/crucible-daemon/tests/e2e_daemon.rs
+// crates/crucible-daemon (removed)/tests/e2e_daemon.rs
 #[tokio::test]
 async fn test_daemon_full_workflow() {
     // Tests: Start daemon → Add file → Search → Verify results

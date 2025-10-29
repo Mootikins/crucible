@@ -1,3 +1,5 @@
+> **Note:** The `crucible-daemon` crate has been removed; references in this document remain for historical context.
+
 # Crucible Developer Guide
 
 > **Status**: Active Development Guide
@@ -90,7 +92,7 @@ Crucible follows a service-oriented architecture with clear separation of concer
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                    Core System                               │
-│ crucible-core │ crucible-daemon │ crucible-tauri           │
+│ crucible-core │ crucible-daemon (removed) │ crucible-tauri           │
 └─────────────────────────────────────────────────────────────┘
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
