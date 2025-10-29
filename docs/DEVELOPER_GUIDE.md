@@ -139,19 +139,7 @@ crates/crucible-config/
 
 ### Service Layer
 
-#### `crucible-services`
-Service abstraction layer
-```bash
-crates/crucible-services/
-├── src/
-│   ├── lib.rs            # Service registry API
-│   ├── search/           # Search service
-│   ├── index/            # Indexing service
-│   ├── agent/            # Agent service
-│   ├── tool/             # Tool service
-│   └── hot_reload/       # Hot reload service
-└── Cargo.toml
-```
+> **Note:** The former `crucible-services` crate has been removed. Its lightweight service abstractions were folded into the CLI (`crates/crucible-cli`) and SurrealDB integration (`crates/crucible-surrealdb`). The directory layout below is retained for historical context only.
 
 ### Scripting & Tools Layer
 
@@ -330,7 +318,7 @@ cargo run -p crucible-cli -- stats
 
 #### Step 1: Define Service Trait
 ```rust
-// crates/crucible-services/src/my_service.rs
+// Legacy example (crate removed): crates/crucible-services/src/my_service.rs
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -352,7 +340,7 @@ pub struct Output {
 
 #### Step 2: Implement Service
 ```rust
-// crates/crucible-services/src/my_service.rs
+// Legacy example (crate removed): crates/crucible-services/src/my_service.rs
 pub struct MyServiceImpl {
     config: MyServiceConfig,
 }
@@ -368,7 +356,7 @@ impl MyService for MyServiceImpl {
 
 #### Step 3: Register Service
 ```rust
-// crates/crucible-services/src/lib.rs
+// Legacy example (crate removed): crates/crucible-services/src/lib.rs
 pub use my_service::{MyService, MyServiceImpl, MyServiceConfig};
 
 // In service registry
