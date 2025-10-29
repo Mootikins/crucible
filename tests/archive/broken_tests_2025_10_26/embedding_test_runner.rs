@@ -7,14 +7,14 @@
 //!
 //! Run all embedding tests:
 //! ```bash
-//! cargo test -p crucible-daemon --test embedding_test_runner
+//! cargo test -p crucible-daemon (removed) --test embedding_test_runner
 //! ```
 //!
 //! Run specific test categories:
 //! ```bash
-//! RUST_LOG=info cargo test -p crucible-daemon --test embedding_test_runner test_mock_provider_suite
-//! RUST_LOG=info cargo test -p crucible-daemon --test embedding_test_runner test_content_type_suite
-//! RUST_LOG=info cargo test -p crucible-daemon --test embedding_test_runner test_storage_retrieval_suite
+//! RUST_LOG=info cargo test -p crucible-daemon (removed) --test embedding_test_runner test_mock_provider_suite
+//! RUST_LOG=info cargo test -p crucible-daemon (removed) --test embedding_test_runner test_content_type_suite
+//! RUST_LOG=info cargo test -p crucible-daemon (removed) --test embedding_test_runner test_storage_retrieval_suite
 //! ```
 
 mod fixtures;

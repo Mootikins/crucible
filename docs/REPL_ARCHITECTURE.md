@@ -1,7 +1,9 @@
+> **Note:** The `crucible-daemon` crate has been removed; references in this document remain for historical context.
+
 # Crucible REPL Architecture
 
 > **Status**: Design Phase (2025-10-19)
-> **Component**: crucible-daemon REPL
+> **Component**: crucible-daemon (removed) REPL
 > **Purpose**: Interactive query and command interface for the Crucible daemon
 
 ## Executive Summary
@@ -998,7 +1000,7 @@ impl DaemonTui {
 ## File Structure
 
 ```
-crates/crucible-daemon/
+crates/crucible-daemon (removed)/
 ├── src/
 │   ├── main.rs              # Entry point, TUI setup
 │   ├── repl/

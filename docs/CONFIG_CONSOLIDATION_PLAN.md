@@ -1,3 +1,5 @@
+> **Note:** The `crucible-daemon` crate has been removed; references in this document remain for historical context.
+
 # Configuration Consolidation Plan
 
 **⚠️ DEPRECATED**: This plan is complete. Configuration is now in config files, not environment variables. - Phase 2
@@ -34,7 +36,7 @@ Crucible currently has **150 config structs** across 8 crates with **18 duplicat
 ### Config Distribution by Crate
 
 ```
-crucible-daemon:  30 config structs (MOST OVER-ENGINEERED)
+crucible-daemon (removed):  30 config structs (MOST OVER-ENGINEERED)
 crucible-cli:     24 config structs
 crucible-services: 23 config structs (BEING REMOVED)
 crucible-config:  21 config structs (CANONICAL - well designed)
@@ -76,8 +78,8 @@ crucible-surrealdb: 4 config structs
    - Used by: Core database abstractions
    - **Assessment:** Duplicates canonical, can be removed
 
-3. **crucible-daemon::config::DatabaseConfig**
-   - Location: `crates/crucible-daemon/src/config.rs:212`
+3. **crucible-daemon (removed)::config::DatabaseConfig**
+   - Location: `crates/crucible-daemon (removed)/src/config.rs:212`
    - Features: Connection, sync strategies, transactions, indexing, backup
    - **OVER-ENGINEERED:** 200+ lines for features we don't use
    - Used by: Daemon tests (which are being archived)
@@ -92,7 +94,7 @@ crucible-surrealdb: 4 config structs
 1. **crucible-core::config::PerformanceConfig**
    - Features: Thread pool, queue sizes, timeouts
 
-2. **crucible-daemon::config::PerformanceConfig**
+2. **crucible-daemon (removed)::config::PerformanceConfig**
    - Features: Workers, cache, resource limits
    - **OVER-ENGINEERED:** Worker affinity, CPU limits, file descriptor limits
 
@@ -121,7 +123,7 @@ crucible-surrealdb: 4 config structs
 1. **crucible-core::config::CacheConfig**
    - Features: TTL, max size, eviction policy
 
-2. **crucible-daemon::config::CacheConfig**
+2. **crucible-daemon (removed)::config::CacheConfig**
    - Features: Cache type (LRU/TTL/Redis), size, TTL, options
 
 3. **crucible-services::config::CacheConfig**
@@ -388,7 +390,7 @@ pub async fn migrate_env_vars() -> Result<()> {
 crucible-cli:        Uses crucible-config::EmbeddingProviderConfig
 crucible-llm:        Defines own EmbeddingConfig
 crucible-surrealdb:  Defines own EmbeddingConfig
-crucible-daemon:     Tests use crucible-llm::EmbeddingConfig
+crucible-daemon (removed):     Tests use crucible-llm::EmbeddingConfig
 ```
 
 **Migration Plan:**
@@ -447,7 +449,7 @@ crucible-daemon:     Tests use crucible-llm::EmbeddingConfig
 ```
 crucible-config:     DatabaseConfig (canonical)
 crucible-core:       DatabaseConfig (duplicate)
-crucible-daemon:     DatabaseConfig (over-engineered)
+crucible-daemon (removed):     DatabaseConfig (over-engineered)
 crucible-services:   DatabaseConfig (being removed)
 ```
 
@@ -467,7 +469,7 @@ crucible-services:   DatabaseConfig (being removed)
 
 2. **Identify Missing Features**
    - From `crucible-core`: Retry config, connection pooling details
-   - From `crucible-daemon`: Transaction config, indexing config
+   - From `crucible-daemon (removed)`: Transaction config, indexing config
    - **Decision:** Daemon features are over-engineered, skip them
 
 3. **Enhance Canonical Config**
@@ -600,7 +602,7 @@ impl Default for PerformanceConfig {
 **Migration:**
 - `crucible-core` → Use `PerformanceConfig::threads`
 - `crucible-watch` → Use `PerformanceConfig::events`
-- `crucible-daemon` → Remove (tests being archived)
+- `crucible-daemon (removed)` → Remove (tests being archived)
 - `crucible-services` → Remove (being removed)
 
 **Estimated Impact:** ~15 files, ~80 lines changed
@@ -610,7 +612,7 @@ impl Default for PerformanceConfig {
 ### Step 4: DaemonConfig Simplification
 
 **Current Situation:**
-- `crucible-daemon/src/config.rs`: 1200 lines, 30 config structs
+- `crucible-daemon (removed)/src/config.rs`: 1200 lines, 30 config structs
 - Features: Filesystem watching, database, performance, health, services
 - **Reality:** Daemon = `crucible-watch::WatchManager` + background event triggering
 
@@ -620,7 +622,7 @@ impl Default for PerformanceConfig {
 
 #### Option A: Thin Adapter (RECOMMENDED)
 ```rust
-// crates/crucible-daemon/src/lib.rs
+// crates/crucible-daemon (removed)/src/lib.rs
 use crucible_config::Config;
 use crucible_watch::{WatchManager, WatchConfig};
 
@@ -645,9 +647,9 @@ impl Daemon {
 ```
 
 **Changes Required:**
-- Delete `crates/crucible-daemon/src/config.rs` (1200 lines)
-- Update `crates/crucible-daemon/src/lib.rs` to use `crucible-config::Config`
-- Update `crates/crucible-daemon/src/main.rs` to use unified config
+- Delete `crates/crucible-daemon (removed)/src/config.rs` (1200 lines)
+- Update `crates/crucible-daemon (removed)/src/lib.rs` to use `crucible-config::Config`
+- Update `crates/crucible-daemon (removed)/src/main.rs` to use unified config
 - Archive all daemon tests that use `DaemonConfig`
 
 **Estimated Impact:** Delete 1200 lines, add ~50 lines adapter code
@@ -742,7 +744,7 @@ pub struct DaemonConfig {
 
 **Current Versions:**
 1. `crucible-core::CacheConfig`
-2. `crucible-daemon::CacheConfig`
+2. `crucible-daemon (removed)::CacheConfig`
 3. `crucible-services::CacheConfig`
 
 **Migration Plan:**
@@ -1183,7 +1185,7 @@ git checkout HEAD~1 -- crates/crucible-config/src/provider.rs
 - LegacyConfig variants
 - TestConfigBuilder
 
-### crucible-daemon (TO BE SIMPLIFIED)
+### crucible-daemon (removed) (TO BE SIMPLIFIED)
 - DaemonConfig (1200 lines - REMOVE)
 - FilesystemConfig (move to crucible-watch)
 - DatabaseConfig (duplicate - REMOVE)

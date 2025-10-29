@@ -1,3 +1,5 @@
+> **Note:** The `crucible-daemon` crate has been removed; references in this document remain for historical context.
+
 # Known Issues
 
 **Last Updated:** 2025-10-26
@@ -30,11 +32,11 @@
 **Status:** Pre-existing Issue - Will be resolved in Phase 2.6
 **Priority:** Low (daemon config being refactored anyway)
 **Affected Tests:**
-- `crucible-daemon::config::tests::test_default_config`
-- `crucible-daemon::coordinator::tests::test_config_update`
-- `crucible-daemon::coordinator::tests::test_event_publishing`
-- `crucible-daemon::coordinator::tests::test_daemon_health_tracking`
-- `crucible-daemon::events::tests::test_event_statistics`
+- `crucible-daemon (removed)::config::tests::test_default_config`
+- `crucible-daemon (removed)::coordinator::tests::test_config_update`
+- `crucible-daemon (removed)::coordinator::tests::test_event_publishing`
+- `crucible-daemon (removed)::coordinator::tests::test_daemon_health_tracking`
+- `crucible-daemon (removed)::events::tests::test_event_statistics`
 
 **Root Cause:**
 `DaemonConfig::default()` creates invalid configuration:

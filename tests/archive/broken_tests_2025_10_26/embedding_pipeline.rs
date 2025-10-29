@@ -45,12 +45,12 @@
 //!
 //! Run all pipeline tests:
 //! ```bash
-//! cargo test -p crucible-daemon --test embedding_pipeline
+//! cargo test -p crucible-daemon (removed) --test embedding_pipeline
 //! ```
 //!
 //! Run specific test:
 //! ```bash
-//! cargo test -p crucible-daemon --test embedding_pipeline test_pipeline_basic_note_creation
+//! cargo test -p crucible-daemon (removed) --test embedding_pipeline test_pipeline_basic_note_creation
 //! ```
 
 mod fixtures;

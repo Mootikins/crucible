@@ -9,7 +9,6 @@
 
 use crate::types::{ToolError, ToolFunction, ToolResult};
 use serde_json::{json, Value};
-use std::env;
 use std::path::PathBuf;
 use tracing::info;
 
@@ -77,13 +76,11 @@ async fn perform_integrated_semantic_search(
         SurrealClient, SurrealDbConfig,
     };
 
-    // Get kiln path from parameter or environment variable (for backwards compatibility)
-    let kiln_path_str = if let Some(path) = kiln_path_opt {
-        path
-    } else {
-        env::var("OBSIDIAN_KILN_PATH")
-            .map_err(|_| anyhow::anyhow!("OBSIDIAN_KILN_PATH environment variable not set"))?
-    };
+    let kiln_path_str = kiln_path_opt.ok_or_else(|| {
+        anyhow::anyhow!(
+            "Kiln path not provided. Configure the tool to supply 'kiln_path' or update the call site"
+        )
+    })?;
 
     let kiln_path = PathBuf::from(kiln_path_str);
 
@@ -433,29 +430,13 @@ pub fn sync_metadata() -> ToolFunction {
 /// Create a default embedding provider using environment variables or defaults
 async fn create_default_embedding_provider(
 ) -> Result<std::sync::Arc<dyn crucible_llm::embeddings::EmbeddingProvider>, anyhow::Error> {
-    use crucible_config::{ApiConfig, EmbeddingProviderConfig, EmbeddingProviderType, ModelConfig};
-    use std::collections::HashMap;
+    use crucible_config::EmbeddingProviderConfig;
 
     // Use default embedding configuration (Ollama with nomic-embed-text)
-    let config = EmbeddingProviderConfig {
-        provider_type: EmbeddingProviderType::Ollama,
-        api: ApiConfig {
-            key: None,
-            base_url: Some(
-                env::var("EMBEDDING_ENDPOINT")
-                    .unwrap_or_else(|_| "http://localhost:11434".to_string()),
-            ),
-            timeout_seconds: Some(30),
-            retry_attempts: Some(3),
-            headers: HashMap::new(),
-        },
-        model: ModelConfig {
-            name: env::var("EMBEDDING_MODEL").unwrap_or_else(|_| "nomic-embed-text".to_string()),
-            dimensions: Some(768), // nomic-embed-text dimensions
-            max_tokens: None,
-        },
-        options: HashMap::new(),
-    };
+    let config = EmbeddingProviderConfig::ollama(
+        Some("http://localhost:11434".to_string()),
+        Some("nomic-embed-text".to_string()),
+    );
 
     crucible_llm::embeddings::create_provider(config)
         .await

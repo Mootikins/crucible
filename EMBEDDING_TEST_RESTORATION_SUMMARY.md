@@ -1,3 +1,5 @@
+**Note:** The `crucible-daemon` crate has been removed; references below are archival only.
+
 # Embedding Pipeline Test Restoration Summary
 
 **Date**: 2025-10-26
@@ -10,7 +12,7 @@ Restored comprehensive embedding pipeline test coverage using simplified Phase 2
 
 ## Test Files Created
 
-### 1. `crates/crucible-daemon/tests/embedding_pipeline.rs`
+### 1. `crates/crucible-daemon (removed)/tests/embedding_pipeline.rs`
 **Lines**: 556
 **Test Count**: 15 tests
 **Focus**: Core embedding generation functionality
@@ -39,7 +41,7 @@ Restored comprehensive embedding pipeline test coverage using simplified Phase 2
   - Special characters
   - Provider health check
 
-### 2. `crates/crucible-daemon/tests/batch_embedding.rs`
+### 2. `crates/crucible-daemon (removed)/tests/batch_embedding.rs`
 **Lines**: 502
 **Test Count**: 12 tests
 **Focus**: Batch processing efficiency and scaling
@@ -217,14 +219,14 @@ These new tests complement existing embedding test coverage:
 ## Files Modified
 
 ### Created:
-- `./crucible/crates/crucible-daemon/tests/embedding_pipeline.rs`
-- `./crucible/crates/crucible-daemon/tests/batch_embedding.rs`
+- `./crucible/crates/crucible-daemon (removed)/tests/embedding_pipeline.rs`
+- `./crucible/crates/crucible-daemon (removed)/tests/batch_embedding.rs`
 
 ### Maintained (No Changes):
-- `./crucible/crates/crucible-daemon/tests/integration_embedding_pipeline.rs`
+- `./crucible/crates/crucible-daemon (removed)/tests/integration_embedding_pipeline.rs`
 - `./crucible/crates/crucible-surrealdb/tests/embedding_storage_tests.rs`
 - `./crucible/crates/crucible-surrealdb/tests/kiln_embedding_pipeline_tests.rs`
-- `./crucible/crates/crucible-daemon/tests/utils/embedding_helpers.rs`
+- `./crucible/crates/crucible-daemon (removed)/tests/utils/embedding_helpers.rs`
 
 ## Conclusion
 

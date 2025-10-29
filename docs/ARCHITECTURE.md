@@ -1,3 +1,5 @@
+> **Note:** The `crucible-daemon` crate has been removed; references in this document remain for historical context.
+
 # Crucible Architecture
 
 > Simplified high-performance system architecture with ScriptEngine services
@@ -79,7 +81,7 @@ graph LR
     end
 
     subgraph "Background Services"
-        D[crucible-daemon]
+        D[crucible-daemon (removed)]
         E[crucible-surrealdb]
         F[crucible-llm]
     end
@@ -172,7 +174,7 @@ pub struct CrucibleScriptEngine {
 
 ### Background Service Layer
 
-**crucible-daemon**: Background service providing terminal interface, REPL capabilities, and real-time service monitoring. It now owns the lightweight orchestration responsibilities that previously lived in the removed `crucible-services` crate.
+**crucible-daemon (removed)**: Background service providing terminal interface, REPL capabilities, and real-time service monitoring. It now owns the lightweight orchestration responsibilities that previously lived in the removed `crucible-services` crate.
 
 **crucible-surrealdb**: Database integration layer managing SurrealDB connections, queries, and data persistence.
 

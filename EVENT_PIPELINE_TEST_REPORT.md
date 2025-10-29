@@ -1,3 +1,5 @@
+**Note:** The `crucible-daemon` crate has been removed; references below are archival only.
+
 # Event Pipeline Integration Test Restoration Report
 
 **Task:** Phase 3.6 - Restore end-to-end file event → embedding integration tests
@@ -304,7 +306,7 @@ These are **documented gaps** with clear implementation paths.
 - Circuit breaker patterns
 
 **Where to place:**
-- New file: `crucible-daemon/tests/daemon_event_architecture_tests.rs`
+- New file: `crucible-daemon (removed)/tests/daemon_event_architecture_tests.rs`
 - Focus: Event routing infrastructure (not file watching)
 - Modernize: Update to current DataCoordinator API
 
@@ -562,7 +564,7 @@ Rather than restoring obsolete tests, the task has **enhanced current coverage**
 
 ## Files Modified
 
-- `crates/crucible-daemon/tests/unified_event_flow_test.rs`
+- `crates/crucible-daemon (removed)/tests/unified_event_flow_test.rs`
   - Added `setup_test_env()` helper
   - Set default EMBEDDING_MODEL and EMBEDDING_ENDPOINT
   - Applied to all 3 test functions
@@ -572,7 +574,7 @@ Rather than restoring obsolete tests, the task has **enhanced current coverage**
 - `tests/archive/broken_tests_2025_10_26/event_pipeline_integration.rs`
 - `tests/archive/broken_tests_2025_10_26/watcher_integration_tests.rs`
 - `tests/archive/broken_tests_2025_10_26/daemon_event_integration_tests.rs`
-- `crates/crucible-daemon/tests/watcher_pipeline.rs`
+- `crates/crucible-daemon (removed)/tests/watcher_pipeline.rs`
 
 ## Documentation Created
 

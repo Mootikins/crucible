@@ -1,3 +1,5 @@
+> **Note:** The `crucible-daemon` crate has been removed; references in this document remain for historical context.
+
 # Phase 3.5: Semantic Search Test Restoration - SKIPPED
 
 **Status:** SKIPPED (No Restoration Needed)
@@ -85,7 +87,7 @@ The archived `semantic_search.rs` (888 lines, 23 tests) does **NOT** need restor
 
 **Status:** ✅ Passing
 
-#### 6. `crucible-daemon/tests/semantic_corpus_validation.rs` (176 lines)
+#### 6. `crucible-daemon (removed)/tests/semantic_corpus_validation.rs` (176 lines)
 **Real corpus validation:**
 - Validates 202KB pre-generated corpus
 - Real embeddings from Ollama (nomic-embed-text-v1.5)
@@ -94,7 +96,7 @@ The archived `semantic_search.rs` (888 lines, 23 tests) does **NOT** need restor
 
 **Status:** ✅ All passing
 
-#### 7. `crucible-daemon/tests/fixtures/corpus_v1.json` (202 KB)
+#### 7. `crucible-daemon (removed)/tests/fixtures/corpus_v1.json` (202 KB)
 **Pre-generated real embeddings:**
 - 11 documents with 768-dimensional vectors
 - Real embeddings from Ollama
@@ -163,7 +165,7 @@ The archived `semantic_search.rs` (888 lines, 23 tests) does **NOT** need restor
 - **Current:** Distributed across crates by concern:
   - `crucible-surrealdb`: Database/vector layer
   - `crucible-cli`: User-facing integration
-  - `crucible-daemon`: Corpus infrastructure
+  - `crucible-daemon (removed)`: Corpus infrastructure
 
 ### 5. Modern Architecture
 - **Archive:** Depended on removed `DaemonEmbeddingHarness`
@@ -182,7 +184,7 @@ The archived `semantic_search.rs` (888 lines, 23 tests) does **NOT** need restor
 ✅ crucible-cli::semantic_search_integration (6/6 tests)
 ✅ crucible-cli::semantic_search_daemonless_tdd (passing)
 ✅ crucible-cli::semantic_search_json_output_tdd (passing)
-✅ crucible-daemon::semantic_corpus_validation (8/8 tests)
+✅ crucible-daemon (removed)::semantic_corpus_validation (8/8 tests)
 ```
 
 ### Intentionally Failing - TDD Red Phase (1,002 lines):
@@ -267,8 +269,8 @@ If semantic search testing needs improvement:
 - `/crates/crucible-cli/tests/semantic_search_integration.rs` (742 lines)
 - `/crates/crucible-cli/tests/semantic_search_daemonless_tdd.rs` (555 lines)
 - `/crates/crucible-cli/tests/semantic_search_json_output_tdd.rs` (639 lines)
-- `/crates/crucible-daemon/tests/semantic_corpus_validation.rs` (176 lines)
-- `/crates/crucible-daemon/tests/fixtures/corpus_v1.json` (202 KB)
+- `/crates/crucible-daemon (removed)/tests/semantic_corpus_validation.rs` (176 lines)
+- `/crates/crucible-daemon (removed)/tests/fixtures/corpus_v1.json` (202 KB)
 
 ### Current (TDD Red Phase):
 - `/crates/crucible-cli/tests/semantic_search_real_integration_tdd.rs` (1,002 lines)

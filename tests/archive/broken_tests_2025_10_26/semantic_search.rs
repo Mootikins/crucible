@@ -17,12 +17,12 @@
 //!
 //! Run all tests:
 //! ```bash
-//! cargo test -p crucible-daemon --test semantic_search
+//! cargo test -p crucible-daemon (removed) --test semantic_search
 //! ```
 //!
 //! Run with real Ollama provider (requires running server):
 //! ```bash
-//! EMBEDDING_ENDPOINT=http://localhost:11434 cargo test -p crucible-daemon --test semantic_search
+//! EMBEDDING_ENDPOINT=http://localhost:11434 cargo test -p crucible-daemon (removed) --test semantic_search
 //! ```
 
 mod fixtures;
