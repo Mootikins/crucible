@@ -367,7 +367,12 @@ pub async fn execute(
                         "id": r.id,
                         "title": r.title,
                         "content_preview": if r.content.len() > 200 {
-                            format!("{}...", &r.content[..200])
+                            // Find a safe UTF-8 boundary at or before position 200
+                            let mut truncate_pos = 200.min(r.content.len());
+                            while truncate_pos > 0 && !r.content.is_char_boundary(truncate_pos) {
+                                truncate_pos -= 1;
+                            }
+                            format!("{}...", &r.content[..truncate_pos])
                         } else {
                             r.content.clone()
                         },
