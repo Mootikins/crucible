@@ -316,8 +316,43 @@ impl ToolRegistry {
 /// Converts Rune runtime values to human-readable strings.
 /// Handles primitives, strings, collections, and objects.
 fn format_rune_value(value: &rune::Value) -> String {
-    // Use Rune's debug formatting
-    // For rune 0.13, we use the Debug trait implementation
+    // Try to extract the actual value from the Rune Value
+    // In Rune 0.14, we need to handle different value types explicitly
+
+    // Try to borrow as string first
+    if let Ok(s) = value.borrow_string_ref() {
+        return s.to_string();
+    }
+
+    // Try as integer (i64 is the default integer type in Rune)
+    if let Ok(i) = value.as_integer::<i64>() {
+        return i.to_string();
+    }
+
+    // Try as float
+    if let Ok(f) = value.as_float() {
+        return f.to_string();
+    }
+
+    // Try as bool
+    if let Ok(b) = value.as_bool() {
+        return b.to_string();
+    }
+
+    // Try to serialize to JSON
+    // This should handle arrays, tuples, objects, etc.
+    match rune::to_value(value) {
+        Ok(serde_value) => {
+            // Convert to serde JSON
+            match serde_json::to_string_pretty(&serde_value) {
+                Ok(json) => return json,
+                Err(_) => {}
+            }
+        }
+        Err(_) => {}
+    }
+
+    // Fallback to debug formatting
     format!("{:?}", value)
 }
 
