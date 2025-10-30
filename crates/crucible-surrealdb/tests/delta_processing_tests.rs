@@ -50,8 +50,11 @@ async fn create_and_store_document(
     let mut doc = ParsedDocument::new(path);
     doc.content.plain_text = content.to_string();
 
-    // Calculate hash using MD5 to match what convert_paths_to_file_infos uses
-    doc.content_hash = format!("{:x}", md5::compute(content.as_bytes()));
+    // Calculate hash using SHA-256 to match what convert_paths_to_file_infos uses
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(content.as_bytes());
+    doc.content_hash = format!("{:x}", hasher.finalize());
 
     doc.file_size = content.len() as u64;
 

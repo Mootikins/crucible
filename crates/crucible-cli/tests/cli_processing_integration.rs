@@ -16,7 +16,10 @@
 use anyhow::Result;
 use crucible_cli::config::CliConfig;
 use crucible_llm::embeddings::create_mock_provider;
-use crucible_surrealdb::{kiln_integration::semantic_search, SurrealClient, SurrealDbConfig};
+use crucible_surrealdb::{
+    embedding_pool::EmbeddingThreadPool, kiln_integration::semantic_search, SurrealClient,
+    SurrealDbConfig,
+};
 use crucible_tools::kiln_change_detection::ChangeDetector;
 use std::collections::HashMap;
 use std::env;
@@ -1047,14 +1050,12 @@ async fn run_delta_processing_test() -> Result<()> {
     // 7. Execute delta processing test - test core functionality directly
     println!("\n⚡ Step 7: Testing delta processing performance");
 
-    let delta_processing_start = Instant::now();
-
     // Test delta processing directly (bypass CLI overhead)
     use crucible_surrealdb::kiln_processor::process_kiln_delta;
     use crucible_surrealdb::kiln_scanner::KilnScannerConfig;
     use crucible_surrealdb::{SurrealClient, SurrealDbConfig};
 
-    // Create database client
+    // Create database client (not timed)
     let db_config = SurrealDbConfig {
         namespace: "crucible".to_string(),
         database: "kiln".to_string(),
@@ -1064,6 +1065,16 @@ async fn run_delta_processing_test() -> Result<()> {
     };
     let client = SurrealClient::new(db_config).await?;
 
+    // Create embedding pool with FastEmbed provider (not timed - initialization overhead)
+    use crucible_surrealdb::EmbeddingConfig;
+    let embedding_config = EmbeddingConfig::default(); // Use FastEmbed with defaults
+    let embedding_pool = EmbeddingThreadPool::new(embedding_config).await?;
+
+    println!("   📊 Starting timed delta processing (embeddings only)...");
+
+    // START TIMING: Only measure the delta processing with embeddings
+    let delta_processing_start = Instant::now();
+
     // Call delta processing directly with the modified file
     let changed_files = vec![modified_file_path.clone()];
     let scanner_config = KilnScannerConfig::default();
@@ -1072,12 +1083,17 @@ async fn run_delta_processing_test() -> Result<()> {
         changed_files,
         &client,
         &scanner_config,
-        None, // No embedding pool needed with mock provider
+        Some(&embedding_pool), // Use real embedding pool
         temp_kiln.path(),
     )
     .await?;
 
+    // STOP TIMING
     let delta_processing_duration = delta_processing_start.elapsed();
+
+    // Shutdown embedding pool (not timed)
+    embedding_pool.shutdown().await?;
+
     println!(
         "⏱️  Delta processing completed in {:?}",
         delta_processing_duration

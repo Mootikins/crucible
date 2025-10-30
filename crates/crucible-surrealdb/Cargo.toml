@@ -35,7 +35,6 @@ futures = "0.3"
 # File system operations
 walkdir = "2.4"
 sha2 = "0.10"
-md5 = { workspace = true }
 
 [features]
 default = []
