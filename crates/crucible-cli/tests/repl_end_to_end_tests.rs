@@ -40,12 +40,12 @@ impl ReplTestContext {
 
     /// Get the path to the crucible CLI binary
     fn get_cli_path() -> PathBuf {
-        // During tests, use the target/debug/crucible binary
+        // During tests, use the target/debug/cru binary
+        // CARGO_MANIFEST_DIR is /home/moot/crucible/crates/crucible-cli
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.pop(); // Remove tests directory
-        path.pop(); // Remove crucible-cli directory
-        path.pop(); // Remove crates directory
-        path.join("target/debug/crucible")
+        path.pop(); // Remove crucible-cli directory -> /home/moot/crucible/crates
+        path.pop(); // Remove crates directory -> /home/moot/crucible
+        path.join("target/debug/cru")
     }
 
     /// Start a REPL process for testing
@@ -53,10 +53,8 @@ impl ReplTestContext {
         let cli_path = Self::get_cli_path();
 
         // Build the command with proper environment and arguments
+        // Note: REPL is the default command when no subcommand is specified
         let mut child = Command::new(cli_path)
-            .arg("repl")
-            .arg("--kiln-path")
-            .arg(&self.kiln_path)
             .arg("--db-path")
             .arg(&self.db_path)
             .arg("--tool-dir")
@@ -159,7 +157,6 @@ impl ReplProcess {
 
 /// Task 1: Test that :tools command displays grouped tools properly
 #[tokio::test]
-#[ignore] // Ignore for now - will implement after infrastructure
 async fn test_repl_tools_command_displays_grouped_tools() -> Result<()> {
     let context = ReplTestContext::new()?;
     let mut repl = context.start_repl()?;
@@ -223,7 +220,6 @@ async fn test_repl_tools_command_displays_grouped_tools() -> Result<()> {
 
 /// Task 2: Test that :run command executes system tools correctly
 #[tokio::test]
-#[ignore] // Ignore for now - will implement after infrastructure
 async fn test_repl_run_command_executes_system_tools() -> Result<()> {
     let context = ReplTestContext::new()?;
     let mut repl = context.start_repl()?;
@@ -286,7 +282,6 @@ async fn test_repl_run_command_executes_system_tools() -> Result<()> {
 
 /// Task 3: Test error handling for missing tools and bad parameters
 #[tokio::test]
-#[ignore] // Ignore for now - will implement after infrastructure
 async fn test_repl_error_handling() -> Result<()> {
     let context = ReplTestContext::new()?;
     let mut repl = context.start_repl()?;
@@ -346,7 +341,6 @@ async fn test_repl_error_handling() -> Result<()> {
 
 /// Task 4: Test fallback routing between system and Rune tools
 #[tokio::test]
-#[ignore] // Ignore for now - will implement after infrastructure
 async fn test_repl_fallback_routing() -> Result<()> {
     let context = ReplTestContext::new()?;
 
@@ -415,7 +409,6 @@ pub fn main(args) {
 
 /// Task 5: Test output formatting and validation
 #[tokio::test]
-#[ignore] // Ignore for now - will implement after infrastructure
 async fn test_repl_output_formatting() -> Result<()> {
     let context = ReplTestContext::new()?;
     let mut repl = context.start_repl()?;
