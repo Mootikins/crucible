@@ -133,7 +133,14 @@ async fn main() -> Result<()> {
         // Commands::Agent(cmd) => commands::agent_management::execute(config, cmd).await?, // Temporarily disabled
         None => {
             // Default to REPL when no command is provided
-            commands::repl::execute(config, cli.db_path, cli.tool_dir, cli.format).await?
+            commands::repl::execute(
+                config,
+                cli.db_path,
+                cli.tool_dir,
+                cli.format,
+                cli.non_interactive,
+            )
+            .await?
         }
     }
 

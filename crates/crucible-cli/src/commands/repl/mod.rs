@@ -1,10 +1,27 @@
 // REPL module for Crucible CLI
 //
-// This module implements the Read-Eval-Print Loop that handles:
-// - Built-in commands (`:tools`, `:run`, etc.)
+// This module implements the Read-Eval-Print Loop with two operational modes:
+//
+// 1. INTERACTIVE MODE (default):
+//    - Uses reedline for rich terminal features (history, completion, highlighting)
+//    - Requires a TTY (terminal device)
+//    - Provides user-friendly line editing with Emacs/Vi keybindings
+//    - Method: Repl::run()
+//
+// 2. NON-INTERACTIVE MODE (--non-interactive flag):
+//    - Reads commands from stdin line-by-line
+//    - Works without a TTY (pipes, scripts, CI/CD, tests)
+//    - Flushes output after each command for immediate availability
+//    - Method: Repl::run_non_interactive()
+//
+// Features (both modes):
+// - Built-in commands (`:tools`, `:run`, `:help`, `:quit`)
 // - SurrealQL query execution
 // - Output formatting (tables, JSON, CSV)
-// - Command history and autocomplete
+// - Command history (persistent in interactive mode)
+// - Unified tool system (system + Rune tools)
+//
+// See MODES.md for detailed documentation on usage and testing.
 
 use anyhow::Result;
 use reedline::{DefaultPrompt, DefaultPromptSegment, Reedline, Signal};
@@ -176,6 +193,44 @@ impl Repl {
         }
 
         info!("REPL loop exited");
+        Ok(())
+    }
+
+    /// Run the REPL in non-interactive mode (reads from stdin line by line)
+    /// This is useful for testing and scripting scenarios where a TTY is not available
+    pub async fn run_non_interactive(&mut self) -> Result<()> {
+        use std::io::{self, BufRead, Write};
+
+        info!("Starting REPL in non-interactive mode");
+        self.print_welcome();
+
+        // Flush stdout after welcome message
+        io::stdout().flush()?;
+
+        let stdin = io::stdin();
+        let reader = stdin.lock();
+
+        for line in reader.lines() {
+            let line = line?;
+
+            // Add to history
+            self.history.add(&line);
+
+            // Process input
+            if let Err(e) = self.process_input(&line).await {
+                eprintln!("{}", e.display_pretty());
+            }
+
+            // Flush stdout after each command to ensure output is available for reading
+            io::stdout().flush()?;
+
+            // Check if we should quit
+            if line.trim() == ":quit" || line.trim() == ":q" || line.trim() == ":exit" {
+                break;
+            }
+        }
+
+        info!("REPL non-interactive mode exited");
         Ok(())
     }
 
@@ -828,7 +883,13 @@ pub async fn execute(
     db_path: Option<String>,
     tool_dir: Option<String>,
     format: String,
+    non_interactive: bool,
 ) -> Result<()> {
     let mut repl = Repl::new(&cli_config, db_path, tool_dir, format).await?;
-    repl.run().await
+
+    if non_interactive {
+        repl.run_non_interactive().await
+    } else {
+        repl.run().await
+    }
 }

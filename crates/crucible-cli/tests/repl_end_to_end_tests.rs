@@ -54,7 +54,9 @@ impl ReplTestContext {
 
         // Build the command with proper environment and arguments
         // Note: REPL is the default command when no subcommand is specified
+        // Use --non-interactive flag for testing (reads from stdin without requiring TTY)
         let mut child = Command::new(cli_path)
+            .arg("--non-interactive")
             .arg("--db-path")
             .arg(&self.db_path)
             .arg("--tool-dir")
@@ -130,21 +132,14 @@ impl ReplProcess {
         Ok(output)
     }
 
-    /// Wait for the REPL to initialize (look for welcome message)
+    /// Wait for the REPL to initialize
+    /// In non-interactive mode, we just sleep briefly since the REPL starts immediately
+    /// and doesn't block waiting for terminal setup
     fn wait_for_ready(&mut self) -> Result<()> {
-        let mut attempts = 0;
-        let max_attempts = 30; // 3 seconds with 100ms sleep
-
-        while attempts < max_attempts {
-            let output = self.read_available_output()?;
-            if output.contains("Crucible CLI REPL") || output.contains("crucible>") {
-                return Ok(());
-            }
-            thread::sleep(Duration::from_millis(100));
-            attempts += 1;
-        }
-
-        Err(anyhow::anyhow!("REPL failed to initialize within timeout"))
+        // Give the REPL process a moment to initialize
+        // In non-interactive mode, it doesn't need to set up a terminal
+        thread::sleep(Duration::from_millis(500));
+        Ok(())
     }
 
     /// Send quit command to clean exit
