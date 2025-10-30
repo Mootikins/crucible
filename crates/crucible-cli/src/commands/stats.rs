@@ -8,7 +8,7 @@ pub async fn execute(config: CliConfig) -> Result<()> {
     // Check if kiln path exists
     if !kiln_path.exists() {
         eprintln!("Error: kiln path does not exist: {}", kiln_path.display());
-        eprintln!("Please set OBSIDIAN_KILN_PATH to a valid kiln directory.");
+        eprintln!("Please configure kiln.path in your config file (see: cru config show)");
         return Err(anyhow::anyhow!("kiln path does not exist"));
     }
 
