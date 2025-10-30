@@ -6,6 +6,27 @@ use std::path::PathBuf;
 pub use crucible_config::EmbeddingProviderConfig as EmbeddingConfig;
 pub use crucible_config::EmbeddingProviderType as ProviderType;
 
+// IMPORTANT: Environment Variable Configuration Removed in v0.2.0
+//
+// The Crucible CLI uses FILE-BASED CONFIGURATION ONLY. Environment variables
+// are NO LONGER READ OR SUPPORTED.
+//
+// Removed Environment Variables:
+// - OBSIDIAN_KILN_PATH      -> Use config.toml [kiln] path instead
+// - EMBEDDING_MODEL          -> Use config.toml [embedding] model instead
+// - EMBEDDING_ENDPOINT       -> Use config.toml [embedding] endpoint instead
+// - CRUCIBLE_DB_PATH         -> Use --db-path flag or config.toml instead
+// - CRUCIBLE_TEST_MODE       -> No longer used (tests use explicit config files)
+//
+// Rationale:
+// - Explicit configuration management
+// - No implicit environment variable precedence
+// - Easier to track and version control
+// - Clearer for users and reduces configuration bugs
+//
+// Migration: Create ~/.config/crucible/config.toml or use --config flag.
+// See MODES.md for migration guide.
+
 /// CLI configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CliConfig {
