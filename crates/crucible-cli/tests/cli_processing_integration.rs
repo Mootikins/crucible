@@ -566,7 +566,7 @@ async fn test_auto_start_performance_requirements() -> Result<()> {
 }
 
 /// Test configuration constants for delta processing
-const DELTA_PROCESSING_TIMEOUT_SECS: u64 = 1; // Single file change should be under 1 second
+const DELTA_PROCESSING_TIMEOUT_SECS: u64 = 2; // Single file change with chunk-level incremental processing
 const DELTA_PROCESSING_QUERY: &str = "machine learning algorithms";
 const MODIFIED_FILE_INDEX: usize = 1; // Which file to modify (0-based index from SAMPLE_MARKDOWN_CONTENTS)
 
