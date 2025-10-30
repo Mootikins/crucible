@@ -23,7 +23,7 @@
 //! 5. File system verification of database file creation
 
 use anyhow::Result;
-use crucible_cli::config::{CliConfig, KilnConfig};
+use crucible_cli::config::{CliConfig, EmbeddingConfigSection, KilnConfig};
 // Import the crates we need to test
 use crucible_surrealdb::{kiln_integration::get_database_stats, SurrealClient, SurrealDbConfig};
 use serde_json::Value;
@@ -68,13 +68,24 @@ async fn create_test_context() -> Result<SurrealDbTestContext> {
         timeout_seconds: Some(30),
     };
 
+    // Create embedding configuration for testing (using mock provider)
+    let embedding_config = EmbeddingConfigSection {
+        provider: Some("mock".to_string()),
+        model: Some("mock-test-model".to_string()),
+        fastembed: Default::default(),
+        ollama: Default::default(),
+        openai: Default::default(),
+        reranking: Default::default(),
+    };
+
     // Create CLI configuration that should flow to database
     let cli_config = CliConfig {
         kiln: KilnConfig {
             path: temp_dir.path().join("test_kiln"),
             embedding_url: "http://localhost:11434".to_string(),
-            embedding_model: None,
+            embedding_model: Some("mock-test-model".to_string()),
         },
+        embedding: Some(embedding_config),
         ..Default::default()
     };
 
@@ -173,6 +184,7 @@ async fn run_cli_semantic_search_with_database(
         .arg("json")
         .env("OBSIDIAN_KILN_PATH", kiln_path.to_string_lossy().as_ref())
         .env("CRUCIBLE_DB_PATH", db_path.to_string_lossy().as_ref())
+        .env("EMBEDDING_MODEL", "mock-test-model")
         .output()
         .await?;
 
@@ -617,66 +629,77 @@ mod surrealdb_client_integration_tdd_tests {
 
         let db_path = Path::new(&ctx.db_config.path);
 
-        // Create first client connection
-        println!("\n🔧 Creating first database connection...");
-        let client1 = SurrealClient::new(ctx.db_config.clone())
-            .await
-            .expect("First client creation should succeed");
+        // Scope block 1: Create and test first client
+        {
+            println!("\n🔧 Creating first database connection...");
+            let client1 = SurrealClient::new(ctx.db_config.clone())
+                .await
+                .expect("First client creation should succeed");
 
-        println!("✅ First client created");
+            println!("✅ First client created");
 
-        // Check if database files exist after schema initialization
-        let files_after_schema = database_files_exist(db_path);
-        if !files_after_schema {
-            println!("❌ TDD FAILURE: Schema initialization did not create database files");
-            println!("   Expected: Database files should be created during schema initialization");
-            println!("   Actual: No files found after client creation");
+            // Check if database files exist after schema initialization
+            let files_after_schema = database_files_exist(db_path);
+            if !files_after_schema {
+                println!("❌ TDD FAILURE: Schema initialization did not create database files");
+                println!("   Expected: Database files should be created during schema initialization");
+                println!("   Actual: No files found after client creation");
 
-            panic!("RED PHASE: Schema initialization should create persistent database files");
+                panic!("RED PHASE: Schema initialization should create persistent database files");
+            }
+
+            // Test basic database operations to verify schema
+            println!("\n🧪 Testing database operations with schema...");
+
+            // Try to query embeddings table (should exist or be created)
+            let query_result = client1
+                .query("SELECT count() as count FROM embeddings", &[])
+                .await;
+
+            match query_result {
+                Ok(result) => {
+                    println!("✅ Database query succeeded: {:?}", result);
+                }
+                Err(e) => {
+                    println!("⚠️  Database query failed (may be expected): {}", e);
+                    // This might fail if schema doesn't exist yet
+                }
+            }
+
+            // client1 is automatically dropped when this scope ends
         }
 
-        // Test basic database operations to verify schema
-        println!("\n🧪 Testing database operations with schema...");
+        // Small delay to ensure database lock is fully released
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-        // Try to query embeddings table (should exist or be created)
-        let query_result = client1
-            .query("SELECT count() as count FROM embeddings", &[])
-            .await;
+        // Scope block 2: Create and test second client
+        {
+            println!("\n🔄 Creating second database connection...");
+            let client2 = SurrealClient::new(ctx.db_config.clone())
+                .await
+                .expect("Second client creation should succeed");
 
-        match query_result {
-            Ok(result) => {
-                println!("✅ Database query succeeded: {:?}", result);
+            println!("✅ Second client created");
+
+            // Test that schema persists between connections
+            let query_result2 = client2
+                .query("SELECT count() as count FROM embeddings", &[])
+                .await;
+
+            match query_result2 {
+                Ok(result) => {
+                    println!("✅ Schema persists between connections: {:?}", result);
+                }
+                Err(e) => {
+                    println!("❌ TDD FAILURE: Schema does not persist between connections");
+                    println!("   Error: {}", e);
+                    println!("   This suggests schema initialization is not working correctly");
+
+                    panic!("RED PHASE: Database schema should persist across client connections");
+                }
             }
-            Err(e) => {
-                println!("⚠️  Database query failed (may be expected): {}", e);
-                // This might fail if schema doesn't exist yet
-            }
-        }
 
-        // Create second client connection to test schema persistence
-        println!("\n🔄 Creating second database connection...");
-        let client2 = SurrealClient::new(ctx.db_config.clone())
-            .await
-            .expect("Second client creation should succeed");
-
-        println!("✅ Second client created");
-
-        // Test that schema persists between connections
-        let query_result2 = client2
-            .query("SELECT count() as count FROM embeddings", &[])
-            .await;
-
-        match query_result2 {
-            Ok(result) => {
-                println!("✅ Schema persists between connections: {:?}", result);
-            }
-            Err(e) => {
-                println!("❌ TDD FAILURE: Schema does not persist between connections");
-                println!("   Error: {}", e);
-                println!("   This suggests schema initialization is not working correctly");
-
-                panic!("RED PHASE: Database schema should persist across client connections");
-            }
+            // client2 is automatically dropped when this scope ends
         }
 
         println!("\n✅ Database schema initialization test completed");
