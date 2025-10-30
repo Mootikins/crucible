@@ -143,6 +143,13 @@ pub async fn initialize_kiln_schema(client: &SurrealClient) -> Result<()> {
                 unique: false,
                 default_value: None,
             },
+            ColumnDefinition {
+                name: "chunk_hash".to_string(),
+                data_type: DataType::String,
+                nullable: true, // Nullable for backward compatibility with existing data
+                unique: false,
+                default_value: None,
+            },
         ],
         primary_key: None,
         foreign_keys: vec![],
@@ -1315,6 +1322,7 @@ pub async fn store_document_embedding(
 /// * `chunk_size` - Size of the text chunk
 /// * `chunk_position` - Position of this chunk in the document
 /// * `dimensions` - Optional vector dimensions (for compatibility checking)
+/// * `chunk_content` - Optional chunk content (for hash computation)
 ///
 /// # Returns
 /// The deterministic chunk ID (format: "embeddings:Projects_file_md_chunk_0")
@@ -1326,6 +1334,7 @@ pub async fn store_embedding(
     chunk_size: usize,
     chunk_position: usize,
     dimensions: Option<usize>,
+    chunk_content: Option<&str>,
 ) -> Result<String> {
     // Extract the relative path ID from the note_id
     // note_id format: "notes:Projects_file_md"
@@ -1374,6 +1383,18 @@ pub async fn store_embedding(
         embedding_data.insert(
             "vector_dimensions".to_string(),
             serde_json::Value::Number(serde_json::Number::from(dims)),
+        );
+    }
+
+    // Compute and store chunk hash for incremental re-embedding
+    if let Some(content) = chunk_content {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(content.as_bytes());
+        let chunk_hash = format!("{:x}", hasher.finalize());
+        embedding_data.insert(
+            "chunk_hash".to_string(),
+            serde_json::Value::String(chunk_hash),
         );
     }
 
@@ -1658,6 +1679,101 @@ pub async fn delete_document_embeddings(client: &SurrealClient, doc_id: &str) ->
     );
 
     Ok(deletion_count)
+}
+
+/// Get existing chunk hashes for a document
+///
+/// Returns a HashMap mapping chunk_position -> chunk_hash for existing embeddings
+pub async fn get_document_chunk_hashes(
+    client: &SurrealClient,
+    doc_id: &str,
+) -> Result<std::collections::HashMap<usize, String>> {
+    debug!("Getting chunk hashes for document: {}", doc_id);
+
+    // Extract the relative path part from doc_id
+    let relative_id = doc_id.strip_prefix("notes:").unwrap_or(doc_id);
+
+    // Query embeddings to get chunk_position and chunk_hash
+    let sql = format!(
+        "SELECT chunk_position, chunk_hash FROM embeddings WHERE id >= 'embeddings:{}' AND id < 'embeddings:{}~'",
+        relative_id.replace("'", "\\'"),
+        relative_id.replace("'", "\\'")
+    );
+
+    let result = client
+        .query(&sql, &[])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to query chunk hashes: {}", e))?;
+
+    let mut chunk_hashes = std::collections::HashMap::new();
+
+    for record in result.records {
+        if let (Some(pos_value), Some(hash_value)) = (
+            record.data.get("chunk_position"),
+            record.data.get("chunk_hash"),
+        ) {
+            if let (Some(pos), Some(hash)) = (
+                pos_value.as_u64().map(|p| p as usize),
+                hash_value.as_str(),
+            ) {
+                chunk_hashes.insert(pos, hash.to_string());
+            }
+        }
+    }
+
+    debug!(
+        "Found {} chunk hashes for document {}",
+        chunk_hashes.len(),
+        doc_id
+    );
+
+    Ok(chunk_hashes)
+}
+
+/// Delete specific chunks by position for a document
+///
+/// This is used for incremental re-embedding to delete only changed chunks
+pub async fn delete_document_chunks(
+    client: &SurrealClient,
+    doc_id: &str,
+    chunk_positions: &[usize],
+) -> Result<usize> {
+    if chunk_positions.is_empty() {
+        return Ok(0);
+    }
+
+    debug!(
+        "Deleting {} chunks for document: {}",
+        chunk_positions.len(),
+        doc_id
+    );
+
+    // Extract the relative path part from doc_id
+    let relative_id = doc_id.strip_prefix("notes:").unwrap_or(doc_id);
+
+    let mut total_deleted = 0;
+
+    // Delete each chunk individually
+    for &pos in chunk_positions {
+        let chunk_id = format!("embeddings:{}_chunk_{}", relative_id, pos);
+        let sql = format!("DELETE {}", chunk_id);
+
+        let result = client
+            .query(&sql, &[])
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to delete chunk {}: {}", chunk_id, e))?;
+
+        if !result.records.is_empty() {
+            total_deleted += 1;
+        }
+    }
+
+    debug!(
+        "Deleted {} chunks for document {}",
+        total_deleted, doc_id
+    );
+
+    Ok(total_deleted)
 }
 
 /// Update document's processed timestamp
@@ -2414,7 +2530,7 @@ mod tests {
         let vector: Vec<f32> = (0..768).map(|i| i as f32 / 768.0).collect();
 
         // Store embedding with graph relation
-        let chunk_id = store_embedding(&client, &note_id, vector.clone(), "test-model", 1000, 0, None)
+        let chunk_id = store_embedding(&client, &note_id, vector.clone(), "test-model", 1000, 0, None, None)
             .await
             .unwrap();
 
@@ -2487,6 +2603,7 @@ mod tests {
                 "test-model",
                 1000,
                 chunk_pos,
+                None,
                 None,
             )
             .await

@@ -858,8 +858,11 @@ async fn convert_paths_to_file_infos(paths: &[PathBuf], kiln_root: &Path) -> Res
             }
         };
 
-        // Use MD5 hash to match what the parser uses
-        let content_hash = format!("{:x}", md5::compute(&content));
+        // Use SHA-256 hash to match what the parser uses
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(&content);
+        let content_hash = format!("{:x}", hasher.finalize());
 
         // Get modification time
         let modified_time = metadata
@@ -1086,48 +1089,11 @@ pub async fn process_kiln_delta(
         });
     }
 
-    // Step 3: Delete old embeddings for changed files
-    // Use bulk query to get all document IDs in one database call
-    let relative_paths: Vec<String> = changed_file_infos
-        .iter()
-        .map(|fi| fi.relative_path.clone())
-        .collect();
-
-    let doc_id_map = bulk_query_document_ids(client, &relative_paths).await?;
-
-    let mut total_embeddings_deleted = 0;
-    for file_info in &changed_file_infos {
-        // Look up document ID from bulk query results
-        if let Some(doc_id) = doc_id_map.get(&file_info.relative_path) {
-            if !doc_id.is_empty() {
-                // Delete old embeddings
-                match crate::kiln_integration::delete_document_embeddings(client, doc_id).await {
-                    Ok(count) => {
-                        debug!(
-                            "Deleted {} embeddings for {}",
-                            count,
-                            file_info.path.display()
-                        );
-                        total_embeddings_deleted += count;
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to delete embeddings for {}: {}",
-                            file_info.path.display(),
-                            e
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    info!(
-        "Deleted {} total embeddings for changed files",
-        total_embeddings_deleted
-    );
-
-    // Step 4: Process changed files using existing pipeline
+    // Step 3 & 4: Process changed files using incremental chunk-level re-embedding
+    // This will automatically:
+    // - Detect which chunks changed
+    // - Delete only changed chunks
+    // - Re-embed only changed chunks
     let processing_result = process_kiln_files(
         &changed_file_infos,
         client,
@@ -1140,10 +1106,9 @@ pub async fn process_kiln_delta(
     let total_time = start_time.elapsed();
 
     info!(
-        "Delta processing completed: {} processed, {} failed, {} embeddings deleted in {:?}",
+        "Delta processing completed: {} processed, {} failed in {:?}",
         processing_result.processed_count,
         processing_result.failed_count,
-        total_embeddings_deleted,
         total_time
     );
 

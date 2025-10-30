@@ -161,13 +161,84 @@ impl KilnPipelineConnector {
             });
         }
 
-        // Process through embedding thread pool
+        // Get existing chunk hashes for incremental processing
+        use crate::kiln_integration::get_document_chunk_hashes;
+        let note_id = format!("notes:{}", document_id);
+        let existing_chunk_hashes = get_document_chunk_hashes(client, &note_id)
+            .await
+            .unwrap_or_default();
+
+        // Compute hashes for new chunks and determine which need processing
+        use sha2::{Digest, Sha256};
+        let mut chunks_to_process: Vec<(String, String, usize)> = Vec::new(); // (chunk_id, content, position)
+        let mut chunks_to_delete = Vec::new();
+
+        for (chunk_index, (chunk_id, chunk_content)) in embedding_inputs.iter().enumerate() {
+            // Compute hash for this chunk
+            let mut hasher = Sha256::new();
+            hasher.update(chunk_content.as_bytes());
+            let new_chunk_hash = format!("{:x}", hasher.finalize());
+
+            // Check if chunk changed
+            let chunk_changed = match existing_chunk_hashes.get(&chunk_index) {
+                Some(existing_hash) => existing_hash != &new_chunk_hash,
+                None => true, // New chunk
+            };
+
+            if chunk_changed {
+                chunks_to_process.push((chunk_id.clone(), chunk_content.clone(), chunk_index));
+                if existing_chunk_hashes.contains_key(&chunk_index) {
+                    chunks_to_delete.push(chunk_index);
+                }
+            }
+        }
+
+        // Delete chunks that no longer exist (document got shorter)
+        for (&existing_pos, _) in existing_chunk_hashes.iter() {
+            if existing_pos >= embedding_inputs.len() {
+                chunks_to_delete.push(existing_pos);
+            }
+        }
+
+        // If no chunks changed, skip processing
+        if chunks_to_process.is_empty() && chunks_to_delete.is_empty() {
+            info!(
+                "Document {} unchanged (all {} chunks match), skipping re-embedding",
+                document_id,
+                embedding_inputs.len()
+            );
+            return Ok(DocumentProcessingResult {
+                document_id,
+                embeddings_generated: 0,
+                processing_time: start_time.elapsed(),
+                success: true,
+                error_message: None,
+                content_hash: document.content_hash.clone(),
+            });
+        }
+
+        info!(
+            "Document {}: {} chunks to re-embed (out of {} total)",
+            document_id,
+            chunks_to_process.len(),
+            embedding_inputs.len()
+        );
+
+        // Delete changed/removed chunks
+        if !chunks_to_delete.is_empty() {
+            use crate::kiln_integration::delete_document_chunks;
+            delete_document_chunks(client, &note_id, &chunks_to_delete)
+                .await
+                .unwrap_or(0);
+        }
+
+        // Process through embedding thread pool (only changed chunks)
         let mut embeddings_generated = 0;
         let mut errors = Vec::new();
 
         let signature = self.thread_pool.signature();
 
-        for (chunk_id, chunk_content) in embedding_inputs {
+        for (chunk_id, chunk_content, _chunk_position) in chunks_to_process {
             match self
                 .thread_pool
                 .process_document_with_retry(&chunk_id, &chunk_content)
@@ -694,6 +765,7 @@ async fn store_embedding_in_database_with_vector(
         chunk_size,
         chunk_position,
         Some(signature.dimensions),
+        Some(chunk_content), // Pass chunk content for hash computation
     )
     .await?;
 

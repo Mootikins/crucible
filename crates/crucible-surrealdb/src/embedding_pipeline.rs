@@ -176,21 +176,7 @@ impl EmbeddingPipeline {
             }
         };
 
-        // Check if document needs processing (content hash comparison)
-        let existing_embeddings = self.get_document_embeddings(client, document_id).await?;
-        let needs_processing = self.should_process_document(&document, &existing_embeddings)?;
-
-        if !needs_processing {
-            info!("Document {} unchanged, skipping processing", document_id);
-            return Ok(IncrementalProcessingResult::skipped(
-                document.content_hash.clone(),
-            ));
-        }
-
-        // Clear existing embeddings for the document
-        self.clear_document_embeddings(client, document_id).await?;
-
-        // Chunk the document
+        // Chunk the document first
         let config = self.thread_pool.model_type().await;
         let chunks = self.chunk_document(&document, &config);
 
@@ -200,11 +186,74 @@ impl EmbeddingPipeline {
             chunks.len()
         );
 
+        // Get existing chunk hashes for incremental processing
+        use crate::kiln_integration::get_document_chunk_hashes;
+        let existing_chunk_hashes = get_document_chunk_hashes(client, document_id).await?;
+
+        // Compute hashes for new chunks and determine which need re-embedding
+        use sha2::{Digest, Sha256};
+        let mut chunks_to_process = Vec::new();
+        let mut chunks_to_delete = Vec::new();
+
+        for (chunk_index, chunk_content) in chunks.iter().enumerate() {
+            // Compute hash for this chunk
+            let mut hasher = Sha256::new();
+            hasher.update(chunk_content.as_bytes());
+            let new_chunk_hash = format!("{:x}", hasher.finalize());
+
+            // Check if chunk changed
+            let chunk_changed = match existing_chunk_hashes.get(&chunk_index) {
+                Some(existing_hash) => existing_hash != &new_chunk_hash,
+                None => true, // New chunk
+            };
+
+            if chunk_changed {
+                chunks_to_process.push(chunk_index);
+                if existing_chunk_hashes.contains_key(&chunk_index) {
+                    chunks_to_delete.push(chunk_index);
+                }
+            }
+        }
+
+        // Delete chunks that no longer exist (document got shorter)
+        for (&existing_pos, _) in existing_chunk_hashes.iter() {
+            if existing_pos >= chunks.len() {
+                chunks_to_delete.push(existing_pos);
+            }
+        }
+
+        // If no chunks changed, skip processing
+        if chunks_to_process.is_empty() && chunks_to_delete.is_empty() {
+            info!(
+                "Document {} unchanged (all {} chunks match), skipping processing",
+                document_id,
+                chunks.len()
+            );
+            return Ok(IncrementalProcessingResult::skipped(
+                document.content_hash.clone(),
+            ));
+        }
+
+        info!(
+            "Document {}: {} chunks to re-embed, {} to delete (out of {} total)",
+            document_id,
+            chunks_to_process.len(),
+            chunks_to_delete.len(),
+            chunks.len()
+        );
+
+        // Delete changed/removed chunks
+        if !chunks_to_delete.is_empty() {
+            use crate::kiln_integration::delete_document_chunks;
+            delete_document_chunks(client, document_id, &chunks_to_delete).await?;
+        }
+
         let mut embeddings_created = 0;
         let embeddings_updated = 0;
 
-        // Process each chunk
-        for (chunk_index, chunk_content) in chunks.iter().enumerate() {
+        // Process only changed chunks
+        for &chunk_index in &chunks_to_process {
+            let chunk_content = &chunks[chunk_index];
             let chunk_id = format!("{}_{}", document_id, chunk_index);
 
             match self
