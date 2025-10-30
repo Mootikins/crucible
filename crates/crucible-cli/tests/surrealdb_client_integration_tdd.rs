@@ -169,24 +169,49 @@ fn get_database_file_info(db_path: &Path) -> HashMap<String, u64> {
     file_info
 }
 
+/// Helper to create a temporary config file for CLI testing
+fn create_test_config_file(kiln_path: &Path, temp_dir: &Path) -> Result<PathBuf> {
+    let config_content = format!(
+        r#"
+[kiln]
+path = "{}"
+
+[embedding]
+provider = "fastembed"
+model = "BAAI/bge-small-en-v1.5"
+"#,
+        kiln_path.display()
+    );
+
+    let config_path = temp_dir.join("test_config.toml");
+    std::fs::write(&config_path, config_content)?;
+    Ok(config_path)
+}
+
 /// Helper to run CLI semantic search command with custom database path
 async fn run_cli_semantic_search_with_database(
     kiln_path: &Path,
     db_path: &Path,
     query: &str,
+    temp_dir: &Path,
 ) -> Result<String> {
+    // Create temporary config file with kiln path and embedding config
+    let config_path = create_test_config_file(kiln_path, temp_dir)?;
+
     let output = Command::new(env!("CARGO_BIN_EXE_cru"))
+        .arg("--config")
+        .arg(&config_path)
         .arg("semantic")
         .arg(query)
         .arg("--top-k")
         .arg("3")
         .arg("--format")
         .arg("json")
-        .env("OBSIDIAN_KILN_PATH", kiln_path.to_string_lossy().as_ref())
-        .env("CRUCIBLE_DB_PATH", db_path.to_string_lossy().as_ref())
-        .env("EMBEDDING_MODEL", "mock-test-model")
         .output()
         .await?;
+
+    // Clean up config file
+    let _ = std::fs::remove_file(&config_path);
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -371,7 +396,9 @@ mod surrealdb_client_integration_tdd_tests {
         println!("📁 Database path: {}", ctx.db_config.path);
         println!("📂 Kiln path: {}", ctx.kiln_path.display());
 
-        let db_path = Path::new(&ctx.db_config.path);
+        // The CLI creates database at {kiln_path}/.crucible/kiln.db, not at ctx.db_config.path
+        let actual_db_path = ctx.kiln_path.join(".crucible").join("kiln.db");
+        let db_path = &actual_db_path;
 
         // First CLI run - should create database and process files
         println!("\n🚀 First CLI run - creating database and processing kiln...");
@@ -381,6 +408,7 @@ mod surrealdb_client_integration_tdd_tests {
             &ctx.kiln_path,
             db_path,
             "artificial intelligence",
+            ctx.temp_dir.path(),
         )
         .await;
         let first_duration = start_time.elapsed();
@@ -432,9 +460,13 @@ mod surrealdb_client_integration_tdd_tests {
         println!("\n🔄 Second CLI run - should use existing database...");
 
         let start_time = Instant::now();
-        let second_result =
-            run_cli_semantic_search_with_database(&ctx.kiln_path, db_path, "rust performance")
-                .await;
+        let second_result = run_cli_semantic_search_with_database(
+            &ctx.kiln_path,
+            db_path,
+            "rust performance",
+            ctx.temp_dir.path(),
+        )
+        .await;
         let second_duration = start_time.elapsed();
 
         match second_result {
