@@ -16,7 +16,6 @@ pub use crucible_config::EmbeddingProviderType as ProviderType;
 // - EMBEDDING_MODEL          -> Use config.toml [embedding] model instead
 // - EMBEDDING_ENDPOINT       -> Use config.toml [embedding] endpoint instead
 // - CRUCIBLE_DB_PATH         -> Use --db-path flag or config.toml instead
-// - CRUCIBLE_TEST_MODE       -> No longer used (tests use explicit config files)
 //
 // Rationale:
 // - Explicit configuration management
@@ -24,8 +23,8 @@ pub use crucible_config::EmbeddingProviderType as ProviderType;
 // - Easier to track and version control
 // - Clearer for users and reduces configuration bugs
 //
-// Migration: Create ~/.config/crucible/config.toml or use --config flag.
-// See MODES.md for migration guide.
+// Configuration: Create ~/.config/crucible/config.toml or use --config flag.
+// See MODES.md for details.
 
 /// CLI configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -775,11 +774,6 @@ max_performance_degradation = 20.0
 
     /// Load config from file or return default
     pub fn from_file_or_default(config_file: Option<PathBuf>) -> Result<Self> {
-        // Check for test mode environment variable to skip loading user config
-        if std::env::var("CRUCIBLE_TEST_MODE").is_ok() {
-            return Ok(Self::default());
-        }
-
         let path = config_file
             .or_else(|| Self::default_config_path().ok())
             .and_then(|p| if p.exists() { Some(p) } else { None });
@@ -807,9 +801,8 @@ max_performance_degradation = 20.0
 
     /// Convert to EmbeddingConfig for use with create_provider
     pub fn to_embedding_config(&self) -> Result<EmbeddingConfig> {
-        // Check if we're in test mode or mock provider requested
-        if std::env::var("CRUCIBLE_TEST_MODE").is_ok()
-            || self.kiln.embedding_model.as_ref().map(|m| m.as_str()) == Some("mock")
+        // Check if mock provider requested
+        if self.kiln.embedding_model.as_ref().map(|m| m.as_str()) == Some("mock")
             || self.kiln.embedding_model.as_ref().map(|m| m.as_str()) == Some("mock-test-model")
         {
             return Ok(EmbeddingConfig::mock());

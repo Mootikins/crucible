@@ -187,7 +187,7 @@ pub async fn execute(
             Err(e) => {
                 let error_msg = format!(
                     "Failed to process kiln: {}. \
-                    Please check that OBSIDIAN_KILN_PATH is set correctly and try again.",
+                    Please check your kiln.path configuration (see: cru config show) and try again.",
                     e
                 );
                 if format == "json" {
@@ -351,7 +351,7 @@ pub async fn execute(
             println!("   • There was an issue during processing");
             println!("\n💡 If you believe there should be results, try:");
             println!("   • Running semantic search again to trigger re-processing");
-            println!("   • Checking that OBSIDIAN_KILN_PATH points to the correct kiln");
+            println!("   • Checking your kiln.path configuration (see: cru config show)");
         }
         return Ok(());
     }
