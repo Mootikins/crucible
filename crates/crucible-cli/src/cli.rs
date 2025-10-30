@@ -41,6 +41,10 @@ pub struct Cli {
     /// Set output format (table, json, csv)
     #[arg(short = 'f', long, global = true, default_value = "table")]
     pub format: String,
+
+    /// Run REPL in non-interactive mode (reads from stdin, useful for testing/scripting)
+    #[arg(long, global = true)]
+    pub non_interactive: bool,
 }
 
 #[derive(Subcommand)]
