@@ -61,7 +61,6 @@ url = "2.5"
 validator = { version = "0.20", features = ["derive"] }
 
 # Hashing
-md5 = "0.8"
 sha2 = "0.10"
 
 # Random number generation
