@@ -1,9 +1,10 @@
-//! Comprehensive integration tests for semantic search using the existing test kiln
+//! Comprehensive integration tests for semantic search using isolated test environments
 //!
-//! This test file uses the rich test kiln at /home/moot/crucible/tests/test-kiln/ which contains
-//! 12 realistic markdown files with diverse content types, frontmatter properties, and linking patterns.
-//! The test kiln provides 150+ search scenarios for comprehensive validation of the semantic search
-//! integration with crucible-surrealdb functionality.
+//! This test file creates isolated test environments for each test, copying realistic markdown files
+//! from /home/moot/crucible/tests/test-kiln/ into temporary directories. Each test gets:
+//! - Fresh temporary directory with copied markdown files
+//! - Isolated database instance
+//! - No shared state between test runs
 //!
 //! These tests verify:
 //! - Semantic search works with real, complex content
@@ -37,10 +38,10 @@ use std::time::{Duration, Instant};
 use tempfile::TempDir;
 use tokio::time::timeout;
 
-/// Test kiln path using the existing comprehensive test kiln
-const TEST_KILN_PATH: &str = "/home/moot/crucible/tests/test-kiln";
+/// Source test kiln path containing sample markdown files
+const SOURCE_TEST_KILN_PATH: &str = "/home/moot/crucible/tests/test-kiln";
 
-/// Test kiln utilities using the existing test data
+/// Test kiln utilities using isolated test environments
 pub struct ExistingTestKiln {
     pub kiln_path: PathBuf,
     pub db_path: PathBuf,
@@ -49,21 +50,29 @@ pub struct ExistingTestKiln {
 }
 
 impl ExistingTestKiln {
-    /// Create a test kiln using the existing comprehensive test kiln
+    /// Create an isolated test kiln by copying files from the source test kiln
     pub async fn new() -> Result<Self> {
-        let kiln_path = PathBuf::from(TEST_KILN_PATH);
+        let source_kiln_path = PathBuf::from(SOURCE_TEST_KILN_PATH);
 
-        // Verify test kiln exists
-        if !kiln_path.exists() {
+        // Verify source test kiln exists
+        if !source_kiln_path.exists() {
             return Err(anyhow::anyhow!(
-                "Test kiln not found at {}. Ensure the test kiln exists.",
-                kiln_path.display()
+                "Source test kiln not found at {}. Ensure the test kiln exists.",
+                source_kiln_path.display()
             ));
         }
 
-        // Create unique temporary database directory for this test
+        // Create unique temporary directory for this test
         let temp_dir = TempDir::new()?;
-        let temp_db_path = temp_dir.path().to_path_buf();
+        let kiln_path = temp_dir.path().join("kiln");
+        let temp_db_path = temp_dir.path().join("db");
+
+        // Create kiln and db directories
+        std::fs::create_dir_all(&kiln_path)?;
+        std::fs::create_dir_all(&temp_db_path)?;
+
+        // Copy all markdown files from source test kiln to isolated test directory
+        Self::copy_test_files(&source_kiln_path, &kiln_path)?;
 
         // Initialize database configuration
         let db_config = SurrealDbConfig {
@@ -85,6 +94,47 @@ impl ExistingTestKiln {
             client,
             _temp_dir: temp_dir,
         })
+    }
+
+    /// Copy test files from source kiln to isolated test directory
+    fn copy_test_files(source_path: &PathBuf, dest_path: &PathBuf) -> Result<()> {
+        for entry in std::fs::read_dir(source_path)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            // Copy markdown files
+            if path.is_file() && path.extension().map_or(false, |ext| ext == "md") {
+                let file_name = path.file_name().ok_or_else(|| {
+                    anyhow::anyhow!("Failed to get filename from path: {:?}", path)
+                })?;
+                let dest_file = dest_path.join(file_name);
+                std::fs::copy(&path, &dest_file)?;
+            }
+
+            // Copy .crucible directory if it exists (for metadata)
+            if path.is_dir() && path.file_name() == Some(std::ffi::OsStr::new(".crucible")) {
+                let dest_crucible = dest_path.join(".crucible");
+                Self::copy_dir_recursive(&path, &dest_crucible)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Recursively copy directory contents
+    fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<()> {
+        std::fs::create_dir_all(dst)?;
+        for entry in std::fs::read_dir(src)? {
+            let entry = entry?;
+            let path = entry.path();
+            let dest_path = dst.join(entry.file_name());
+
+            if path.is_dir() {
+                Self::copy_dir_recursive(&path, &dest_path)?;
+            } else {
+                std::fs::copy(&path, &dest_path)?;
+            }
+        }
+        Ok(())
     }
 
     /// Get all markdown files in the test kiln
