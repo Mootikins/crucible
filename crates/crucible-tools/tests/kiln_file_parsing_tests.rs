@@ -11,16 +11,119 @@
 
 use chrono::Datelike;
 use serde_json::Value;
+use std::fs;
+use tempfile::TempDir;
 
-/// Test kiln path for integration testing
-const TEST_KILN_PATH: &str = "/home/moot/Documents/crucible-testing";
+/// Helper function to create an isolated test kiln with sample markdown files
+fn setup_test_kiln() -> TempDir {
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let kiln_path = temp_dir.path();
+
+    // Create PRIME.md with expected frontmatter and content
+    let prime_content = r#"---
+type: meta
+tags: [kiln-config, instructions, ai-guide]
+created: 2025-10-14
+status: active
+---
+# Kiln Primer
+
+## Navigation
+
+### Key Folders
+- Projects/Crucible Architecture/ - Main system architecture docs
+- Projects/Multi-Agent Research/ - Research on agent orchestration
+- Projects/Rune MCP/ - MCP server with Rune tools
+- tasks/ - Implementation planning and tasks
+- bugs/ - Issue tracking and test cases
+
+## Current Focus
+- CLI/chat/early agent integration (primary focus)
+- Crucible architecture design and documentation
+"#;
+    fs::write(kiln_path.join("PRIME.md"), prime_content)
+        .expect("Failed to create PRIME.md");
+
+    // Create Projects directory structure
+    fs::create_dir_all(kiln_path.join("Projects/Rune MCP"))
+        .expect("Failed to create Projects/Rune MCP directory");
+    fs::create_dir_all(kiln_path.join("Projects/Multi-Agent Research"))
+        .expect("Failed to create Projects/Multi-Agent Research directory");
+
+    // Create Rune MCP - MoC.md
+    let rune_mcp_content = r#"---
+project: Rune MCP
+tags: [rune, mcp, tools]
+created: 2025-10-15
+status: active
+---
+# Rune MCP - MoC
+
+MCP server where tools are defined in Rune scripts.
+
+## Links
+[[Tool Architecture]]
+[[Rune Integration]]
+"#;
+    fs::write(
+        kiln_path.join("Projects/Rune MCP/Rune MCP - MoC.md"),
+        rune_mcp_content,
+    )
+    .expect("Failed to create Rune MCP - MoC.md");
+
+    // Create Sessions directory
+    fs::create_dir_all(kiln_path.join("Sessions"))
+        .expect("Failed to create Sessions directory");
+
+    // Create Session Summary file
+    let session_content = r#"---
+type: conversation
+date: 2025-10-11
+topics: [testing, architecture]
+status: completed
+---
+# Session Summary 2025-10-11
+
+## Topics Discussed
+- Testing infrastructure
+- Architecture decisions
+- Implementation planning
+"#;
+    fs::write(
+        kiln_path.join("Sessions/Session Summary 2025-10-11.md"),
+        session_content,
+    )
+    .expect("Failed to create Session Summary file");
+
+    // Create additional test files in Projects
+    let multi_agent_content = r#"---
+type: research
+tags: [agents, orchestration]
+created: 2025-10-12
+status: active
+---
+# Multi-Agent Research
+
+Research on agent orchestration patterns.
+"#;
+    fs::write(
+        kiln_path.join("Projects/Multi-Agent Research/Overview.md"),
+        multi_agent_content,
+    )
+    .expect("Failed to create Multi-Agent Research file");
+
+    temp_dir
+}
 
 #[tokio::test]
 async fn test_kiln_scanner_finds_markdown_files() {
     // This test should FAIL initially before implementation
     // Tests that kiln scanner can discover markdown files in directory
 
-    let scanner = crucible_tools::kiln_scanner::KilnScanner::new(TEST_KILN_PATH);
+    let test_kiln = setup_test_kiln();
+    let test_kiln_path = test_kiln.path().to_str().unwrap();
+
+    let scanner = crucible_tools::kiln_scanner::KilnScanner::new(test_kiln_path);
     let markdown_files = scanner.scan_markdown_files().await.unwrap();
 
     // Verify we found markdown files in the test kiln
@@ -60,10 +163,13 @@ async fn test_frontmatter_parsing_extracts_metadata() {
     // This test should FAIL initially before implementation
     // Tests that markdown parser can extract YAML frontmatter
 
+    let test_kiln = setup_test_kiln();
+    let test_kiln_path = test_kiln.path().to_str().unwrap();
+
     let parser = crucible_tools::kiln_parser::KilnParser::new();
 
     // Test with a real file from the test kiln
-    let test_file_path = format!("{}/PRIME.md", TEST_KILN_PATH);
+    let test_file_path = format!("{}/PRIME.md", test_kiln_path);
     let kiln_file = parser.parse_file(&test_file_path).await.unwrap();
 
     // Verify frontmatter was extracted
@@ -105,10 +211,13 @@ async fn test_file_change_detection_via_hashing() {
     // This test should FAIL initially before implementation
     // Tests that file change detection works via SHA256 hashing
 
+    let test_kiln = setup_test_kiln();
+    let test_kiln_path = test_kiln.path().to_str().unwrap();
+
     let change_detector = crucible_tools::kiln_change_detection::ChangeDetector::new();
 
     // Test file path
-    let test_file_path = format!("{}/PRIME.md", TEST_KILN_PATH);
+    let test_file_path = format!("{}/PRIME.md", test_kiln_path);
 
     // Get initial hash
     let initial_hash = change_detector
@@ -133,7 +242,7 @@ async fn test_file_change_detection_via_hashing() {
     );
 
     // Test with different file (should have different hash)
-    let different_file_path = format!("{}/Projects/Rune MCP/Rune MCP - MoC.md", TEST_KILN_PATH);
+    let different_file_path = format!("{}/Projects/Rune MCP/Rune MCP - MoC.md", test_kiln_path);
     let different_hash = change_detector
         .calculate_file_hash(&different_file_path)
         .await
@@ -149,7 +258,9 @@ async fn test_kiln_parsing_integration_with_real_files() {
     // This test should FAIL initially before implementation
     // Tests full integration: scanning + parsing + metadata extraction
 
-    let kiln_path = TEST_KILN_PATH;
+    let test_kiln = setup_test_kiln();
+    let kiln_path = test_kiln.path().to_str().unwrap();
+
     let scanner = crucible_tools::kiln_scanner::KilnScanner::new(kiln_path);
     let parser = crucible_tools::kiln_parser::KilnParser::new();
 
@@ -228,8 +339,11 @@ async fn test_error_handling_missing_file() {
     // This test should FAIL initially before implementation
     // Tests error handling for non-existent files
 
+    let test_kiln = setup_test_kiln();
+    let test_kiln_path = test_kiln.path().to_str().unwrap();
+
     let parser = crucible_tools::kiln_parser::KilnParser::new();
-    let nonexistent_path = format!("{}/nonexistent_file.md", TEST_KILN_PATH);
+    let nonexistent_path = format!("{}/nonexistent_file.md", test_kiln_path);
 
     let result = parser.parse_file(&nonexistent_path).await;
 
@@ -268,7 +382,9 @@ async fn test_kiln_scanner_recursive_directory_traversal() {
     // This test should FAIL initially before implementation
     // Tests that scanner properly traverses subdirectories
 
-    let kiln_path = TEST_KILN_PATH;
+    let test_kiln = setup_test_kiln();
+    let kiln_path = test_kiln.path().to_str().unwrap();
+
     let scanner = crucible_tools::kiln_scanner::KilnScanner::new(kiln_path);
 
     // Test recursive scanning (default behavior)
@@ -298,6 +414,9 @@ async fn test_kiln_metadata_extraction_various_frontmatter_types() {
     // This test should FAIL initially before implementation
     // Tests parsing different frontmatter field types
 
+    let test_kiln = setup_test_kiln();
+    let test_kiln_path = test_kiln.path().to_str().unwrap();
+
     let parser = crucible_tools::kiln_parser::KilnParser::new();
 
     // Parse files with different frontmatter structures
@@ -308,7 +427,7 @@ async fn test_kiln_metadata_extraction_various_frontmatter_types() {
     ];
 
     for file_name in test_files {
-        let full_path = format!("{}/{}", TEST_KILN_PATH, file_name);
+        let full_path = format!("{}/{}", test_kiln_path, file_name);
         let kiln_file = parser.parse_file(&full_path).await.unwrap();
 
         let frontmatter = &kiln_file.metadata.frontmatter;
@@ -588,8 +707,11 @@ async fn test_metadata_extraction_normalizes_tags_and_dates() {
 
     use crucible_tools::kiln_parser::KilnParser;
 
+    let test_kiln = setup_test_kiln();
+    let test_kiln_path = test_kiln.path().to_str().unwrap();
+
     let parser = KilnParser::new();
-    let test_file_path = format!("{}/PRIME.md", TEST_KILN_PATH);
+    let test_file_path = format!("{}/PRIME.md", test_kiln_path);
     let kiln_file = parser.parse_file(&test_file_path).await.unwrap();
 
     // Test tag normalization (lowercase, hyphen-separated)
@@ -635,6 +757,9 @@ async fn test_metadata_extraction_handles_various_frontmatter_formats() {
 
     use crucible_tools::kiln_parser::KilnParser;
 
+    let test_kiln = setup_test_kiln();
+    let test_kiln_path = test_kiln.path().to_str().unwrap();
+
     let parser = KilnParser::new();
     let test_files = vec![
         "PRIME.md",
@@ -643,7 +768,7 @@ async fn test_metadata_extraction_handles_various_frontmatter_formats() {
     ];
 
     for file_name in test_files {
-        let full_path = format!("{}/{}", TEST_KILN_PATH, file_name);
+        let full_path = format!("{}/{}", test_kiln_path, file_name);
         if std::path::Path::new(&full_path).exists() {
             let kiln_file = parser.parse_file(&full_path).await.unwrap();
 
@@ -672,8 +797,11 @@ async fn test_metadata_extraction_calculates_content_metrics() {
 
     use crucible_tools::kiln_parser::KilnParser;
 
+    let test_kiln = setup_test_kiln();
+    let test_kiln_path = test_kiln.path().to_str().unwrap();
+
     let parser = KilnParser::new();
-    let test_file_path = format!("{}/PRIME.md", TEST_KILN_PATH);
+    let test_file_path = format!("{}/PRIME.md", test_kiln_path);
     let kiln_file = parser.parse_file(&test_file_path).await.unwrap();
 
     // Content should be analyzed for basic metrics
@@ -698,8 +826,11 @@ async fn test_metadata_extraction_handles_relationships_and_links() {
 
     use crucible_tools::kiln_parser::KilnParser;
 
+    let test_kiln = setup_test_kiln();
+    let test_kiln_path = test_kiln.path().to_str().unwrap();
+
     let parser = KilnParser::new();
-    let test_file_path = format!("{}/Projects/Rune MCP/Rune MCP - MoC.md", TEST_KILN_PATH);
+    let test_file_path = format!("{}/Projects/Rune MCP/Rune MCP - MoC.md", test_kiln_path);
 
     if std::path::Path::new(&test_file_path).exists() {
         let kiln_file = parser.parse_file(&test_file_path).await.unwrap();
