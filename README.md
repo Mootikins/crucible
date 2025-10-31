@@ -146,18 +146,14 @@ SELECT title, tags FROM notes WHERE tags CONTAINS '#project';
 ## 📚 Documentation
 
 ### User Documentation
-- **[Architecture](./docs/ARCHITECTURE.md)** - Updated simplified system architecture
+- **[Architecture](./docs/ARCHITECTURE.md)** - Updated system architecture and roadmap context
 - **[CLI Reference](./docs/CLI_REFERENCE.md)** - Comprehensive CLI command documentation
-- **[Migration Guide](./docs/MIGRATION_GUIDE.md)** - Tool migration and validation
-- **[Examples and Tutorials](./docs/EXAMPLES_AND_TUTORIALS.md)** - Practical examples and tutorials
 - **[Troubleshooting](./docs/TROUBLESHOOTING.md)** - Common issues and solutions
 - **[FAQ](./docs/FAQ.md)** - Frequently asked questions
 - **[System Requirements](./docs/SYSTEM_REQUIREMENTS.md)** - Hardware and software requirements
 
 ### Technical Documentation
 - **[API Documentation](./docs/API_DOCUMENTATION.md)** - Complete API reference
-- **[ScriptEngine API](./docs/SCRIPTENGINE_API.md)** - Legacy documentation for the pre-refactor service system
-- **[Service Integration](./crates/crucible-cli/CLI_SERVICE_INTEGRATION.md)** - Legacy CLI/service notes (to be retired)
 - **[Developer Guide](./docs/DEVELOPER_GUIDE.md)** - Development environment and workflow
 - **[AI Agent Guide](./AGENTS.md)** - Instructions for AI agents working on the codebase
 
@@ -211,7 +207,7 @@ SELECT title, tags FROM notes WHERE tags CONTAINS '#project';
 
 ### Migration & Maintenance
 - **Automation**: Tool migration helpers with validation and rollback paths
-- **Legacy Docs**: ScriptEngine references live in `docs/SCRIPTENGINE_API.md` for historical context while the new architecture lands
+- **Legacy Docs**: Historical ScriptEngine documentation has been removed; consult Git history if needed
 - **Roadmap Driven**: See `ROADMAP.md` for the staged core-centric refactor
 
 ## License
