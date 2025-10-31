@@ -436,8 +436,8 @@ async fn test_daemon_full_workflow() {
 ```
 tests/fixtures/
 ├── semantic-corpus/      # For search quality tests
-├── test-kiln/           # For kiln processing tests
-└── test-kiln/           # For kiln terminology tests
+├── examples/test-kiln/           # For kiln processing tests
+└── examples/test-kiln/           # For kiln terminology tests
 ```
 
 ### New Fixtures Needed

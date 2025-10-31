@@ -1,7 +1,7 @@
 //! Comprehensive integration tests for semantic search using isolated test environments
 //!
 //! This test file creates isolated test environments for each test, copying realistic markdown files
-//! from /home/moot/crucible/tests/test-kiln/ into temporary directories. Each test gets:
+//! from the workspace `examples/test-kiln/` into temporary directories. Each test gets:
 //! - Fresh temporary directory with copied markdown files
 //! - Isolated database instance
 //! - No shared state between test runs
@@ -39,7 +39,8 @@ use tempfile::TempDir;
 use tokio::time::timeout;
 
 /// Source test kiln path containing sample markdown files
-const SOURCE_TEST_KILN_PATH: &str = "/home/moot/crucible/tests/test-kiln";
+const SOURCE_TEST_KILN_PATH: &str =
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/test-kiln");
 
 /// Test kiln utilities using isolated test environments
 pub struct ExistingTestKiln {
