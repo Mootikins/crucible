@@ -15,7 +15,7 @@ Local-first knowledge management means the CLI and future desktop app must share
 - Update `CONTRIBUTING.md` to clarify that integration tests live inside workspace crates, preventing future regressions.
 
 ## Phase 2 – Local Test Utilities
-- Introduce per-crate `tests::support` modules (start with the CLI crate) that provide kiln fixtures, config builders, and an injectable tool executor mock.
+- Expose shared fixtures in `crucible_core::test_support`, then add lightweight `tests::support` modules per crate (starting with the CLI) that wrap CLI- or UI-specific helpers.
 - Port existing CLI integration tests to use the shared module inside the crate, removing custom env/tempfile plumbing.
 - Add smoke tests to each module to prove the helpers behave and avoid coupling between crates.
 
