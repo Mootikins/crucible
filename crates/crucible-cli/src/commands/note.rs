@@ -1,35 +1,82 @@
 use crate::cli::NoteCommands;
-use crate::common::CrucibleToolManager;
 use crate::config::CliConfig;
 use crate::output;
 use anyhow::Result;
+use async_trait::async_trait;
 use serde_json::json;
+use std::sync::Arc;
+
+#[async_trait]
+pub trait ToolInvoker: Send + Sync {
+    async fn ensure_initialized(&self) -> Result<()>;
+    async fn execute(
+        &self,
+        name: &str,
+        payload: serde_json::Value,
+        user_id: Option<&str>,
+        session_id: Option<&str>,
+    ) -> Result<crucible_tools::ToolResult>;
+}
+
+#[derive(Default, Clone)]
+struct GlobalToolInvoker;
+
+#[async_trait]
+impl ToolInvoker for GlobalToolInvoker {
+    async fn ensure_initialized(&self) -> Result<()> {
+        crate::common::CrucibleToolManager::ensure_initialized_global().await
+    }
+
+    async fn execute(
+        &self,
+        name: &str,
+        payload: serde_json::Value,
+        user_id: Option<&str>,
+        session_id: Option<&str>,
+    ) -> Result<crucible_tools::ToolResult> {
+        crate::common::CrucibleToolManager::execute_tool_global(
+            name,
+            payload,
+            user_id.map(|s| s.to_string()),
+            session_id.map(|s| s.to_string()),
+        )
+        .await
+    }
+}
 
 pub async fn execute(config: CliConfig, cmd: NoteCommands) -> Result<()> {
+    let invoker: Arc<dyn ToolInvoker> = Arc::new(GlobalToolInvoker::default());
+
     match cmd {
-        NoteCommands::Get { path, format } => get_note(config, path, format).await,
+        NoteCommands::Get { path, format } => get_note(invoker, config, path, format).await,
         NoteCommands::Create {
             path,
             content,
             edit,
         } => create_note(config, path, content, edit).await,
         NoteCommands::Update { path, properties } => update_note(config, path, properties).await,
-        NoteCommands::List { format } => list_notes(config, format).await,
+        NoteCommands::List { format } => list_notes(invoker, config, format).await,
     }
 }
 
-async fn get_note(config: CliConfig, path: String, format: String) -> Result<()> {
+async fn get_note(
+    invoker: Arc<dyn ToolInvoker>,
+    config: CliConfig,
+    path: String,
+    format: String,
+) -> Result<()> {
     // Use search_by_content tool to find the note
-    let result = CrucibleToolManager::execute_tool_global(
-        "search_by_content",
-        json!({
-            "query": path,
-            "limit": 1
-        }),
-        Some("cli_user".to_string()),
-        Some("note_session".to_string()),
-    )
-    .await?;
+    let result = invoker
+        .execute(
+            "search_by_content",
+            json!({
+                "query": path,
+                "limit": 1
+            }),
+            Some("cli_user"),
+            Some("note_session"),
+        )
+        .await?;
 
     if let Some(data) = result.data {
         if let Some(results) = data.get("results").and_then(|r| r.as_array()) {
@@ -119,21 +166,26 @@ async fn update_note(_config: CliConfig, path: String, properties: String) -> Re
     Ok(())
 }
 
-async fn list_notes(_config: CliConfig, format: String) -> Result<()> {
+async fn list_notes(
+    invoker: Arc<dyn ToolInvoker>,
+    _config: CliConfig,
+    format: String,
+) -> Result<()> {
     // Use simplified tools approach instead of direct database access
-    CrucibleToolManager::ensure_initialized_global().await?;
+    invoker.ensure_initialized().await?;
 
     // Get all documents using search_by_folder tool
-    let result = CrucibleToolManager::execute_tool_global(
-        "search_by_folder",
-        serde_json::json!({
-            "path": ".",
-            "recursive": true
-        }),
-        Some("cli_user".to_string()),
-        Some("list_notes".to_string()),
-    )
-    .await?;
+    let result = invoker
+        .execute(
+            "search_by_folder",
+            serde_json::json!({
+                "path": ".",
+                "recursive": true
+            }),
+            Some("cli_user"),
+            Some("list_notes"),
+        )
+        .await?;
 
     let files: Vec<String> = if let Some(data) = result.data {
         data.get("files")
