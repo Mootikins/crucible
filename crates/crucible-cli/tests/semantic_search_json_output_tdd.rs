@@ -220,8 +220,115 @@ Natural language processing, computer vision, and reinforcement learning have se
 }
 
 /// Helper to use the existing test-kiln for more realistic testing
+/// DEPRECATED: This causes flaky tests due to shared state between test runs.
+/// Use setup_test_kiln_for_cli() instead for isolated test environments.
+#[allow(dead_code)]
 fn get_test_kiln_path() -> PathBuf {
     PathBuf::from("/home/moot/crucible/tests/test-kiln")
+}
+
+/// Setup an isolated test kiln with sample documents for CLI testing
+///
+/// Unlike get_test_kiln_path(), this creates a fresh temporary directory
+/// for each test, preventing state pollution between test runs.
+async fn setup_test_kiln_with_embeddings_for_cli() -> Result<(TempDir, PathBuf)> {
+    use crucible_cli::config::{CliConfig, KilnConfig};
+    use crucible_core::parser::ParsedDocument;
+    use crucible_surrealdb::{
+        kiln_integration::{self, store_document_embedding, store_parsed_document},
+        DocumentEmbedding, SurrealClient, SurrealDbConfig,
+    };
+
+    let temp_dir = TempDir::new()?;
+    let kiln_path = temp_dir.path().join("kiln");
+    fs::create_dir_all(&kiln_path)?;
+
+    // Create config
+    let config = CliConfig {
+        kiln: KilnConfig {
+            path: kiln_path.clone(),
+            embedding_url: "http://localhost:11434".to_string(),
+            embedding_model: Some("nomic-embed-text".to_string()),
+        },
+        ..Default::default()
+    };
+
+    // Initialize database
+    let db_path = config.database_path();
+    fs::create_dir_all(db_path.parent().unwrap())?;
+
+    let db_config = SurrealDbConfig {
+        namespace: "test".to_string(),
+        database: "test".to_string(),
+        path: config.database_path_str()?,
+        max_connections: Some(10),
+        timeout_seconds: Some(30),
+    };
+    let client = SurrealClient::new(db_config).await?;
+    kiln_integration::initialize_kiln_schema(&client).await?;
+
+    // Create sample documents
+    let test_docs = vec![
+        (
+            "machine-learning-basics.md",
+            "Introduction to machine learning algorithms and neural networks",
+            vec![0.8, 0.6, 0.1, 0.2],
+        ),
+        (
+            "rust-programming.md",
+            "Systems programming with Rust language memory safety",
+            vec![0.3, 0.2, 0.8, 0.4],
+        ),
+        (
+            "database-systems.md",
+            "SQL and NoSQL database management vector embeddings",
+            vec![0.2, 0.9, 0.3, 0.1],
+        ),
+        (
+            "ai-research.md",
+            "Artificial intelligence deep learning transformer models",
+            vec![0.7, 0.7, 0.2, 0.3],
+        ),
+    ];
+
+    // Store documents with embeddings
+    for (filename, content, embedding_pattern) in test_docs {
+        let mut doc = ParsedDocument::new(kiln_path.join(filename));
+        doc.content.plain_text = content.to_string();
+        doc.parsed_at = chrono::Utc::now();
+        doc.content_hash = format!("hash_{}", filename);
+        doc.file_size = content.len() as u64;
+
+        let doc_id = store_parsed_document(&client, &doc, &kiln_path).await?;
+
+        let embedding_vector = create_full_embedding_vector(&embedding_pattern);
+        let mut embedding = DocumentEmbedding::new(
+            doc_id.clone(),
+            embedding_vector,
+            "nomic-embed-text".to_string(),
+        );
+        embedding.chunk_size = content.len();
+        embedding.created_at = chrono::Utc::now();
+
+        store_document_embedding(&client, &embedding).await?;
+    }
+
+    Ok((temp_dir, kiln_path))
+}
+
+/// Helper to create full 768-dimensional embedding vector from pattern
+fn create_full_embedding_vector(pattern: &[f32]) -> Vec<f32> {
+    let dimensions = 768;
+    let mut vector = Vec::with_capacity(dimensions);
+
+    for i in 0..dimensions {
+        let pattern_idx = i % pattern.len();
+        let base_value = pattern[pattern_idx];
+        let variation = (i as f32 * 0.01).sin() * 0.1;
+        vector.push((base_value + variation).clamp(-1.0, 1.0));
+    }
+
+    vector
 }
 
 #[cfg(test)]
@@ -237,9 +344,9 @@ mod semantic_search_json_output_tdd_tests {
     async fn test_semantic_search_json_output_is_valid() -> Result<()> {
         println!("🧪 TDD RED Phase: Testing semantic search JSON output validity");
 
-        // Use the existing test-kiln for realistic content
-        let kiln_path = get_test_kiln_path();
-        println!("📁 Using test-kiln: {}", kiln_path.display());
+        // Use isolated test kiln with pre-populated embeddings
+        let (_temp_dir, kiln_path) = setup_test_kiln_with_embeddings_for_cli().await?;
+        println!("📁 Using isolated test-kiln: {}", kiln_path.display());
 
         // Test basic semantic search with JSON output
         let result = run_semantic_search_json(&kiln_path, "machine learning", vec![]).await?;
@@ -293,8 +400,9 @@ mod semantic_search_json_output_tdd_tests {
     async fn test_semantic_search_json_contains_search_results() -> Result<()> {
         println!("🧪 TDD RED Phase: Testing semantic search JSON content accuracy");
 
-        let kiln_path = get_test_kiln_path();
-        println!("📁 Using test-kiln: {}", kiln_path.display());
+        // Use isolated test kiln with pre-populated embeddings
+        let (_temp_dir, kiln_path) = setup_test_kiln_with_embeddings_for_cli().await?;
+        println!("📁 Using isolated test-kiln: {}", kiln_path.display());
 
         // Test semantic search that should find relevant results
         let result =
@@ -442,8 +550,9 @@ mod semantic_search_json_output_tdd_tests {
     async fn test_semantic_search_json_field_validation() -> Result<()> {
         println!("🧪 TDD RED Phase: Testing semantic search JSON field validation");
 
-        let kiln_path = get_test_kiln_path();
-        println!("📁 Using test-kiln: {}", kiln_path.display());
+        // Use isolated test kiln with pre-populated embeddings
+        let (_temp_dir, kiln_path) = setup_test_kiln_with_embeddings_for_cli().await?;
+        println!("📁 Using isolated test-kiln: {}", kiln_path.display());
 
         // Test semantic search with comprehensive output
         let result =
@@ -604,8 +713,9 @@ mod semantic_search_json_output_tdd_tests {
     async fn test_semantic_search_json_consistency_across_queries() -> Result<()> {
         println!("🧪 TDD RED Phase: Testing semantic search JSON consistency across queries");
 
-        let kiln_path = get_test_kiln_path();
-        println!("📁 Using test-kiln: {}", kiln_path.display());
+        // Use isolated test kiln with pre-populated embeddings
+        let (_temp_dir, kiln_path) = setup_test_kiln_with_embeddings_for_cli().await?;
+        println!("📁 Using isolated test-kiln: {}", kiln_path.display());
 
         let test_queries = vec![
             ("machine learning", vec![]),
