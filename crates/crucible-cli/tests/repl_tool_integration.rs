@@ -157,6 +157,16 @@ async fn test_tool_execution_integration() -> Result<(), Box<dyn std::error::Err
         tool_result.output.len()
     );
 
+    // Create isolated test environment for kiln tools
+    let temp_kiln = TempDir::new()?;
+    let test_file = temp_kiln.path().join("test.md");
+    std::fs::write(&test_file, "---\ntags: [test]\n---\n# Test")?;
+
+    // Set tool context for kiln operations
+    crucible_tools::types::set_tool_context(
+        crucible_tools::types::ToolConfigContext::with_kiln_path(temp_kiln.path().to_path_buf()),
+    );
+
     // Test executing get_kiln_stats
     let kiln_result = registry.execute_tool("get_kiln_stats", &[]).await;
     assert!(
