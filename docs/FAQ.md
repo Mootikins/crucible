@@ -209,7 +209,7 @@ crucible-cli migration validate --auto-fix
 
 ### Q: What is the core orchestration architecture?
 
-**A**: Crucible routes every UI through `crucible-core`, which exposes domain APIs and hides infrastructure details. The core coordinates configuration, storage (SurrealDB), tool execution, and agents through narrowly scoped traits. Legacy documentation about the ScriptEngine service remains in `docs/SCRIPTENGINE_API.md` for historical reference, but new work should target the core façade instead.
+**A**: Crucible routes every UI through `crucible-core`, which exposes domain APIs and hides infrastructure details. The core coordinates configuration, storage (SurrealDB), tool execution, and agents through narrowly scoped traits. Historical ScriptEngine docs have been removed; consult repository history if you need the pre-refactor design.
 
 ### Q: How are embeddings generated?
 

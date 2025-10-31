@@ -93,4 +93,4 @@ graph TD
 - Phase 6 introduces a `CliApp` builder; later phases align the REPL and future desktop shell.
 - Sync and multi-user collaboration build on the same façade, letting agents and humans share workflows across devices.
 
-Legacy documentation about the "ScriptEngine" architecture is preserved in `docs/SCRIPTENGINE_API.md` for historical context and will be removed once the refactor completes.
+Legacy documentation about the former "ScriptEngine" architecture has been removed; consult Git history if you need the old design for reference.
