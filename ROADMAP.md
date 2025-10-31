@@ -14,15 +14,15 @@ Local-first knowledge management means the CLI and future desktop app must share
 - Drop legacy docs that describe the old orchestrators (e.g. `README_PHASE8_INTEGRATION_TESTS.md`, `*_SUMMARY.md`) and point links at the new baseline note.
 - Update `CONTRIBUTING.md` to clarify that integration tests live inside workspace crates, preventing future regressions.
 
-## Phase 2 – Shared Test Support
-- Add `crates/test-support` with kiln fixtures, config builders, a `ToolExecutor` test mock, and `assert_cmd` helpers.
-- Port existing CLI integration tests to use the fixture crate, removing custom env/tempfile plumbing.
-- Write smoke tests inside `test-support` to prove the fixtures behave and can be reused by multiple crates without circular dependencies.
+## Phase 2 – Local Test Utilities
+- Introduce per-crate `tests::support` modules (start with the CLI crate) that provide kiln fixtures, config builders, and an injectable tool executor mock.
+- Port existing CLI integration tests to use the shared module inside the crate, removing custom env/tempfile plumbing.
+- Add smoke tests to each module to prove the helpers behave and avoid coupling between crates.
 
 ## Phase 3 – Command Dependency Injection
 - For each CLI command (start with `search`, then `fuzzy`, `semantic`, `note`, `config`):
   - Introduce a small `CommandService` struct with a `run` method that accepts the relevant inputs, returning results without touching global state.
-  - Inject dependencies such as the tool executor or kiln repository via traits defined in `test-support`.
+  - Inject dependencies such as the tool executor or kiln repository via traits exposed by the crate’s `tests::support` module.
   - Add missing test coverage via TDD before removing the old helpers (query validation, empty results, note edge cases, etc.).
 - Ensure `main.rs` constructs each command service once per invocation and hands in the shared dependencies.
 
@@ -48,7 +48,7 @@ Local-first knowledge management means the CLI and future desktop app must share
 
 ## Phase 8 – Focused Integration Tests
 - Introduce `crates/integration-tests` to exercise end-to-end scenarios using the new app core (search + note workflow, tool execution via mock, REPL startup).
-- Reuse `test-support` fixtures to keep tests fast and predictable; avoid custom runners or emoji logging so failures are easy to read.
+- Reuse the per-crate support modules to keep tests fast and predictable; avoid custom runners or emoji logging so failures are easy to read.
 
 ## Phase 9 – Documentation Refresh
 - Update `README.md`, `CLAUDE.md`, and `CONTRIBUTING.md` to describe the new architecture: config → `CliApp` core → CLI/REPL UI layers.
