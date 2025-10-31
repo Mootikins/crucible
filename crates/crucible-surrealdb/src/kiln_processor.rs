@@ -717,14 +717,19 @@ async fn bulk_query_document_hashes(
         path_strings.join(", ")
     );
 
+    debug!("Executing hash query SQL: {}", sql);
+    debug!("Querying for relative paths: {:?}", rel_paths);
+
     let result = client
         .query(&sql, &[])
         .await
         .map_err(|e| anyhow::anyhow!("Failed to query document hashes: {}", e))?;
 
+    debug!("Query returned {} records", result.records.len());
+
     // Build HashMap from results, mapping back to absolute paths
     let mut hash_map = HashMap::new();
-    for record in result.records {
+    for (i, record) in result.records.iter().enumerate() {
         if let Some(path_value) = record.data.get("path") {
             if let Some(rel_path_str) = path_value.as_str() {
                 if let Some(hash_value) = record.data.get("content_hash") {
