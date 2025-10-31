@@ -4,6 +4,8 @@
 
 A high-performance knowledge management system that combines hierarchical organization, real-time collaboration, and AI agent integration. Built on a simplified ScriptEngine service architecture, Crucible promotes **linked thinking** - the seamless connection and evolution of ideas across time and context.
 
+> **Status Note (2025-10-30):** The project is pivoting away from the legacy “service” architecture toward a lightweight, local-first core. References to service orchestration below describe historical behavior and will be updated as the refactor progresses.
+
 ## ✨ Key Features
 
 - 🔍 **Advanced Search**: Fuzzy search, semantic search with embeddings, and SurrealQL queries
@@ -33,6 +35,17 @@ cru
 # Show available commands
 cru --help
 ```
+
+## 🔁 Current CLI Execution Flow (Baseline)
+
+As of 2025-10-30 the CLI follows this path at runtime:
+
+1. **Argument & Config Parsing** – `main.rs` parses `Cli` arguments with Clap, then loads `CliConfig` from disk (no env-var fallbacks).
+2. **Global Initialization** – The kiln watcher (`kiln_processor::ensure_watcher_running`) and `CrucibleToolManager` singleton are lazily started. Dependencies are accessed through global state rather than explicit wiring.
+3. **Command Dispatch** – Each subcommand module executes immediately using the loaded config, performing its own kiln access and tool execution.
+4. **REPL Startup (default command)** – When no subcommand is provided, the REPL module spins up and reuses the same global managers for tool discovery and kiln access.
+
+This flow is being documented as the baseline for the incremental refactor described in `ROADMAP.md`.
 
 ## 🖥️ CLI Overview
 
@@ -203,4 +216,3 @@ SELECT title, tags FROM notes WHERE tags CONTAINS '#project';
 Copyright (c) 2024 Crucible. All Rights Reserved.
 
 This software is proprietary and may not be used, reproduced, or distributed without permission from Crucible.
-
