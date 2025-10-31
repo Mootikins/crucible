@@ -272,18 +272,18 @@ pub async fn store_parsed_document(
         _ => {
             // Record doesn't exist, create it
             let create_sql = format!("CREATE notes:⟨{}⟩ CONTENT {}", relative_id, json_data);
-            client
-                .query(&create_sql, &[])
-                .await
-                .map_err(|e| {
-                    // If CREATE also fails with "already exists", try UPDATE one more time
-                    if e.to_string().contains("already exists") {
-                        warn!("Race condition detected, will retry UPDATE for {}", record_id);
-                        anyhow::anyhow!("Race condition: {}", e)
-                    } else {
-                        anyhow::anyhow!("Failed to create document: {}", e)
-                    }
-                })?;
+            client.query(&create_sql, &[]).await.map_err(|e| {
+                // If CREATE also fails with "already exists", try UPDATE one more time
+                if e.to_string().contains("already exists") {
+                    warn!(
+                        "Race condition detected, will retry UPDATE for {}",
+                        record_id
+                    );
+                    anyhow::anyhow!("Race condition: {}", e)
+                } else {
+                    anyhow::anyhow!("Failed to create document: {}", e)
+                }
+            })?;
             debug!("Created new document: {}", record_id);
         }
     }
@@ -377,10 +377,7 @@ pub async fn get_embedding_index_metadata(
             .and_then(|v| v.as_u64())
             .map(|v| v as usize);
 
-        Ok(Some(EmbeddingIndexMetadata {
-            model,
-            dimensions,
-        }))
+        Ok(Some(EmbeddingIndexMetadata { model, dimensions }))
     } else {
         Ok(None)
     }
@@ -1606,11 +1603,14 @@ pub async fn get_document_embeddings(
 
             // Query the embedding record by ID
             let emb_sql = format!("SELECT * FROM {}", embedding_id);
-            let emb_result = client.query(&emb_sql, &[]).await
+            let emb_result = client
+                .query(&emb_sql, &[])
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to fetch embedding record: {}", e))?;
 
             if let Some(emb_record) = emb_result.records.first() {
-                let embedding = convert_record_to_document_embedding_with_id(emb_record, document_id)?;
+                let embedding =
+                    convert_record_to_document_embedding_with_id(emb_record, document_id)?;
                 embeddings.push(embedding);
             }
         }
@@ -1751,10 +1751,9 @@ pub async fn get_document_chunk_hashes(
             record.data.get("chunk_position"),
             record.data.get("chunk_hash"),
         ) {
-            if let (Some(pos), Some(hash)) = (
-                pos_value.as_u64().map(|p| p as usize),
-                hash_value.as_str(),
-            ) {
+            if let (Some(pos), Some(hash)) =
+                (pos_value.as_u64().map(|p| p as usize), hash_value.as_str())
+            {
                 chunk_hashes.insert(pos, hash.to_string());
             }
         }
@@ -1807,10 +1806,7 @@ pub async fn delete_document_chunks(
         }
     }
 
-    debug!(
-        "Deleted {} chunks for document {}",
-        total_deleted, doc_id
-    );
+    debug!("Deleted {} chunks for document {}", total_deleted, doc_id);
 
     Ok(total_deleted)
 }
@@ -2569,9 +2565,18 @@ mod tests {
         let vector: Vec<f32> = (0..768).map(|i| i as f32 / 768.0).collect();
 
         // Store embedding with graph relation
-        let chunk_id = store_embedding(&client, &note_id, vector.clone(), "test-model", 1000, 0, None, None)
-            .await
-            .unwrap();
+        let chunk_id = store_embedding(
+            &client,
+            &note_id,
+            vector.clone(),
+            "test-model",
+            1000,
+            0,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
         println!("Stored embedding with ID: {}", chunk_id);
 

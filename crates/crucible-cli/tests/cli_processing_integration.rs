@@ -300,7 +300,6 @@ async fn spawn_daemon_from_path(
     let child = AsyncCommand::new(daemon_path)
         .arg("daemon")
         .arg("start")
-        .env("OBSIDIAN_KILN_PATH", &config.kiln.path)
         .env("CRUCIBLE_TEST_MODE", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -825,7 +824,6 @@ async fn test_process_argument_security(config: &CliConfig) -> Result<()> {
     // Try to spawn CLI process and inspect its arguments
     let mut child = AsyncCommand::new(&cli_path)
         .arg("help") // Use help command to avoid needing full setup
-        .env("OBSIDIAN_KILN_PATH", &config.kiln.path)
         .env("CRUCIBLE_TEST_MODE", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

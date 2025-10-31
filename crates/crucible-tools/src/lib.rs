@@ -8,14 +8,14 @@
 //! ### Using Individual Tool Functions
 //!
 //! ```rust
-//! use crucible_tools::{search_tools, kiln_tools};
+//! use crucible_tools::{search_tools, system_tools};
 //! use serde_json::json;
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     // Get tool functions directly
 //!     let search_fn = search_tools::search_documents();
-//!     let kiln_fn = kiln_tools::get_kiln_stats();
+//!     let system_fn = system_tools::get_system_info();
 //!
 //!     // Execute tools with the unified ToolFunction signature
 //!     let search_result = search_fn(
@@ -25,15 +25,15 @@
 //!         Some("session456".to_string()),
 //!     ).await?;
 //!
-//!     let kiln_stats = kiln_fn(
-//!         "get_kiln_stats".to_string(),
+//!     let system_info = system_fn(
+//!         "get_system_info".to_string(),
 //!         json!({}),
 //!         Some("user123".to_string()),
 //!         Some("session456".to_string()),
 //!     ).await?;
 //!
 //!     println!("Search successful: {}", search_result.success);
-//!     println!("Kiln has {} notes", kiln_stats.data.unwrap()["total_notes"]);
+//!     println!("System: {}", system_info.data.unwrap()["os"]);
 //!
 //!     Ok(())
 //! }

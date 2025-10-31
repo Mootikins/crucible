@@ -7,7 +7,8 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, Once};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, Once, RwLock};
 use tokio::sync::RwLock as AsyncRwLock;
 use tracing::{debug, error, info};
 
@@ -24,6 +25,8 @@ pub struct CrucibleToolManager {
     execution_cache: Arc<AsyncRwLock<HashMap<String, CachedResult>>>,
     /// Configuration for caching behavior
     cache_config: ToolManagerConfig,
+    /// Kiln path for tool execution context
+    kiln_path: Arc<RwLock<Option<PathBuf>>>,
 }
 
 /// Configuration for the tool manager
@@ -89,6 +92,7 @@ impl CrucibleToolManager {
             tool_list_cache: Arc::new(AsyncRwLock::new(None)),
             execution_cache: Arc::new(AsyncRwLock::new(HashMap::new())),
             cache_config: ToolManagerConfig::default(),
+            kiln_path: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -100,6 +104,7 @@ impl CrucibleToolManager {
             tool_list_cache: Arc::new(AsyncRwLock::new(None)),
             execution_cache: Arc::new(AsyncRwLock::new(HashMap::new())),
             cache_config: config,
+            kiln_path: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -107,18 +112,36 @@ impl CrucibleToolManager {
     pub async fn ensure_initialized(&self) -> Result<()> {
         let mut init_flag = self.initialized.lock().unwrap();
         if !*init_flag {
-            info!("Initializing crucible-tools through centralized manager");
+            info!("=== Initializing Crucible Tools (Centralized Manager) ===");
+            debug!("Starting crucible-tools library initialization...");
 
             // Initialize crucible-tools library
             crucible_tools::init();
+            debug!("✓ crucible-tools::init() completed");
 
             // Load all tools
-            crucible_tools::load_all_tools()
-                .await
-                .context("Failed to load crucible-tools")?;
+            debug!("Loading all tools via crucible_tools::load_all_tools()...");
+            match crucible_tools::load_all_tools().await {
+                Ok(_) => {
+                    debug!("✓ Successfully loaded all tools");
+
+                    // Log registered tool count
+                    let tools = crucible_tools::list_registered_tools().await;
+                    info!("✓ Registered {} tools from crucible-tools", tools.len());
+                    if !tools.is_empty() {
+                        debug!("Available tools: {:?}", tools);
+                    }
+                }
+                Err(e) => {
+                    error!("✗ Failed to load crucible-tools: {}", e);
+                    return Err(anyhow::anyhow!("Failed to load crucible-tools: {}", e));
+                }
+            }
 
             *init_flag = true;
-            info!("Successfully initialized crucible-tools through centralized manager");
+            info!("=== Crucible Tools Initialization Complete ===");
+        } else {
+            debug!("Tools already initialized, skipping initialization");
         }
         Ok(())
     }
@@ -352,6 +375,28 @@ impl CrucibleToolManager {
 
         // Re-initialize
         self.ensure_initialized().await
+    }
+
+    /// Set the kiln path for this manager instance
+    pub fn set_kiln_path(&self, path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+        let mut kiln_path = self
+            .kiln_path
+            .write()
+            .map_err(|e| format!("Failed to lock kiln_path: {}", e))?;
+        *kiln_path = Some(path.clone());
+
+        // Update global tool execution context
+        use crucible_tools::types::{set_tool_context, ToolConfigContext};
+        set_tool_context(ToolConfigContext::with_kiln_path(path));
+
+        Ok(())
+    }
+
+    /// Set kiln path globally (convenience method for tests)
+    pub fn set_kiln_path_global(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+        use crucible_tools::types::{set_tool_context, ToolConfigContext};
+        set_tool_context(ToolConfigContext::with_kiln_path(path));
+        Ok(())
     }
 }
 

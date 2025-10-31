@@ -1,15 +1,15 @@
-//! Kiln operation tools - Phase 1B Real Implementation
+//! Kiln operation tools - Phase 1B Implementation
 //!
-//! This module provides real async functions for interacting with Obsidian kilns,
+//! This module provides async functions for interacting with Obsidian kilns,
 //! including file operations, metadata management, and indexing. Uses the Phase 1A
-//! parsing system to provide actual kiln data instead of mock responses.
+//! parsing system via the KilnRepository to provide kiln data access.
 
-use crate::kiln_operations::RealKilnOperations;
+use crate::kiln_operations::KilnRepository;
 use crate::types::{ToolError, ToolFunction, ToolResult};
 use serde_json::{json, Value};
 use tracing::info;
 
-/// Search notes by frontmatter properties - Real Implementation using Phase 1A parsing
+/// Search notes by frontmatter properties - Implementation using Phase 1A parsing
 pub fn search_by_properties() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -19,16 +19,19 @@ pub fn search_by_properties() -> ToolFunction {
 
             info!("Searching for files with properties: {:?}", properties);
 
-            // Use real kiln operations
-            let kiln_ops = RealKilnOperations::new();
-            match kiln_ops.search_by_properties(properties).await {
+            // Get repository from global context
+            let kiln_repo = KilnRepository::from_context()
+                .map_err(|e| ToolError::Other(format!("Failed to get kiln repository: {}", e)))?;
+
+            match kiln_repo.search_by_properties(properties.clone()).await {
                 Ok(matching_files) => {
                     let result_data = json!({
                         "matching_files": matching_files,
                         "count": matching_files.len(),
+                        "properties": properties,
                         "user_id": user_id,
                         "session_id": session_id,
-                        "kiln_path": kiln_ops.kiln_path()
+                        "kiln_path": kiln_repo.kiln_path()
                     });
 
                     Ok(ToolResult::success_with_duration(
@@ -43,7 +46,7 @@ pub fn search_by_properties() -> ToolFunction {
     }
 }
 
-/// Search notes by tags - Real Implementation using Phase 1A parsing
+/// Search notes by tags - Implementation using Phase 1A parsing
 pub fn search_by_tags() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -62,16 +65,19 @@ pub fn search_by_tags() -> ToolFunction {
 
             info!("Searching for files with tags: {:?}", tags);
 
-            // Use real kiln operations
-            let kiln_ops = RealKilnOperations::new();
-            match kiln_ops.search_by_tags(tags).await {
+            // Get repository from global context
+            let kiln_repo = KilnRepository::from_context()
+                .map_err(|e| ToolError::Other(format!("Failed to get kiln repository: {}", e)))?;
+
+            match kiln_repo.search_by_tags(tags.clone()).await {
                 Ok(matching_files) => {
                     let result_data = json!({
                         "matching_files": matching_files,
                         "count": matching_files.len(),
+                        "tags": tags,
                         "user_id": user_id,
                         "session_id": session_id,
-                        "kiln_path": kiln_ops.kiln_path()
+                        "kiln_path": kiln_repo.kiln_path()
                     });
 
                     Ok(ToolResult::success_with_duration(
@@ -80,13 +86,13 @@ pub fn search_by_tags() -> ToolFunction {
                         start_time.elapsed().as_millis() as u64,
                     ))
                 }
-                Err(e) => Err(ToolError::Other(format!("Tag search failed: {}", e))),
+                Err(e) => Err(ToolError::Other(format!("Kiln search failed: {}", e))),
             }
         })
     }
 }
 
-/// Search notes in a specific folder - Real Implementation using Phase 1A parsing
+/// Search notes in a specific folder - Implementation using Phase 1A parsing
 pub fn search_by_folder() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -102,20 +108,25 @@ pub fn search_by_folder() -> ToolFunction {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true);
 
-            info!("Searching in folder: {} (recursive: {})", path, recursive);
+            info!(
+                "Searching for files in folder: {} (recursive: {})",
+                path, recursive
+            );
 
-            // Use real kiln operations
-            let kiln_ops = RealKilnOperations::new();
-            match kiln_ops.search_by_folder(path, recursive).await {
-                Ok(files) => {
+            // Get repository from global context
+            let kiln_repo = KilnRepository::from_context()
+                .map_err(|e| ToolError::Other(format!("Failed to get kiln repository: {}", e)))?;
+
+            match kiln_repo.search_by_folder(path, recursive).await {
+                Ok(matching_files) => {
                     let result_data = json!({
-                        "files": files,
-                        "search_path": path,
+                        "matching_files": matching_files,
+                        "count": matching_files.len(),
+                        "path": path,
                         "recursive": recursive,
-                        "count": files.len(),
                         "user_id": user_id,
                         "session_id": session_id,
-                        "kiln_path": kiln_ops.kiln_path()
+                        "kiln_path": kiln_repo.kiln_path()
                     });
 
                     Ok(ToolResult::success_with_duration(
@@ -124,7 +135,7 @@ pub fn search_by_folder() -> ToolFunction {
                         start_time.elapsed().as_millis() as u64,
                     ))
                 }
-                Err(e) => Err(ToolError::Other(format!("Folder search failed: {}", e))),
+                Err(e) => Err(ToolError::Other(format!("Kiln search failed: {}", e))),
             }
         })
     }
@@ -244,7 +255,7 @@ pub fn delete_note() -> ToolFunction {
     }
 }
 
-/// Get kiln statistics - Real Implementation using Phase 1A parsing
+/// Get kiln statistics - Implementation using Phase 1A parsing
 pub fn get_kiln_stats() -> ToolFunction {
     |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -252,52 +263,18 @@ pub fn get_kiln_stats() -> ToolFunction {
 
             info!("Getting kiln statistics");
 
-            // Use real kiln operations
-            let kiln_ops = RealKilnOperations::new();
-            match kiln_ops.get_kiln_stats().await {
-                Ok(mut stats) => {
-                    // Add user and session info
-                    if let Some(user_id) = user_id {
-                        stats["user_id"] = json!(user_id);
-                    }
-                    if let Some(session_id) = session_id {
-                        stats["session_id"] = json!(session_id);
-                    }
+            // Get repository from global context
+            let kiln_repo = KilnRepository::from_context()
+                .map_err(|e| ToolError::Other(format!("Failed to get kiln repository: {}", e)))?;
 
-                    Ok(ToolResult::success_with_duration(
-                        tool_name,
-                        stats,
-                        start_time.elapsed().as_millis() as u64,
-                    ))
-                }
-                Err(e) => Err(ToolError::Other(format!(
-                    "Kiln stats calculation failed: {}",
-                    e
-                ))),
-            }
-        })
-    }
-}
-
-/// List all tags in the kiln - Real Implementation using Phase 1A parsing
-pub fn list_tags() -> ToolFunction {
-    |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
-        Box::pin(async move {
-            let start_time = std::time::Instant::now();
-
-            info!("Listing all kiln tags");
-
-            // Use real kiln operations
-            let kiln_ops = RealKilnOperations::new();
-            match kiln_ops.list_tags().await {
-                Ok(mut result_data) => {
-                    // Add user and session info
-                    if let Some(user_id) = user_id {
-                        result_data["user_id"] = json!(user_id);
-                    }
-                    if let Some(session_id) = session_id {
-                        result_data["session_id"] = json!(session_id);
-                    }
+            match kiln_repo.get_kiln_stats().await {
+                Ok(stats) => {
+                    let result_data = json!({
+                        "stats": stats,
+                        "user_id": user_id,
+                        "session_id": session_id,
+                        "kiln_path": kiln_repo.kiln_path()
+                    });
 
                     Ok(ToolResult::success_with_duration(
                         tool_name,
@@ -305,7 +282,45 @@ pub fn list_tags() -> ToolFunction {
                         start_time.elapsed().as_millis() as u64,
                     ))
                 }
-                Err(e) => Err(ToolError::Other(format!("Tag listing failed: {}", e))),
+                Err(e) => Err(ToolError::Other(format!("Failed to get kiln stats: {}", e))),
+            }
+        })
+    }
+}
+
+/// List all tags in the kiln - Implementation using Phase 1A parsing
+pub fn list_tags() -> ToolFunction {
+    |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+        Box::pin(async move {
+            let start_time = std::time::Instant::now();
+
+            info!("Listing all tags in kiln");
+
+            // Get repository from global context
+            let kiln_repo = KilnRepository::from_context()
+                .map_err(|e| ToolError::Other(format!("Failed to get kiln repository: {}", e)))?;
+
+            match kiln_repo.list_tags().await {
+                Ok(mut tags_data) => {
+                    // tags_data is already a JSON object with "tags" and "total_tags"
+                    // Add user_id, session_id, and kiln_path to the result
+                    if let Some(obj) = tags_data.as_object_mut() {
+                        if let Some(uid) = user_id {
+                            obj.insert("user_id".to_string(), json!(uid));
+                        }
+                        if let Some(sid) = session_id {
+                            obj.insert("session_id".to_string(), json!(sid));
+                        }
+                        obj.insert("kiln_path".to_string(), json!(kiln_repo.kiln_path()));
+                    }
+
+                    Ok(ToolResult::success_with_duration(
+                        tool_name,
+                        tags_data,
+                        start_time.elapsed().as_millis() as u64,
+                    ))
+                }
+                Err(e) => Err(ToolError::Other(format!("Failed to list tags: {}", e))),
             }
         })
     }
@@ -318,6 +333,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_by_properties_function() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create isolated test environment
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("test.md");
+
+        // Create test file with frontmatter
+        fs::write(
+            &test_file,
+            r#"---
+status: active
+priority: high
+---
+# Test Note"#,
+        )
+        .unwrap();
+
+        // Set kiln path in registry
+        crate::types::set_tool_context(crate::types::ToolConfigContext::with_kiln_path(
+            temp_dir.path().to_path_buf(),
+        ));
+
         let tool_fn = search_by_properties();
         let parameters = json!({
             "properties": {
@@ -336,11 +374,35 @@ mod tests {
         .unwrap();
 
         assert!(result.success);
-        assert!(result.data.is_some());
+        let data = result.data.unwrap();
+        let matching_files = data.get("matching_files").unwrap().as_array().unwrap();
+        assert!(matching_files.len() > 0);
     }
 
     #[tokio::test]
     async fn test_search_by_tags_function() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create isolated test environment
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("test.md");
+
+        // Create test file with frontmatter
+        fs::write(
+            &test_file,
+            r#"---
+tags: [ai, research]
+---
+# Test Note"#,
+        )
+        .unwrap();
+
+        // Set kiln path in registry
+        crate::types::set_tool_context(crate::types::ToolConfigContext::with_kiln_path(
+            temp_dir.path().to_path_buf(),
+        ));
+
         let tool_fn = search_by_tags();
         let parameters = json!({
             "tags": ["ai", "research"]
@@ -356,7 +418,9 @@ mod tests {
         .unwrap();
 
         assert!(result.success);
-        assert!(result.data.is_some());
+        let data = result.data.unwrap();
+        let matching_files = data.get("matching_files").unwrap().as_array().unwrap();
+        assert!(matching_files.len() > 0);
     }
 
     #[tokio::test]
@@ -387,6 +451,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_kiln_stats_function() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create isolated test environment
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("test.md");
+
+        // Create test file with frontmatter
+        fs::write(
+            &test_file,
+            r#"---
+title: Test Note
+---
+# Test Note
+Some content here."#,
+        )
+        .unwrap();
+
+        // Set kiln path in registry
+        crate::types::set_tool_context(crate::types::ToolConfigContext::with_kiln_path(
+            temp_dir.path().to_path_buf(),
+        ));
+
         let tool_fn = get_kiln_stats();
         let parameters = json!({});
 
@@ -395,15 +482,36 @@ mod tests {
             .unwrap();
 
         assert!(result.success);
-        assert!(result.data.is_some());
-
         let data = result.data.unwrap();
-        assert!(data.get("total_notes").is_some());
-        assert!(data.get("kiln_type").is_some());
+        let stats = data.get("stats").unwrap();
+        assert!(stats.get("total_notes").is_some());
+        assert!(stats.get("total_size_mb").is_some());
     }
 
     #[tokio::test]
     async fn test_list_tags_function() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create isolated test environment
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("test.md");
+
+        // Create test file with frontmatter
+        fs::write(
+            &test_file,
+            r#"---
+tags: [ai, research, testing]
+---
+# Test Note"#,
+        )
+        .unwrap();
+
+        // Set kiln path in registry
+        crate::types::set_tool_context(crate::types::ToolConfigContext::with_kiln_path(
+            temp_dir.path().to_path_buf(),
+        ));
+
         let tool_fn = list_tags();
         let parameters = json!({});
 
@@ -412,11 +520,9 @@ mod tests {
             .unwrap();
 
         assert!(result.success);
-        assert!(result.data.is_some());
-
         let data = result.data.unwrap();
-        assert!(data.get("tags").is_some());
-        assert!(data.get("total_tags").is_some());
+        let tags = data.get("tags").unwrap().as_array().unwrap();
+        assert!(tags.len() > 0);
     }
 
     #[tokio::test]
@@ -440,6 +546,31 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_by_folder_function() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        // Create isolated test environment
+        let temp_dir = TempDir::new().unwrap();
+        let projects_dir = temp_dir.path().join("projects");
+        fs::create_dir(&projects_dir).unwrap();
+
+        let test_file = projects_dir.join("test.md");
+
+        // Create test file with frontmatter
+        fs::write(
+            &test_file,
+            r#"---
+title: Project Note
+---
+# Project Note"#,
+        )
+        .unwrap();
+
+        // Set kiln path in registry
+        crate::types::set_tool_context(crate::types::ToolConfigContext::with_kiln_path(
+            temp_dir.path().to_path_buf(),
+        ));
+
         let tool_fn = search_by_folder();
         let parameters = json!({
             "path": "projects",
@@ -451,7 +582,9 @@ mod tests {
             .unwrap();
 
         assert!(result.success);
-        assert!(result.data.is_some());
+        let data = result.data.unwrap();
+        let matching_files = data.get("matching_files").unwrap().as_array().unwrap();
+        assert!(matching_files.len() > 0);
     }
 
     #[tokio::test]

@@ -12,6 +12,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 use uuid::Uuid;
 
 /// Simple tool definition for basic tool registration
@@ -295,6 +297,76 @@ pub async fn list_registered_tools() -> Vec<String> {
     let registry = get_tool_registry().await;
     let reg = registry.read().await;
     reg.keys().cloned().collect()
+}
+
+// ===== GLOBAL TOOL CONFIGURATION CONTEXT =====
+// Thread-safe global configuration for tools (separate from per-request context)
+
+/// Global configuration context for tools
+///
+/// This provides shared configuration that tools can access without
+/// requiring parameters on every call. Managed by CrucibleToolManager.
+/// This is distinct from the per-request ToolExecutionContext which handles
+/// user sessions and environment variables.
+#[derive(Debug, Clone)]
+pub struct ToolConfigContext {
+    /// Path to the kiln directory
+    pub kiln_path: Option<PathBuf>,
+}
+
+impl ToolConfigContext {
+    /// Create empty context
+    pub fn new() -> Self {
+        Self { kiln_path: None }
+    }
+
+    /// Create context with kiln path
+    pub fn with_kiln_path(kiln_path: PathBuf) -> Self {
+        Self {
+            kiln_path: Some(kiln_path),
+        }
+    }
+}
+
+impl Default for ToolConfigContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Global configuration context for tools
+///
+/// This is set by CrucibleToolManager during initialization and accessed
+/// by tools that need configuration like kiln_path.
+static TOOL_CONFIG_CONTEXT: RwLock<Option<Arc<ToolConfigContext>>> = RwLock::new(None);
+
+/// Set the global tool configuration context
+///
+/// This should be called by CrucibleToolManager during initialization.
+pub fn set_tool_context(context: ToolConfigContext) {
+    let mut ctx = TOOL_CONFIG_CONTEXT.write().unwrap();
+    *ctx = Some(Arc::new(context));
+}
+
+/// Get the global tool configuration context
+///
+/// Returns None if context has not been initialized.
+pub fn get_tool_context() -> Option<Arc<ToolConfigContext>> {
+    let ctx = TOOL_CONFIG_CONTEXT.read().unwrap();
+    ctx.clone()
+}
+
+/// Get the kiln path from the global context
+///
+/// Returns an error if no context is set or no kiln path is configured.
+pub fn get_kiln_path_from_context() -> Result<PathBuf, ToolError> {
+    let context = get_tool_context()
+        .ok_or_else(|| ToolError::Other("Tool execution context not initialized".to_string()))?;
+
+    context
+        .kiln_path
+        .clone()
+        .ok_or_else(|| ToolError::Other("No kiln path configured in execution context".to_string()))
 }
 
 // ===== SIMPLE TOOL LOADER (PHASE 3.1) =====

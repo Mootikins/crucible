@@ -13,6 +13,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_simplified_public_api() {
+        use tempfile::TempDir;
+
+        // Create isolated test environment
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("test.md");
+        std::fs::write(&test_file, "---\ntags: [test]\n---\n# Test").unwrap();
+
+        // Set tool context
+        crate::types::set_tool_context(crate::types::ToolConfigContext::with_kiln_path(
+            temp_dir.path().to_path_buf(),
+        ));
+
         // Test 1: Simple initialization
         init();
 
@@ -103,6 +115,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_clean_api_examples() {
+        use tempfile::TempDir;
+
+        // Create isolated test environment
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("test.md");
+        std::fs::write(&test_file, "---\ntags: [test]\n---\n# Test").unwrap();
+
+        // Set tool context
+        crate::types::set_tool_context(crate::types::ToolConfigContext::with_kiln_path(
+            temp_dir.path().to_path_buf(),
+        ));
+
         // Test that the API examples in the documentation actually work
 
         init();
