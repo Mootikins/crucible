@@ -1,4 +1,9 @@
-# Examples and Tutorials for ScriptEngine Architecture
+# Examples and Tutorials
+
+> **Legacy Notice (2025-10-30):** Examples reference the ScriptEngine service. Updated examples will target the new core façade once the refactor lands.
+
+> _Legacy ScriptEngine content retained for reference._
+
 
 > **Status**: Active Examples
 > **Version**: 2.0.0 (ScriptEngine Architecture)

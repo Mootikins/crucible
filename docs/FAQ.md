@@ -23,12 +23,12 @@
 ### Q: What makes Crucible different from other knowledge management tools?
 
 **A**: Key differentiators include:
-- **ScriptEngine Architecture**: Production-ready script execution with security isolation
+- **Core-Orchestrated Architecture**: UI layers call a shared core façade that coordinates storage, tools, and agents
 - **Semantic Search**: Advanced search with embeddings and fuzzy matching
-- **AI Integration**: Multiple AI agents for research, writing, and analysis
-- **Real-time Collaboration**: CRDT-based collaboration with Yjs
+- **AI Integration**: Multiple AI agents share the same APIs as human operators
+- **Real-time Collaboration (roadmap)**: CRDT-based collaboration and multi-device sync managed by the core
 - **CLI-First Design**: Powerful command-line interface with interactive REPL
-- **High Performance**: 83% complexity reduction with simplified architecture
+- **High Performance**: Simplified dependency graph and reusable infrastructure
 
 ### Q: Is Crucible open source?
 
@@ -207,13 +207,9 @@ crucible-cli migration validate --auto-fix
 - **WebSockets**: Real-time communication
 - **Operational Transforms**: Efficient conflict resolution
 
-### Q: What is the ScriptEngine architecture?
+### Q: What is the core orchestration architecture?
 
-**A**: The ScriptEngine architecture provides:
-- **Simplified Design**: 83% complexity reduction
-- **Security Isolation**: Sandboxed script execution
-- **Performance Monitoring**: Resource limits and metrics
-- **Event System**: Service coordination and health monitoring
+**A**: Crucible routes every UI through `crucible-core`, which exposes domain APIs and hides infrastructure details. The core coordinates configuration, storage (SurrealDB), tool execution, and agents through narrowly scoped traits. Legacy documentation about the ScriptEngine service remains in `docs/SCRIPTENGINE_API.md` for historical reference, but new work should target the core façade instead.
 
 ### Q: How are embeddings generated?
 
