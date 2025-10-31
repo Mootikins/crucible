@@ -52,6 +52,10 @@ use highlighter::SurrealQLHighlighter;
 use history::CommandHistory;
 use input::Input;
 
+// Re-export key types for external use (tests, integrations)
+pub use command::Command as ReplCommand;
+pub use input::Input as ReplInput;
+
 /// REPL state and configuration
 pub struct Repl {
     /// Line editor with history and completion
@@ -235,7 +239,10 @@ impl Repl {
     }
 
     /// Process a single input line
-    async fn process_input(&mut self, input: &str) -> Result<(), ReplError> {
+    ///
+    /// This method is public to enable direct testing of command processing
+    /// logic without spawning a REPL session.
+    pub async fn process_input(&mut self, input: &str) -> Result<(), ReplError> {
         let start = Instant::now();
 
         // Parse input
@@ -263,7 +270,9 @@ impl Repl {
     }
 
     /// Execute a built-in command
-    async fn execute_command(&mut self, cmd: Command) -> Result<(), ReplError> {
+    ///
+    /// This method is public to enable direct testing of individual command handlers.
+    pub async fn execute_command(&mut self, cmd: Command) -> Result<(), ReplError> {
         match cmd {
             Command::ListTools => {
                 self.list_tools().await;
@@ -329,7 +338,10 @@ impl Repl {
     }
 
     /// Execute a SurrealQL query with async cancellation support
-    async fn execute_query(&mut self, query: &str) -> Result<(), ReplError> {
+    ///
+    /// This method is public to enable direct testing of query execution
+    /// without spawning a REPL session.
+    pub async fn execute_query(&mut self, query: &str) -> Result<(), ReplError> {
         use indicatif::{ProgressBar, ProgressStyle};
 
         // Create progress indicator
@@ -496,6 +508,11 @@ impl Repl {
         use colored::Colorize;
 
         info!("Running tool: {} with args: {:?}", tool_name, args);
+        debug!(
+            "Tool execution context - name: {}, arg_count: {}",
+            tool_name,
+            args.len()
+        );
 
         // Execute the tool
         let result = self
@@ -504,20 +521,58 @@ impl Repl {
             .await
             .map_err(|e| {
                 let err_str = e.to_string();
-                // Check if this is a parameter conversion error
-                if err_str.contains("Parameter conversion failed:") {
-                    // Extract the actual error message after the prefix
+
+                // Enhanced error reporting with context
+                if err_str.contains("Parameter error:") {
+                    // Parameter validation error (from unified_registry)
+                    eprintln!(
+                        "\n{} {}\n\n{} Tool '{}' parameter requirements:",
+                        "❌ Parameter Error:".red().bold(),
+                        err_str.strip_prefix("Parameter error: ").unwrap_or(&err_str),
+                        "💡".cyan(),
+                        tool_name.green()
+                    );
+
+                    // Provide tool-specific help
+                    if tool_name == "create_note" {
+                        eprintln!("  Usage: {}",
+                            ":run create_note <path> <title> <content> [properties_json] [tags]".yellow());
+                        eprintln!("  Example: {}",
+                            ":run create_note /tmp/test.md \"My Note\" \"Content here\" '{{\"type\":\"note\"}}' \"tag1,tag2\"".cyan());
+                    } else {
+                        eprintln!("  Use {} to see tool details", ":tools".green());
+                    }
+                } else if err_str.contains("not found or execution failed in all registries") {
+                    // Tool not found error (from unified_registry)
+                    eprintln!(
+                        "\n{} Tool '{}' not found\n\n{} Available tools:",
+                        "❌".red(),
+                        tool_name.yellow(),
+                        "💡".cyan()
+                    );
+                    eprintln!("  Use {} to list all available tools", ":tools".green());
+                    eprintln!("  Use {} to see detailed logs", "RUST_LOG=debug".yellow());
+                } else if err_str.contains("Parameter conversion failed:") {
+                    // Legacy parameter conversion error
                     let clean_msg = err_str
                         .strip_prefix("Parameter conversion failed: ")
                         .unwrap_or(&err_str);
                     eprintln!(
-                        "\n{} {}\n",
+                        "\n{} {}\n\n{} Check parameter format and count",
                         "❌ Tool Execution Failed:".red().bold(),
-                        clean_msg
+                        clean_msg,
+                        "💡".cyan()
                     );
                 } else {
-                    eprintln!("\n{} {}\n", "❌ Tool Error:".red(), err_str);
+                    // Generic error with context
+                    eprintln!("\n{} Tool '{}' execution failed", "❌".red(), tool_name.yellow());
+                    eprintln!("{}\n", err_str);
+                    eprintln!("{} Debugging tips:", "💡".cyan());
+                    eprintln!("  • Run with {} for detailed logs", "RUST_LOG=debug".yellow());
+                    eprintln!("  • Use {} to verify tool availability", ":tools".green());
+                    eprintln!("  • Check parameter format and requirements");
                 }
+
                 ReplError::Tool(e.to_string())
             })?;
 
@@ -706,9 +761,73 @@ impl Repl {
     }
 
     /// Get access to the tool registry (for testing)
-    #[cfg(test)]
+    ///
+    /// This is available for both unit tests and integration tests.
     pub fn get_tools(&self) -> &Arc<UnifiedToolRegistry> {
         &self.tools
+    }
+
+    /// Get access to the database (for testing)
+    ///
+    /// This allows tests to verify database state or perform queries directly.
+    pub fn get_database(&self) -> &ReplDatabase {
+        &self.db
+    }
+
+    /// Get the current statistics (for testing)
+    ///
+    /// This allows tests to verify that commands and queries are being counted correctly.
+    pub fn get_stats(&self) -> &ReplStats {
+        &self.stats
+    }
+
+    /// Create a test REPL instance with in-memory database
+    ///
+    /// This is a convenience constructor for tests that need a fully functional
+    /// REPL without file system dependencies.
+    ///
+    /// Available in both unit tests and integration tests.
+    pub async fn new_test() -> Result<Self> {
+        use std::path::PathBuf;
+
+        let config_dir = std::env::temp_dir().join("crucible_test");
+        std::fs::create_dir_all(&config_dir)?;
+
+        let config = ReplConfig {
+            kiln_path: config_dir.clone(),
+            db_path: config_dir.join("test.db"),
+            history_file: config_dir.join("history"),
+            tool_dir: config_dir.join("tools"),
+            default_format: "table".to_string(),
+            query_timeout_secs: 30,
+            max_column_width: 50,
+        };
+
+        let history = CommandHistory::new(config.history_file.clone())?;
+        let highlighter = SurrealQLHighlighter::new();
+        let db = ReplDatabase::new_memory().await?;
+        let tools = Arc::new(UnifiedToolRegistry::new(config.tool_dir.clone()).await?);
+        let completer = ReplCompleter::new(db.clone(), tools.clone());
+
+        let editor = Reedline::create()
+            .with_highlighter(Box::new(highlighter))
+            .with_completer(Box::new(completer))
+            .with_history(history.clone_backend());
+
+        let formatter: Box<dyn OutputFormatter> = Box::new(TableFormatter::new());
+        let (shutdown_tx, _) = watch::channel(false);
+
+        Ok(Self {
+            editor,
+            db,
+            tools,
+            config,
+            formatter,
+            history,
+            shutdown_tx,
+            current_query_cancel: None,
+            stats: ReplStats::default(),
+        })
     }
 }
 
@@ -725,7 +844,11 @@ pub struct ReplConfig {
 }
 
 impl ReplConfig {
-    fn from_cli_config(
+    /// Create ReplConfig from CLI config
+    ///
+    /// This method is exposed as `pub(crate)` to enable test setup
+    /// with custom configurations.
+    pub(crate) fn from_cli_config(
         cli_config: &crate::config::CliConfig,
         db_path: Option<String>,
         tool_dir: Option<String>,
@@ -753,15 +876,17 @@ impl ReplConfig {
 }
 
 /// REPL usage statistics
+///
+/// This struct tracks execution metrics and is accessible via `get_stats()` for testing.
 #[derive(Debug, Default)]
-struct ReplStats {
-    command_count: usize,
-    query_count: usize,
-    total_query_time: std::time::Duration,
+pub struct ReplStats {
+    pub command_count: usize,
+    pub query_count: usize,
+    pub total_query_time: std::time::Duration,
 }
 
 impl ReplStats {
-    fn avg_query_time(&self) -> std::time::Duration {
+    pub fn avg_query_time(&self) -> std::time::Duration {
         if self.query_count == 0 {
             std::time::Duration::ZERO
         } else {
