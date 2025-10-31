@@ -41,8 +41,7 @@ status: active
 - CLI/chat/early agent integration (primary focus)
 - Crucible architecture design and documentation
 "#;
-    fs::write(kiln_path.join("PRIME.md"), prime_content)
-        .expect("Failed to create PRIME.md");
+    fs::write(kiln_path.join("PRIME.md"), prime_content).expect("Failed to create PRIME.md");
 
     // Create Projects directory structure
     fs::create_dir_all(kiln_path.join("Projects/Rune MCP"))
@@ -72,8 +71,7 @@ MCP server where tools are defined in Rune scripts.
     .expect("Failed to create Rune MCP - MoC.md");
 
     // Create Sessions directory
-    fs::create_dir_all(kiln_path.join("Sessions"))
-        .expect("Failed to create Sessions directory");
+    fs::create_dir_all(kiln_path.join("Sessions")).expect("Failed to create Sessions directory");
 
     // Create Session Summary file
     let session_content = r#"---
@@ -471,6 +469,27 @@ async fn test_search_by_properties_returns_real_kiln_data_not_mock_data() {
     use crucible_tools::kiln_tools;
     use serde_json::json;
 
+    // Create isolated test environment
+    let temp_dir = TempDir::new().unwrap();
+    let test_file = temp_dir.path().join("test-meta.md");
+
+    // Create a test file with the properties we're searching for
+    let test_content = r#"---
+type: meta
+tags: [test, example]
+status: active
+---
+# Test Meta File
+
+This is a test file for search_by_properties.
+"#;
+    fs::write(&test_file, test_content).unwrap();
+
+    // Set tool context
+    crucible_tools::types::set_tool_context(
+        crucible_tools::types::ToolConfigContext::with_kiln_path(temp_dir.path().to_path_buf()),
+    );
+
     let tool_fn = kiln_tools::search_by_properties();
     let parameters = json!({
         "properties": {
@@ -502,27 +521,48 @@ async fn test_search_by_properties_returns_real_kiln_data_not_mock_data() {
     let has_real_kiln_file = matching_files.iter().any(|file| {
         if let Some(path) = file.get("path").and_then(|p| p.as_str()) {
             // Mock data returns "projects/project1.md" - real kiln should have different paths
-            path.contains("PRIME.md") || path.contains("Rune MCP") || path.contains("Sessions/")
+            // In our test, we created "test-meta.md"
+            path.contains("test-meta.md")
         } else {
             false
         }
     });
 
-    // This assertion should FAIL initially (mock data vs real data)
+    // This assertion should now pass with real kiln file
     assert!(
         has_real_kiln_file,
-        "Expected real kiln files like PRIME.md, but got mock data. Found files: {:?}",
+        "Expected real kiln file test-meta.md with type=meta. Found files: {:?}",
         matching_files
     );
 }
 
 #[tokio::test]
 async fn test_search_by_tags_finds_real_kiln_files_not_mock_data() {
-    // This test should FAIL initially because search_by_tags returns mock data
-    // instead of real tagged files from the test kiln
-
     use crucible_tools::kiln_tools;
     use serde_json::json;
+    use std::fs;
+    use tempfile::TempDir;
+
+    // Create isolated test environment
+    let temp_dir = TempDir::new().unwrap();
+    let test_file_path = temp_dir.path().join("test-config.md");
+
+    // Create a test file with the expected tags
+    let test_content = r#"---
+type: config
+tags: [kiln-config, instructions]
+created: 2025-01-01
+---
+# Test Configuration File
+
+This is a test file for search_by_tags.
+"#;
+    fs::write(&test_file_path, test_content).unwrap();
+
+    // Set kiln path in registry
+    crucible_tools::types::set_tool_context(
+        crucible_tools::types::ToolConfigContext::with_kiln_path(temp_dir.path().to_path_buf()),
+    );
 
     let tool_fn = kiln_tools::search_by_tags();
     let parameters = json!({
@@ -542,21 +582,22 @@ async fn test_search_by_tags_finds_real_kiln_files_not_mock_data() {
     let data = result.data.unwrap();
     let matching_files = data.get("matching_files").unwrap().as_array().unwrap();
 
-    // Mock returns "knowledge/ai.md" but real kiln should have PRIME.md with these tags
-    let has_prime_file = matching_files.iter().any(|file| {
+    // Should find our test file
+    let has_test_file = matching_files.iter().any(|file| {
         if let Some(path) = file.get("path").and_then(|p| p.as_str()) {
-            path.contains("PRIME.md")
+            path.contains("test-config.md")
         } else {
             false
         }
     });
 
-    // This should FAIL initially (mock data vs real data)
     assert!(
-        has_prime_file,
-        "Expected PRIME.md with kiln-config and instructions tags, but got mock data. Found: {:?}",
+        has_test_file,
+        "Expected test-config.md with kiln-config and instructions tags. Found: {:?}",
         matching_files
     );
+
+    // TempDir automatically cleans up when dropped
 }
 
 #[tokio::test]
@@ -566,6 +607,40 @@ async fn test_search_by_folder_returns_real_files_from_test_kiln() {
 
     use crucible_tools::kiln_tools;
     use serde_json::json;
+
+    // Create isolated test environment
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create subdirectories with test files
+    fs::create_dir_all(temp_dir.path().join("Projects/Rune MCP")).unwrap();
+    fs::create_dir_all(temp_dir.path().join("Projects/Multi-Agent")).unwrap();
+
+    let rune_file = temp_dir.path().join("Projects/Rune MCP/overview.md");
+    fs::write(
+        &rune_file,
+        r#"---
+project: Rune MCP
+tags: [rune, mcp]
+---
+# Rune MCP Overview"#,
+    )
+    .unwrap();
+
+    let multi_agent_file = temp_dir.path().join("Projects/Multi-Agent/research.md");
+    fs::write(
+        &multi_agent_file,
+        r#"---
+project: Multi-Agent
+tags: [agents]
+---
+# Multi-Agent Research"#,
+    )
+    .unwrap();
+
+    // Set tool context
+    crucible_tools::types::set_tool_context(
+        crucible_tools::types::ToolConfigContext::with_kiln_path(temp_dir.path().to_path_buf()),
+    );
 
     let tool_fn = kiln_tools::search_by_folder();
     let parameters = json!({
@@ -582,9 +657,15 @@ async fn test_search_by_folder_returns_real_files_from_test_kiln() {
     .await
     .unwrap();
 
-    assert!(result.success);
-    let data = result.data.unwrap();
-    let files = data.get("files").unwrap().as_array().unwrap();
+    assert!(result.success, "search_by_folder should succeed");
+    let data = result.data.expect("Result should have data");
+
+    // The actual key is "matching_files", not "files"
+    let files = data
+        .get("matching_files")
+        .expect("Should have matching_files field")
+        .as_array()
+        .expect("matching_files should be an array");
 
     // Mock returns "projects/active/project1.md" but real kiln should have different structure
     let has_rune_mcp_files = files.iter().any(|file| {
@@ -611,6 +692,34 @@ async fn test_get_kiln_stats_calculates_real_statistics_not_mock_numbers() {
     use crucible_tools::kiln_tools;
     use serde_json::json;
 
+    // Create isolated test environment
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create test files with varying sizes
+    for i in 1..=5 {
+        let test_file = temp_dir.path().join(format!("note{}.md", i));
+        fs::write(
+            &test_file,
+            format!(
+                r#"---
+type: note
+tags: [test{}]
+---
+# Note {}
+
+This is test note number {}.
+"#,
+                i, i, i
+            ),
+        )
+        .unwrap();
+    }
+
+    // Set tool context
+    crucible_tools::types::set_tool_context(
+        crucible_tools::types::ToolConfigContext::with_kiln_path(temp_dir.path().to_path_buf()),
+    );
+
     let tool_fn = kiln_tools::get_kiln_stats();
     let parameters = json!({});
 
@@ -618,37 +727,46 @@ async fn test_get_kiln_stats_calculates_real_statistics_not_mock_numbers() {
         .await
         .unwrap();
 
-    assert!(result.success);
-    let data = result.data.unwrap();
+    assert!(result.success, "get_kiln_stats should succeed");
+    let data = result.data.expect("Result should have data");
+
+    // The stats are nested under a "stats" key
+    let stats = data
+        .get("stats")
+        .expect("Should have stats field")
+        .as_object()
+        .expect("stats should be an object");
 
     // Mock returns hardcoded 1250 total_notes, but real kiln should have different count
-    let total_notes = data.get("total_notes").unwrap().as_u64().unwrap();
-    let total_size_mb = data.get("total_size_mb").unwrap().as_f64().unwrap();
+    let total_notes = stats
+        .get("total_notes")
+        .expect("Should have total_notes field in stats")
+        .as_u64()
+        .expect("total_notes should be a number");
+    let total_size_mb = stats
+        .get("total_size_mb")
+        .expect("Should have total_size_mb field in stats")
+        .as_f64()
+        .expect("total_size_mb should be a number");
 
-    // Mock returns exactly 156.7 for size - real kiln should be different
-    // This should FAIL initially because we expect real calculation, not mock values
-    assert_ne!(
-        total_notes, 1250,
-        "Expected real kiln note count, not mock value of 1250. Got: {}",
+    // We created 5 test files, so we expect real kiln to have 5 notes, not mock value of 1250
+    assert_eq!(
+        total_notes, 5,
+        "Expected 5 test notes from our isolated test environment. Got: {}",
         total_notes
     );
+
+    // Real kiln should calculate actual size, not mock value of 156.7
     assert_ne!(
         total_size_mb, 156.7,
         "Expected real kiln size calculation, not mock value of 156.7. Got: {}",
         total_size_mb
     );
 
-    // Real kiln should have specific structure indicators
-    if let Some(kiln_type) = data.get("kiln_type").and_then(|v| v.as_str()) {
-        assert_eq!(kiln_type, "obsidian", "Kiln type should be obsidian");
-    }
-
-    // Real stats should not be perfect round numbers like mock data
-    // This is a heuristic to detect mock vs real data
-    let is_perfect_round_number = total_size_mb * 10.0 == (total_size_mb * 10.0).round();
+    // Verify we got reasonable size for 5 small markdown files
     assert!(
-        !is_perfect_round_number,
-        "Real kiln size should not be a perfect round number like mock data. Got: {}",
+        total_size_mb < 1.0,
+        "5 small test files should be less than 1 MB. Got: {} MB",
         total_size_mb
     );
 }
@@ -660,6 +778,37 @@ async fn test_list_tags_extracts_real_tags_from_kiln_frontmatter() {
 
     use crucible_tools::kiln_tools;
     use serde_json::json;
+
+    // Create isolated test environment
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create test files with specific tags
+    let file1 = temp_dir.path().join("config.md");
+    fs::write(
+        &file1,
+        r#"---
+type: meta
+tags: [kiln-config, instructions, ai-guide]
+---
+# Config File"#,
+    )
+    .unwrap();
+
+    let file2 = temp_dir.path().join("note.md");
+    fs::write(
+        &file2,
+        r#"---
+type: note
+tags: [research, testing]
+---
+# Research Note"#,
+    )
+    .unwrap();
+
+    // Set tool context
+    crucible_tools::types::set_tool_context(
+        crucible_tools::types::ToolConfigContext::with_kiln_path(temp_dir.path().to_path_buf()),
+    );
 
     let tool_fn = kiln_tools::list_tags();
     let parameters = json!({});

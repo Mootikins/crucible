@@ -674,7 +674,9 @@ mod surrealdb_client_integration_tdd_tests {
             let files_after_schema = database_files_exist(db_path);
             if !files_after_schema {
                 println!("❌ TDD FAILURE: Schema initialization did not create database files");
-                println!("   Expected: Database files should be created during schema initialization");
+                println!(
+                    "   Expected: Database files should be created during schema initialization"
+                );
                 println!("   Actual: No files found after client creation");
 
                 panic!("RED PHASE: Schema initialization should create persistent database files");

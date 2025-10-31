@@ -219,9 +219,9 @@ async fn process_kiln_if_needed(
     Err(anyhow::anyhow!(
         "No embeddings found in database. Please run the CLI semantic search command first to generate embeddings:\n\
         \n\
-        OBSIDIAN_KILN_PATH={} ./target/release/cru semantic \"test query\"\n\
+        ./target/release/cru semantic \"test query\"\n\
         \n\
-        This will process your kiln and generate the required embeddings for semantic search.\n\
+        This will process your kiln at {} and generate the required embeddings for semantic search.\n\
         \n\
         After the initial processing, semantic search will work through the REPL tools.",
         kiln_path.display()

@@ -1231,15 +1231,12 @@ mod tests {
     }
 
     #[test]
-    fn test_load_config_without_obsidian_kiln_path() {
-        // Clear environment variable to test default behavior
-        std::env::remove_var("OBSIDIAN_KILN_PATH");
-
+    fn test_load_config_with_default_path() {
         let result = CliConfig::load(None, None, None);
         assert!(result.is_ok());
         let config = result.unwrap();
 
-        // Should use current directory as default when no env var is set
+        // Should use default kiln path from config
         assert!(
             config.kiln.path.is_absolute()
                 || config.kiln.path.as_path() == std::path::Path::new(".")
@@ -1248,15 +1245,9 @@ mod tests {
 
     #[test]
     fn test_load_config_with_explicit_url() {
-        // Set the required environment variable
-        std::env::set_var("OBSIDIAN_KILN_PATH", "/tmp/test");
-
         let config = CliConfig::load(None, Some("https://example.com".to_string()), None).unwrap();
 
         assert_eq!(config.kiln.embedding_url, "https://example.com");
-
-        // Clean up
-        std::env::remove_var("OBSIDIAN_KILN_PATH");
     }
 
     #[test]
@@ -1310,32 +1301,20 @@ mod tests {
 
     #[test]
     fn test_display_as_toml() {
-        // Set the required environment variable
-        std::env::set_var("OBSIDIAN_KILN_PATH", "/tmp/test");
-
         let config = CliConfig::load(None, None, None).unwrap();
         let toml_str = config.display_as_toml().unwrap();
         assert!(toml_str.contains("[kiln]"));
         assert!(toml_str.contains("path"));
         assert!(toml_str.contains("embedding_url"));
-
-        // Clean up
-        std::env::remove_var("OBSIDIAN_KILN_PATH");
     }
 
     #[test]
     fn test_display_as_json() {
-        // Set the required environment variable
-        std::env::set_var("OBSIDIAN_KILN_PATH", "/tmp/test");
-
         let config = CliConfig::load(None, None, None).unwrap();
         let json_str = config.display_as_json().unwrap();
         assert!(json_str.contains("\"kiln\""));
         assert!(json_str.contains("\"path\""));
         assert!(json_str.contains("\"embedding_url\""));
-
-        // Clean up
-        std::env::remove_var("OBSIDIAN_KILN_PATH");
     }
 
     #[test]
@@ -1422,8 +1401,6 @@ timeout_secs = 60
 
     #[test]
     fn test_api_key_from_environment() {
-        // Set required environment variable
-        std::env::set_var("OBSIDIAN_KILN_PATH", "/tmp/test");
         std::env::set_var("OPENAI_API_KEY", "sk-test-openai");
         std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-test-anthropic");
 
@@ -1436,7 +1413,6 @@ timeout_secs = 60
         );
 
         // Clean up
-        std::env::remove_var("OBSIDIAN_KILN_PATH");
         std::env::remove_var("OPENAI_API_KEY");
         std::env::remove_var("ANTHROPIC_API_KEY");
     }
