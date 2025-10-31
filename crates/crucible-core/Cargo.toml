@@ -22,6 +22,7 @@ tracing = { workspace = true }
 async-trait = { workspace = true }
 pulldown-cmark = { workspace = true }
 sha2 = "0.10"
+tempfile = { workspace = true }
 
 # Enhanced async runtime
 tokio = { workspace = true, features = ["full", "tracing"] }
@@ -43,6 +44,5 @@ full = ["orchestration", "hot-reload"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
-tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }
 

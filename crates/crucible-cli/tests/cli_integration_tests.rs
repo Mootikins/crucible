@@ -3,179 +3,25 @@
 //! These tests are written TDD-style - they should fail first,
 //! then drive the implementation to make them pass.
 
-use anyhow::{Context, Result};
+mod common;
+
+use anyhow::Result;
+use common::{create_basic_kiln, kiln_path_str, run_cli_command as run_cli_support};
 use crucible_config::Config;
-use std::path::PathBuf;
-use std::process::Command;
 use tempfile::TempDir;
-
-/// Helper function to get CLI binary path
-fn cli_binary_path() -> PathBuf {
-    // Look for CLI binary in target directory
-    let base_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| {
-        std::env::current_dir()
-            .unwrap()
-            .to_string_lossy()
-            .to_string()
-    });
-
-    let debug_path = PathBuf::from(&base_dir).join("../../target/debug/cru");
-    let release_path = PathBuf::from(&base_dir).join("../../target/release/cru");
-
-    if debug_path.exists() {
-        debug_path
-    } else if release_path.exists() {
-        release_path
-    } else {
-        panic!("cru binary not found. Run 'cargo build -p crucible-cli' first.");
-    }
-}
-
-/// Helper to run CLI command with configuration
-async fn run_cli_command(args: Vec<&str>, config: &Config) -> Result<String> {
-    let binary_path = cli_binary_path();
-    let mut cmd = Command::new(binary_path);
-
-    // Isolate HOME/XDG directories to a temp location so tests can run in sandboxed environments
-    let temp_home = tempfile::Builder::new()
-        .prefix("crucible-cli-home")
-        .tempdir()
-        .context("Failed to create temporary HOME directory")?;
-
-    cmd.env("HOME", temp_home.path());
-    cmd.env("XDG_CONFIG_HOME", temp_home.path());
-    cmd.env("XDG_DATA_HOME", temp_home.path());
-
-    // Create a temporary CLI config file if we have a kiln path
-    if let Some(kiln_path) = config.kiln_path_opt() {
-        let temp_config = tempfile::Builder::new()
-            .suffix(".toml")
-            .tempfile()
-            .context("Failed to create temp config file")?;
-
-        // Write a minimal CLI config with the kiln path
-        let cli_config_toml = format!(
-            "[kiln]\npath = \"{}\"\nembedding_url = \"http://localhost:11434\"\n",
-            kiln_path.replace('\\', "\\\\") // Escape backslashes for TOML
-        );
-
-        std::fs::write(temp_config.path(), cli_config_toml)
-            .context("Failed to write config file")?;
-
-        cmd.arg("--config").arg(temp_config.path());
-
-        // Keep temp file alive until command finishes
-        // Execute command with the config file
-        for arg in args {
-            cmd.arg(arg);
-        }
-
-        let output = tokio::task::spawn_blocking(move || {
-            let _temp_config = temp_config; // Keep alive
-            let _temp_home = temp_home;
-            cmd.output()
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("Task join error: {}", e))?
-        .map_err(|e| anyhow::anyhow!("Command execution failed: {}", e))?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-        if !output.status.success() {
-            return Err(anyhow::anyhow!(
-                "CLI command failed: {}\n{}",
-                stderr,
-                stdout
-            ));
-        }
-
-        let combined_output = if !stderr.is_empty() {
-            format!("{}{}", stderr, stdout)
-        } else {
-            stdout
-        };
-
-        Ok(combined_output)
-    } else {
-        // No config, just run the command
-        for arg in args {
-            cmd.arg(arg);
-        }
-
-        let output = tokio::task::spawn_blocking(move || {
-            let _temp_home = temp_home;
-            cmd.output()
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("Task join error: {}", e))?
-        .map_err(|e| anyhow::anyhow!("Command execution failed: {}", e))?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-        if !output.status.success() {
-            return Err(anyhow::anyhow!(
-                "CLI command failed: {}\n{}",
-                stderr,
-                stdout
-            ));
-        }
-
-        let combined_output = if !stderr.is_empty() {
-            format!("{}{}", stderr, stdout)
-        } else {
-            stdout
-        };
-
-        Ok(combined_output)
-    }
-}
-
-/// Helper to create a test kiln with sample content
-async fn create_test_kiln() -> Result<TempDir> {
-    let temp_dir = TempDir::new()?;
-    let kiln_path = temp_dir.path();
-
-    // Create sample markdown files
-    let test_files = vec![
-        (
-            "Getting Started.md",
-            "# Getting Started\n\nThis is a getting started guide for the kiln.",
-        ),
-        (
-            "Project Architecture.md",
-            "# Project Architecture\n\nThis document describes the architecture.",
-        ),
-        ("Testing Notes.md", "# Testing\n\nSome testing notes here."),
-        ("README.md", "# README\n\nThis is the main README file."),
-        (
-            "Development.md",
-            "# Development\n\nDevelopment documentation.",
-        ),
-    ];
-
-    for (filename, content) in test_files {
-        let file_path = kiln_path.join(filename);
-        std::fs::write(file_path, content)?;
-    }
-
-    Ok(temp_dir)
-}
 
 #[tokio::test]
 async fn test_basic_search_works_immediately() -> Result<()> {
     // GIVEN: A test kiln with content
-    let kiln_dir = create_test_kiln().await?;
-    let config =
-        crucible_config::TestConfig::with_kiln_path(kiln_dir.path().to_string_lossy().to_string());
+    let kiln_dir = create_basic_kiln()?;
+    let config = crucible_config::TestConfig::with_kiln_path(kiln_path_str(kiln_dir.path()));
 
     // WHEN: User performs basic search
-    let result = run_cli_command(vec!["search", "getting"], &config).await?;
+    let output = run_cli_support(&["search", "getting"], &config).await?;
 
     // THEN: Should return immediate basic results without daemon
-    assert!(result.contains("Getting Started.md") || result.contains("basic"));
-    assert!(result.contains("Found") || result.contains("matches"));
+    assert!(output.stdout.contains("Getting Started.md") || output.stdout.contains("basic"));
+    assert!(output.stdout.contains("Found") || output.stdout.contains("matches"));
 
     Ok(())
 }
@@ -184,14 +30,14 @@ async fn test_basic_search_works_immediately() -> Result<()> {
 async fn test_search_without_kiln_gives_helpful_error() -> Result<()> {
     // GIVEN: No kiln path set (set to invalid path)
     let config = crucible_config::TestConfig::with_kiln_path("/nonexistent/path");
-    let result = run_cli_command(vec!["search", "test"], &config).await;
+    let result = run_cli_support(&["search", "test"], &config).await;
 
     // WHEN: Search is attempted without kiln
     // THEN: Should give helpful error message
     match result {
         Ok(output) => {
-            assert!(output.contains("kiln") && output.contains("path"));
-            assert!(output.contains("help") || output.contains("Error"));
+            assert!(output.stdout.contains("kiln") && output.stdout.contains("path"));
+            assert!(output.stdout.contains("help") || output.stdout.contains("Error"));
         }
         Err(e) => {
             let error_msg = e.to_string();
@@ -206,16 +52,15 @@ async fn test_search_without_kiln_gives_helpful_error() -> Result<()> {
 #[tokio::test]
 async fn test_basic_search_with_options() -> Result<()> {
     // GIVEN: A test kiln
-    let kiln_dir = create_test_kiln().await?;
-    let config =
-        crucible_config::TestConfig::with_kiln_path(kiln_dir.path().to_string_lossy().to_string());
+    let kiln_dir = create_basic_kiln()?;
+    let config = crucible_config::TestConfig::with_kiln_path(kiln_path_str(kiln_dir.path()));
 
     // WHEN: User searches with limit option
-    let result = run_cli_command(vec!["search", "development", "--limit", "2"], &config).await?;
+    let output = run_cli_support(&["search", "development", "--limit", "2"], &config).await?;
 
     // THEN: Should respect limit and find relevant files
-    assert!(result.contains("Development.md"));
-    assert!(result.contains("limit") || result.contains("results"));
+    assert!(output.stdout.contains("Development.md"));
+    assert!(output.stdout.contains("limit") || output.stdout.contains("results"));
 
     Ok(())
 }
@@ -359,57 +204,31 @@ async fn test_search_empty_query_shows_help() -> Result<()> {
 
 /// Helper to run CLI command and allow failure (captures error output)
 async fn run_cli_command_allow_failure(args: Vec<&str>, config: &Config) -> Result<String> {
-    let binary_path = cli_binary_path();
-    let mut cmd = Command::new(binary_path);
-
-    // Create a temporary CLI config file if we have a kiln path
-    if let Some(kiln_path) = config.kiln_path_opt() {
-        let temp_config = tempfile::Builder::new()
-            .suffix(".toml")
-            .tempfile()
-            .context("Failed to create temp config file")?;
-
-        let cli_config_toml = format!(
-            "[kiln]\npath = \"{}\"\nembedding_url = \"http://localhost:11434\"\n",
-            kiln_path.replace('\\', "\\\\")
-        );
-
-        std::fs::write(temp_config.path(), cli_config_toml)?;
-        cmd.arg("--config").arg(temp_config.path());
-
-        for arg in args {
-            cmd.arg(arg);
-        }
-
-        let output = tokio::task::spawn_blocking(move || {
-            let _temp = temp_config;
-            cmd.output()
-        })
-        .await??;
-
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-        Ok(if !stderr.is_empty() {
-            format!("{}{}", stderr, stdout)
+    let arg_refs = args.iter().map(|s| *s).collect::<Vec<_>>();
+    match run_cli_support(&arg_refs, config).await {
+        Ok(output) => Ok(if output.stderr.is_empty() {
+            output.stdout
         } else {
-            stdout
-        })
-    } else {
-        for arg in args {
-            cmd.arg(arg);
-        }
-
-        let output = tokio::task::spawn_blocking(move || cmd.output()).await??;
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-        Ok(if !stderr.is_empty() {
-            format!("{}{}", stderr, stdout)
-        } else {
-            stdout
-        })
+            format!("{}{}", output.stderr, output.stdout)
+        }),
+        Err(err) => Ok(err.to_string()),
     }
+}
+
+/// Helper to run CLI command and fail on non-zero exit codes
+async fn run_cli_command(args: Vec<&str>, config: &Config) -> Result<String> {
+    let arg_refs = args.iter().map(|s| *s).collect::<Vec<_>>();
+    let output = run_cli_support(&arg_refs, config).await?;
+    if output.stderr.is_empty() {
+        Ok(output.stdout)
+    } else {
+        Ok(format!("{}{}", output.stderr, output.stdout))
+    }
+}
+
+/// Helper to create a test kiln with sample content
+async fn create_test_kiln() -> Result<TempDir> {
+    create_basic_kiln()
 }
 
 #[tokio::test]
