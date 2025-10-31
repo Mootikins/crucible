@@ -15,6 +15,8 @@ use crucible_surrealdb::{SurrealClient, SurrealDbConfig};
 use std::default::Default;
 
 /// Real database connection using SurrealDB
+///
+/// This struct is clonable and can be used in tests via `new_memory()`.
 #[derive(Clone)]
 pub struct ReplDatabase {
     /// SurrealDB client (wrapped in Arc for sharing)

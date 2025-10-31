@@ -104,7 +104,34 @@ fn convert_args_to_parameters(tool_name: &str, args: &[String]) -> serde_json::V
                 serde_json::json!({"query": args[0]})
             }
         }
-        "create_note" | "update_note" | "delete_note" => {
+        "create_note" => {
+            // create_note requires: path, title, content
+            // Optional: properties (JSON string), tags (comma-separated)
+            if args.len() < 3 {
+                return serde_json::json!({
+                    "error": format!("create_note requires at least 3 arguments: path, title, content (got {})", args.len())
+                });
+            }
+            let mut params = serde_json::json!({
+                "path": args[0],
+                "title": args[1],
+                "content": args[2]
+            });
+            // Add optional properties (expects JSON string)
+            if args.len() > 3 && !args[3].is_empty() {
+                if let Ok(props) = serde_json::from_str::<serde_json::Value>(&args[3]) {
+                    params["properties"] = props;
+                } else {
+                    tracing::warn!("Invalid JSON for properties parameter: {}", args[3]);
+                }
+            }
+            // Add optional tags (comma-separated string)
+            if args.len() > 4 && !args[4].is_empty() {
+                params["tags"] = serde_json::json!(args[4]);
+            }
+            params
+        }
+        "update_note" | "delete_note" => {
             if args.is_empty() {
                 serde_json::json!({})
             } else {
@@ -305,16 +332,32 @@ impl UnifiedToolRegistry {
     /// Execute a tool using the unified system with performance tracking
     pub async fn execute_tool(&self, tool_name: &str, args: &[String]) -> Result<ToolResult> {
         let start_time = Instant::now();
-        debug!("Executing tool: {} with args: {:?}", tool_name, args);
+        debug!("=== Tool Execution Start ===");
+        debug!("Tool: {}", tool_name);
+        debug!("Args count: {}", args.len());
+        debug!("Args: {:?}", args);
 
         let result = if self.use_unified {
             // Convert CLI args to proper tool parameters
             let parameters = convert_args_to_parameters(tool_name, args);
+            debug!(
+                "Converted parameters: {}",
+                serde_json::to_string_pretty(&parameters)
+                    .unwrap_or_else(|_| format!("{:?}", parameters))
+            );
+
+            // Check if parameter conversion detected an error
+            if let Some(error) = parameters.get("error") {
+                let error_msg = error.as_str().unwrap_or("Unknown parameter error");
+                warn!("Parameter conversion error: {}", error_msg);
+                return Err(anyhow::anyhow!("Parameter error: {}", error_msg));
+            }
 
             // First try the centralized manager (system tools)
+            debug!("Attempting execution via centralized manager (Rust tools)...");
             match CrucibleToolManager::execute_tool_global(
                 tool_name,
-                parameters,
+                parameters.clone(),
                 Some("repl_user".to_string()),
                 Some("repl_session".to_string()),
             )
@@ -323,9 +366,10 @@ impl UnifiedToolRegistry {
                 Ok(crucible_result) => {
                     // Convert crucible_tools::ToolResult to REPL ToolResult
                     debug!(
-                        "Tool {} executed successfully via centralized manager",
+                        "✓ Tool {} executed successfully via centralized manager",
                         tool_name
                     );
+                    debug!("Execution time: {:?}", start_time.elapsed());
                     Ok(convert_crucible_result_to_repl_result(
                         tool_name,
                         crucible_result,
@@ -333,33 +377,44 @@ impl UnifiedToolRegistry {
                 }
                 Err(e) => {
                     debug!(
-                        "Centralized manager execution failed for {}: {}",
+                        "✗ Centralized manager execution failed for {}: {}",
                         tool_name, e
                     );
+                    debug!("Attempting fallback to group registry (system tool groups)...");
 
                     // Try group registry as fallback
                     match self.group_registry.execute_tool(tool_name, args).await {
                         Ok(result) => {
                             debug!(
-                                "Tool {} executed successfully via group registry (fallback)",
+                                "✓ Tool {} executed successfully via group registry (fallback)",
                                 tool_name
                             );
+                            debug!("Execution time: {:?}", start_time.elapsed());
                             Ok(result)
                         }
-                        Err(e) => {
-                            debug!("Group registry execution failed for {}: {}", tool_name, e);
+                        Err(group_err) => {
+                            debug!(
+                                "✗ Group registry execution failed for {}: {}",
+                                tool_name, group_err
+                            );
+                            debug!("Attempting final fallback to Rune registry (.rn scripts)...");
 
                             // Try Rune tools as final fallback
                             match self.rune_registry.execute_tool(tool_name, args).await {
                                 Ok(result) => {
-                                    debug!("Tool {} executed successfully via Rune registry (final fallback)", tool_name);
+                                    debug!("✓ Tool {} executed successfully via Rune registry (final fallback)", tool_name);
+                                    debug!("Execution time: {:?}", start_time.elapsed());
                                     Ok(result)
                                 }
                                 Err(rune_err) => {
                                     // All failed, return combined error
+                                    warn!("✗ All registries failed for tool '{}'", tool_name);
                                     let combined_error = format!(
-                                        "Tool '{}' not found or execution failed.\nCentralized manager: {}\nGroup registry: {}\nRune registry: {}",
-                                        tool_name, e, e, rune_err
+                                        "Tool '{}' not found or execution failed in all registries:\n\
+                                         • Centralized manager (Rust): {}\n\
+                                         • Group registry (System): {}\n\
+                                         • Rune registry (.rn): {}",
+                                        tool_name, e, group_err, rune_err
                                     );
                                     Err(anyhow::anyhow!(combined_error))
                                 }

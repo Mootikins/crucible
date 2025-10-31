@@ -31,6 +31,7 @@ impl LogBuffer {
     ///
     /// # Example
     /// ```
+    /// use crucible_cli::tui::LogBuffer;
     /// let buffer = LogBuffer::new(20); // Keep last 20 logs
     /// ```
     pub fn new(capacity: usize) -> Self {
