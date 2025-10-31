@@ -2,7 +2,7 @@
 
 > Where ideas transform through linked thinking
 
-A high-performance knowledge management system that combines hierarchical organization, real-time collaboration, and AI agent integration. Built on a simplified ScriptEngine service architecture, Crucible promotes **linked thinking** - the seamless connection and evolution of ideas across time and context.
+A high-performance knowledge management system that combines hierarchical organization, real-time collaboration, and AI agent integration. Crucible promotes **linked thinking** – the seamless connection and evolution of ideas across time and context – by routing every UI (CLI today, desktop/agent integrations tomorrow) through a shared `crucible-core` façade that orchestrates configuration, storage, agents, and tools behind the scenes.
 
 > **Status Note (2025-10-30):** The project is pivoting away from the legacy “service” architecture toward a lightweight, local-first core. References to service orchestration below describe historical behavior and will be updated as the refactor progresses.
 
@@ -10,11 +10,10 @@ A high-performance knowledge management system that combines hierarchical organi
 
 - 🔍 **Advanced Search**: Fuzzy search, semantic search with embeddings, and SurrealQL queries
 - 🖥️ **Interactive REPL**: Full-featured terminal interface with syntax highlighting and auto-completion
-- 🤖 **AI Chat Integration**: Multiple AI agents for research, writing, and analysis
-- 🚀 **ScriptEngine Service**: Production-ready Rune script execution with security and performance monitoring
-- 🔧 **Service Management**: Comprehensive CLI commands for service orchestration and monitoring
-- 🔄 **Migration System**: Automated tool migration with validation, rollback, and integrity checking
-- 📊 **Real-time Metrics**: Service health monitoring, performance tracking, and resource management
+- 🤖 **AI Agent Integration**: Multiple AI agents share the same core APIs as human operators
+- 🔧 **Tool Orchestration**: Shared execution layer available to the CLI, agents, and future desktop UI
+- 🔄 **Sync & Collaboration (roadmap)**: CRDT-backed document sync and multi-user sessions coordinated by the core
+- 📊 **Operational Insights**: Core-level metrics, tooling diagnostics, and performance tracking
 - ⚡ **High Performance**: Simplified architecture with 83% complexity reduction and 51% fewer dependencies
 - 🛡️ **Security First**: Multiple security levels, sandboxed execution, and comprehensive validation
 - 🔒 **Memory Safety**: Large file protection, UTF-8 safety, and input validation for search operations
@@ -36,16 +35,21 @@ cru
 cru --help
 ```
 
-## 🔁 Current CLI Execution Flow (Baseline)
+## 🔁 Execution Flow (Baseline → Target)
 
-As of 2025-10-30 the CLI follows this path at runtime:
+**Baseline (2025-10-30)**
+1. `main.rs` parses CLI args with Clap and loads `CliConfig`.
+2. Global singletons spin up on demand (kiln watcher, `CrucibleToolManager`).
+3. Commands hit filesystem/SurrealDB/tool layers directly.
+4. REPL starts with its own copies of the same globals.
 
-1. **Argument & Config Parsing** – `main.rs` parses `Cli` arguments with Clap, then loads `CliConfig` from disk (no env-var fallbacks).
-2. **Global Initialization** – The kiln watcher (`kiln_processor::ensure_watcher_running`) and `CrucibleToolManager` singleton are lazily started. Dependencies are accessed through global state rather than explicit wiring.
-3. **Command Dispatch** – Each subcommand module executes immediately using the loaded config, performing its own kiln access and tool execution.
-4. **REPL Startup (default command)** – When no subcommand is provided, the REPL module spins up and reuses the same global managers for tool discovery and kiln access.
+**Target (Roadmap)**
+1. UI adapters parse input then hand control to a `CliApp` (or desktop equivalent) constructed from `crucible-core`.
+2. The core façade exposes agent, tool, and storage traits; concrete implementations stay inside core.
+3. Commands/REPL interact only with the façade, making orchestration identical across UIs.
+4. Sync & collaboration piggyback on the same façade so multiple devices/users share state through CRDT updates coordinated by the core.
 
-This flow is being documented as the baseline for the incremental refactor described in `ROADMAP.md`.
+During the transition you may still encounter global managers or direct CLI → infrastructure calls; the roadmap tracks the steps that retire those paths.
 
 ## 🖥️ CLI Overview
 
@@ -123,21 +127,15 @@ SELECT title, tags FROM notes WHERE tags CONTAINS '#project';
 
 ## 🏗️ Architecture Highlights
 
-### ScriptEngine Service Architecture
-- **Simplified Design**: 83% reduction in complexity, removed 5,000+ lines of over-engineered code
-- **Production Ready**: VM-per-execution pattern with security isolation and resource monitoring
-- **Event-Driven**: Comprehensive event system for service coordination and monitoring
-- **High Performance**: 51% reduction in dependencies, improved compilation and runtime performance
-
-### Service Integration
-- **Service Discovery**: Automatic service detection and registration
-- **Health Monitoring**: Real-time health checks and performance metrics
-- **Configuration Management**: Hot-reloadable configuration with validation
-- **Migration System**: Automated tool migration with rollback capabilities
+### Core-Orchestrated Architecture
+- **Domain-Centric Core**: `crucible-core` owns parsing, CRDTs, configuration, agent orchestration, and the traits that expose shared functionality to every UI.
+- **Integrated Agents & Tools**: LLM agents and tool execution pipelines live inside the core layer so automated workflows and human operators share the same capabilities.
+- **Infrastructure Behind Façade**: Storage (SurrealDB), embedding pipelines, and external runners are coordinated by the core; UI layers never talk to them directly.
+- **Shared Test Fixtures**: `crucible_core::test_support` exports kiln/document builders so unit, integration, and UI tests exercise identical data.
 
 ## 🔧 Tech Stack
 
-- **Core**: Rust + Tauri + ScriptEngine Services
+- **Core**: Rust + Tokio + SurrealDB orchestration façade
 - **Frontend**: Svelte 5 + TypeScript
 - **Database**: SurrealDB with vector extensions
 - **Scripting**: Rune with security sandboxing
@@ -158,8 +156,8 @@ SELECT title, tags FROM notes WHERE tags CONTAINS '#project';
 
 ### Technical Documentation
 - **[API Documentation](./docs/API_DOCUMENTATION.md)** - Complete API reference
-- **[ScriptEngine API](./docs/SCRIPTENGINE_API.md)** - Service architecture and API
-- **[Service Integration](./crates/crucible-cli/CLI_SERVICE_INTEGRATION.md)** - CLI and service integration guide
+- **[ScriptEngine API](./docs/SCRIPTENGINE_API.md)** - Legacy documentation for the pre-refactor service system
+- **[Service Integration](./crates/crucible-cli/CLI_SERVICE_INTEGRATION.md)** - Legacy CLI/service notes (to be retired)
 - **[Developer Guide](./docs/DEVELOPER_GUIDE.md)** - Development environment and workflow
 - **[AI Agent Guide](./AGENTS.md)** - Instructions for AI agents working on the codebase
 
@@ -193,23 +191,28 @@ SELECT title, tags FROM notes WHERE tags CONTAINS '#project';
 - **Zero Timeouts**: Eliminated all test timeout issues through dead code removal
 - **Memory Testing**: Validated large file handling and memory limits
 
-## 🔥 New in This Version
+## 🔥 Roadmap Focus
 
-### ScriptEngine Service Architecture
-- **Simplified Services**: Clean, focused service traits with 83% complexity reduction
-- **Production Ready**: Security levels, resource limits, and comprehensive monitoring
-- **Event System**: Real-time service coordination and health monitoring
+### Core-Orchestrated Architecture (in progress)
+- **UI → Core → Infra Flow**: CLI now targets the shared core façade before hitting storage/tools
+- **Integrated Agents & Tools**: Agents, LLM utilities, and tool execution move behind the core façade so automated workflows and humans share the same APIs
+- **Shared Fixtures**: `crucible_core::test_support` centralises kiln/document builders for every layer
+- **Dependency Cleanup**: Roadmap phases focus on removing direct UI → infrastructure calls
 
 ### Enhanced CLI Capabilities
-- **20+ New Commands**: Service management, migration operations, and advanced monitoring
-- **Interactive REPL**: Enhanced with syntax highlighting, auto-completion, and tool integration
-- **Service Integration**: Automatic service discovery and management
+- **20+ Commands**: Search, notes, semantics, migrations, and diagnostics
+- **Interactive REPL**: Syntax highlighting, auto-completion, and tool execution via the shared core façade
 - **Search Safety**: Built-in memory protection and input validation
 
-### Migration System
-- **Automated Migration**: Tool migration with validation and rollback
-- **Multiple Security Levels**: Safe, Development, and Production modes
-- **Integrity Checking**: Comprehensive validation and auto-fix capabilities
+### Multi-Client & Collaboration (planned)
+- **Sync Engine**: CRDT-powered document sync between devices through the core façade
+- **Shared Sessions**: Core-managed collaboration channels so multiple users can edit the same knowledge base in real time
+- **Agent Collaboration**: Agents consume the same APIs and tools as humans, enabling automated document curation and cross-device assistance
+
+### Migration & Maintenance
+- **Automation**: Tool migration helpers with validation and rollback paths
+- **Legacy Docs**: ScriptEngine references live in `docs/SCRIPTENGINE_API.md` for historical context while the new architecture lands
+- **Roadmap Driven**: See `ROADMAP.md` for the staged core-centric refactor
 
 ## License
 
