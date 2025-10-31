@@ -1314,6 +1314,4 @@ CRUCIBLE_TEST_MODE=1 RUST_LOG=debug crucible-cli migration status
 
 For more information, see:
 - [Architecture Documentation](./ARCHITECTURE.md)
-- [ScriptEngine API Documentation](./SCRIPTENGINE_API.md)
-- [Migration Guide](./MIGRATION_GUIDE.md)
-- [Service Integration Guide](../crates/crucible-cli/CLI_SERVICE_INTEGRATION.md)
+- (Legacy ScriptEngine, migration, and service integration docs have been removed; see project history if needed.)
