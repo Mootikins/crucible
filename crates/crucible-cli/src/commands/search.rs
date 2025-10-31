@@ -8,6 +8,7 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Binary file detection constants
 const NULL_BYTE: u8 = 0x00;
@@ -52,6 +53,131 @@ const BINARY_SIGNATURES: &[&[u8]] = &[
     &[0x00, 0x00, 0x01, 0x00], // ICO
     &[0x00, 0x00, 0x02, 0x00], // CUR
 ];
+
+/// Abstraction over filesystem and validation operations used by search commands.
+pub trait SearchAdapter: Send + Sync {
+    fn validate_query(&self, kiln_path: &Path, query: &str) -> Result<String>;
+    fn list_markdown_files(&self, kiln_path: &Path) -> Result<Vec<String>>;
+    fn read_file_content(&self, kiln_path: &Path, file_id: &str) -> Result<String>;
+}
+
+#[derive(Clone)]
+pub struct SecureSearchAdapter {
+    config: SecureFileSystemConfig,
+}
+
+impl SecureSearchAdapter {
+    pub fn new() -> Self {
+        Self {
+            config: SecureFileSystemConfig::default(),
+        }
+    }
+
+    pub fn with_config(config: SecureFileSystemConfig) -> Self {
+        Self { config }
+    }
+}
+
+impl Default for SecureSearchAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SearchAdapter for SecureSearchAdapter {
+    fn validate_query(&self, kiln_path: &Path, query: &str) -> Result<String> {
+        PathValidator::new(kiln_path)
+            .validate_search_query(query)
+            .map_err(|e| anyhow::anyhow!("Invalid search query: {}", e))
+    }
+
+    fn list_markdown_files(&self, kiln_path: &Path) -> Result<Vec<String>> {
+        collect_markdown_files(kiln_path, &self.config)
+    }
+
+    fn read_file_content(&self, kiln_path: &Path, file_id: &str) -> Result<String> {
+        SecureFileReader::new(kiln_path, self.config.clone()).read_file_content(file_id)
+    }
+}
+
+/// Service layer that orchestrates search operations using an injected adapter.
+pub struct SearchService {
+    adapter: Arc<dyn SearchAdapter>,
+}
+
+impl SearchService {
+    /// Create a service with the default secure adapter.
+    pub fn new() -> Self {
+        Self::with_adapter(Arc::new(SecureSearchAdapter::default()))
+    }
+
+    /// Create a service with a custom adapter (useful for testing).
+    pub fn with_adapter(adapter: Arc<dyn SearchAdapter>) -> Self {
+        Self { adapter }
+    }
+
+    pub fn validate_query(&self, kiln_path: &Path, query: &str) -> Result<String> {
+        self.adapter.validate_query(kiln_path, query)
+    }
+
+    pub fn list_markdown_files(&self, kiln_path: &Path) -> Result<Vec<String>> {
+        self.adapter.list_markdown_files(kiln_path)
+    }
+
+    pub fn read_file_content(&self, kiln_path: &Path, file_id: &str) -> Result<String> {
+        self.adapter.read_file_content(kiln_path, file_id)
+    }
+
+    pub fn search_with_query(
+        &self,
+        kiln_path: &Path,
+        query: &str,
+        limit: u32,
+        include_content: bool,
+    ) -> Result<Vec<SearchResultWithScore>> {
+        let mut results = Vec::new();
+        let query_lower = query.to_lowercase();
+
+        for file_path in self.list_markdown_files(kiln_path)? {
+            if results.len() >= limit as usize {
+                break;
+            }
+
+            match self.read_file_content(kiln_path, &file_path) {
+                Ok(content) => {
+                    let content_lower = content.to_lowercase();
+                    if content_lower.contains(&query_lower) {
+                        let snippet = extract_snippet(&content, query, include_content);
+                        let score = calculate_relevance_score(&content, &query_lower);
+
+                        let title = file_path
+                            .split('/')
+                            .next_back()
+                            .unwrap_or(&file_path)
+                            .trim_end_matches(".md")
+                            .to_string();
+
+                        results.push(SearchResultWithScore {
+                            id: file_path,
+                            title,
+                            content: snippet,
+                            score,
+                        });
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        Ok(results)
+    }
+}
 
 /// Detect if file content is binary by analyzing byte patterns
 pub fn is_binary_content(content: &[u8]) -> bool {
@@ -146,24 +272,21 @@ pub async fn execute(
         return Err(anyhow::anyhow!("kiln path does not exist"));
     }
 
-    // Initialize secure filesystem components
-    let secure_config = SecureFileSystemConfig::default();
-    let path_validator = PathValidator::new(kiln_path);
+    let service = SearchService::new();
 
-    // Validate query if provided
-    let query_ref = if let Some(ref q) = query {
-        let validated_query = validate_search_query(q, &path_validator)?;
-        Some(validated_query)
+    // Validate query if provided (sanitized copy used for execution)
+    let sanitized_query = if let Some(ref q) = query {
+        Some(service.validate_query(kiln_path, q)?)
     } else {
         None
     };
 
-    let results = if let Some(q) = query_ref {
-        // Direct search with query using secure file system
-        search_files_in_kiln_secure(kiln_path, &q, limit, show_content, &secure_config)?
+    let results = if let Some(ref q) = sanitized_query {
+        // Direct search with query using the service layer
+        service.search_with_query(kiln_path, q, limit, show_content)?
     } else {
         // Interactive picker with available files
-        let files = get_markdown_files_secure(kiln_path, &secure_config)?;
+        let files = service.list_markdown_files(kiln_path)?;
 
         if files.is_empty() {
             println!("No markdown files found in kiln: {}", kiln_path.display());
@@ -191,8 +314,7 @@ pub async fn execute(
             println!("\nSelected: {}\n", selected.title);
 
             // Get document content from file using secure reader
-            let secure_reader = SecureFileReader::new(kiln_path, secure_config);
-            if let Ok(content) = secure_reader.read_file_content(&selected.id) {
+            if let Ok(content) = service.read_file_content(kiln_path, &selected.id) {
                 println!("{}", content);
             }
             return Ok(());
@@ -228,8 +350,7 @@ pub fn search_files_in_kiln(
     limit: u32,
     include_content: bool,
 ) -> Result<Vec<SearchResultWithScore>> {
-    let secure_config = SecureFileSystemConfig::default();
-    search_files_in_kiln_secure(kiln_path, query, limit, include_content, &secure_config)
+    SearchService::new().search_with_query(kiln_path, query, limit, include_content)
 }
 
 /// Secure version of search_files_in_kiln using secure filesystem utilities
@@ -240,73 +361,25 @@ pub fn search_files_in_kiln_secure(
     include_content: bool,
     config: &SecureFileSystemConfig,
 ) -> Result<Vec<SearchResultWithScore>> {
-    let mut results = Vec::new();
-    let query_lower = query.to_lowercase();
-
-    // Get all markdown files using secure walker
-    let files = get_markdown_files_secure(kiln_path, config)?;
-
-    // Create secure file reader
-    let secure_reader = SecureFileReader::new(kiln_path, config.clone());
-
-    for file_path in files {
-        if results.len() >= limit as usize {
-            break;
-        }
-
-        // Read file content securely
-        match secure_reader.read_file_content(&file_path) {
-            Ok(content) => {
-                // Check if content contains the query (case-insensitive)
-                let content_lower = content.to_lowercase();
-                if content_lower.contains(&query_lower) {
-                    // Extract a snippet around the match
-                    let snippet = extract_snippet(&content, query, include_content);
-
-                    // Calculate a simple relevance score based on match position and frequency
-                    let score = calculate_relevance_score(&content, &query_lower);
-
-                    // Get title from filename
-                    let title = file_path
-                        .split('/')
-                        .next_back()
-                        .unwrap_or(&file_path)
-                        .trim_end_matches(".md")
-                        .to_string();
-
-                    results.push(SearchResultWithScore {
-                        id: file_path,
-                        title,
-                        content: snippet,
-                        score,
-                    });
-                }
-            }
-            Err(_) => {
-                // Skip files that can't be read - secure reader logs warnings
-                continue;
-            }
-        }
-    }
-
-    // Sort by score (descending)
-    results.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    Ok(results)
+    let adapter = Arc::new(SecureSearchAdapter::with_config(config.clone()));
+    SearchService::with_adapter(adapter).search_with_query(kiln_path, query, limit, include_content)
 }
 
 /// Get all markdown files in the kiln directory recursively using secure walker
 pub fn get_markdown_files(kiln_path: &Path) -> Result<Vec<String>> {
-    let secure_config = SecureFileSystemConfig::default();
-    get_markdown_files_secure(kiln_path, &secure_config)
+    SearchService::new().list_markdown_files(kiln_path)
 }
 
 /// Secure version of get_markdown_files using the secure file walker
 pub fn get_markdown_files_secure(
+    kiln_path: &Path,
+    config: &SecureFileSystemConfig,
+) -> Result<Vec<String>> {
+    let adapter = Arc::new(SecureSearchAdapter::with_config(config.clone()));
+    SearchService::with_adapter(adapter).list_markdown_files(kiln_path)
+}
+
+fn collect_markdown_files(
     kiln_path: &Path,
     config: &SecureFileSystemConfig,
 ) -> Result<Vec<String>> {
@@ -434,6 +507,67 @@ fn read_file_with_utf8_recovery(file_path: &str) -> Result<String> {
     }
 
     Ok(content)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    struct MockSearchAdapter {
+        files: HashMap<String, String>,
+    }
+
+    impl SearchAdapter for MockSearchAdapter {
+        fn validate_query(&self, _kiln_path: &Path, query: &str) -> Result<String> {
+            Ok(query.to_string())
+        }
+
+        fn list_markdown_files(&self, _kiln_path: &Path) -> Result<Vec<String>> {
+            Ok(self.files.keys().cloned().collect())
+        }
+
+        fn read_file_content(&self, _kiln_path: &Path, file_id: &str) -> Result<String> {
+            self.files
+                .get(file_id)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("missing file"))
+        }
+    }
+
+    fn build_mock_adapter() -> Arc<dyn SearchAdapter> {
+        let mut files = HashMap::new();
+        files.insert(
+            "notes/rust.md".to_string(),
+            "Rust programming language overview".to_string(),
+        );
+        files.insert(
+            "notes/python.md".to_string(),
+            "Python scripting tips".to_string(),
+        );
+        Arc::new(MockSearchAdapter { files })
+    }
+
+    #[test]
+    fn search_service_returns_matching_results() {
+        let service = SearchService::with_adapter(build_mock_adapter());
+        let results = service
+            .search_with_query(Path::new("/tmp"), "rust", 10, false)
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "notes/rust.md");
+    }
+
+    #[test]
+    fn search_service_respects_limit() {
+        let service = SearchService::with_adapter(build_mock_adapter());
+        let results = service
+            .search_with_query(Path::new("/tmp"), "", 1, false)
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+    }
 }
 
 /// Extract a snippet around the matching text
