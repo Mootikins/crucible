@@ -192,9 +192,12 @@ pub async fn store_parsed_document(
 
     // Store the relative path (for display only, not for ID generation)
     let relative_path = doc.path.strip_prefix(kiln_root).unwrap_or(&doc.path);
+    let relative_path_str = relative_path.display().to_string();
+    debug!("Storing document with relative path: {}", relative_path_str);
+    debug!("Document content_hash: {}", doc.content_hash);
     record_data.insert(
         "path".to_string(),
-        serde_json::Value::String(relative_path.display().to_string()),
+        serde_json::Value::String(relative_path_str),
     );
 
     record_data.insert("title".to_string(), serde_json::Value::String(doc.title()));
@@ -253,15 +256,37 @@ pub async fn store_parsed_document(
     }
     record_data.insert("metadata".to_string(), serde_json::Value::Object(metadata));
 
-    // Store the record with explicit ID - use CREATE for upsert behavior
-    // CREATE in SurrealDB creates new records or replaces existing ones
+    // Store the record with explicit ID
+    // First try UPDATE (for existing records), then CREATE if it doesn't exist
     let json_data = serde_json::to_string(&record_data)?;
-    let update_sql = format!("CREATE notes:⟨{}⟩ CONTENT {}", relative_id, json_data);
 
-    client
-        .query(&update_sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to upsert document: {}", e))?;
+    // Try UPDATE first
+    let update_sql = format!("UPDATE notes:⟨{}⟩ CONTENT {}", relative_id, json_data);
+    let update_result = client.query(&update_sql, &[]).await;
+
+    match update_result {
+        Ok(result) if !result.records.is_empty() => {
+            // Update succeeded
+            debug!("Updated existing document: {}", record_id);
+        }
+        _ => {
+            // Record doesn't exist, create it
+            let create_sql = format!("CREATE notes:⟨{}⟩ CONTENT {}", relative_id, json_data);
+            client
+                .query(&create_sql, &[])
+                .await
+                .map_err(|e| {
+                    // If CREATE also fails with "already exists", try UPDATE one more time
+                    if e.to_string().contains("already exists") {
+                        warn!("Race condition detected, will retry UPDATE for {}", record_id);
+                        anyhow::anyhow!("Race condition: {}", e)
+                    } else {
+                        anyhow::anyhow!("Failed to create document: {}", e)
+                    }
+                })?;
+            debug!("Created new document: {}", record_id);
+        }
+    }
 
     info!(
         "Stored document: {} (ID: {})",
@@ -1557,8 +1582,9 @@ pub async fn get_document_embeddings(
     };
 
     // Use graph traversal to get embeddings via has_embedding edges
+    // The graph traversal returns the 'out' field which contains the embedding record IDs
     let sql = format!(
-        "SELECT ->has_embedding->* FROM {}",
+        "SELECT out FROM {}->has_embedding",
         note_id.replace("'", "\\'")
     );
 
@@ -1569,12 +1595,25 @@ pub async fn get_document_embeddings(
 
     let mut embeddings = Vec::new();
 
-    // The graph traversal returns embedding records
+    // The graph traversal returns records with 'out' field containing embedding IDs
     for record in result.records {
-        // Convert the embedding record to DocumentEmbedding
-        // The record contains the embedding data
-        let embedding = convert_record_to_document_embedding_with_id(&record, document_id)?;
-        embeddings.push(embedding);
+        // Extract the 'out' field which contains the embedding record ID
+        if let Some(out_value) = record.data.get("out") {
+            // Fetch the actual embedding record
+            let embedding_id = out_value.as_str().ok_or_else(|| {
+                anyhow::anyhow!("Expected string for embedding ID, got: {:?}", out_value)
+            })?;
+
+            // Query the embedding record by ID
+            let emb_sql = format!("SELECT * FROM {}", embedding_id);
+            let emb_result = client.query(&emb_sql, &[]).await
+                .map_err(|e| anyhow::anyhow!("Failed to fetch embedding record: {}", e))?;
+
+            if let Some(emb_record) = emb_result.records.first() {
+                let embedding = convert_record_to_document_embedding_with_id(emb_record, document_id)?;
+                embeddings.push(embedding);
+            }
+        }
     }
 
     Ok(embeddings)
