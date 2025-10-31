@@ -43,6 +43,15 @@ impl MockEmbeddingProvider {
         }
     }
 
+    /// Set a pre-computed embedding for specific text
+    ///
+    /// This allows tests to provide controlled embeddings for specific queries,
+    /// ensuring deterministic similarity calculations.
+    pub fn set_embedding(&self, text: &str, embedding: Vec<f32>) {
+        let mut cache = self.cache.lock().unwrap();
+        cache.insert(text.to_string(), embedding);
+    }
+
     /// Generate deterministic embedding from text
     fn generate_embedding(&self, text: &str) -> Vec<f32> {
         // Check cache first
