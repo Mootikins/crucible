@@ -1037,6 +1037,7 @@ async fn test_vector_search_integration_with_embedding_retrieval() {
     let stored_embeddings = get_document_embeddings(&client, "doc1")
         .await
         .expect("Should retrieve stored embeddings");
+
     assert!(
         !stored_embeddings.is_empty(),
         "Should have stored embeddings for doc1"
@@ -1055,14 +1056,17 @@ async fn test_vector_search_integration_with_embedding_retrieval() {
             .expect("Semantic search should succeed");
 
     // Search should find doc1 in results
-    let doc1_found = search_results.iter().any(|(doc_id, _)| doc_id == "doc1");
+    // Note: semantic_search returns full record IDs like "notes:doc1", not just "doc1"
+    let doc1_found = search_results.iter().any(|(doc_id, _)| doc_id.contains("doc1"));
     assert!(
         doc1_found,
-        "Search should find doc1 which has stored embeddings"
+        "Search should find doc1 which has stored embeddings. Found {} results: {:?}",
+        search_results.len(),
+        search_results.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>()
     );
 
     // If doc1 is found, its similarity score should be reasonable
-    if let Some((_, similarity_score)) = search_results.iter().find(|(doc_id, _)| doc_id == "doc1")
+    if let Some((_, similarity_score)) = search_results.iter().find(|(doc_id, _)| doc_id.contains("doc1"))
     {
         assert!(
             *similarity_score >= -1.0 && *similarity_score <= 1.0,
