@@ -36,7 +36,7 @@ This test kiln is designed for comprehensive end-to-end testing of the Crucible 
 ## File Structure
 
 ```
-tests/test-kiln/
+examples/test-kiln/
 ├── README - Test Kiln Structure.md       # This file
 ├── Knowledge Management Hub.md            # Central linking node
 ├── Project Management.md                  # Tasks, timelines, tracking
@@ -432,7 +432,7 @@ WHERE created > modified
 ## Usage Instructions
 
 ### Running Tests
-1. **Setup**: Ensure all files are in the `tests/test-kiln/` directory
+1. **Setup**: Ensure all files are in the `examples/test-kiln/` directory
 2. **Index**: Run kiln indexing to build search database
 3. **Execute**: Run test suites for different search types
 4. **Validate**: Verify results match expected outcomes
