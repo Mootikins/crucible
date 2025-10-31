@@ -8,6 +8,7 @@ pub mod document;
 pub mod parser;
 pub mod properties;
 pub mod sink;
+pub mod test_support;
 // pub mod task_router; // Temporarily disabled due to compilation issues
 
 pub use agent::{
