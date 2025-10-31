@@ -2,7 +2,7 @@
 //!
 //! This module provides basic fuzzy search functionality using file system operations.
 
-use crate::commands::search::get_markdown_files;
+use crate::commands::search::{get_markdown_files, SearchExecutor};
 use crate::config::CliConfig;
 use crate::interactive::SearchResultWithScore;
 use anyhow::Result;
@@ -26,13 +26,14 @@ pub async fn execute(
 
     println!("🔍 Fuzzy search: {}", query);
 
+    let executor = SearchExecutor::new();
+
     // Use the same search functionality as regular search
     let results = if !query.is_empty() {
-        // Direct search with query using file system
-        crate::commands::search::search_files_in_kiln(kiln_path, &query, limit, true)?
+        executor.search_with_query(kiln_path, &query, limit, true)?
     } else {
         // Get all files if no query
-        let files = get_markdown_files(kiln_path)?;
+        let files = executor.list_markdown_files(kiln_path)?;
         let mut results = Vec::new();
 
         for file_path in files.into_iter().take(limit as usize) {

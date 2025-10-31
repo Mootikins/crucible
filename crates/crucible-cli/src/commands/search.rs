@@ -55,18 +55,18 @@ const BINARY_SIGNATURES: &[&[u8]] = &[
 ];
 
 /// Abstraction over filesystem and validation operations used by search commands.
-pub trait SearchAdapter: Send + Sync {
+pub trait SearchBackend: Send + Sync {
     fn validate_query(&self, kiln_path: &Path, query: &str) -> Result<String>;
     fn list_markdown_files(&self, kiln_path: &Path) -> Result<Vec<String>>;
     fn read_file_content(&self, kiln_path: &Path, file_id: &str) -> Result<String>;
 }
 
 #[derive(Clone)]
-pub struct SecureSearchAdapter {
+pub struct SecureSearchBackend {
     config: SecureFileSystemConfig,
 }
 
-impl SecureSearchAdapter {
+impl SecureSearchBackend {
     pub fn new() -> Self {
         Self {
             config: SecureFileSystemConfig::default(),
@@ -78,13 +78,13 @@ impl SecureSearchAdapter {
     }
 }
 
-impl Default for SecureSearchAdapter {
+impl Default for SecureSearchBackend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl SearchAdapter for SecureSearchAdapter {
+impl SearchBackend for SecureSearchBackend {
     fn validate_query(&self, kiln_path: &Path, query: &str) -> Result<String> {
         PathValidator::new(kiln_path)
             .validate_search_query(query)
@@ -100,19 +100,19 @@ impl SearchAdapter for SecureSearchAdapter {
     }
 }
 
-/// Service layer that orchestrates search operations using an injected adapter.
-pub struct SearchService {
-    adapter: Arc<dyn SearchAdapter>,
+/// Coordinator that orchestrates search operations using an injected backend.
+pub struct SearchExecutor {
+    adapter: Arc<dyn SearchBackend>,
 }
 
-impl SearchService {
+impl SearchExecutor {
     /// Create a service with the default secure adapter.
     pub fn new() -> Self {
-        Self::with_adapter(Arc::new(SecureSearchAdapter::default()))
+        Self::with_adapter(Arc::new(SecureSearchBackend::default()))
     }
 
     /// Create a service with a custom adapter (useful for testing).
-    pub fn with_adapter(adapter: Arc<dyn SearchAdapter>) -> Self {
+    pub fn with_adapter(adapter: Arc<dyn SearchBackend>) -> Self {
         Self { adapter }
     }
 
@@ -272,7 +272,7 @@ pub async fn execute(
         return Err(anyhow::anyhow!("kiln path does not exist"));
     }
 
-    let service = SearchService::new();
+    let service = SearchExecutor::new();
 
     // Validate query if provided (sanitized copy used for execution)
     let sanitized_query = if let Some(ref q) = query {
@@ -350,7 +350,7 @@ pub fn search_files_in_kiln(
     limit: u32,
     include_content: bool,
 ) -> Result<Vec<SearchResultWithScore>> {
-    SearchService::new().search_with_query(kiln_path, query, limit, include_content)
+    SearchExecutor::new().search_with_query(kiln_path, query, limit, include_content)
 }
 
 /// Secure version of search_files_in_kiln using secure filesystem utilities
@@ -361,13 +361,18 @@ pub fn search_files_in_kiln_secure(
     include_content: bool,
     config: &SecureFileSystemConfig,
 ) -> Result<Vec<SearchResultWithScore>> {
-    let adapter = Arc::new(SecureSearchAdapter::with_config(config.clone()));
-    SearchService::with_adapter(adapter).search_with_query(kiln_path, query, limit, include_content)
+    let adapter = Arc::new(SecureSearchBackend::with_config(config.clone()));
+    SearchExecutor::with_adapter(adapter).search_with_query(
+        kiln_path,
+        query,
+        limit,
+        include_content,
+    )
 }
 
 /// Get all markdown files in the kiln directory recursively using secure walker
 pub fn get_markdown_files(kiln_path: &Path) -> Result<Vec<String>> {
-    SearchService::new().list_markdown_files(kiln_path)
+    SearchExecutor::new().list_markdown_files(kiln_path)
 }
 
 /// Secure version of get_markdown_files using the secure file walker
@@ -375,8 +380,8 @@ pub fn get_markdown_files_secure(
     kiln_path: &Path,
     config: &SecureFileSystemConfig,
 ) -> Result<Vec<String>> {
-    let adapter = Arc::new(SecureSearchAdapter::with_config(config.clone()));
-    SearchService::with_adapter(adapter).list_markdown_files(kiln_path)
+    let adapter = Arc::new(SecureSearchBackend::with_config(config.clone()));
+    SearchExecutor::with_adapter(adapter).list_markdown_files(kiln_path)
 }
 
 fn collect_markdown_files(
@@ -514,11 +519,11 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    struct MockSearchAdapter {
+    struct MockSearchBackend {
         files: HashMap<String, String>,
     }
 
-    impl SearchAdapter for MockSearchAdapter {
+    impl SearchBackend for MockSearchBackend {
         fn validate_query(&self, _kiln_path: &Path, query: &str) -> Result<String> {
             Ok(query.to_string())
         }
@@ -535,7 +540,7 @@ mod tests {
         }
     }
 
-    fn build_mock_adapter() -> Arc<dyn SearchAdapter> {
+    fn build_mock_adapter() -> Arc<dyn SearchBackend> {
         let mut files = HashMap::new();
         files.insert(
             "notes/rust.md".to_string(),
@@ -545,12 +550,12 @@ mod tests {
             "notes/python.md".to_string(),
             "Python scripting tips".to_string(),
         );
-        Arc::new(MockSearchAdapter { files })
+        Arc::new(MockSearchBackend { files })
     }
 
     #[test]
-    fn search_service_returns_matching_results() {
-        let service = SearchService::with_adapter(build_mock_adapter());
+    fn search_executor_returns_matching_results() {
+        let service = SearchExecutor::with_adapter(build_mock_adapter());
         let results = service
             .search_with_query(Path::new("/tmp"), "rust", 10, false)
             .unwrap();
@@ -560,8 +565,8 @@ mod tests {
     }
 
     #[test]
-    fn search_service_respects_limit() {
-        let service = SearchService::with_adapter(build_mock_adapter());
+    fn search_executor_respects_limit() {
+        let service = SearchExecutor::with_adapter(build_mock_adapter());
         let results = service
             .search_with_query(Path::new("/tmp"), "", 1, false)
             .unwrap();
