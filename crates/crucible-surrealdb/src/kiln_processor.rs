@@ -55,18 +55,12 @@ pub async fn process_kiln_files(
         .collect();
 
     info!("Found {} markdown files to process", markdown_files.len());
-    debug!(
-        "found {} markdown files to process",
-        markdown_files.len()
-    );
+    debug!("found {} markdown files to process", markdown_files.len());
 
     for (i, file) in files.iter().enumerate().take(5) {
         debug!(
             "sample file {}: {:?} (markdown={}, accessible={})",
-            i,
-            file.path,
-            file.is_markdown,
-            file.is_accessible
+            i, file.path, file.is_markdown, file.is_accessible
         );
     }
 
@@ -76,10 +70,7 @@ pub async fn process_kiln_files(
         markdown_files.len(),
         config.batch_size
     );
-    debug!(
-        "parallel_processing={}",
-        config.parallel_processing
-    );
+    debug!("parallel_processing={}", config.parallel_processing);
 
     if config.batch_processing && markdown_files.len() > config.batch_size {
         // Process in batches
@@ -835,7 +826,10 @@ async fn bulk_query_document_ids(
 /// let paths = vec![PathBuf::from("note1.md"), PathBuf::from("note2.md")];
 /// let file_infos = convert_paths_to_file_infos(&paths, kiln_root).await?;
 /// ```
-async fn convert_paths_to_file_infos(paths: &[PathBuf], kiln_root: &Path) -> Result<Vec<KilnFileInfo>> {
+async fn convert_paths_to_file_infos(
+    paths: &[PathBuf],
+    kiln_root: &Path,
+) -> Result<Vec<KilnFileInfo>> {
     let mut file_infos = Vec::new();
 
     for path in paths {
@@ -874,10 +868,7 @@ async fn convert_paths_to_file_infos(paths: &[PathBuf], kiln_root: &Path) -> Res
             .modified()
             .unwrap_or_else(|_| std::time::SystemTime::now());
 
-        let relative_path = path
-            .strip_prefix(kiln_root)
-            .unwrap_or(path)
-            .to_path_buf();
+        let relative_path = path.strip_prefix(kiln_root).unwrap_or(path).to_path_buf();
 
         // Create KilnFileInfo
         let file_info = KilnFileInfo {
@@ -1112,9 +1103,7 @@ pub async fn process_kiln_delta(
 
     info!(
         "Delta processing completed: {} processed, {} failed in {:?}",
-        processing_result.processed_count,
-        processing_result.failed_count,
-        total_time
+        processing_result.processed_count, processing_result.failed_count, total_time
     );
 
     // Return results with updated timing

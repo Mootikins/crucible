@@ -378,21 +378,32 @@ mod semantic_search_real_integration_tdd_tests {
             let variance = calculate_variance(&all_scores);
             println!("\n📊 Score Statistics:");
             println!("   Total scores collected: {}", all_scores.len());
-            println!("   Min score: {:.4}", all_scores.iter().cloned().fold(f64::INFINITY, f64::min));
-            println!("   Max score: {:.4}", all_scores.iter().cloned().fold(f64::NEG_INFINITY, f64::max));
+            println!(
+                "   Min score: {:.4}",
+                all_scores.iter().cloned().fold(f64::INFINITY, f64::min)
+            );
+            println!(
+                "   Max score: {:.4}",
+                all_scores.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+            );
             println!("   Variance: {:.6}", variance);
 
             // Real embeddings should have variance > 0.001
             // (scores should not all be identical or nearly identical)
             if variance > 0.001 {
                 println!("\n✅ REAL EMBEDDINGS DETECTED:");
-                println!("   Score variance ({:.6}) indicates real semantic similarity", variance);
+                println!(
+                    "   Score variance ({:.6}) indicates real semantic similarity",
+                    variance
+                );
                 println!("   Different queries produce different similarity patterns");
                 println!("   This confirms real embedding generation is working");
             } else {
                 println!("\n⚠️  LOW VARIANCE DETECTED:");
                 println!("   Score variance ({:.6}) is suspiciously low", variance);
-                println!("   This may indicate mock embeddings or a problem with similarity calculation");
+                println!(
+                    "   This may indicate mock embeddings or a problem with similarity calculation"
+                );
                 panic!(
                     "Real embeddings should produce variance > 0.001, got {:.6}",
                     variance
@@ -744,17 +755,15 @@ mod semantic_search_real_integration_tdd_tests {
                                 .iter()
                                 .take(3)
                                 .filter_map(|r| {
-                                    r.get("id")
-                                        .and_then(|id| id.as_str())
-                                        .map(|s| {
-                                            // Extract filename from either path (contains /) or record ID (notes:xxx format)
-                                            if let Some(filename) = s.split('/').last() {
-                                                filename.to_string()
-                                            } else {
-                                                // Handle notes:xxx format - extract everything after colon
-                                                s.split(':').last().unwrap_or(s).to_string()
-                                            }
-                                        })
+                                    r.get("id").and_then(|id| id.as_str()).map(|s| {
+                                        // Extract filename from either path (contains /) or record ID (notes:xxx format)
+                                        if let Some(filename) = s.split('/').last() {
+                                            filename.to_string()
+                                        } else {
+                                            // Handle notes:xxx format - extract everything after colon
+                                            s.split(':').last().unwrap_or(s).to_string()
+                                        }
+                                    })
                                 })
                                 .collect();
 
@@ -770,13 +779,12 @@ mod semantic_search_real_integration_tdd_tests {
                             // Check if any expected files appear in results
                             // Need to handle format conversion: "machine-learning-intro.md" -> "machine_learning_intro_md"
                             let has_related_file = expected_related_files.iter().any(|expected| {
-                                let expected_id = expected
-                                    .trim_end_matches(".md")
-                                    .replace("-", "_");
+                                let expected_id =
+                                    expected.trim_end_matches(".md").replace("-", "_");
                                 top_results.iter().any(|result| {
-                                    result.contains(expected) ||
-                                    result.contains(&expected_id) ||
-                                    result.contains(&expected.trim_end_matches(".md"))
+                                    result.contains(expected)
+                                        || result.contains(&expected_id)
+                                        || result.contains(&expected.trim_end_matches(".md"))
                                 })
                             });
 
@@ -865,7 +873,10 @@ mod semantic_search_real_integration_tdd_tests {
             .ok_or_else(|| anyhow::anyhow!("No search results"))?;
 
         assert!(!search_results1.is_empty(), "Search should return results");
-        println!("   ✅ Initial search succeeded, got {} results", search_results1.len());
+        println!(
+            "   ✅ Initial search succeeded, got {} results",
+            search_results1.len()
+        );
 
         // Test 2: Verify reusing same config produces identical results
         println!("\n2. Verifying embeddings are reused with same config");
@@ -876,14 +887,30 @@ mod semantic_search_real_integration_tdd_tests {
             .and_then(|r| r.as_array())
             .ok_or_else(|| anyhow::anyhow!("No search results"))?;
 
-        assert_eq!(search_results1.len(), search_results2.len(), "Result count should match");
+        assert_eq!(
+            search_results1.len(),
+            search_results2.len(),
+            "Result count should match"
+        );
 
         // Compare first result scores
-        let score1 = search_results1[0].get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
-        let score2 = search_results2[0].get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
+        let score1 = search_results1[0]
+            .get("score")
+            .and_then(|s| s.as_f64())
+            .unwrap_or(0.0);
+        let score2 = search_results2[0]
+            .get("score")
+            .and_then(|s| s.as_f64())
+            .unwrap_or(0.0);
 
-        assert!((score1 - score2).abs() < 0.0001, "Scores should match with same config");
-        println!("   ✅ Embeddings reused successfully (scores match: {:.4})", score1);
+        assert!(
+            (score1 - score2).abs() < 0.0001,
+            "Scores should match with same config"
+        );
+        println!(
+            "   ✅ Embeddings reused successfully (scores match: {:.4})",
+            score1
+        );
 
         // Test 3: Verify different config triggers clear+rebuild
         println!("\n3. Changing config (different model) - should clear and rebuild");
@@ -892,7 +919,8 @@ mod semantic_search_real_integration_tdd_tests {
             "machine learning",
             Some("http://localhost:11434"),
             Some("nomic-embed-text-v1.5"),
-        ).await?;
+        )
+        .await?;
 
         let parsed3: Value = serde_json::from_str(&result3)?;
         let search_results3 = parsed3
@@ -900,8 +928,14 @@ mod semantic_search_real_integration_tdd_tests {
             .and_then(|r| r.as_array())
             .ok_or_else(|| anyhow::anyhow!("No search results"))?;
 
-        assert!(!search_results3.is_empty(), "Search with new config should return results");
-        println!("   ✅ Config change triggered rebuild, got {} results", search_results3.len());
+        assert!(
+            !search_results3.is_empty(),
+            "Search with new config should return results"
+        );
+        println!(
+            "   ✅ Config change triggered rebuild, got {} results",
+            search_results3.len()
+        );
 
         // Test 4: Verify switching back to original config
         println!("\n4. Switching back to original config");
@@ -912,8 +946,14 @@ mod semantic_search_real_integration_tdd_tests {
             .and_then(|r| r.as_array())
             .ok_or_else(|| anyhow::anyhow!("No search results"))?;
 
-        assert!(!search_results4.is_empty(), "Search with original config should work");
-        println!("   ✅ Original config still works, got {} results", search_results4.len());
+        assert!(
+            !search_results4.is_empty(),
+            "Search with original config should work"
+        );
+        println!(
+            "   ✅ Original config still works, got {} results",
+            search_results4.len()
+        );
 
         println!("\n✅ EMBEDDING COMPATIBILITY CHECKING VERIFIED:");
         println!("   - Embeddings are properly created and indexed");

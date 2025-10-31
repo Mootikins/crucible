@@ -1,0 +1,69 @@
+error: Tool functions must be public
+  --> tests/compile_fail/invalid_macro_usage.rs:14:1
+   |
+14 | #[rune_tool(desc = "This should fail because function is private")]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: this error originates in the attribute macro `rune_tool` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: expected `fn`
+  --> tests/compile_fail/invalid_macro_usage.rs:20:5
+   |
+20 | pub struct TestStruct;
+   |     ^^^^^^
+
+error: Tool functions cannot have self parameters (must be free functions)
+  --> tests/compile_fail/invalid_macro_usage.rs:23:29
+   |
+23 |     pub fn method_with_self(&self) {}
+   |                             ^
+
+error: cannot find attribute `default` in this scope
+  --> tests/compile_fail/invalid_macro_usage.rs:49:26
+   |
+49 | pub fn invalid_default(#[default = 123] param: String) {}
+   |                          ^^^^^^^
+
+error[E0412]: cannot find type `TestStruct` in this scope
+  --> tests/compile_fail/invalid_macro_usage.rs:21:6
+   |
+21 | impl TestStruct {
+   |      ^^^^^^^^^^ not found in this scope
+
+error[E0601]: `main` function not found in crate `$CRATE`
+  --> tests/compile_fail/invalid_macro_usage.rs:82:39
+   |
+82 | pub fn invalid_description_format() {}
+   |                                       ^ consider adding a `main` function to `$DIR/tests/compile_fail/invalid_macro_usage.rs`
+
+warning: unused variable: `ctx`
+  --> tests/compile_fail/invalid_macro_usage.rs:29:21
+   |
+29 | pub fn reserved_ctx(ctx: String) {}
+   |                     ^^^ help: if this is intentional, prefix it with an underscore: `_ctx`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `a`
+  --> tests/compile_fail/invalid_macro_usage.rs:34:24
+   |
+34 | pub fn complex_params((a, b): (String, i32)) {}
+   |                        ^ help: if this is intentional, prefix it with an underscore: `_a`
+
+warning: unused variable: `b`
+  --> tests/compile_fail/invalid_macro_usage.rs:34:27
+   |
+34 | pub fn complex_params((a, b): (String, i32)) {}
+   |                           ^ help: if this is intentional, prefix it with an underscore: `_b`
+
+warning: unused variable: `param`
+  --> tests/compile_fail/invalid_macro_usage.rs:49:41
+   |
+49 | pub fn invalid_default(#[default = 123] param: String) {}
+   |                                         ^^^^^ help: if this is intentional, prefix it with an underscore: `_param`
+
+warning: unused variable: `param`
+  --> tests/compile_fail/invalid_macro_usage.rs:62:21
+   |
+62 | pub fn invalid_type(param: std::io::Error) {}
+   |                     ^^^^^ help: if this is intentional, prefix it with an underscore: `_param`

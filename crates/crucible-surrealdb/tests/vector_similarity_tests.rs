@@ -449,10 +449,9 @@ async fn test_semantic_search_ranking_accuracy() {
     mock_provider.set_embedding(query, query_vector.clone());
 
     // Perform semantic search
-    let search_results =
-        semantic_search(&client, query, 10, Arc::new(mock_provider))
-            .await
-            .expect("Semantic search should succeed");
+    let search_results = semantic_search(&client, query, 10, Arc::new(mock_provider))
+        .await
+        .expect("Semantic search should succeed");
 
     // Calculate expected similarities using reference implementation
     let mut expected_similarities = Vec::new();
@@ -1050,23 +1049,29 @@ async fn test_vector_search_integration_with_embedding_retrieval() {
     mock_provider.set_embedding(query, query_embedding);
 
     // Perform semantic search
-    let search_results =
-        semantic_search(&client, query, 10, Arc::new(mock_provider))
-            .await
-            .expect("Semantic search should succeed");
+    let search_results = semantic_search(&client, query, 10, Arc::new(mock_provider))
+        .await
+        .expect("Semantic search should succeed");
 
     // Search should find doc1 in results
     // Note: semantic_search returns full record IDs like "notes:doc1", not just "doc1"
-    let doc1_found = search_results.iter().any(|(doc_id, _)| doc_id.contains("doc1"));
+    let doc1_found = search_results
+        .iter()
+        .any(|(doc_id, _)| doc_id.contains("doc1"));
     assert!(
         doc1_found,
         "Search should find doc1 which has stored embeddings. Found {} results: {:?}",
         search_results.len(),
-        search_results.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>()
+        search_results
+            .iter()
+            .map(|(id, _)| id.as_str())
+            .collect::<Vec<_>>()
     );
 
     // If doc1 is found, its similarity score should be reasonable
-    if let Some((_, similarity_score)) = search_results.iter().find(|(doc_id, _)| doc_id.contains("doc1"))
+    if let Some((_, similarity_score)) = search_results
+        .iter()
+        .find(|(doc_id, _)| doc_id.contains("doc1"))
     {
         assert!(
             *similarity_score >= -1.0 && *similarity_score <= 1.0,

@@ -116,15 +116,13 @@ impl KilnProcessor {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .env("OBSIDIAN_KILN_PATH", kiln_path.to_string_lossy().as_ref())
             // Inherit all relevant environment variables for security
             .env_clear()
             .envs(std::env::vars().filter(|(k, _)| {
                 // Keep only essential environment variables for security
                 matches!(
                     k.as_str(),
-                    "OBSIDIAN_KILN_PATH"
-                        | "EMBEDDING_ENDPOINT"
+                    "EMBEDDING_ENDPOINT"
                         | "EMBEDDING_MODEL"
                         | "HOME"
                         | "PATH"
@@ -178,7 +176,7 @@ impl KilnProcessor {
                     Ok(result)
                 } else {
                     let error_msg = match result.exit_code {
-                        Some(1) => "Configuration error (missing OBSIDIAN_KILN_PATH)",
+                        Some(1) => "Configuration error (missing kiln path)",
                         Some(2) => "Processing error (file parsing/validation failed)",
                         Some(3) => "Database error (connection/query failed)",
                         Some(4) => "Other error",
@@ -447,10 +445,6 @@ mod tests {
     async fn test_missing_kiln_path_error() {
         let mut manager = KilnProcessor::new();
 
-        // Temporarily clear the environment variable
-        let original_path = std::env::var("OBSIDIAN_KILN_PATH").ok();
-        std::env::remove_var("OBSIDIAN_KILN_PATH");
-
         let result = manager
             .process_kiln(std::path::Path::new("/nonexistent"))
             .await;
@@ -459,11 +453,6 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("does not exist or is not accessible"));
-
-        // Restore original value
-        if let Some(path) = original_path {
-            std::env::set_var("OBSIDIAN_KILN_PATH", path);
-        }
     }
 
     #[tokio::test]

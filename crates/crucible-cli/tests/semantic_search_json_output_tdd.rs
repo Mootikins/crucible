@@ -219,17 +219,9 @@ Natural language processing, computer vision, and reinforcement learning have se
     Ok((temp_dir, kiln_path))
 }
 
-/// Helper to use the existing test-kiln for more realistic testing
-/// DEPRECATED: This causes flaky tests due to shared state between test runs.
-/// Use setup_test_kiln_for_cli() instead for isolated test environments.
-#[allow(dead_code)]
-fn get_test_kiln_path() -> PathBuf {
-    PathBuf::from("/home/moot/crucible/tests/test-kiln")
-}
-
 /// Setup an isolated test kiln with sample documents for CLI testing
 ///
-/// Unlike get_test_kiln_path(), this creates a fresh temporary directory
+/// Creates a fresh temporary directory
 /// for each test, preventing state pollution between test runs.
 async fn setup_test_kiln_with_embeddings_for_cli() -> Result<(TempDir, PathBuf)> {
     use crucible_cli::config::{CliConfig, KilnConfig};

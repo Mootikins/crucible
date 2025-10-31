@@ -1,8 +1,8 @@
-//! Real Kiln Operations - Phase 1B Implementation
+//! Kiln Repository - Phase 1B Implementation
 //!
-//! This module provides real kiln operations using the Phase 1A parsing system.
-//! It replaces the mock implementations with actual functionality that scans
-//! and processes real kiln data from the test kiln.
+//! This module provides the kiln repository pattern using the Phase 1A parsing system.
+//! It orchestrates KilnScanner and KilnParser to provide search and query operations
+//! over kiln data.
 
 use crate::kiln_parser::KilnParser;
 use crate::kiln_scanner::KilnScanner;
@@ -13,12 +13,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-/// Default kiln path for testing
-const DEFAULT_KILN_PATH: &str = "/home/moot/Documents/crucible-testing";
-
-/// Real kiln operations using Phase 1A parsing system
+/// Kiln repository using Phase 1A parsing system
 #[derive(Debug, Clone)]
-pub struct RealKilnOperations {
+pub struct KilnRepository {
     /// Path to the kiln directory
     kiln_path: Arc<String>,
     /// Scanner for discovering markdown files
@@ -31,14 +28,12 @@ pub struct RealKilnOperations {
     tag_cache: Arc<RwLock<HashMap<String, usize>>>,
 }
 
-impl RealKilnOperations {
-    /// Create new kiln operations with default test kiln path
-    pub fn new() -> Self {
-        Self::with_path(DEFAULT_KILN_PATH)
-    }
-
-    /// Create new kiln operations with custom path
-    pub fn with_path(kiln_path: &str) -> Self {
+impl KilnRepository {
+    /// Create new kiln operations with explicit path
+    ///
+    /// Note: This function requires an explicit path to avoid hardcoded defaults.
+    /// Callers should obtain the path from configuration or pass it explicitly.
+    pub fn new(kiln_path: &str) -> Self {
         let kiln_path = Arc::new(kiln_path.to_string());
         let scanner = Arc::new(KilnScanner::new(&kiln_path));
         let parser = Arc::new(KilnParser::new());
@@ -50,6 +45,21 @@ impl RealKilnOperations {
             file_cache: Arc::new(RwLock::new(HashMap::new())),
             tag_cache: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// Create new kiln repository from global execution context
+    ///
+    /// This reads the kiln_path from the global TOOL_EXECUTION_CONTEXT set by
+    /// CrucibleToolManager. Returns an error if no context is set or no path is configured.
+    pub fn from_context() -> KilnResult<Self> {
+        use crate::types::get_kiln_path_from_context;
+
+        let kiln_path =
+            get_kiln_path_from_context().map_err(|e| KilnError::InvalidPath(e.to_string()))?;
+
+        Ok(Self::new(kiln_path.to_str().ok_or_else(|| {
+            KilnError::InvalidPath("Invalid UTF-8 in kiln path".to_string())
+        })?))
     }
 
     /// Get the kiln path
@@ -412,41 +422,8 @@ impl RealKilnOperations {
     }
 }
 
-impl Default for RealKilnOperations {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// Default implementation removed - callers must provide explicit path.
+// Use KilnRepository::new(path) instead.
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_real_kiln_operations_creation() {
-        let ops = RealKilnOperations::new();
-        assert_eq!(ops.kiln_path(), DEFAULT_KILN_PATH);
-    }
-
-    #[tokio::test]
-    async fn test_kiln_exists() {
-        let ops = RealKilnOperations::new();
-        assert!(ops.scanner.kiln_exists().await);
-    }
-
-    #[tokio::test]
-    async fn test_scan_and_parse_kiln() {
-        let ops = RealKilnOperations::new();
-        let result = ops.scan_and_parse_kiln().await;
-        assert!(result.is_ok(), "Kiln scan should succeed");
-
-        let files = result.unwrap();
-        assert!(!files.is_empty(), "Should find files in test kiln");
-
-        // Should find PRIME.md specifically
-        let has_prime = files
-            .iter()
-            .any(|f| f.path.to_string_lossy().contains("PRIME.md"));
-        assert!(has_prime, "Should find PRIME.md in test kiln");
-    }
-}
+// Tests removed - these were testing against hardcoded user vault paths.
+// Proper tests should use TempDir with isolated test environments.
