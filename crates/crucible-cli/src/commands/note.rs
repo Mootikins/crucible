@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use serde_json::json;
 use std::sync::Arc;
 
-#[async_trait]
+#[async_trait(?Send)]
 pub trait ToolInvoker: Send + Sync {
     async fn ensure_initialized(&self) -> Result<()>;
     async fn execute(
@@ -21,7 +21,7 @@ pub trait ToolInvoker: Send + Sync {
 #[derive(Default, Clone)]
 struct GlobalToolInvoker;
 
-#[async_trait]
+#[async_trait(?Send)]
 impl ToolInvoker for GlobalToolInvoker {
     async fn ensure_initialized(&self) -> Result<()> {
         crate::common::CrucibleToolManager::ensure_initialized_global().await
