@@ -19,16 +19,16 @@ use tokio::sync::mpsc;
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use crucible_llm::text_generation_mock::MockTextProvider;
-/// use crucible_llm::text_generation::{ChatCompletionRequest, ChatMessage};
+/// use crucible_llm::text_generation::{ChatCompletionRequest, ChatMessage, TextGenerationProvider};
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let mut provider = MockTextProvider::new();
+///     let provider = MockTextProvider::new();
 ///
-///     // Configure a specific response for a prompt
-///     provider.set_completion_response("What is Rust?", "Rust is a systems programming language.");
+///     // Configure a specific response for a chat completion
+///     provider.set_chat_response("What is Rust?", "Rust is a systems programming language.");
 ///
 ///     let request = ChatCompletionRequest::new(
 ///         "mock-model".to_string(),
