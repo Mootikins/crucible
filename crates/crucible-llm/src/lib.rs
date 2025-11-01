@@ -41,6 +41,10 @@ pub mod embeddings;
 pub mod reranking;
 pub mod text_generation;
 
+// Mock implementations for testing (Phase 5)
+#[cfg(any(test, feature = "test-utils"))]
+pub mod text_generation_mock;
+
 // Re-export commonly used types at crate root
 pub use embeddings::{
     EmbeddingConfig, EmbeddingError, EmbeddingProvider, EmbeddingResponse, EmbeddingResult,
@@ -55,3 +59,7 @@ pub use text_generation::{
     OllamaTextProvider, OpenAIConfig, OpenAITextProvider, TextGenerationProvider,
     TextProviderConfig, TokenUsage,
 };
+
+// Re-export mock implementations for testing
+#[cfg(any(test, feature = "test-utils"))]
+pub use text_generation_mock::MockTextProvider;
