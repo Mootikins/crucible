@@ -334,9 +334,12 @@ mod tests {
     #[tokio::test]
     async fn test_search_by_properties_function() {
         use std::fs;
+        use std::collections::HashMap;
         use tempfile::TempDir;
+        use crate::kiln_operations::KilnRepository;
 
-        // Create isolated test environment
+        // Phase 7: Use KilnRepository directly instead of global context
+        // This eliminates race conditions from concurrent test execution
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.md");
 
@@ -351,40 +354,29 @@ priority: high
         )
         .unwrap();
 
-        // Set kiln path in registry
-        crate::types::set_tool_context(crate::types::ToolConfigContext::with_kiln_path(
-            temp_dir.path().to_path_buf(),
-        ));
-
-        let tool_fn = search_by_properties();
-        let parameters = json!({
-            "properties": {
-                "status": "active",
-                "priority": "high"
-            }
+        // Create repository directly with test path (no global state)
+        let kiln_repo = KilnRepository::new(temp_dir.path().to_str().unwrap());
+        let properties = json!({
+            "status": "active",
+            "priority": "high"
         });
 
-        let result = tool_fn(
-            "search_by_properties".to_string(),
-            parameters,
-            Some("test_user".to_string()),
-            Some("test_session".to_string()),
-        )
-        .await
-        .unwrap();
+        let matching_files = kiln_repo.search_by_properties(properties)
+            .await
+            .unwrap();
 
-        assert!(result.success);
-        let data = result.data.unwrap();
-        let matching_files = data.get("matching_files").unwrap().as_array().unwrap();
-        assert!(matching_files.len() > 0);
+        // Verify results
+        assert!(matching_files.len() > 0, "Should find files with matching properties");
     }
 
     #[tokio::test]
     async fn test_search_by_tags_function() {
         use std::fs;
         use tempfile::TempDir;
+        use crate::kiln_operations::KilnRepository;
 
-        // Create isolated test environment
+        // Phase 7: Use KilnRepository directly instead of global context
+        // This eliminates race conditions from concurrent test execution
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.md");
 
@@ -398,29 +390,14 @@ tags: [ai, research]
         )
         .unwrap();
 
-        // Set kiln path in registry
-        crate::types::set_tool_context(crate::types::ToolConfigContext::with_kiln_path(
-            temp_dir.path().to_path_buf(),
-        ));
+        // Create repository directly with test path (no global state)
+        let kiln_repo = KilnRepository::new(temp_dir.path().to_str().unwrap());
+        let matching_files = kiln_repo.search_by_tags(vec!["ai".to_string(), "research".to_string()])
+            .await
+            .unwrap();
 
-        let tool_fn = search_by_tags();
-        let parameters = json!({
-            "tags": ["ai", "research"]
-        });
-
-        let result = tool_fn(
-            "search_by_tags".to_string(),
-            parameters,
-            Some("test_user".to_string()),
-            Some("test_session".to_string()),
-        )
-        .await
-        .unwrap();
-
-        assert!(result.success);
-        let data = result.data.unwrap();
-        let matching_files = data.get("matching_files").unwrap().as_array().unwrap();
-        assert!(matching_files.len() > 0);
+        // Verify results
+        assert!(matching_files.len() > 0, "Should find files with matching tags");
     }
 
     #[tokio::test]
@@ -548,8 +525,10 @@ tags: [ai, research, testing]
     async fn test_search_by_folder_function() {
         use std::fs;
         use tempfile::TempDir;
+        use crate::kiln_operations::KilnRepository;
 
-        // Create isolated test environment
+        // Phase 7: Use KilnRepository directly instead of global context
+        // This eliminates race conditions from concurrent test execution
         let temp_dir = TempDir::new().unwrap();
         let projects_dir = temp_dir.path().join("projects");
         fs::create_dir(&projects_dir).unwrap();
@@ -566,25 +545,14 @@ title: Project Note
         )
         .unwrap();
 
-        // Set kiln path in registry
-        crate::types::set_tool_context(crate::types::ToolConfigContext::with_kiln_path(
-            temp_dir.path().to_path_buf(),
-        ));
-
-        let tool_fn = search_by_folder();
-        let parameters = json!({
-            "path": "projects",
-            "recursive": true
-        });
-
-        let result = tool_fn("search_by_folder".to_string(), parameters, None, None)
+        // Create repository directly with test path (no global state)
+        let kiln_repo = KilnRepository::new(temp_dir.path().to_str().unwrap());
+        let matching_files = kiln_repo.search_by_folder("projects", true)
             .await
             .unwrap();
 
-        assert!(result.success);
-        let data = result.data.unwrap();
-        let matching_files = data.get("matching_files").unwrap().as_array().unwrap();
-        assert!(matching_files.len() > 0);
+        // Verify results
+        assert!(matching_files.len() > 0, "Should find files in projects folder");
     }
 
     #[tokio::test]
