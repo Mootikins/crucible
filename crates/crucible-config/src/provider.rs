@@ -51,6 +51,13 @@ pub struct EmbeddingProviderConfig {
     pub options: HashMap<String, serde_json::Value>,
 }
 
+impl Default for EmbeddingProviderConfig {
+    /// Create a default embedding provider configuration (FastEmbed with bge-small-en-v1.5).
+    fn default() -> Self {
+        Self::fastembed(None, None, None)
+    }
+}
+
 impl EmbeddingProviderConfig {
     /// Create a new OpenAI embedding provider configuration.
     pub fn openai(api_key: String, model: Option<String>) -> Self {
