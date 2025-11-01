@@ -122,19 +122,6 @@ mod tests {
 
         assert!(ProviderType::from_str("unknown").is_err());
         assert!(ProviderType::from_str("").is_err());
-
-        assert_eq!(
-            ProviderType::from_str("candle").unwrap(),
-            ProviderType::Candle
-        );
-        assert_eq!(
-            ProviderType::from_str("Candle").unwrap(),
-            ProviderType::Candle
-        );
-        assert_eq!(
-            ProviderType::from_str("CANDLE").unwrap(),
-            ProviderType::Candle
-        );
     }
 
     #[test]
@@ -153,12 +140,6 @@ mod tests {
         assert_eq!(openai.default_model(), "text-embedding-3-small");
         assert_eq!(openai.default_dimensions(), 1536);
         assert!(openai.requires_api_key());
-
-        let candle = ProviderType::Candle;
-        assert_eq!(candle.default_endpoint(), "local");
-        assert_eq!(candle.default_model(), "nomic-embed-text-v1.5");
-        assert_eq!(candle.default_dimensions(), 768);
-        assert!(!candle.requires_api_key());
     }
 
     #[test]
@@ -169,7 +150,7 @@ mod tests {
         let config = EmbeddingConfig::openai("test-key".to_string(), None);
         assert!(config.validate().is_ok());
 
-        let config = EmbeddingConfig::candle(None, None, None, None);
+        let config = EmbeddingConfig::fastembed(None, None, None);
         assert!(config.validate().is_ok());
     }
 
@@ -243,60 +224,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_candle_config_creation() {
-        let config = EmbeddingConfig::candle(None, None, None, None);
-        assert_eq!(config.provider_type, EmbeddingProviderType::Candle);
-        assert_eq!(config.endpoint(), "local");
-        assert_eq!(config.model_name(), "nomic-embed-text-v1.5");
-        assert!(config.api_key().is_none());
-        assert!(config.validate().is_ok());
-    }
-
-    #[test]
-    fn test_candle_config_with_custom_model() {
-        let config = EmbeddingConfig::candle(
-            Some("jina-embeddings-v2-base-en".to_string()),
-            None,
-            None,
-            None,
-        );
-        assert_eq!(config.provider_type, EmbeddingProviderType::Candle);
-        assert_eq!(config.model_name(), "jina-embeddings-v2-base-en");
-        assert!(config.validate().is_ok());
-    }
-
-    #[test]
-    fn test_candle_expected_dimensions() {
-        let config = EmbeddingConfig::candle(None, None, None, None);
-        assert_eq!(
-            expected_dimensions_for_model(&config.provider_type, config.model_name()),
-            768
-        );
-
-        let models = vec![
-            ("nomic-embed-text-v1.5", 768),
-            ("jina-embeddings-v2-base-en", 768),
-            ("jina-embeddings-v3-base-en", 768),
-            ("all-MiniLM-L6-v2", 384),
-            ("bge-small-en-v1.5", 384),
-        ];
-
-        for (model, expected_dims) in models {
-            let config = EmbeddingConfig::candle(Some(model.to_string()), None, None, None);
-            assert_eq!(
-                expected_dimensions_for_model(&config.provider_type, config.model_name()),
-                expected_dims,
-                "Model {} should have {} dimensions",
-                model,
-                expected_dims
-            );
-        }
-
-        let config = EmbeddingConfig::candle(Some("unknown-model".to_string()), None, None, None);
-        assert_eq!(
-            expected_dimensions_for_model(&config.provider_type, config.model_name()),
-            768
-        );
-    }
 }
