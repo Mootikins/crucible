@@ -401,7 +401,7 @@ pub async fn create_wikilink_edges(
 
         // Create or find the target document
         let display_name = wikilink.display();
-        let target_id = find_or_create_target_document(client, &target_path, &display_name).await?;
+        let target_id = find_or_create_target_document(client, &target_path, display_name).await?;
 
         // Create the wikilink relationship
         let mut edge_data = HashMap::new();
@@ -2444,7 +2444,7 @@ fn calculate_mock_similarity(query: &str, content: &str) -> f64 {
 
     let mut matches = 0;
     for query_word in &query_words {
-        if content_words.contains(&query_word) {
+        if content_words.contains(query_word) {
             matches += 1;
         }
     }

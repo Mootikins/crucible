@@ -39,6 +39,7 @@ pub struct FileMetadata {
 
 impl FileMetadata {
     /// Create new file metadata
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             title: None,
@@ -50,14 +51,16 @@ impl FileMetadata {
     }
 
     /// Get a frontmatter value as string
+    #[must_use] 
     pub fn get_string(&self, key: &str) -> Option<String> {
         self.frontmatter
             .get(key)
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
     }
 
     /// Get a frontmatter value as array of strings
+    #[must_use] 
     pub fn get_string_array(&self, key: &str) -> Vec<String> {
         self.frontmatter
             .get(key)
@@ -65,13 +68,14 @@ impl FileMetadata {
             .map(|arr| {
                 arr.iter()
                     .filter_map(|v| v.as_str())
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect()
             })
             .unwrap_or_default()
     }
 
     /// Check if frontmatter contains a key
+    #[must_use] 
     pub fn has_key(&self, key: &str) -> bool {
         self.frontmatter.contains_key(key)
     }
@@ -117,6 +121,7 @@ pub type KilnResult<T> = Result<T, KilnError>;
 
 impl KilnFile {
     /// Create a new kiln file
+    #[must_use] 
     pub fn new(path: PathBuf, content: String, hash: String) -> Self {
         let size = content.len() as u64;
         let mut metadata = FileMetadata::new();
@@ -132,6 +137,7 @@ impl KilnFile {
     }
 
     /// Get the file title (from metadata or filename)
+    #[must_use] 
     pub fn get_title(&self) -> String {
         self.metadata
             .title
@@ -141,27 +147,31 @@ impl KilnFile {
                 self.path
                     .file_stem()
                     .and_then(|s| s.to_str())
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
             })
             .unwrap_or_else(|| "Untitled".to_string())
     }
 
     /// Get file tags from frontmatter
+    #[must_use] 
     pub fn get_tags(&self) -> Vec<String> {
         self.metadata.get_string_array("tags")
     }
 
     /// Get file type from frontmatter
+    #[must_use] 
     pub fn get_type(&self) -> Option<String> {
         self.metadata.get_string("type")
     }
 
     /// Get file status from frontmatter
+    #[must_use] 
     pub fn get_status(&self) -> Option<String> {
         self.metadata.get_string("status")
     }
 
     /// Check if file has changed since last scan
+    #[must_use] 
     pub fn has_changed(&self, new_hash: &str) -> bool {
         self.hash != new_hash
     }

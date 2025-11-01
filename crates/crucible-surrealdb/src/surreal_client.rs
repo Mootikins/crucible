@@ -384,11 +384,7 @@ impl SurrealClient {
 
         // Extract the id field if present
         let id = data.remove("id").and_then(|id_val| {
-            if let Some(id_str) = id_val.as_str() {
-                Some(RecordId(id_str.to_string()))
-            } else {
-                None
-            }
+            id_val.as_str().map(|id_str| RecordId(id_str.to_string()))
         });
 
         Record {

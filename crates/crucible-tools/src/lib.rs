@@ -137,6 +137,7 @@ pub fn init() {
 /// Get library information
 ///
 /// Returns information about the library version and available features.
+#[must_use] 
 pub fn library_info() -> LibraryInfo {
     LibraryInfo {
         version: VERSION.to_string(),

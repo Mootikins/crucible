@@ -141,14 +141,12 @@ impl ReplCompleter {
         start_pos: usize,
         end_pos: usize,
     ) -> Vec<Suggestion> {
-        let levels = vec![
-            ("trace", "Most verbose logging"),
+        let levels = [("trace", "Most verbose logging"),
             ("debug", "Debug information"),
             ("info", "Informational messages"),
             ("warn", "Warnings only"),
             ("error", "Errors only"),
-            ("off", "No logging"),
-        ];
+            ("off", "No logging")];
 
         levels
             .iter()
@@ -166,11 +164,9 @@ impl ReplCompleter {
 
     /// Complete output formats for `:format` command
     fn complete_formats(&self, prefix: &str, start_pos: usize, end_pos: usize) -> Vec<Suggestion> {
-        let formats = vec![
-            ("table", "Human-readable table"),
+        let formats = [("table", "Human-readable table"),
             ("json", "JSON format"),
-            ("csv", "CSV format"),
-        ];
+            ("csv", "CSV format")];
 
         formats
             .iter()

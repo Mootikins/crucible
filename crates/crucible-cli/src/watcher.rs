@@ -196,9 +196,8 @@ impl SimpleFileWatcher {
             // Pattern like **/.obsidian/workspace*
             let middle = &pattern[3..pattern.len() - 1];
             path_str.contains(middle)
-        } else if pattern.ends_with("*") {
+        } else if let Some(prefix) = pattern.strip_suffix("*") {
             // Pattern like .obsidian/workspace*
-            let prefix = &pattern[..pattern.len() - 1];
             path_str.contains(prefix)
         } else {
             // Exact match

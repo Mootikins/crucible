@@ -468,7 +468,7 @@ impl Repl {
                             desc.to_string()
                         }
                     })
-                    .unwrap_or_else(|| String::new());
+                    .unwrap_or_else(String::new);
 
                 if !description.is_empty() {
                     println!(

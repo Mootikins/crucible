@@ -255,14 +255,14 @@ impl EmbeddingFixtures {
         embeddings.insert("Hello, world!".to_string(), {
             let base = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
             let mut full = vec![0.0; 768];
-            full[..8.min(768)].copy_from_slice(&base);
+            full[..8].copy_from_slice(&base);
             full
         });
 
         embeddings.insert("This is a test document".to_string(), {
             let base = vec![0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1];
             let mut full = vec![0.0; 768];
-            full[..8.min(768)].copy_from_slice(&base);
+            full[..8].copy_from_slice(&base);
             full
         });
 
@@ -273,7 +273,7 @@ impl EmbeddingFixtures {
         embeddings.insert("Unicode test: 🦀 Rust is awesome!".to_string(), {
             let base = vec![0.9, 0.1, 0.8, 0.2, 0.7, 0.3, 0.6, 0.4];
             let mut full = vec![0.0; 768];
-            full[..8.min(768)].copy_from_slice(&base);
+            full[..8].copy_from_slice(&base);
             full
         });
 
@@ -303,7 +303,7 @@ impl EmbeddingFixtures {
                 {
                     let base = vec![0.1, 0.2, 0.3, 0.4];
                     let mut full = vec![0.0; 768];
-                    full[..4.min(768)].copy_from_slice(&base);
+                    full[..4].copy_from_slice(&base);
                     full
                 },
                 "nomic-embed-text-v1.5".to_string(),
@@ -313,7 +313,7 @@ impl EmbeddingFixtures {
                 {
                     let base = vec![0.4, 0.3, 0.2, 0.1];
                     let mut full = vec![0.0; 768];
-                    full[..4.min(768)].copy_from_slice(&base);
+                    full[..4].copy_from_slice(&base);
                     full
                 },
                 "nomic-embed-text-v1.5".to_string(),
@@ -546,7 +546,7 @@ impl EmbeddingProvider for FixtureBasedMockProvider {
         let mut models = Vec::new();
 
         // Add models from fixtures
-        for (_, model_info) in &self.fixtures.model_info {
+        for model_info in self.fixtures.model_info.values() {
             models.push(model_info.clone());
         }
 

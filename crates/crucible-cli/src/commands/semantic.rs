@@ -320,7 +320,7 @@ pub async fn execute(
     format: String,
     show_scores: bool,
 ) -> Result<()> {
-    let service = Arc::new(DefaultSemanticSearchService::default());
+    let service = Arc::new(DefaultSemanticSearchService);
     execute_with_service(service, config, query, top_k, format, show_scores).await
 }
 

@@ -246,6 +246,7 @@ pub struct AnthropicConfig {
 
 /// Services configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct ServicesConfig {
     /// ScriptEngine service configuration
     #[serde(default)]
@@ -432,15 +433,6 @@ impl Default for AnthropicConfig {
     }
 }
 
-impl Default for ServicesConfig {
-    fn default() -> Self {
-        Self {
-            script_engine: ScriptEngineConfig::default(),
-            discovery: ServiceDiscoveryConfig::default(),
-            health: ServiceHealthConfig::default(),
-        }
-    }
-}
 
 impl Default for ScriptEngineConfig {
     fn default() -> Self {
@@ -802,8 +794,8 @@ max_performance_degradation = 20.0
     /// Convert to EmbeddingConfig for use with create_provider
     pub fn to_embedding_config(&self) -> Result<EmbeddingConfig> {
         // Check if mock provider requested
-        if self.kiln.embedding_model.as_ref().map(|m| m.as_str()) == Some("mock")
-            || self.kiln.embedding_model.as_ref().map(|m| m.as_str()) == Some("mock-test-model")
+        if self.kiln.embedding_model.as_deref() == Some("mock")
+            || self.kiln.embedding_model.as_deref() == Some("mock-test-model")
         {
             return Ok(EmbeddingConfig::mock());
         }
