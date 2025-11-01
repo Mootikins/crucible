@@ -125,7 +125,7 @@ impl EventUtils {
                 if let Some(ext) = event.extension() {
                     matches!(
                         ext.as_str(),
-                        "md" | "txt" | "json" | "yaml" | "toml" | "rune"
+                        "md" | "txt" | "json" | "yaml" | "toml"
                     )
                 } else {
                     false

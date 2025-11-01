@@ -64,21 +64,6 @@ async fn main() -> Result<()> {
 
         Some(Commands::Test) => commands::test_tools::execute(config).await?,
 
-        Some(Commands::Run { script, args }) => {
-            commands::rune::execute(config, script, args).await?
-        }
-
-        Some(Commands::Commands) => {
-            println!("📋 Available Commands:");
-            println!("   crucible run <script>     - Execute a Rune script");
-            println!("   crucible search <query>  - Search documents");
-            println!("   crucible stats          - Show kiln statistics");
-            println!("   crucible config         - Configuration management");
-            println!(
-                "💡 Phase 1.1 Simplification: Only core commands are listed for now."
-            );
-        }
-
         Some(Commands::Config(cmd)) => commands::config::execute(cmd).await?,
 
         Some(Commands::Process(cmd)) => commands::process::execute(config, cmd).await?,

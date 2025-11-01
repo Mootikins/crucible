@@ -2,9 +2,8 @@ pub mod api;
 pub mod arena;
 pub mod coordinator;
 pub mod graph;
-pub mod rune_engine;
 pub mod store;
-/// Context window management and Rune-based pruning strategies
+/// Context window management and pruning strategies
 pub mod types;
 
 pub use api::PruningContextState;

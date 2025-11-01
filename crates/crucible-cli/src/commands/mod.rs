@@ -3,7 +3,6 @@ pub mod fuzzy;
 pub mod note;
 pub mod process;
 pub mod repl;
-pub mod rune;
 pub mod search;
 pub mod secure_filesystem;
 pub mod semantic;

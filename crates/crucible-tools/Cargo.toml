@@ -49,9 +49,10 @@ crucible-surrealdb = { workspace = true }
 reqwest = { workspace = true }
 urlencoding = { workspace = true }
 
-# Rune scripting language
-rune = { workspace = true }
-rune-modules = { workspace = true }
+# Rune scripting language (commented out - not MVP critical)
+# rune = { workspace = true, optional = true }
+# rune-modules = { workspace = true, optional = true }
+# crucible-rune-macros = { workspace = true, optional = true }
 
 # File operations
 pathdiff = "0.2"
@@ -74,9 +75,6 @@ serde_yaml = "0.9"
 
 # Markdown parsing
 pulldown-cmark = "0.13"
-
-# Rune macros
-crucible-rune-macros = { workspace = true }
 
 # Additional dependencies for Rune
 parking_lot = { workspace = true }

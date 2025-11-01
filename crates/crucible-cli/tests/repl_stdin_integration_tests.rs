@@ -93,6 +93,7 @@ async fn test_clear_and_history_commands() -> Result<()> {
 // ============================================================================
 
 #[tokio::test]
+#[ignore = "Tool system removed in Phase 3 - will restore when needed"]
 async fn test_tools_command_lists_grouped_tools() -> Result<()> {
     let mut repl = Repl::new_test().await?;
 
@@ -136,6 +137,7 @@ async fn test_tools_command_lists_grouped_tools() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "Tool system removed in Phase 3 - will restore when needed"]
 async fn test_tools_grouping_structure() -> Result<()> {
     let repl = Repl::new_test().await?;
 
@@ -164,6 +166,7 @@ async fn test_tools_grouping_structure() -> Result<()> {
 // ============================================================================
 
 #[tokio::test]
+#[ignore = "Tool system removed in Phase 3 - will restore when needed"]
 async fn test_run_system_info_tool() -> Result<()> {
     let mut repl = Repl::new_test().await?;
 
@@ -184,6 +187,7 @@ async fn test_run_system_info_tool() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "Tool system removed in Phase 3 - will restore when needed"]
 async fn test_run_list_files_tool_with_args() -> Result<()> {
     let mut repl = Repl::new_test().await?;
 
@@ -210,6 +214,7 @@ async fn test_run_list_files_tool_with_args() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "Tool system removed in Phase 3 - will restore when needed"]
 async fn test_tool_execution_via_process_input() -> Result<()> {
     let mut repl = Repl::new_test().await?;
 
