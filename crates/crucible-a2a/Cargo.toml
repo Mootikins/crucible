@@ -22,7 +22,7 @@ anyhow = "1"
 thiserror = { workspace = true }
 
 # Rune scripting
-rune = { workspace = true }
+# rune = { workspace = true }  # Commented out - not MVP critical
 
 # Utilities
 uuid = { version = "1", features = ["v4", "serde"] }

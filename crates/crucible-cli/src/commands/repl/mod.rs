@@ -19,7 +19,7 @@
 // - SurrealQL query execution
 // - Output formatting (tables, JSON, CSV)
 // - Command history (persistent in interactive mode)
-// - Unified tool system (system + Rune tools)
+// - Tool system for executing registered tools
 //
 // See MODES.md for detailed documentation on usage and testing.
 
@@ -38,7 +38,7 @@ pub mod formatter;
 pub mod highlighter;
 pub mod history;
 pub mod input;
-pub mod tools;
+mod tools; // Stub implementation - Rune tools removed from MVP
 
 use crate::config::CliConfig;
 use tools::UnifiedToolRegistry;
@@ -64,7 +64,7 @@ pub struct Repl {
     /// Database connection using SurrealDB
     db: ReplDatabase,
 
-    /// Tool registry for `:run` commands (includes system and Rune tools)
+    /// Tool registry for `:run` commands
     tools: Arc<UnifiedToolRegistry>,
 
     /// Configuration
@@ -279,15 +279,6 @@ impl Repl {
                 Ok(())
             }
             Command::RunTool { tool_name, args } => self.run_tool(&tool_name, args).await,
-            Command::RunRune { script_path, args } => {
-                // :rune can run arbitrary .rn files, not just registered tools
-                // Extract filename without extension as tool name
-                let tool_name = std::path::Path::new(&script_path)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or(&script_path);
-                self.run_tool(tool_name, args).await
-            }
             Command::ShowStats => {
                 self.show_stats().await;
                 Ok(())
@@ -420,9 +411,8 @@ impl Repl {
 
         if grouped_tools.is_empty() {
             println!(
-                "\n{} No tools found. Add .rn files to {}\n",
-                "ℹ".blue(),
-                self.config.tool_dir.display()
+                "\n{} No tools found.\n",
+                "ℹ".blue()
             );
             return;
         }
@@ -437,7 +427,6 @@ impl Repl {
         for (group_name, tools) in grouped_tools {
             let group_color = match group_name.as_str() {
                 "system" => colored::Color::Magenta,
-                "rune" => colored::Color::Cyan,
                 _ => colored::Color::White,
             };
 
@@ -446,7 +435,6 @@ impl Repl {
                 group_name.to_uppercase().color(group_color),
                 match group_name.as_str() {
                     "system" => "crucible-tools",
-                    "rune" => "scripted tools",
                     _ => "external tools",
                 },
                 tools.len()

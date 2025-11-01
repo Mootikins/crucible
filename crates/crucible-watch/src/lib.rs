@@ -2,7 +2,7 @@
 //!
 //! A comprehensive, production-ready file watching architecture for the Crucible ecosystem.
 //! Provides configurable folder watching, multi-backend support, and seamless integration
-//! with the embedding database, Rune tools, and Obsidian API.
+//! with the embedding database and external tools.
 //!
 //! ## Features
 //!

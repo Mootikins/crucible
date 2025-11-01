@@ -48,7 +48,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 # Rune scripting
-rune = { workspace = true }
+# rune = { workspace = true }  # Commented out - not MVP critical
 
 # Fuzzy search
 nucleo = { workspace = true }
