@@ -105,7 +105,6 @@ impl EmbeddingSignature {
         match &self.provider_type {
             EmbeddingProviderType::OpenAI => "openai",
             EmbeddingProviderType::Ollama => "ollama",
-            EmbeddingProviderType::Candle => "candle",
             EmbeddingProviderType::FastEmbed => "fastembed",
             EmbeddingProviderType::Mock => "mock",
             EmbeddingProviderType::Cohere => "cohere",
@@ -281,7 +280,6 @@ impl EmbeddingThreadPool {
             .unwrap_or_else(|| match &provider_type {
                 EmbeddingProviderType::OpenAI => "OpenAI".to_string(),
                 EmbeddingProviderType::Ollama => "Ollama".to_string(),
-                EmbeddingProviderType::Candle => "Candle".to_string(),
                 EmbeddingProviderType::FastEmbed => "FastEmbed".to_string(),
                 EmbeddingProviderType::Mock => "Mock".to_string(),
                 EmbeddingProviderType::Cohere => "Cohere".to_string(),
@@ -916,15 +914,6 @@ impl EmbeddingThreadPool {
                     .ok_or_else(|| anyhow!("Vertex AI provider requires API key"))?;
 
                 LlmEmbeddingConfig::openai(api_key, Some(config.model.name.clone()))
-            }
-            EmbeddingProviderType::Candle => {
-                // For Candle, use candle config
-                LlmEmbeddingConfig::candle(
-                    Some(config.model.name.clone()),
-                    None, // cache_dir
-                    None, // memory_mb
-                    None, // device
-                )
             }
             EmbeddingProviderType::FastEmbed => {
                 // For FastEmbed, use fastembed config

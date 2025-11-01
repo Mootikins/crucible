@@ -43,13 +43,6 @@ tracing = { workspace = true }
 # FastEmbed for local embeddings and reranking
 fastembed = "5.2"
 
-# TODO: Add Candle ML framework dependencies when version conflicts are resolved
-# candle-core = { version = "0.4", features = ["mkl"] }
-# candle-nn = "0.4"
-# candle-transformers = "0.4"
-# tokenizers = "0.19"
-# safetensors = "0.4"
-
 [dev-dependencies]
 tokio-test = "0.4"
 mockito = "1.0"
