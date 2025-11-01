@@ -34,6 +34,9 @@ use serde_json::Value;
 use surrealdb::engine::local::Db;
 use surrealdb::Surreal;
 
+#[cfg(test)]
+use std::collections::HashMap;
+
 /// Real SurrealDB client wrapping the official Rust SDK
 ///
 /// This client provides a thin wrapper around `surrealdb::Surreal<Db>`,
