@@ -632,6 +632,97 @@ impl SurrealEmbeddingDatabase {
     }
 }
 
+// === KilnStore Trait Implementation ===
+
+use crate::kiln_store::KilnStore;
+use async_trait::async_trait;
+
+#[async_trait]
+impl KilnStore for SurrealEmbeddingDatabase {
+    async fn store_embedding(
+        &self,
+        file_path: &str,
+        content: &str,
+        embedding: &[f32],
+        metadata: &EmbeddingMetadata,
+    ) -> Result<()> {
+        self.store_embedding(file_path, content, embedding, metadata)
+            .await
+    }
+
+    async fn update_metadata(
+        &self,
+        file_path: &str,
+        metadata: &EmbeddingMetadata,
+    ) -> Result<()> {
+        self.update_metadata(file_path, metadata).await
+    }
+
+    async fn update_metadata_hashmap(
+        &self,
+        file_path: &str,
+        properties: HashMap<String, serde_json::Value>,
+    ) -> Result<bool> {
+        self.update_metadata_hashmap(file_path, properties).await
+    }
+
+    async fn delete_file(&self, file_path: &str) -> Result<bool> {
+        self.delete_file(file_path).await
+    }
+
+    async fn get_embedding(&self, file_path: &str) -> Result<Option<EmbeddingData>> {
+        self.get_embedding(file_path).await
+    }
+
+    async fn file_exists(&self, file_path: &str) -> Result<bool> {
+        self.file_exists(file_path).await
+    }
+
+    async fn list_files(&self) -> Result<Vec<String>> {
+        self.list_files().await
+    }
+
+    async fn search_similar(
+        &self,
+        query: &str,
+        query_embedding: &[f32],
+        top_k: u32,
+    ) -> Result<Vec<SearchResultWithScore>> {
+        self.search_similar(query, query_embedding, top_k).await
+    }
+
+    async fn search_by_tags(&self, tags: &[String]) -> Result<Vec<String>> {
+        self.search_by_tags(tags).await
+    }
+
+    async fn search_by_properties(
+        &self,
+        properties: &HashMap<String, serde_json::Value>,
+    ) -> Result<Vec<String>> {
+        self.search_by_properties(properties).await
+    }
+
+    async fn search(&self, query: &SearchQuery) -> Result<Vec<SearchResultWithScore>> {
+        self.search(query).await
+    }
+
+    async fn batch_operation(&self, operation: &BatchOperation) -> Result<BatchResult> {
+        self.batch_operation(operation).await
+    }
+
+    async fn get_stats(&self) -> Result<DatabaseStats> {
+        self.get_stats().await
+    }
+
+    async fn initialize(&self) -> Result<()> {
+        self.initialize().await
+    }
+
+    async fn close(self: Box<Self>) -> Result<()> {
+        (*self).close().await
+    }
+}
+
 /// Compute cosine similarity between two vectors
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
     if a.len() != b.len() {

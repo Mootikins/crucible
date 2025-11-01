@@ -32,6 +32,7 @@ pub mod kiln_integration;
 pub mod kiln_pipeline_connector;
 pub mod kiln_processor;
 pub mod kiln_scanner;
+pub mod kiln_store;
 pub mod query;
 pub mod schema_types;
 pub mod surreal_client;
@@ -44,6 +45,7 @@ pub mod embedding_pipeline;
 pub mod embedding_pool;
 
 pub use database::SurrealEmbeddingDatabase;
+pub use kiln_store::{InMemoryKilnStore, KilnStore};
 pub use schema_types::*;
 pub use surreal_client::SurrealClient;
 pub use types::*;
