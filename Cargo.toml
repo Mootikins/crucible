@@ -3,16 +3,21 @@ resolver = "2"
 members = [
     "crates/crucible-core",
     "crates/crucible-tauri",
-    "crates/crucible-plugins",
     "crates/crucible-cli",
     "crates/crucible-sync",
     "crates/crucible-surrealdb",
     "crates/crucible-config",
     "crates/crucible-a2a",
     "crates/crucible-llm",
-    "crates/crucible-rune-macros",
     "crates/crucible-tools",
 ]
+
+# Rune-related crates (excluded from default build)
+# To include: uncomment these and add rune dependencies back to workspace.dependencies
+# members += [
+#     "crates/crucible-plugins",
+#     "crates/crucible-rune-macros",
+# ]
 
 [workspace.package]
 version = "0.1.0"
@@ -35,7 +40,8 @@ serde_yaml = "0.9"
 uuid = { version = "1.11", features = ["v4", "serde"] }
 anyhow = "1.0"
 thiserror = "2.0.17"
-rune = "0.14"
+# Rune (commented out - not needed for MVP)
+# rune = "0.14"
 tauri = { version = "2.0", features = [] }
 regex = "1.12"
 glob = "0.3"
@@ -64,7 +70,7 @@ jsonschema = "0.33"
 schemars = "1.0"
 
 # Rune scripting language
-rune-modules = "0.14"
+# rune-modules = "0.14"
 
 # Configuration management
 config = "0.15"
@@ -141,7 +147,7 @@ nucleo-matcher = "0.3"
 # Internal workspace crates
 crucible-core = { path = "crates/crucible-core" }
 crucible-config = { path = "crates/crucible-config" }
-crucible-rune-macros = { path = "crates/crucible-rune-macros" }
+# crucible-rune-macros = { path = "crates/crucible-rune-macros" }
 crucible-tools = { path = "crates/crucible-tools" }
 crucible-llm = { path = "crates/crucible-llm" }
 crucible-surrealdb = { path = "crates/crucible-surrealdb" }
