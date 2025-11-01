@@ -34,7 +34,7 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub db_path: Option<String>,
 
-    /// Tool directory path for Rune scripts
+    /// (Deprecated) Tool directory path - Rune removed from MVP
     #[arg(long, global = true)]
     pub tool_dir: Option<String>,
 
@@ -116,19 +116,6 @@ pub enum Commands {
 
     /// Test tool loading and execution
     Test,
-
-    /// Run a Rune script as a command
-    Run {
-        /// Path to .rn script
-        script: String,
-
-        /// Arguments to pass to the script (as JSON object)
-        #[arg(short, long)]
-        args: Option<String>,
-    },
-
-    /// List available Rune commands
-    Commands,
 
     /// Configuration management
     #[command(subcommand)]

@@ -19,12 +19,6 @@ pub enum Command {
         args: Vec<String>,
     },
 
-    /// :rune <script> [args...> - Run a Rune script
-    RunRune {
-        script_path: String,
-        args: Vec<String>,
-    },
-
     /// :stats - Show kiln and REPL statistics
     ShowStats,
 
@@ -84,19 +78,6 @@ impl Command {
                 }
                 Ok(Command::RunTool {
                     tool_name: args[0].to_string(),
-                    args: args[1..].iter().map(|s| s.to_string()).collect(),
-                })
-            }
-
-            "rune" => {
-                if args.is_empty() {
-                    return Err(CommandParseError::MissingArgument {
-                        command: cmd.to_string(),
-                        expected: "script path".to_string(),
-                    });
-                }
-                Ok(Command::RunRune {
-                    script_path: args[0].to_string(),
                     args: args[1..].iter().map(|s| s.to_string()).collect(),
                 })
             }
@@ -219,7 +200,6 @@ impl Command {
 TOOLS:
   :tools                      List all available tools
   :run <tool> [args...]       Execute a tool with arguments
-  :rune <script> [args...]    Run a Rune script
   :help <tool>                Show detailed help for a specific tool
   :h <tool>                   (shorthand)
 
@@ -266,14 +246,14 @@ USAGE:
   :tools
 
 DESCRIPTION:
-  Displays all available tools (both built-in and Rune scripts) with
-  their descriptions. These tools can be executed using :run.
+  Displays all available tools with their descriptions.
+  These tools can be executed using :run.
 
 EXAMPLES:
   :tools
 
 SEE ALSO:
-  :run, :rune
+  :run
                 "#,
             ),
 
@@ -285,9 +265,7 @@ USAGE:
   :run <tool_name> [args...]
 
 DESCRIPTION:
-  Executes a tool by name with optional arguments. Tools can be:
-  - Built-in Rust tools (search, metadata, etc.)
-  - Rune scripts loaded from ~/.crucible/scripts/
+  Executes a tool by name with optional arguments.
 
 ARGUMENTS:
   tool_name     Name of the tool to execute (required)
@@ -299,32 +277,7 @@ EXAMPLES:
   :run semantic_search "agent orchestration"
 
 SEE ALSO:
-  :tools, :rune
-                "#,
-            ),
-
-            ":rune" | "rune" => Some(
-                r#"
-:rune - Run Rune Script
-
-USAGE:
-  :rune <script_path> [args...]
-
-DESCRIPTION:
-  Executes a Rune script file with optional arguments. Scripts can
-  access the database and tool registry.
-
-ARGUMENTS:
-  script_path   Path to .rn script file (required)
-  args          Script-specific arguments (optional)
-
-EXAMPLES:
-  :rune custom_query.rn
-  :rune scripts/analytics.rn --format json
-  :rune ~/tools/export.rn output.csv
-
-SEE ALSO:
-  :run, :tools
+  :tools
                 "#,
             ),
 
@@ -481,16 +434,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_parse_rune_script() {
-        match Command::parse(":rune custom.rn arg1 arg2").unwrap() {
-            Command::RunRune { script_path, args } => {
-                assert_eq!(script_path, "custom.rn");
-                assert_eq!(args, vec!["arg1", "arg2"]);
-            }
-            _ => panic!("Expected RunRune"),
-        }
-    }
 
     #[test]
     fn test_parse_log_level() {

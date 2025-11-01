@@ -4,12 +4,10 @@
 pub mod composite;
 mod indexing;
 mod obsidian_sync;
-mod rune_reload;
 
 pub use composite::*;
 pub use indexing::*;
 pub use obsidian_sync::*;
-pub use rune_reload::*;
 
 use crate::{error::Result, events::FileEvent, traits::EventHandler};
 use std::sync::Arc;
@@ -93,11 +91,6 @@ pub fn create_default_handlers() -> Result<HandlerRegistry> {
     // {
     //     registry.register(Arc::new(IndexingHandler::new()?));
     // }
-
-    #[cfg(feature = "rune")]
-    {
-        registry.register(Arc::new(RuneReloadHandler::new()?));
-    }
 
     #[cfg(feature = "obsidian")]
     {
