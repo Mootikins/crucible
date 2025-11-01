@@ -963,4 +963,3 @@ mod performance_tests {
         assert!(embedding_provider.is_ok());
     }
 }
-

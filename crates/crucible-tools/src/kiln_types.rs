@@ -39,7 +39,7 @@ pub struct FileMetadata {
 
 impl FileMetadata {
     /// Create new file metadata
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             title: None,
@@ -51,7 +51,7 @@ impl FileMetadata {
     }
 
     /// Get a frontmatter value as string
-    #[must_use] 
+    #[must_use]
     pub fn get_string(&self, key: &str) -> Option<String> {
         self.frontmatter
             .get(key)
@@ -60,7 +60,7 @@ impl FileMetadata {
     }
 
     /// Get a frontmatter value as array of strings
-    #[must_use] 
+    #[must_use]
     pub fn get_string_array(&self, key: &str) -> Vec<String> {
         self.frontmatter
             .get(key)
@@ -75,7 +75,7 @@ impl FileMetadata {
     }
 
     /// Check if frontmatter contains a key
-    #[must_use] 
+    #[must_use]
     pub fn has_key(&self, key: &str) -> bool {
         self.frontmatter.contains_key(key)
     }
@@ -121,7 +121,7 @@ pub type KilnResult<T> = Result<T, KilnError>;
 
 impl KilnFile {
     /// Create a new kiln file
-    #[must_use] 
+    #[must_use]
     pub fn new(path: PathBuf, content: String, hash: String) -> Self {
         let size = content.len() as u64;
         let mut metadata = FileMetadata::new();
@@ -137,7 +137,7 @@ impl KilnFile {
     }
 
     /// Get the file title (from metadata or filename)
-    #[must_use] 
+    #[must_use]
     pub fn get_title(&self) -> String {
         self.metadata
             .title
@@ -153,25 +153,25 @@ impl KilnFile {
     }
 
     /// Get file tags from frontmatter
-    #[must_use] 
+    #[must_use]
     pub fn get_tags(&self) -> Vec<String> {
         self.metadata.get_string_array("tags")
     }
 
     /// Get file type from frontmatter
-    #[must_use] 
+    #[must_use]
     pub fn get_type(&self) -> Option<String> {
         self.metadata.get_string("type")
     }
 
     /// Get file status from frontmatter
-    #[must_use] 
+    #[must_use]
     pub fn get_status(&self) -> Option<String> {
         self.metadata.get_string("status")
     }
 
     /// Check if file has changed since last scan
-    #[must_use] 
+    #[must_use]
     pub fn has_changed(&self, new_hash: &str) -> bool {
         self.hash != new_hash
     }

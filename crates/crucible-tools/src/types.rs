@@ -31,8 +31,7 @@ pub struct ToolDefinition {
 
 /// Simple context for tool execution - Phase 2.1 simplified
 /// Replaced complex `ContextRef` patterns with direct parameters for async function composition
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ToolExecutionContext {
     /// User ID for the execution
     pub user_id: Option<String>,
@@ -44,10 +43,9 @@ pub struct ToolExecutionContext {
     pub environment: HashMap<String, String>,
 }
 
-
 impl ToolExecutionContext {
     /// Create a new context with user and session
-    #[must_use] 
+    #[must_use]
     pub fn with_user_session(user_id: Option<String>, session_id: Option<String>) -> Self {
         Self {
             user_id,
@@ -58,7 +56,7 @@ impl ToolExecutionContext {
     }
 
     /// Create a context with working directory
-    #[must_use] 
+    #[must_use]
     pub fn with_working_dir(working_directory: String) -> Self {
         Self {
             user_id: None,
@@ -69,7 +67,7 @@ impl ToolExecutionContext {
     }
 
     /// Add environment variable
-    #[must_use] 
+    #[must_use]
     pub fn with_env(mut self, key: String, value: String) -> Self {
         self.environment.insert(key, value);
         self
@@ -91,7 +89,7 @@ pub struct ToolExecutionRequest {
 
 impl ToolExecutionRequest {
     /// Create a new execution request
-    #[must_use] 
+    #[must_use]
     pub fn new(tool_name: String, parameters: Value, context: ToolExecutionContext) -> Self {
         Self {
             tool_name,
@@ -102,13 +100,13 @@ impl ToolExecutionRequest {
     }
 
     /// Create a request with minimal context
-    #[must_use] 
+    #[must_use]
     pub fn simple(tool_name: String, parameters: Value) -> Self {
         Self::new(tool_name, parameters, ToolExecutionContext::default())
     }
 
     /// Create a request with user and session context
-    #[must_use] 
+    #[must_use]
     pub fn with_user_session(
         tool_name: String,
         parameters: Value,
@@ -160,7 +158,7 @@ pub struct ToolResult {
 
 impl ToolResult {
     /// Create a successful result
-    #[must_use] 
+    #[must_use]
     pub fn success(tool_name: String, data: serde_json::Value) -> Self {
         Self {
             success: true,
@@ -172,7 +170,7 @@ impl ToolResult {
     }
 
     /// Create a successful result with duration
-    #[must_use] 
+    #[must_use]
     pub fn success_with_duration(
         tool_name: String,
         data: serde_json::Value,
@@ -188,7 +186,7 @@ impl ToolResult {
     }
 
     /// Create an error result
-    #[must_use] 
+    #[must_use]
     pub fn error(tool_name: String, error: String) -> Self {
         Self {
             success: false,
@@ -200,7 +198,7 @@ impl ToolResult {
     }
 
     /// Create an error result with duration
-    #[must_use] 
+    #[must_use]
     pub fn error_with_duration(tool_name: String, error: String, duration_ms: u64) -> Self {
         Self {
             success: false,
@@ -317,13 +315,13 @@ pub struct ToolConfigContext {
 
 impl ToolConfigContext {
     /// Create empty context
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self { kiln_path: None }
     }
 
     /// Create context with kiln path
-    #[must_use] 
+    #[must_use]
     pub fn with_kiln_path(kiln_path: PathBuf) -> Self {
         Self {
             kiln_path: Some(kiln_path),
@@ -494,7 +492,7 @@ async fn register_search_tools() -> Result<(), ToolError> {
 }
 
 /// Get tool loader information
-#[must_use] 
+#[must_use]
 pub fn tool_loader_info() -> ToolLoaderInfo {
     ToolLoaderInfo {
         version: "3.2".to_string(),

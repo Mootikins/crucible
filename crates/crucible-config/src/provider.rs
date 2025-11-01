@@ -229,10 +229,7 @@ pub enum EmbeddingProviderType {
 impl EmbeddingProviderType {
     /// Check if this provider type requires an API key.
     pub fn requires_api_key(&self) -> bool {
-        !matches!(
-            self,
-            Self::Ollama | Self::FastEmbed | Self::Mock
-        )
+        !matches!(self, Self::Ollama | Self::FastEmbed | Self::Mock)
     }
 
     /// Get the default base URL for the provider.

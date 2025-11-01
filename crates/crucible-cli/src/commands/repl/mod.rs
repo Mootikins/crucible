@@ -410,10 +410,7 @@ impl Repl {
         let grouped_tools = self.tools.list_tools_by_group().await;
 
         if grouped_tools.is_empty() {
-            println!(
-                "\n{} No tools found.\n",
-                "ℹ".blue()
-            );
+            println!("\n{} No tools found.\n", "ℹ".blue());
             return;
         }
 
@@ -776,8 +773,6 @@ impl Repl {
     ///
     /// Available in both unit tests and integration tests.
     pub async fn new_test() -> Result<Self> {
-        
-
         let config_dir = std::env::temp_dir().join("crucible_test");
         std::fs::create_dir_all(&config_dir)?;
 

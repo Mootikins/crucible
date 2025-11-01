@@ -18,13 +18,13 @@ pub struct KilnParser {
 
 impl KilnParser {
     /// Create a new kiln parser
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self { strict_mode: false }
     }
 
     /// Create a parser with strict frontmatter validation
-    #[must_use] 
+    #[must_use]
     pub fn strict() -> Self {
         Self { strict_mode: true }
     }

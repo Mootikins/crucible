@@ -46,8 +46,7 @@ pub enum ConfigError {
 }
 
 /// Master configuration structure
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 pub struct CrucibleConfig {
     /// Service configuration
     pub services: ServiceConfig,
@@ -63,10 +62,8 @@ pub struct CrucibleConfig {
     pub performance: PerformanceConfig,
 }
 
-
 /// Service configuration
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 pub struct ServiceConfig {
     /// Service registry configuration
     pub registry: ServiceRegistryConfig,
@@ -77,7 +74,6 @@ pub struct ServiceConfig {
     /// Custom service configurations
     pub custom: HashMap<String, serde_json::Value>,
 }
-
 
 /// Service registry configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -171,8 +167,7 @@ impl Default for HealthCheckConfig {
 /// This is distinct from crucible-config::DatabaseConfig which is used for
 /// simple profile-based configuration. This config supports primary/replica
 /// setups for service orchestration.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 pub struct ServiceDatabaseConfig {
     /// Primary database configuration
     pub primary: DatabaseConnectionConfig,
@@ -181,7 +176,6 @@ pub struct ServiceDatabaseConfig {
     /// Connection pool configuration
     pub pool: ConnectionPoolConfig,
 }
-
 
 /// Database connection configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -235,8 +229,7 @@ impl Default for ConnectionPoolConfig {
 }
 
 /// Network configuration
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 pub struct NetworkConfig {
     /// HTTP server configuration
     pub http: HttpConfig,
@@ -245,7 +238,6 @@ pub struct NetworkConfig {
     /// WebSocket configuration
     pub websocket: WebSocketConfig,
 }
-
 
 /// HTTP server configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

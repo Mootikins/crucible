@@ -596,10 +596,7 @@ tags: [agents]
 
     // Phase 7: Use KilnRepository directly instead of global context
     let kiln_repo = KilnRepository::new(temp_dir.path().to_str().unwrap());
-    let files = kiln_repo
-        .search_by_folder("Projects", true)
-        .await
-        .unwrap();
+    let files = kiln_repo.search_by_folder("Projects", true).await.unwrap();
 
     // Verify we found files in the Projects folder
     let has_rune_mcp_files = files.iter().any(|file| {
