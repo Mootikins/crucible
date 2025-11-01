@@ -14,34 +14,7 @@
 //!
 //! # Usage
 //!
-//! ## Production Code
-//! ```rust,no_run
-//! use crucible_surrealdb::{KilnStore, SurrealEmbeddingDatabase};
-//! use std::sync::Arc;
-//!
-//! # async fn example() -> anyhow::Result<()> {
-//! // Production: Use SurrealDB implementation
-//! let store: Arc<dyn KilnStore> = Arc::new(
-//!     SurrealEmbeddingDatabase::new("/path/to/db").await?
-//! );
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! ## Test Code
-//! ```rust
-//! use crucible_surrealdb::{KilnStore, InMemoryKilnStore};
-//! use std::sync::Arc;
-//!
-//! # async fn example() -> anyhow::Result<()> {
-//! // Tests: Use fast in-memory mock
-//! let store: Arc<dyn KilnStore> = Arc::new(InMemoryKilnStore::new());
-//!
-//! // Tests are fast and deterministic
-//! store.store_embedding("test.md", "content", &[0.1; 768], &metadata).await?;
-//! # Ok(())
-//! # }
-//! ```
+//! Use `SurrealEmbeddingDatabase` for production and `InMemoryKilnStore` for tests.
 
 use crate::types::{
     BatchOperation, BatchOperationType, BatchResult, DatabaseStats, EmbeddingData,
@@ -80,26 +53,6 @@ pub trait KilnStore: Send + Sync {
     /// - `content`: Full markdown content of the document
     /// - `embedding`: Vector embedding (typically 384 or 768 dimensions)
     /// - `metadata`: Document metadata (title, tags, properties, timestamps)
-    ///
-    /// # Example
-    /// ```rust,no_run
-    /// # use crucible_surrealdb::*;
-    /// # async fn example(store: &dyn KilnStore) -> anyhow::Result<()> {
-    /// let metadata = EmbeddingMetadata {
-    ///     title: Some("My Note".to_string()),
-    ///     tags: vec!["rust".to_string()],
-    ///     ..Default::default()
-    /// };
-    ///
-    /// store.store_embedding(
-    ///     "notes/rust.md",
-    ///     "# Rust\n\nSystems programming language",
-    ///     &[0.1; 768],
-    ///     &metadata
-    /// ).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
     async fn store_embedding(
         &self,
         file_path: &str,
@@ -287,23 +240,6 @@ use std::sync::{Arc, RwLock};
 /// - **Deterministic**: No timing dependencies or external services
 /// - **Isolated**: Each instance has independent state
 /// - **Resettable**: Can clear state between tests
-///
-/// # Example
-/// ```rust
-/// use crucible_surrealdb::{KilnStore, InMemoryKilnStore, EmbeddingMetadata};
-/// use std::sync::Arc;
-///
-/// # async fn example() -> anyhow::Result<()> {
-/// let store: Arc<dyn KilnStore> = Arc::new(InMemoryKilnStore::new());
-///
-/// let metadata = EmbeddingMetadata::default();
-/// store.store_embedding("test.md", "content", &[0.1; 768], &metadata).await?;
-///
-/// let result = store.get_embedding("test.md").await?;
-/// assert!(result.is_some());
-/// # Ok(())
-/// # }
-/// ```
 pub struct InMemoryKilnStore {
     storage: Arc<RwLock<HashMap<String, EmbeddingData>>>,
     stats: Arc<RwLock<DatabaseStats>>,

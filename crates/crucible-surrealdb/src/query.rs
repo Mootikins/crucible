@@ -2,22 +2,6 @@
 //!
 //! This module provides functionality for executing raw SurrealQL queries
 //! against the SurrealDB backend and formatting results for terminal display.
-//!
-//! # Usage
-//!
-//! ```no_run
-//! use crucible_surrealdb::query::{execute_query, format_results};
-//!
-//! # async fn example() -> anyhow::Result<()> {
-//! // Execute a query
-//! let results = execute_query("SELECT * FROM notes WHERE tags CONTAINS 'rust'").await?;
-//!
-//! // Format for terminal display
-//! let table = format_results(&results)?;
-//! println!("{}", table);
-//! # Ok(())
-//! # }
-//! ```
 
 use anyhow::{Context, Result};
 use comfy_table::{Cell, Table};
