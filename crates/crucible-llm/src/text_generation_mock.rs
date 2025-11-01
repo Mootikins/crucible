@@ -473,10 +473,10 @@ mod tests {
     #[tokio::test]
     async fn test_mock_completion_custom_response() {
         let provider = MockTextProvider::new();
-        provider.set_completion_response("What is Rust?", "Rust is a systems programming language.");
+        provider
+            .set_completion_response("What is Rust?", "Rust is a systems programming language.");
 
-        let request =
-            CompletionRequest::new("mock-model".to_string(), "What is Rust?".to_string());
+        let request = CompletionRequest::new("mock-model".to_string(), "What is Rust?".to_string());
         let response = provider.generate_completion(request).await.unwrap();
 
         assert_eq!(

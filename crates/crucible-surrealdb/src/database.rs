@@ -650,11 +650,7 @@ impl KilnStore for SurrealEmbeddingDatabase {
             .await
     }
 
-    async fn update_metadata(
-        &self,
-        file_path: &str,
-        metadata: &EmbeddingMetadata,
-    ) -> Result<()> {
+    async fn update_metadata(&self, file_path: &str, metadata: &EmbeddingMetadata) -> Result<()> {
         self.update_metadata(file_path, metadata).await
     }
 

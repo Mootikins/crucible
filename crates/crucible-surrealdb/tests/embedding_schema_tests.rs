@@ -568,8 +568,7 @@ async fn test_embedding_performance_characteristics() {
     // Just verify the field is present and doesn't panic
     println!(
         "Storage size: {:?} bytes for {} documents",
-        final_stats.storage_size_bytes,
-        final_stats.total_documents
+        final_stats.storage_size_bytes, final_stats.total_documents
     );
 
     println!("✓ All performance characteristic tests passed");

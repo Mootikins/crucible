@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use tracing::info;
 
 /// Search documents using semantic similarity - Phase 2.1 `ToolFunction`
-#[must_use] 
+#[must_use]
 pub fn search_documents() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -78,7 +78,7 @@ pub fn search_documents() -> ToolFunction {
 }
 
 /// Rebuild search indexes for all documents - Phase 2.1 `ToolFunction`
-#[must_use] 
+#[must_use]
 pub fn rebuild_index() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -130,7 +130,7 @@ pub fn rebuild_index() -> ToolFunction {
 }
 
 /// Get statistics about search indexes - Phase 2.1 `ToolFunction`
-#[must_use] 
+#[must_use]
 pub fn get_index_stats() -> ToolFunction {
     |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -189,7 +189,7 @@ pub fn get_index_stats() -> ToolFunction {
 }
 
 /// Optimize search indexes for better performance - Phase 2.1 `ToolFunction`
-#[must_use] 
+#[must_use]
 pub fn optimize_index() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -241,7 +241,7 @@ pub fn optimize_index() -> ToolFunction {
 }
 
 /// Advanced search with multiple criteria and ranking - Phase 2.1 `ToolFunction`
-#[must_use] 
+#[must_use]
 pub fn advanced_search() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
