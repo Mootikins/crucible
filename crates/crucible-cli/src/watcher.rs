@@ -59,7 +59,6 @@ pub enum WatcherError {
 /// Simple file watcher using notify-debouncer-mini
 pub struct SimpleFileWatcher {
     _debouncer: Debouncer<RecommendedWatcher>,
-    watched_path: PathBuf,
 }
 
 impl SimpleFileWatcher {
@@ -125,7 +124,6 @@ impl SimpleFileWatcher {
 
         Ok(Self {
             _debouncer: debouncer,
-            watched_path: kiln_path.to_path_buf(),
         })
     }
 

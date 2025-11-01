@@ -748,63 +748,6 @@ async fn bulk_query_document_hashes(
     Ok(hash_map)
 }
 
-/// Query document IDs for multiple files in a single database call
-///
-/// This function efficiently retrieves document IDs for multiple file paths using
-/// a single parameterized query with an IN clause, which is much faster than
-/// querying each file individually.
-///
-/// # Arguments
-/// * `client` - SurrealDB client connection
-/// * `relative_paths` - Slice of relative file paths to query
-///
-/// # Returns
-/// A HashMap mapping relative file paths to their document IDs. Files not found
-/// in the database will not be present in the HashMap.
-async fn bulk_query_document_ids(
-    client: &SurrealClient,
-    relative_paths: &[String],
-) -> Result<std::collections::HashMap<String, String>> {
-    use std::collections::HashMap;
-
-    if relative_paths.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    // Build query with IN clause
-    let path_strings: Vec<String> = relative_paths
-        .iter()
-        .map(|p| {
-            let sanitized = p.replace('\'', "''");
-            format!("'{}'", sanitized)
-        })
-        .collect();
-
-    let sql = format!(
-        "SELECT id, path FROM notes WHERE path IN [{}]",
-        path_strings.join(", ")
-    );
-
-    let result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query document IDs: {}", e))?;
-
-    // Build HashMap from results
-    let mut id_map = HashMap::new();
-    for record in result.records {
-        if let Some(path_value) = record.data.get("path") {
-            if let Some(path_str) = path_value.as_str() {
-                if let Some(id) = &record.id {
-                    id_map.insert(path_str.to_string(), id.0.clone());
-                }
-            }
-        }
-    }
-
-    Ok(id_map)
-}
-
 /// Convert file paths to KilnFileInfo structures
 ///
 /// This helper function reads file metadata for each path and creates KilnFileInfo

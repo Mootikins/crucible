@@ -10,7 +10,7 @@ use std::time::Instant;
 use tracing::{debug, error, info, warn};
 
 use crate::commands::repl::formatter::{QueryResult, QueryStatus};
-use crucible_core::{RelationalDB, SelectQuery};
+use crucible_core::SelectQuery;
 use crucible_surrealdb::{SurrealClient, SurrealDbConfig};
 use std::default::Default;
 
