@@ -4,7 +4,7 @@
 //! eliminating duplicate initialization and registry management across CLI commands
 //! and REPL components.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;

@@ -31,7 +31,6 @@
 use crate::types::SurrealDbConfig;
 use crucible_core::{DbError, DbResult, QueryResult, Record, RecordId, SelectQuery, TableSchema};
 use serde_json::Value;
-use std::collections::HashMap;
 use surrealdb::engine::local::Db;
 use surrealdb::Surreal;
 
