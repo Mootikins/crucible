@@ -4,7 +4,7 @@
 
 A high-performance knowledge management system that combines hierarchical organization, real-time collaboration, and AI agent integration. Crucible promotes **linked thinking** – the seamless connection and evolution of ideas across time and context – by routing every UI (CLI today, desktop/agent integrations tomorrow) through a shared `crucible-core` façade that orchestrates configuration, storage, agents, and tools behind the scenes.
 
-> **Status Note (2025-10-30):** The project is pivoting away from the legacy “service” architecture toward a lightweight, local-first core. References to service orchestration below describe historical behavior and will be updated as the refactor progresses.
+> **Status Note (2025-10-30):** The legacy “service” command surface has been retired. The roadmap now centers on a lightweight, local-first core that keeps orchestration inside `crucible-core` while the CLI stays focused on knowledge management tasks.
 
 ## ✨ Key Features
 
@@ -76,35 +76,8 @@ cru note get projects/research.md --format json
 cru note list --format table
 ```
 
-### Service Management (NEW)
+### Tooling & Automation
 ```bash
-# Service health and monitoring
-crucible-cli service health --detailed
-crucible-cli service metrics --real-time
-crucible-cli service list --status
-
-# Service lifecycle
-crucible-cli service start crucible-script-engine --wait
-crucible-cli service restart crucible-script-engine
-crucible-cli service logs --follow --errors
-```
-
-### Migration Management (NEW)
-```bash
-# Migration operations
-crucible-cli migration status --detailed --validate
-crucible-cli migration migrate --security-level production --dry-run
-crucible-cli migration migrate --security-level production
-crucible-cli migration validate --auto-fix
-crucible-cli migration list --active --metadata
-```
-
-### AI Integration
-```bash
-# AI chat with multiple agents
-crucible-cli chat --agent researcher --start-message "Help me analyze my research notes"
-crucible-cli chat --agent writer --temperature 0.7 --max-tokens 1000
-
 # Run custom Rune scripts
 crucible-cli run my-analysis-script.rn --args '{"query": "test", "limit": 10}'
 crucible-cli commands  # List available commands
@@ -196,7 +169,7 @@ SELECT title, tags FROM notes WHERE tags CONTAINS '#project';
 - **Dependency Cleanup**: Roadmap phases focus on removing direct UI → infrastructure calls
 
 ### Enhanced CLI Capabilities
-- **20+ Commands**: Search, notes, semantics, migrations, and diagnostics
+- **Core Commands**: Search, notes, statistics, kiln processing, and tooling utilities
 - **Interactive REPL**: Syntax highlighting, auto-completion, and tool execution via the shared core façade
 - **Search Safety**: Built-in memory protection and input validation
 
