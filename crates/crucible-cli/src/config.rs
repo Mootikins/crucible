@@ -872,16 +872,8 @@ max_performance_degradation = 20.0
                 };
                 Ok(EmbeddingConfig::openai(api_key, Some(model.clone())))
             }
-            "candle" => {
-                Ok(EmbeddingConfig::candle(
-                    Some(model.clone()),
-                    None, // cache_dir
-                    None, // memory_mb
-                    None, // device
-                ))
-            }
             _ => Err(anyhow::anyhow!(
-                "Unknown embedding provider: {}. Valid options: fastembed, ollama, openai, candle",
+                "Unknown embedding provider: {}. Valid options: fastembed, ollama, openai",
                 provider
             )),
         }

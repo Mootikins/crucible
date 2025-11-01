@@ -12,8 +12,6 @@ pub enum ProviderType {
     Ollama,
     /// OpenAI embedding API
     OpenAI,
-    /// Candle local embedding framework
-    Candle,
 }
 
 impl ProviderType {
@@ -22,9 +20,8 @@ impl ProviderType {
         match s.to_lowercase().as_str() {
             "ollama" => Ok(ProviderType::Ollama),
             "openai" => Ok(ProviderType::OpenAI),
-            "candle" => Ok(ProviderType::Candle),
             _ => Err(EmbeddingError::ConfigError(format!(
-                "Unknown provider type: {}. Valid options: ollama, openai, candle",
+                "Unknown provider type: {}. Valid options: ollama, openai",
                 s
             ))),
         }
@@ -35,7 +32,6 @@ impl ProviderType {
         match self {
             ProviderType::Ollama => "https://llama.terminal.krohnos.io",
             ProviderType::OpenAI => "https://api.openai.com/v1",
-            ProviderType::Candle => "local",
         }
     }
 
@@ -44,7 +40,6 @@ impl ProviderType {
         match self {
             ProviderType::Ollama => "nomic-embed-text",
             ProviderType::OpenAI => "text-embedding-3-small",
-            ProviderType::Candle => "nomic-embed-text-v1.5",
         }
     }
 
@@ -53,7 +48,6 @@ impl ProviderType {
         match self {
             ProviderType::Ollama => 768,  // nomic-embed-text
             ProviderType::OpenAI => 1536, // text-embedding-3-small
-            ProviderType::Candle => 768,  // nomic-embed-text-v1.5
         }
     }
 
@@ -62,7 +56,6 @@ impl ProviderType {
         match self {
             ProviderType::Ollama => false,
             ProviderType::OpenAI => true,
-            ProviderType::Candle => false,
         }
     }
 }
@@ -85,18 +78,11 @@ pub fn expected_dimensions_for_model(provider: &EmbeddingProviderType, model: &s
         (EmbeddingProviderType::OpenAI, "text-embedding-3-small") => 1536,
         (EmbeddingProviderType::OpenAI, "text-embedding-3-large") => 3072,
         (EmbeddingProviderType::OpenAI, "text-embedding-ada-002") => 1536,
-        // Candle models
-        (EmbeddingProviderType::Candle, "nomic-embed-text-v1.5") => 768,
-        (EmbeddingProviderType::Candle, "jina-embeddings-v2-base-en") => 768,
-        (EmbeddingProviderType::Candle, "jina-embeddings-v3-base-en") => 768,
-        (EmbeddingProviderType::Candle, "all-MiniLM-L6-v2") => 384,
-        (EmbeddingProviderType::Candle, "bge-small-en-v1.5") => 384,
         // Mock models for testing
         (EmbeddingProviderType::Mock, _) => 768,
         // Default to provider defaults for unknown models
         (EmbeddingProviderType::Ollama, _) => 768,
         (EmbeddingProviderType::OpenAI, _) => 1536,
-        (EmbeddingProviderType::Candle, _) => 768,
         // Other providers default to 768
         _ => 768,
     }
