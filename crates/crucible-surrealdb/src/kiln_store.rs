@@ -44,7 +44,7 @@
 //! ```
 
 use crate::types::{
-    BatchOperation, BatchOperationType, BatchResult, DatabaseStats, Document, EmbeddingData,
+    BatchOperation, BatchOperationType, BatchResult, DatabaseStats, EmbeddingData,
     EmbeddingMetadata, SearchQuery, SearchResultWithScore,
 };
 use anyhow::Result;

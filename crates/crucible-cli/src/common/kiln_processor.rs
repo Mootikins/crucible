@@ -276,7 +276,7 @@ impl ProcessingResult {
 pub async fn ensure_watcher_running(
     config: &crate::config::CliConfig,
 ) -> Result<std::sync::Arc<std::sync::RwLock<std::collections::HashSet<std::path::PathBuf>>>> {
-    use crate::watcher::{get_fix_instructions, SimpleFileWatcher};
+    
     use std::collections::HashSet;
     use std::sync::{Arc, RwLock};
 
