@@ -463,10 +463,9 @@ async fn test_kiln_metadata_extraction_various_frontmatter_types() {
 
 #[tokio::test]
 async fn test_search_by_properties_returns_real_kiln_data_not_mock_data() {
-    // This test should FAIL initially because search_by_properties returns mock data
-    // instead of real data from the test kiln
+    // Phase 7: Refactored to use KilnRepository directly to eliminate race conditions
 
-    use crucible_tools::kiln_tools;
+    use crucible_tools::kiln_operations::KilnRepository;
     use serde_json::json;
 
     // Create isolated test environment
@@ -485,63 +484,41 @@ This is a test file for search_by_properties.
 "#;
     fs::write(&test_file, test_content).unwrap();
 
-    // Set tool context
-    crucible_tools::types::set_tool_context(
-        crucible_tools::types::ToolConfigContext::with_kiln_path(temp_dir.path().to_path_buf()),
-    );
-
-    let tool_fn = kiln_tools::search_by_properties();
-    let parameters = json!({
-        "properties": {
-            "type": "meta"
-        }
+    // Phase 7: Use KilnRepository directly instead of global context
+    let kiln_repo = KilnRepository::new(temp_dir.path().to_str().unwrap());
+    let properties = json!({
+        "type": "meta"
     });
 
-    let result = tool_fn(
-        "search_by_properties".to_string(),
-        parameters,
-        Some("test_user".to_string()),
-        Some("test_session".to_string()),
-    )
-    .await
-    .unwrap();
+    let matching_files = kiln_repo.search_by_properties(properties).await.unwrap();
 
-    assert!(result.success);
-    let data = result.data.unwrap();
-    let matching_files = data.get("matching_files").unwrap().as_array().unwrap();
-
-    // This should FAIL because mock implementation returns hardcoded "projects/project1.md"
-    // but we expect real files from the test kiln like "PRIME.md"
+    // Verify we found files with type=meta
     assert!(
         !matching_files.is_empty(),
         "Should find files with type=meta"
     );
 
-    // Check if any result contains real kiln file (not mock data)
-    let has_real_kiln_file = matching_files.iter().any(|file| {
+    // Check if any result contains our test file
+    let has_test_file = matching_files.iter().any(|file| {
         if let Some(path) = file.get("path").and_then(|p| p.as_str()) {
-            // Mock data returns "projects/project1.md" - real kiln should have different paths
-            // In our test, we created "test-meta.md"
             path.contains("test-meta.md")
         } else {
             false
         }
     });
 
-    // This assertion should now pass with real kiln file
     assert!(
-        has_real_kiln_file,
-        "Expected real kiln file test-meta.md with type=meta. Found files: {:?}",
+        has_test_file,
+        "Expected to find test-meta.md with type=meta. Found files: {:?}",
         matching_files
     );
 }
 
 #[tokio::test]
 async fn test_search_by_tags_finds_real_kiln_files_not_mock_data() {
-    use crucible_tools::kiln_tools;
-    use serde_json::json;
-    use std::fs;
-    use tempfile::TempDir;
+    // Phase 7: Refactored to use KilnRepository directly to eliminate race conditions
+
+    use crucible_tools::kiln_operations::KilnRepository;
 
     // Create isolated test environment
     let temp_dir = TempDir::new().unwrap();
@@ -559,28 +536,12 @@ This is a test file for search_by_tags.
 "#;
     fs::write(&test_file_path, test_content).unwrap();
 
-    // Set kiln path in registry
-    crucible_tools::types::set_tool_context(
-        crucible_tools::types::ToolConfigContext::with_kiln_path(temp_dir.path().to_path_buf()),
-    );
-
-    let tool_fn = kiln_tools::search_by_tags();
-    let parameters = json!({
-        "tags": ["kiln-config", "instructions"]
-    });
-
-    let result = tool_fn(
-        "search_by_tags".to_string(),
-        parameters,
-        Some("test_user".to_string()),
-        Some("test_session".to_string()),
-    )
-    .await
-    .unwrap();
-
-    assert!(result.success);
-    let data = result.data.unwrap();
-    let matching_files = data.get("matching_files").unwrap().as_array().unwrap();
+    // Phase 7: Use KilnRepository directly instead of global context
+    let kiln_repo = KilnRepository::new(temp_dir.path().to_str().unwrap());
+    let matching_files = kiln_repo
+        .search_by_tags(vec!["kiln-config".to_string(), "instructions".to_string()])
+        .await
+        .unwrap();
 
     // Should find our test file
     let has_test_file = matching_files.iter().any(|file| {
@@ -596,17 +557,13 @@ This is a test file for search_by_tags.
         "Expected test-config.md with kiln-config and instructions tags. Found: {:?}",
         matching_files
     );
-
-    // TempDir automatically cleans up when dropped
 }
 
 #[tokio::test]
 async fn test_search_by_folder_returns_real_files_from_test_kiln() {
-    // This test should FAIL initially because search_by_folder returns mock data
-    // instead of real files from the test kiln folders
+    // Phase 7: Refactored to use KilnRepository directly to eliminate race conditions
 
-    use crucible_tools::kiln_tools;
-    use serde_json::json;
+    use crucible_tools::kiln_operations::KilnRepository;
 
     // Create isolated test environment
     let temp_dir = TempDir::new().unwrap();
@@ -637,37 +594,14 @@ tags: [agents]
     )
     .unwrap();
 
-    // Set tool context
-    crucible_tools::types::set_tool_context(
-        crucible_tools::types::ToolConfigContext::with_kiln_path(temp_dir.path().to_path_buf()),
-    );
+    // Phase 7: Use KilnRepository directly instead of global context
+    let kiln_repo = KilnRepository::new(temp_dir.path().to_str().unwrap());
+    let files = kiln_repo
+        .search_by_folder("Projects", true)
+        .await
+        .unwrap();
 
-    let tool_fn = kiln_tools::search_by_folder();
-    let parameters = json!({
-        "path": "Projects",
-        "recursive": true
-    });
-
-    let result = tool_fn(
-        "search_by_folder".to_string(),
-        parameters,
-        Some("test_user".to_string()),
-        Some("test_session".to_string()),
-    )
-    .await
-    .unwrap();
-
-    assert!(result.success, "search_by_folder should succeed");
-    let data = result.data.expect("Result should have data");
-
-    // The actual key is "matching_files", not "files"
-    let files = data
-        .get("matching_files")
-        .expect("Should have matching_files field")
-        .as_array()
-        .expect("matching_files should be an array");
-
-    // Mock returns "projects/active/project1.md" but real kiln should have different structure
+    // Verify we found files in the Projects folder
     let has_rune_mcp_files = files.iter().any(|file| {
         if let Some(path) = file.get("path").and_then(|p| p.as_str()) {
             path.contains("Rune MCP") || path.contains("Multi-Agent")
@@ -676,21 +610,18 @@ tags: [agents]
         }
     });
 
-    // This should FAIL initially (mock data vs real data)
     assert!(
         has_rune_mcp_files,
-        "Expected real files from Projects folder like Rune MCP, but got mock data. Found: {:?}",
+        "Expected real files from Projects folder like Rune MCP. Found: {:?}",
         files
     );
 }
 
 #[tokio::test]
 async fn test_get_kiln_stats_calculates_real_statistics_not_mock_numbers() {
-    // This test should FAIL initially because get_kiln_stats returns hardcoded mock numbers
-    // instead of real statistics from the test kiln
+    // Phase 7: Refactored to use KilnRepository directly to eliminate race conditions
 
-    use crucible_tools::kiln_tools;
-    use serde_json::json;
+    use crucible_tools::kiln_operations::KilnRepository;
 
     // Create isolated test environment
     let temp_dir = TempDir::new().unwrap();
@@ -715,41 +646,22 @@ This is test note number {}.
         .unwrap();
     }
 
-    // Set tool context
-    crucible_tools::types::set_tool_context(
-        crucible_tools::types::ToolConfigContext::with_kiln_path(temp_dir.path().to_path_buf()),
-    );
+    // Phase 7: Use KilnRepository directly instead of global context
+    let kiln_repo = KilnRepository::new(temp_dir.path().to_str().unwrap());
+    let stats = kiln_repo.get_kiln_stats().await.unwrap();
 
-    let tool_fn = kiln_tools::get_kiln_stats();
-    let parameters = json!({});
-
-    let result = tool_fn("get_kiln_stats".to_string(), parameters, None, None)
-        .await
-        .unwrap();
-
-    assert!(result.success, "get_kiln_stats should succeed");
-    let data = result.data.expect("Result should have data");
-
-    // The stats are nested under a "stats" key
-    let stats = data
-        .get("stats")
-        .expect("Should have stats field")
-        .as_object()
-        .expect("stats should be an object");
-
-    // Mock returns hardcoded 1250 total_notes, but real kiln should have different count
+    // We created 5 test files, so we expect 5 notes
     let total_notes = stats
         .get("total_notes")
-        .expect("Should have total_notes field in stats")
+        .expect("Should have total_notes field")
         .as_u64()
         .expect("total_notes should be a number");
     let total_size_mb = stats
         .get("total_size_mb")
-        .expect("Should have total_size_mb field in stats")
+        .expect("Should have total_size_mb field")
         .as_f64()
         .expect("total_size_mb should be a number");
 
-    // We created 5 test files, so we expect real kiln to have 5 notes, not mock value of 1250
     assert_eq!(
         total_notes, 5,
         "Expected 5 test notes from our isolated test environment. Got: {}",
@@ -773,11 +685,9 @@ This is test note number {}.
 
 #[tokio::test]
 async fn test_list_tags_extracts_real_tags_from_kiln_frontmatter() {
-    // This test should FAIL initially because list_tags returns hardcoded mock tags
-    // instead of extracting real tags from test kiln frontmatter
+    // Phase 7: Refactored to use KilnRepository directly to eliminate race conditions
 
-    use crucible_tools::kiln_tools;
-    use serde_json::json;
+    use crucible_tools::kiln_operations::KilnRepository;
 
     // Create isolated test environment
     let temp_dir = TempDir::new().unwrap();
@@ -805,24 +715,17 @@ tags: [research, testing]
     )
     .unwrap();
 
-    // Set tool context
-    crucible_tools::types::set_tool_context(
-        crucible_tools::types::ToolConfigContext::with_kiln_path(temp_dir.path().to_path_buf()),
-    );
+    // Phase 7: Use KilnRepository directly instead of global context
+    let kiln_repo = KilnRepository::new(temp_dir.path().to_str().unwrap());
+    let tag_list = kiln_repo.list_tags().await.unwrap();
 
-    let tool_fn = kiln_tools::list_tags();
-    let parameters = json!({});
+    let tags = tag_list
+        .get("tags")
+        .expect("Should have tags field")
+        .as_array()
+        .expect("tags should be an array");
 
-    let result = tool_fn("list_tags".to_string(), parameters, None, None)
-        .await
-        .unwrap();
-
-    assert!(result.success);
-    let data = result.data.unwrap();
-    let tags = data.get("tags").unwrap().as_array().unwrap();
-
-    // Mock returns hardcoded tags: ["ai", "research", "project"]
-    // Real kiln should have different tags like "kiln-config", "instructions", "ai-guide"
+    // Verify we found our custom tags
     let has_kiln_config_tag = tags.iter().any(|tag| {
         if let Some(name) = tag.get("name").and_then(|n| n.as_str()) {
             name == "kiln-config" || name == "ai-guide" || name == "instructions"
@@ -831,15 +734,14 @@ tags: [research, testing]
         }
     });
 
-    // This should now pass with real kiln tags
     assert!(
         has_kiln_config_tag,
-        "Expected real kiln tags like 'kiln-config' from PRIME.md, but got mock tags. Found: {:?}",
+        "Expected real kiln tags like 'kiln-config'. Found: {:?}",
         tags
     );
 
-    // Check that counts are realistic (not perfect round numbers like mock data)
-    let total_tags = data.get("total_tags").unwrap().as_u64().unwrap();
+    // Verify tag count is realistic
+    let total_tags = tag_list.get("total_tags").unwrap().as_u64().unwrap();
     assert_ne!(
         total_tags, 3,
         "Expected real tag count from kiln, not mock value of 3. Got: {}",
