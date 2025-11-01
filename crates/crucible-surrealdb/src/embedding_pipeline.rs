@@ -395,48 +395,6 @@ impl EmbeddingPipeline {
         Ok(None)
     }
 
-    /// Check if document needs processing based on content hash
-    fn should_process_document(
-        &self,
-        _document: &ParsedDocument,
-        existing_embeddings: &[DocumentEmbedding],
-    ) -> Result<bool> {
-        // Simple check: if no embeddings exist, process
-        if existing_embeddings.is_empty() {
-            return Ok(true);
-        }
-
-        // In a real implementation, we would:
-        // 1. Compare content hash with stored hash
-        // 2. Check if document was modified since last processing
-        // 3. Check if embedding model has changed
-
-        // For testing, always process if we have embeddings
-        Ok(true)
-    }
-
-    /// Get existing embeddings for a document
-    async fn get_document_embeddings(
-        &self,
-        _client: &SurrealClient,
-        _document_id: &str,
-    ) -> Result<Vec<DocumentEmbedding>> {
-        // This would query the database for existing embeddings
-        // For now, return empty vector
-        Ok(Vec::new())
-    }
-
-    /// Clear existing embeddings for a document
-    async fn clear_document_embeddings(
-        &self,
-        _client: &SurrealClient,
-        _document_id: &str,
-    ) -> Result<()> {
-        // This would delete existing embeddings from the database
-        debug!("Clearing existing embeddings for document {}", _document_id);
-        Ok(())
-    }
-
     /// Store document embedding in database
     async fn store_document_embedding(
         &self,

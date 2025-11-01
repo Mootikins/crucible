@@ -9,7 +9,7 @@ use crate::SurrealClient;
 use anyhow::{anyhow, Result};
 use crucible_core::{
     parser::{FrontmatterFormat, ParsedDocument, Tag},
-    Record, RecordId, RelationalDB,
+    Record, RecordId,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -17,7 +17,7 @@ use tracing::{debug, error, info, warn};
 
 /// Initialize the kiln schema in the database
 pub async fn initialize_kiln_schema(client: &SurrealClient) -> Result<()> {
-    use crucible_core::{ColumnDefinition, DataType, RelationalDB, TableSchema};
+    use crucible_core::{ColumnDefinition, DataType, TableSchema};
 
     // Create notes table
     let notes_schema = TableSchema {
@@ -2229,45 +2229,6 @@ pub async fn get_all_document_embeddings(client: &SurrealClient) -> Result<Vec<D
     }
 
     Ok(embeddings)
-}
-
-/// Generate mock query embedding for testing
-fn generate_mock_query_embedding(query: &str) -> Result<Vec<f32>> {
-    let _dimensions = 768; // Standard embedding dimension
-
-    // Use patterns that match test expectations for common queries
-    let pattern = if query.to_lowercase().contains("machine learning") {
-        [0.8, 0.6, 0.1, 0.2] // High similarity pattern for machine learning
-    } else if query.to_lowercase().contains("neural") {
-        [0.7, 0.4, 0.2, 0.3] // Pattern for neural network related queries
-    } else if query.to_lowercase().contains("deep") {
-        [0.6, 0.7, 0.1, 0.1] // Pattern for deep learning queries
-    } else if query.to_lowercase().contains("artificial") || query.to_lowercase().contains("ai") {
-        [0.5, 0.5, 0.3, 0.3] // Pattern for AI queries
-    } else if query.to_lowercase().contains("data") {
-        [0.4, 0.3, 0.6, 0.2] // Pattern for data science queries
-    } else {
-        // Default pattern for other queries
-        [0.3, 0.2, 0.4, 0.5]
-    };
-
-    Ok(create_controlled_vector(&pattern))
-}
-
-/// Create a vector with controlled pattern for similarity testing (matches test implementation)
-fn create_controlled_vector(pattern: &[f32]) -> Vec<f32> {
-    let dimensions = 768; // Standard embedding dimension
-    let mut vector = Vec::with_capacity(dimensions);
-
-    for i in 0..dimensions {
-        let pattern_idx = i % pattern.len();
-        let base_value = pattern[pattern_idx];
-        // Add some variation while maintaining the pattern
-        let variation = (i as f32 * 0.01).sin() * 0.1;
-        vector.push((base_value + variation).clamp(-1.0, 1.0));
-    }
-
-    vector
 }
 
 /// Calculate cosine similarity between two vectors
