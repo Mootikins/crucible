@@ -245,8 +245,7 @@ pub struct AnthropicConfig {
 }
 
 /// Services configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ServicesConfig {
     /// ScriptEngine service configuration
     #[serde(default)]
@@ -432,7 +431,6 @@ impl Default for AnthropicConfig {
         }
     }
 }
-
 
 impl Default for ScriptEngineConfig {
     fn default() -> Self {

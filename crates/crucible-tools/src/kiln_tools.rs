@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use tracing::info;
 
 /// Search notes by frontmatter properties - Implementation using Phase 1A parsing
-#[must_use] 
+#[must_use]
 pub fn search_by_properties() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -48,7 +48,7 @@ pub fn search_by_properties() -> ToolFunction {
 }
 
 /// Search notes by tags - Implementation using Phase 1A parsing
-#[must_use] 
+#[must_use]
 pub fn search_by_tags() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -95,7 +95,7 @@ pub fn search_by_tags() -> ToolFunction {
 }
 
 /// Search notes in a specific folder - Implementation using Phase 1A parsing
-#[must_use] 
+#[must_use]
 pub fn search_by_folder() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -145,7 +145,7 @@ pub fn search_by_folder() -> ToolFunction {
 }
 
 /// Create a new note in the kiln - Phase 2.1 `ToolFunction`
-#[must_use] 
+#[must_use]
 pub fn create_note() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -191,7 +191,7 @@ pub fn create_note() -> ToolFunction {
 }
 
 /// Update an existing note - Phase 2.1 `ToolFunction`
-#[must_use] 
+#[must_use]
 pub fn update_note() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -231,7 +231,7 @@ pub fn update_note() -> ToolFunction {
 }
 
 /// Delete a note from the kiln - Phase 2.1 `ToolFunction`
-#[must_use] 
+#[must_use]
 pub fn delete_note() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -262,7 +262,7 @@ pub fn delete_note() -> ToolFunction {
 }
 
 /// Get kiln statistics - Implementation using Phase 1A parsing
-#[must_use] 
+#[must_use]
 pub fn get_kiln_stats() -> ToolFunction {
     |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -296,7 +296,7 @@ pub fn get_kiln_stats() -> ToolFunction {
 }
 
 /// List all tags in the kiln - Implementation using Phase 1A parsing
-#[must_use] 
+#[must_use]
 pub fn list_tags() -> ToolFunction {
     |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -341,10 +341,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_by_properties_function() {
-        use std::fs;
-        use std::collections::HashMap;
-        use tempfile::TempDir;
         use crate::kiln_operations::KilnRepository;
+        use std::collections::HashMap;
+        use std::fs;
+        use tempfile::TempDir;
 
         // Phase 7: Use KilnRepository directly instead of global context
         // This eliminates race conditions from concurrent test execution
@@ -369,19 +369,20 @@ priority: high
             "priority": "high"
         });
 
-        let matching_files = kiln_repo.search_by_properties(properties)
-            .await
-            .unwrap();
+        let matching_files = kiln_repo.search_by_properties(properties).await.unwrap();
 
         // Verify results
-        assert!(matching_files.len() > 0, "Should find files with matching properties");
+        assert!(
+            matching_files.len() > 0,
+            "Should find files with matching properties"
+        );
     }
 
     #[tokio::test]
     async fn test_search_by_tags_function() {
+        use crate::kiln_operations::KilnRepository;
         use std::fs;
         use tempfile::TempDir;
-        use crate::kiln_operations::KilnRepository;
 
         // Phase 7: Use KilnRepository directly instead of global context
         // This eliminates race conditions from concurrent test execution
@@ -400,12 +401,16 @@ tags: [ai, research]
 
         // Create repository directly with test path (no global state)
         let kiln_repo = KilnRepository::new(temp_dir.path().to_str().unwrap());
-        let matching_files = kiln_repo.search_by_tags(vec!["ai".to_string(), "research".to_string()])
+        let matching_files = kiln_repo
+            .search_by_tags(vec!["ai".to_string(), "research".to_string()])
             .await
             .unwrap();
 
         // Verify results
-        assert!(matching_files.len() > 0, "Should find files with matching tags");
+        assert!(
+            matching_files.len() > 0,
+            "Should find files with matching tags"
+        );
     }
 
     #[tokio::test]
@@ -531,9 +536,9 @@ tags: [ai, research, testing]
 
     #[tokio::test]
     async fn test_search_by_folder_function() {
+        use crate::kiln_operations::KilnRepository;
         use std::fs;
         use tempfile::TempDir;
-        use crate::kiln_operations::KilnRepository;
 
         // Phase 7: Use KilnRepository directly instead of global context
         // This eliminates race conditions from concurrent test execution
@@ -555,12 +560,13 @@ title: Project Note
 
         // Create repository directly with test path (no global state)
         let kiln_repo = KilnRepository::new(temp_dir.path().to_str().unwrap());
-        let matching_files = kiln_repo.search_by_folder("projects", true)
-            .await
-            .unwrap();
+        let matching_files = kiln_repo.search_by_folder("projects", true).await.unwrap();
 
         // Verify results
-        assert!(matching_files.len() > 0, "Should find files in projects folder");
+        assert!(
+            matching_files.len() > 0,
+            "Should find files in projects folder"
+        );
     }
 
     #[tokio::test]

@@ -33,7 +33,7 @@ impl KilnRepository {
     ///
     /// Note: This function requires an explicit path to avoid hardcoded defaults.
     /// Callers should obtain the path from configuration or pass it explicitly.
-    #[must_use] 
+    #[must_use]
     pub fn new(kiln_path: &str) -> Self {
         let kiln_path = Arc::new(kiln_path.to_string());
         let scanner = Arc::new(KilnScanner::new(&kiln_path));
@@ -64,7 +64,7 @@ impl KilnRepository {
     }
 
     /// Get the kiln path
-    #[must_use] 
+    #[must_use]
     pub fn kiln_path(&self) -> &str {
         &self.kiln_path
     }

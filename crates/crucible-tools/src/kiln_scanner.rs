@@ -16,7 +16,7 @@ pub struct KilnScanner {
 
 impl KilnScanner {
     /// Create a new kiln scanner
-    #[must_use] 
+    #[must_use]
     pub fn new(kiln_path: &str) -> Self {
         Self {
             kiln_path: kiln_path.to_string(),
@@ -92,7 +92,7 @@ impl KilnScanner {
     }
 
     /// Get the kiln root path
-    #[must_use] 
+    #[must_use]
     pub fn kiln_path(&self) -> &str {
         &self.kiln_path
     }
@@ -107,7 +107,7 @@ impl KilnScanner {
     }
 
     /// Get absolute file paths from relative paths
-    #[must_use] 
+    #[must_use]
     pub fn get_absolute_path(&self, relative_path: &PathBuf) -> PathBuf {
         std::path::Path::new(&self.kiln_path).join(relative_path)
     }

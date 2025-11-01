@@ -68,11 +68,7 @@ pub trait KilnStore: Send + Sync {
     ///
     /// # Returns
     /// `Ok(())` if updated, `Err` if file doesn't exist
-    async fn update_metadata(
-        &self,
-        file_path: &str,
-        metadata: &EmbeddingMetadata,
-    ) -> Result<()>;
+    async fn update_metadata(&self, file_path: &str, metadata: &EmbeddingMetadata) -> Result<()>;
 
     /// Update metadata properties using a HashMap.
     ///
@@ -302,10 +298,7 @@ impl InMemoryKilnStore {
 
     /// Get current document count (for test assertions).
     pub fn len(&self) -> usize {
-        self.storage
-            .read()
-            .map(|s| s.len())
-            .unwrap_or(0)
+        self.storage.read().map(|s| s.len()).unwrap_or(0)
     }
 
     /// Check if store is empty (for test assertions).
@@ -370,11 +363,7 @@ impl KilnStore for InMemoryKilnStore {
         Ok(())
     }
 
-    async fn update_metadata(
-        &self,
-        file_path: &str,
-        metadata: &EmbeddingMetadata,
-    ) -> Result<()> {
+    async fn update_metadata(&self, file_path: &str, metadata: &EmbeddingMetadata) -> Result<()> {
         let mut storage = self
             .storage
             .write()
@@ -550,22 +539,22 @@ impl KilnStore for InMemoryKilnStore {
         for document in &operation.documents {
             let embedding_data = EmbeddingData::from(document.clone());
             let result = match operation.operation_type {
-                BatchOperationType::Create => {
-                    self.store_embedding(
+                BatchOperationType::Create => self
+                    .store_embedding(
                         &document.file_path,
                         &document.content,
                         &document.embedding,
                         &embedding_data.metadata,
                     )
                     .await
-                    .map(|_| ())
+                    .map(|_| ()),
+                BatchOperationType::Update => self
+                    .update_metadata(&document.file_path, &embedding_data.metadata)
+                    .await
+                    .map(|_| ()),
+                BatchOperationType::Delete => {
+                    self.delete_file(&document.file_path).await.map(|_| ())
                 }
-                BatchOperationType::Update => {
-                    self.update_metadata(&document.file_path, &embedding_data.metadata)
-                        .await
-                        .map(|_| ())
-                }
-                BatchOperationType::Delete => self.delete_file(&document.file_path).await.map(|_| ()),
             };
 
             match result {
@@ -732,16 +721,10 @@ mod tests {
             .unwrap();
 
         // Search by tags
-        let results = store
-            .search_by_tags(&["rust".to_string()])
-            .await
-            .unwrap();
+        let results = store.search_by_tags(&["rust".to_string()]).await.unwrap();
         assert_eq!(results.len(), 2);
 
-        let results = store
-            .search_by_tags(&["async".to_string()])
-            .await
-            .unwrap();
+        let results = store.search_by_tags(&["async".to_string()]).await.unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0], "doc2.md");
 

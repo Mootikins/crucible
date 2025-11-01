@@ -434,7 +434,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn test_parse_log_level() {
         match Command::parse(":log debug").unwrap() {

@@ -16,7 +16,7 @@ use tracing::info;
 ///
 /// This function implements the `ToolFunction` signature for unified execution.
 /// Now uses integrated crucible-surrealdb functionality for real semantic search.
-#[must_use] 
+#[must_use]
 pub fn semantic_search() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -171,8 +171,14 @@ async fn perform_integrated_semantic_search(
 
     // Sort by similarity score (descending)
     tool_results.sort_by(|a, b| {
-        let score_a = a.get("score").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
-        let score_b = b.get("score").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+        let score_a = a
+            .get("score")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0);
+        let score_b = b
+            .get("score")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0);
         score_b
             .partial_cmp(&score_a)
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -187,7 +193,9 @@ async fn check_embeddings_exist_integrated(
 ) -> Result<bool, anyhow::Error> {
     use crucible_surrealdb::kiln_integration::get_database_stats;
 
-    if let Ok(stats) = get_database_stats(client).await { Ok(stats.total_embeddings > 0) } else {
+    if let Ok(stats) = get_database_stats(client).await {
+        Ok(stats.total_embeddings > 0)
+    } else {
         // Fallback to direct query
         let embeddings_sql = "SELECT count() as total FROM embeddings LIMIT 1";
         let result = client
@@ -227,7 +235,7 @@ async fn process_kiln_if_needed(
 }
 
 /// Full-text search in note contents - Phase 2.1 `ToolFunction`
-#[must_use] 
+#[must_use]
 pub fn search_by_content() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -266,7 +274,7 @@ pub fn search_by_content() -> ToolFunction {
 }
 
 /// Search notes by filename pattern - Phase 2.1 `ToolFunction`
-#[must_use] 
+#[must_use]
 pub fn search_by_filename() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -302,7 +310,7 @@ pub fn search_by_filename() -> ToolFunction {
 }
 
 /// Update frontmatter properties of a note - Phase 2.1 `ToolFunction`
-#[must_use] 
+#[must_use]
 pub fn update_note_properties() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -335,7 +343,7 @@ pub fn update_note_properties() -> ToolFunction {
 }
 
 /// Index a specific document for search - Phase 2.1 `ToolFunction`
-#[must_use] 
+#[must_use]
 pub fn index_document() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -371,7 +379,7 @@ pub fn index_document() -> ToolFunction {
 }
 
 /// Get document statistics from the database - Phase 2.1 `ToolFunction`
-#[must_use] 
+#[must_use]
 pub fn get_document_stats() -> ToolFunction {
     |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -398,7 +406,7 @@ pub fn get_document_stats() -> ToolFunction {
 }
 
 /// Sync metadata from external source to database - Phase 2.1 `ToolFunction`
-#[must_use] 
+#[must_use]
 pub fn sync_metadata() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {

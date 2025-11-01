@@ -89,12 +89,12 @@ impl SemanticSearchService for DefaultSemanticSearchService {
             timeout_seconds: Some(30),
         };
 
-        let client = SurrealClient::new(db_config)
-            .await
-            .map_err(|e| anyhow::anyhow!(
+        let client = SurrealClient::new(db_config).await.map_err(|e| {
+            anyhow::anyhow!(
                 "Failed to connect to kiln database: {}. Make sure your kiln has been processed.",
                 e
-            ))?;
+            )
+        })?;
 
         progress.set_message("Database connected, checking embeddings...");
 
@@ -132,7 +132,8 @@ impl SemanticSearchService for DefaultSemanticSearchService {
                     "    Requested: {} ({:?} dimensions)",
                     expected_model_name, expected_dimensions
                 ));
-                info_messages.push("    Clearing existing embeddings and rebuilding index...".to_string());
+                info_messages
+                    .push("    Clearing existing embeddings and rebuilding index...".to_string());
                 info_messages.push(String::new());
 
                 clear_all_embeddings(&client).await?;

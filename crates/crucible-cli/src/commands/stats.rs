@@ -36,9 +36,8 @@ impl KilnStatsService for FileSystemKilnStatsService {
                     totals.total_files += 1;
 
                     if let Ok(metadata) = entry.metadata() {
-                        totals.total_size_bytes = totals
-                            .total_size_bytes
-                            .saturating_add(metadata.len());
+                        totals.total_size_bytes =
+                            totals.total_size_bytes.saturating_add(metadata.len());
                     }
 
                     if path

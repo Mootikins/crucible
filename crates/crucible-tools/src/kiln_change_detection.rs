@@ -17,7 +17,7 @@ pub struct ChangeDetector {
 
 impl ChangeDetector {
     /// Create a new change detector
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             cache_enabled: false,
@@ -25,7 +25,7 @@ impl ChangeDetector {
     }
 
     /// Create a change detector with caching enabled
-    #[must_use] 
+    #[must_use]
     pub fn with_cache() -> Self {
         Self {
             cache_enabled: true,
@@ -46,7 +46,7 @@ impl ChangeDetector {
     }
 
     /// Calculate SHA256 hash for string content
-    #[must_use] 
+    #[must_use]
     pub fn calculate_content_hash(&self, content: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
@@ -54,7 +54,7 @@ impl ChangeDetector {
     }
 
     /// Calculate hash for file bytes
-    #[must_use] 
+    #[must_use]
     pub fn calculate_bytes_hash(&self, bytes: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(bytes);
@@ -68,20 +68,20 @@ impl ChangeDetector {
     }
 
     /// Check if content has changed
-    #[must_use] 
+    #[must_use]
     pub fn content_has_changed(&self, content: &str, previous_hash: &str) -> bool {
         let current_hash = self.calculate_content_hash(content);
         current_hash != previous_hash
     }
 
     /// Get hash length (should always be 64 for SHA256)
-    #[must_use] 
+    #[must_use]
     pub fn hash_length(&self) -> usize {
         64
     }
 
     /// Validate if a string looks like a valid SHA256 hash
-    #[must_use] 
+    #[must_use]
     pub fn is_valid_hash(&self, hash: &str) -> bool {
         hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit())
     }
