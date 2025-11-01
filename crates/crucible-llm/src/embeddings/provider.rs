@@ -572,6 +572,7 @@ impl EmbeddingResponse {
 /// ```rust,no_run
 /// use async_trait::async_trait;
 /// use crucible_llm::embeddings::{EmbeddingProvider, EmbeddingResponse, EmbeddingResult};
+/// use crucible_llm::embeddings::provider::ModelInfo;
 ///
 /// struct MyProvider {
 ///     model: String,
@@ -604,6 +605,11 @@ impl EmbeddingResponse {
 ///
 ///     fn provider_name(&self) -> &str {
 ///         "MyProvider"
+///     }
+///
+///     async fn list_models(&self) -> EmbeddingResult<Vec<ModelInfo>> {
+///         // Return available models for this provider
+///         Ok(vec![])
 ///     }
 /// }
 /// ```
