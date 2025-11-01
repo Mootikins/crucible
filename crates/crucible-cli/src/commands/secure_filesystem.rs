@@ -652,7 +652,7 @@ impl SecureFileReader {
             &[0xCE, 0xFA, 0xED, 0xFE], // Mach-O (reverse 32-bit)
             &[0xCF, 0xFA, 0xED, 0xFE], // Mach-O (reverse 64-bit)
             // Document formats
-            &[b'%', b'P', b'D', b'F'],                         // PDF
+            b"%PDF",                         // PDF
             &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1], // Microsoft Office
             // Audio/Video formats
             &[0x49, 0x44, 0x33],       // MP3

@@ -411,14 +411,13 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
     }
 
     // Close any open paragraph at the end
-    if in_paragraph {
-        if !current_paragraph_text.trim().is_empty() {
+    if in_paragraph
+        && !current_paragraph_text.trim().is_empty() {
             paragraphs.push(Paragraph::new(
                 current_paragraph_text.clone(),
                 current_paragraph_offset,
             ));
         }
-    }
 
     // Close any open list item at the end
     if in_list_item {
@@ -478,11 +477,7 @@ fn extract_task_content(text: &str) -> Option<(String, bool)> {
 
     if let Some(task_text) = trimmed.strip_prefix("[x] ") {
         Some((task_text.trim().to_string(), true))
-    } else if let Some(task_text) = trimmed.strip_prefix("[ ] ") {
-        Some((task_text.trim().to_string(), false))
-    } else {
-        None
-    }
+    } else { trimmed.strip_prefix("[ ] ").map(|task_text| (task_text.trim().to_string(), false)) }
 }
 
 /// Convert pulldown-cmark HeadingLevel to u8

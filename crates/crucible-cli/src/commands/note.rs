@@ -45,7 +45,7 @@ impl ToolInvoker for GlobalToolInvoker {
 }
 
 pub async fn execute(config: CliConfig, cmd: NoteCommands) -> Result<()> {
-    let invoker: Arc<dyn ToolInvoker> = Arc::new(GlobalToolInvoker::default());
+    let invoker: Arc<dyn ToolInvoker> = Arc::new(GlobalToolInvoker);
 
     match cmd {
         NoteCommands::Get { path, format } => get_note(invoker, config, path, format).await,

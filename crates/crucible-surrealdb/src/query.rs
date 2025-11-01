@@ -154,7 +154,7 @@ pub fn format_results(results: &[Value]) -> Result<String> {
     let column_names: Vec<String> = columns.keys().cloned().collect();
 
     // Add header row
-    let header_cells: Vec<Cell> = column_names.iter().map(|name| Cell::new(name)).collect();
+    let header_cells: Vec<Cell> = column_names.iter().map(Cell::new).collect();
     table.set_header(header_cells);
 
     // Add data rows
@@ -164,8 +164,8 @@ pub fn format_results(results: &[Value]) -> Result<String> {
         for col_name in &column_names {
             let cell_value = if let Value::Object(obj) = result {
                 obj.get(col_name)
-                    .map(|v| format_value(v))
-                    .unwrap_or_else(|| String::new())
+                    .map(format_value)
+                    .unwrap_or_else(String::new)
             } else {
                 String::new()
             };

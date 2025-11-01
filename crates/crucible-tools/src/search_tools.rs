@@ -3,13 +3,14 @@
 //! This module provides simple async functions for advanced search capabilities including
 //! semantic search, full-text search, pattern matching, and index maintenance operations.
 //! Converted from Tool trait implementations to direct async function composition as part of
-//! Phase 1.3 service architecture removal. Now updated to Phase 2.1 ToolFunction interface.
+//! Phase 1.3 service architecture removal. Now updated to Phase 2.1 `ToolFunction` interface.
 
 use crate::types::{ToolError, ToolFunction, ToolResult};
 use serde_json::{json, Value};
 use tracing::info;
 
-/// Search documents using semantic similarity - Phase 2.1 ToolFunction
+/// Search documents using semantic similarity - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn search_documents() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -22,7 +23,7 @@ pub fn search_documents() -> ToolFunction {
 
             let top_k = parameters
                 .get("top_k")
-                .and_then(|v| v.as_u64())
+                .and_then(serde_json::Value::as_u64)
                 .unwrap_or(10);
 
             let filters = parameters.get("filters").cloned();
@@ -76,7 +77,8 @@ pub fn search_documents() -> ToolFunction {
     }
 }
 
-/// Rebuild search indexes for all documents - Phase 2.1 ToolFunction
+/// Rebuild search indexes for all documents - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn rebuild_index() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -84,7 +86,7 @@ pub fn rebuild_index() -> ToolFunction {
 
             let force = parameters
                 .get("force")
-                .and_then(|v| v.as_bool())
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
 
             let index_types = parameters
@@ -93,7 +95,7 @@ pub fn rebuild_index() -> ToolFunction {
                 .map(|arr| {
                     arr.iter()
                         .filter_map(|v| v.as_str())
-                        .map(|s| s.to_string())
+                        .map(std::string::ToString::to_string)
                         .collect()
                 })
                 .unwrap_or_else(|| {
@@ -127,7 +129,8 @@ pub fn rebuild_index() -> ToolFunction {
     }
 }
 
-/// Get statistics about search indexes - Phase 2.1 ToolFunction
+/// Get statistics about search indexes - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn get_index_stats() -> ToolFunction {
     |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -185,7 +188,8 @@ pub fn get_index_stats() -> ToolFunction {
     }
 }
 
-/// Optimize search indexes for better performance - Phase 2.1 ToolFunction
+/// Optimize search indexes for better performance - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn optimize_index() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -197,13 +201,13 @@ pub fn optimize_index() -> ToolFunction {
                 .map(|arr| {
                     arr.iter()
                         .filter_map(|v| v.as_str())
-                        .map(|s| s.to_string())
+                        .map(std::string::ToString::to_string)
                         .collect()
                 });
 
             let rebuild_threshold = parameters
                 .get("rebuild_threshold")
-                .and_then(|v| v.as_f64())
+                .and_then(serde_json::Value::as_f64)
                 .unwrap_or(0.3);
 
             info!(
@@ -236,7 +240,8 @@ pub fn optimize_index() -> ToolFunction {
     }
 }
 
-/// Advanced search with multiple criteria and ranking - Phase 2.1 ToolFunction
+/// Advanced search with multiple criteria and ranking - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn advanced_search() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -251,7 +256,7 @@ pub fn advanced_search() -> ToolFunction {
 
             let limit = parameters
                 .get("limit")
-                .and_then(|v| v.as_u64())
+                .and_then(serde_json::Value::as_u64)
                 .unwrap_or(20);
 
             info!(

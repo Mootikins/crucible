@@ -1,7 +1,7 @@
 //! Kiln Repository - Phase 1B Implementation
 //!
 //! This module provides the kiln repository pattern using the Phase 1A parsing system.
-//! It orchestrates KilnScanner and KilnParser to provide search and query operations
+//! It orchestrates `KilnScanner` and `KilnParser` to provide search and query operations
 //! over kiln data.
 
 use crate::kiln_parser::KilnParser;
@@ -33,6 +33,7 @@ impl KilnRepository {
     ///
     /// Note: This function requires an explicit path to avoid hardcoded defaults.
     /// Callers should obtain the path from configuration or pass it explicitly.
+    #[must_use] 
     pub fn new(kiln_path: &str) -> Self {
         let kiln_path = Arc::new(kiln_path.to_string());
         let scanner = Arc::new(KilnScanner::new(&kiln_path));
@@ -49,8 +50,8 @@ impl KilnRepository {
 
     /// Create new kiln repository from global execution context
     ///
-    /// This reads the kiln_path from the global TOOL_EXECUTION_CONTEXT set by
-    /// CrucibleToolManager. Returns an error if no context is set or no path is configured.
+    /// This reads the `kiln_path` from the global `TOOL_EXECUTION_CONTEXT` set by
+    /// `CrucibleToolManager`. Returns an error if no context is set or no path is configured.
     pub fn from_context() -> KilnResult<Self> {
         use crate::types::get_kiln_path_from_context;
 
@@ -63,6 +64,7 @@ impl KilnRepository {
     }
 
     /// Get the kiln path
+    #[must_use] 
     pub fn kiln_path(&self) -> &str {
         &self.kiln_path
     }
@@ -137,17 +139,14 @@ impl KilnRepository {
 
             // Check each search property against file's frontmatter
             for (key, search_value) in &search_props {
-                match kiln_file.metadata.frontmatter.get(key) {
-                    Some(file_value) => {
-                        if !self.values_match(search_value, file_value) {
-                            matches_all = false;
-                            break;
-                        }
-                    }
-                    None => {
+                if let Some(file_value) = kiln_file.metadata.frontmatter.get(key) {
+                    if !self.values_match(search_value, file_value) {
                         matches_all = false;
                         break;
                     }
+                } else {
+                    matches_all = false;
+                    break;
                 }
             }
 
@@ -374,8 +373,8 @@ impl KilnRepository {
         }
 
         // Hyphen/underscore normalization
-        let search_normalized = search_lower.replace('-', " ").replace('_', " ");
-        let file_normalized = file_lower.replace('-', " ").replace('_', " ");
+        let search_normalized = search_lower.replace(['-', '_'], " ");
+        let file_normalized = file_lower.replace(['-', '_'], " ");
 
         search_normalized == file_normalized
     }
@@ -400,7 +399,7 @@ impl KilnRepository {
         }
     }
 
-    /// Convert KilnFile to JSON format
+    /// Convert `KilnFile` to JSON format
     fn kiln_file_to_json(&self, kiln_file: &KilnFile) -> Value {
         json!({
             "path": kiln_file.path.to_string_lossy(),
@@ -412,9 +411,7 @@ impl KilnRepository {
             "tags": kiln_file.get_tags(),
             "type": kiln_file.get_type(),
             "status": kiln_file.get_status(),
-            "created": kiln_file.metadata.created
-                .map(|dt| dt.to_rfc3339())
-                .unwrap_or_else(|| "unknown".to_string()),
+            "created": kiln_file.metadata.created.map_or_else(|| "unknown".to_string(), |dt| dt.to_rfc3339()),
             "modified": kiln_file.metadata.modified.to_rfc3339(),
             "size": kiln_file.metadata.size,
             "hash": kiln_file.hash

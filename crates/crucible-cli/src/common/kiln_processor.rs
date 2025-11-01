@@ -16,6 +16,12 @@ pub struct KilnProcessor {
     progress_bar: Option<ProgressBar>,
 }
 
+impl Default for KilnProcessor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KilnProcessor {
     /// Create a new kiln processor
     pub fn new() -> Self {

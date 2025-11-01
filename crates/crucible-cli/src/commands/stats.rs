@@ -57,7 +57,7 @@ impl KilnStatsService for FileSystemKilnStatsService {
 }
 
 pub async fn execute(config: CliConfig) -> Result<()> {
-    let service: Arc<dyn KilnStatsService> = Arc::new(FileSystemKilnStatsService::default());
+    let service: Arc<dyn KilnStatsService> = Arc::new(FileSystemKilnStatsService);
     execute_with_service(service, config).await
 }
 

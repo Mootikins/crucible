@@ -2,7 +2,7 @@
 //!
 //! This module provides async functions for interacting with Obsidian kilns,
 //! including file operations, metadata management, and indexing. Uses the Phase 1A
-//! parsing system via the KilnRepository to provide kiln data access.
+//! parsing system via the `KilnRepository` to provide kiln data access.
 
 use crate::kiln_operations::KilnRepository;
 use crate::types::{ToolError, ToolFunction, ToolResult};
@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use tracing::info;
 
 /// Search notes by frontmatter properties - Implementation using Phase 1A parsing
+#[must_use] 
 pub fn search_by_properties() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -21,7 +22,7 @@ pub fn search_by_properties() -> ToolFunction {
 
             // Get repository from global context
             let kiln_repo = KilnRepository::from_context()
-                .map_err(|e| ToolError::Other(format!("Failed to get kiln repository: {}", e)))?;
+                .map_err(|e| ToolError::Other(format!("Failed to get kiln repository: {e}")))?;
 
             match kiln_repo.search_by_properties(properties.clone()).await {
                 Ok(matching_files) => {
@@ -40,13 +41,14 @@ pub fn search_by_properties() -> ToolFunction {
                         start_time.elapsed().as_millis() as u64,
                     ))
                 }
-                Err(e) => Err(ToolError::Other(format!("Kiln search failed: {}", e))),
+                Err(e) => Err(ToolError::Other(format!("Kiln search failed: {e}"))),
             }
         })
     }
 }
 
 /// Search notes by tags - Implementation using Phase 1A parsing
+#[must_use] 
 pub fn search_by_tags() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -58,7 +60,7 @@ pub fn search_by_tags() -> ToolFunction {
                 .map(|arr| {
                     arr.iter()
                         .filter_map(|v| v.as_str())
-                        .map(|s| s.to_string())
+                        .map(std::string::ToString::to_string)
                         .collect()
                 })
                 .unwrap_or_default();
@@ -67,7 +69,7 @@ pub fn search_by_tags() -> ToolFunction {
 
             // Get repository from global context
             let kiln_repo = KilnRepository::from_context()
-                .map_err(|e| ToolError::Other(format!("Failed to get kiln repository: {}", e)))?;
+                .map_err(|e| ToolError::Other(format!("Failed to get kiln repository: {e}")))?;
 
             match kiln_repo.search_by_tags(tags.clone()).await {
                 Ok(matching_files) => {
@@ -86,13 +88,14 @@ pub fn search_by_tags() -> ToolFunction {
                         start_time.elapsed().as_millis() as u64,
                     ))
                 }
-                Err(e) => Err(ToolError::Other(format!("Kiln search failed: {}", e))),
+                Err(e) => Err(ToolError::Other(format!("Kiln search failed: {e}"))),
             }
         })
     }
 }
 
 /// Search notes in a specific folder - Implementation using Phase 1A parsing
+#[must_use] 
 pub fn search_by_folder() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -105,7 +108,7 @@ pub fn search_by_folder() -> ToolFunction {
 
             let recursive = parameters
                 .get("recursive")
-                .and_then(|v| v.as_bool())
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(true);
 
             info!(
@@ -115,7 +118,7 @@ pub fn search_by_folder() -> ToolFunction {
 
             // Get repository from global context
             let kiln_repo = KilnRepository::from_context()
-                .map_err(|e| ToolError::Other(format!("Failed to get kiln repository: {}", e)))?;
+                .map_err(|e| ToolError::Other(format!("Failed to get kiln repository: {e}")))?;
 
             match kiln_repo.search_by_folder(path, recursive).await {
                 Ok(matching_files) => {
@@ -135,13 +138,14 @@ pub fn search_by_folder() -> ToolFunction {
                         start_time.elapsed().as_millis() as u64,
                     ))
                 }
-                Err(e) => Err(ToolError::Other(format!("Kiln search failed: {}", e))),
+                Err(e) => Err(ToolError::Other(format!("Kiln search failed: {e}"))),
             }
         })
     }
 }
 
-/// Create a new note in the kiln - Phase 2.1 ToolFunction
+/// Create a new note in the kiln - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn create_note() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -186,7 +190,8 @@ pub fn create_note() -> ToolFunction {
     }
 }
 
-/// Update an existing note - Phase 2.1 ToolFunction
+/// Update an existing note - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn update_note() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -225,7 +230,8 @@ pub fn update_note() -> ToolFunction {
     }
 }
 
-/// Delete a note from the kiln - Phase 2.1 ToolFunction
+/// Delete a note from the kiln - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn delete_note() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -256,6 +262,7 @@ pub fn delete_note() -> ToolFunction {
 }
 
 /// Get kiln statistics - Implementation using Phase 1A parsing
+#[must_use] 
 pub fn get_kiln_stats() -> ToolFunction {
     |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -265,7 +272,7 @@ pub fn get_kiln_stats() -> ToolFunction {
 
             // Get repository from global context
             let kiln_repo = KilnRepository::from_context()
-                .map_err(|e| ToolError::Other(format!("Failed to get kiln repository: {}", e)))?;
+                .map_err(|e| ToolError::Other(format!("Failed to get kiln repository: {e}")))?;
 
             match kiln_repo.get_kiln_stats().await {
                 Ok(stats) => {
@@ -282,13 +289,14 @@ pub fn get_kiln_stats() -> ToolFunction {
                         start_time.elapsed().as_millis() as u64,
                     ))
                 }
-                Err(e) => Err(ToolError::Other(format!("Failed to get kiln stats: {}", e))),
+                Err(e) => Err(ToolError::Other(format!("Failed to get kiln stats: {e}"))),
             }
         })
     }
 }
 
 /// List all tags in the kiln - Implementation using Phase 1A parsing
+#[must_use] 
 pub fn list_tags() -> ToolFunction {
     |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -298,7 +306,7 @@ pub fn list_tags() -> ToolFunction {
 
             // Get repository from global context
             let kiln_repo = KilnRepository::from_context()
-                .map_err(|e| ToolError::Other(format!("Failed to get kiln repository: {}", e)))?;
+                .map_err(|e| ToolError::Other(format!("Failed to get kiln repository: {e}")))?;
 
             match kiln_repo.list_tags().await {
                 Ok(mut tags_data) => {
@@ -320,7 +328,7 @@ pub fn list_tags() -> ToolFunction {
                         start_time.elapsed().as_millis() as u64,
                     ))
                 }
-                Err(e) => Err(ToolError::Other(format!("Failed to list tags: {}", e))),
+                Err(e) => Err(ToolError::Other(format!("Failed to list tags: {e}"))),
             }
         })
     }
