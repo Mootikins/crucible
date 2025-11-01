@@ -2,7 +2,7 @@
 //!
 //! This module provides basic fuzzy search functionality using file system operations.
 
-use crate::commands::search::{get_markdown_files, SearchExecutor};
+use crate::commands::search::SearchExecutor;
 use crate::config::CliConfig;
 use crate::interactive::SearchResultWithScore;
 use anyhow::Result;

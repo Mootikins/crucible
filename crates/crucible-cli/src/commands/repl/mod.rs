@@ -776,7 +776,7 @@ impl Repl {
     ///
     /// Available in both unit tests and integration tests.
     pub async fn new_test() -> Result<Self> {
-        use std::path::PathBuf;
+        
 
         let config_dir = std::env::temp_dir().join("crucible_test");
         std::fs::create_dir_all(&config_dir)?;
