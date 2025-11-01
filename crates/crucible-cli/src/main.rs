@@ -73,43 +73,15 @@ async fn main() -> Result<()> {
             println!("   crucible run <script>     - Execute a Rune script");
             println!("   crucible search <query>  - Search documents");
             println!("   crucible stats          - Show kiln statistics");
-            println!("   crucible migrate        - Migration management");
-            println!("   crucible service        - Service management");
             println!("   crucible config         - Configuration management");
             println!(
-                "💡 Phase 1.1 Simplification: Complex command listing features have been removed."
+                "💡 Phase 1.1 Simplification: Only core commands are listed for now."
             );
         }
 
         Some(Commands::Config(cmd)) => commands::config::execute(cmd).await?,
 
-        Some(Commands::Service(cmd)) => commands::service::execute(config, cmd).await?,
-
         Some(Commands::Process(cmd)) => commands::process::execute(config, cmd).await?,
-
-        Some(Commands::Migration(cmd)) => commands::migration::execute(config, cmd).await?,
-
-        Some(Commands::Chat {
-            agent,
-            model,
-            temperature,
-            max_tokens,
-            no_stream,
-            start_message,
-            history,
-        }) => {
-            commands::chat::execute(
-                config,
-                agent,
-                model,
-                temperature,
-                max_tokens,
-                !no_stream,
-                start_message,
-                history,
-            )
-            .await?
-        }
 
         // Commands::EnhancedChat { // Temporarily disabled
         //     agent,
