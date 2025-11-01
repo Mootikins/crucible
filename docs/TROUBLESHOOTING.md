@@ -162,25 +162,25 @@ export RUSTFLAGS="-C link-arg=-fuse-ld=lld"
    chmod -R 755 ~/.local/share/crucible/
    ```
 
-### Service Startup Failures
+### Kiln Processor Failures
 
-**Issue**: `Service failed to start` or `Service not available`
+**Issue**: `Processor failed to start` or semantic search reports missing embeddings
 
 **Solutions**:
 
-1. **Check service status**:
+1. **Check processor status**:
    ```bash
-   crucible-cli service health --detailed
+   crucible-cli process status
    ```
 
-2. **Start services manually**:
+2. **Run the processor with verbose output**:
    ```bash
-   crucible-cli service start crucible-script-engine
+   RUST_LOG=debug crucible-cli process start --wait
    ```
 
-3. **Check logs for errors**:
+3. **Review recent processor output**:
    ```bash
-   crucible-cli service logs --follow --errors
+   RUST_LOG=trace crucible-cli process restart --wait --force
    ```
 
 ### Configuration Issues
@@ -467,10 +467,10 @@ For detailed error information, check the logs:
 # Enable verbose logging
 crucible-cli --verbose
 
-# Check service logs
-crucible-cli service logs --follow
+# Check kiln processor output
+RUST_LOG=debug crucible-cli process start --wait
 
-# Check application logs
+# Tail application logs
 tail -f ~/.local/share/crucible/logs/crucible.log
 ```
 
@@ -500,17 +500,17 @@ When reporting issues, include:
 ### Common Debug Commands
 
 ```bash
-# Check system status
-crucible-cli service health
+# Check processor status
+crucible-cli process status
 
-# Validate configuration
-crucible-cli config --validate
+# Show current configuration
+crucible-cli config show
 
-# Test database connection
-crucible-cli db test
+# Run a semantic search
+crucible-cli semantic "debugging checklist" --show-scores
 
-# Check indexing status
-crucible-cli index --status
+# Display kiln statistics
+crucible-cli stats
 
 # Show version information
 crucible-cli --version
@@ -527,24 +527,23 @@ crucible-cli --version
 | `command not found: cargo` | Install Rust: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh` |
 | Compilation errors | `cargo clean && cargo build` |
 | Database connection failed | Check permissions and paths |
-| Slow search | Rebuild index: `crucible-cli index --rebuild` |
+| Semantic search returns nothing | `crucible-cli process start --wait` |
 | CLI command not found | `cargo install --path crates/crucible-cli` |
 
 ### Useful Commands
 
 ```bash
-# Full system reset
+# Full system reset (developer use only)
 cargo clean
 rm -rf ~/.local/share/crucible/
-crucible-cli index --rebuild
 
 # Debug mode
 RUST_LOG=debug crucible-cli --verbose
 
 # Check everything
-crucible-cli service health
-crucible-cli config --validate
-crucible-cli index --status
+crucible-cli process status
+crucible-cli config show
+crucible-cli stats
 ```
 
 For additional help, please check the [main documentation](../README.md) or [create an issue](https://github.com/matthewkrohn/crucible/issues).

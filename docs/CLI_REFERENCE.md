@@ -4,7 +4,7 @@
 
 ## Overview
 
-The Crucible CLI provides a powerful command-line interface for knowledge management, service orchestration, and AI integration. This reference covers all available commands, options, and usage examples.
+The Crucible CLI provides a powerful command-line interface for knowledge management and tooling automation. This reference covers all available commands, options, and usage examples.
 
 ## Installation
 
@@ -459,57 +459,6 @@ crucible-cli commands
 crucible-cli commands | grep search
 ```
 
-### AI Chat Integration
-
-#### `chat` - Interactive AI Chat
-
-**Description**: Interactive chat mode with AI agents
-
-**Usage**:
-```bash
-crucible-cli chat [options]
-```
-
-**Options**:
-| Option | Short | Long | Default | Description |
-|--------|-------|------|---------|-------------|
-| Agent | `-a` | `--agent <name>` | default | Agent name for conversation |
-| Model | `-m` | `--model <model>` | | Model override |
-| Temperature | `-t` | `--temperature <temp>` | | Temperature (0.0-2.0) |
-| Max Tokens | | `--max-tokens <N>` | | Maximum response tokens |
-| No Stream | | `--no-stream` | false | Disable streaming responses |
-| Start Message | `-s` | `--start-message <msg>` | | Start with specific message |
-| History | | `--history <file>` | | Load conversation history |
-
-**Examples**:
-```bash
-# Start chat with default agent
-crucible-cli chat
-
-# Chat with researcher agent
-crucible-cli chat --agent researcher
-
-# Chat with custom temperature
-crucible-cli chat --agent writer --temperature 0.8
-
-# Start chat with specific message
-crucible-cli chat --agent researcher --start-message "Help me analyze my research notes"
-
-# Chat with token limit
-crucible-cli chat --max-tokens 1000
-
-# Load conversation history
-crucible-cli chat --history conversation.json
-
-# Non-streaming chat (wait for complete response)
-crucible-cli chat --no-stream
-```
-
-**Available Agents**:
-- `default` - General purpose conversation
-- `researcher` - Research and analysis focused
-- `writer` - Content creation and editing
-
 ### Configuration Management
 
 #### `config init` - Initialize Configuration
@@ -563,513 +512,6 @@ crucible-cli config show --format json
 
 # Export specific section
 crucible-cli config show --format json | jq '.kiln'
-```
-
-## Service Management Commands
-
-### Service Health
-
-#### `service health` - Service Health Status
-
-**Description**: Show service health status
-
-**Usage**:
-```bash
-crucible-cli service health [service] [options]
-```
-
-**Arguments**:
-| Argument | Description |
-|----------|-------------|
-| service | Service name (optional - shows all services if not specified) |
-
-**Options**:
-| Option | Short | Long | Default | Description |
-|--------|-------|------|---------|-------------|
-| Format | `-f` | `--format <format>` | table | Output format (table, json) |
-| Detailed | `-d` | `--detailed` | false | Show detailed health information |
-
-**Examples**:
-```bash
-# Show health of all services
-crucible-cli service health
-
-# Show health of specific service
-crucible-cli service health crucible-script-engine
-
-# Show detailed health information
-crucible-cli service health --detailed
-
-# Show health in JSON format
-crucible-cli service health --format json
-
-# Show detailed health of specific service
-crucible-cli service health crucible-script-engine --detailed
-```
-
-### Service Metrics
-
-#### `service metrics` - Service Metrics
-
-**Description**: Show service performance metrics
-
-**Usage**:
-```bash
-crucible-cli service metrics [service] [options]
-```
-
-**Arguments**:
-| Argument | Description |
-|----------|-------------|
-| service | Service name (optional - shows all services if not specified) |
-
-**Options**:
-| Option | Short | Long | Default | Description |
-|--------|-------|------|---------|-------------|
-| Format | `-f` | `--format <format>` | table | Output format (table, json) |
-| Real Time | `-r` | `--real-time` | false | Show real-time metrics |
-
-**Examples**:
-```bash
-# Show metrics for all services
-crucible-cli service metrics
-
-# Show metrics for specific service
-crucible-cli service metrics crucible-script-engine
-
-# Show real-time metrics (continuous updates)
-crucible-cli service metrics --real-time
-
-# Show metrics in JSON format
-crucible-cli service metrics --format json
-
-# Real-time metrics for specific service
-crucible-cli service metrics crucible-script-engine --real-time
-```
-
-### Service Lifecycle
-
-#### `service start` - Start Service
-
-**Description**: Start a service
-
-**Usage**:
-```bash
-crucible-cli service start <service> [options]
-```
-
-**Arguments**:
-| Argument | Description |
-|----------|-------------|
-| service | Service name |
-
-**Options**:
-| Option | Short | Long | Description |
-|--------|-------|------|-------------|
-| Wait | | `--wait` | Wait for service to be ready |
-
-**Examples**:
-```bash
-# Start service
-crucible-cli service start crucible-script-engine
-
-# Start service and wait for it to be ready
-crucible-cli service start crucible-script-engine --wait
-```
-
-#### `service stop` - Stop Service
-
-**Description**: Stop a service
-
-**Usage**:
-```bash
-crucible-cli service stop <service> [options]
-```
-
-**Arguments**:
-| Argument | Description |
-|----------|-------------|
-| service | Service name |
-
-**Options**:
-| Option | Short | Long | Description |
-|--------|-------|------|-------------|
-| Force | | `--force` | Force stop (graceful shutdown if false) |
-
-**Examples**:
-```bash
-# Stop service gracefully
-crucible-cli service stop crucible-script-engine
-
-# Force stop service
-crucible-cli service stop crucible-script-engine --force
-```
-
-#### `service restart` - Restart Service
-
-**Description**: Restart a service
-
-**Usage**:
-```bash
-crucible-cli service restart <service> [options]
-```
-
-**Arguments**:
-| Argument | Description |
-|----------|-------------|
-| service | Service name |
-
-**Options**:
-| Option | Short | Long | Description |
-|--------|-------|------|-------------|
-| Wait | | `--wait` | Wait for service to be ready |
-
-**Examples**:
-```bash
-# Restart service
-crucible-cli service restart crucible-script-engine
-
-# Restart service and wait for it to be ready
-crucible-cli service restart crucible-script-engine --wait
-```
-
-### Service Discovery
-
-#### `service list` - List Services
-
-**Description**: List all registered services
-
-**Usage**:
-```bash
-crucible-cli service list [options]
-```
-
-**Options**:
-| Option | Short | Long | Default | Description |
-|--------|-------|------|---------|-------------|
-| Format | `-f` | `--format <format>` | table | Output format (table, json) |
-| Status | `-s` | `--status` | false | Show service status |
-| Detailed | `-d` | `--detailed` | false | Show detailed information |
-
-**Examples**:
-```bash
-# List all services
-crucible-cli service list
-
-# List services with status
-crucible-cli service list --status
-
-# List services with detailed information
-crucible-cli service list --detailed
-
-# List services in JSON format
-crucible-cli service list --format json
-
-# List services with status and detailed info
-crucible-cli service list --status --detailed
-```
-
-### Service Logs
-
-#### `service logs` - Service Logs
-
-**Description**: Show service logs
-
-**Usage**:
-```bash
-crucible-cli service logs [service] [options]
-```
-
-**Arguments**:
-| Argument | Description |
-|----------|-------------|
-| service | Service name (optional - shows all services if not specified) |
-
-**Options**:
-| Option | Short | Long | Default | Description |
-|--------|-------|------|---------|-------------|
-| Lines | `-n` | `--lines <N>` | 100 | Number of lines to show |
-| Follow | `-f` | `--follow` | false | Follow log output |
-| Errors | | `--errors` | false | Show only errors |
-
-**Examples**:
-```bash
-# Show recent logs from all services
-crucible-cli service logs
-
-# Show logs from specific service
-crucible-cli service logs crucible-script-engine
-
-# Show more lines
-crucible-cli service logs --lines 1000
-
-# Follow logs in real-time
-crucible-cli service logs --follow
-
-# Show only error logs
-crucible-cli service logs --errors
-
-# Follow logs from specific service
-crucible-cli service logs crucible-script-engine --follow
-
-# Show error logs from specific service
-crucible-cli service logs crucible-script-engine --errors --lines 50
-```
-
-## Migration Management Commands
-
-### Migration Status
-
-#### `migration status` - Migration Status
-
-**Description**: Show migration status and statistics
-
-**Usage**:
-```bash
-crucible-cli migration status [options]
-```
-
-**Options**:
-| Option | Short | Long | Default | Description |
-|--------|-------|------|---------|-------------|
-| Format | `-f` | `--format <format>` | table | Output format (table, json) |
-| Detailed | `-d` | `--detailed` | false | Show detailed migration information |
-| Validate | | `--validate` | false | Validate migration integrity |
-
-**Examples**:
-```bash
-# Show migration status
-crucible-cli migration status
-
-# Show detailed migration information
-crucible-cli migration status --detailed
-
-# Validate migration integrity
-crucible-cli migration status --validate
-
-# Show status in JSON format
-crucible-cli migration status --format json
-
-# Show detailed status with validation
-crucible-cli migration status --detailed --validate
-```
-
-### Migration Operations
-
-#### `migration migrate` - Start Migration
-
-**Description**: Start migration of Rune tools to ScriptEngine service
-
-**Usage**:
-```bash
-crucible-cli migration migrate [options]
-```
-
-**Options**:
-| Option | Short | Long | Default | Description |
-|--------|-------|------|---------|-------------|
-| Tool | | `--tool <name>` | Tool name to migrate (migrates all if not specified) |
-| Force | | `--force` | false | Force migration even if tool already exists |
-| Security Level | | `--security-level <level>` | safe | Security level for migrated tools |
-| Dry Run | | `--dry-run` | false | Dry run - show what would be migrated |
-
-**Security Levels**:
-- `safe` - Limited capabilities, sandboxed (default)
-- `development` - Full access for testing and development
-- `production` - Balanced security and functionality
-
-**Examples**:
-```bash
-# Preview migration (dry run)
-crucible-cli migration migrate --dry-run
-
-# Migrate all tools
-crucible-cli migration migrate
-
-# Migrate specific tool
-crucible-cli migration migrate --tool search-tool
-
-# Force migration
-crucible-cli migration migrate --force
-
-# Set security level for migrated tools
-crucible-cli migration migrate --security-level production
-
-# Preview migration of specific tool
-crucible-cli migration migrate --tool search-tool --dry-run
-
-# Migrate with production security level
-crucible-cli migration migrate --security-level production --force
-```
-
-#### `migration validate` - Validate Migration
-
-**Description**: Validate migration integrity
-
-**Usage**:
-```bash
-crucible-cli migration validate [options]
-```
-
-**Options**:
-| Option | Short | Long | Default | Description |
-|--------|-------|------|---------|-------------|
-| Tool | | `--tool <name>` | Tool name to validate (validates all if not specified) |
-| Auto Fix | | `--auto-fix` | false | Fix issues automatically if possible |
-| Format | `-f` | `--format <format>` | table | Output format (table, json) |
-
-**Examples**:
-```bash
-# Validate all migrations
-crucible-cli migration validate
-
-# Validate specific tool
-crucible-cli migration validate --tool search-tool
-
-# Auto-fix validation issues
-crucible-cli migration validate --auto-fix
-
-# Validate in JSON format
-crucible-cli migration validate --format json
-
-# Validate specific tool with auto-fix
-crucible-cli migration validate --tool search-tool --auto-fix
-```
-
-#### `migration rollback` - Rollback Migration
-
-**Description**: Rollback migrated tools
-
-**Usage**:
-```bash
-crucible-cli migration rollback [options]
-```
-
-**Options**:
-| Option | Short | Long | Default | Description |
-|--------|-------|------|---------|-------------|
-| Tool | | `--tool <name>` | Tool name to rollback (rollbacks all if not specified) |
-| Confirm | | `--confirm` | false | Confirm rollback without prompt |
-| Backup | | `--backup` | false | Keep backup of migrated tools |
-
-**Examples**:
-```bash
-# Rollback all tools (with confirmation prompt)
-crucible-cli migration rollback
-
-# Rollback specific tool
-crucible-cli migration rollback --tool search-tool
-
-# Confirm rollback without prompt
-crucible-cli migration rollback --confirm
-
-# Keep backup during rollback
-crucible-cli migration rollback --backup
-
-# Rollback specific tool with confirmation
-crucible-cli migration rollback --tool search-tool --confirm
-```
-
-### Migration Information
-
-#### `migration list` - List Migrated Tools
-
-**Description**: List migrated tools
-
-**Usage**:
-```bash
-crucible-cli migration list [options]
-```
-
-**Options**:
-| Option | Short | Long | Default | Description |
-|--------|-------|------|---------|-------------|
-| Format | `-f` | `--format <format>` | table | Output format (table, json) |
-| Active | | `--active` | false | Show only active tools |
-| Inactive | | `--inactive` | false | Show only inactive tools |
-| Metadata | `-m` | `--metadata` | false | Show migration metadata |
-
-**Examples**:
-```bash
-# List all migrated tools
-crucible-cli migration list
-
-# Show only active tools
-crucible-cli migration list --active
-
-# Show only inactive tools
-crucible-cli migration list --inactive
-
-# Show migration metadata
-crucible-cli migration list --metadata
-
-# List in JSON format
-crucible-cli migration list --format json
-
-# Show active tools with metadata
-crucible-cli migration list --active --metadata
-```
-
-#### `migration reload` - Reload Migrated Tool
-
-**Description**: Reload a migrated tool from its original source
-
-**Usage**:
-```bash
-crucible-cli migration reload <tool> [options]
-```
-
-**Arguments**:
-| Argument | Description |
-|----------|-------------|
-| tool | Tool name to reload |
-
-**Options**:
-| Option | Short | Long | Description |
-|--------|-------|------|-------------|
-| Force | | `--force` | Force reload even if source unchanged |
-
-**Examples**:
-```bash
-# Reload tool
-crucible-cli migration reload search-tool
-
-# Force reload
-crucible-cli migration reload search-tool --force
-```
-
-#### `migration cleanup` - Clean Up Migration Artifacts
-
-**Description**: Clean up migration artifacts
-
-**Usage**:
-```bash
-crucible-cli migration cleanup [options]
-```
-
-**Options**:
-| Option | Short | Long | Description |
-|--------|-------|------|-------------|
-| Inactive | | `--inactive` | Remove inactive migrations |
-| Failed | | `--failed` | Remove failed migrations |
-| Confirm | | `--confirm` | Confirm cleanup without prompt |
-
-**Examples**:
-```bash
-# Clean up migration artifacts (with confirmation)
-crucible-cli migration cleanup
-
-# Remove inactive migrations
-crucible-cli migration cleanup --inactive
-
-# Remove failed migrations
-crucible-cli migration cleanup --failed
-
-# Confirm cleanup without prompt
-crucible-cli migration cleanup --confirm
-
-# Remove inactive and failed migrations
-crucible-cli migration cleanup --inactive --failed --confirm
 ```
 
 ## Configuration
@@ -1205,12 +647,12 @@ crucible-cli search "TODO" --format plain | \
 # Integration with git hooks
 #!/bin/sh
 # .git/hooks/pre-commit
-crucible-cli index --force
-crucible-cli migration validate --auto-fix
+crucible-cli process start --wait
+crucible-cli stats > backup/kiln-stats-$(date +%Y%m%d).txt
 
 # Integration with backup systems
-crucible-cli stats --format json > backup/stats-$(date +%Y%m%d).json
-crucible-cli migration list --metadata > backup/migrations-$(date +%Y%m%d).json
+crucible-cli note list --format json > backup/notes-$(date +%Y%m%d).json
+crucible-cli semantic "weekly summary" --top-k 5 --format json > backup/semantic-$(date +%Y%m%d).json
 ```
 
 ### Performance Optimization
@@ -1234,23 +676,22 @@ crucible-cli fuzzy "pattern" --format json | \
 
 ### Common Issues
 
-1. **Service Not Found**
+1. **Embeddings Missing**
    ```
-   Error: Service not found: crucible-script-engine
+   Error: Semantic search requires embeddings. None found for this kiln.
    ```
-   **Solution**: Check available services:
+   **Solution**: Run the kiln processor to generate embeddings:
    ```bash
-   crucible-cli service list
+   crucible-cli process start --wait
    ```
 
-2. **Migration Disabled**
+2. **Processor Already Running**
    ```
-   Error: Migration is disabled in configuration
+   Error: Another kiln processor is already running
    ```
-   **Solution**: Enable migration in config:
-   ```toml
-   [migration]
-   enabled = true
+   **Solution**: Check processor status or stop existing runs:
+   ```bash
+   crucible-cli process status
    ```
 
 3. **Database Lock Error**
@@ -1274,10 +715,10 @@ Enable debug logging for troubleshooting:
 
 ```bash
 # Enable debug logging
-RUST_LOG=debug crucible-cli --verbose service health
+RUST_LOG=debug crucible-cli --verbose semantic "knowledge graph"
 
 # Enable trace logging for detailed debugging
-RUST_LOG=trace crucible-cli --verbose migration status
+RUST_LOG=trace crucible-cli --verbose process status
 
 # Debug specific operations
 RUST_LOG=debug crucible-cli --verbose run script.rn
@@ -1289,10 +730,10 @@ Use test mode to avoid loading user configuration:
 
 ```bash
 # Run in test mode
-CRUCIBLE_TEST_MODE=1 crucible-cli service list
+CRUCIBLE_TEST_MODE=1 crucible-cli search "getting started"
 
 # Test mode with debug logging
-CRUCIBLE_TEST_MODE=1 RUST_LOG=debug crucible-cli migration status
+CRUCIBLE_TEST_MODE=1 RUST_LOG=debug crucible-cli process status
 ```
 
 ## Performance Tips
