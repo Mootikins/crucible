@@ -30,8 +30,9 @@ pub struct ToolDefinition {
 }
 
 /// Simple context for tool execution - Phase 2.1 simplified
-/// Replaced complex ContextRef patterns with direct parameters for async function composition
+/// Replaced complex `ContextRef` patterns with direct parameters for async function composition
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct ToolExecutionContext {
     /// User ID for the execution
     pub user_id: Option<String>,
@@ -43,19 +44,10 @@ pub struct ToolExecutionContext {
     pub environment: HashMap<String, String>,
 }
 
-impl Default for ToolExecutionContext {
-    fn default() -> Self {
-        Self {
-            user_id: None,
-            session_id: None,
-            working_directory: None,
-            environment: HashMap::new(),
-        }
-    }
-}
 
 impl ToolExecutionContext {
     /// Create a new context with user and session
+    #[must_use] 
     pub fn with_user_session(user_id: Option<String>, session_id: Option<String>) -> Self {
         Self {
             user_id,
@@ -66,6 +58,7 @@ impl ToolExecutionContext {
     }
 
     /// Create a context with working directory
+    #[must_use] 
     pub fn with_working_dir(working_directory: String) -> Self {
         Self {
             user_id: None,
@@ -76,6 +69,7 @@ impl ToolExecutionContext {
     }
 
     /// Add environment variable
+    #[must_use] 
     pub fn with_env(mut self, key: String, value: String) -> Self {
         self.environment.insert(key, value);
         self
@@ -97,6 +91,7 @@ pub struct ToolExecutionRequest {
 
 impl ToolExecutionRequest {
     /// Create a new execution request
+    #[must_use] 
     pub fn new(tool_name: String, parameters: Value, context: ToolExecutionContext) -> Self {
         Self {
             tool_name,
@@ -107,11 +102,13 @@ impl ToolExecutionRequest {
     }
 
     /// Create a request with minimal context
+    #[must_use] 
     pub fn simple(tool_name: String, parameters: Value) -> Self {
         Self::new(tool_name, parameters, ToolExecutionContext::default())
     }
 
     /// Create a request with user and session context
+    #[must_use] 
     pub fn with_user_session(
         tool_name: String,
         parameters: Value,
@@ -137,9 +134,9 @@ pub enum ToolError {
 impl std::fmt::Display for ToolError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ToolError::ToolNotFound(name) => write!(f, "Tool '{}' not found", name),
-            ToolError::ExecutionFailed(msg) => write!(f, "Execution failed: {}", msg),
-            ToolError::Other(msg) => write!(f, "Error: {}", msg),
+            ToolError::ToolNotFound(name) => write!(f, "Tool '{name}' not found"),
+            ToolError::ExecutionFailed(msg) => write!(f, "Execution failed: {msg}"),
+            ToolError::Other(msg) => write!(f, "Error: {msg}"),
         }
     }
 }
@@ -163,6 +160,7 @@ pub struct ToolResult {
 
 impl ToolResult {
     /// Create a successful result
+    #[must_use] 
     pub fn success(tool_name: String, data: serde_json::Value) -> Self {
         Self {
             success: true,
@@ -174,6 +172,7 @@ impl ToolResult {
     }
 
     /// Create a successful result with duration
+    #[must_use] 
     pub fn success_with_duration(
         tool_name: String,
         data: serde_json::Value,
@@ -189,6 +188,7 @@ impl ToolResult {
     }
 
     /// Create an error result
+    #[must_use] 
     pub fn error(tool_name: String, error: String) -> Self {
         Self {
             success: false,
@@ -200,6 +200,7 @@ impl ToolResult {
     }
 
     /// Create an error result with duration
+    #[must_use] 
     pub fn error_with_duration(tool_name: String, error: String, duration_ms: u64) -> Self {
         Self {
             success: false,
@@ -305,8 +306,8 @@ pub async fn list_registered_tools() -> Vec<String> {
 /// Global configuration context for tools
 ///
 /// This provides shared configuration that tools can access without
-/// requiring parameters on every call. Managed by CrucibleToolManager.
-/// This is distinct from the per-request ToolExecutionContext which handles
+/// requiring parameters on every call. Managed by `CrucibleToolManager`.
+/// This is distinct from the per-request `ToolExecutionContext` which handles
 /// user sessions and environment variables.
 #[derive(Debug, Clone)]
 pub struct ToolConfigContext {
@@ -316,11 +317,13 @@ pub struct ToolConfigContext {
 
 impl ToolConfigContext {
     /// Create empty context
+    #[must_use] 
     pub fn new() -> Self {
         Self { kiln_path: None }
     }
 
     /// Create context with kiln path
+    #[must_use] 
     pub fn with_kiln_path(kiln_path: PathBuf) -> Self {
         Self {
             kiln_path: Some(kiln_path),
@@ -336,13 +339,13 @@ impl Default for ToolConfigContext {
 
 /// Global configuration context for tools
 ///
-/// This is set by CrucibleToolManager during initialization and accessed
-/// by tools that need configuration like kiln_path.
+/// This is set by `CrucibleToolManager` during initialization and accessed
+/// by tools that need configuration like `kiln_path`.
 static TOOL_CONFIG_CONTEXT: RwLock<Option<Arc<ToolConfigContext>>> = RwLock::new(None);
 
 /// Set the global tool configuration context
 ///
-/// This should be called by CrucibleToolManager during initialization.
+/// This should be called by `CrucibleToolManager` during initialization.
 pub fn set_tool_context(context: ToolConfigContext) {
     let mut ctx = TOOL_CONFIG_CONTEXT.write().unwrap();
     *ctx = Some(Arc::new(context));
@@ -491,6 +494,7 @@ async fn register_search_tools() -> Result<(), ToolError> {
 }
 
 /// Get tool loader information
+#[must_use] 
 pub fn tool_loader_info() -> ToolLoaderInfo {
     ToolLoaderInfo {
         version: "3.2".to_string(),

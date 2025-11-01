@@ -16,6 +16,7 @@ pub struct KilnScanner {
 
 impl KilnScanner {
     /// Create a new kiln scanner
+    #[must_use] 
     pub fn new(kiln_path: &str) -> Self {
         Self {
             kiln_path: kiln_path.to_string(),
@@ -28,7 +29,7 @@ impl KilnScanner {
 
         tokio::task::spawn_blocking(move || Self::_scan_markdown_files_recursive(&kiln_path))
             .await
-            .map_err(|e| KilnError::HashError(format!("Task join error: {}", e)))?
+            .map_err(|e| KilnError::HashError(format!("Task join error: {e}")))?
     }
 
     /// Scan for markdown files non-recursively (root only)
@@ -37,7 +38,7 @@ impl KilnScanner {
 
         tokio::task::spawn_blocking(move || Self::_scan_markdown_files_non_recursive(&kiln_path))
             .await
-            .map_err(|e| KilnError::HashError(format!("Task join error: {}", e)))?
+            .map_err(|e| KilnError::HashError(format!("Task join error: {e}")))?
     }
 
     /// Internal recursive implementation (runs in blocking thread)
@@ -46,7 +47,7 @@ impl KilnScanner {
 
         let walk_dir = WalkDir::new(kiln_path).follow_links(false).max_depth(10); // Reasonable depth limit
 
-        for entry in walk_dir.into_iter().filter_map(|e| e.ok()) {
+        for entry in walk_dir.into_iter().filter_map(std::result::Result::ok) {
             if Self::is_markdown_file(&entry) {
                 if let Ok(path) = entry.path().strip_prefix(kiln_path) {
                     markdown_files.push(path.to_path_buf());
@@ -65,7 +66,7 @@ impl KilnScanner {
 
         let walk_dir = WalkDir::new(kiln_path).follow_links(false).max_depth(1); // Root directory only
 
-        for entry in walk_dir.into_iter().filter_map(|e| e.ok()) {
+        for entry in walk_dir.into_iter().filter_map(std::result::Result::ok) {
             if Self::is_markdown_file(&entry) {
                 if let Ok(path) = entry.path().strip_prefix(kiln_path) {
                     markdown_files.push(path.to_path_buf());
@@ -87,11 +88,11 @@ impl KilnScanner {
         entry
             .path()
             .extension()
-            .map(|ext| ext.to_string_lossy().to_lowercase() == "md")
-            .unwrap_or(false)
+            .is_some_and(|ext| ext.to_string_lossy().to_lowercase() == "md")
     }
 
     /// Get the kiln root path
+    #[must_use] 
     pub fn kiln_path(&self) -> &str {
         &self.kiln_path
     }
@@ -106,6 +107,7 @@ impl KilnScanner {
     }
 
     /// Get absolute file paths from relative paths
+    #[must_use] 
     pub fn get_absolute_path(&self, relative_path: &PathBuf) -> PathBuf {
         std::path::Path::new(&self.kiln_path).join(relative_path)
     }

@@ -47,6 +47,7 @@ pub enum ConfigError {
 
 /// Master configuration structure
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Default)]
 pub struct CrucibleConfig {
     /// Service configuration
     pub services: ServiceConfig,
@@ -62,21 +63,10 @@ pub struct CrucibleConfig {
     pub performance: PerformanceConfig,
 }
 
-impl Default for CrucibleConfig {
-    fn default() -> Self {
-        Self {
-            services: ServiceConfig::default(),
-            database: ServiceDatabaseConfig::default(),
-            network: NetworkConfig::default(),
-            logging: LoggingConfig::default(),
-            features: FeatureConfig::default(),
-            performance: PerformanceConfig::default(),
-        }
-    }
-}
 
 /// Service configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Default)]
 pub struct ServiceConfig {
     /// Service registry configuration
     pub registry: ServiceRegistryConfig,
@@ -88,16 +78,6 @@ pub struct ServiceConfig {
     pub custom: HashMap<String, serde_json::Value>,
 }
 
-impl Default for ServiceConfig {
-    fn default() -> Self {
-        Self {
-            registry: ServiceRegistryConfig::default(),
-            orchestration: OrchestrationConfig::default(),
-            health_check: HealthCheckConfig::default(),
-            custom: HashMap::new(),
-        }
-    }
-}
 
 /// Service registry configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -192,6 +172,7 @@ impl Default for HealthCheckConfig {
 /// simple profile-based configuration. This config supports primary/replica
 /// setups for service orchestration.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Default)]
 pub struct ServiceDatabaseConfig {
     /// Primary database configuration
     pub primary: DatabaseConnectionConfig,
@@ -201,15 +182,6 @@ pub struct ServiceDatabaseConfig {
     pub pool: ConnectionPoolConfig,
 }
 
-impl Default for ServiceDatabaseConfig {
-    fn default() -> Self {
-        Self {
-            primary: DatabaseConnectionConfig::default(),
-            replicas: Vec::new(),
-            pool: ConnectionPoolConfig::default(),
-        }
-    }
-}
 
 /// Database connection configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -264,6 +236,7 @@ impl Default for ConnectionPoolConfig {
 
 /// Network configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Default)]
 pub struct NetworkConfig {
     /// HTTP server configuration
     pub http: HttpConfig,
@@ -273,15 +246,6 @@ pub struct NetworkConfig {
     pub websocket: WebSocketConfig,
 }
 
-impl Default for NetworkConfig {
-    fn default() -> Self {
-        Self {
-            http: HttpConfig::default(),
-            grpc: GrpcConfig::default(),
-            websocket: WebSocketConfig::default(),
-        }
-    }
-}
 
 /// HTTP server configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -651,7 +615,7 @@ impl ConfigManager {
         T: Clone,
     {
         let config = self.config.read().await;
-        section_fn(&*config).clone()
+        section_fn(&config).clone()
     }
 
     /// Subscribe to configuration changes
@@ -666,7 +630,7 @@ impl ConfigManager {
         T: Clone,
     {
         let mut config = self.config.write().await;
-        update_fn(&mut *config);
+        update_fn(&mut config);
 
         // Validate after update
         Self::validate_config(&config)?;

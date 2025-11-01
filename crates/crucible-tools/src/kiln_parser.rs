@@ -18,11 +18,13 @@ pub struct KilnParser {
 
 impl KilnParser {
     /// Create a new kiln parser
+    #[must_use] 
     pub fn new() -> Self {
         Self { strict_mode: false }
     }
 
     /// Create a parser with strict frontmatter validation
+    #[must_use] 
     pub fn strict() -> Self {
         Self { strict_mode: true }
     }
@@ -42,7 +44,7 @@ impl KilnParser {
             move || fs::read_to_string(&file_path)
         })
         .await
-        .map_err(|e| KilnError::HashError(format!("Task join error: {}", e)))??;
+        .map_err(|e| KilnError::HashError(format!("Task join error: {e}")))??;
 
         // Parse the content
         self.parse_content(file_path, content).await
@@ -161,7 +163,7 @@ impl KilnParser {
         }
 
         let parsed: serde_yaml::Value = serde_yaml::from_str(frontmatter)
-            .map_err(|e| KilnError::FrontmatterParseError(format!("YAML parsing failed: {}", e)))?;
+            .map_err(|e| KilnError::FrontmatterParseError(format!("YAML parsing failed: {e}")))?;
 
         // Convert YAML value to JSON value
         let json_value: Value = serde_yaml_to_json(&parsed);
@@ -194,7 +196,7 @@ impl KilnParser {
         std::path::Path::new(file_path)
             .file_stem()
             .and_then(|s| s.to_str())
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
     }
 
     /// Calculate hash of content for change detection
@@ -220,7 +222,7 @@ impl KilnParser {
                     .filter_map(|tag| tag.as_str())
                     .map(|tag| self.normalize_tag(tag))
                     .filter(|tag| !tag.is_empty())
-                    .map(|tag| Value::String(tag))
+                    .map(Value::String)
                     .collect();
                 *tags_value = Value::Array(normalized_tags);
             }
@@ -233,8 +235,7 @@ impl KilnParser {
     fn normalize_tag(&self, tag: &str) -> String {
         tag.trim()
             .to_lowercase()
-            .replace(' ', "-")
-            .replace('_', "-")
+            .replace([' ', '_'], "-")
             .replace("--", "-")
             .trim_matches('-')
             .to_string()
@@ -295,7 +296,7 @@ impl KilnParser {
             }
         }
 
-        Err(format!("Unable to parse date: {}", date_str).into())
+        Err(format!("Unable to parse date: {date_str}").into())
     }
 }
 

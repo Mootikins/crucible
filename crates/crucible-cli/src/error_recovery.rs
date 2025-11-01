@@ -243,6 +243,12 @@ pub struct ServiceHealthMonitor {
     last_check: Arc<RwLock<HashMap<String, Instant>>>,
 }
 
+impl Default for ServiceHealthMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ServiceHealthMonitor {
     pub fn new() -> Self {
         Self {

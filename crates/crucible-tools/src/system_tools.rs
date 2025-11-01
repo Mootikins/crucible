@@ -3,7 +3,7 @@
 //! This module provides foundational utility functions and helpers for the direct
 //! async function tools. Converted from service-based architecture to simple
 //! utility functions as part of Phase 1.3 service architecture elimination.
-//! Now updated to Phase 2.1 ToolFunction interface with actual system tools.
+//! Now updated to Phase 2.1 `ToolFunction` interface with actual system tools.
 
 use crate::types::{ToolError, ToolExecutionContext, ToolFunction, ToolResult};
 use anyhow::Result;
@@ -69,7 +69,7 @@ where
             warn!("Tool {} parameter validation failed: {}", tool_name, e);
             Ok(ToolResult::error(
                 tool_name.to_string(),
-                format!("Parameter validation failed: {}", e),
+                format!("Parameter validation failed: {e}"),
             ))
         }
     };
@@ -86,6 +86,7 @@ where
 ///
 /// # Returns
 /// `ToolResult` marked as successful
+#[must_use] 
 pub fn success_result(tool_name: String, data: Value, duration: u64) -> ToolResult {
     ToolResult::success_with_duration(tool_name, data, duration)
 }
@@ -98,6 +99,7 @@ pub fn success_result(tool_name: String, data: Value, duration: u64) -> ToolResu
 ///
 /// # Returns
 /// `ToolResult` marked as failed
+#[must_use] 
 pub fn error_result(tool_name: String, error: String) -> ToolResult {
     ToolResult::error(tool_name, error)
 }
@@ -139,6 +141,7 @@ pub fn log_execution_error(tool_name: &str, error: &str) {
 ///
 /// # Returns
 /// Current timestamp as u64
+#[must_use] 
 pub fn current_timestamp_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -150,6 +153,7 @@ pub fn current_timestamp_ms() -> u64 {
 ///
 /// # Returns
 /// Default `ToolExecutionContext`
+#[must_use] 
 pub fn default_context() -> ToolExecutionContext {
     ToolExecutionContext::default()
 }
@@ -159,6 +163,7 @@ pub mod schemas {
     use serde_json::{json, Value};
 
     /// Create a string parameter schema
+    #[must_use] 
     pub fn string_param(description: &str, required: bool) -> Value {
         json!({
             "type": "string",
@@ -168,6 +173,7 @@ pub mod schemas {
     }
 
     /// Create an object parameter schema
+    #[must_use] 
     pub fn object_param(description: &str, properties: Value, required: bool) -> Value {
         json!({
             "type": "object",
@@ -178,6 +184,7 @@ pub mod schemas {
     }
 
     /// Create an array parameter schema
+    #[must_use] 
     pub fn array_param(description: &str, items: Value, required: bool) -> Value {
         json!({
             "type": "array",
@@ -188,6 +195,7 @@ pub mod schemas {
     }
 
     /// Create a boolean parameter schema
+    #[must_use] 
     pub fn boolean_param(description: &str, default: Option<bool>) -> Value {
         let mut schema = json!({
             "type": "boolean",
@@ -200,6 +208,7 @@ pub mod schemas {
     }
 
     /// Create a success response schema
+    #[must_use] 
     pub fn success_response(data_schema: Option<Value>) -> Value {
         let mut response = json!({
             "type": "object",
@@ -224,7 +233,8 @@ pub mod schemas {
 // Phase 2.1 ToolFunction implementations
 // ============================================================================
 
-/// Get system information - Phase 2.1 ToolFunction
+/// Get system information - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn get_system_info() -> ToolFunction {
     |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -253,7 +263,8 @@ pub fn get_system_info() -> ToolFunction {
     }
 }
 
-/// Execute shell command - Phase 2.1 ToolFunction
+/// Execute shell command - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn execute_command() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -289,7 +300,8 @@ pub fn execute_command() -> ToolFunction {
     }
 }
 
-/// List files in directory - Phase 2.1 ToolFunction
+/// List files in directory - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn list_files() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -302,12 +314,12 @@ pub fn list_files() -> ToolFunction {
 
             let recursive = parameters
                 .get("recursive")
-                .and_then(|v| v.as_bool())
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
 
             let show_hidden = parameters
                 .get("show_hidden")
-                .and_then(|v| v.as_bool())
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false);
 
             info!(
@@ -352,7 +364,8 @@ pub fn list_files() -> ToolFunction {
     }
 }
 
-/// Read file content - Phase 2.1 ToolFunction
+/// Read file content - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn read_file() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -391,7 +404,8 @@ pub fn read_file() -> ToolFunction {
     }
 }
 
-/// Get environment variables - Phase 2.1 ToolFunction
+/// Get environment variables - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn get_environment() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {

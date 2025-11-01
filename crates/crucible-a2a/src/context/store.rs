@@ -47,14 +47,14 @@ impl MessageMetadataStore {
         // Update agent index
         self.agent_index
             .entry(agent_id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(message_id);
 
         // Update entity index
         for entity_id in entity_ids {
             self.entity_index
                 .entry(entity_id)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(message_id);
         }
 

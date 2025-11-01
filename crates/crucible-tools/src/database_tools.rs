@@ -3,7 +3,7 @@
 //! This module provides simple async functions for database operations including CRUD,
 //! search, indexing, and maintenance operations. Converted from Tool trait implementations
 //! to direct async function composition as part of Phase 1.3 service architecture removal.
-//! Now updated to Phase 2.1 ToolFunction interface for unified tool execution.
+//! Now updated to Phase 2.1 `ToolFunction` interface for unified tool execution.
 //!
 //! Semantic search now uses integrated crucible-surrealdb functionality instead of mock data.
 
@@ -12,10 +12,11 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use tracing::info;
 
-/// Semantic search using embeddings - Phase 2.1 ToolFunction
+/// Semantic search using embeddings - Phase 2.1 `ToolFunction`
 ///
-/// This function implements the ToolFunction signature for unified execution.
+/// This function implements the `ToolFunction` signature for unified execution.
 /// Now uses integrated crucible-surrealdb functionality for real semantic search.
+#[must_use] 
 pub fn semantic_search() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -29,13 +30,13 @@ pub fn semantic_search() -> ToolFunction {
 
             let top_k = parameters
                 .get("top_k")
-                .and_then(|v| v.as_u64())
+                .and_then(serde_json::Value::as_u64)
                 .unwrap_or(10);
 
             let kiln_path = parameters
                 .get("kiln_path")
                 .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+                .map(std::string::ToString::to_string);
 
             info!(
                 "Performing integrated semantic search: {} (top_k: {})",
@@ -46,7 +47,7 @@ pub fn semantic_search() -> ToolFunction {
             let search_results =
                 perform_integrated_semantic_search(query, top_k as usize, kiln_path)
                     .await
-                    .map_err(|e| ToolError::Other(format!("Semantic search failed: {}", e)))?;
+                    .map_err(|e| ToolError::Other(format!("Semantic search failed: {e}")))?;
 
             let result_data = json!({
                 "results": search_results,
@@ -103,7 +104,7 @@ async fn perform_integrated_semantic_search(
 
     let client = SurrealClient::new(db_config)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to connect to database: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to connect to database: {e}"))?;
 
     // Check if embeddings exist, process kiln if needed
     let embeddings_exist = check_embeddings_exist_integrated(&client).await?;
@@ -119,7 +120,7 @@ async fn perform_integrated_semantic_search(
     // Perform semantic search
     let search_results = semantic_search(&client, query, top_k, embedding_provider)
         .await
-        .map_err(|e| anyhow::anyhow!("Semantic search failed: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Semantic search failed: {e}"))?;
 
     // Convert search results to tool format
     let mut tool_results = Vec::new();
@@ -170,8 +171,8 @@ async fn perform_integrated_semantic_search(
 
     // Sort by similarity score (descending)
     tool_results.sort_by(|a, b| {
-        let score_a = a.get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
-        let score_b = b.get("score").and_then(|s| s.as_f64()).unwrap_or(0.0);
+        let score_a = a.get("score").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+        let score_b = b.get("score").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
         score_b
             .partial_cmp(&score_a)
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -186,25 +187,22 @@ async fn check_embeddings_exist_integrated(
 ) -> Result<bool, anyhow::Error> {
     use crucible_surrealdb::kiln_integration::get_database_stats;
 
-    match get_database_stats(client).await {
-        Ok(stats) => Ok(stats.total_embeddings > 0),
-        Err(_) => {
-            // Fallback to direct query
-            let embeddings_sql = "SELECT count() as total FROM embeddings LIMIT 1";
-            let result = client
-                .query(embeddings_sql, &[])
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to query embeddings: {}", e))?;
+    if let Ok(stats) = get_database_stats(client).await { Ok(stats.total_embeddings > 0) } else {
+        // Fallback to direct query
+        let embeddings_sql = "SELECT count() as total FROM embeddings LIMIT 1";
+        let result = client
+            .query(embeddings_sql, &[])
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to query embeddings: {e}"))?;
 
-            let embeddings_count = result
-                .records
-                .first()
-                .and_then(|r| r.data.get("total"))
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
+        let embeddings_count = result
+            .records
+            .first()
+            .and_then(|r| r.data.get("total"))
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0);
 
-            Ok(embeddings_count > 0)
-        }
+        Ok(embeddings_count > 0)
     }
 }
 
@@ -228,7 +226,8 @@ async fn process_kiln_if_needed(
     ))
 }
 
-/// Full-text search in note contents - Phase 2.1 ToolFunction
+/// Full-text search in note contents - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn search_by_content() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -266,7 +265,8 @@ pub fn search_by_content() -> ToolFunction {
     }
 }
 
-/// Search notes by filename pattern - Phase 2.1 ToolFunction
+/// Search notes by filename pattern - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn search_by_filename() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -301,7 +301,8 @@ pub fn search_by_filename() -> ToolFunction {
     }
 }
 
-/// Update frontmatter properties of a note - Phase 2.1 ToolFunction
+/// Update frontmatter properties of a note - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn update_note_properties() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -333,7 +334,8 @@ pub fn update_note_properties() -> ToolFunction {
     }
 }
 
-/// Index a specific document for search - Phase 2.1 ToolFunction
+/// Index a specific document for search - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn index_document() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -368,7 +370,8 @@ pub fn index_document() -> ToolFunction {
     }
 }
 
-/// Get document statistics from the database - Phase 2.1 ToolFunction
+/// Get document statistics from the database - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn get_document_stats() -> ToolFunction {
     |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -394,7 +397,8 @@ pub fn get_document_stats() -> ToolFunction {
     }
 }
 
-/// Sync metadata from external source to database - Phase 2.1 ToolFunction
+/// Sync metadata from external source to database - Phase 2.1 `ToolFunction`
+#[must_use] 
 pub fn sync_metadata() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
@@ -440,7 +444,7 @@ async fn create_default_embedding_provider(
 
     crucible_llm::embeddings::create_provider(config)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to create default embedding provider: {}", e))
+        .map_err(|e| anyhow::anyhow!("Failed to create default embedding provider: {e}"))
 }
 
 #[cfg(test)]
