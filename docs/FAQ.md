@@ -153,43 +153,24 @@ crucible-cli run my-script.rn
 crucible-cli commands
 ```
 
-### Q: How do I manage services?
+### Q: How do I process or refresh my kiln?
 
-**A**: Crucible provides service management commands:
-
-```bash
-# Check service health
-crucible-cli service health --detailed
-
-# List all services
-crucible-cli service list --status
-
-# Start a service
-crucible-cli service start crucible-script-engine
-
-# View service logs
-crucible-cli service logs --follow
-```
-
-### Q: What is the migration system?
-
-**A**: The migration system handles tool migrations between versions:
-- **Automated Migration**: Zero-touch tool migration
-- **Validation**: Ensures migration integrity
-- **Rollback**: Revert problematic migrations
-- **Multiple Security Levels**: Safe, Development, Production modes
+**A**: Use the `process` command group to manage kiln processing:
 
 ```bash
-# Check migration status
-crucible-cli migration status --detailed
+# Run the kiln processor and wait for completion
+crucible-cli process start --wait
 
-# Run migration (dry run first)
-crucible-cli migration migrate --dry-run
-crucible-cli migration migrate
+# Check processor status and embedding availability
+crucible-cli process status
 
-# Validate migration
-crucible-cli migration validate --auto-fix
+# Restart processing if you change configuration
+crucible-cli process restart --wait
 ```
+
+### Q: What happened to the old service and migration commands?
+
+**A**: The legacy service and migration subcommands have been removed as part of the local-first refactor. The CLI now focuses on knowledge management features (search, notes, stats, process, tooling). Historical documentation is preserved for reference, but the commands are no longer available.
 
 ## Technical Questions
 
@@ -233,12 +214,12 @@ crucible-cli migration validate --auto-fix
 
 1. **Rebuild search index**:
    ```bash
-   crucible-cli index --rebuild
+   crucible-cli process start --wait
    ```
 
 2. **Limit concurrent operations**:
    ```bash
-   crucible-cli --max-concurrent 2
+   crucible-cli search "query" --limit 50
    ```
 
 3. **Use specific search types**:
@@ -248,7 +229,7 @@ crucible-cli migration validate --auto-fix
 
 4. **Clear cache**:
    ```bash
-   crucible-cli cache --clear
+   rm -rf ~/.local/share/crucible/cache
    ```
 
 ### Q: Search returns no results
@@ -262,7 +243,7 @@ crucible-cli migration validate --auto-fix
 
 2. **Rebuild index**:
    ```bash
-   crucible-cli index --force-rebuild
+   crucible-cli process restart --wait --force
    ```
 
 3. **Check file permissions**:
@@ -276,13 +257,13 @@ crucible-cli migration validate --auto-fix
 
 1. **Check database status**:
    ```bash
-   crucible-cli db test
+   crucible-cli process status
    ```
 
 2. **Recreate database**:
    ```bash
    rm ~/.local/share/crucible/db/*
-   crucible-cli index --rebuild
+   crucible-cli process start --wait
    ```
 
 3. **Check database path**:

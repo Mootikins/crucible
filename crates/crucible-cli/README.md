@@ -7,7 +7,7 @@ A powerful command-line interface for the Crucible knowledge management system, 
 - 🔍 **Interactive Search**: Fuzzy search across all metadata with real-time results
 - 🎯 **Semantic Search**: AI-powered semantic search using embeddings
 - 🖥️ **Interactive REPL**: Full-featured REPL with SurrealQL support, syntax highlighting, and tool execution
-- 🤖 **AI Chat**: Interactive chat with multiple AI agents (researcher, writer, etc.)
+- 🔄 **Kiln Processing**: Manage embedding generation directly from the CLI
 - 📝 **Note Management**: Create, update, and list notes with full metadata support
 - 📊 **Statistics**: Comprehensive kiln statistics and analytics
 - 🔧 **Rune Scripting**: Execute custom Rune scripts as commands
@@ -40,9 +40,6 @@ crucible-cli search "your query"
 
 # Semantic search
 crucible-cli semantic "conceptual understanding"
-
-# Chat with AI
-crucible-cli chat --agent researcher
 
 # Start REPL with custom settings
 crucible-cli --format json --tool-dir ~/my-tools
@@ -146,26 +143,6 @@ crucible-cli note list [options]
 ```
 - `-f, --format <format>`: Output format (plain, json, table)
 
-### AI Chat
-
-```bash
-crucible-cli chat [options]
-```
-
-**Options:**
-- `-a, --agent <name>`: Agent name (default: "default")
-- `-m, --model <model>`: Model override
-- `-t, --temperature <temp>`: Temperature (0.0-2.0)
-- `--max-tokens <N>`: Maximum response tokens
-- `--no-stream`: Disable streaming responses
-- `-s, --start-message <msg>`: Start with specific message
-- `--history <file>`: Load conversation history
-
-**Available Agents:**
-- `default` - General purpose conversation
-- `researcher` - Research and analysis focused
-- `writer` - Content creation and editing
-
 ### Utilities
 
 #### Statistics
@@ -174,13 +151,14 @@ crucible-cli stats
 ```
 Shows comprehensive kiln statistics including note count, embeddings status, and metadata.
 
-#### Index Kiln
+#### Kiln Processor
 ```bash
-crucible-cli index [path] [options]
+crucible-cli process <subcommand> [options]
 ```
-- `path`: Kiln path (optional)
-- `-f, --force`: Force re-indexing
-- `-g, --glob <pattern>`: File pattern (default: "**/*.md")
+- `start`: Run the processor (use `--wait` to block until complete)
+- `status`: Check processor status and embedding availability
+- `stop`: Request processor shutdown (force flag supported)
+- `restart`: Restart processing in one command
 
 #### Rune Scripts
 ```bash
@@ -239,14 +217,14 @@ crucible-cli search "machine learning" -n 20
 crucible-cli semantic "neural network architectures" --show-scores
 
 # 3. Interactive REPL for deep analysis
-crucible-cli repl
+crucible-cli
 # In REPL:
 # :stats
 # SELECT title, created FROM notes WHERE tags CONTAINS '#ml' ORDER BY created DESC;
 # :run semantic_search "deep learning patterns"
 
-# 4. Chat with AI researcher agent
-crucible-cli chat --agent researcher --start-message "Help me organize my ML research notes"
+# 4. Summarize findings with a Rune script
+crucible-cli run summarize.rn --args '{"source": "projects/ml-research.md"}'
 ```
 
 ### Note Management
