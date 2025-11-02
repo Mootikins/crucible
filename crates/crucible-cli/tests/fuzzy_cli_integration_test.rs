@@ -54,18 +54,24 @@ async fn test_fuzzy_command_interactive_mode() {
 async fn test_fuzzy_interactive_module_callable() {
     use crucible_cli::commands::fuzzy_interactive;
 
+    // Set test mode to prevent interactive picker from opening
+    std::env::set_var("CRUCIBLE_TEST_MODE", "1");
+
     let kiln = create_test_kiln().unwrap();
     let config = create_test_config(&kiln.path()).unwrap();
 
     // Verify the interactive module exists and is callable
-    // Note: In test environment (no terminal), this prints files and exits early
-    // In real terminal, it opens interactive nucleo-picker with Ctrl+M mode toggle
+    // Note: CRUCIBLE_TEST_MODE=1 forces non-interactive mode (prints files and exits)
+    // In real usage without this var, it opens interactive nucleo-picker with Ctrl+M mode toggle
     let result = fuzzy_interactive::execute(
         config,
         "note".to_string(),
         10,
     )
     .await;
+
+    // Clean up
+    std::env::remove_var("CRUCIBLE_TEST_MODE");
 
     // Should succeed in non-interactive mode (just lists files)
     assert!(result.is_ok(), "fuzzy_interactive::execute should be callable");
