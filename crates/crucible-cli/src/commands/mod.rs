@@ -1,5 +1,6 @@
 pub mod config;
 pub mod fuzzy;
+pub mod fuzzy_interactive;
 pub mod note;
 pub mod process;
 pub mod repl;
