@@ -58,9 +58,14 @@ pub struct CliConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingConfigSection {
     /// Embedding provider type (fastembed, ollama, openai, candle)
+    #[serde(alias = "provider", rename = "type")]
     pub provider: Option<String>,
-    /// Model name
-    pub model: Option<String>,
+    /// Model configuration (can be string or nested struct)
+    #[serde(default)]
+    pub model: Option<ModelConfigOrString>,
+    /// API configuration (for nested table format)
+    #[serde(default)]
+    pub api: Option<ApiConfigSection>,
     /// FastEmbed-specific options
     #[serde(default)]
     pub fastembed: FastEmbedOptions,
@@ -73,6 +78,40 @@ pub struct EmbeddingConfigSection {
     /// Reranking configuration
     #[serde(default)]
     pub reranking: RerankingOptions,
+}
+
+/// Model configuration (supports both string and nested struct)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ModelConfigOrString {
+    String(String),
+    Struct(ModelConfigStruct),
+}
+
+impl ModelConfigOrString {
+    /// Get the model name as a string
+    pub fn as_string(&self) -> String {
+        match self {
+            ModelConfigOrString::String(s) => s.clone(),
+            ModelConfigOrString::Struct(s) => s.name.clone(),
+        }
+    }
+}
+
+/// Nested model configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelConfigStruct {
+    pub name: String,
+    pub dimensions: Option<u32>,
+    pub max_tokens: Option<u32>,
+}
+
+/// API configuration section
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ApiConfigSection {
+    pub base_url: Option<String>,
+    pub timeout_seconds: Option<u64>,
+    pub retry_attempts: Option<u32>,
 }
 
 /// FastEmbed provider options
@@ -816,24 +855,24 @@ max_performance_degradation = 20.0
         &self,
         embedding: &EmbeddingConfigSection,
     ) -> Result<EmbeddingConfig> {
-        let model = embedding
-            .model
-            .as_ref()
-            .or(self.kiln.embedding_model.as_ref())
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Embedding model is not configured. Please set it in [embedding] section:\n\
-                    [embedding]\n\
-                    model = \"<model-name>\""
-                )
-            })?;
+        let model_string = if let Some(model) = &embedding.model {
+            model.as_string()
+        } else if let Some(legacy_model) = &self.kiln.embedding_model {
+            legacy_model.clone()
+        } else {
+            return Err(anyhow::anyhow!(
+                "Embedding model is not configured. Please set it in [embedding] section:\n\
+                [embedding]\n\
+                model = \"<model-name>\""
+            ));
+        };
 
         // Determine provider: explicit > default to FastEmbed
         let provider = embedding.provider.as_deref().unwrap_or("fastembed");
 
         match provider.to_lowercase().as_str() {
             "fastembed" => Ok(EmbeddingConfig::fastembed(
-                Some(model.clone()),
+                Some(model_string.clone()),
                 embedding
                     .fastembed
                     .cache_dir
@@ -850,7 +889,7 @@ max_performance_degradation = 20.0
                     .ok_or_else(|| anyhow::anyhow!("Ollama URL not configured"))?;
                 Ok(EmbeddingConfig::ollama(
                     Some(url.clone()),
-                    Some(model.clone()),
+                    Some(model_string.clone()),
                 ))
             }
             "openai" => {
@@ -860,7 +899,7 @@ max_performance_degradation = 20.0
                     std::env::var("OPENAI_API_KEY")
                         .map_err(|_| anyhow::anyhow!("OpenAI API key not configured"))?
                 };
-                Ok(EmbeddingConfig::openai(api_key, Some(model.clone())))
+                Ok(EmbeddingConfig::openai(api_key, Some(model_string.clone())))
             }
             _ => Err(anyhow::anyhow!(
                 "Unknown embedding provider: {}. Valid options: fastembed, ollama, openai",

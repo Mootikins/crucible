@@ -15,7 +15,7 @@ crucible-core = { path = "../crucible-core" }
 crucible-tools = { path = "../crucible-tools" }
 crucible-surrealdb = { path = "../crucible-surrealdb" }
 crucible-llm = { path = "../crucible-llm" }
-crucible-config = { path = "../crucible-config" }
+crucible-config = { path = "../crucible-config", features = ["toml"] }
 
 # CLI framework
 clap = { workspace = true, features = ["derive", "env", "string"] }
