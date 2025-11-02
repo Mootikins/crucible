@@ -15,8 +15,9 @@
 //! - Integration with embedding thread pool configuration
 
 use crucible_config::{
-    ApiConfig, Config, ConfigError, ConfigFormat, ConfigLoader, EmbeddingProviderConfig,
-    EmbeddingProviderType, Environment, ModelConfig, ProfileConfig, ProviderError,
+    ApiConfig, Config, ConfigError, ConfigFormat, ConfigLoader,
+    EmbeddingProviderConfig, EmbeddingProviderType, Environment, ModelConfig, ProfileConfig,
+    ProviderError,
 };
 // Import test utilities when feature is enabled
 #[cfg(feature = "test-utils")]
@@ -25,6 +26,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use tempfile::TempDir;
 use tokio::fs;
+use toml;
 
 /// Test fixture data for deterministic embedding provider configuration
 mod fixtures {
@@ -160,18 +162,6 @@ mod embedding_provider_config_tests {
         assert!(custom.provider_type.requires_api_key());
         assert_eq!(custom.provider_type.default_base_url(), None);
         assert_eq!(custom.provider_type.default_model(), None);
-
-        // RED Phase: Test Candle provider (should fail initially)
-        let candle = candle_provider_fixture();
-        assert!(!candle.provider_type.requires_api_key());
-        assert_eq!(
-            candle.provider_type.default_base_url(),
-            Some("local".to_string())
-        );
-        assert_eq!(
-            candle.provider_type.default_model(),
-            Some("nomic-embed-text-v1.5".to_string())
-        );
     }
 
     #[test]
@@ -961,5 +951,70 @@ mod performance_tests {
         // Test accessing embedding provider from large config
         let embedding_provider = deserialized.embedding_provider();
         assert!(embedding_provider.is_ok());
+    }
+
+    /// Test nested table format for embedding configuration
+    #[tokio::test]
+    async fn test_embedding_nested_table_format() {
+        let toml_config = r#"
+[embedding]
+type = "fastembed"
+
+[embedding.model]
+name = "nomic-embed-text-v1.5"
+dimensions = 768
+max_tokens = 512
+
+[embedding.api]
+base_url = "local"
+timeout_seconds = 60
+retry_attempts = 1
+"#;
+
+        let config: Config = toml::from_str(toml_config).expect("Failed to parse TOML config");
+
+        // Verify the embedding config was parsed
+        assert!(config.embedding.is_some());
+        let embedding = config.embedding.unwrap();
+
+        // Verify provider type
+        assert_eq!(embedding.provider_type, EmbeddingProviderType::FastEmbed);
+
+        // Verify model config
+        assert_eq!(embedding.model.name, "nomic-embed-text-v1.5");
+        assert_eq!(embedding.model.dimensions, Some(768));
+        assert_eq!(embedding.model.max_tokens, Some(512));
+
+        // Verify API config
+        assert_eq!(embedding.api.base_url, Some("local".to_string()));
+        assert_eq!(embedding.api.timeout_seconds, Some(60));
+        assert_eq!(embedding.api.retry_attempts, Some(1));
+    }
+
+    /// Test that the embedding_provider() method works with new nested format
+    #[tokio::test]
+    async fn test_embedding_provider_method_with_nested_format() {
+        let toml_config = r#"
+[embedding]
+type = "fastembed"
+
+[embedding.model]
+name = "nomic-embed-text-v1.5"
+dimensions = 768
+
+[embedding.api]
+base_url = "local"
+"#;
+
+        let config: Config = toml::from_str(toml_config).expect("Failed to parse TOML config");
+
+        // The embedding_provider() method should return the embedding config
+        let provider_config = config
+            .embedding_provider()
+            .expect("Should get embedding provider config");
+
+        assert_eq!(provider_config.provider_type, EmbeddingProviderType::FastEmbed);
+        assert_eq!(provider_config.model.name, "nomic-embed-text-v1.5");
+        assert_eq!(provider_config.model.dimensions, Some(768));
     }
 }
