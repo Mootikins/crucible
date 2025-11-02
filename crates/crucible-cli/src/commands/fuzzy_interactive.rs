@@ -17,9 +17,10 @@ use nucleo_matcher::{
     pattern::{CaseMatching, Normalization, Pattern},
     Config, Matcher, Utf32Str,
 };
-use nucleo_picker::{Picker, PickerOptions, render::StrRenderer};
+use nucleo_picker::{Picker, PickerOptions, event::Event, render::StrRenderer};
 use std::io::{IsTerminal, Write};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 /// Result from content search with snippet
 #[derive(Debug, Clone)]
@@ -101,6 +102,9 @@ pub async fn execute(
         }
         return Ok(());
     }
+
+    // Initialize search mode state (shared between picker and observer thread)
+    let current_mode = Arc::new(Mutex::new(SearchMode::default()));
 
     // Create picker with options
     // Use reversed layout (prompt at top) for more natural reading order
