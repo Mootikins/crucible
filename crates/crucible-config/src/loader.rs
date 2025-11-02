@@ -198,13 +198,13 @@ impl ConfigLoader {
 
         // Override embedding provider API key
         if let Ok(api_key) = std::env::var("CRUCIBLE_EMBEDDING_API_KEY") {
-            if config.embedding_provider.is_none() {
+            if config.embedding.is_none() {
                 // Create a default OpenAI provider
-                config.embedding_provider = Some(crate::EmbeddingProviderConfig::openai(
+                config.embedding = Some(crate::EmbeddingProviderConfig::openai(
                     api_key.clone(),
                     None,
                 ));
-            } else if let Some(ref mut provider) = config.embedding_provider {
+            } else if let Some(ref mut provider) = config.embedding {
                 provider.api.key = Some(api_key);
             }
         }

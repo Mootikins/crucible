@@ -47,7 +47,7 @@ pub struct EmbeddingProviderConfig {
     pub model: ModelConfig,
 
     /// Additional provider-specific options.
-    #[serde(flatten)]
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub options: HashMap<String, serde_json::Value>,
 }
 
@@ -275,6 +275,7 @@ pub struct ApiConfig {
     pub retry_attempts: Option<u32>,
 
     /// Additional HTTP headers.
+    #[serde(default)]
     pub headers: HashMap<String, String>,
 }
 
@@ -432,3 +433,4 @@ impl Default for GenerationConfig {
         }
     }
 }
+

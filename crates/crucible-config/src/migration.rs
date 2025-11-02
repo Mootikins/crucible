@@ -337,7 +337,7 @@ impl ConfigMigrator {
         }
 
         if let Some(provider) = provider_config {
-            config.embedding_provider = Some(provider);
+            config.embedding = Some(provider);
         }
     }
 
@@ -430,7 +430,7 @@ impl ConfigMigrator {
 
         // Migrate embedding provider
         if let Some(legacy_provider) = legacy.embedding_provider {
-            config.embedding_provider =
+            config.embedding =
                 self.migrate_legacy_embedding_provider(legacy_provider, result);
         }
 
