@@ -112,6 +112,38 @@ pub async fn execute(
         .reversed(true);
     let mut picker: Picker<String, _> = options.picker(StrRenderer);
 
+    // Get injector observer to watch for restart events
+    let observer = picker.injector_observer(true);
+
+    // Spawn background thread to handle mode changes and re-filtering
+    // This thread watches for restart events and re-filters files based on current mode
+    let mode_for_thread = Arc::clone(&current_mode);
+    let kiln_path_for_thread = kiln_path.to_path_buf();
+    let query_for_thread = initial_query.clone();
+
+    std::thread::spawn(move || {
+        // Block and wait for new injectors (sent when Event::Restart occurs)
+        while let Ok(mut injector) = observer.recv() {
+            // Get current mode (locked briefly to read)
+            let mode = *mode_for_thread.lock().unwrap();
+
+            // Re-filter files based on current mode
+            let filtered_files = if query_for_thread.is_empty() {
+                // No query: list all files
+                list_files_in_kiln(&kiln_path_for_thread).unwrap_or_default()
+            } else {
+                // Filter by mode
+                filter_files_by_mode(&kiln_path_for_thread, &query_for_thread, mode)
+                    .unwrap_or_default()
+            };
+
+            // Populate new injector with filtered files
+            for file in filtered_files {
+                injector.push(file);
+            }
+        }
+    });
+
     // Populate picker
     let injector = picker.injector();
     for file in files {
