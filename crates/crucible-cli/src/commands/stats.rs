@@ -21,6 +21,45 @@ pub trait KilnStatsService: Send + Sync {
 #[derive(Default)]
 pub struct FileSystemKilnStatsService;
 
+impl FileSystemKilnStatsService {
+    /// Recursively collect statistics from a directory and all subdirectories
+    fn collect_recursive(&self, path: &Path, stats: &mut KilnStats) -> Result<()> {
+        if !path.is_dir() {
+            return Ok(());
+        }
+
+        let entries = fs::read_dir(path)?;
+
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+
+            if entry_path.is_file() {
+                // Count the file
+                stats.total_files += 1;
+
+                // Add file size
+                if let Ok(metadata) = entry.metadata() {
+                    stats.total_size_bytes = stats.total_size_bytes.saturating_add(metadata.len());
+                }
+
+                // Check if it's a markdown file
+                if entry_path
+                    .extension()
+                    .map(|ext| ext.eq_ignore_ascii_case("md"))
+                    .unwrap_or(false)
+                {
+                    stats.markdown_files += 1;
+                }
+            } else if entry_path.is_dir() {
+                // Recursively process subdirectory
+                self.collect_recursive(&entry_path, stats)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
 impl KilnStatsService for FileSystemKilnStatsService {
     fn collect(&self, kiln_path: &Path) -> Result<KilnStats> {
         let mut totals = KilnStats::default();
@@ -29,27 +68,8 @@ impl KilnStatsService for FileSystemKilnStatsService {
             return Ok(totals);
         }
 
-        if let Ok(entries) = fs::read_dir(kiln_path) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() {
-                    totals.total_files += 1;
-
-                    if let Ok(metadata) = entry.metadata() {
-                        totals.total_size_bytes =
-                            totals.total_size_bytes.saturating_add(metadata.len());
-                    }
-
-                    if path
-                        .extension()
-                        .map(|ext| ext.eq_ignore_ascii_case("md"))
-                        .unwrap_or(false)
-                    {
-                        totals.markdown_files += 1;
-                    }
-                }
-            }
-        }
+        // Use recursive helper to walk all subdirectories
+        self.collect_recursive(kiln_path, &mut totals)?;
 
         Ok(totals)
     }
