@@ -12,11 +12,13 @@
 use crate::commands::search::SearchExecutor;
 use crate::config::CliConfig;
 use anyhow::{Context, Result};
+use crossterm::{execute, terminal};
 use nucleo_matcher::{
     pattern::{CaseMatching, Normalization, Pattern},
     Config, Matcher, Utf32Str,
 };
 use nucleo_picker::{Picker, render::StrRenderer};
+use std::io::Write;
 use std::path::Path;
 
 /// Result from content search with snippet
@@ -71,6 +73,17 @@ pub async fn execute(
 
             // Get editor from environment (default to 'vi' if not set)
             let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+
+            // Ensure clean terminal state before launching editor
+            // Flush any pending stderr output from logging/tracing
+            std::io::stderr().flush()
+                .with_context(|| "Failed to flush stderr")?;
+
+            // Clear terminal to remove any residual output from background logging
+            execute!(
+                std::io::stderr(),
+                terminal::Clear(terminal::ClearType::All)
+            ).with_context(|| "Failed to clear terminal")?;
 
             // Launch editor
             let status = std::process::Command::new(&editor)
