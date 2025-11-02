@@ -21,8 +21,16 @@ async fn main() -> Result<()> {
     let config = config::CliConfig::load(cli.config, cli.embedding_url, cli.embedding_model)?;
 
     // Auto-start file watcher for background processing
-    let _pending_files =
-        crucible_cli::common::kiln_processor::ensure_watcher_running(&config).await?;
+    // Skip for interactive fuzzy picker (one-shot command, no benefit from background processing)
+    match &cli.command {
+        Some(Commands::Fuzzy { .. }) => {
+            // Skip watcher - fuzzy is interactive and doesn't need background processing
+        }
+        _ => {
+            let _pending_files =
+                crucible_cli::common::kiln_processor::ensure_watcher_running(&config).await?;
+        }
+    }
 
     // Execute command (default to REPL if no command provided)
     match cli.command {
