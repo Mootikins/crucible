@@ -1654,6 +1654,7 @@ checksum = "829d955a0bb380ef178a640b91779e3987da38c9aea133b20614cfed8cdea9c6"
 dependencies = [
  "bitflags 2.10.0",
  "crossterm_winapi",
+ "filedescriptor",
  "mio 1.0.4",
  "parking_lot",
  "rustix 0.38.44",
@@ -2774,6 +2775,17 @@ checksum = "38e2275cc4e4fc009b0669731a1e5ab7ebf11f469eaede2bab9309a5b4d6057f"
 dependencies = [
  "memoffset",
  "rustc_version",
+]
+
+[[package]]
+name = "filedescriptor"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e40758ed24c9b2eeb76c35fb0aebc66c626084edd827e07e1552279814c6682d"
+dependencies = [
+ "libc",
+ "thiserror 1.0.69",
+ "winapi",
 ]
 
 [[package]]
@@ -5127,12 +5139,16 @@ dependencies = [
 
 [[package]]
 name = "nucleo-picker"
-version = "0.3.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f01dc56bcc7dbab47cdbe27e8824efa9e522e38c74af6185664a9aa4fe917f46"
+checksum = "512cf86db60feedc18301adfd77f78bd0ba60bd67649635429a584aea7a2d8fe"
 dependencies = [
  "crossterm 0.28.1",
+ "memchr",
  "nucleo",
+ "parking_lot",
+ "unicode-segmentation",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]
