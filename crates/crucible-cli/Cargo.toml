@@ -72,6 +72,8 @@ futures = { workspace = true }
 
 # Chat REPL dependencies
 crossterm = { workspace = true }
+# crossterm 0.28.1 for nucleo-picker compatibility (renamed to avoid conflict with workspace 0.29)
+crossterm-028 = { package = "crossterm", version = "0.28.1" }
 reedline = { workspace = true }
 
 # TUI framework
