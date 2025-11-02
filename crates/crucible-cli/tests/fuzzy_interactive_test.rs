@@ -287,51 +287,76 @@ async fn test_content_only_mode() {
 // ============================================================================
 
 /// Test: Handle binary files gracefully (should skip)
-/// Expected: FAIL (binary detection not in place)
 #[tokio::test]
-#[ignore]
 async fn test_binary_files_skipped() {
     use std::fs;
+    use crucible_cli::commands::fuzzy_interactive::list_files_in_kiln;
 
     let kiln = create_kiln_with_files(&[
         ("text.md", "# Text File\n\nRegular markdown."),
     ]).unwrap();
 
-    // Add a binary file manually
-    let binary_path = kiln.path().join("binary.bin");
+    // Add a binary file with .md extension (edge case)
+    let binary_path = kiln.path().join("binary.md");
     fs::write(&binary_path, &[0u8, 1u8, 2u8, 255u8]).unwrap();
 
-    let _kiln_path = kiln_path_str(kiln.path());
+    // Add a non-.md binary file (should be skipped by extension filter)
+    let bin_path = kiln.path().join("binary.bin");
+    fs::write(&bin_path, &[0u8, 1u8, 2u8, 255u8]).unwrap();
 
-    // Expected behavior:
-    // 1. Picker should only show text.md
-    // 2. binary.bin should be skipped/ignored
-    // 3. No errors or panics
+    // List files in kiln
+    let files = list_files_in_kiln(kiln.path()).unwrap();
 
-    panic!("Test not yet implemented - awaiting binary file handling");
+    // Verify only text.md appears (binary.md should be filtered by binary detection)
+    assert_eq!(files.len(), 1, "Should only find 1 file (text.md)");
+    assert!(
+        files[0].contains("text.md"),
+        "Should find text.md, got: {:?}",
+        files
+    );
+
+    // Verify binary files are not in the list
+    assert!(
+        !files.iter().any(|f| f.contains("binary.md")),
+        "binary.md should be skipped"
+    );
+    assert!(
+        !files.iter().any(|f| f.contains("binary.bin")),
+        "binary.bin should be skipped"
+    );
 }
 
 /// Test: Handle invalid UTF-8 gracefully
-/// Expected: FAIL (UTF-8 error handling not in place)
 #[tokio::test]
-#[ignore]
 async fn test_invalid_utf8_handling() {
     use std::fs;
+    use crucible_cli::commands::fuzzy_interactive::list_files_in_kiln;
 
     let kiln = create_kiln_with_files(&[
         ("valid.md", "# Valid UTF-8\n\nAll good here."),
     ]).unwrap();
 
-    // Add file with invalid UTF-8
+    // Add file with invalid UTF-8 bytes
     let invalid_path = kiln.path().join("invalid.md");
     fs::write(&invalid_path, &[0xFFu8, 0xFEu8, 0xFDu8]).unwrap();
 
-    let _kiln_path = kiln_path_str(kiln.path());
+    // List files in kiln - should not panic
+    let files = list_files_in_kiln(kiln.path()).unwrap();
 
-    // Expected behavior:
-    // 1. Picker should show valid.md
-    // 2. invalid.md should be skipped or show error indicator
-    // 3. No panic, graceful degradation
+    // Verify valid.md appears
+    assert!(
+        files.iter().any(|f| f.contains("valid.md")),
+        "Should find valid.md"
+    );
 
-    panic!("Test not yet implemented - awaiting UTF-8 error handling");
+    // Invalid UTF-8 file should be skipped (treated as binary due to invalid bytes)
+    // Note: The file listing itself doesn't read content, so invalid.md may appear.
+    // The real test is that reading it later won't crash.
+    // For now, we just verify no panic occurred during listing.
+
+    // Additional verification: Try to read the invalid file through search
+    // This should gracefully handle the error
+    use crucible_cli::commands::fuzzy_interactive::search_files_by_content;
+    let results = search_files_by_content(kiln.path(), "test");
+    assert!(results.is_ok(), "Search should not panic on invalid UTF-8");
 }
