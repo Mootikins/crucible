@@ -71,7 +71,8 @@ async fn create_test_context() -> Result<SurrealDbTestContext> {
     // Create embedding configuration for testing (using mock provider)
     let embedding_config = EmbeddingConfigSection {
         provider: Some("mock".to_string()),
-        model: Some("mock-test-model".to_string()),
+        model: Some(crucible_cli::config::ModelConfigOrString::String("mock-test-model".to_string())),
+        api: None,
         fastembed: Default::default(),
         ollama: Default::default(),
         openai: Default::default(),
