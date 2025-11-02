@@ -43,7 +43,7 @@ impl TestConfigBuilder {
 
     /// Add an embedding provider configuration.
     pub fn embedding_provider(mut self, provider: EmbeddingProviderConfig) -> Self {
-        self.config.embedding_provider = Some(provider);
+        self.config.embedding = Some(provider);
         self
     }
 
