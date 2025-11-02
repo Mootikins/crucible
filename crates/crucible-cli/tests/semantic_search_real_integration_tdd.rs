@@ -189,6 +189,10 @@ Semantic search faces challenges including computational complexity, embedding q
         fs::write(file_path, content)?;
     }
 
+    // Give filesystem time to flush all writes and ensure file watcher
+    // can detect all files when it starts
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
     Ok((temp_dir, kiln_path))
 }
 
@@ -303,7 +307,24 @@ async fn process_kiln_for_embeddings(kiln_path: &PathBuf) -> Result<()> {
     }
 
     // Give more time for processing to complete (FastEmbed may download models on first run)
-    sleep(Duration::from_millis(2000)).await;
+    // Also need time for file watcher to detect all files (500ms debounce + processing time)
+    sleep(Duration::from_millis(4000)).await;
+
+    // Verify embeddings were created by running another search
+    let output = Command::new(env!("CARGO_BIN_EXE_cru"))
+        .arg("--config")
+        .arg(config_file.path())
+        .arg("semantic")
+        .arg("verification query")
+        .arg("--top-k")
+        .arg("5")
+        .output()
+        .await?;
+
+    let result_str = String::from_utf8_lossy(&output.stdout);
+    if result_str.contains("❌ No embeddings found") {
+        anyhow::bail!("Processing did not create embeddings - file watcher may not have detected all files");
+    }
 
     Ok(())
 }
