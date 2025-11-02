@@ -58,7 +58,8 @@ async fn test_fuzzy_interactive_module_callable() {
     let config = create_test_config(&kiln.path()).unwrap();
 
     // Verify the interactive module exists and is callable
-    // Note: This won't actually show a picker in tests, but verifies the API
+    // Note: In test environment (no terminal), this prints files and exits early
+    // In real terminal, it opens interactive nucleo-picker with Ctrl+M mode toggle
     let result = fuzzy_interactive::execute(
         config,
         "note".to_string(),
@@ -66,7 +67,6 @@ async fn test_fuzzy_interactive_module_callable() {
     )
     .await;
 
-    // Currently this will just list files and exit
-    // When we integrate nucleo-picker, it will open interactive UI
+    // Should succeed in non-interactive mode (just lists files)
     assert!(result.is_ok(), "fuzzy_interactive::execute should be callable");
 }
