@@ -160,8 +160,11 @@ impl SecureFileWalker {
                 if extension == "md" {
                     // Validate file before adding
                     if self.validate_file_secure(&path)? {
-                        if let Some(path_str) = path.to_str() {
-                            files.push(path_str.to_string());
+                        // Strip kiln_path prefix to get relative path
+                        if let Ok(relative) = path.strip_prefix(&self.kiln_path) {
+                            if let Some(path_str) = relative.to_str() {
+                                files.push(path_str.to_string());
+                            }
                         }
                     }
                 }
