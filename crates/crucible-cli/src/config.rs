@@ -1443,7 +1443,8 @@ timeout_secs = 60
         let mut config = CliConfig::default();
         config.embedding = Some(EmbeddingConfigSection {
             provider: Some("fastembed".to_string()),
-            model: Some("nomic-embed-text-v1.5".to_string()),
+            model: Some(ModelConfigOrString::String("nomic-embed-text-v1.5".to_string())),
+            api: None,
             fastembed: FastEmbedOptions {
                 cache_dir: Some(PathBuf::from("/tmp/cache")),
                 batch_size: Some(64),
@@ -1464,7 +1465,8 @@ timeout_secs = 60
         let mut config = CliConfig::default();
         config.embedding = Some(EmbeddingConfigSection {
             provider: Some("ollama".to_string()),
-            model: Some("nomic-embed-text".to_string()),
+            model: Some(ModelConfigOrString::String("nomic-embed-text".to_string())),
+            api: None,
             fastembed: Default::default(),
             ollama: OllamaEmbeddingOptions {
                 url: Some("https://llama.terminal.krohnos.io".to_string()),
@@ -1489,7 +1491,8 @@ timeout_secs = 60
         let mut config = CliConfig::default();
         config.embedding = Some(EmbeddingConfigSection {
             provider: Some("openai".to_string()),
-            model: Some("text-embedding-3-small".to_string()),
+            model: Some(ModelConfigOrString::String("text-embedding-3-small".to_string())),
+            api: None,
             fastembed: Default::default(),
             ollama: Default::default(),
             openai: OpenAIEmbeddingOptions {
@@ -1533,7 +1536,8 @@ timeout_secs = 60
         let mut config = CliConfig::default();
         config.embedding = Some(EmbeddingConfigSection {
             provider: None, // No provider specified
-            model: Some("bge-small-en-v1.5".to_string()),
+            model: Some(ModelConfigOrString::String("bge-small-en-v1.5".to_string())),
+            api: None,
             fastembed: Default::default(),
             ollama: Default::default(),
             openai: Default::default(),
@@ -1553,6 +1557,7 @@ timeout_secs = 60
         config.embedding = Some(EmbeddingConfigSection {
             provider: Some("fastembed".to_string()),
             model: None, // No model in embedding section
+            api: None,
             fastembed: Default::default(),
             ollama: Default::default(),
             openai: Default::default(),
