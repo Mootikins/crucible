@@ -16,7 +16,7 @@ use nucleo_matcher::{
     pattern::{CaseMatching, Normalization, Pattern},
     Config, Matcher, Utf32Str,
 };
-use nucleo_picker::{nucleo::Utf32String, Picker};
+use nucleo_picker::{Picker, render::StrRenderer};
 use std::path::Path;
 
 /// Result from content search with snippet
@@ -24,13 +24,6 @@ use std::path::Path;
 pub struct ContentSearchResult {
     pub path: String,
     pub snippet: String,
-}
-
-/// Format file paths for display in nucleo picker
-fn format_file_for_picker(file: &String, cols: &mut [Utf32String]) {
-    // Show just the filename for cleaner display
-    let display = file.split('/').last().unwrap_or(file);
-    cols[0] = display.into();
 }
 
 /// Execute interactive fuzzy search
@@ -62,12 +55,12 @@ pub async fn execute(
     }
 
     // Create picker
-    let mut picker = Picker::default();
+    let mut picker: Picker<String, _> = Picker::new(StrRenderer);
 
     // Populate picker
     let injector = picker.injector();
     for file in files {
-        injector.push(file, format_file_for_picker);
+        injector.push(file);
     }
 
     // Open interactive picker
