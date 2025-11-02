@@ -17,7 +17,7 @@ use nucleo_matcher::{
     pattern::{CaseMatching, Normalization, Pattern},
     Config, Matcher, Utf32Str,
 };
-use nucleo_picker::{Picker, PickerOptions, event::Event, render::StrRenderer};
+use nucleo_picker::{Picker, PickerOptions, event::{Event, StdinReader, keybind_default}, render::StrRenderer};
 use std::io::{IsTerminal, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -150,8 +150,32 @@ pub async fn execute(
         injector.push(file);
     }
 
-    // Open interactive picker
-    match picker.pick()? {
+    // Create custom event source with Ctrl+M keybinding for mode toggle
+    let mode_for_keybind = Arc::clone(&current_mode);
+    let event_source = StdinReader::new(move |key_event| {
+        // Import crossterm 0.28.1 types (same version as nucleo-picker uses)
+        // We use crossterm-028 (aliased dependency) to match nucleo-picker's version
+        use crossterm_028::event::{KeyCode, KeyEventKind, KeyModifiers};
+
+        if key_event.kind == KeyEventKind::Press
+            && key_event.modifiers == KeyModifiers::CONTROL
+            && key_event.code == KeyCode::Char('m')
+        {
+            // Cycle to next mode
+            let mut mode = mode_for_keybind.lock().unwrap();
+            *mode = mode.cycle();
+
+            // Trigger restart to re-filter with new mode
+            // Use Infallible as error type (default, means abort events are impossible)
+            Some(Event::<std::convert::Infallible>::Restart)
+        } else {
+            keybind_default(key_event)
+        }
+    });
+
+    // Open interactive picker with custom keybindings
+    let mut stderr = std::io::stderr();
+    match picker.pick_with_io(event_source, &mut stderr)? {
         Some(selected_file) => {
             // Build full path to file
             let file_path = kiln_path.join(selected_file);
