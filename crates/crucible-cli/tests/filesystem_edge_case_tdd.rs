@@ -221,8 +221,17 @@ fn test_path_traversal_prevention() -> Result<()> {
         // Verify no results contain paths outside the kiln
         if let Ok(results) = &result {
             for r in results {
+                // Result IDs should be relative paths (not starting with '/')
                 assert!(
-                    r.id.starts_with(setup.kiln_path.to_str().unwrap()),
+                    !r.id.starts_with('/'),
+                    "Result path should be relative: {}",
+                    r.id
+                );
+
+                // Verify reconstructed path is within kiln boundaries
+                let full_path = setup.kiln_path.join(&r.id);
+                assert!(
+                    full_path.starts_with(&setup.kiln_path),
                     "Result path should be within kiln: {}",
                     r.id
                 );
@@ -233,8 +242,17 @@ fn test_path_traversal_prevention() -> Result<()> {
     // Test that the secure file walker doesn't traverse outside kiln boundaries
     let files = get_markdown_files(&setup.kiln_path)?;
     for file in files {
+        // Files should be relative paths (not starting with '/')
         assert!(
-            file.starts_with(setup.kiln_path.to_str().unwrap()),
+            !file.starts_with('/'),
+            "File walker should return relative paths: {}",
+            file
+        );
+
+        // Verify reconstructed path is within kiln boundaries
+        let full_path = setup.kiln_path.join(&file);
+        assert!(
+            full_path.starts_with(&setup.kiln_path),
             "File walker should not find files outside kiln: {}",
             file
         );
@@ -296,9 +314,17 @@ fn test_symlink_security_validation() -> Result<()> {
     // when traversing the kiln
     let discovered_files = get_markdown_files(&setup.kiln_path)?;
     for file in &discovered_files {
-        // Verify discovered files are within kiln boundaries
+        // Files should be relative paths (not starting with '/')
         assert!(
-            file.starts_with(setup.kiln_path.to_str().unwrap()),
+            !file.starts_with('/'),
+            "Secure walker should return relative paths: {}",
+            file
+        );
+
+        // Verify reconstructed path is within kiln boundaries
+        let full_path = setup.kiln_path.join(file);
+        assert!(
+            full_path.starts_with(&setup.kiln_path),
             "Secure walker should only discover files within kiln: {}",
             file
         );
