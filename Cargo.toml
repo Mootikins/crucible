@@ -11,6 +11,7 @@ members = [
     "crates/crucible-llm",
     "crates/crucible-tools",
 ]
+default-members = ["crates/crucible-cli"]
 
 # Rune-related crates (excluded from default build)
 # To include: uncomment these and add rune dependencies back to workspace.dependencies
@@ -143,6 +144,7 @@ tabled = "0.15"
 # Fuzzy search
 nucleo = "0.5"
 nucleo-matcher = "0.3"
+nucleo-picker = "0.3"
 
 # Internal workspace crates
 crucible-core = { path = "crates/crucible-core" }
