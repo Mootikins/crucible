@@ -202,7 +202,32 @@ impl SecureFileWalker {
             return Ok(false);
         }
 
+        // Check if file appears to be binary (read first 8KB for null bytes)
+        if self.is_binary_file(file_path) {
+            tracing::debug!("Skipping binary file: {}", file_path.display());
+            return Ok(false);
+        }
+
         Ok(true)
+    }
+
+    /// Check if a file appears to be binary by looking for null bytes in the first 8KB
+    fn is_binary_file(&self, file_path: &Path) -> bool {
+        use std::io::Read;
+
+        let mut file = match std::fs::File::open(file_path) {
+            Ok(f) => f,
+            Err(_) => return false, // If we can't open it, let other validation catch it
+        };
+
+        let mut buffer = [0u8; 8192];
+        let bytes_read = match file.read(&mut buffer) {
+            Ok(n) => n,
+            Err(_) => return false, // If we can't read it, let other validation catch it
+        };
+
+        // Check for null bytes (common in binary files, rare in text)
+        buffer[..bytes_read].contains(&0)
     }
 
     /// Check if path is within kiln boundaries
