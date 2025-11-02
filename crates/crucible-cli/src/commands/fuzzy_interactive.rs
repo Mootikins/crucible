@@ -95,7 +95,9 @@ pub async fn execute(
     }
 
     // Check if running in interactive terminal
-    if !std::io::stderr().is_terminal() {
+    // Tests should set CRUCIBLE_TEST_MODE=1 to disable interactive mode
+    let test_mode = std::env::var("CRUCIBLE_TEST_MODE").is_ok();
+    if !std::io::stderr().is_terminal() || test_mode {
         // Non-interactive mode: print all matching files to stdout
         for file in files {
             println!("{}", file);
