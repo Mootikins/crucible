@@ -29,10 +29,11 @@ pub struct ProfileConfig {
     pub logging: Option<LoggingConfig>,
 
     /// Environment variables for this profile.
+    #[serde(default)]
     pub env_vars: HashMap<String, String>,
 
     /// Profile-specific settings.
-    #[serde(flatten)]
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub settings: HashMap<String, serde_json::Value>,
 }
 
