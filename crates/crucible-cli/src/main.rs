@@ -35,17 +35,15 @@ async fn main() -> Result<()> {
 
         Some(Commands::Fuzzy {
             query,
-            content,
-            tags,
-            paths,
+            content: _,  // keep for future use
+            tags: _,     // keep for future use
+            paths: _,    // keep for future use
             limit,
         }) => {
-            commands::fuzzy::execute(
+            // Always use interactive mode
+            commands::fuzzy_interactive::execute(
                 config,
                 query.unwrap_or_default(),
-                content,
-                tags,
-                paths,
                 limit,
             )
             .await?
