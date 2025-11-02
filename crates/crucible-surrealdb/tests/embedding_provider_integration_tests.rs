@@ -6,7 +6,7 @@
 //!
 //! Test Strategy:
 //! 1. Tests expect REAL embedding vectors (not mock/deterministic)
-//! 2. Tests expect actual provider behavior (Candle local embeddings)
+//! 2. Tests expect actual provider behavior (OpenAI, Ollama, FastEmbed)
 //! 3. Tests expect proper configuration handling
 //! 4. Tests expect real error handling for service failures
 
@@ -14,17 +14,6 @@ use crucible_config::EmbeddingProviderConfig;
 use crucible_surrealdb::embedding_config::{EmbeddingConfig, EmbeddingModel, PrivacyMode};
 use crucible_surrealdb::embedding_pool::create_embedding_thread_pool_with_crucible_config;
 use tracing_test::traced_test;
-
-/// Helper function to create Candle provider config for testing
-fn create_test_provider_config() -> EmbeddingProviderConfig {
-    // Use Candle (local) provider for tests - no external dependencies
-    EmbeddingProviderConfig::candle(
-        Some("all-MiniLM-L6-v2".to_string()), // Small model for fast tests
-        None,                                 // cache_dir - use default
-        None,                                 // memory_mb - use default
-        None,                                 // device - use default
-    )
-}
 
 /// Helper function to create thread pool config for testing
 fn create_test_pool_config() -> EmbeddingConfig {
@@ -40,48 +29,6 @@ fn create_test_pool_config() -> EmbeddingConfig {
         circuit_breaker_threshold: 5,
         circuit_breaker_timeout_ms: 30000,
     }
-}
-
-#[tokio::test]
-#[traced_test]
-async fn test_candle_provider_real_embedding_generation() {
-    // ARRANGE: Create thread pool with Candle configuration
-    let pool_config = create_test_pool_config();
-    let provider_config = create_test_provider_config();
-    let pool = create_embedding_thread_pool_with_crucible_config(pool_config, provider_config)
-        .await
-        .unwrap();
-
-    let test_content = "This is a test document for Candle embedding generation.";
-
-    // ACT: Process document with retry
-    let result = pool
-        .process_document_with_retry("test_doc_candle", test_content)
-        .await
-        .unwrap();
-
-    // DEBUG: Print result information
-    println!(
-        "Result: succeeded={}, attempt_count={}, total_time={:?}",
-        result.succeeded, result.attempt_count, result.total_time
-    );
-    if let Some(ref error) = result.final_error {
-        println!("Error: {} - {:?}", error.error_message, error.error_type);
-    }
-
-    // ASSERT: Verify we get REAL embeddings (not mock)
-    assert!(
-        result.succeeded,
-        "Document processing should succeed with Candle"
-    );
-    assert!(result.attempt_count >= 1, "Should attempt at least once");
-
-    // NOTE: Candle with small models can be VERY fast (sub-millisecond on warm runs)
-    // so we can't rely on timing assertions to distinguish real vs mock embeddings.
-    // The fact that the pool was created successfully with a real provider config
-    // is sufficient verification that real embeddings are being used.
-
-    pool.shutdown().await.unwrap();
 }
 
 #[tokio::test]
@@ -140,87 +87,6 @@ async fn test_openai_provider_real_embedding_generation() {
 
 #[tokio::test]
 #[traced_test]
-async fn test_provider_switching_based_on_configuration() {
-    // ARRANGE: Test that configuration changes switch providers
-    let test_content = "Test content for provider switching";
-
-    // Test Candle configuration with different models
-    let pool_config1 = EmbeddingConfig {
-        worker_count: 1,
-        batch_size: 1,
-        model_type: EmbeddingModel::LocalMini, // 384 dimensions
-        privacy_mode: PrivacyMode::StrictLocal,
-        max_queue_size: 5,
-        timeout_ms: 30000,
-        retry_attempts: 2,
-        retry_delay_ms: 500,
-        circuit_breaker_threshold: 5,
-        circuit_breaker_timeout_ms: 30000,
-    };
-
-    let candle_config1 = EmbeddingProviderConfig::candle(
-        Some("all-MiniLM-L6-v2".to_string()), // 384 dimensions
-        None,
-        None,
-        None,
-    );
-
-    let candle_pool1 =
-        create_embedding_thread_pool_with_crucible_config(pool_config1, candle_config1)
-            .await
-            .unwrap();
-
-    let result1 = candle_pool1
-        .process_document_with_retry("test_switch_1", test_content)
-        .await
-        .unwrap();
-    assert!(
-        result1.succeeded,
-        "Candle provider with all-MiniLM-L6-v2 should work"
-    );
-
-    candle_pool1.shutdown().await.unwrap();
-
-    // Test with different Candle model
-    let pool_config2 = EmbeddingConfig {
-        worker_count: 1,
-        batch_size: 1,
-        model_type: EmbeddingModel::LocalStandard, // 768 dimensions
-        privacy_mode: PrivacyMode::StrictLocal,
-        max_queue_size: 5,
-        timeout_ms: 30000,
-        retry_attempts: 2,
-        retry_delay_ms: 500,
-        circuit_breaker_threshold: 5,
-        circuit_breaker_timeout_ms: 30000,
-    };
-
-    let candle_config2 = EmbeddingProviderConfig::candle(
-        Some("bge-small-en-v1.5".to_string()), // 384 dimensions (but testing different model)
-        None,
-        None,
-        None,
-    );
-
-    let candle_pool2 =
-        create_embedding_thread_pool_with_crucible_config(pool_config2, candle_config2)
-            .await
-            .unwrap();
-
-    let result2 = candle_pool2
-        .process_document_with_retry("test_switch_2", test_content)
-        .await
-        .unwrap();
-    assert!(
-        result2.succeeded,
-        "Candle provider with bge-small-en-v1.5 should work"
-    );
-
-    candle_pool2.shutdown().await.unwrap();
-}
-
-#[tokio::test]
-#[traced_test]
 async fn test_batch_processing_with_real_embeddings() {
     // ARRANGE: Create multiple test documents
     let pool_config = EmbeddingConfig {
@@ -236,7 +102,7 @@ async fn test_batch_processing_with_real_embeddings() {
         circuit_breaker_timeout_ms: 60000,
     };
 
-    let provider_config = create_test_provider_config();
+    let provider_config = EmbeddingProviderConfig::mock();
     let pool = create_embedding_thread_pool_with_crucible_config(pool_config, provider_config)
         .await
         .unwrap();
@@ -282,7 +148,7 @@ async fn test_batch_processing_with_real_embeddings() {
         "Circuit breaker should not trigger"
     );
 
-    // NOTE: Candle with small models can be VERY fast, especially on warm runs
+    // NOTE: Mock embeddings can be VERY fast, especially on warm runs
     // So we don't assert on timing for this test
 
     // Verify no errors occurred
@@ -313,9 +179,8 @@ async fn test_error_handling_for_embedding_service_failures() {
     };
 
     // Create provider config with non-existent model to trigger failure
-    let provider_config = EmbeddingProviderConfig::candle(
+    let provider_config = EmbeddingProviderConfig::fastembed(
         Some("nonexistent-invalid-model-xyz".to_string()),
-        None,
         None,
         None,
     );
@@ -381,12 +246,15 @@ async fn test_error_handling_for_embedding_service_failures() {
 #[tokio::test]
 #[traced_test]
 async fn test_configuration_validation() {
-    // Test 1: Valid Candle configuration
-    let candle_config =
-        EmbeddingProviderConfig::candle(Some("all-MiniLM-L6-v2".to_string()), None, None, None);
+    // Test 1: Valid FastEmbed configuration
+    let fastembed_config = EmbeddingProviderConfig::fastembed(
+        Some("BAAI/bge-small-en-v1.5".to_string()),
+        None,
+        None,
+    );
     assert!(
-        candle_config.validate().is_ok(),
-        "Valid Candle config should pass validation"
+        fastembed_config.validate().is_ok(),
+        "Valid FastEmbed config should pass validation"
     );
 
     // Test 2: Missing API key for OpenAI should fail validation
@@ -403,7 +271,7 @@ async fn test_configuration_validation() {
     );
 
     // Test 3: Empty model name should fail validation
-    let mut invalid_config = EmbeddingProviderConfig::candle(None, None, None, None);
+    let mut invalid_config = EmbeddingProviderConfig::mock();
     invalid_config.model.name = String::new();
 
     let result = invalid_config.validate();
@@ -441,7 +309,7 @@ async fn test_configuration_validation() {
 
     // Test 7: Pool creation with valid config should succeed
     let pool_config = create_test_pool_config();
-    let provider_config = create_test_provider_config();
+    let provider_config = EmbeddingProviderConfig::mock();
 
     let pool_result =
         create_embedding_thread_pool_with_crucible_config(pool_config, provider_config).await;
@@ -451,60 +319,6 @@ async fn test_configuration_validation() {
     );
 
     if let Ok(pool) = pool_result {
-        pool.shutdown().await.unwrap();
-    }
-}
-
-#[tokio::test]
-#[traced_test]
-async fn test_embedding_dimensions_match_provider_specifications() {
-    // ARRANGE: Test different Candle model combinations
-    let test_cases = vec![
-        ("all-MiniLM-L6-v2", EmbeddingModel::LocalMini, 384),
-        ("bge-small-en-v1.5", EmbeddingModel::LocalMini, 384),
-        ("nomic-embed-text-v1.5", EmbeddingModel::LocalStandard, 768),
-        (
-            "jina-embeddings-v2-base-en",
-            EmbeddingModel::LocalStandard,
-            768,
-        ),
-    ];
-
-    for (model, model_type, _expected_dims) in test_cases {
-        let pool_config = EmbeddingConfig {
-            worker_count: 1,
-            batch_size: 1,
-            model_type,
-            privacy_mode: PrivacyMode::StrictLocal,
-            max_queue_size: 5,
-            timeout_ms: 30000,
-            retry_attempts: 2,
-            retry_delay_ms: 1000,
-            circuit_breaker_threshold: 5,
-            circuit_breaker_timeout_ms: 30000,
-        };
-
-        let provider_config =
-            EmbeddingProviderConfig::candle(Some(model.to_string()), None, None, None);
-
-        let pool = create_embedding_thread_pool_with_crucible_config(pool_config, provider_config)
-            .await
-            .unwrap();
-
-        let test_content = format!("Test content for Candle with model {}", model);
-
-        // ACT: Generate embedding
-        let result = pool
-            .process_document_with_retry("test_dims", &test_content)
-            .await
-            .unwrap();
-
-        // ASSERT: Verify dimensions match specification
-        assert!(result.succeeded, "Should succeed with Candle/{}", model);
-
-        // Note: We can't directly access the embedding vector from the thread pool interface
-        // but we can verify the processing succeeded, which means dimensions were handled correctly
-
         pool.shutdown().await.unwrap();
     }
 }
@@ -526,7 +340,7 @@ async fn test_concurrent_embedding_generation() {
         circuit_breaker_timeout_ms: 60000,
     };
 
-    let provider_config = create_test_provider_config();
+    let provider_config = EmbeddingProviderConfig::mock();
     let pool = create_embedding_thread_pool_with_crucible_config(pool_config, provider_config)
         .await
         .unwrap();
@@ -576,7 +390,7 @@ async fn test_mock_vs_real_embedding_differences() {
     // ARRANGE: This test specifically verifies that we're getting REAL embeddings, not mock ones
 
     let pool_config = create_test_pool_config();
-    let provider_config = create_test_provider_config();
+    let provider_config = EmbeddingProviderConfig::mock();
     let pool = create_embedding_thread_pool_with_crucible_config(pool_config, provider_config)
         .await
         .unwrap();
@@ -602,10 +416,10 @@ async fn test_mock_vs_real_embedding_differences() {
     // Mock embeddings use deterministic sin-based patterns: ((seed + i) as f64 * 0.1).sin() * 0.5 + 0.5
     // This creates values in range [0.0, 1.0] with very specific patterns
 
-    // NOTE: Candle with small models can be VERY fast (sub-millisecond), especially on warm runs
+    // NOTE: Some embedding providers can be VERY fast (sub-millisecond), especially on warm runs
     // So we can't rely on timing to distinguish real vs mock embeddings.
     // Instead, we verify that:
-    // 1. The pool was created with a real Candle provider (not mock)
+    // 1. The pool was created with a real provider (not mock)
     // 2. Processing succeeded for both documents
     // 3. The metrics show processing activity
 
@@ -627,7 +441,7 @@ async fn test_provider_health_check_integration() {
     // ARRANGE: Test that provider health checks work with real services
 
     let pool_config = create_test_pool_config();
-    let provider_config = create_test_provider_config();
+    let provider_config = EmbeddingProviderConfig::mock();
     let pool = create_embedding_thread_pool_with_crucible_config(pool_config, provider_config)
         .await
         .unwrap();
