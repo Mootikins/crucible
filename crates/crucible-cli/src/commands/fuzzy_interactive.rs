@@ -18,7 +18,7 @@ use nucleo_matcher::{
     Config, Matcher, Utf32Str,
 };
 use nucleo_picker::{Picker, render::StrRenderer};
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::path::Path;
 
 /// Result from content search with snippet
@@ -53,6 +53,15 @@ pub async fn execute(
 
     if files.is_empty() {
         println!("No files found in kiln");
+        return Ok(());
+    }
+
+    // Check if running in interactive terminal
+    if !std::io::stderr().is_terminal() {
+        // Non-interactive mode: print all matching files to stdout
+        for file in files {
+            println!("{}", file);
+        }
         return Ok(());
     }
 
