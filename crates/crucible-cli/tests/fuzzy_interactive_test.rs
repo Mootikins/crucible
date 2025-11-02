@@ -55,6 +55,69 @@ async fn test_basic_file_listing() {
     assert!(file_names.contains(&"todo.md".to_string()));
     assert!(file_names.contains(&"design.md".to_string()));
     assert!(file_names.contains(&"implementation.md".to_string()));
+
+    // TDD: Verify all paths are relative (don't start with '/')
+    for file in &files {
+        assert!(
+            !file.starts_with('/'),
+            "Path should be relative, but got: {}",
+            file
+        );
+    }
+
+    // TDD: Verify paths don't contain the absolute kiln directory path
+    let kiln_path_str = kiln_path.to_string_lossy();
+    for file in &files {
+        assert!(
+            !file.contains(kiln_path_str.as_ref()),
+            "Path should not contain kiln directory, but got: {}",
+            file
+        );
+    }
+}
+
+/// Test: Verify that listed paths are relative to kiln root
+/// This test ensures privacy and correct fuzzy matching on file structure
+#[tokio::test]
+async fn test_paths_are_relative() {
+    use crucible_cli::commands::fuzzy_interactive;
+
+    let kiln = create_fuzzy_test_kiln().unwrap();
+    let kiln_path = kiln.path();
+
+    let files = fuzzy_interactive::list_files_in_kiln(kiln_path)
+        .expect("should list files successfully");
+
+    // All paths should be relative (not absolute)
+    for file in &files {
+        assert!(!file.starts_with('/'), "Path '{}' should be relative", file);
+        assert!(!file.starts_with('\\'), "Path '{}' should be relative (Windows)", file);
+
+        // Verify we can reconstruct full path and it exists
+        let full_path = kiln_path.join(file);
+        assert!(
+            full_path.exists(),
+            "Reconstructed path should exist: {:?} (from relative: {})",
+            full_path,
+            file
+        );
+    }
+
+    // Verify nested paths work correctly (should have project/design.md format)
+    let nested = files.iter().find(|f| f.contains('/'));
+    assert!(
+        nested.is_some(),
+        "Should have at least one nested file path like 'project/design.md'"
+    );
+
+    // Verify the nested path format is correct
+    if let Some(nested_file) = nested {
+        assert!(
+            nested_file.starts_with("project/"),
+            "Nested file should start with 'project/', got: {}",
+            nested_file
+        );
+    }
 }
 
 /// Test: Picker initialization with empty kiln should not panic
