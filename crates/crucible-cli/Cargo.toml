@@ -53,6 +53,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 # Fuzzy search
 nucleo = { workspace = true }
 nucleo-matcher = { workspace = true }
+nucleo-picker = { workspace = true }
 
 # Additional dependencies for REPL
 csv = { workspace = true }

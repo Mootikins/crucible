@@ -1732,6 +1732,7 @@ dependencies = [
  "nu-ansi-term",
  "nucleo",
  "nucleo-matcher",
+ "nucleo-picker",
  "predicates",
  "ratatui",
  "reedline",
@@ -5122,6 +5123,16 @@ checksum = "bf33f538733d1a5a3494b836ba913207f14d9d4a1d3cd67030c5061bdd2cac85"
 dependencies = [
  "memchr",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "nucleo-picker"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f01dc56bcc7dbab47cdbe27e8824efa9e522e38c74af6185664a9aa4fe917f46"
+dependencies = [
+ "crossterm 0.28.1",
+ "nucleo",
 ]
 
 [[package]]
