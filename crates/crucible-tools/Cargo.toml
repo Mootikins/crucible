@@ -65,7 +65,7 @@ validator = { version = "0.20", features = ["derive"] }
 sha2 = "0.10"
 
 # Random number generation
-rand = "0.9"
+rand = { workspace = true }
 
 # File system operations for kiln parsing
 walkdir = "2.4"
@@ -74,7 +74,7 @@ walkdir = "2.4"
 serde_yaml = "0.9"
 
 # Markdown parsing
-pulldown-cmark = "0.13"
+pulldown-cmark = { workspace = true }
 
 # Additional dependencies for Rune
 parking_lot = { workspace = true }
