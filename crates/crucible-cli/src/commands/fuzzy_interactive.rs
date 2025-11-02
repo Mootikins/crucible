@@ -28,6 +28,43 @@ pub struct ContentSearchResult {
     pub snippet: String,
 }
 
+/// Search mode for fuzzy picker
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchMode {
+    /// Search both filename and content (default)
+    Both,
+    /// Search filename only
+    FilenameOnly,
+    /// Search content only
+    ContentOnly,
+}
+
+impl SearchMode {
+    /// Cycle to the next mode
+    pub fn cycle(self) -> Self {
+        match self {
+            SearchMode::Both => SearchMode::FilenameOnly,
+            SearchMode::FilenameOnly => SearchMode::ContentOnly,
+            SearchMode::ContentOnly => SearchMode::Both,
+        }
+    }
+
+    /// Get display string for mode
+    pub fn display(self) -> &'static str {
+        match self {
+            SearchMode::Both => "Both",
+            SearchMode::FilenameOnly => "Filename",
+            SearchMode::ContentOnly => "Content",
+        }
+    }
+}
+
+impl Default for SearchMode {
+    fn default() -> Self {
+        SearchMode::Both
+    }
+}
+
 /// Execute interactive fuzzy search
 ///
 /// This is the main entry point for the interactive picker.
@@ -216,6 +253,50 @@ pub fn search_files_by_content(kiln_path: &Path, query: &str) -> Result<Vec<Cont
     }
 
     Ok(results)
+}
+
+/// Filter files by mode (both filename and content, filename only, or content only)
+///
+/// This function combines filename and content searching based on the mode.
+/// Results are deduplicated (a file appears only once even if it matches both).
+///
+/// # Arguments
+///
+/// * `kiln_path` - Path to the kiln directory
+/// * `query` - Query string to search for
+/// * `mode` - Search mode (Both, FilenameOnly, or ContentOnly)
+///
+/// # Returns
+///
+/// A list of file paths that match based on the mode
+pub fn filter_files_by_mode(kiln_path: &Path, query: &str, mode: SearchMode) -> Result<Vec<String>> {
+    match mode {
+        SearchMode::Both => {
+            // Combine filename and content results, deduplicate
+            let mut all_paths = std::collections::HashSet::new();
+
+            // Add filename matches
+            for path in filter_files_by_query(kiln_path, query)? {
+                all_paths.insert(path);
+            }
+
+            // Add content matches
+            for result in search_files_by_content(kiln_path, query)? {
+                all_paths.insert(result.path);
+            }
+
+            Ok(all_paths.into_iter().collect())
+        }
+        SearchMode::FilenameOnly => {
+            filter_files_by_query(kiln_path, query)
+        }
+        SearchMode::ContentOnly => {
+            Ok(search_files_by_content(kiln_path, query)?
+                .into_iter()
+                .map(|r| r.path)
+                .collect())
+        }
+    }
 }
 
 /// Extract a snippet around the matching text
