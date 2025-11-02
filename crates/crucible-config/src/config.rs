@@ -57,13 +57,15 @@ pub enum ConfigError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Current active profile name.
+    #[serde(default)]
     pub profile: Option<String>,
 
     /// Available profiles configuration.
+    #[serde(default)]
     pub profiles: HashMap<String, ProfileConfig>,
 
-    /// Default embedding provider configuration.
-    pub embedding_provider: Option<EmbeddingProviderConfig>,
+    /// Embedding configuration.
+    pub embedding: Option<EmbeddingProviderConfig>,
 
     /// Default database configuration.
     pub database: Option<DatabaseConfig>,
@@ -75,7 +77,7 @@ pub struct Config {
     pub logging: Option<LoggingConfig>,
 
     /// Custom configuration values.
-    #[serde(flatten)]
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub custom: HashMap<String, serde_json::Value>,
 }
 
@@ -84,7 +86,7 @@ impl Default for Config {
         Self {
             profile: Some("default".to_string()),
             profiles: HashMap::from([("default".to_string(), ProfileConfig::default())]),
-            embedding_provider: None,
+            embedding: None,
             database: None,
             server: None,
             logging: None,
@@ -111,7 +113,7 @@ impl Config {
 
     /// Get the effective embedding provider configuration.
     pub fn embedding_provider(&self) -> Result<EmbeddingProviderConfig, ConfigError> {
-        if let Some(provider) = &self.embedding_provider {
+        if let Some(provider) = &self.embedding {
             return Ok(provider.clone());
         }
 
@@ -122,7 +124,7 @@ impl Config {
         }
 
         Err(ConfigError::MissingValue {
-            field: "embedding_provider".to_string(),
+            field: "embedding".to_string(),
         })
     }
 
