@@ -17,7 +17,7 @@ use nucleo_matcher::{
     pattern::{CaseMatching, Normalization, Pattern},
     Config, Matcher, Utf32Str,
 };
-use nucleo_picker::{Picker, render::StrRenderer};
+use nucleo_picker::{Picker, PickerOptions, render::StrRenderer};
 use std::io::{IsTerminal, Write};
 use std::path::Path;
 
@@ -65,8 +65,11 @@ pub async fn execute(
         return Ok(());
     }
 
-    // Create picker
-    let mut picker: Picker<String, _> = Picker::new(StrRenderer);
+    // Create picker with options
+    // Use reversed layout (prompt at top) for more natural reading order
+    let options = PickerOptions::default()
+        .reversed(true);
+    let mut picker: Picker<String, _> = options.picker(StrRenderer);
 
     // Populate picker
     let injector = picker.injector();
