@@ -43,36 +43,10 @@ async fn test_fuzzy_command_interactive_mode() {
     // For now, we just verify the command structure exists
 
     // This test serves as documentation that:
-    // 1. `cru fuzzy` should open interactive picker (default)
-    // 2. `cru fuzzy --oneshot "query"` should run old one-shot mode
+    // `cru fuzzy` opens interactive picker with Ctrl+M mode toggle
 
     // We can't easily test interactive mode in automated tests
     // Manual testing will verify this works
-}
-
-/// Test: CLI fuzzy command with --oneshot flag runs non-interactive search
-#[tokio::test]
-async fn test_fuzzy_command_oneshot_mode() {
-    let kiln = create_test_kiln().unwrap();
-    let config = create_test_config(&kiln.path()).unwrap();
-
-    // Create a simple test by directly calling the fuzzy execute function
-    // with oneshot mode enabled
-    use crucible_cli::commands::fuzzy;
-
-    // Run one-shot mode (old behavior)
-    let result = fuzzy::execute(
-        config,
-        "note".to_string(),
-        true,  // content
-        true,  // tags
-        true,  // paths
-        10,    // limit
-    )
-    .await;
-
-    // Should complete without error
-    assert!(result.is_ok(), "oneshot mode should work: {:?}", result);
 }
 
 /// Test: fuzzy_interactive module can be called directly
@@ -95,27 +69,4 @@ async fn test_fuzzy_interactive_module_callable() {
     // Currently this will just list files and exit
     // When we integrate nucleo-picker, it will open interactive UI
     assert!(result.is_ok(), "fuzzy_interactive::execute should be callable");
-}
-
-/// Test: Verify CLI structure has oneshot flag
-#[test]
-fn test_cli_has_oneshot_flag() {
-    use clap::CommandFactory;
-    use crucible_cli::cli::Cli;
-
-    let cli = Cli::command();
-    let fuzzy_cmd = cli
-        .get_subcommands()
-        .find(|cmd| cmd.get_name() == "fuzzy")
-        .expect("fuzzy command should exist");
-
-    // Verify oneshot flag exists
-    let oneshot_arg = fuzzy_cmd
-        .get_arguments()
-        .find(|arg| arg.get_id() == "oneshot");
-
-    assert!(
-        oneshot_arg.is_some(),
-        "fuzzy command should have --oneshot flag"
-    );
 }
