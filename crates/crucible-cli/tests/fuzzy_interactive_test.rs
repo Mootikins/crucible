@@ -283,59 +283,6 @@ async fn test_content_only_mode() {
 // ============================================================================
 // Phase 7: TDD Cycle 5 - Multi-Select Tests
 // ============================================================================
-
-/// Test: Select multiple files with Tab key
-/// Expected: FAIL (multi-select not implemented)
-#[tokio::test]
-#[ignore]
-async fn test_multi_select() {
-    let kiln = create_fuzzy_test_kiln().unwrap();
-    let _kiln_path = kiln_path_str(kiln.path());
-
-    // Expected behavior:
-    // 1. Navigate to note1.md, press Tab (selected)
-    // 2. Navigate to note2.md, press Tab (also selected)
-    // 3. Navigate to todo.md, press Tab (also selected)
-    // 4. Press Enter
-    // 5. Should return all 3 selected files
-
-    panic!("Test not yet implemented - awaiting multi-select implementation");
-}
-
-/// Test: Tab toggles selection on/off
-/// Expected: FAIL (selection toggle not implemented)
-#[tokio::test]
-#[ignore]
-async fn test_toggle_selection() {
-    let kiln = create_fuzzy_test_kiln().unwrap();
-    let _kiln_path = kiln_path_str(kiln.path());
-
-    // Expected behavior:
-    // 1. Navigate to note1.md, press Tab (selected)
-    // 2. Press Tab again (unselected)
-    // 3. Selection indicator should update appropriately
-
-    panic!("Test not yet implemented - awaiting selection toggle implementation");
-}
-
-/// Test: Selected items persist during filtering
-/// Expected: FAIL (selection persistence not implemented)
-#[tokio::test]
-#[ignore]
-async fn test_selection_persists_during_filter() {
-    let kiln = create_fuzzy_test_kiln().unwrap();
-    let _kiln_path = kiln_path_str(kiln.path());
-
-    // Expected behavior:
-    // 1. Select note1.md with Tab
-    // 2. Type query to filter results
-    // 3. note1.md should remain selected if still visible
-    // 4. Clear query, note1.md should still be selected
-
-    panic!("Test not yet implemented - awaiting selection persistence implementation");
-}
-
-// ============================================================================
 // Phase 9: Edge Cases & Error Handling Tests
 // ============================================================================
 
@@ -362,36 +309,6 @@ async fn test_binary_files_skipped() {
     // 3. No errors or panics
 
     panic!("Test not yet implemented - awaiting binary file handling");
-}
-
-/// Test: Handle very large kilns (1000+ files) without hanging
-/// Expected: FAIL (performance not optimized)
-#[tokio::test]
-#[ignore]
-async fn test_large_kiln_performance() {
-    // Create kiln with 1000 markdown files
-    let mut files = Vec::new();
-    for i in 0..1000 {
-        files.push((
-            format!("file_{:04}.md", i),
-            format!("# File {}\n\nContent for file {}.", i, i),
-        ));
-    }
-
-    let file_refs: Vec<(&str, &str)> = files
-        .iter()
-        .map(|(name, content)| (name.as_str(), content.as_str()))
-        .collect();
-
-    let kiln = create_kiln_with_files(&file_refs).unwrap();
-    let _kiln_path = kiln_path_str(kiln.path());
-
-    // Expected behavior:
-    // 1. Picker should initialize within reasonable time (< 2 seconds)
-    // 2. Filtering should be responsive (< 100ms per keystroke)
-    // 3. No UI freezing
-
-    panic!("Test not yet implemented - awaiting performance optimization");
 }
 
 /// Test: Handle invalid UTF-8 gracefully
