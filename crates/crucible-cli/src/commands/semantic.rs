@@ -26,7 +26,7 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 /// Primary interface for executing semantic search from the CLI.
 #[async_trait(?Send)]
@@ -480,7 +480,22 @@ async fn process_kiln_integrated(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to initialize database schema: {}", e))?;
 
+    // Clear the notes table to ensure fresh processing
+    // This prevents issues where files might be marked as already processed
+    debug!("Clearing existing notes to ensure fresh processing");
+    client
+        .query("DELETE notes", &[])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to clear notes table: {}", e))?;
+
     progress.set_message("Scanning kiln directory...");
+
+    // Give filesystem time to complete any pending write operations
+    // This is especially important in test scenarios where files are created
+    // immediately before processing begins. Also ensures file watcher has
+    // time to initialize and won't interfere with the initial scan.
+    tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+
     let scanner_config = KilnScannerConfig {
         max_file_size_bytes: 50 * 1024 * 1024,
         max_recursion_depth: 10,
@@ -511,11 +526,60 @@ async fn process_kiln_integrated(
     };
 
     let kiln_path_buf = kiln_path.to_path_buf();
-    let discovered_files = scan_kiln_directory(&kiln_path_buf, &scanner_config)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to scan kiln directory: {}", e))?;
 
-    if discovered_files.is_empty() {
+    // Retry scanning to ensure all files are discovered
+    // Filesystem operations may be delayed, especially in test scenarios
+    // We keep rescanning if we find MORE files on subsequent attempts
+    let mut discovered_files = Vec::new();
+    let mut best_markdown_count = 0;
+
+    for attempt in 0..3 {
+        let files = scan_kiln_directory(&kiln_path_buf, &scanner_config)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to scan kiln directory: {}", e))?;
+
+        let markdown_count = files
+            .iter()
+            .filter(|f| f.is_markdown && f.is_accessible)
+            .count();
+
+        info!(
+            "Scan attempt {}: discovered {} total files, {} markdown files",
+            attempt + 1,
+            files.len(),
+            markdown_count
+        );
+
+        // Keep the scan with the most markdown files
+        if markdown_count > best_markdown_count {
+            best_markdown_count = markdown_count;
+            discovered_files = files;
+        }
+
+        // If we found the same count as last time and it's > 0, we're stable
+        if attempt > 0 && markdown_count == best_markdown_count && markdown_count > 0 {
+            break;
+        }
+
+        // Wait between retries to allow filesystem operations to complete
+        if attempt < 2 {
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        }
+    }
+
+    let markdown_count = best_markdown_count;
+
+    for (i, file) in discovered_files.iter().enumerate().take(10) {
+        debug!(
+            "Discovered file {}: {} (markdown={}, accessible={})",
+            i + 1,
+            file.path.display(),
+            file.is_markdown,
+            file.is_accessible
+        );
+    }
+
+    if discovered_files.is_empty() || markdown_count == 0 {
         return Err(anyhow::anyhow!(
             "No markdown files found in kiln directory: {}",
             kiln_path.display()

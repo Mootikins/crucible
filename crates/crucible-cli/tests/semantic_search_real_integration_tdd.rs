@@ -283,6 +283,7 @@ async fn process_kiln_for_embeddings(kiln_path: &PathBuf) -> Result<()> {
     let config_file = create_temp_config(kiln_path, None, None)?;
 
     let output = Command::new(env!("CARGO_BIN_EXE_cru"))
+        .env("RUST_LOG", "crucible_surrealdb=info,crucible_cli=info")
         .arg("--config")
         .arg(config_file.path())
         .arg("semantic")
