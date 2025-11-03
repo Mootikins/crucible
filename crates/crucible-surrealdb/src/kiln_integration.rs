@@ -5,19 +5,16 @@
 //! Includes comprehensive vector embedding support for semantic search and processing.
 
 use crate::embedding_config::*;
+use crucible_core::types::{FrontmatterFormat, ParsedDocument, Tag};
+use crate::types::{ColumnDefinition, DatabaseStats, DataType, Record, RecordId, TableSchema};
 use crate::SurrealClient;
 use anyhow::{anyhow, Result};
-use crucible_core::{
-    parser::{FrontmatterFormat, ParsedDocument, Tag},
-    Record, RecordId,
-};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tracing::{debug, error, info, warn};
 
 /// Initialize the kiln schema in the database
 pub async fn initialize_kiln_schema(client: &SurrealClient) -> Result<()> {
-    use crucible_core::{ColumnDefinition, DataType, TableSchema};
 
     // Create notes table
     let notes_schema = TableSchema {
@@ -1956,6 +1953,8 @@ pub async fn get_database_stats(client: &SurrealClient) -> Result<DatabaseStats>
     Ok(DatabaseStats {
         total_documents,
         total_embeddings,
+        storage_size_bytes: 0,
+        last_updated: chrono::Utc::now(),
     })
 }
 
@@ -2461,12 +2460,6 @@ fn generate_mock_semantic_results(query: &str, _limit: usize) -> Vec<(String, f6
     results
 }
 
-/// Database statistics
-#[derive(Debug, Clone, PartialEq)]
-pub struct DatabaseStats {
-    pub total_documents: u64,
-    pub total_embeddings: u64,
-}
 
 // =============================================================================
 // SCHEMA MIGRATION FUNCTIONS

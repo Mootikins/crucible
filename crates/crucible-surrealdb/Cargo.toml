@@ -7,7 +7,8 @@ edition.workspace = true
 description = "SurrealDB backend for the Crucible knowledge management system"
 
 [dependencies]
-crucible-core = { workspace = true }
+# Now depends on crucible-core for trait definitions (Dependency Inversion)
+crucible-core = { path = "../crucible-core" }
 crucible-llm = { workspace = true, features = ["test-utils"] }
 crucible-config = { workspace = true, features = ["test-utils"] }
 serde = { workspace = true }

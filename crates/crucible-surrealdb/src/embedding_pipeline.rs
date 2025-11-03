@@ -7,7 +7,7 @@ use crate::embedding_config::*;
 use crate::embedding_pool::EmbeddingThreadPool;
 use crate::SurrealClient;
 use anyhow::{anyhow, Result};
-use crucible_core::parser::ParsedDocument;
+use crucible_core::types::ParsedDocument;
 use std::collections::HashMap;
 use std::time::Instant;
 use tracing::{debug, error, info, warn};

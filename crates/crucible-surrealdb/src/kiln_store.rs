@@ -249,7 +249,7 @@ impl InMemoryKilnStore {
             stats: Arc::new(RwLock::new(DatabaseStats {
                 total_documents: 0,
                 total_embeddings: 0,
-                storage_size_bytes: Some(0),
+                storage_size_bytes: 0,
                 last_updated: chrono::Utc::now(),
             })),
         }
@@ -289,7 +289,7 @@ impl InMemoryKilnStore {
         *stats = DatabaseStats {
             total_documents: 0,
             total_embeddings: 0,
-            storage_size_bytes: Some(0),
+            storage_size_bytes: 0,
             last_updated: chrono::Utc::now(),
         };
 
@@ -313,8 +313,8 @@ impl InMemoryKilnStore {
             .read()
             .map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
 
-        let total_documents = storage.len() as i64;
-        let total_embeddings = storage.values().filter(|d| !d.embedding.is_empty()).count() as i64;
+        let total_documents = storage.len() as u64;
+        let total_embeddings = storage.values().filter(|d| !d.embedding.is_empty()).count() as u64;
 
         let mut stats = self
             .stats
@@ -323,7 +323,7 @@ impl InMemoryKilnStore {
 
         stats.total_documents = total_documents;
         stats.total_embeddings = total_embeddings;
-        stats.storage_size_bytes = Some(0); // In-memory doesn't track actual bytes
+        stats.storage_size_bytes = 0; // In-memory doesn't track actual bytes
         stats.last_updated = chrono::Utc::now();
 
         Ok(())
@@ -463,8 +463,10 @@ impl KilnStore for InMemoryKilnStore {
                         .title
                         .clone()
                         .unwrap_or_else(|| file_path.clone()),
+                    file_path: file_path.clone(),
                     content: embedding_data.content.clone(),
                     score: similarity,
+                    metadata: embedding_data.metadata.clone(),
                 });
             }
         }

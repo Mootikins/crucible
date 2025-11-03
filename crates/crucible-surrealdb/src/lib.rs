@@ -48,7 +48,15 @@ pub use database::SurrealEmbeddingDatabase;
 pub use kiln_store::{InMemoryKilnStore, KilnStore};
 pub use schema_types::*;
 pub use surreal_client::SurrealClient;
-pub use types::*;
+// Re-export database types for external use
+// Note: Use local type definitions but provide aliases for compatibility
+pub use types::{
+    DatabaseStats, DbError, DbResult, QueryResult, Record, RecordId, SelectQuery, TableSchema,
+    SurrealDbConfig,
+    // Legacy embedding types for tests
+    Document, EmbeddingDocument, EmbeddingData, EmbeddingMetadata, SearchFilters, SearchQuery,
+    BatchOperation, BatchOperationType,
+};
 
 // Re-export embedding functionality with specific exports to avoid conflicts
 pub use embedding_config::{

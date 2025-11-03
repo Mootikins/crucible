@@ -19,7 +19,7 @@ use crate::kiln_scanner::{
     KilnFileInfo, KilnProcessError, KilnProcessResult, KilnScannerConfig, KilnScannerErrorType,
 };
 use crate::SurrealClient;
-use crucible_core::parser::ParsedDocument;
+use crucible_core::types::ParsedDocument;
 
 /// Scan a kiln directory recursively and return discovered files
 pub async fn scan_kiln_directory(
@@ -414,6 +414,7 @@ async fn process_files_parallel(
 ) -> Result<KilnProcessResult> {
     let start_time = std::time::Instant::now();
     let semaphore = Arc::new(Semaphore::new(config.parallel_processing));
+    // Clone is now cheap - it just clones the Arc inside SurrealClient
     let client = Arc::new(client.clone());
     let kiln_root = Arc::new(kiln_root.to_path_buf());
 
@@ -720,7 +721,7 @@ async fn bulk_query_document_hashes(
 
     // Build HashMap from results, mapping back to absolute paths
     let mut hash_map = HashMap::new();
-    for (i, record) in result.records.iter().enumerate() {
+    for (_i, record) in result.records.iter().enumerate() {
         if let Some(path_value) = record.data.get("path") {
             if let Some(rel_path_str) = path_value.as_str() {
                 if let Some(hash_value) = record.data.get("content_hash") {
