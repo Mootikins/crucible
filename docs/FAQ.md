@@ -176,9 +176,8 @@ crucible-cli process restart --wait
 
 ### Q: What databases does Crucible use?
 
-**A**: Crucible uses multiple database systems:
-- **SurrealDB**: Primary database for documents and metadata
-- **DuckDB**: Analytics and vector operations
+**A**: Crucible uses multiple storage systems:
+- **SurrealDB**: Primary database for documents, metadata, and embeddings (RocksDB backend)
 - **File System**: File-based storage for notes and media
 
 ### Q: How does real-time collaboration work?

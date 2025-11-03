@@ -97,7 +97,7 @@ Crucible follows a service-oriented architecture with clear separation of concer
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                      Storage                                │
-│    SurrealDB    │    DuckDB    │    File System           │
+│    SurrealDB (RocksDB)    │    File System                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 

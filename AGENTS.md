@@ -22,7 +22,7 @@ This file provides essential information for AI agents to understand and contrib
 - **Tauri**: Desktop application framework
 - **Svelte 5**: Modern reactive frontend
 - **Yjs**: CRDT for real-time collaboration
-- **DuckDB**: Embedded database with vector search
+- **SurrealDB**: Embedded database with RocksDB backend
 - **Rune**: Plugin scripting language
 
 ## 📁 Project Structure

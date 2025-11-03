@@ -29,8 +29,8 @@ Crucible v0.1.0 represents the culmination of comprehensive development, testing
 - **Service Management**: Comprehensive CLI for service orchestration
 
 ### Database & Storage
-- **DuckDB Integration**: Embedded database with vector search capabilities
-- **SurrealDB Support**: Advanced querying with real-time synchronization
+- **SurrealDB**: Embedded database with RocksDB backend for documents, metadata, and vector embeddings
+- **Real-time Synchronization**: Advanced querying with real-time updates
 - **Migration System**: Automated data migration with rollback capabilities
 - **Performance Optimization**: Efficient indexing and query optimization
 
@@ -73,7 +73,6 @@ Crucible v0.1.0 represents the culmination of comprehensive development, testing
 ### Prerequisites
 - Rust 1.75 or higher
 - Node.js 18+ (for web interface)
-- DuckDB (embedded)
 - Git (for version control)
 
 ### Quick Start

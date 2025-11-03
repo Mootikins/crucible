@@ -164,14 +164,6 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 | **Storage** | 100 MB | 1 GB+ |
 | **CPU** | 1 core | 2+ cores |
 
-#### DuckDB
-
-| Requirement | Minimum | Recommended |
-|-------------|---------|-------------|
-| **Memory** | 256 MB | 1 GB+ |
-| **Storage** | 50 MB | 500 MB+ |
-| **CPU** | 1 core | 2+ cores |
-
 ### AI/ML Components
 
 #### Local Embeddings

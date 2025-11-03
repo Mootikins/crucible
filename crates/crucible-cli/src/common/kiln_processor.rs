@@ -426,16 +426,6 @@ async fn handle_watch_events(
     }
 }
 
-/// Convert CLI configuration to crucible-config provider configuration
-fn create_provider_config_from_cli(
-    config: &crate::config::CliConfig,
-) -> Result<crucible_config::EmbeddingProviderConfig> {
-    // Use the unified config conversion method that handles both new [embedding] section
-    // and legacy kiln.embedding_* format
-    // Note: to_embedding_config() already returns EmbeddingProviderConfig (re-exported as EmbeddingConfig)
-    config.to_embedding_config()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
