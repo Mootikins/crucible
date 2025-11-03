@@ -220,7 +220,7 @@ where
     }
 
     error!("All {} retry attempts failed", config.max_attempts);
-    Err(last_error.unwrap())
+    Err(last_error.expect("at least one retry attempt should have occurred"))
 }
 
 /// Service health status

@@ -42,7 +42,9 @@ impl ReplCompleter {
     /// Update cached tool list (call this periodically)
     pub async fn refresh_tools(&self) {
         let tools = self.tools.list_tools().await;
-        *self.cached_tools.write().unwrap() = tools;
+        if let Ok(mut cached) = self.cached_tools.write() {
+            *cached = tools;
+        }
     }
 
     /// Build list of built-in commands with descriptions
@@ -118,7 +120,9 @@ impl ReplCompleter {
         start_pos: usize,
         end_pos: usize,
     ) -> Vec<Suggestion> {
-        let tools = self.cached_tools.read().unwrap();
+        let Ok(tools) = self.cached_tools.read() else {
+            return Vec::new();
+        };
 
         tools
             .iter()

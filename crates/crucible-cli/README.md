@@ -10,7 +10,7 @@ A powerful command-line interface for the Crucible knowledge management system, 
 - 🔄 **Kiln Processing**: Manage embedding generation directly from the CLI
 - 📝 **Note Management**: Create, update, and list notes with full metadata support
 - 📊 **Statistics**: Comprehensive kiln statistics and analytics
-- 🔧 **Rune Scripting**: Execute custom Rune scripts as commands
+- 🔧 **Rune Scripting** (via crucible-tools, in development): Execute custom Rune scripts as commands
 - ⚡ **Performance**: Fast, responsive CLI with async operations
 
 ## Installation
