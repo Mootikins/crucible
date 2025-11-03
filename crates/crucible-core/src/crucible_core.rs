@@ -1,350 +1,395 @@
-//! # CrucibleCore - Simplified Central Coordinator
+//! # CrucibleCore - Dependency-Inverted Central Coordinator
 //!
-//! This module provides a simplified central coordinator for the Crucible architecture
-//! after Phase 5 cleanup. It provides basic service coordination without the complexity
-//! of the previous event-driven system.
+//! This module provides a central coordinator that orchestrates operations through trait abstractions.
+//! Core depends ONLY on traits (Storage, MarkdownParser, ToolExecutor), never on concrete implementations.
+//!
+//! ## Architecture (Dependency Inversion)
+//! - Core defines traits (abstractions) in `traits/` module
+//! - Implementations (SurrealDB, Pulldown, etc.) implement these traits
+//! - Core receives trait objects via Builder pattern
+//! - CLI/REPL/Desktop construct implementations and pass to Core via builder
+//!
+//! ## Usage
+//! ```ignore
+//! let storage = SurrealClient::new(config).await?;
+//! let parser = PulldownParser::new();
+//! let tools = RuneToolExecutor::new();
+//!
+//! let core = CrucibleCore::builder()
+//!     .with_storage(storage)
+//!     .with_parser(parser)
+//!     .with_tools(tools)
+//!     .build()?;
+//! ```
 
-use super::{config::CrucibleConfig, CrucibleError, Result as CoreResult};
-use chrono::Utc;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
-use uuid::Uuid;
 
-// NOTE: This module (CrucibleCore coordinator) is not currently used in the codebase.
-// It was part of the old service architecture and remains for potential future use.
-// The service types below are defined inline since crucible-services was removed.
+use crate::traits::{MarkdownParser, Storage, ToolExecutor};
 
-use chrono::DateTime;
-
-/// Service status
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ServiceStatus {
-    Healthy,
-    Degraded,
-    Unhealthy,
-}
-
-/// Service health status
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServiceHealth {
-    pub status: ServiceStatus,
-    pub message: Option<String>,
-    pub last_check: DateTime<Utc>,
-}
-
-/// Service metrics
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServiceMetrics {
-    pub request_count: u64,
-    pub error_count: u64,
-    pub avg_response_time_ms: f64,
-    pub last_updated: DateTime<Utc>,
-}
-
-impl Default for ServiceMetrics {
-    fn default() -> Self {
-        Self {
-            request_count: 0,
-            error_count: 0,
-            avg_response_time_ms: 0.0,
-            last_updated: Utc::now(),
-        }
-    }
-}
-
-/// ============================================================================
-/// SERVICE TRAITS (Unused - for future compatibility)
-/// ============================================================================
-
-#[async_trait::async_trait]
-pub trait ServiceLifecycle: Send + Sync {}
-
-#[async_trait::async_trait]
-pub trait HealthCheck: Send + Sync {}
-
-#[async_trait::async_trait]
-pub trait ScriptEngine: Send + Sync {}
-
-#[async_trait::async_trait]
-pub trait ServiceRegistry: Send + Sync {}
-
-#[async_trait::async_trait]
-pub trait ToolService: Send + Sync {}
-
-/// ============================================================================
-/// SIMPLIFIED CRUCIBLE CORE
-/// ============================================================================
-
-/// Simplified central coordinator for Crucible services
+/// Configuration for CrucibleCore initialization
 ///
-/// This provides basic coordination without the complex event routing system
-/// that was removed during Phase 5 cleanup.
-pub struct CrucibleCore {
-    /// Unique identifier for this core instance
-    id: Uuid,
-
-    /// Core configuration
-    config: Arc<RwLock<CrucibleConfig>>,
-
-    /// Service registry
-    services: Arc<RwLock<HashMap<String, Arc<dyn ServiceLifecycle>>>>,
-
-    /// Health status
-    health: Arc<RwLock<ServiceHealth>>,
-
-    /// Metrics collection
-    metrics: Arc<RwLock<ServiceMetrics>>,
-
-    /// Communication channel
-    message_sender: mpsc::UnboundedSender<CoreMessage>,
-    message_receiver: Arc<RwLock<Option<mpsc::UnboundedReceiver<CoreMessage>>>>,
+/// DEPRECATED: Use CrucibleCoreBuilder instead.
+/// This config was used with the old `new()` constructor which created concrete implementations.
+/// The new builder pattern accepts trait objects directly.
+#[derive(Debug, Clone)]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use CrucibleCore::builder() instead of new(config)"
+)]
+pub struct CrucibleCoreConfig {
+    /// Path to the database (file path or `:memory:` for in-memory)
+    pub database_path: String,
 }
 
-/// Core communication messages
-#[derive(Debug, Clone)]
-pub enum CoreMessage {
-    /// Service status update
-    ServiceStatusUpdate {
-        service_id: String,
-        status: ServiceStatus,
-    },
-    /// Health check request
-    HealthCheck,
-    /// Metrics update
-    MetricsUpdate(ServiceMetrics),
-    /// Shutdown request
-    Shutdown,
+/// Central coordinator for Crucible - Orchestrates operations through trait abstractions
+///
+/// Core is the single dependency for all frontends (CLI, REPL, Desktop).
+/// It coordinates operations by delegating to injected trait implementations.
+///
+/// ## Dependency Inversion
+/// Core depends on abstractions (traits), not concrete implementations:
+/// - `Storage` - Database/persistence operations
+/// - `MarkdownParser` - Document parsing
+/// - `ToolExecutor` - Tool/plugin execution
+///
+/// Use `CrucibleCore::builder()` to construct instances.
+pub struct CrucibleCore {
+    /// Storage abstraction (database operations)
+    storage: Arc<dyn Storage>,
+
+    /// Markdown parser abstraction (optional - for parse_and_store operations)
+    // TODO: Will be used once parser implementation is injected via builder
+    #[allow(dead_code)]
+    parser: Option<Arc<dyn MarkdownParser>>,
+
+    /// Tool executor abstraction (optional - for agent/tool operations)
+    // TODO: Will be used once tool executor implementation is injected via builder
+    #[allow(dead_code)]
+    tools: Option<Arc<dyn ToolExecutor>>,
 }
 
 impl CrucibleCore {
-    /// Create a new CrucibleCore instance
-    pub async fn new(config: CrucibleConfig) -> CoreResult<Self> {
-        let id = Uuid::new_v4();
-        let config = Arc::new(RwLock::new(config));
+    /// Create a new builder for CrucibleCore
+    ///
+    /// Use this to construct CrucibleCore instances with injected dependencies.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let storage = SurrealClient::new(config).await?;
+    /// let core = CrucibleCore::builder()
+    ///     .with_storage(storage)
+    ///     .build()?;
+    /// ```
+    pub fn builder() -> CrucibleCoreBuilder {
+        CrucibleCoreBuilder::new()
+    }
 
-        let (message_sender, message_receiver) = mpsc::unbounded_channel();
+    /// Create a new CrucibleCore instance from configuration
+    ///
+    /// DEPRECATED: This method creates concrete implementations internally,
+    /// violating dependency inversion. Use `CrucibleCore::builder()` instead.
+    ///
+    /// # Migration
+    /// ```ignore
+    /// // Old way (creates SurrealClient internally):
+    /// let core = CrucibleCore::new(config).await?;
+    ///
+    /// // New way (inject dependencies):
+    /// let storage = SurrealClient::new(surreal_config).await?;
+    /// let core = CrucibleCore::builder()
+    ///     .with_storage(storage)
+    ///     .build()?;
+    /// ```
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use CrucibleCore::builder() to inject dependencies instead of creating them internally"
+    )]
+    pub async fn new(_config: CrucibleCoreConfig) -> Result<Self, String> {
+        Err(
+            "CrucibleCore::new() is deprecated. Use CrucibleCore::builder() instead. \
+             See documentation for migration guide."
+                .to_string(),
+        )
+    }
 
-        let health = Arc::new(RwLock::new(ServiceHealth {
-            status: ServiceStatus::Degraded,
-            message: Some("Core initializing".to_string()),
-            last_check: Utc::now(),
-        }));
+    /// Execute a raw query
+    ///
+    /// Delegates to the Storage trait implementation.
+    /// CLI/REPL call this method, Core delegates to storage abstraction.
+    pub async fn query(
+        &self,
+        query: &str,
+    ) -> Result<Vec<BTreeMap<String, serde_json::Value>>, String> {
+        // Delegate to storage trait
+        let result = self
+            .storage
+            .query(query, &[])
+            .await
+            .map_err(|e| format!("Query failed: {}", e))?;
 
-        let metrics = Arc::new(RwLock::new(ServiceMetrics {
-            request_count: 0,
-            error_count: 0,
-            avg_response_time_ms: 0.0,
-            last_updated: Utc::now(),
-        }));
+        // Convert Record to BTreeMap (maintains backward compatibility with existing CLI code)
+        let rows = result
+            .records
+            .into_iter()
+            .map(|record| {
+                let mut map = BTreeMap::new();
 
-        Ok(Self {
-            id,
-            config,
-            services: Arc::new(RwLock::new(HashMap::new())),
-            health,
-            metrics,
-            message_sender,
-            message_receiver: Arc::new(RwLock::new(Some(message_receiver))),
+                // Add ID if present
+                if let Some(id) = record.id {
+                    map.insert("id".to_string(), serde_json::Value::String(id.0));
+                }
+
+                // Add all data fields
+                for (key, value) in record.data {
+                    map.insert(key, value);
+                }
+
+                map
+            })
+            .collect();
+
+        Ok(rows)
+    }
+
+    /// Get database statistics
+    ///
+    /// Delegates to the Storage trait implementation.
+    pub async fn get_stats(&self) -> Result<BTreeMap<String, serde_json::Value>, String> {
+        // Delegate to storage trait - it handles stats calculation
+        let stats = self
+            .storage
+            .get_stats()
+            .await
+            .map_err(|e| format!("Failed to get stats: {}", e))?;
+
+        // Convert HashMap to BTreeMap for backward compatibility
+        Ok(stats.into_iter().collect())
+    }
+
+    /// List database tables (for autocomplete)
+    ///
+    /// Delegates to the Storage trait implementation.
+    pub async fn list_tables(&self) -> Result<Vec<String>, String> {
+        self.storage
+            .list_tables()
+            .await
+            .map_err(|e| format!("Failed to list tables: {}", e))
+    }
+
+    /// Initialize database schema
+    ///
+    /// Delegates to the Storage trait implementation.
+    pub async fn initialize_database(&self) -> Result<(), String> {
+        self.storage
+            .initialize_schema()
+            .await
+            .map_err(|e| format!("Failed to initialize schema: {}", e))
+    }
+}
+
+/// Builder for constructing CrucibleCore instances with dependency injection
+///
+/// Use this to inject trait implementations into CrucibleCore.
+///
+/// # Example
+/// ```ignore
+/// let storage = SurrealClient::new(config).await?;
+/// let parser = PulldownParser::new();
+/// let tools = RuneToolExecutor::new();
+///
+/// let core = CrucibleCore::builder()
+///     .with_storage(storage)
+///     .with_parser(parser)
+///     .with_tools(tools)
+///     .build()?;
+/// ```
+pub struct CrucibleCoreBuilder {
+    storage: Option<Arc<dyn Storage>>,
+    parser: Option<Arc<dyn MarkdownParser>>,
+    tools: Option<Arc<dyn ToolExecutor>>,
+}
+
+impl CrucibleCoreBuilder {
+    /// Create a new builder
+    pub fn new() -> Self {
+        Self {
+            storage: None,
+            parser: None,
+            tools: None,
+        }
+    }
+
+    /// Set the storage implementation (required)
+    ///
+    /// # Example
+    /// ```ignore
+    /// let storage = SurrealClient::new(config).await?;
+    /// builder.with_storage(storage)
+    /// ```
+    pub fn with_storage<S: Storage + 'static>(mut self, storage: S) -> Self {
+        self.storage = Some(Arc::new(storage));
+        self
+    }
+
+    /// Set the markdown parser implementation (optional)
+    ///
+    /// # Example
+    /// ```ignore
+    /// let parser = PulldownParser::new();
+    /// builder.with_parser(parser)
+    /// ```
+    pub fn with_parser<P: MarkdownParser + 'static>(mut self, parser: P) -> Self {
+        self.parser = Some(Arc::new(parser));
+        self
+    }
+
+    /// Set the tool executor implementation (optional)
+    ///
+    /// # Example
+    /// ```ignore
+    /// let tools = RuneToolExecutor::new();
+    /// builder.with_tools(tools)
+    /// ```
+    pub fn with_tools<T: ToolExecutor + 'static>(mut self, tools: T) -> Self {
+        self.tools = Some(Arc::new(tools));
+        self
+    }
+
+    /// Build the CrucibleCore instance
+    ///
+    /// # Errors
+    /// Returns an error if required dependencies (storage) are not provided.
+    pub fn build(self) -> Result<CrucibleCore, String> {
+        let storage = self
+            .storage
+            .ok_or_else(|| "Storage implementation is required".to_string())?;
+
+        Ok(CrucibleCore {
+            storage,
+            parser: self.parser,
+            tools: self.tools,
         })
     }
+}
 
-    /// Get the core instance ID
-    pub fn id(&self) -> Uuid {
-        self.id
-    }
-
-    /// Get the core configuration
-    pub async fn config(&self) -> CrucibleConfig {
-        self.config.read().await.clone()
-    }
-
-    /// Register a service with the core
-    pub async fn register_service(
-        &self,
-        name: String,
-        service: Arc<dyn ServiceLifecycle>,
-    ) -> CoreResult<()> {
-        let mut services = self.services.write().await;
-        services.insert(name.clone(), service);
-
-        // Send status update
-        let _ = self.message_sender.send(CoreMessage::ServiceStatusUpdate {
-            service_id: name,
-            status: ServiceStatus::Healthy,
-        });
-
-        Ok(())
-    }
-
-    /// Get a registered service
-    pub async fn get_service(&self, name: &str) -> Option<Arc<dyn ServiceLifecycle>> {
-        let services = self.services.read().await;
-        services.get(name).cloned()
-    }
-
-    /// Get all registered services
-    pub async fn list_services(&self) -> Vec<String> {
-        let services = self.services.read().await;
-        services.keys().cloned().collect()
-    }
-
-    /// Get the health status of the core
-    pub async fn health(&self) -> ServiceHealth {
-        self.health.read().await.clone()
-    }
-
-    /// Get the current metrics
-    pub async fn metrics(&self) -> ServiceMetrics {
-        self.metrics.read().await.clone()
-    }
-
-    /// Update health status
-    pub async fn update_health(&self, status: ServiceStatus, message: Option<String>) {
-        let mut health = self.health.write().await;
-        health.status = status;
-        health.message = message;
-        health.last_check = Utc::now();
-    }
-
-    /// Update metrics
-    pub async fn update_metrics(&self, new_metrics: ServiceMetrics) {
-        let mut metrics = self.metrics.write().await;
-        *metrics = new_metrics;
-    }
-
-    /// Start the core and all registered services
-    pub async fn start(&self) -> CoreResult<()> {
-        self.update_health(ServiceStatus::Degraded, Some("Core starting".to_string()))
-            .await;
-
-        // Note: Service starting simplified for now
-        // In a real implementation, we'd need a different approach for mutable operations
-        tracing::info!("Service starting simplified - all services assumed started");
-
-        self.update_health(ServiceStatus::Healthy, Some("Core running".to_string()))
-            .await;
-
-        // Start message processing
-        self.start_message_processing().await;
-
-        tracing::info!("CrucibleCore {} started successfully", self.id);
-        Ok(())
-    }
-
-    /// Stop the core and all registered services
-    pub async fn stop(&self) -> CoreResult<()> {
-        self.update_health(ServiceStatus::Degraded, Some("Core stopping".to_string()))
-            .await;
-
-        // Send shutdown message
-        let _ = self.message_sender.send(CoreMessage::Shutdown);
-
-        // Note: Service stopping simplified for now
-        // In a real implementation, we'd need a different approach for mutable operations
-        tracing::info!("Service stopping simplified - all services remain registered");
-
-        self.update_health(ServiceStatus::Degraded, Some("Core stopped".to_string()))
-            .await;
-
-        tracing::info!("CrucibleCore {} stopped", self.id);
-        Ok(())
-    }
-
-    /// Check if the core is running
-    pub fn is_running(&self) -> bool {
-        // This is a simplified check - in a real implementation,
-        // we'd track the actual state
-        true
-    }
-
-    /// Process core messages
-    async fn start_message_processing(&self) {
-        let health = self.health.clone();
-        let metrics = self.metrics.clone();
-
-        // Take the receiver
-        let receiver = {
-            let mut receiver_guard = self.message_receiver.write().await;
-            receiver_guard.take()
-        };
-
-        if let Some(mut receiver) = receiver {
-            tokio::spawn(async move {
-                while let Some(message) = receiver.recv().await {
-                    match message {
-                        CoreMessage::ServiceStatusUpdate { service_id, status } => {
-                            tracing::debug!(
-                                "Service {} status updated to {:?}",
-                                service_id,
-                                status
-                            );
-                        }
-                        CoreMessage::HealthCheck => {
-                            let mut h = health.write().await;
-                            h.last_check = Utc::now();
-                        }
-                        CoreMessage::MetricsUpdate(new_metrics) => {
-                            let mut m = metrics.write().await;
-                            *m = new_metrics;
-                        }
-                        CoreMessage::Shutdown => {
-                            tracing::info!("Core message processing shutting down");
-                            break;
-                        }
-                    }
-                }
-            });
-        }
-    }
-
-    /// Send a message to the core
-    pub fn send_message(&self, message: CoreMessage) -> CoreResult<()> {
-        self.message_sender
-            .send(message)
-            .map_err(|_| CrucibleError::InvalidOperation("Failed to send message".to_string()))
-    }
-
-    /// Perform health check on all services
-    pub async fn perform_health_check(&self) -> CoreResult<HashMap<String, ServiceHealth>> {
-        let services = self.services.read().await;
-        let mut results = HashMap::new();
-
-        for (name, _service) in services.iter() {
-            // Simplified health check - assume services are healthy if they're registered
-            results.insert(
-                name.clone(),
-                ServiceHealth {
-                    status: ServiceStatus::Healthy,
-                    message: Some("Service registered and assumed healthy".to_string()),
-                    last_check: Utc::now(),
-                },
-            );
-        }
-
-        Ok(results)
+impl Default for CrucibleCoreBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use std::collections::HashMap;
 
-    #[tokio::test]
-    async fn test_core_creation() {
-        let config = CrucibleConfig::default();
-        let core = CrucibleCore::new(config).await;
-        assert!(core.is_ok());
+    use crate::traits::storage::{QueryResult, StorageResult};
+
+    // Mock storage implementation for testing
+    struct MockStorage;
+
+    #[async_trait]
+    impl Storage for MockStorage {
+        async fn query(
+            &self,
+            _query: &str,
+            _params: &[(&str, serde_json::Value)],
+        ) -> StorageResult<QueryResult> {
+            Ok(QueryResult::empty())
+        }
+
+        async fn get_stats(&self) -> StorageResult<HashMap<String, serde_json::Value>> {
+            let mut stats = HashMap::new();
+            stats.insert(
+                "database_type".to_string(),
+                serde_json::Value::String("Mock".to_string()),
+            );
+            Ok(stats)
+        }
+
+        async fn list_tables(&self) -> StorageResult<Vec<String>> {
+            Ok(vec!["notes".to_string(), "tags".to_string()])
+        }
+
+        async fn initialize_schema(&self) -> StorageResult<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_builder_creation() {
+        let mock_storage = MockStorage;
+        let core = CrucibleCore::builder()
+            .with_storage(mock_storage)
+            .build()
+            .expect("Should build successfully");
+
+        // Verify storage was set correctly (use Arc::strong_count to verify it's not null)
+        assert!(std::sync::Arc::strong_count(&core.storage) > 0);
+        assert!(core.parser.is_none());
+        assert!(core.tools.is_none());
+    }
+
+    #[test]
+    fn test_builder_requires_storage() {
+        let result = CrucibleCore::builder().build();
+        assert!(result.is_err());
+        assert_eq!(
+            result.err().unwrap(),
+            "Storage implementation is required"
+        );
     }
 
     #[tokio::test]
-    async fn test_service_registration() {
-        let config = CrucibleConfig::default();
-        let core = CrucibleCore::new(config).await.unwrap();
+    async fn test_list_tables() {
+        let mock_storage = MockStorage;
+        let core = CrucibleCore::builder()
+            .with_storage(mock_storage)
+            .build()
+            .unwrap();
 
-        // This test would need a mock service implementation
-        // For now, just test that the method exists
-        assert_eq!(core.list_services().await.len(), 0);
+        let tables = core.list_tables().await.unwrap();
+        assert_eq!(tables, vec!["notes".to_string(), "tags".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_get_stats() {
+        let mock_storage = MockStorage;
+        let core = CrucibleCore::builder()
+            .with_storage(mock_storage)
+            .build()
+            .unwrap();
+
+        let stats = core.get_stats().await.unwrap();
+        assert_eq!(
+            stats.get("database_type"),
+            Some(&serde_json::Value::String("Mock".to_string()))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_query() {
+        let mock_storage = MockStorage;
+        let core = CrucibleCore::builder()
+            .with_storage(mock_storage)
+            .build()
+            .unwrap();
+
+        let results = core.query("SELECT * FROM notes").await.unwrap();
+        assert_eq!(results.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_initialize_database() {
+        let mock_storage = MockStorage;
+        let core = CrucibleCore::builder()
+            .with_storage(mock_storage)
+            .build()
+            .unwrap();
+
+        let result = core.initialize_database().await;
+        assert!(result.is_ok());
     }
 }
