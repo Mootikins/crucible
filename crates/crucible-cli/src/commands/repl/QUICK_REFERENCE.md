@@ -78,11 +78,11 @@ assert!(input.is_query());
 | `repl.process_input(s)` | Process input line | `Result<(), ReplError>` |
 | `repl.execute_command(cmd)` | Execute command | `Result<(), ReplError>` |
 | `repl.execute_query(q)` | Execute query | `Result<(), ReplError>` |
-| `repl.get_database()` | Access database | `&ReplDatabase` |
+| `repl.get_core()` | Access Core coordinator | `&Arc<CrucibleCore>` |
 | `repl.get_stats()` | Get statistics | `&ReplStats` |
 | `ReplInput::parse(s)` | Parse input | `Result<Input, ReplError>` |
-| `db.query(q)` | Query database | `Result<QueryResult, String>` |
-| `db.list_tables()` | List tables | `Result<Vec<String>>` |
+| `core.query(q)` | Query database | `Result<Vec<BTreeMap>, String>` |
+| `core.list_tables()` | List tables | `Result<Vec<String>, String>` |
 
 ## Testing Checklist
 

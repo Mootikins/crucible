@@ -89,23 +89,24 @@ async fn test_query_execution() {
 }
 ```
 
-### 5. Database Integration (`ReplDatabase`)
+### 5. Database Integration via Core
 
-The database can be tested independently:
+Database queries are executed through CrucibleCore:
 
 ```rust
-use crucible_cli::commands::repl::database::ReplDatabase;
+use crucible_cli::commands::repl::Repl;
 
 #[tokio::test]
 async fn test_database_queries() {
-    let db = ReplDatabase::new_memory().await.unwrap();
+    let repl = Repl::new_test().await.unwrap();
+    let core = repl.get_core();
 
-    // Execute a query
-    let result = db.query("SELECT * FROM notes").await;
+    // Execute a query via Core
+    let result = core.query("SELECT * FROM notes").await;
     assert!(result.is_ok());
 
     let query_result = result.unwrap();
-    assert!(!query_result.rows.is_empty());
+    assert!(!query_result.is_empty());
 }
 ```
 
@@ -145,9 +146,9 @@ async fn test_tool_execution() {
   - Execute a SurrealQL query
   - Useful for testing query execution and formatting
 
-- `pub(crate) fn get_database(&self) -> &ReplDatabase`
-  - Access the database for verification
-  - Allows direct database queries in tests
+- `pub fn get_core(&self) -> &Arc<CrucibleCore>`
+  - Access the Core coordinator
+  - Allows database queries via `core.query()` and `core.list_tables()` in tests
 
 - `pub(crate) fn get_stats(&self) -> &ReplStats`
   - Access execution statistics
@@ -156,16 +157,17 @@ async fn test_tool_execution() {
 - `#[cfg(test)] pub async fn new_test() -> Result<Self>`
   - Create a test REPL with in-memory database
   - No file system dependencies
+  - Populates database with sample data from examples/test-kiln
 
-### ReplDatabase Methods
+### CrucibleCore Methods
 
-All methods are already `pub`:
+Core provides database access through a facade pattern:
 
-- `pub async fn new(db_path: &str) -> Result<Self>`
-  - Create database with file storage
+- `pub async fn query(&self, query: &str) -> Result<Vec<BTreeMap<String, serde_json::Value>>, String>`
+  - Execute SurrealQL queries
 
-- `pub async fn new_memory() -> Result<Self>`
-  - Create in-memory database (preferred for tests)
+- `pub async fn list_tables(&self) -> Result<Vec<String>, String>`
+  - Get list of database tables (used for autocomplete)
 
 - `pub async fn query(&self, query_str: &str) -> Result<QueryResult, String>`
   - Execute a query and return formatted results
