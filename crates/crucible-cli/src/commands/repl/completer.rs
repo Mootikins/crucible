@@ -3,13 +3,13 @@
 use reedline::{Completer, Span, Suggestion};
 use std::sync::Arc;
 
-use super::database::ReplDatabase;
+use crucible_core::CrucibleCore;
 use super::tools::UnifiedToolRegistry;
 
 /// REPL autocompleter
 pub struct ReplCompleter {
-    /// Database connection for schema introspection
-    db: ReplDatabase,
+    /// Core coordinator for database introspection
+    core: Arc<CrucibleCore>,
 
     /// Tool registry for tool name completion
     tools: Arc<UnifiedToolRegistry>,
@@ -28,11 +28,11 @@ struct CommandCompletion {
 }
 
 impl ReplCompleter {
-    pub fn new(db: ReplDatabase, tools: Arc<UnifiedToolRegistry>) -> Self {
+    pub fn new(core: Arc<CrucibleCore>, tools: Arc<UnifiedToolRegistry>) -> Self {
         let commands = Self::build_command_list();
         let cached_tools = std::sync::Arc::new(std::sync::RwLock::new(Vec::new()));
         Self {
-            db,
+            core,
             tools,
             cached_tools,
             commands,
@@ -221,7 +221,7 @@ impl ReplCompleter {
             // We have a runtime, use it
             tokio::task::block_in_place(|| {
                 handle.block_on(async {
-                    self.db.list_tables().await.unwrap_or_else(|_| {
+                    self.core.list_tables().await.unwrap_or_else(|_| {
                         vec!["notes".to_string(), "tags".to_string(), "files".to_string()]
                     })
                 })
@@ -304,19 +304,37 @@ impl Completer for ReplCompleter {
 mod tests {
     use super::*;
     use crate::commands::repl::tools::UnifiedToolRegistry;
+    use crucible_surrealdb::{SurrealClient, SurrealDbConfig};
     use tempfile::TempDir;
 
     fn create_test_completer() -> ReplCompleter {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            let db = ReplDatabase::new_memory().await.unwrap();
+            // Create in-memory storage
+            let storage_config = SurrealDbConfig {
+                path: ":memory:".to_string(),
+                namespace: "crucible".to_string(),
+                database: "test".to_string(),
+                max_connections: Some(10),
+                timeout_seconds: Some(30),
+            };
+            let storage = SurrealClient::new(storage_config).await.unwrap();
+
+            // Create Core with storage
+            let core = Arc::new(
+                CrucibleCore::builder()
+                    .with_storage(storage)
+                    .build()
+                    .unwrap()
+            );
+
             let temp_dir = TempDir::new().unwrap();
             let tools = Arc::new(
                 UnifiedToolRegistry::new(temp_dir.path().to_path_buf())
                     .await
                     .unwrap(),
             );
-            ReplCompleter::new(db, tools)
+            ReplCompleter::new(core, tools)
         })
     }
 
@@ -390,17 +408,34 @@ mod tests {
         // Use a mock database to avoid async issues in test
         let temp_dir = TempDir::new().unwrap();
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let (db, tools) = rt.block_on(async {
-            let db = ReplDatabase::new_memory().await.unwrap();
+        let (core, tools) = rt.block_on(async {
+            // Create in-memory storage
+            let storage_config = SurrealDbConfig {
+                path: ":memory:".to_string(),
+                namespace: "crucible".to_string(),
+                database: "test".to_string(),
+                max_connections: Some(10),
+                timeout_seconds: Some(30),
+            };
+            let storage = SurrealClient::new(storage_config).await.unwrap();
+
+            // Create Core with storage
+            let core = Arc::new(
+                CrucibleCore::builder()
+                    .with_storage(storage)
+                    .build()
+                    .unwrap()
+            );
+
             let tools = Arc::new(
                 UnifiedToolRegistry::new(temp_dir.path().to_path_buf())
                     .await
                     .unwrap(),
             );
-            (db, tools)
+            (core, tools)
         });
 
-        let mut completer = ReplCompleter::new(db, tools);
+        let mut completer = ReplCompleter::new(core, tools);
 
         // Complete `SELECT * FROM n`
         let suggestions = completer.complete("SELECT * FROM n", 15);
