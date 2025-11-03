@@ -16,5 +16,6 @@ pub use crate::embedding_pool::EmbeddingThreadPool;
 pub use crate::kiln_integration::{
     clear_document_embeddings, document_exists, get_database_stats, get_document_embeddings,
     semantic_search, store_document_embedding, update_document_content,
-    update_document_processed_timestamp, DatabaseStats,
+    update_document_processed_timestamp,
 };
+pub use crate::types::DatabaseStats;

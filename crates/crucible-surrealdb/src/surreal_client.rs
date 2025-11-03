@@ -29,7 +29,7 @@
 //! ```
 
 use crate::types::SurrealDbConfig;
-use crucible_core::{DbError, DbResult, QueryResult, Record, RecordId, SelectQuery, TableSchema};
+use crate::types::{DbError, DbResult, QueryResult, Record, RecordId, SelectQuery, TableSchema};
 use serde_json::Value;
 use surrealdb::engine::local::Db;
 use surrealdb::Surreal;
@@ -42,8 +42,18 @@ use std::collections::HashMap;
 /// This client provides a thin wrapper around `surrealdb::Surreal<Db>`,
 /// converting between our internal types and SurrealDB's types while
 /// exposing the full power of real SurrealDB queries without custom parsing.
+///
+/// **Implementation**: Uses Arc internally so cloning is cheap and doesn't attempt
+/// to open multiple database connections. This prevents "lock hold by current process"
+/// errors with RocksDB file databases.
 #[derive(Clone)]
 pub struct SurrealClient {
+    /// The underlying SurrealDB connection (Arc-wrapped for cheap cloning)
+    inner: std::sync::Arc<SurrealClientInner>,
+}
+
+/// Inner client state that is Arc-wrapped
+struct SurrealClientInner {
     /// The underlying SurrealDB connection
     db: Surreal<Db>,
 
@@ -54,7 +64,7 @@ pub struct SurrealClient {
 impl std::fmt::Debug for SurrealClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SurrealClient")
-            .field("config", &self.config)
+            .field("config", &self.inner.config)
             .finish()
     }
 }
@@ -93,7 +103,9 @@ impl SurrealClient {
                 ))
             })?;
 
-        Ok(Self { db, config })
+        Ok(Self {
+            inner: std::sync::Arc::new(SurrealClientInner { db, config }),
+        })
     }
 
     /// Create an in-memory SurrealDB client for testing
@@ -158,7 +170,7 @@ impl SurrealClient {
     pub async fn query(&self, sql: &str, _params: &[Value]) -> DbResult<QueryResult> {
         // Execute the query
         let response = self
-            .db
+            .inner.db
             .query(sql)
             .await
             .map_err(|e| DbError::Query(format!("Query execution failed: {}", e)))?;
@@ -398,12 +410,12 @@ impl SurrealClient {
     /// This allows direct access to the SurrealDB SDK for advanced operations
     /// not covered by the wrapper API.
     pub fn db(&self) -> &Surreal<Db> {
-        &self.db
+        &self.inner.db
     }
 
     /// Get the client configuration
     pub fn config(&self) -> &SurrealDbConfig {
-        &self.config
+        &self.inner.config
     }
 
     /// Create a table with the given schema
@@ -443,7 +455,7 @@ impl SurrealClient {
     ///
     /// This queries the SurrealDB information schema to get table names.
     pub async fn list_tables(&self) -> DbResult<Vec<String>> {
-        let result = self.query("INFO FOR DB", &[]).await?;
+        let _result = self.query("INFO FOR DB", &[]).await?;
 
         // The INFO FOR DB command returns metadata about the database
         // We need to parse it to extract table names
@@ -548,3 +560,122 @@ mod tests {
         assert!(!result.records.is_empty(), "Should find related data");
     }
 }
+
+// ==============================================================================
+// STORAGE TRAIT IMPLEMENTATION (Dependency Inversion)
+// ==============================================================================
+
+use crucible_core::traits::Storage;
+use crucible_core::traits::storage::{
+    StorageError, StorageResult,
+    QueryResult as StorageQueryResult,
+    Record as StorageRecord,
+    RecordId as StorageRecordId
+};
+use async_trait::async_trait;
+
+#[async_trait]
+impl Storage for SurrealClient {
+    /// Execute a query and return results
+    ///
+    /// Maps from SurrealDB types to Storage trait types
+    async fn query(
+        &self,
+        query_str: &str,
+        params: &[(&str, serde_json::Value)],
+    ) -> StorageResult<StorageQueryResult> {
+        // Convert params to the format SurrealClient.query expects (Vec<Value>)
+        let param_values: Vec<serde_json::Value> = params.iter().map(|(_, v)| v.clone()).collect();
+
+        // Call the SurrealClient's query method directly
+        let result = SurrealClient::query(self, query_str, &param_values)
+            .await
+            .map_err(|e| match e {
+                DbError::Connection(msg) => StorageError::Connection(msg),
+                DbError::Query(msg) => StorageError::Query(msg),
+                DbError::Schema(msg) => StorageError::Schema(msg),
+                DbError::Transaction(msg) => StorageError::Transaction(msg),
+                DbError::InvalidOperation(msg) => StorageError::InvalidOperation(msg),
+                DbError::NotFound(msg) => StorageError::NotFound(msg),
+                DbError::PermissionDenied(msg) => StorageError::PermissionDenied(msg),
+                DbError::Timeout(msg) => StorageError::Timeout(msg),
+                DbError::Internal(msg) => StorageError::Internal(msg),
+            })?;
+
+        // Convert from SurrealDB types to Storage trait types
+        let storage_records: Vec<StorageRecord> = result.records
+            .into_iter()
+            .map(|r| StorageRecord {
+                id: r.id.map(|rid| StorageRecordId(rid.0)),
+                data: r.data,
+            })
+            .collect();
+
+        Ok(StorageQueryResult {
+            records: storage_records,
+            total_count: result.total_count,
+            execution_time_ms: result.execution_time_ms,
+            has_more: result.has_more,
+        })
+    }
+
+    /// Get database statistics
+    async fn get_stats(&self) -> StorageResult<std::collections::HashMap<String, serde_json::Value>> {
+        use std::collections::HashMap;
+
+        let mut stats = HashMap::new();
+        stats.insert("database_type".to_string(), serde_json::json!("SurrealDB"));
+        stats.insert("namespace".to_string(), serde_json::json!(self.inner.config.namespace));
+        stats.insert("database".to_string(), serde_json::json!(self.inner.config.database));
+        stats.insert("path".to_string(), serde_json::json!(self.inner.config.path));
+
+        // Try to get table count
+        match SurrealClient::list_tables(self).await {
+            Ok(tables) => {
+                stats.insert("table_count".to_string(), serde_json::json!(tables.len()));
+                stats.insert("tables".to_string(), serde_json::json!(tables));
+            }
+            Err(_) => {
+                // If we can't get tables, just skip this stat
+            }
+        }
+
+        Ok(stats)
+    }
+
+    /// List all tables in the database
+    async fn list_tables(&self) -> StorageResult<Vec<String>> {
+        SurrealClient::list_tables(self)
+            .await
+            .map_err(|e| match e {
+                DbError::Connection(msg) => StorageError::Connection(msg),
+                DbError::Query(msg) => StorageError::Query(msg),
+                DbError::Schema(msg) => StorageError::Schema(msg),
+                DbError::Transaction(msg) => StorageError::Transaction(msg),
+                DbError::InvalidOperation(msg) => StorageError::InvalidOperation(msg),
+                DbError::NotFound(msg) => StorageError::NotFound(msg),
+                DbError::PermissionDenied(msg) => StorageError::PermissionDenied(msg),
+                DbError::Timeout(msg) => StorageError::Timeout(msg),
+                DbError::Internal(msg) => StorageError::Internal(msg),
+            })
+    }
+
+    /// Initialize database schema
+    async fn initialize_schema(&self) -> StorageResult<()> {
+        SurrealClient::initialize(self)
+            .await
+            .map_err(|e| match e {
+                DbError::Connection(msg) => StorageError::Connection(msg),
+                DbError::Query(msg) => StorageError::Query(msg),
+                DbError::Schema(msg) => StorageError::Schema(msg),
+                DbError::Transaction(msg) => StorageError::Transaction(msg),
+                DbError::InvalidOperation(msg) => StorageError::InvalidOperation(msg),
+                DbError::NotFound(msg) => StorageError::NotFound(msg),
+                DbError::PermissionDenied(msg) => StorageError::PermissionDenied(msg),
+                DbError::Timeout(msg) => StorageError::Timeout(msg),
+                DbError::Internal(msg) => StorageError::Internal(msg),
+            })
+    }
+}
+
+// DatabaseFacade trait removed - Core now owns SurrealClient directly
