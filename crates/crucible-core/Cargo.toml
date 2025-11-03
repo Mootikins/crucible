@@ -30,6 +30,10 @@ tokio = { workspace = true, features = ["full", "tracing"] }
 # Configuration dependencies
 crucible-config = { workspace = true }
 
+# NOTE: crucible-surrealdb dependency REMOVED to break circular dependency
+# With Dependency Inversion, Core defines Storage trait, surrealdb implements it
+# Higher-level crates (CLI, Tauri) inject the implementation
+
 # Configuration management
 config = { workspace = true }
 schemars = { workspace = true, features = ["derive"] }
