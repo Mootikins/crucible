@@ -866,7 +866,13 @@ impl Repl {
             let mut doc = ParsedDocument::new(file_path.clone());
             doc.content.plain_text = content.clone();
             doc.parsed_at = chrono::Utc::now();
-            doc.content_hash = format!("hash_{}", file_path.file_name().unwrap().to_str().unwrap());
+            doc.content_hash = format!(
+                "hash_{}",
+                file_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown")
+            );
             doc.file_size = content.len() as u64;
 
             // Store document in database

@@ -46,7 +46,7 @@ Start with the data pipeline foundation and work our way up to user queries. Thi
 - Connect to configured embedding service (EMBEDDING_ENDPOINT, EMBEDDING_MODEL)
 - Generate embeddings for actual document content (not mock data)
 - Handle embedding service errors, retries, and rate limiting
-- Store embeddings in proper vector format in DuckDB
+- Store embeddings in proper vector format in SurrealDB
 - Batch embedding generation for efficiency
 
 ### Agent 4: Build Re-embedding Trigger System
@@ -66,7 +66,7 @@ Start with the data pipeline foundation and work our way up to user queries. Thi
 **Tasks:**
 - Replace mock `semantic_search()` with actual vector similarity search
 - Query embedding service for user query embeddings
-- Find similar documents using cosine similarity in DuckDB
+- Find similar documents using cosine similarity in SurrealDB
 - Return ranked results with real similarity scores
 
 ### Agent 6: Implement Metadata and Content Search

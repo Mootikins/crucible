@@ -6,7 +6,6 @@ use crate::interactive::{FuzzyPicker, SearchResultWithScore};
 use crate::output;
 use anyhow::{Context, Result};
 use std::fs;
-use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -232,36 +231,6 @@ pub fn is_binary_content(content: &[u8]) -> bool {
     false
 }
 
-/// Read first bytes of a file for binary detection
-fn read_file_sample(file_path: &str, sample_size: usize) -> Result<Vec<u8>> {
-    let mut file =
-        fs::File::open(file_path).with_context(|| format!("Failed to open file: {}", file_path))?;
-
-    let mut buffer = vec![0; sample_size];
-    let bytes_read = file
-        .read(&mut buffer)
-        .with_context(|| format!("Failed to read from file: {}", file_path))?;
-
-    buffer.truncate(bytes_read);
-    Ok(buffer)
-}
-
-/// Maximum file size to process (10MB)
-const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
-/// Maximum content length to keep in memory for search (1MB)
-const MAX_CONTENT_LENGTH: usize = 1024 * 1024;
-/// Maximum search query length (1000 characters)
-const MAX_QUERY_LENGTH: usize = 1000;
-/// Minimum meaningful search query length (2 characters)
-const MIN_QUERY_LENGTH: usize = 2;
-
-/// Validate and sanitize search query using secure validator
-fn validate_search_query(query: &str, validator: &PathValidator) -> Result<String> {
-    validator
-        .validate_search_query(query)
-        .map_err(|e| anyhow::anyhow!("Invalid search query: {}", e))
-}
-
 pub async fn execute(
     config: CliConfig,
     query: Option<String>,
@@ -474,50 +443,6 @@ fn find_kiln_path_for_file(file_path: &Path) -> Result<PathBuf> {
 
     // Strategy 2: Use current directory
     Ok(Path::new(".").to_path_buf())
-}
-
-/// Read file with UTF-8 error recovery, replacing invalid sequences
-fn read_file_with_utf8_recovery(file_path: &str) -> Result<String> {
-    // Perform binary detection first for recovery function as well
-    let file_sample = read_file_sample(file_path, BINARY_DETECTION_SAMPLE_SIZE)?;
-    if is_binary_content(&file_sample) {
-        return Err(anyhow::anyhow!(
-            "Binary file detected and skipped for safety: {}",
-            file_path
-        ));
-    }
-
-    let file =
-        fs::File::open(file_path).with_context(|| format!("Failed to open file: {}", file_path))?;
-    let mut reader = BufReader::new(file);
-
-    let mut content = String::new();
-    let mut buffer = [0; 8192]; // 8KB buffer
-    let mut bytes_read = 0usize;
-
-    loop {
-        let bytes_read_this_time = reader
-            .read(&mut buffer)
-            .with_context(|| format!("Failed to read from file: {}", file_path))?;
-
-        if bytes_read_this_time == 0 {
-            break; // EOF reached
-        }
-
-        bytes_read += bytes_read_this_time;
-
-        // Check memory limit - if we're about to exceed it, stop reading and truncate
-        if bytes_read > MAX_CONTENT_LENGTH {
-            // We've hit the memory limit, stop reading more content
-            break;
-        }
-
-        // Convert with UTF-8 error recovery
-        let chunk = String::from_utf8_lossy(&buffer[..bytes_read_this_time]);
-        content.push_str(&chunk);
-    }
-
-    Ok(content)
 }
 
 #[cfg(test)]
