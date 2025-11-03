@@ -12,10 +12,10 @@ path = "src/main.rs"
 
 [dependencies]
 crucible-core = { path = "../crucible-core" }
-crucible-tools = { path = "../crucible-tools" }
 crucible-surrealdb = { path = "../crucible-surrealdb" }
-crucible-llm = { path = "../crucible-llm" }
 crucible-config = { path = "../crucible-config", features = ["toml"] }
+crucible-llm = { path = "../crucible-llm" }
+crucible-tools = { path = "../crucible-tools" }
 
 # CLI framework
 clap = { workspace = true, features = ["derive", "env", "string"] }

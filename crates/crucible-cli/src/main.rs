@@ -1,10 +1,13 @@
 use anyhow::Result;
 use clap::Parser;
+use std::sync::Arc;
 
 use crucible_cli::{
     cli::{Cli, Commands},
     commands, config,
 };
+use crucible_core::CrucibleCore;
+use crucible_surrealdb::{SurrealClient, SurrealDbConfig};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,8 +20,18 @@ async fn main() -> Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::new(env_filter))
         .init();
 
-    // Load configuration
-    let config = config::CliConfig::load(cli.config, cli.embedding_url, cli.embedding_model)?;
+    // Load configuration with CLI overrides
+    let mut config = config::CliConfig::load(cli.config, cli.embedding_url, cli.embedding_model)?;
+
+    // Apply database path override if provided
+    if let Some(db_path) = cli.db_path {
+        config.custom_database_path = Some(db_path.into());
+    }
+
+    // Note: Storage/Core initialization moved to individual commands that need it.
+    // Creating it here caused database lock conflicts as multiple commands would
+    // try to open the same RocksDB file. Each command now creates its own client
+    // when needed, and the Arc-wrapped SurrealClient ensures cheap cloning.
 
     // Auto-start file watcher for background processing
     // Skip for interactive fuzzy picker (one-shot command, no benefit from background processing)
@@ -96,14 +109,27 @@ async fn main() -> Result<()> {
         // Commands::Agent(cmd) => commands::agent_management::execute(config, cmd).await?, // Temporarily disabled
         None => {
             // Default to REPL when no command is provided
-            commands::repl::execute(
-                config,
-                cli.db_path,
-                cli.tool_dir,
-                cli.format,
-                cli.non_interactive,
-            )
-            .await?
+            // Create storage only for REPL to avoid lock conflicts with other commands
+            let storage_config = SurrealDbConfig {
+                path: config.database_path_str()?,
+                namespace: "crucible".to_string(),
+                database: "kiln".to_string(),
+                max_connections: Some(10),
+                timeout_seconds: Some(30),
+            };
+
+            let storage = SurrealClient::new(storage_config)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to create storage: {}", e))?;
+
+            let core = Arc::new(
+                CrucibleCore::builder()
+                    .with_storage(storage)
+                    .build()
+                    .map_err(|e| anyhow::anyhow!("Failed to build CrucibleCore: {}", e))?
+            );
+
+            commands::repl::execute(core, config, cli.non_interactive).await?
         }
     }
 
