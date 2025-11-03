@@ -87,6 +87,44 @@ graph TD
 - **Integration Tests** (planned `crates/integration-tests`) spin up the core façade and exercise shared workflows.
 - **UI Tests** keep their own `tests::support` modules for presentation-specific helpers while relying on core fixtures for data.
 
+## REPL Implementation (Dependency Injection)
+
+The CLI REPL demonstrates the façade pattern in practice:
+
+### Architecture
+```
+┌──────────────┐
+│    REPL      │ - User interface (reedline editor)
+│              │ - Input parsing and command routing
+└──────┬───────┘
+       │ owns Arc<CrucibleCore>
+       ▼
+┌──────────────┐
+│CrucibleCore  │ - Storage façade (query, list_tables, get_stats)
+│   (Façade)   │ - Dependency injection via builder pattern
+└──────┬───────┘
+       │ owns dyn Storage trait
+       ▼
+┌──────────────┐
+│SurrealClient │ - Implements Storage trait
+│              │ - Database operations
+└──────────────┘
+```
+
+### Key Components
+- **REPL**: Thin presentation layer handling user input and output formatting
+- **ReplCompleter**: Autocompletion using `Arc<CrucibleCore>` for table introspection
+- **CrucibleCore**: Single point of database access through Storage trait
+- **SurrealClient**: Infrastructure implementation of Storage
+
+### Benefits
+1. **Testability**: REPL uses `Repl::new_test()` with in-memory storage
+2. **Portability**: Core can swap storage implementations via builder
+3. **Clean boundaries**: REPL never touches database directly
+4. **Autocompletion**: Completer shares Core instance for real-time table names
+
+This pattern eliminates the legacy `ReplDatabase` wrapper and demonstrates how all presentation layers (CLI, desktop, agents) should interact with Core through façades.
+
 ## Roadmap Alignment
 - Phase 2 establishes shared fixtures and per-crate support modules.
 - Phase 5 moves tooling/storage orchestration fully behind the core façade.
