@@ -248,7 +248,7 @@ impl ExistingTestKiln {
     }
 
     /// Get database statistics
-    pub async fn get_stats(&self) -> Result<kiln_integration::DatabaseStats> {
+    pub async fn get_stats(&self) -> Result<crucible_surrealdb::DatabaseStats> {
         get_database_stats(&self.client).await
     }
 }
