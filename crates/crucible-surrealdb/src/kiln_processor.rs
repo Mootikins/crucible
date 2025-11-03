@@ -45,7 +45,7 @@ pub async fn process_kiln_files(
     let mut failed_count = 0;
     let mut errors = Vec::new();
 
-    info!("Processing {} kiln files", files.len());
+    info!("🚀 Processing {} total kiln files", files.len());
     debug!("processing {} kiln files", files.len());
 
     // Filter to only accessible markdown files
@@ -54,7 +54,10 @@ pub async fn process_kiln_files(
         .filter(|f| f.is_markdown && f.is_accessible)
         .collect();
 
-    info!("Found {} markdown files to process", markdown_files.len());
+    info!("📚 Found {} markdown files to process", markdown_files.len());
+    for (i, file) in markdown_files.iter().enumerate() {
+        info!("  File {}: {}", i + 1, file.path.display());
+    }
     debug!("found {} markdown files to process", markdown_files.len());
 
     for (i, file) in files.iter().enumerate().take(5) {
@@ -249,12 +252,14 @@ pub async fn process_single_file_with_recovery(
 ) -> Result<bool> {
     let mut last_error = None;
 
+    info!("📝 Queuing file for processing: {}", file_info.path.display());
+
     for attempt in 0..=config.error_retry_attempts {
         match process_single_file_internal(file_info, client, embedding_pool, kiln_root).await {
             Ok(_) => {
                 if attempt > 0 {
                     info!(
-                        "File {} recovered after {} attempts",
+                        "🔄 File {} recovered after {} attempts",
                         file_info.path.display(),
                         attempt
                     );
@@ -264,7 +269,7 @@ pub async fn process_single_file_with_recovery(
             Err(e) => {
                 last_error = Some(anyhow::anyhow!("{}", e));
                 warn!(
-                    "Processing attempt {} failed for {}: {}",
+                    "⚠️  Processing attempt {} failed for {}: {}",
                     attempt + 1,
                     file_info.path.display(),
                     e
@@ -279,7 +284,7 @@ pub async fn process_single_file_with_recovery(
     }
 
     error!(
-        "Failed to process file {} after {} attempts: {}",
+        "❌ FAILED to process file {} after {} attempts: {}",
         file_info.path.display(),
         config.error_retry_attempts + 1,
         last_error.unwrap_or_else(|| anyhow!("Unknown error"))
@@ -527,19 +532,38 @@ async fn process_single_file_internal(
     embedding_pool: Option<&EmbeddingThreadPool>,
     kiln_root: &std::path::Path,
 ) -> Result<()> {
+    info!("🔄 Starting processing: {}", file_info.path.display());
+
     // Parse the file
-    let document = crate::kiln_scanner::parse_file_to_document(&file_info.path).await?;
+    debug!("  📄 Parsing file...");
+    let document = crate::kiln_scanner::parse_file_to_document(&file_info.path)
+        .await
+        .map_err(|e| {
+            error!("  ❌ Parse failed for {}: {}", file_info.path.display(), e);
+            e
+        })?;
+    debug!("  ✅ Parse complete");
 
     // Store the document
-    let doc_id = store_parsed_document(client, &document, kiln_root).await?;
+    debug!("  💾 Storing document...");
+    let doc_id = store_parsed_document(client, &document, kiln_root)
+        .await
+        .map_err(|e| {
+            error!("  ❌ Store failed for {}: {}", file_info.path.display(), e);
+            e
+        })?;
+    debug!("  ✅ Document stored with ID: {}", doc_id);
 
     // Create relationships
+    debug!("  🔗 Creating relationships...");
     create_wikilink_edges(client, &doc_id, &document).await?;
     create_embed_relationships(client, &doc_id, &document).await?;
     create_tag_associations(client, &doc_id, &document).await?;
+    debug!("  ✅ Relationships created");
 
     // Process embeddings if available
     if let Some(pool) = embedding_pool {
+        debug!("  🧮 Generating embeddings...");
         // Use KilnPipelineConnector to process embeddings
         let connector = crate::kiln_pipeline_connector::KilnPipelineConnector::new(
             pool.clone(),
@@ -551,22 +575,25 @@ async fn process_single_file_internal(
         {
             Ok(result) => {
                 info!(
-                    "Generated {} embeddings for document {} in {:?}",
+                    "  ✅ Generated {} embeddings for {} in {:?}",
                     result.embeddings_generated, doc_id, result.processing_time
                 );
             }
             Err(e) => {
-                error!("Failed to generate embeddings for {}: {}", doc_id, e);
+                error!("  ❌ Embedding generation failed for {}: {}", doc_id, e);
                 // Don't fail the entire processing if embeddings fail
                 // Just log the error and continue
             }
         }
+    } else {
+        debug!("  ⏭️  Skipping embeddings (no pool available)");
     }
 
     // Update processed timestamp
+    debug!("  ⏰ Updating timestamp...");
     update_document_processed_timestamp(client, &doc_id).await?;
 
-    debug!("Successfully processed file: {}", file_info.path.display());
+    info!("✅ Successfully completed: {}", file_info.path.display());
 
     Ok(())
 }
