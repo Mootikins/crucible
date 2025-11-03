@@ -9,6 +9,8 @@ pub mod parser;
 pub mod properties;
 pub mod sink;
 pub mod test_support;
+pub mod traits;
+pub mod types;
 // pub mod task_router; // Temporarily disabled due to compilation issues
 
 pub use agent::{
@@ -20,6 +22,20 @@ pub use config::{
     PerformanceConfig, ServiceConfig, ServiceDatabaseConfig,
 };
 pub use crucible_core::CrucibleCore;
+// Note: CrucibleCoreConfig is deprecated - use CrucibleCore::builder() instead
+
+// Re-export core traits (abstractions for Dependency Inversion)
+pub use traits::{
+    AgentProvider, MarkdownParser, Storage, ToolExecutor,
+};
+
+// Re-export key types used across module boundaries
+pub use types::{
+    // Storage trait types (from traits/storage.rs)
+    // Note: Parser types (ParsedDocument, Wikilink, Tag, etc.) are exported from parser:: module below
+    ExecutionContext, ToolDefinition, ToolExample,
+};
+
 pub use database::{
     AggregateFunction,
     AggregateQuery,
@@ -93,8 +109,9 @@ pub use database::{
 };
 pub use document::{DocumentNode, ViewportState};
 pub use parser::{
-    CodeBlock, DocumentContent, Frontmatter, FrontmatterFormat, Heading, MarkdownParser,
+    CodeBlock, DocumentContent, Frontmatter, FrontmatterFormat, Heading,
     ParsedDocument, ParserCapabilities, ParserError, ParserResult, Tag, Wikilink,
+    // Note: MarkdownParser trait is exported from traits:: module above
 };
 pub use properties::{PropertyMap, PropertyValue};
 pub use sink::{
@@ -117,6 +134,9 @@ pub enum CrucibleError {
 
     #[error("CRDT error: {0}")]
     CrdtError(String),
+
+    #[error("Database error: {0}")]
+    DatabaseError(String),
 }
 
 pub type Result<T> = std::result::Result<T, CrucibleError>;
