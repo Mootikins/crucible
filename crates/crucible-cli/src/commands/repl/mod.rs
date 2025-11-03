@@ -28,11 +28,13 @@ use reedline::{DefaultPrompt, DefaultPromptSegment, Reedline, Signal};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{oneshot, watch};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
+
+use crucible_core::CrucibleCore;
+use crucible_surrealdb::{SurrealClient, SurrealDbConfig};
 
 pub mod command;
 pub mod completer;
-pub mod database;
 pub mod error;
 pub mod formatter;
 pub mod highlighter;
@@ -45,7 +47,6 @@ use tools::UnifiedToolRegistry;
 
 use command::Command;
 use completer::ReplCompleter;
-use database::ReplDatabase;
 use error::ReplError;
 use formatter::{CsvFormatter, JsonFormatter, OutputFormatter, TableFormatter};
 use highlighter::SurrealQLHighlighter;
@@ -58,16 +59,16 @@ pub use input::Input as ReplInput;
 
 /// REPL state and configuration
 pub struct Repl {
+    /// Core coordinator (owns database client)
+    core: Arc<CrucibleCore>,
+
     /// Line editor with history and completion
     editor: Reedline,
-
-    /// Database connection using SurrealDB
-    db: ReplDatabase,
 
     /// Tool registry for `:run` commands
     tools: Arc<UnifiedToolRegistry>,
 
-    /// Configuration
+    /// Configuration (for UI settings like history file, format)
     config: ReplConfig,
 
     /// Current output formatter
@@ -89,37 +90,19 @@ pub struct Repl {
 impl Repl {
     /// Create a new REPL instance
     pub async fn new(
+        core: Arc<CrucibleCore>,
         cli_config: &CliConfig,
-        db_path: Option<String>,
-        tool_dir: Option<String>,
-        format: String,
     ) -> Result<Self> {
-        info!("Initializing REPL");
+        info!("Initializing REPL with Core");
 
-        // Create REPL config from CLI config
-        let config = ReplConfig::from_cli_config(cli_config, db_path, tool_dir, format)?;
+        // Create simple REPL config (just UI settings, no DB path)
+        let config = ReplConfig::from_cli_config(cli_config)?;
 
         // Create line editor with history and completion
         let history = CommandHistory::new(config.history_file.clone())?;
 
-        // Setup editor with custom highlighter and completer
+        // Setup editor with custom highlighter
         let highlighter = SurrealQLHighlighter::new();
-
-        // Create real database connection
-        let db_path = config.db_path.to_string_lossy().to_string();
-        let db = match ReplDatabase::new(&db_path).await {
-            Ok(db) => {
-                info!("Connected to database at: {}", db_path);
-                db
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to connect to database at {}: {}, falling back to in-memory",
-                    db_path, e
-                );
-                ReplDatabase::new_memory().await?
-            }
-        };
 
         // Initialize unified tool registry
         let tool_dir = config.tool_dir.clone();
@@ -128,7 +111,9 @@ impl Repl {
         info!("Initialized unified tool registry");
 
         let tools_arc = Arc::new(tools);
-        let completer = ReplCompleter::new(db.clone(), tools_arc.clone());
+
+        // Create completer with Core and tools
+        let completer = ReplCompleter::new(core.clone(), tools_arc.clone());
 
         let editor = Reedline::create()
             .with_highlighter(Box::new(highlighter))
@@ -146,8 +131,8 @@ impl Repl {
         let (shutdown_tx, _) = watch::channel(false);
 
         Ok(Self {
+            core,
             editor,
-            db,
             tools: tools_arc,
             config,
             formatter,
@@ -349,9 +334,19 @@ impl Repl {
         self.current_query_cancel = Some(cancel_tx);
 
         // Spawn query in background
-        let db = self.db.clone();
+        let core = self.core.clone();
         let query = query.to_string();
-        let query_task = tokio::spawn(async move { db.query(&query).await });
+        let query_task = tokio::spawn(async move {
+            // Use Core façade method
+            core.query(&query)
+                .await
+                .map(|rows| crate::commands::repl::formatter::QueryResult {
+                    rows,
+                    duration: std::time::Duration::from_millis(0),
+                    affected_rows: None,
+                    status: crate::commands::repl::formatter::QueryStatus::Success,
+                })
+        });
 
         // Tick progress bar in background
         let pb_clone = pb.clone();
@@ -602,7 +597,7 @@ impl Repl {
         println!("  Max column width: {}", self.config.max_column_width);
 
         // Show database statistics
-        match self.db.get_stats().await {
+        match self.core.get_stats().await {
             Ok(stats) => {
                 println!("  Database stats:");
                 for (key, value) in stats {
@@ -752,11 +747,12 @@ impl Repl {
         &self.tools
     }
 
-    /// Get access to the database (for testing)
+    /// Get access to the Core (for testing)
     ///
     /// This allows tests to verify database state or perform queries directly.
-    pub fn get_database(&self) -> &ReplDatabase {
-        &self.db
+    /// The Core is the primary interface for all UI/UX interactions.
+    pub fn get_core(&self) -> &Arc<CrucibleCore> {
+        &self.core
     }
 
     /// Get the current statistics (for testing)
@@ -776,9 +772,40 @@ impl Repl {
         let config_dir = std::env::temp_dir().join("crucible_test");
         std::fs::create_dir_all(&config_dir)?;
 
+        // Use the examples/test-kiln directory as the test kiln
+        let test_kiln_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/test-kiln");
+
+        // Create storage with in-memory database
+        let storage_config = SurrealDbConfig {
+            path: ":memory:".to_string(),
+            namespace: "crucible".to_string(),
+            database: "test".to_string(),
+            max_connections: Some(10),
+            timeout_seconds: Some(30),
+        };
+        let storage = SurrealClient::new(storage_config).await
+            .map_err(|e| anyhow::anyhow!("Failed to create test storage: {}", e))?;
+
+        // Initialize kiln schema
+        crucible_surrealdb::kiln_integration::initialize_kiln_schema(&storage).await
+            .map_err(|e| anyhow::anyhow!("Failed to initialize kiln schema: {}", e))?;
+
+        // Populate database with test-kiln data
+        Self::populate_test_data(&storage, &test_kiln_path).await?;
+
+        // Build Core with builder pattern
+        let core = Arc::new(
+            CrucibleCore::builder()
+                .with_storage(storage)
+                .build()
+                .map_err(|e| anyhow::anyhow!(e))?
+        );
+
+        // Create minimal REPL state
         let config = ReplConfig {
-            kiln_path: config_dir.clone(),
-            db_path: config_dir.join("test.db"),
+            kiln_path: test_kiln_path,
+            db_path: std::path::PathBuf::new(), // Unused now
             history_file: config_dir.join("history"),
             tool_dir: config_dir.join("tools"),
             default_format: "table".to_string(),
@@ -788,9 +815,10 @@ impl Repl {
 
         let history = CommandHistory::new(config.history_file.clone())?;
         let highlighter = SurrealQLHighlighter::new();
-        let db = ReplDatabase::new_memory().await?;
         let tools = Arc::new(UnifiedToolRegistry::new(config.tool_dir.clone()).await?);
-        let completer = ReplCompleter::new(db.clone(), tools.clone());
+
+        // Create completer with Core and tools
+        let completer = ReplCompleter::new(core.clone(), tools.clone());
 
         let editor = Reedline::create()
             .with_highlighter(Box::new(highlighter))
@@ -801,8 +829,8 @@ impl Repl {
         let (shutdown_tx, _) = watch::channel(false);
 
         Ok(Self {
+            core,
             editor,
-            db,
             tools,
             config,
             formatter,
@@ -812,7 +840,45 @@ impl Repl {
             stats: ReplStats::default(),
         })
     }
+
+    /// Populate test database with data from test-kiln directory
+    async fn populate_test_data(storage: &SurrealClient, kiln_path: &std::path::Path) -> Result<()> {
+        use crucible_surrealdb::kiln_integration::store_parsed_document;
+        use crucible_core::ParsedDocument;
+
+        // Scan for markdown files in test-kiln
+        let mut files = Vec::new();
+        if kiln_path.exists() {
+            for entry in std::fs::read_dir(kiln_path)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.extension().map_or(false, |ext| ext == "md") {
+                    files.push(path);
+                }
+            }
+        }
+
+        // Process each file
+        for file_path in files {
+            let content = std::fs::read_to_string(&file_path)?;
+
+            // Create parsed document
+            let mut doc = ParsedDocument::new(file_path.clone());
+            doc.content.plain_text = content.clone();
+            doc.parsed_at = chrono::Utc::now();
+            doc.content_hash = format!("hash_{}", file_path.file_name().unwrap().to_str().unwrap());
+            doc.file_size = content.len() as u64;
+
+            // Store document in database
+            store_parsed_document(storage, &doc, kiln_path).await
+                .map_err(|e| anyhow::anyhow!("Failed to store document {:?}: {}", file_path, e))?;
+        }
+
+        Ok(())
+    }
+
 }
+
 
 /// REPL configuration
 #[derive(Debug, Clone)]
@@ -829,13 +895,10 @@ pub struct ReplConfig {
 impl ReplConfig {
     /// Create ReplConfig from CLI config
     ///
-    /// This method is exposed as `pub(crate)` to enable test setup
-    /// with custom configurations.
+    /// This creates a minimal config with just UI settings (history, format, etc.).
+    /// Database path is no longer needed here - Core owns the database.
     pub(crate) fn from_cli_config(
         cli_config: &crate::config::CliConfig,
-        db_path: Option<String>,
-        tool_dir: Option<String>,
-        format: String,
     ) -> Result<Self> {
         let kiln_path = cli_config.kiln.path.clone();
         let config_dir = dirs::home_dir()
@@ -844,14 +907,10 @@ impl ReplConfig {
 
         Ok(Self {
             kiln_path,
-            db_path: db_path
-                .map(|p| p.into())
-                .unwrap_or_else(|| config_dir.join("kiln.db")),
+            db_path: std::path::PathBuf::new(), // Unused - Core owns DB
             history_file: config_dir.join("repl_history"),
-            tool_dir: tool_dir
-                .map(|p| p.into())
-                .unwrap_or_else(|| config_dir.join("tools")),
-            default_format: format,
+            tool_dir: cli_config.tools_path(),
+            default_format: "table".to_string(),
             query_timeout_secs: 300,
             max_column_width: 50,
         })
@@ -987,13 +1046,11 @@ fn format_tool_schema(schema: &tools::ToolSchema) -> String {
 
 /// Main entry point for REPL command
 pub async fn execute(
+    core: Arc<CrucibleCore>,
     cli_config: crate::config::CliConfig,
-    db_path: Option<String>,
-    tool_dir: Option<String>,
-    format: String,
     non_interactive: bool,
 ) -> Result<()> {
-    let mut repl = Repl::new(&cli_config, db_path, tool_dir, format).await?;
+    let mut repl = Repl::new(core, &cli_config).await?;
 
     if non_interactive {
         repl.run_non_interactive().await

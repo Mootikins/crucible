@@ -125,7 +125,7 @@ pub async fn execute(
 
     std::thread::spawn(move || {
         // Block and wait for new injectors (sent when Event::Restart occurs)
-        while let Ok(mut injector) = observer.recv() {
+        while let Ok(injector) = observer.recv() {
             // Get current mode (locked briefly to read)
             let mode = *mode_for_thread.lock().unwrap();
 

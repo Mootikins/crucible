@@ -585,7 +585,11 @@ impl CliConfig {
         if let Some(custom_path) = &self.custom_database_path {
             custom_path.clone()
         } else {
-            self.kiln.path.join(".crucible/kiln.db")
+            // Use process ID to ensure unique database paths for parallel tests
+            // This prevents RocksDB lock collisions when tests run concurrently
+            let pid = std::process::id();
+            let db_name = format!("kiln-{}.db", pid);
+            self.kiln.path.join(".crucible").join(db_name)
         }
     }
 
@@ -1279,14 +1283,24 @@ mod tests {
         // Use builder to create config with explicit kiln path
         let config = CliConfig::builder().kiln_path(&kiln_path).build().unwrap();
 
-        let expected_db = kiln_path.join(".crucible/kiln.db");
+        // Database path now includes PID to prevent lock conflicts
+        let db_path = config.database_path();
+        let db_parent = db_path.parent().unwrap();
+        let db_filename = db_path.file_name().unwrap().to_str().unwrap();
 
         // The config should use the path we set via builder
         assert_eq!(
             &config.kiln.path, &kiln_path,
             "Config kiln path should match builder"
         );
-        assert_eq!(config.database_path(), expected_db);
+
+        // Verify the database path structure
+        assert_eq!(db_parent, kiln_path.join(".crucible"));
+        assert!(
+            db_filename.starts_with("kiln-") && db_filename.ends_with(".db"),
+            "Database filename should be kiln-{{pid}}.db, got: {}",
+            db_filename
+        );
     }
 
     #[test]
