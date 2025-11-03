@@ -308,28 +308,6 @@ let core = CrucibleCore::builder()
     .build()?;
 ```
 
-## Migration Guide
-
-### Old Pattern (Deprecated)
-
-```rust
-// ❌ Old way - Core creates its own dependencies
-let core_config = CrucibleCoreConfig {
-    database_path: "./data/crucible.db".to_string(),
-};
-let core = CrucibleCore::new(core_config).await?;
-```
-
-### New Pattern (Current)
-
-```rust
-// ✅ New way - Inject dependencies via builder
-let storage = SurrealClient::new(storage_config).await?;
-let core = CrucibleCore::builder()
-    .with_storage(storage)
-    .build()?;
-```
-
 ## Testing
 
 All DI patterns are tested:
