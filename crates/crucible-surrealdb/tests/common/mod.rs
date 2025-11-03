@@ -5,9 +5,10 @@
 
 use chrono::Utc;
 use crucible_core::parser::{DocumentContent, Frontmatter, FrontmatterFormat, ParsedDocument};
-use crucible_core::QueryResult;
+use crucible_core::CrucibleCore;
 use crucible_surrealdb::{kiln_integration, SurrealClient};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Setup a test client with initialized schema
 ///
@@ -23,6 +24,27 @@ pub async fn setup_test_client() -> (SurrealClient, PathBuf) {
     let kiln_root = PathBuf::from("/test/kiln");
 
     (client, kiln_root)
+}
+
+/// Create a test Core instance with in-memory storage
+///
+/// Returns (Arc<CrucibleCore>, kiln_root_path)
+pub async fn setup_test_core() -> (Arc<CrucibleCore>, PathBuf) {
+    let client = SurrealClient::new_memory()
+        .await
+        .expect("Failed to create in-memory client");
+
+    let _ = kiln_integration::initialize_kiln_schema(&client).await;
+
+    let core = Arc::new(
+        CrucibleCore::builder()
+            .with_storage(client)
+            .build()
+            .expect("Failed to build core")
+    );
+
+    let kiln_root = PathBuf::from("/test/kiln");
+    (core, kiln_root)
 }
 
 /// Create a test note with given path and content
@@ -173,7 +195,7 @@ pub async fn count_query_results(
 }
 
 /// Extract paths from query result
-pub fn extract_paths(result: &QueryResult) -> Vec<String> {
+pub fn extract_paths(result: &crucible_surrealdb::QueryResult) -> Vec<String> {
     result.records.iter()
         .filter_map(|r| r.data.get("path"))
         .filter_map(|v| v.as_str())
@@ -182,7 +204,7 @@ pub fn extract_paths(result: &QueryResult) -> Vec<String> {
 }
 
 /// Count query results
-pub fn count_results(result: &QueryResult) -> usize {
+pub fn count_results(result: &crucible_surrealdb::QueryResult) -> usize {
     result.records.len()
 }
 
@@ -262,6 +284,17 @@ mod tests {
         // Verify we can query
         let result = client.query("SELECT * FROM notes", &[]).await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_setup_test_core() {
+        let (core, kiln_root) = setup_test_core().await;
+        assert_eq!(kiln_root, PathBuf::from("/test/kiln"));
+
+        // Verify we can query through Core
+        let result = core.query("SELECT * FROM notes").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0);
     }
 
     #[tokio::test]

@@ -389,16 +389,23 @@ fn test_path_derivation() -> Result<()> {
     // Use builder to create config with explicit kiln path
     let config = CliConfig::builder().kiln_path(&kiln_path).build()?;
 
-    // Test database path derivation
-    let expected_db = kiln_path.join(".crucible/kiln.db");
-    assert_eq!(config.database_path(), expected_db);
+    // Test database path derivation (now includes PID to prevent lock conflicts)
+    let db_path = config.database_path();
+    let db_parent = db_path.parent().unwrap();
+    let db_filename = db_path.file_name().unwrap().to_str().unwrap();
+    assert_eq!(db_parent, kiln_path.join(".crucible"));
+    assert!(
+        db_filename.starts_with("kiln-") && db_filename.ends_with(".db"),
+        "Database filename should be kiln-{{pid}}.db, got: {}",
+        db_filename
+    );
 
     // Test tools path derivation
     let expected_tools = kiln_path.join("tools");
     assert_eq!(config.tools_path(), expected_tools);
 
     // Test string conversions
-    assert_eq!(config.database_path_str()?, expected_db.to_str().unwrap());
+    assert!(config.database_path_str()?.contains(".crucible/kiln-"));
     assert_eq!(config.kiln_path_str()?, kiln_path.to_str().unwrap());
 
     Ok(())

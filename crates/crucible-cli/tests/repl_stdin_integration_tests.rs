@@ -279,20 +279,20 @@ async fn test_execute_multiple_queries() -> Result<()> {
 async fn test_query_returns_sample_data() -> Result<()> {
     let repl = Repl::new_test().await?;
 
-    // Execute query directly on database
-    let db = repl.get_database();
-    let result = db.query("SELECT * FROM notes").await;
+    // Execute query directly on core
+    let core = repl.get_core();
+    let result = core.query("SELECT * FROM notes").await;
 
     assert!(result.is_ok(), "Query should succeed");
 
     let query_result = result.unwrap();
     assert!(
-        !query_result.rows.is_empty(),
+        !query_result.is_empty(),
         "Should have sample data in notes table"
     );
 
     // Verify sample data structure
-    let first_row = &query_result.rows[0];
+    let first_row = &query_result[0];
     assert!(
         first_row.contains_key("title") || first_row.contains_key("id"),
         "Rows should have expected fields"
@@ -551,10 +551,10 @@ async fn test_mixed_command_and_query_execution() -> Result<()> {
 #[tokio::test]
 async fn test_database_table_listing() -> Result<()> {
     let repl = Repl::new_test().await?;
-    let db = repl.get_database();
+    let core = repl.get_core();
 
     // List tables
-    let tables = db.list_tables().await?;
+    let tables = core.list_tables().await.map_err(|e| anyhow::anyhow!(e))?;
 
     // Should return a table list (may be empty for in-memory DB)
     // In-memory DB may not expose tables until they have data
@@ -569,10 +569,10 @@ async fn test_database_table_listing() -> Result<()> {
 #[tokio::test]
 async fn test_database_stats_retrieval() -> Result<()> {
     let repl = Repl::new_test().await?;
-    let db = repl.get_database();
+    let core = repl.get_core();
 
     // Get database stats
-    let stats = db.get_stats().await?;
+    let stats = core.get_stats().await.map_err(|e| anyhow::anyhow!(e))?;
 
     // Should have some metadata
     assert!(!stats.is_empty(), "Database stats should not be empty");
@@ -587,10 +587,10 @@ async fn test_database_stats_retrieval() -> Result<()> {
 #[tokio::test]
 async fn test_database_direct_query() -> Result<()> {
     let repl = Repl::new_test().await?;
-    let db = repl.get_database();
+    let core = repl.get_core();
 
     // Execute query directly
-    let result = db.query("SELECT * FROM notes").await;
+    let result = core.query("SELECT * FROM notes").await;
 
     assert!(result.is_ok(), "Direct database query should succeed");
 

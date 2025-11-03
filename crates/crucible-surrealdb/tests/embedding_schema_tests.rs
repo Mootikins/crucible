@@ -10,8 +10,8 @@
 
 use chrono::Utc;
 use crucible_surrealdb::{
-    Document, EmbeddingData, EmbeddingMetadata, InMemoryKilnStore, KilnStore, SearchFilters,
-    SearchQuery, SurrealEmbeddingDatabase,
+    EmbeddingData, EmbeddingDocument, EmbeddingMetadata, InMemoryKilnStore, KilnStore,
+    SearchFilters, SearchQuery, SurrealEmbeddingDatabase,
 };
 use std::collections::HashMap;
 use tempfile::TempDir;
@@ -51,9 +51,9 @@ fn create_test_metadata(file_path: &str, model: &str) -> EmbeddingMetadata {
     }
 }
 
-/// Test helper to create a Document with embedding
-fn create_test_document(file_path: &str, content: &str, model: &str) -> Document {
-    Document {
+/// Test helper to create an EmbeddingDocument with embedding
+fn create_test_document(file_path: &str, content: &str, model: &str) -> EmbeddingDocument {
+    EmbeddingDocument {
         id: format!("doc:{}", file_path.replace("/", "_")),
         file_path: file_path.to_string(),
         title: Some(format!("Test Document: {}", file_path)),
@@ -384,18 +384,19 @@ async fn test_embedding_workflow_integration() {
     // Test 3: Search with filters workflow
     println!("Testing advanced search with filters...");
 
+    let search_filters = SearchFilters {
+        tags: Some(vec!["embedding".to_string()]),
+        folder: Some("test".to_string()),
+        properties: Some({
+            let mut props = HashMap::new();
+            props.insert("model".to_string(), serde_json::json!("model-v2"));
+            props
+        }),
+    };
+
     let search_query = SearchQuery {
         query: "batch".to_string(),
-        filters: Some(SearchFilters {
-            tags: Some(vec!["embedding".to_string()]),
-            folder: Some("test".to_string()),
-            properties: Some({
-                let mut props = HashMap::new();
-                props.insert("model".to_string(), serde_json::json!("model-v2"));
-                props
-            }),
-            date_range: None,
-        }),
+        filters: Some(serde_json::to_value(&search_filters).expect("Should serialize filters")),
         limit: Some(10),
         offset: None,
     };
@@ -474,7 +475,7 @@ async fn test_embedding_performance_characteristics() {
 
     let start_time = std::time::Instant::now();
 
-    let large_batch: Vec<Document> = (0..100)
+    let large_batch: Vec<EmbeddingDocument> = (0..100)
         .map(|i| {
             create_test_document(
                 &format!("perf_doc_{}.md", i),
@@ -663,7 +664,7 @@ async fn test_embedding_error_handling() {
     ];
 
     // Add a document with potentially problematic data
-    mixed_docs.push(Document {
+    mixed_docs.push(EmbeddingDocument {
         id: "problematic".to_string(),
         file_path: "".to_string(), // Empty path
         title: None,

@@ -89,17 +89,17 @@ async fn test_execute_specific_command() {
 async fn test_database_access() {
     let repl = Repl::new_test().await.unwrap();
 
-    // Access the database
-    let db = repl.get_database();
+    // Access the core
+    let core = repl.get_core();
 
-    // Execute a query directly on the database
-    let result = db.query("SELECT * FROM notes").await;
+    // Execute a query directly on the core
+    let result = core.query("SELECT * FROM notes").await;
     assert!(result.is_ok(), "Failed to query database");
 
     let query_result = result.unwrap();
     // The test database has sample data pre-populated
     assert!(
-        !query_result.rows.is_empty(),
+        !query_result.is_empty(),
         "Expected sample data in database"
     );
 }
@@ -200,10 +200,10 @@ async fn test_empty_lines_ignored() {
 #[tokio::test]
 async fn test_database_table_listing() {
     let repl = Repl::new_test().await.unwrap();
-    let db = repl.get_database();
+    let core = repl.get_core();
 
     // List tables
-    let tables = db.list_tables().await;
+    let tables = core.list_tables().await;
     assert!(tables.is_ok(), "Failed to list tables");
 
     let tables = tables.unwrap();
@@ -221,10 +221,10 @@ async fn test_database_table_listing() {
 #[tokio::test]
 async fn test_database_stats() {
     let repl = Repl::new_test().await.unwrap();
-    let db = repl.get_database();
+    let core = repl.get_core();
 
     // Get database stats
-    let stats = db.get_stats().await;
+    let stats = core.get_stats().await;
     assert!(stats.is_ok(), "Failed to get database stats");
 
     let stats = stats.unwrap();

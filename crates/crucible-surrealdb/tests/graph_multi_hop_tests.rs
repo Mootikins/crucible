@@ -12,7 +12,6 @@
 
 mod common;
 use common::*;
-use crucible_core::QueryResult;
 
 /// Helper to unwrap SurrealDB "Object" wrapper: {"Object": {...}} -> {...}
 fn unwrap_object(val: &serde_json::Value) -> Option<&serde_json::Map<String, serde_json::Value>> {
@@ -50,7 +49,7 @@ fn unwrap_array(val: &serde_json::Value) -> Option<&Vec<serde_json::Value>> {
 /// Graph traversal returns structure like: ->wikilink -> ->notes -> path
 /// For depth N, there will be N levels of ->wikilink->notes nesting
 /// Each level is wrapped in {"Object": {...}} by SurrealDB serialization
-fn extract_graph_paths(result: &QueryResult, depth: usize) -> Vec<String> {
+fn extract_graph_paths(result: &crucible_surrealdb::QueryResult, depth: usize) -> Vec<String> {
     use serde_json::Value;
 
     let mut paths = Vec::new();
@@ -130,7 +129,7 @@ fn extract_graph_paths(result: &QueryResult, depth: usize) -> Vec<String> {
 ///
 /// Backlink traversal uses <-wikilink<-notes syntax (incoming direction)
 /// Structure is similar to forward traversal but with <- prefix
-fn extract_backlink_paths(result: &QueryResult, depth: usize) -> Vec<String> {
+fn extract_backlink_paths(result: &crucible_surrealdb::QueryResult, depth: usize) -> Vec<String> {
     use serde_json::Value;
 
     let mut paths = Vec::new();

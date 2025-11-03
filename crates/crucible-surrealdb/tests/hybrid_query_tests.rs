@@ -60,7 +60,7 @@ async fn setup_complex_graph(
 }
 
 /// Helper to extract nested path from a record field (handles SurrealDB Object wrapping)
-fn extract_nested_path(record: &crucible_core::Record, field_name: &str) -> Option<String> {
+fn extract_nested_path(record: &crucible_surrealdb::Record, field_name: &str) -> Option<String> {
     let val = record.data.get(field_name)?;
     let obj = val.get("Object")?.as_object()?;
     let path_val = obj.get("path")?;
