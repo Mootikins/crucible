@@ -22,7 +22,6 @@ pub use config::{
     PerformanceConfig, ServiceConfig, ServiceDatabaseConfig,
 };
 pub use crucible_core::CrucibleCore;
-// Note: CrucibleCoreConfig is deprecated - use CrucibleCore::builder() instead
 
 // Re-export core traits (abstractions for Dependency Inversion)
 pub use traits::{

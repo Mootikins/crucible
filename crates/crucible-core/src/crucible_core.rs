@@ -27,21 +27,6 @@ use std::sync::Arc;
 
 use crate::traits::{MarkdownParser, Storage, ToolExecutor};
 
-/// Configuration for CrucibleCore initialization
-///
-/// DEPRECATED: Use CrucibleCoreBuilder instead.
-/// This config was used with the old `new()` constructor which created concrete implementations.
-/// The new builder pattern accepts trait objects directly.
-#[derive(Debug, Clone)]
-#[deprecated(
-    since = "0.2.0",
-    note = "Use CrucibleCore::builder() instead of new(config)"
-)]
-pub struct CrucibleCoreConfig {
-    /// Path to the database (file path or `:memory:` for in-memory)
-    pub database_path: String,
-}
-
 /// Central coordinator for Crucible - Orchestrates operations through trait abstractions
 ///
 /// Core is the single dependency for all frontends (CLI, REPL, Desktop).
@@ -83,34 +68,6 @@ impl CrucibleCore {
     /// ```
     pub fn builder() -> CrucibleCoreBuilder {
         CrucibleCoreBuilder::new()
-    }
-
-    /// Create a new CrucibleCore instance from configuration
-    ///
-    /// DEPRECATED: This method creates concrete implementations internally,
-    /// violating dependency inversion. Use `CrucibleCore::builder()` instead.
-    ///
-    /// # Migration
-    /// ```ignore
-    /// // Old way (creates SurrealClient internally):
-    /// let core = CrucibleCore::new(config).await?;
-    ///
-    /// // New way (inject dependencies):
-    /// let storage = SurrealClient::new(surreal_config).await?;
-    /// let core = CrucibleCore::builder()
-    ///     .with_storage(storage)
-    ///     .build()?;
-    /// ```
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use CrucibleCore::builder() to inject dependencies instead of creating them internally"
-    )]
-    pub async fn new(_config: CrucibleCoreConfig) -> Result<Self, String> {
-        Err(
-            "CrucibleCore::new() is deprecated. Use CrucibleCore::builder() instead. \
-             See documentation for migration guide."
-                .to_string(),
-        )
     }
 
     /// Execute a raw query
