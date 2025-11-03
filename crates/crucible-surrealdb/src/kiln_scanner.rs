@@ -18,7 +18,7 @@ use walkdir::{DirEntry, WalkDir};
 use crate::embedding_pool::EmbeddingThreadPool;
 use crate::kiln_integration::*;
 use crate::SurrealClient;
-use crucible_core::parser::ParsedDocument;
+use crucible_core::types::ParsedDocument;
 
 /// Configuration for kiln scanning operations
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -243,6 +243,8 @@ pub enum KilnScannerErrorType {
 }
 
 /// Main kiln scanner implementation
+///
+/// **Note**: Clone is now cheap as SurrealClient uses Arc internally
 #[derive(Debug, Clone)]
 pub struct KilnScanner {
     config: KilnScannerConfig,
@@ -747,8 +749,7 @@ impl KilnScanner {
 
 /// Parse a file to ParsedDocument
 pub async fn parse_file_to_document(file_path: &Path) -> Result<ParsedDocument> {
-    use crucible_core::parser::MarkdownParser;
-    use crucible_core::parser::PulldownParser;
+    use crucible_core::parser::{MarkdownParser, PulldownParser};
 
     let parser = PulldownParser::new();
     let document = parser.parse_file(file_path).await?;

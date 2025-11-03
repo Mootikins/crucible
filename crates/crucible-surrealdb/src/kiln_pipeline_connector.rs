@@ -23,7 +23,7 @@ use tracing::{debug, error, info, warn};
 use crate::embedding_pool::{EmbeddingSignature, EmbeddingThreadPool};
 use crate::kiln_scanner::KilnScanResult;
 use crate::SurrealClient;
-use crucible_core::parser::ParsedDocument;
+use crucible_core::types::ParsedDocument;
 
 /// Configuration for kiln pipeline connector
 #[derive(Debug, Clone)]
