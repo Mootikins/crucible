@@ -115,7 +115,7 @@ pub async fn execute(
     let mut picker: Picker<String, _> = options.picker(StrRenderer);
 
     // Get injector observer to watch for restart events
-    let observer = picker.injector_observer(true);
+    let observer = picker.injector_observer(false);
 
     // Spawn background thread to handle mode changes and re-filtering
     // This thread watches for restart events and re-filters files based on current mode
