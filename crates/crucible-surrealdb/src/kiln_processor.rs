@@ -18,6 +18,8 @@ use crate::kiln_integration::*;
 use crate::kiln_scanner::{
     KilnFileInfo, KilnProcessError, KilnProcessResult, KilnScannerConfig, KilnScannerErrorType,
 };
+use crate::simple_integration;
+use crate::transaction_queue::{TransactionQueue, TransactionQueueConfig};
 use crate::SurrealClient;
 use crucible_core::types::ParsedDocument;
 
@@ -170,6 +172,88 @@ pub async fn process_kiln_files(
         total_processing_time,
         average_processing_time_per_document: avg_time_per_doc,
     })
+}
+
+/// Queue-based processing: Process a collection of kiln files using simple queue operations
+///
+/// This replaces direct database calls with our simple integration layer to eliminate
+/// RocksDB lock contention while maintaining the same functionality.
+pub async fn process_kiln_files_with_queue(
+    files: &[KilnFileInfo],
+    client: &Arc<SurrealClient>,
+    queue: &TransactionQueue,
+    config: &KilnScannerConfig,
+    kiln_root: &std::path::Path,
+) -> Result<KilnProcessResult> {
+    let start_time = std::time::Instant::now();
+    let mut processed_count = 0;
+    let mut failed_count = 0;
+
+    info!("🚀 Processing {} total kiln files with queue", files.len());
+
+    // Filter to only accessible markdown files
+    let markdown_files: Vec<&KilnFileInfo> = files
+        .iter()
+        .filter(|f| f.is_markdown && f.is_accessible)
+        .collect();
+
+    info!("📚 Found {} markdown files to queue", markdown_files.len());
+
+    // Convert file paths to Path references for queue processing
+    let file_paths: Vec<&std::path::Path> = markdown_files
+        .iter()
+        .map(|f| f.path.as_path())
+        .collect();
+
+    // Enqueue all documents for processing
+    debug!("📤 Enqueuing {} documents for queue processing", file_paths.len());
+    match simple_integration::enqueue_documents(queue, client, &file_paths, kiln_root).await {
+        Ok(document_ids) => {
+            processed_count = document_ids.len();
+            info!("✅ Successfully enqueued {} documents", processed_count);
+        }
+        Err(e) => {
+            error!("❌ Failed to enqueue documents: {}", e);
+            failed_count = file_paths.len();
+            warn!("⚠️ Queue processing failed for {} files", failed_count);
+        }
+    }
+
+    let total_processing_time = start_time.elapsed();
+    let avg_time_per_doc = if processed_count > 0 {
+        total_processing_time / processed_count as u32
+    } else {
+        Duration::from_millis(0)
+    };
+
+    Ok(KilnProcessResult {
+        processed_count,
+        failed_count,
+        errors: Vec::new(), // Simplified - don't collect individual errors
+        total_processing_time,
+        average_processing_time_per_document: avg_time_per_doc,
+    })
+}
+
+/// Queue-based single file processing with simple queue operations
+pub async fn process_single_file_with_queue(
+    file_info: &KilnFileInfo,
+    client: &Arc<SurrealClient>,
+    queue: &TransactionQueue,
+    kiln_root: &std::path::Path,
+) -> Result<bool> {
+    info!("📝 Queuing file for processing: {}", file_info.path.display());
+
+    match simple_integration::enqueue_document(queue, client, &file_info.path, kiln_root).await {
+        Ok(document_id) => {
+            info!("✅ Successfully enqueued document: {}", document_id);
+            Ok(true)
+        }
+        Err(e) => {
+            error!("❌ Failed to enqueue document {}: {}", file_info.path.display(), e);
+            Err(e)
+        }
+    }
 }
 
 /// Process files with comprehensive error handling and recovery
