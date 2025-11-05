@@ -7,6 +7,7 @@ pub mod database;
 pub mod document;
 pub mod hashing;
 pub mod parser;
+pub mod processing;
 pub mod properties;
 pub mod sink;
 pub mod storage;
@@ -24,6 +25,13 @@ pub use config::{
     PerformanceConfig, ServiceConfig, ServiceDatabaseConfig,
 };
 pub use crucible_core::CrucibleCore;
+
+// Re-export processing handoff types
+pub use processing::{
+    ProcessedDocument, DocumentProcessingJob, ProcessingContext, ProcessingSource,
+    ProcessingPriority, ProcessingMetadata, JobConfiguration, JobStats,
+    DocumentProcessingResult,
+};
 
 // Re-export core traits (abstractions for Dependency Inversion)
 pub use traits::{AgentProvider, MarkdownParser, Storage, ToolExecutor};
