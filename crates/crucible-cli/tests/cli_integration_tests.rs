@@ -135,8 +135,12 @@ async fn test_help_command_shows_available_commands() -> Result<()> {
 
 #[tokio::test]
 async fn test_no_command_defaults_to_help() -> Result<()> {
+    // GIVEN: A minimal test configuration with temporary kiln to avoid DB conflicts
+    let kiln_dir = create_basic_kiln()?;
+    let config = crucible_config::TestConfig::with_kiln_path(kiln_path_str(kiln_dir.path()));
+
     // WHEN: User runs CLI with no arguments
-    let result = run_cli_command(vec![], &crucible_config::TestConfig::minimal()).await?;
+    let result = run_cli_command(vec![], &config).await?;
 
     // THEN: Should show help or REPL mode
     assert!(result.contains("help") || result.contains("commands") || result.contains("REPL"));

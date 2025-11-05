@@ -293,6 +293,8 @@ pub async fn process_files_on_startup(
 
     if files.is_empty() {
         info!("📂 No files found to process");
+        // Explicitly drop the client to ensure database connections are closed
+        drop(client);
         return Ok(());
     }
 
@@ -320,6 +322,8 @@ pub async fn process_files_on_startup(
     // If no files needed processing, we're done
     if result.processed_count == 0 && result.failed_count == 0 {
         info!("✅ All files are up to date");
+        // Explicitly drop the client to ensure database connections are closed
+        drop(client);
         return Ok(());
     }
 
@@ -341,6 +345,11 @@ pub async fn process_files_on_startup(
     if result.failed_count > 0 {
         warn!("Some files failed to process - check logs for details");
     }
+
+    // Explicitly drop the client to ensure all database connections are closed
+    // This prevents "lock hold by current process" errors when CLI commands
+    // try to create new database connections after file processing
+    drop(client);
 
     Ok(())
 }
