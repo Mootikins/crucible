@@ -1,5 +1,6 @@
 //! Parser error types
 
+use serde::{Deserialize, Serialize};
 use std::io;
 use thiserror::Error;
 
@@ -38,6 +39,122 @@ pub enum ParserError {
     /// Invalid file path
     #[error("Invalid file path: {0}")]
     InvalidPath(String),
+}
+
+/// Non-fatal parsing error for tracking issues during document parsing
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParseError {
+    /// Error message
+    pub message: String,
+
+    /// Error type
+    pub error_type: ParseErrorType,
+
+    /// Line number where error occurred (0-based)
+    pub line: usize,
+
+    /// Column number where error occurred (0-based)
+    pub column: usize,
+
+    /// Character offset in source
+    pub offset: usize,
+
+    /// Error severity
+    pub severity: ErrorSeverity,
+}
+
+impl ParseError {
+    /// Create a new parse error
+    pub fn new(
+        message: String,
+        error_type: ParseErrorType,
+        line: usize,
+        column: usize,
+        offset: usize,
+    ) -> Self {
+        Self {
+            message,
+            error_type,
+            line,
+            column,
+            offset,
+            severity: ErrorSeverity::Warning,
+        }
+    }
+
+    /// Create a warning
+    pub fn warning(
+        message: String,
+        error_type: ParseErrorType,
+        line: usize,
+        column: usize,
+        offset: usize,
+    ) -> Self {
+        Self {
+            message,
+            error_type,
+            line,
+            column,
+            offset,
+            severity: ErrorSeverity::Warning,
+        }
+    }
+
+    /// Create an error
+    pub fn error(
+        message: String,
+        error_type: ParseErrorType,
+        line: usize,
+        column: usize,
+        offset: usize,
+    ) -> Self {
+        Self {
+            message,
+            error_type,
+            line,
+            column,
+            offset,
+            severity: ErrorSeverity::Error,
+        }
+    }
+}
+
+/// Types of parsing errors
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ParseErrorType {
+    /// Malformed wikilink syntax
+    MalformedWikilink,
+
+    /// Invalid LaTeX expression
+    InvalidLatex,
+
+    /// Broken footnote reference
+    BrokenFootnoteReference,
+
+    /// Invalid callout syntax
+    InvalidCallout,
+
+    /// Frontmatter syntax issue
+    FrontmatterSyntax,
+
+    /// Circular transclusion detected
+    CircularTransclusion,
+
+    /// Invalid tag format
+    InvalidTag,
+
+    /// General syntax error
+    SyntaxError,
+}
+
+/// Error severity levels
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ErrorSeverity {
+    /// Warning - non-critical issue
+    Warning,
+
+    /// Error - more serious issue
+    Error,
 }
 
 /// Specialized Result type for parser operations
