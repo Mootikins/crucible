@@ -1,5 +1,6 @@
 //! Core data types for parsed markdown documents
 
+use super::error::ParseError;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -13,11 +14,14 @@ use std::sync::OnceLock;
 ///
 /// # Memory Characteristics
 ///
-/// Estimated size: ~2 KB per document
+/// Estimated size: ~3 KB per document (increased from enhanced parsing)
 /// - PathBuf: ~24 bytes (SmallVec optimization)
 /// - Frontmatter: ~200 bytes average
 /// - Wikilinks: ~50 bytes × 10 avg = 500 bytes
 /// - Tags: ~40 bytes × 5 avg = 200 bytes
+/// - Callouts: ~80 bytes × 3 avg = 240 bytes (new)
+/// - LaTeX: ~60 bytes × 2 avg = 120 bytes (new)
+/// - Footnotes: ~70 bytes × 5 avg = 350 bytes (new)
 /// - Content: ~1 KB (plain text excerpt)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParsedDocument {
@@ -36,6 +40,15 @@ pub struct ParsedDocument {
     /// Parsed document content structure
     pub content: DocumentContent,
 
+    /// Extracted Obsidian-style callouts > [!type]
+    pub callouts: Vec<Callout>,
+
+    /// LaTeX mathematical expressions ($...$ and $$...$$)
+    pub latex_expressions: Vec<LatexExpression>,
+
+    /// Footnote definitions and references
+    pub footnotes: FootnoteMap,
+
     /// When this document was parsed
     pub parsed_at: DateTime<Utc>,
 
@@ -44,20 +57,46 @@ pub struct ParsedDocument {
 
     /// File size in bytes
     pub file_size: u64,
+
+    /// Parsing errors encountered (non-fatal)
+    pub parse_errors: Vec<ParseError>,
 }
 
 impl ParsedDocument {
     /// Create a new parsed document
     pub fn new(path: PathBuf) -> Self {
+        Self::builder(path).build()
+    }
+
+    /// Create a document builder for migration compatibility
+    pub fn builder(path: PathBuf) -> ParsedDocumentBuilder {
+        ParsedDocumentBuilder::new(path)
+    }
+
+    /// Legacy compatibility constructor for existing tests
+    pub fn legacy(
+        path: PathBuf,
+        frontmatter: Option<Frontmatter>,
+        wikilinks: Vec<Wikilink>,
+        tags: Vec<Tag>,
+        content: DocumentContent,
+        parsed_at: DateTime<Utc>,
+        content_hash: String,
+        file_size: u64,
+    ) -> Self {
         Self {
             path,
-            frontmatter: None,
-            wikilinks: Vec::new(),
-            tags: Vec::new(),
-            content: DocumentContent::default(),
-            parsed_at: Utc::now(),
-            content_hash: String::new(),
-            file_size: 0,
+            frontmatter,
+            wikilinks,
+            tags,
+            content,
+            callouts: Vec::new(),
+            latex_expressions: Vec::new(),
+            footnotes: FootnoteMap::new(),
+            parsed_at,
+            content_hash,
+            file_size,
+            parse_errors: Vec::new(),
         }
     }
 
@@ -93,6 +132,25 @@ impl ParsedDocument {
     /// Get the first heading as a fallback title
     pub fn first_heading(&self) -> Option<&str> {
         self.content.headings.first().map(|h| h.text.as_str())
+    }
+}
+
+impl Default for ParsedDocument {
+    fn default() -> Self {
+        Self {
+            path: PathBuf::default(),
+            frontmatter: None,
+            wikilinks: Vec::new(),
+            tags: Vec::new(),
+            content: DocumentContent::default(),
+            callouts: Vec::new(),
+            latex_expressions: Vec::new(),
+            footnotes: FootnoteMap::default(),
+            parsed_at: Utc::now(),
+            content_hash: String::new(),
+            file_size: 0,
+            parse_errors: Vec::new(),
+        }
     }
 }
 
@@ -352,6 +410,12 @@ pub struct DocumentContent {
     /// List blocks (for structured content extraction)
     pub lists: Vec<ListBlock>,
 
+    /// LaTeX mathematical expressions extracted from content
+    pub latex_expressions: Vec<LatexExpression>,
+
+    /// Obsidian-style callouts extracted from content
+    pub callouts: Vec<Callout>,
+
     /// Word count (approximate)
     pub word_count: usize,
 
@@ -362,7 +426,17 @@ pub struct DocumentContent {
 impl DocumentContent {
     /// Create empty content
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            plain_text: String::new(),
+            headings: Vec::new(),
+            code_blocks: Vec::new(),
+            paragraphs: Vec::new(),
+            lists: Vec::new(),
+            latex_expressions: Vec::new(),
+            callouts: Vec::new(),
+            word_count: 0,
+            char_count: 0,
+        }
     }
 
     /// Set plain text and update counts
@@ -586,6 +660,320 @@ pub enum TaskStatus {
     Completed,
     /// Task is pending ([ ])
     Pending,
+}
+
+/// Obsidian-style callout > [!type]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Callout {
+    /// Callout type (note, tip, warning, danger, etc.)
+    pub callout_type: String,
+
+    /// Callout title (optional)
+    pub title: Option<String>,
+
+    /// Callout content
+    pub content: String,
+
+    /// Character offset in source document
+    pub offset: usize,
+
+    /// Whether this is a known callout type
+    pub is_standard_type: bool,
+}
+
+impl Callout {
+    /// Create a new callout
+    pub fn new(callout_type: impl Into<String>, content: String, offset: usize) -> Self {
+        let callout_type = callout_type.into();
+        let is_standard_type = matches!(
+            callout_type.as_str(),
+            "note"
+                | "tip"
+                | "warning"
+                | "danger"
+                | "info"
+                | "abstract"
+                | "summary"
+                | "tldr"
+                | "todo"
+                | "question"
+                | "success"
+                | "failure"
+                | "example"
+                | "quote"
+        );
+
+        Self {
+            callout_type,
+            title: None,
+            content,
+            offset,
+            is_standard_type,
+        }
+    }
+
+    /// Create a callout with title
+    pub fn with_title(
+        callout_type: impl Into<String>,
+        title: impl Into<String>,
+        content: String,
+        offset: usize,
+    ) -> Self {
+        let mut callout = Self::new(callout_type, content, offset);
+        callout.title = Some(title.into());
+        callout
+    }
+
+    /// Get the display type with fallback
+    pub fn display_type(&self) -> &str {
+        if self.is_standard_type {
+            &self.callout_type
+        } else {
+            "note" // fallback to generic note type
+        }
+    }
+}
+
+/// LaTeX mathematical expression
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LatexExpression {
+    /// LaTeX expression content
+    pub expression: String,
+
+    /// Whether this is inline ($) or block ($$) math
+    pub is_block: bool,
+
+    /// Character offset in source document
+    pub offset: usize,
+
+    /// Length of the expression in source
+    pub length: usize,
+}
+
+impl LatexExpression {
+    /// Create a new LaTeX expression
+    pub fn new(expression: String, is_block: bool, offset: usize, length: usize) -> Self {
+        Self {
+            expression,
+            is_block,
+            offset,
+            length,
+        }
+    }
+
+    /// Get the expression type as a string
+    pub fn expression_type(&self) -> &'static str {
+        if self.is_block {
+            "block"
+        } else {
+            "inline"
+        }
+    }
+}
+
+/// Footnote definitions and references
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FootnoteMap {
+    /// Footnote definitions [^1]: content
+    pub definitions: HashMap<String, FootnoteDefinition>,
+
+    /// Footnote references in text order
+    pub references: Vec<FootnoteReference>,
+}
+
+impl FootnoteMap {
+    /// Create a new empty footnote map
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add a footnote definition
+    pub fn add_definition(&mut self, identifier: String, definition: FootnoteDefinition) {
+        self.definitions.insert(identifier, definition);
+    }
+
+    /// Add a footnote reference
+    pub fn add_reference(&mut self, reference: FootnoteReference) {
+        self.references.push(reference);
+    }
+
+    /// Get a footnote definition by identifier
+    pub fn get_definition(&self, identifier: &str) -> Option<&FootnoteDefinition> {
+        self.definitions.get(identifier)
+    }
+
+    /// Get all orphaned references (no definition found)
+    pub fn orphaned_references(&self) -> Vec<&FootnoteReference> {
+        self.references
+            .iter()
+            .filter(|ref_| !self.definitions.contains_key(&ref_.identifier))
+            .collect()
+    }
+
+    /// Get all unused definitions (no references found)
+    pub fn unused_definitions(&self) -> Vec<&String> {
+        self.definitions
+            .keys()
+            .filter(|key| !self.references.iter().any(|ref_| &ref_.identifier == *key))
+            .collect()
+    }
+}
+
+/// Footnote definition [^1]: content
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FootnoteDefinition {
+    /// Footnote identifier (without [^] and :)
+    pub identifier: String,
+
+    /// Footnote content
+    pub content: String,
+
+    /// Character offset in source document
+    pub offset: usize,
+
+    /// Line number in source
+    pub line_number: usize,
+}
+
+impl FootnoteDefinition {
+    /// Create a new footnote definition
+    pub fn new(identifier: String, content: String, offset: usize, line_number: usize) -> Self {
+        Self {
+            identifier,
+            content,
+            offset,
+            line_number,
+        }
+    }
+}
+
+/// Footnote reference [^1]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FootnoteReference {
+    /// Footnote identifier (without [^])
+    pub identifier: String,
+
+    /// Character offset in source document
+    pub offset: usize,
+
+    /// Reference order number (for sequential numbering)
+    pub order_number: Option<usize>,
+}
+
+impl FootnoteReference {
+    /// Create a new footnote reference
+    pub fn new(identifier: String, offset: usize) -> Self {
+        Self {
+            identifier,
+            offset,
+            order_number: None,
+        }
+    }
+
+    /// Create a footnote reference with order number
+    pub fn with_order(identifier: String, offset: usize, order_number: usize) -> Self {
+        Self {
+            identifier,
+            offset,
+            order_number: Some(order_number),
+        }
+    }
+}
+
+/// Builder for ParsedDocument to support migration and test compatibility
+pub struct ParsedDocumentBuilder {
+    path: PathBuf,
+    frontmatter: Option<Frontmatter>,
+    wikilinks: Vec<Wikilink>,
+    tags: Vec<Tag>,
+    content: DocumentContent,
+    callouts: Vec<Callout>,
+    latex_expressions: Vec<LatexExpression>,
+    footnotes: FootnoteMap,
+    parsed_at: Option<DateTime<Utc>>,
+    content_hash: String,
+    file_size: u64,
+    parse_errors: Vec<ParseError>,
+}
+
+impl ParsedDocumentBuilder {
+    /// Create a new builder with just the path
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            frontmatter: None,
+            wikilinks: Vec::new(),
+            tags: Vec::new(),
+            content: DocumentContent::default(),
+            callouts: Vec::new(),
+            latex_expressions: Vec::new(),
+            footnotes: FootnoteMap::new(),
+            parsed_at: None,
+            content_hash: String::new(),
+            file_size: 0,
+            parse_errors: Vec::new(),
+        }
+    }
+
+    /// Set frontmatter
+    pub fn with_frontmatter(mut self, frontmatter: Option<Frontmatter>) -> Self {
+        self.frontmatter = frontmatter;
+        self
+    }
+
+    /// Set wikilinks
+    pub fn with_wikilinks(mut self, wikilinks: Vec<Wikilink>) -> Self {
+        self.wikilinks = wikilinks;
+        self
+    }
+
+    /// Set tags
+    pub fn with_tags(mut self, tags: Vec<Tag>) -> Self {
+        self.tags = tags;
+        self
+    }
+
+    /// Set content
+    pub fn with_content(mut self, content: DocumentContent) -> Self {
+        self.content = content;
+        self
+    }
+
+    /// Set parsed timestamp
+    pub fn with_parsed_at(mut self, parsed_at: DateTime<Utc>) -> Self {
+        self.parsed_at = Some(parsed_at);
+        self
+    }
+
+    /// Set content hash
+    pub fn with_content_hash(mut self, content_hash: String) -> Self {
+        self.content_hash = content_hash;
+        self
+    }
+
+    /// Set file size
+    pub fn with_file_size(mut self, file_size: u64) -> Self {
+        self.file_size = file_size;
+        self
+    }
+
+    /// Build the ParsedDocument
+    pub fn build(self) -> ParsedDocument {
+        ParsedDocument {
+            path: self.path,
+            frontmatter: self.frontmatter,
+            wikilinks: self.wikilinks,
+            tags: self.tags,
+            content: self.content,
+            callouts: self.callouts,
+            latex_expressions: self.latex_expressions,
+            footnotes: self.footnotes,
+            parsed_at: self.parsed_at.unwrap_or_else(Utc::now),
+            content_hash: self.content_hash,
+            file_size: self.file_size,
+            parse_errors: self.parse_errors,
+        }
+    }
 }
 
 #[cfg(test)]

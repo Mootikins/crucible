@@ -87,9 +87,13 @@ impl MarkdownParser for PulldownParser {
             wikilinks,
             tags,
             content: doc_content,
+            callouts: Vec::new(),          // TODO: Implement callout extraction
+            latex_expressions: Vec::new(), // TODO: Implement LaTeX extraction
+            footnotes: FootnoteMap::new(), // TODO: Implement footnote extraction
             parsed_at: Utc::now(),
             content_hash,
             file_size,
+            parse_errors: Vec::new(), // TODO: Implement error collection
         })
     }
 
@@ -463,6 +467,8 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
         code_blocks,
         paragraphs,
         lists,
+        latex_expressions: Vec::new(),
+        callouts: Vec::new(), // Add missing field
         word_count,
         char_count,
     })
