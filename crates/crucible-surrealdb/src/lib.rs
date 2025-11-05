@@ -39,6 +39,11 @@ pub mod kiln_store;
 pub mod query;
 pub mod schema_types;
 pub mod surreal_client;
+pub mod transaction_queue;
+pub mod transaction_consumer;
+pub mod transaction_builder;
+pub mod transaction_results;
+pub mod queue_processor;
 pub mod types;
 
 // Embedding modules
@@ -52,6 +57,24 @@ pub use database::SurrealEmbeddingDatabase;
 pub use kiln_store::{InMemoryKilnStore, KilnStore};
 pub use schema_types::*;
 pub use surreal_client::SurrealClient;
+pub use transaction_queue::{
+    DatabaseTransaction, QueueStats, TransactionQueueConfig, TransactionResult, QueuedTransaction,
+    TransactionReceiver, TransactionSender, ResultReceiver, ResultSender, StatsWatcher,
+    TransactionTimestamp, QueueError,
+};
+pub use transaction_consumer::{
+    DatabaseTransactionConsumer, ConsumerConfig, ConsumerStats, ShutdownSender, ShutdownReceiver,
+};
+pub use transaction_builder::{TransactionBuilder, TransactionBuilderConfig};
+pub use transaction_builder::utils as transaction_builder_utils;
+pub use transaction_results::{
+    TransactionResultHandler, TransactionResultStats, TransactionResultAggregator,
+    BatchResultCollector,
+};
+pub use queue_processor::{
+    QueueBasedProcessor, QueueProcessorConfig, ProcessorStats,
+    queue_aware_needs_processing,
+};
 // Re-export database types for external use
 // Note: Use local type definitions but provide aliases for compatibility
 pub use types::{

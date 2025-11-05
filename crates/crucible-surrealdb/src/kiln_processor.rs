@@ -600,7 +600,7 @@ async fn process_single_file_internal(
 
 // Embedding processing functions removed for now - to be implemented properly later
 
-async fn needs_processing(file_info: &KilnFileInfo, client: &SurrealClient) -> Result<bool> {
+pub async fn needs_processing(file_info: &KilnFileInfo, client: &SurrealClient) -> Result<bool> {
     // Check if document exists in database
     let doc_id = find_document_id_by_path(client, &file_info.relative_path).await?;
 
