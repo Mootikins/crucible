@@ -34,13 +34,28 @@ async fn execute_start_command(config: CliConfig, wait: bool, background: bool) 
     println!("🚀 Starting kiln processor...");
     println!("📁 Kiln path: {}", config.kiln.path.display());
 
+    // Initialize database connection
+    let db_config = crucible_surrealdb::SurrealDbConfig {
+        namespace: "crucible".to_string(),
+        database: "kiln".to_string(),
+        path: config.database_path_str()?,
+        max_connections: Some(10),
+        timeout_seconds: Some(30),
+    };
+
+    let client = match crucible_surrealdb::SurrealClient::new(db_config).await {
+        Ok(client) => client,
+        Err(e) => {
+            error!("Failed to connect to database: {}", e);
+            return Err(anyhow::anyhow!("Database connection failed: {}", e));
+        }
+    };
+
     let mut processor_manager = KilnProcessor::new();
 
     if background {
-        println!("🔄 Starting processor in background mode...");
-        // For now, we'll use the existing process_kiln method
-        // In the future, this could start a persistent background processor
-        match processor_manager.process_kiln(&config.kiln.path).await {
+        println!("🔄 Starting processor in integrated mode...");
+        match processor_manager.process_kiln_integrated(&config.kiln.path, &client).await {
             Ok(result) => {
                 println!("✅ {}", result.status_message());
                 println!("📊 {}", result.processing_info());
@@ -52,7 +67,7 @@ async fn execute_start_command(config: CliConfig, wait: bool, background: bool) 
         }
     } else {
         println!("🔄 Starting processor in one-shot mode...");
-        match processor_manager.process_kiln(&config.kiln.path).await {
+        match processor_manager.process_kiln_integrated(&config.kiln.path, &client).await {
             Ok(result) => {
                 println!("✅ {}", result.status_message());
                 println!("📊 {}", result.processing_info());
@@ -66,8 +81,8 @@ async fn execute_start_command(config: CliConfig, wait: bool, background: bool) 
 
     if wait {
         println!("⏳ Waiting for processor to complete processing...");
-        // The process_kiln already waits for completion
-        println!("✅ Daemon processing completed");
+        // The process_kiln_integrated already waits for completion
+        println!("✅ Processing completed");
     }
 
     Ok(())
@@ -86,8 +101,8 @@ async fn execute_stop_command(_config: CliConfig, force: bool) -> Result<()> {
     // TODO: Implement processor stopping logic
     // This would require the processor to be running in background mode
     // with proper PID management and signal handling
-    println!("⚠️  Daemon stopping not yet implemented");
-    println!("💡 Use Ctrl+C to stop running kiln processores");
+    println!("⚠️  Processor stopping not yet implemented");
+    println!("💡 Use Ctrl+C to stop running kiln processes");
 
     Ok(())
 }
@@ -117,7 +132,7 @@ async fn execute_status_command(config: CliConfig) -> Result<()> {
     match crucible_surrealdb::SurrealClient::new(db_config).await {
         Ok(client) => match processor_manager.check_embeddings_exist(&client).await {
             Ok(true) => {
-                println!("✅ Daemon has processed this kiln");
+                println!("✅ Kiln has been processed");
                 println!("📊 Embeddings are available for semantic search");
             }
             Ok(false) => {

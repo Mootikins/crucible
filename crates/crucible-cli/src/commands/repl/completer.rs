@@ -92,7 +92,7 @@ impl ReplCompleter {
             },
             CommandCompletion {
                 name: ":quit".to_string(),
-                description: "Exit daemon".to_string(),
+                description: "Exit CLI".to_string(),
             },
         ]
     }
