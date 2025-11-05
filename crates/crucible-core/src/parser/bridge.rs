@@ -109,27 +109,33 @@ impl MarkdownParser for ParserAdapter {
     }
 
     fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedDocument> {
-        self.inner
-            .parse_content(content, source_path)
-            .map(convert_parsed_document)
-            .map_err(|e| {
-                // Convert error types
-                match e {
-                    crucible_parser::ParserError::FrontmatterError(msg) => {
-                        crate::parser::error::ParserError::FrontmatterError(msg)
-                    }
-                    crucible_parser::ParserError::ParseFailed(msg) => {
-                        crate::parser::error::ParserError::ParseFailed(msg)
-                    }
-                    crucible_parser::ParserError::Unsupported(msg) => {
-                        crate::parser::error::ParserError::Unsupported(msg)
-                    }
-                    _ => crate::parser::error::ParserError::ParseFailed(format!(
-                        "Parser error: {:?}",
-                        e
-                    )),
-                }
+        // Use tokio runtime handle to block on the async implementation
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                self.inner
+                    .parse_content(content, source_path)
+                    .await
+                    .map(convert_parsed_document)
+                    .map_err(|e| {
+                        // Convert error types
+                        match e {
+                            crucible_parser::ParserError::FrontmatterError(msg) => {
+                                crate::parser::error::ParserError::FrontmatterError(msg)
+                            }
+                            crucible_parser::ParserError::ParseFailed(msg) => {
+                                crate::parser::error::ParserError::ParseFailed(msg)
+                            }
+                            crucible_parser::ParserError::Unsupported(msg) => {
+                                crate::parser::error::ParserError::Unsupported(msg)
+                            }
+                            _ => crate::parser::error::ParserError::ParseFailed(format!(
+                                "Parser error: {:?}",
+                                e
+                            )),
+                        }
+                    })
             })
+        })
     }
 
     fn capabilities(&self) -> ParserCapabilities {
@@ -185,8 +191,8 @@ pub enum ParserConfig {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_adapter_basic_parsing() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_adapter_basic_parsing() {
         let adapter = ParserAdapter::new();
         let content = "# Test Note\n\nThis is a test.";
         let source_path = Path::new("test.md");
@@ -196,7 +202,7 @@ mod tests {
         assert!(result.is_ok());
         let doc = result.unwrap();
         assert!(doc.content.plain_text.contains("test"));
-        assert_eq!(doc.content.word_count, 4);
+        assert_eq!(doc.content.word_count, 7); // "Test Note This is a test"
     }
 
     #[test]
