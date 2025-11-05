@@ -470,7 +470,7 @@ mod tests {
         let result = processor
             .process_kiln_integrated(
                 std::path::Path::new("/nonexistent"),
-                &crucible_surrealdb::SurrealClient::in_memory().await,
+                &crucible_surrealdb::SurrealClient::new_memory().await.unwrap(),
             )
             .await;
         assert!(result.is_err());
