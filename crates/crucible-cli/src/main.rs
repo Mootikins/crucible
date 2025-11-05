@@ -33,15 +33,15 @@ async fn main() -> Result<()> {
     // try to open the same RocksDB file. Each command now creates its own client
     // when needed, and the Arc-wrapped SurrealClient ensures cheap cloning.
 
-    // Auto-start file watcher for background processing
-    // Skip for interactive fuzzy picker (one-shot command, no benefit from background processing)
+    // Process any pending files on startup using integrated blocking processing
+    // Skip for interactive fuzzy picker (users want immediate results)
     match &cli.command {
         Some(Commands::Fuzzy { .. }) => {
-            // Skip watcher - fuzzy is interactive and doesn't need background processing
+            // Skip processing - fuzzy is interactive and users want immediate results
         }
         _ => {
-            let _pending_files =
-                crucible_cli::common::kiln_processor::ensure_watcher_running(&config).await?;
+            // Process files before command execution to ensure up-to-date data
+            crucible_cli::common::kiln_processor::process_files_on_startup(&config).await?;
         }
     }
 
