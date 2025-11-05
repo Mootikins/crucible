@@ -124,6 +124,83 @@ pub enum Commands {
     /// Kiln processing management
     #[command(subcommand)]
     Process(ProcessCommands),
+
+    /// Show changes between files or directories
+    Diff {
+        /// First file or directory to compare
+        #[arg(value_name = "PATH1")]
+        path1: PathBuf,
+
+        /// Second file or directory to compare
+        #[arg(value_name = "PATH2")]
+        path2: PathBuf,
+
+        /// Output format (plain, json, detailed)
+        #[arg(short = 'f', long, default_value = "plain")]
+        format: String,
+
+        /// Show similarity scores for moved content
+        #[arg(short = 's', long)]
+        show_similarity: bool,
+
+        /// Include unchanged content in output
+        #[arg(long)]
+        show_unchanged: bool,
+
+        /// Maximum depth for directory comparison
+        #[arg(short = 'd', long, default_value = "10")]
+        max_depth: usize,
+    },
+
+    /// Show storage status and statistics
+    Status {
+        /// Path to analyze (optional - shows global status if omitted)
+        #[arg(value_name = "PATH")]
+        path: Option<PathBuf>,
+
+        /// Output format (table, json, plain)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+
+        /// Show detailed block-level information
+        #[arg(long)]
+        detailed: bool,
+
+        /// Include recent change activity
+        #[arg(long)]
+        recent: bool,
+    },
+
+    /// Storage management and operations
+    #[command(subcommand)]
+    Storage(StorageCommands),
+
+    /// Parse and analyze files
+    Parse {
+        /// File or directory to parse
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+
+        /// Output format (plain, json, detailed)
+        #[arg(short = 'f', long, default_value = "plain")]
+        format: String,
+
+        /// Show Merkle tree information
+        #[arg(short = 't', long)]
+        show_tree: bool,
+
+        /// Display content blocks and hashes
+        #[arg(short = 'b', long)]
+        show_blocks: bool,
+
+        /// Maximum recursion depth for directories
+        #[arg(short = 'd', long, default_value = "5")]
+        max_depth: usize,
+
+        /// Continue processing on errors
+        #[arg(short = 'c', long)]
+        continue_on_error: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -143,6 +220,104 @@ pub enum ConfigCommands {
     Show {
         /// Output format (toml, json)
         #[arg(short = 'f', long, default_value = "toml")]
+        format: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum StorageCommands {
+    /// Show detailed storage statistics
+    Stats {
+        /// Output format (table, json, plain)
+        #[arg(short = 'f', long, default_value = "table")]
+        format: String,
+
+        /// Show per-backend breakdown
+        #[arg(long)]
+        by_backend: bool,
+
+        /// Include deduplication statistics
+        #[arg(long)]
+        deduplication: bool,
+    },
+
+    /// Verify content integrity
+    Verify {
+        /// Path to verify (optional - verifies all storage if omitted)
+        #[arg(value_name = "PATH")]
+        path: Option<PathBuf>,
+
+        /// Repair any inconsistencies found
+        #[arg(long)]
+        repair: bool,
+
+        /// Output format (plain, json)
+        #[arg(short = 'f', long, default_value = "plain")]
+        format: String,
+    },
+
+    /// Perform maintenance operations
+    Cleanup {
+        /// Run garbage collection
+        #[arg(long)]
+        gc: bool,
+
+        /// Rebuild indexes
+        #[arg(long)]
+        rebuild_indexes: bool,
+
+        /// Optimize storage layout
+        #[arg(long)]
+        optimize: bool,
+
+        /// Force cleanup even if system is busy
+        #[arg(long)]
+        force: bool,
+
+        /// Dry run - show what would be done
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Export or backup storage data
+    Backup {
+        /// Backup destination path
+        #[arg(value_name = "DEST")]
+        dest: PathBuf,
+
+        /// Include content blocks
+        #[arg(long)]
+        include_content: bool,
+
+        /// Compress backup
+        #[arg(long)]
+        compress: bool,
+
+        /// Verify backup after creation
+        #[arg(long)]
+        verify: bool,
+
+        /// Export format (json, binary)
+        #[arg(short = 'f', long, default_value = "json")]
+        format: String,
+    },
+
+    /// Import or restore storage data
+    Restore {
+        /// Backup source path
+        #[arg(value_name = "SOURCE")]
+        source: PathBuf,
+
+        /// Merge with existing data
+        #[arg(long)]
+        merge: bool,
+
+        /// Skip verification during import
+        #[arg(long)]
+        skip_verify: bool,
+
+        /// Import format (json, binary)
+        #[arg(short = 'f', long, default_value = "json")]
         format: String,
     },
 }
