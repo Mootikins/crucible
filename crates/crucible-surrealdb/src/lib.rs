@@ -27,6 +27,8 @@
 //! }
 //! ```
 
+pub mod batch_aware_client;
+pub mod consistency;
 pub mod content_addressed_storage;
 pub mod database;
 pub mod kiln_integration;
