@@ -87,6 +87,33 @@ async fn main() -> Result<()> {
 
         Some(Commands::Process(cmd)) => commands::process::execute(config, cmd).await?,
 
+        Some(Commands::Diff {
+            path1,
+            path2,
+            format,
+            show_similarity,
+            show_unchanged,
+            max_depth,
+        }) => commands::diff::execute(config, path1, path2, format, show_similarity, show_unchanged, max_depth).await?,
+
+        Some(Commands::Status {
+            path,
+            format,
+            detailed,
+            recent,
+        }) => commands::status::execute(config, path, format, detailed, recent).await?,
+
+        Some(Commands::Storage(cmd)) => commands::storage::execute(config, cmd).await?,
+
+        Some(Commands::Parse {
+            path,
+            format,
+            show_tree,
+            show_blocks,
+            max_depth,
+            continue_on_error,
+        }) => commands::parse::execute(config, path, format, show_tree, show_blocks, max_depth, continue_on_error).await?,
+
         // Commands::EnhancedChat { // Temporarily disabled
         //     agent,
         //     model,

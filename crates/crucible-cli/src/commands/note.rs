@@ -18,13 +18,31 @@ pub trait ToolInvoker: Send + Sync {
     ) -> Result<crucible_tools::ToolResult>;
 }
 
-#[derive(Default, Clone)]
-struct GlobalToolInvoker;
+/// Simple tool invoker using a local registry instance
+#[derive(Clone)]
+struct LocalToolInvoker {
+    registry: Arc<std::sync::Mutex<crate::common::ToolRegistry>>,
+}
+
+impl LocalToolInvoker {
+    fn new() -> Self {
+        Self {
+            registry: Arc::new(std::sync::Mutex::new(crate::common::ToolRegistry::new())),
+        }
+    }
+
+    fn with_kiln_path(kiln_path: std::path::PathBuf) -> Self {
+        Self {
+            registry: Arc::new(std::sync::Mutex::new(crate::common::ToolRegistry::with_kiln_path(kiln_path))),
+        }
+    }
+}
 
 #[async_trait(?Send)]
-impl ToolInvoker for GlobalToolInvoker {
+impl ToolInvoker for LocalToolInvoker {
     async fn ensure_initialized(&self) -> Result<()> {
-        crate::common::CrucibleToolManager::ensure_initialized_global().await
+        let mut registry = self.registry.lock().unwrap();
+        registry.ensure_initialized().await
     }
 
     async fn execute(
@@ -34,18 +52,18 @@ impl ToolInvoker for GlobalToolInvoker {
         user_id: Option<&str>,
         session_id: Option<&str>,
     ) -> Result<crucible_tools::ToolResult> {
-        crate::common::CrucibleToolManager::execute_tool_global(
+        let registry = self.registry.lock().unwrap();
+        registry.execute_tool(
             name,
             payload,
             user_id.map(|s| s.to_string()),
             session_id.map(|s| s.to_string()),
-        )
-        .await
+        ).await
     }
 }
 
 pub async fn execute(config: CliConfig, cmd: NoteCommands) -> Result<()> {
-    let invoker: Arc<dyn ToolInvoker> = Arc::new(GlobalToolInvoker);
+    let invoker: Arc<dyn ToolInvoker> = Arc::new(LocalToolInvoker::new());
 
     match cmd {
         NoteCommands::Get { path, format } => get_note(invoker, config, path, format).await,
