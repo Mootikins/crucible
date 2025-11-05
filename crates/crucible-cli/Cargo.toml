@@ -106,3 +106,6 @@ toml = { workspace = true }
 # Additional dependencies for resource constraint testing
 rand = "0.8"
 nix = { version = "0.27", features = ["fs"] }
+
+# File locking for concurrent test serialization
+fs2 = "0.4"

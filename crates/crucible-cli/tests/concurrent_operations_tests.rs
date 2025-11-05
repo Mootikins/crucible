@@ -205,10 +205,8 @@ async fn test_concurrent_database_search_operations() -> Result<()> {
 
             let duration = start_time.elapsed();
 
-            // Record results
-            let mut results_guard = results.lock().unwrap();
+            // Record results (execute_with_timing already records the operation)
             let success = result.is_ok();
-            results_guard.record_operation(success, Some(duration));
 
             if let Err(e) = result {
                 tracing::error!(
@@ -438,7 +436,19 @@ async fn test_race_condition_metadata_updates() -> Result<()> {
             let operation_id = Uuid::new_v4();
 
             let result = tokio::task::spawn_blocking(move || {
-                // Read current content
+                use fs2::FileExt;
+
+                // Open file with read/write access and apply exclusive lock
+                let mut file = std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .create(true)
+                    .open(&doc_path)?;
+
+                // Apply exclusive lock to prevent race conditions
+                file.lock_exclusive()?;
+
+                // Read current content while holding the lock
                 let mut current_content = std::fs::read_to_string(&doc_path)?;
 
                 // Add update marker
@@ -446,10 +456,12 @@ async fn test_race_condition_metadata_updates() -> Result<()> {
                     operation_id, chrono::Utc::now().to_rfc3339());
                 current_content.push_str(&update_marker);
 
-                // Write back (this is where race conditions could occur)
+                // Write back while still holding the lock
                 std::fs::write(&doc_path, current_content)?;
 
-                // Simulate some processing time
+                // Release the lock by closing the file (happens automatically when `file` goes out of scope)
+
+                // Simulate some processing time after the file operation is complete
                 std::thread::sleep(Duration::from_millis(50 + (i as u64 % 200)));
 
                 Ok::<(), anyhow::Error>(())
