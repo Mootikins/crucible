@@ -102,6 +102,46 @@ No additional dependencies needed.
 - `integration_test.rs` - General CLI integration tests
 - `test_chat.rs` - Chat REPL tests
 - `test_backend.rs` - Backend integration tests
+- `large_dataset_performance_tests.rs` - Large dataset performance testing suite
+
+### Large Dataset Performance Tests (`large_dataset_performance_tests.rs`)
+
+A comprehensive performance testing suite that validates the CLI system with 1000+ documents and establishes baseline performance metrics for semantic search scalability, database operations, and resource utilization patterns.
+
+#### Features
+
+- **Large Dataset Generation**: Creates realistic test datasets with 1000+ documents across diverse content types
+- **Search Performance Testing**: Validates semantic search response times and result quality with large document sets
+- **Database Performance Scaling**: Tests performance across different storage backends and dataset sizes
+- **Resource Utilization Monitoring**: Monitors memory, CPU, and I/O patterns during operations
+- **Scalability Benchmarks**: Tests performance scaling from 100 → 500 → 1000 → 2000+ documents
+
+#### Running the Performance Tests
+
+```bash
+# Run all performance tests
+cargo test -p crucible-cli --test large_dataset_performance_tests
+
+# Run specific test categories
+cargo test -p crucible-cli test_large_dataset_generation --test large_dataset_performance_tests
+cargo test -p crucible-cli test_performance_threshold_validation --test large_dataset_performance_tests
+
+# Run the complete performance suite manually
+cargo run -p crucible-cli --test large_dataset_performance_tests
+```
+
+#### Performance Reports
+
+The test suite generates comprehensive reports:
+- `large_dataset_performance_report.json` - Machine-readable metrics
+- `large_dataset_performance_report.md` - Human-readable summary
+
+#### Performance Thresholds
+
+- Maximum search time: 5 seconds
+- Maximum memory usage: 1GB
+- Minimum processing rate: 10 documents/second
+- Maximum error rate: 5%
 
 ### CI/CD Notes
 
