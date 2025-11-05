@@ -1,152 +1,115 @@
-//! Centralized Tool Manager for Crucible CLI
+//! Simple Tool Registry for Crucible CLI
 //!
-//! This module provides a unified interface for tool discovery and execution,
-//! eliminating duplicate initialization and registry management across CLI commands
-//! and REPL components.
+//! This module provides a simple, production-proven tool registry pattern
+//! based on research of successful agentic frameworks (LangChain, OpenAI Swarm, etc.).
+//! Uses direct function registration and execution with no global state or complex caching.
 
 use anyhow::Result;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, Once, RwLock};
-use tokio::sync::RwLock as AsyncRwLock;
 use tracing::{debug, error, info};
 
-/// Centralized tool manager that handles all crucible-tools interactions
+/// Simple tool registry following production patterns from successful agentic frameworks
 ///
-/// This singleton ensures tools are initialized only once and provides
-/// both direct execution and REPL-compatible interfaces.
-pub struct CrucibleToolManager {
-    /// Whether tools have been initialized
-    initialized: Arc<Mutex<bool>>,
-    /// Cache for tool lists to avoid repeated discovery
-    tool_list_cache: Arc<AsyncRwLock<Option<Vec<String>>>>,
-    /// Cache for tool execution results
-    execution_cache: Arc<AsyncRwLock<HashMap<String, CachedResult>>>,
-    /// Configuration for caching behavior
-    cache_config: ToolManagerConfig,
+/// This is a straightforward function registry with no global state, caching, or
+/// lifecycle management - just like the patterns used in LangChain, OpenAI Swarm, etc.
+pub struct ToolRegistry {
+    /// Registered tools by name
+    tools: HashMap<String, ToolDefinition>,
     /// Kiln path for tool execution context
-    kiln_path: Arc<RwLock<Option<PathBuf>>>,
+    kiln_path: Option<PathBuf>,
+    /// Whether crucible-tools library is initialized
+    initialized: bool,
 }
 
-/// Configuration for the tool manager
+/// Definition of a tool in the registry
 #[derive(Debug, Clone)]
-pub struct ToolManagerConfig {
-    /// Enable tool list caching
-    pub enable_list_cache: bool,
-    /// Enable result caching
-    pub enable_result_cache: bool,
-    /// Maximum cache size
-    pub max_cache_size: usize,
-    /// Cache TTL in seconds
-    pub cache_ttl_secs: u64,
+pub struct ToolDefinition {
+    /// Tool name
+    pub name: String,
+    /// Tool description
+    pub description: String,
+    /// Tool category/group
+    pub category: String,
 }
 
-impl Default for ToolManagerConfig {
-    fn default() -> Self {
+impl ToolRegistry {
+    /// Create a new empty tool registry
+    pub fn new() -> Self {
+        info!("Creating new ToolRegistry");
         Self {
-            enable_list_cache: true,
-            enable_result_cache: true,
-            max_cache_size: 100,
-            cache_ttl_secs: 300, // 5 minutes
-        }
-    }
-}
-
-/// Cached execution result
-#[derive(Debug, Clone)]
-struct CachedResult {
-    /// Result value
-    result: crucible_tools::ToolResult,
-    /// Timestamp when cached
-    timestamp: std::time::Instant,
-}
-
-impl CachedResult {
-    /// Check if cache entry is still valid
-    fn is_valid(&self, ttl_secs: u64) -> bool {
-        self.timestamp.elapsed().as_secs() < ttl_secs
-    }
-}
-
-impl CrucibleToolManager {
-    /// Get the global tool manager instance
-    #[allow(static_mut_refs)]
-    pub fn instance() -> &'static Self {
-        static mut INSTANCE: Option<CrucibleToolManager> = None;
-        static INIT: Once = Once::new();
-
-        unsafe {
-            INIT.call_once(|| {
-                INSTANCE = Some(CrucibleToolManager::new());
-            });
-            INSTANCE.as_ref().unwrap()
+            tools: HashMap::new(),
+            kiln_path: None,
+            initialized: false,
         }
     }
 
-    /// Create a new tool manager
-    fn new() -> Self {
-        info!("Creating centralized CrucibleToolManager");
+    /// Create a tool registry with a specific kiln path
+    pub fn with_kiln_path(kiln_path: PathBuf) -> Self {
+        info!("Creating ToolRegistry with kiln path: {:?}", kiln_path);
         Self {
-            initialized: Arc::new(Mutex::new(false)),
-            tool_list_cache: Arc::new(AsyncRwLock::new(None)),
-            execution_cache: Arc::new(AsyncRwLock::new(HashMap::new())),
-            cache_config: ToolManagerConfig::default(),
-            kiln_path: Arc::new(RwLock::new(None)),
+            tools: HashMap::new(),
+            kiln_path: Some(kiln_path),
+            initialized: false,
         }
     }
 
-    /// Create a tool manager with custom configuration
-    pub fn with_config(config: ToolManagerConfig) -> Self {
-        info!("Creating CrucibleToolManager with custom config");
-        Self {
-            initialized: Arc::new(Mutex::new(false)),
-            tool_list_cache: Arc::new(AsyncRwLock::new(None)),
-            execution_cache: Arc::new(AsyncRwLock::new(HashMap::new())),
-            cache_config: config,
-            kiln_path: Arc::new(RwLock::new(None)),
+    /// Initialize the crucible-tools library and discover available tools
+    pub async fn ensure_initialized(&mut self) -> Result<()> {
+        if self.initialized {
+            debug!("Tools already initialized, skipping initialization");
+            return Ok(());
         }
-    }
 
-    /// Ensure tools are initialized (lazy initialization)
-    pub async fn ensure_initialized(&self) -> Result<()> {
-        let mut init_flag = self.initialized.lock().unwrap();
-        if !*init_flag {
-            info!("=== Initializing Crucible Tools (Centralized Manager) ===");
-            debug!("Starting crucible-tools library initialization...");
+        info!("=== Initializing Tool Registry ===");
+        debug!("Starting crucible-tools library initialization...");
 
-            // Initialize crucible-tools library
-            crucible_tools::init();
-            debug!("✓ crucible-tools::init() completed");
+        // Set up kiln path if provided
+        if let Some(ref kiln_path) = self.kiln_path {
+            use crucible_tools::types::{set_tool_context, ToolConfigContext};
+            set_tool_context(ToolConfigContext::with_kiln_path(kiln_path.clone()));
+            debug!("✓ Set kiln path: {:?}", kiln_path);
+        }
 
-            // Load all tools
-            debug!("Loading all tools via crucible_tools::load_all_tools()...");
-            match crucible_tools::load_all_tools().await {
-                Ok(_) => {
-                    debug!("✓ Successfully loaded all tools");
+        // Initialize crucible-tools library
+        crucible_tools::init();
+        debug!("✓ crucible-tools::init() completed");
 
-                    // Log registered tool count
-                    let tools = crucible_tools::list_registered_tools().await;
-                    info!("✓ Registered {} tools from crucible-tools", tools.len());
-                    if !tools.is_empty() {
-                        debug!("Available tools: {:?}", tools);
-                    }
+        // Load all tools and populate registry
+        debug!("Loading all tools via crucible_tools::load_all_tools()...");
+        match crucible_tools::load_all_tools().await {
+            Ok(_) => {
+                debug!("✓ Successfully loaded all tools");
+
+                // Discover and register available tools
+                let tool_names = crucible_tools::list_registered_tools().await;
+                info!("✓ Discovered {} tools from crucible-tools", tool_names.len());
+
+                for tool_name in &tool_names {
+                    self.tools.insert(tool_name.clone(), ToolDefinition {
+                        name: tool_name.clone(),
+                        description: format!("Tool: {}", tool_name),
+                        category: self.categorize_tool(tool_name),
+                    });
                 }
-                Err(e) => {
-                    error!("✗ Failed to load crucible-tools: {}", e);
-                    return Err(anyhow::anyhow!("Failed to load crucible-tools: {}", e));
+
+                if !tool_names.is_empty() {
+                    debug!("Registered tools: {:?}", tool_names);
                 }
             }
-
-            *init_flag = true;
-            info!("=== Crucible Tools Initialization Complete ===");
-        } else {
-            debug!("Tools already initialized, skipping initialization");
+            Err(e) => {
+                error!("✗ Failed to load crucible-tools: {}", e);
+                return Err(anyhow::anyhow!("Failed to load crucible-tools: {}", e));
+            }
         }
+
+        self.initialized = true;
+        info!("=== Tool Registry Initialization Complete ===");
         Ok(())
     }
 
-    /// Execute a tool with caching
+    /// Execute a tool by name with parameters
     pub async fn execute_tool(
         &self,
         tool_name: &str,
@@ -154,33 +117,22 @@ impl CrucibleToolManager {
         user_id: Option<String>,
         session_id: Option<String>,
     ) -> Result<crucible_tools::ToolResult> {
-        // Ensure tools are initialized
-        self.ensure_initialized().await?;
-
-        // Check cache first if enabled
-        if self.cache_config.enable_result_cache {
-            let cache_key = self.create_cache_key(tool_name, &parameters, &user_id, &session_id);
-            {
-                let cache = self.execution_cache.read().await;
-                if let Some(cached) = cache.get(&cache_key) {
-                    if cached.is_valid(self.cache_config.cache_ttl_secs) {
-                        debug!("Cache hit for tool: {}", tool_name);
-                        return Ok(cached.result.clone());
-                    }
-                }
-            }
+        // Check if tool is registered
+        if !self.tools.contains_key(tool_name) {
+            return Err(anyhow::anyhow!("Tool '{}' not found in registry", tool_name));
         }
 
-        // Execute the tool
         debug!(
             "Executing tool: {} with params: {:?}",
             tool_name, parameters
         );
+
+        // Execute the tool directly through crucible-tools
         let result = crucible_tools::execute_tool(
             tool_name.to_string(),
             parameters,
-            user_id.clone(),
-            session_id.clone(),
+            user_id,
+            session_id,
         )
         .await
         .map_err(|e| {
@@ -188,250 +140,105 @@ impl CrucibleToolManager {
             anyhow::anyhow!("Tool execution failed: {}", e)
         })?;
 
-        // Cache result if enabled
-        if self.cache_config.enable_result_cache {
-            let cache_key = self.create_cache_key(
-                tool_name,
-                &result.data.clone().unwrap_or(Value::Null),
-                &user_id,
-                &session_id,
-            );
-            let mut cache = self.execution_cache.write().await;
-
-            // Enforce cache size limit
-            if cache.len() >= self.cache_config.max_cache_size {
-                // Remove oldest entries (simple FIFO)
-                let mut keys: Vec<String> = cache.keys().cloned().collect();
-                keys.sort(); // Simple sort for removal
-                let excess = cache.len() - self.cache_config.max_cache_size + 1;
-                for key in keys.into_iter().take(excess) {
-                    cache.remove(&key);
-                }
-            }
-
-            cache.insert(
-                cache_key,
-                CachedResult {
-                    result: result.clone(),
-                    timestamp: std::time::Instant::now(),
-                },
-            );
-        }
-
         Ok(result)
     }
 
-    /// Get list of available tools with caching
-    pub async fn list_tools(&self) -> Result<Vec<String>> {
-        // Ensure tools are initialized
-        self.ensure_initialized().await?;
-
-        // Check cache first if enabled
-        if self.cache_config.enable_list_cache {
-            {
-                let cache = self.tool_list_cache.read().await;
-                if let Some(cached_tools) = &*cache {
-                    debug!("Tool list cache hit: {} tools", cached_tools.len());
-                    return Ok(cached_tools.clone());
-                }
-            }
-        }
-
-        // Get tools from crucible-tools
-        let tools = crucible_tools::list_registered_tools().await;
-        debug!("Discovered {} tools from crucible-tools", tools.len());
-
-        // Cache result if enabled
-        if self.cache_config.enable_list_cache {
-            *self.tool_list_cache.write().await = Some(tools.clone());
-        }
-
-        Ok(tools)
+    /// Get list of available tool names
+    pub fn list_tools(&self) -> Vec<String> {
+        self.tools.keys().cloned().collect()
     }
 
     /// Get tools grouped by category
-    pub async fn list_tools_by_group(&self) -> Result<HashMap<String, Vec<String>>> {
-        let tools = self.list_tools().await?;
+    pub fn list_tools_by_group(&self) -> HashMap<String, Vec<String>> {
         let mut grouped = HashMap::new();
+        for tool_def in self.tools.values() {
+            grouped
+                .entry(tool_def.category.clone())
+                .or_insert_with(Vec::new)
+                .push(tool_def.name.clone());
+        }
+        grouped
+    }
 
-        // Group tools by prefix or known categories
-        for tool in tools {
-            let category = if tool.starts_with("system_") {
-                "system".to_string()
-            } else if tool.starts_with("search_")
-                || tool.starts_with("semantic_")
-                || tool.starts_with("rebuild_")
-                || tool.starts_with("get_index")
-                || tool.starts_with("optimize_")
-                || tool.starts_with("advanced_")
-            {
-                "search".to_string()
-            } else if tool.starts_with("get_")
-                || tool.starts_with("create_")
-                || tool.starts_with("update_")
-                || tool.starts_with("delete_")
-                || tool.starts_with("list_")
-            {
-                "kiln".to_string()
-            } else if tool.contains("document")
-                || tool.contains("content")
-                || tool.contains("filename")
-                || tool.contains("sync")
-                || tool.contains("properties")
-            {
-                "database".to_string()
-            } else {
-                "other".to_string()
-            };
+    /// Get tool definition by name
+    pub fn get_tool(&self, name: &str) -> Option<&ToolDefinition> {
+        self.tools.get(name)
+    }
 
-            grouped.entry(category).or_insert_with(Vec::new).push(tool);
+    /// Register a custom tool
+    pub fn register_tool(&mut self, tool_def: ToolDefinition) {
+        info!("Registering custom tool: {}", tool_def.name);
+        self.tools.insert(tool_def.name.clone(), tool_def);
+    }
+
+    /// Get registry statistics
+    pub fn get_stats(&self) -> HashMap<String, String> {
+        let mut stats = HashMap::new();
+        stats.insert("total_tools".to_string(), self.tools.len().to_string());
+        stats.insert("initialized".to_string(), self.initialized.to_string());
+        stats.insert("has_kiln_path".to_string(), self.kiln_path.is_some().to_string());
+
+        if let Some(ref path) = self.kiln_path {
+            stats.insert("kiln_path".to_string(), path.display().to_string());
         }
 
-        Ok(grouped)
-    }
+        let mut category_counts = HashMap::new();
+        for tool_def in self.tools.values() {
+            *category_counts.entry(&tool_def.category).or_insert(0) += 1;
+        }
 
-    /// Clear all caches
-    pub async fn clear_caches(&self) {
-        info!("Clearing tool manager caches");
-        *self.tool_list_cache.write().await = None;
-        self.execution_cache.write().await.clear();
-    }
-
-    /// Get tool manager statistics
-    pub async fn get_stats(&self) -> HashMap<String, String> {
-        let mut stats = HashMap::new();
-
-        stats.insert("initialized".to_string(), {
-            let init_flag = self.initialized.lock().unwrap();
-            init_flag.to_string()
-        });
-
-        stats.insert("cached_tool_lists".to_string(), {
-            let cache = self.tool_list_cache.read().await;
-            cache.is_some().to_string()
-        });
-
-        stats.insert("cached_results".to_string(), {
-            let cache = self.execution_cache.read().await;
-            cache.len().to_string()
-        });
-
-        stats.insert(
-            "list_cache_enabled".to_string(),
-            self.cache_config.enable_list_cache.to_string(),
-        );
-        stats.insert(
-            "result_cache_enabled".to_string(),
-            self.cache_config.enable_result_cache.to_string(),
-        );
-        stats.insert(
-            "max_cache_size".to_string(),
-            self.cache_config.max_cache_size.to_string(),
-        );
-        stats.insert(
-            "cache_ttl_secs".to_string(),
-            self.cache_config.cache_ttl_secs.to_string(),
-        );
-
-        if let Ok(tool_count) = self.list_tools().await {
-            stats.insert("total_tools".to_string(), tool_count.len().to_string());
+        for (category, count) in category_counts {
+            stats.insert(format!("category_{}", category), count.to_string());
         }
 
         stats
     }
 
-    /// Create cache key for tool execution
-    fn create_cache_key(
-        &self,
-        tool_name: &str,
-        parameters: &Value,
-        user_id: &Option<String>,
-        session_id: &Option<String>,
-    ) -> String {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut hasher = DefaultHasher::new();
-        tool_name.hash(&mut hasher);
-        parameters.to_string().hash(&mut hasher);
-        user_id.hash(&mut hasher);
-        session_id.hash(&mut hasher);
-
-        format!("{}_{}", tool_name, hasher.finish())
-    }
-
-    /// Force re-initialization of tools
-    pub async fn force_reinitialize(&self) -> Result<()> {
-        info!("Force re-initializing crucible-tools");
-
-        // Clear caches
-        self.clear_caches().await;
-
-        // Reset initialization flag
+    /// Categorize a tool based on its name
+    fn categorize_tool(&self, tool_name: &str) -> String {
+        if tool_name.starts_with("system_") {
+            "system".to_string()
+        } else if tool_name.starts_with("search_")
+            || tool_name.starts_with("semantic_")
+            || tool_name.starts_with("rebuild_")
+            || tool_name.starts_with("get_index")
+            || tool_name.starts_with("optimize_")
+            || tool_name.starts_with("advanced_")
         {
-            let mut init_flag = self.initialized.lock().unwrap();
-            *init_flag = false;
+            "search".to_string()
+        } else if tool_name.starts_with("get_")
+            || tool_name.starts_with("create_")
+            || tool_name.starts_with("update_")
+            || tool_name.starts_with("delete_")
+            || tool_name.starts_with("list_")
+        {
+            "kiln".to_string()
+        } else if tool_name.contains("document")
+            || tool_name.contains("content")
+            || tool_name.contains("filename")
+            || tool_name.contains("sync")
+            || tool_name.contains("properties")
+        {
+            "database".to_string()
+        } else {
+            "other".to_string()
         }
-
-        // Re-initialize
-        self.ensure_initialized().await
-    }
-
-    /// Set the kiln path for this manager instance
-    pub fn set_kiln_path(&self, path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-        let mut kiln_path = self
-            .kiln_path
-            .write()
-            .map_err(|e| format!("Failed to lock kiln_path: {}", e))?;
-        *kiln_path = Some(path.clone());
-
-        // Update global tool execution context
-        use crucible_tools::types::{set_tool_context, ToolConfigContext};
-        set_tool_context(ToolConfigContext::with_kiln_path(path));
-
-        Ok(())
-    }
-
-    /// Set kiln path globally (convenience method for tests)
-    pub fn set_kiln_path_global(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-        use crucible_tools::types::{set_tool_context, ToolConfigContext};
-        set_tool_context(ToolConfigContext::with_kiln_path(path));
-        Ok(())
     }
 }
 
-/// Convenience functions for global access
-impl CrucibleToolManager {
-    /// Execute a tool using the global manager
-    pub async fn execute_tool_global(
-        tool_name: &str,
-        parameters: Value,
-        user_id: Option<String>,
-        session_id: Option<String>,
-    ) -> Result<crucible_tools::ToolResult> {
-        Self::instance()
-            .execute_tool(tool_name, parameters, user_id, session_id)
-            .await
+/// Type alias for backward compatibility
+pub type CrucibleToolManager = ToolRegistry;
+
+/// Convenience functions for creating registries
+impl ToolRegistry {
+    /// Create a new registry (alias for consistency)
+    pub fn create() -> Self {
+        Self::new()
     }
 
-    /// List tools using the global manager
-    pub async fn list_tools_global() -> Result<Vec<String>> {
-        Self::instance().list_tools().await
-    }
-
-    /// List tools by group using the global manager
-    pub async fn list_tools_by_group_global() -> Result<HashMap<String, Vec<String>>> {
-        Self::instance().list_tools_by_group().await
-    }
-
-    /// Ensure initialization using the global manager
-    pub async fn ensure_initialized_global() -> Result<()> {
-        Self::instance().ensure_initialized().await
-    }
-
-    /// Clear caches using the global manager
-    pub async fn clear_caches_global() {
-        Self::instance().clear_caches().await
+    /// Create a new registry with kiln path
+    pub fn create_with_kiln_path(kiln_path: PathBuf) -> Self {
+        Self::with_kiln_path(kiln_path)
     }
 }
 
@@ -441,41 +248,50 @@ mod tests {
     use serde_json::json;
 
     #[tokio::test]
-    async fn test_singleton_behavior() {
-        let manager1 = CrucibleToolManager::instance();
-        let manager2 = CrucibleToolManager::instance();
+    async fn test_registry_creation() {
+        let registry = ToolRegistry::new();
+        assert!(!registry.initialized);
+        assert!(registry.tools.is_empty());
+        assert!(registry.kiln_path.is_none());
+    }
 
-        // Both should be the same instance
-        assert!(std::ptr::eq(manager1, manager2));
+    #[tokio::test]
+    async fn test_registry_with_kiln_path() {
+        let path = PathBuf::from("/test/path");
+        let registry = ToolRegistry::with_kiln_path(path.clone());
+        assert_eq!(registry.kiln_path, Some(path));
     }
 
     #[tokio::test]
     async fn test_initialization() {
-        let manager = CrucibleToolManager::with_config(ToolManagerConfig::default());
+        let mut registry = ToolRegistry::new();
 
         // Should initialize successfully
-        assert!(manager.ensure_initialized().await.is_ok());
+        assert!(registry.ensure_initialized().await.is_ok());
+        assert!(registry.initialized);
 
         // Should not initialize again
-        assert!(manager.ensure_initialized().await.is_ok());
+        assert!(registry.ensure_initialized().await.is_ok());
     }
 
     #[tokio::test]
     async fn test_tool_listing() {
-        let manager = CrucibleToolManager::instance();
+        let mut registry = ToolRegistry::new();
+        registry.ensure_initialized().await.unwrap();
 
-        let tools = manager.list_tools().await.unwrap();
+        let tools = registry.list_tools();
         assert!(!tools.is_empty());
 
-        let grouped = manager.list_tools_by_group().await.unwrap();
+        let grouped = registry.list_tools_by_group();
         assert!(!grouped.is_empty());
     }
 
     #[tokio::test]
     async fn test_tool_execution() {
-        let manager = CrucibleToolManager::instance();
+        let mut registry = ToolRegistry::new();
+        registry.ensure_initialized().await.unwrap();
 
-        let result = manager
+        let result = registry
             .execute_tool(
                 "system_info",
                 json!({}),
@@ -489,25 +305,41 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_caching() {
-        let config = ToolManagerConfig {
-            enable_list_cache: true,
-            enable_result_cache: true,
-            max_cache_size: 10,
-            cache_ttl_secs: 1,
+    async fn test_custom_tool_registration() {
+        let mut registry = ToolRegistry::new();
+
+        let tool_def = ToolDefinition {
+            name: "custom_tool".to_string(),
+            description: "A custom test tool".to_string(),
+            category: "test".to_string(),
         };
-        let manager = CrucibleToolManager::with_config(config);
 
-        // First call should populate cache
-        let tools1 = manager.list_tools().await.unwrap();
+        registry.register_tool(tool_def);
 
-        // Second call should use cache
-        let tools2 = manager.list_tools().await.unwrap();
+        let retrieved = registry.get_tool("custom_tool");
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().name, "custom_tool");
+    }
 
-        assert_eq!(tools1, tools2);
+    #[tokio::test]
+    async fn test_stats() {
+        let mut registry = ToolRegistry::new();
+        registry.ensure_initialized().await.unwrap();
 
-        // Check stats
-        let stats = manager.get_stats().await;
-        assert_eq!(stats.get("cached_tool_lists"), Some(&"true".to_string()));
+        let stats = registry.get_stats();
+        assert!(!stats.is_empty());
+        assert!(stats.contains_key("total_tools"));
+        assert!(stats.contains_key("initialized"));
+    }
+
+    #[tokio::test]
+    async fn test_tool_categorization() {
+        let registry = ToolRegistry::new();
+
+        assert_eq!(registry.categorize_tool("system_info"), "system");
+        assert_eq!(registry.categorize_tool("search_files"), "search");
+        assert_eq!(registry.categorize_tool("get_document"), "kiln");
+        assert_eq!(registry.categorize_tool("sync_content"), "database");
+        assert_eq!(registry.categorize_tool("random_tool"), "other");
     }
 }
