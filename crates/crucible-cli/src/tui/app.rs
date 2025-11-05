@@ -396,7 +396,7 @@ impl App {
             ":help" | ":h" => {
                 let help_text = r#"
 Built-in Commands:
-  :quit, :q       - Exit daemon
+  :quit, :q       - Exit CLI
   :help, :h       - Show this help
   :clear          - Clear REPL output
   :stats          - Show kiln statistics

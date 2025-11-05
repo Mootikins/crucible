@@ -40,7 +40,7 @@ pub enum Command {
     /// :clear - Clear screen
     ClearScreen,
 
-    /// :quit - Exit daemon
+    /// :quit - Exit CLI
     Quit,
 }
 
@@ -215,7 +215,7 @@ CONFIGURATION:
 UTILITY:
   :help [command]             Show help (optionally for specific command)
   :clear                      Clear screen
-  :quit                       Exit daemon
+  :quit                       Exit CLI
 
 SURREALQL QUERIES:
   Any input not starting with ':' is treated as a SurrealQL query.
@@ -290,7 +290,7 @@ USAGE:
 
 DESCRIPTION:
   Changes the logging verbosity. Affects both console output and
-  the daemon.log file.
+  the crucible.log file.
 
 LEVELS:
   trace         Most verbose (all events)
@@ -365,7 +365,7 @@ USAGE:
   :config
 
 DESCRIPTION:
-  Displays current daemon configuration:
+  Displays current CLI configuration:
   - Kiln path
   - Database path
   - History file location
