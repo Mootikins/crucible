@@ -58,3 +58,6 @@ src-tauri/target/
 # AI agent symlinks
 CLAUDE.md
 crates/crucible-llm/.fastembed_cache/
+
+# OpenCode IDE
+.opencode/
