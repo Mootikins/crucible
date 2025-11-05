@@ -15,14 +15,14 @@ use anyhow::Result;
 use serde_json;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::RwLock;
 
 /// In-memory kiln database (temporary implementation)
 pub struct SurrealEmbeddingDatabase {
-    // In-memory storage for documents
-    storage: Arc<Mutex<HashMap<String, EmbeddingData>>>,
-    // In-memory graph relations: (from_file, to_file, relation_type, properties)
-    relations: Arc<Mutex<Vec<(String, String, String, HashMap<String, serde_json::Value>)>>>,
+    // In-memory storage for documents - uses RwLock for concurrent reads
+    storage: Arc<RwLock<HashMap<String, EmbeddingData>>>,
+    // In-memory graph relations - uses RwLock for concurrent reads
+    relations: Arc<RwLock<Vec<(String, String, String, HashMap<String, serde_json::Value>)>>>,
     #[allow(dead_code)] // Config will be used for actual SurrealDB implementation
     config: SurrealDbConfig,
 }
@@ -31,8 +31,8 @@ impl SurrealEmbeddingDatabase {
     /// Create a new in-memory database for testing
     pub fn new_memory() -> Self {
         let config = SurrealDbConfig::default();
-        let storage = Arc::new(Mutex::new(HashMap::new()));
-        let relations = Arc::new(Mutex::new(Vec::new()));
+        let storage = Arc::new(RwLock::new(HashMap::new()));
+        let relations = Arc::new(RwLock::new(Vec::new()));
         Self {
             storage,
             relations,
@@ -52,8 +52,8 @@ impl SurrealEmbeddingDatabase {
     /// Create a new database connection with custom configuration
     pub async fn with_config(config: SurrealDbConfig) -> Result<Self> {
         // Use in-memory storage (temporary implementation)
-        let storage = Arc::new(Mutex::new(HashMap::new()));
-        let relations = Arc::new(Mutex::new(Vec::new()));
+        let storage = Arc::new(RwLock::new(HashMap::new()));
+        let relations = Arc::new(RwLock::new(Vec::new()));
 
         Ok(Self {
             storage,
@@ -86,7 +86,7 @@ impl SurrealEmbeddingDatabase {
 
         let mut storage = self
             .storage
-            .lock()
+            .write()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         storage.insert(file_path.to_string(), data);
         println!("Stored embedding for: {}", file_path);
@@ -97,7 +97,7 @@ impl SurrealEmbeddingDatabase {
     pub async fn store_embedding_data(&self, data: &EmbeddingData) -> Result<()> {
         let mut storage = self
             .storage
-            .lock()
+            .write()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         storage.insert(data.file_path.clone(), data.clone());
         println!("Stored embedding data for: {}", data.file_path);
@@ -112,7 +112,7 @@ impl SurrealEmbeddingDatabase {
     ) -> Result<()> {
         let mut storage = self
             .storage
-            .lock()
+            .write()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
 
         if let Some(embedding_data) = storage.get_mut(file_path) {
@@ -132,7 +132,7 @@ impl SurrealEmbeddingDatabase {
     ) -> Result<bool> {
         let mut storage = self
             .storage
-            .lock()
+            .write()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
 
         if let Some(embedding_data) = storage.get_mut(file_path) {
@@ -150,7 +150,7 @@ impl SurrealEmbeddingDatabase {
     pub async fn file_exists(&self, file_path: &str) -> Result<bool> {
         let storage = self
             .storage
-            .lock()
+            .read()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         Ok(storage.contains_key(file_path))
     }
@@ -159,7 +159,7 @@ impl SurrealEmbeddingDatabase {
     pub async fn get_embedding(&self, file_path: &str) -> Result<Option<EmbeddingData>> {
         let storage = self
             .storage
-            .lock()
+            .read()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         Ok(storage.get(file_path).cloned())
     }
@@ -173,7 +173,7 @@ impl SurrealEmbeddingDatabase {
     ) -> Result<Vec<SearchResultWithScore>> {
         let storage = self
             .storage
-            .lock()
+            .read()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         let mut results = Vec::new();
 
@@ -219,7 +219,7 @@ impl SurrealEmbeddingDatabase {
     pub async fn search_by_tags(&self, tags: &[String]) -> Result<Vec<String>> {
         let storage = self
             .storage
-            .lock()
+            .read()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         let mut results = Vec::new();
 
@@ -245,7 +245,7 @@ impl SurrealEmbeddingDatabase {
     ) -> Result<Vec<String>> {
         let storage = self
             .storage
-            .lock()
+            .read()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         let mut results = Vec::new();
 
@@ -286,7 +286,7 @@ impl SurrealEmbeddingDatabase {
     ) -> Result<Vec<SearchResultWithScore>> {
         let storage = self
             .storage
-            .lock()
+            .read()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         let mut results = Vec::new();
 
@@ -361,7 +361,7 @@ impl SurrealEmbeddingDatabase {
     pub async fn list_files(&self) -> Result<Vec<String>> {
         let storage = self
             .storage
-            .lock()
+            .read()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         let mut files: Vec<String> = storage.keys().cloned().collect();
         files.sort(); // Return sorted list for deterministic results
@@ -372,7 +372,7 @@ impl SurrealEmbeddingDatabase {
     pub async fn delete_file(&self, file_path: &str) -> Result<bool> {
         let mut storage = self
             .storage
-            .lock()
+            .write()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
 
         if storage.remove(file_path).is_some() {
@@ -433,7 +433,7 @@ impl SurrealEmbeddingDatabase {
     pub async fn get_stats(&self) -> Result<DatabaseStats> {
         let storage = self
             .storage
-            .lock()
+            .read()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
 
         let total_documents = storage.len() as u64;
@@ -471,7 +471,7 @@ impl SurrealEmbeddingDatabase {
     ) -> Result<()> {
         let mut relations = self
             .relations
-            .lock()
+            .write()
             .expect("Relations lock poisoned - document links may be corrupted");
 
         relations.push((
@@ -499,7 +499,7 @@ impl SurrealEmbeddingDatabase {
         // Check if both files exist
         let storage = self
             .storage
-            .lock()
+            .read()
             .expect("Storage lock poisoned - kiln database is in inconsistent state");
         if !storage.contains_key(from_file) || !storage.contains_key(to_file) {
             return Ok(false);
@@ -508,7 +508,7 @@ impl SurrealEmbeddingDatabase {
 
         let mut relations = self
             .relations
-            .lock()
+            .write()
             .expect("Relations lock poisoned - document links may be corrupted");
         relations.push((
             from_file.to_string(),
@@ -533,7 +533,7 @@ impl SurrealEmbeddingDatabase {
     ) -> Result<bool> {
         let mut relations = self
             .relations
-            .lock()
+            .write()
             .expect("Relations lock poisoned - document links may be corrupted");
         let initial_len = relations.len();
 
@@ -559,7 +559,7 @@ impl SurrealEmbeddingDatabase {
     ) -> Result<Vec<String>> {
         let relations = self
             .relations
-            .lock()
+            .read()
             .expect("Relations lock poisoned - document links may be corrupted");
         let mut related_files = Vec::new();
 
