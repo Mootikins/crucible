@@ -11,6 +11,7 @@
 use super::extensions::SyntaxExtension;
 use super::types::{DocumentContent, FootnoteReference, FootnoteDefinition};
 use super::error::{ParseError, ParseErrorType};
+use async_trait::async_trait;
 
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
@@ -41,6 +42,7 @@ impl Default for FootnoteExtension {
 }
 
 
+#[async_trait]
 impl SyntaxExtension for FootnoteExtension {
     fn name(&self) -> &'static str {
         "markdown-footnotes"
@@ -58,7 +60,7 @@ impl SyntaxExtension for FootnoteExtension {
         content.contains("[^") || content.contains('^')
     }
 
-    fn parse(
+    async fn parse(
         &self,
         content: &str,
         doc_content: &mut DocumentContent,

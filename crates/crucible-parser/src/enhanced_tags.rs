@@ -7,6 +7,7 @@
 use super::extensions::SyntaxExtension;
 use super::types::{DocumentContent, Tag, ListBlock, ListItem, ListType, TaskStatus};
 use super::error::{ParseError, ParseErrorType};
+use async_trait::async_trait;
 
 use regex::Regex;
 use std::sync::Arc;
@@ -28,6 +29,7 @@ impl Default for EnhancedTagsExtension {
 }
 
 
+#[async_trait]
 impl SyntaxExtension for EnhancedTagsExtension {
     fn name(&self) -> &'static str {
         "enhanced-tags"
@@ -58,7 +60,7 @@ impl SyntaxExtension for EnhancedTagsExtension {
         has_hashtags || has_task_lists
     }
 
-    fn parse(
+    async fn parse(
         &self,
         content: &str,
         doc_content: &mut DocumentContent,
@@ -91,7 +93,8 @@ impl EnhancedTagsExtension {
         doc_content: &mut DocumentContent,
     ) -> Result<(), ParseError> {
         // Pattern to match #hashtags (excluding URLs like http:// and # in code blocks)
-        let re = Regex::new(r"(?m)(?<!\w)#([a-zA-Z0-9_-]+)").map_err(|e| {
+        // Note: Rust's regex crate doesn't support lookbehind, so we'll filter matches manually
+        let re = Regex::new(r"#([a-zA-Z0-9_-]+)").map_err(|e| {
             ParseError::error(
                 format!("Failed to compile hashtag regex: {}", e),
                 ParseErrorType::SyntaxError,
@@ -114,6 +117,12 @@ impl EnhancedTagsExtension {
 
                 // Skip if inside a code block (simplified check)
                 if line.chars().take(cap.get(0).unwrap().start()).filter(|&c| c == '`').count() % 2 == 1 {
+                    continue;
+                }
+
+                // Skip if preceded by a word character (replaces negative lookbehind)
+                let match_start = cap.get(0).unwrap().start();
+                if match_start > 0 && line.chars().nth(match_start - 1).unwrap().is_alphanumeric() {
                     continue;
                 }
 
@@ -153,7 +162,8 @@ impl EnhancedTagsExtension {
         })?;
 
         // Pattern to detect regular (non-task) list items for context switching
-        let regular_list_re = Regex::new(r"(?m)^\s*([-*+]|\d+\.|[a-zA-Z]\.)\s+(?!\[)[^-\*+\s].*$").map_err(|e| {
+        // Note: Rust's regex crate doesn't support lookahead, so we'll filter manually
+        let regular_list_re = Regex::new(r"(?m)^\s*([-*+]|\d+\.|[a-zA-Z]\.)\s+[^-\*+\s].*$").map_err(|e| {
             ParseError::error(
                 format!("Failed to compile regular list regex: {}", e),
                 ParseErrorType::SyntaxError,
@@ -227,7 +237,7 @@ impl EnhancedTagsExtension {
                 }
             }
             // Check for regular list items (close task lists)
-            else if regular_list_re.is_match(line) {
+            else if regular_list_re.is_match(line) && !line.contains('[') {
                 // Close current task list if we hit a regular list item
                 if let Some((items, list_offset, list_type)) = current_list.take() {
                     if !items.is_empty() {

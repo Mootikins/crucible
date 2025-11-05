@@ -30,7 +30,7 @@ Footnote reference[^1].
 [^1]: Footnote definition.
 "#;
 
-    let document = parser.parse_content(simple_content, Path::new("simple.md"))
+    let document = parser.parse_content(simple_content, Path::new("simple.md")).await
         .expect("Should parse simple content");
 
     // Basic checks

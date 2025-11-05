@@ -689,6 +689,22 @@ impl Callout {
             "note" // fallback to generic note type
         }
     }
+
+    /// Get the start offset (backward compatibility)
+    pub fn start_offset(&self) -> usize {
+        self.offset
+    }
+
+    /// Get the total length of the callout
+    pub fn length(&self) -> usize {
+        // Calculate total length including callout header and content
+        let header_len = if let Some(title) = &self.title {
+            format!("> [!{}] {}\n", self.callout_type, title).len()
+        } else {
+            format!("> [!{}]\n", self.callout_type).len()
+        };
+        header_len + self.content.len()
+    }
 }
 
 /// LaTeX mathematical expression
@@ -725,6 +741,11 @@ impl LatexExpression {
         } else {
             "inline"
         }
+    }
+
+    /// Get the start offset (backward compatibility)
+    pub fn start_offset(&self) -> usize {
+        self.offset
     }
 }
 

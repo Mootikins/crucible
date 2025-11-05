@@ -23,7 +23,7 @@ regex = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 
 # Parsing
-pulldown-cmark = { workspace = true, default-features = false }
+pulldown-cmark = { workspace = true }
 serde_yaml = { workspace = true }
 toml = { workspace = true }
 
