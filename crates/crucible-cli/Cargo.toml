@@ -102,3 +102,7 @@ tokio-test = { workspace = true }
 wiremock = { workspace = true }
 mockall = { workspace = true }
 toml = { workspace = true }
+
+# Additional dependencies for resource constraint testing
+rand = "0.8"
+nix = { version = "0.27", features = ["fs"] }
