@@ -11,6 +11,7 @@ members = [
     "crates/crucible-a2a",
     "crates/crucible-llm",
     "crates/crucible-tools",
+    "crates/crucible-watch",
 ]
 default-members = ["crates/crucible-cli"]
 
