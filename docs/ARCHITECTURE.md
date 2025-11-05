@@ -65,10 +65,17 @@ graph TD
 ## Data Flows
 
 ### Document Lifecycle
-1. Watchers (or manual triggers) notify the core of file changes.
+1. **Integrated File Processing**: CLI automatically scans for file changes on startup, processing only new/modified files (incremental).
 2. Core parses Markdown/CRDT structures and writes canonical state through the storage façade.
 3. Tool façade emits events for indexing, linking, and embedding updates.
 4. UIs query the core for summaries, search results, or structured data.
+
+#### Single-Binary Architecture (2025-11)
+- **No External Daemon**: All file processing happens in-process within the CLI binary
+- **Startup Processing**: Files are processed automatically when CLI starts, ensuring data is always up-to-date
+- **Graceful Degradation**: CLI continues to function even if file processing fails, using existing data
+- **User Control**: `--no-process` flag skips processing for quick commands, `--process-timeout` controls duration
+- **Incremental Updates**: Only changed files are reprocessed, providing fast subsequent startups
 
 ### Tool / Agent Invocation
 1. UI or automation calls `Core::execute_tool(...)`.
