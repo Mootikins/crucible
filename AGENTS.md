@@ -36,6 +36,22 @@ This file provides essential information for AI agents to understand and contrib
 
 > **Note:** The legacy `crucible-services` crate has been removed. Service integrations now live directly inside the remaining crates (primarily the CLI and SurrealDB layers).
 
+## 🔄 Single-Binary Architecture (2025-11)
+
+### Integrated File Processing
+- **No External Daemon**: All file processing happens in-process within the CLI binary
+- **Automatic Processing**: Files are processed automatically on startup, ensuring data is always up-to-date
+- **User Control**: Use `--no-process` to skip processing for quick commands, `--process-timeout` for custom duration
+- **Graceful Degradation**: CLI continues to function even if file processing fails
+- **Incremental Updates**: Only changed files are reprocessed for fast subsequent startups
+
+### CLI File Processing Flow
+1. CLI starts → Scan kiln directory for changes
+2. Process new/modified files with incremental change detection
+3. Update embeddings and database state
+4. Execute user commands with up-to-date data
+5. Handle errors gracefully and continue operation
+
 ### Key Technologies
 - **Rust**: Core performance-critical components
 - **Tauri**: Desktop application framework

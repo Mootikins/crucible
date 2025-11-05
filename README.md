@@ -65,6 +65,10 @@ cru search "your query" --limit 20 --format table
 cru fuzzy "concept" --content --tags --paths
 cru semantic "machine learning concepts" --show-scores
 
+# File Processing Options
+cru --no-process search "query"           # Skip file processing for quick commands
+cru --process-timeout 60 semantic "ml"   # Set custom processing timeout
+
 # Search automatically handles:
 # - Large files (>10MB skipped, >1MB content limited)
 # - UTF-8 encoding errors (graceful recovery)
@@ -75,6 +79,26 @@ cru note create projects/research.md --edit
 cru note get projects/research.md --format json
 cru note list --format table
 ```
+
+### Integrated File Processing
+
+Crucible now processes files automatically on startup to ensure all data is up-to-date:
+
+```bash
+# Files are processed automatically when CLI starts
+cru semantic "recent changes"    # Uses latest processed data
+
+# Control file processing behavior
+cru --no-process fuzzy "concept"         # Use existing data (faster)
+cru --process-timeout 120 stats          # Custom timeout (seconds)
+```
+
+**What happens automatically:**
+- ✅ Scans for new and modified files
+- ✅ Updates embeddings for semantic search
+- ✅ Processes only changed files (incremental)
+- ✅ Shows progress and handles errors gracefully
+- ✅ Continues even if processing fails (graceful degradation)
 
 ### Tooling & Automation
 ```bash
