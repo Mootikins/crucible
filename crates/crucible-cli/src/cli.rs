@@ -45,6 +45,14 @@ pub struct Cli {
     /// Run REPL in non-interactive mode (reads from stdin, useful for testing/scripting)
     #[arg(long, global = true)]
     pub non_interactive: bool,
+
+    /// Skip file processing on startup (useful for quick commands with potentially stale data)
+    #[arg(long = "no-process", global = true)]
+    pub no_process: bool,
+
+    /// File processing timeout in seconds (default: 300, 0 = no timeout)
+    #[arg(long = "process-timeout", global = true, default_value = "300")]
+    pub process_timeout: u64,
 }
 
 #[derive(Subcommand)]

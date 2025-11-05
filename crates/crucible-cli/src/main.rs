@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use std::sync::Arc;
+use tracing::{debug, info, warn, error};
 
 use crucible_cli::{
     cli::{Cli, Commands},
@@ -34,14 +35,51 @@ async fn main() -> Result<()> {
     // when needed, and the Arc-wrapped SurrealClient ensures cheap cloning.
 
     // Process any pending files on startup using integrated blocking processing
-    // Skip for interactive fuzzy picker (users want immediate results)
+    // Skip for interactive fuzzy picker or when explicitly disabled
     match &cli.command {
         Some(Commands::Fuzzy { .. }) => {
             // Skip processing - fuzzy is interactive and users want immediate results
+            debug!("Skipping file processing for fuzzy search command");
         }
         _ => {
-            // Process files before command execution to ensure up-to-date data
-            crucible_cli::common::kiln_processor::process_files_on_startup(&config).await?;
+            if cli.no_process {
+                info!("⚡ File processing skipped due to --no-process flag");
+                info!("ℹ️  CLI commands may operate on stale data");
+            } else {
+                // Process files before command execution to ensure up-to-date data
+                debug!("Starting file processing with timeout: {} seconds", cli.process_timeout);
+                // Set timeout for file processing
+                let timeout_duration = if cli.process_timeout == 0 {
+                    None // No timeout
+                } else {
+                    Some(std::time::Duration::from_secs(cli.process_timeout))
+                };
+
+                let result = tokio::time::timeout(
+                    timeout_duration.unwrap_or(std::time::Duration::from_secs(u64::MAX)),
+                    crucible_cli::common::kiln_processor::process_files_on_startup(&config)
+                ).await;
+
+                match result {
+                    Ok(process_result) => {
+                        match process_result {
+                            Ok(()) => {
+                                debug!("File processing completed successfully");
+                            }
+                            Err(e) => {
+                                error!("❌ File processing failed: {}", e);
+                                info!("⚠️  CLI commands may operate on stale data");
+                                // Continue execution even if processing fails (graceful degradation)
+                            }
+                        }
+                    }
+                    Err(timeout_err) => {
+                        warn!("⏱️  File processing timed out after {} seconds", cli.process_timeout);
+                        info!("⚠️  CLI commands may operate on partially updated data");
+                        // Continue execution even if processing times out (graceful degradation)
+                    }
+                }
+            }
         }
     }
 
