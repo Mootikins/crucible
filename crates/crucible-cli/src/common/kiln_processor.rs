@@ -1,17 +1,15 @@
 //! Kiln processing utilities for CLI
 //!
-//! Provides functionality to spawn and manage the kiln processor process
-//! for one-shot kiln processing when embeddings are missing.
+//! Provides functionality for integrated kiln processing using the
+//! single-binary architecture without external daemon processes.
 
 use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::process::Stdio;
 use std::time::{Duration, Instant};
-use tokio::process::Command;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
-/// Daemon process manager for one-shot processing
+/// Kiln processor for integrated file processing
 pub struct KilnProcessor {
     progress_bar: Option<ProgressBar>,
 }
@@ -65,9 +63,14 @@ impl KilnProcessor {
         }
     }
 
-    /// Spawn daemon for one-shot processing with progress feedback
-    pub async fn process_kiln(&mut self, kiln_path: &std::path::Path) -> Result<ProcessingResult> {
-        info!("Starting daemon for one-shot kiln processing...");
+    /// Process kiln files directly using the integrated processing pipeline
+    /// This replaces the legacy daemon spawning with in-process file processing
+    pub async fn process_kiln_integrated(
+        &mut self,
+        kiln_path: &std::path::Path,
+        client: &crucible_surrealdb::SurrealClient,
+    ) -> Result<ProcessingResult> {
+        info!("Starting integrated kiln processing...");
 
         // Validate kiln path exists
         if !kiln_path.exists() {
@@ -85,116 +88,70 @@ impl KilnProcessor {
                 .unwrap()
                 .progress_chars("#>-"),
         );
-        pb.set_message("Starting kiln processing...");
+        pb.set_message("Scanning kiln files...");
         pb.enable_steady_tick(Duration::from_millis(100));
         self.progress_bar = Some(pb);
 
         let start_time = Instant::now();
 
-        // Spawn the kiln processor - use the built binary from target directory
-        let crate_root = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| {
-            std::env::current_dir()
-                .unwrap()
-                .to_string_lossy()
-                .to_string()
-        });
-
-        // Try debug build first, then release build as fallback
-        let daemon_path_debug =
-            std::path::PathBuf::from(&crate_root).join("../../target/debug/kiln processor");
-        let daemon_path_release =
-            std::path::PathBuf::from(&crate_root).join("../../target/release/kiln processor");
-
-        let daemon_path = if daemon_path_debug.exists() {
-            daemon_path_debug
-        } else if daemon_path_release.exists() {
-            daemon_path_release
-        } else {
-            return Err(anyhow::anyhow!(
-                "kiln processor binary not found at {} or {}. \
-                Run 'cargo build -p kiln processor' to build the daemon.",
-                daemon_path_debug.display(),
-                daemon_path_release.display()
-            ));
-        };
-
-        let mut child = Command::new(&daemon_path)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            // Inherit all relevant environment variables for security
-            .env_clear()
-            .envs(std::env::vars().filter(|(k, _)| {
-                // Keep only essential environment variables for security
-                matches!(
-                    k.as_str(),
-                    "EMBEDDING_ENDPOINT"
-                        | "EMBEDDING_MODEL"
-                        | "HOME"
-                        | "PATH"
-                        | "RUST_LOG"
-                        | "CRUCIBLE_DB_PATH"
-                        | "CRUCIBLE_CONFIG_PATH"
-                )
-            }))
-            .spawn()
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to spawn kiln processor from {}: {}. \
-                Make sure the daemon is built (run 'cargo build -p kiln processor').",
-                    daemon_path.display(),
-                    e
-                )
-            })?;
+        // Use the integrated processing pipeline
+        let config = crucible_surrealdb::kiln_scanner::KilnScannerConfig::default();
+        let files = crucible_surrealdb::kiln_processor::scan_kiln_directory(
+            &std::path::PathBuf::from(kiln_path),
+            &config,
+        )
+        .await?;
 
         if let Some(pb) = &self.progress_bar {
-            pb.set_message("Processing kiln files... (this may take a few minutes)");
+            pb.set_message(format!("Processing {} files...", files.len()));
         }
 
-        // Wait for the daemon to complete
-        let start_wait = Instant::now();
-        debug!("Waiting for kiln processor to complete...");
+        // Process files using the integrated pipeline
+        let result = crucible_surrealdb::kiln_processor::process_kiln_files(
+            &files,
+            client,
+            &config,
+            None, // No embedding pool for basic processing
+            kiln_path,
+        )
+        .await;
 
-        match child.wait().await {
-            Ok(status) => {
-                let elapsed = start_time.elapsed();
-                let wait_elapsed = start_wait.elapsed();
+        let elapsed = start_time.elapsed();
 
+        match result {
+            Ok(process_result) => {
                 if let Some(pb) = self.progress_bar.take() {
-                    let message = format!("Processing completed in {:.1}s", elapsed.as_secs_f64());
+                    let message = format!(
+                        "Processed {} files successfully in {:.1}s",
+                        process_result.processed_count,
+                        elapsed.as_secs_f64()
+                    );
                     pb.finish_with_message(message);
                     self.progress_bar = Some(pb);
                 }
 
-                let result = ProcessingResult {
-                    success: status.success(),
-                    exit_code: status.code(),
+                let processing_result = ProcessingResult {
+                    success: process_result.failed_count == 0,
+                    exit_code: if process_result.failed_count == 0 { Some(0) } else { Some(1) },
                     processing_time: elapsed,
-                    wait_time: wait_elapsed,
+                    wait_time: elapsed,
                     kiln_path: Some(kiln_path.to_string_lossy().to_string()),
                 };
 
-                if result.success {
+                if processing_result.success {
                     info!(
-                        "Daemon processing completed successfully in {:.1}s",
+                        "Integrated processing completed successfully: {} files in {:.1}s",
+                        process_result.processed_count,
                         elapsed.as_secs_f64()
                     );
-                    Ok(result)
+                    Ok(processing_result)
                 } else {
-                    let error_msg = match result.exit_code {
-                        Some(1) => "Configuration error (missing kiln path)",
-                        Some(2) => "Processing error (file parsing/validation failed)",
-                        Some(3) => "Database error (connection/query failed)",
-                        Some(4) => "Other error",
-                        Some(code) => &format!("Unknown error code: {}", code),
-                        None => "Process terminated by signal",
-                    };
-
-                    error!("Daemon processing failed: {}", error_msg);
-                    Err(anyhow::anyhow!(
-                        "Daemon processing failed: {}. Check that your kiln path is correct and accessible.",
-                        error_msg
-                    ))
+                    warn!(
+                        "Integrated processing completed with {} failures out of {} files",
+                        process_result.failed_count,
+                        files.len()
+                    );
+                    Ok(processing_result)
                 }
             }
             Err(e) => {
@@ -202,8 +159,8 @@ impl KilnProcessor {
                     pb.abandon_with_message("Processing failed".to_string());
                     self.progress_bar = Some(pb);
                 }
-                error!("Failed to wait for kiln processor: {}", e);
-                Err(anyhow::anyhow!("Failed to wait for kiln processor: {}", e))
+                error!("Integrated processing failed: {}", e);
+                Err(anyhow::anyhow!("Integrated processing failed: {}", e))
             }
         }
     }
@@ -431,17 +388,20 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_daemon_manager_creation() {
-        let manager = KilnProcessor::new();
-        assert!(manager.progress_bar.is_none());
+    async fn test_kiln_processor_creation() {
+        let processor = KilnProcessor::new();
+        assert!(processor.progress_bar.is_none());
     }
 
     #[tokio::test]
     async fn test_missing_kiln_path_error() {
-        let mut manager = KilnProcessor::new();
+        let mut processor = KilnProcessor::new();
 
-        let result = manager
-            .process_kiln(std::path::Path::new("/nonexistent"))
+        let result = processor
+            .process_kiln_integrated(
+                std::path::Path::new("/nonexistent"),
+                &crucible_surrealdb::SurrealClient::in_memory().await,
+            )
             .await;
         assert!(result.is_err());
         assert!(result
@@ -451,7 +411,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_daemon_result_creation() {
+    async fn test_processing_result_creation() {
         let result = ProcessingResult {
             success: true,
             exit_code: Some(0),

@@ -112,7 +112,7 @@ impl Visit for LogFieldVisitor {
 ///
 /// This function configures the tracing subscriber with:
 /// - TUI layer: Sends logs to the UI
-/// - File layer: Writes logs to ~/.crucible/daemon.log
+/// - File layer: Writes logs to ~/.crucible/crucible.log
 ///
 /// # Arguments
 /// - `log_tx`: Channel sender for TUI logs

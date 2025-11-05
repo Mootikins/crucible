@@ -1,4 +1,4 @@
-// TUI module for the Crucible daemon
+// TUI module for the Crucible CLI
 //
 // This module implements a terminal user interface using ratatui, providing:
 // - Real-time log display from worker threads
@@ -58,7 +58,7 @@ impl Default for TuiConfig {
 
 /// Run the TUI event loop
 ///
-/// This is the main entry point for the daemon TUI. It:
+/// This is the main entry point for the CLI TUI. It:
 /// 1. Sets up the terminal in raw mode with alternate screen
 /// 2. Creates the App state with channel receivers
 /// 3. Runs the event loop (tokio::select! multiplexing)
