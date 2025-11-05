@@ -11,12 +11,6 @@ pub use crucible_config::EmbeddingProviderType as ProviderType;
 // The Crucible CLI uses FILE-BASED CONFIGURATION ONLY. Environment variables
 // are NO LONGER READ OR SUPPORTED.
 //
-// Removed Environment Variables:
-// - OBSIDIAN_KILN_PATH      -> Use config.toml [kiln] path instead
-// - EMBEDDING_MODEL          -> Use config.toml [embedding] model instead
-// - EMBEDDING_ENDPOINT       -> Use config.toml [embedding] endpoint instead
-// - CRUCIBLE_DB_PATH         -> Use --db-path flag or config.toml instead
-//
 // Rationale:
 // - Explicit configuration management
 // - No implicit environment variable precedence
