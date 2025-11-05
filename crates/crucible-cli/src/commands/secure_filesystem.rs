@@ -14,6 +14,43 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
 
+/// Strip UTF-8 Byte Order Mark (BOM) from content if present
+///
+/// The UTF-8 BOM is the byte sequence [0xEF, 0xBB, 0xBF] which appears at the start
+/// of text files to indicate UTF-8 encoding. For text processing, it should be stripped
+/// as it's not part of the actual content and can interfere with parsing.
+fn strip_utf8_bom(content: &str) -> String {
+    if content.starts_with('\u{FEFF}') {
+        // Content starts with UTF-8 BOM (Unicode code point U+FEFF)
+        // Strip it by skipping the first character
+        content[3..].to_string() // Skip the 3-byte BOM
+    } else {
+        content.to_string()
+    }
+}
+
+/// Enhanced UTF-8 validation with detailed error messages
+fn validate_utf8_with_detailed_errors(content: &[u8]) -> Result<()> {
+    match std::str::from_utf8(content) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            // Find the problematic bytes for better error reporting
+            let error_pos = e.valid_up_to();
+            let problematic_bytes = if error_pos < content.len() {
+                &content[error_pos..std::cmp::min(error_pos + 10, content.len())]
+            } else {
+                &[]
+            };
+
+            Err(anyhow!(
+                "Invalid UTF-8 encoding detected at byte {}. Problematic bytes: {:?}. \
+                This file contains non-UTF-8 characters and may be corrupted or use a different encoding.",
+                error_pos, problematic_bytes
+            ))
+        }
+    }
+}
+
 /// Configuration for secure filesystem operations
 #[derive(Debug, Clone)]
 pub struct SecureFileSystemConfig {
@@ -596,9 +633,11 @@ impl SecureFileReader {
 
         // For smaller files, read the entire content
         if bytes_read < sample_buffer.len() {
-            // File is smaller than our sample, return the sample as string
-            return String::from_utf8(sample_buffer)
-                .map_err(|e| anyhow!("Invalid UTF-8 in file: {} - {}", file_path.display(), e));
+            // File is smaller than our sample, validate and convert with enhanced error reporting
+            validate_utf8_with_detailed_errors(&sample_buffer)?;
+            let content = String::from_utf8(sample_buffer)
+                .map_err(|e| anyhow!("Invalid UTF-8 in file: {} - {}", file_path.display(), e))?;
+            return Ok(strip_utf8_bom(&content));
         }
 
         // For larger files, continue reading with UTF-8 error handling
@@ -651,7 +690,8 @@ impl SecureFileReader {
             }
         }
 
-        Ok(content)
+        // Strip UTF-8 BOM if present and return final content
+        Ok(strip_utf8_bom(&content))
     }
 
     /// Detect if content is binary
