@@ -19,7 +19,7 @@ async fn test_basic_search_works_immediately() -> Result<()> {
     // WHEN: User performs basic search
     let output = run_cli_support(&["search", "getting"], &config).await?;
 
-    // THEN: Should return immediate basic results without daemon
+    // THEN: Should return immediate basic results with integrated processing
     assert!(output.stdout.contains("Getting Started.md") || output.stdout.contains("basic"));
     assert!(output.stdout.contains("Found") || output.stdout.contains("matches"));
 
@@ -88,7 +88,7 @@ async fn test_search_json_output_format() -> Result<()> {
 
 #[tokio::test]
 #[ignore] // Ignored: fuzzy command now opens interactive picker requiring terminal
-async fn test_fuzzy_search_without_daemon() -> Result<()> {
+async fn test_fuzzy_search_interactive() -> Result<()> {
     // GIVEN: A test kiln
     let kiln_dir = create_test_kiln().await?;
     let config =
