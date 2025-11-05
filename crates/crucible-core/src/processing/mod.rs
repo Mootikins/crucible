@@ -400,19 +400,22 @@ impl DocumentProcessingJob {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::types::{ParsedDocument, DocumentContent};
+    use crate::parser::types::{ParsedDocument, DocumentContent, FootnoteMap};
 
     fn create_test_document(path: &str) -> ParsedDocument {
         ParsedDocument {
             path: PathBuf::from(path),
             content: DocumentContent::default(),
             frontmatter: None,
-            headings: Vec::new(),
             wikilinks: Vec::new(),
             tags: Vec::new(),
             callouts: Vec::new(),
-            code_blocks: Vec::new(),
-            task_items: Vec::new(),
+            latex_expressions: Vec::new(),
+            footnotes: FootnoteMap::new(),
+            parsed_at: chrono::Utc::now(),
+            content_hash: "test_hash".to_string(),
+            file_size: 0,
+            parse_errors: Vec::new(),
         }
     }
 
