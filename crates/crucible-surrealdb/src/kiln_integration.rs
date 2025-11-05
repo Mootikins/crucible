@@ -2630,3 +2630,13 @@ mod tests {
         println!("✓ Multiple chunks graph relations test passed!");
     }
 }
+
+/// Generate a document ID from path and kiln root
+pub fn generate_document_id(document_path: &std::path::Path, _kiln_root: &std::path::Path) -> String {
+    // Simple implementation - just use the path string
+    // TODO: Implement proper ID generation based on relative path
+    document_path
+        .to_str()
+        .unwrap_or("unknown")
+        .replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
+}
