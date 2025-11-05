@@ -1,0 +1,35 @@
+//! Crucible Markdown Parser
+//!
+//! A modular, extensible markdown parser for knowledge management systems.
+//! This crate provides:
+//! - Obsidian-compatible syntax extensions
+//! - Plugin-based architecture
+//! - Dependency inversion support for testing
+//! - High-performance parsing with sub-100ms target
+
+pub mod callouts;
+pub mod enhanced_tags;
+pub mod error;
+pub mod extensions;
+pub mod footnotes;
+pub mod implementation;
+pub mod latex;
+pub mod traits;
+pub mod types;
+
+// Re-export main types for convenience
+pub use error::{ParseError, ParseErrorType, ParserError, ParserResult};
+pub use extensions::{ExtensionRegistry, ExtensionRegistryBuilder, ExtensionRegistryStats, SyntaxExtension};
+pub use implementation::CrucibleParser;
+pub use traits::{MarkdownParserImplementation, ParserCapabilities};
+pub use types::{
+    Callout, CodeBlock, DocumentContent, FootnoteDefinition, FootnoteMap, FootnoteReference,
+    Frontmatter, FrontmatterFormat, Heading, LatexExpression, ListBlock, ListItem, ListType,
+    ParsedDocument, ParsedDocumentBuilder, Tag, TaskStatus, Wikilink,
+};
+
+// Convenience factory functions
+pub use callouts::create_callout_extension;
+pub use enhanced_tags::create_enhanced_tags_extension;
+pub use footnotes::create_footnote_extension;
+pub use latex::create_latex_extension;
