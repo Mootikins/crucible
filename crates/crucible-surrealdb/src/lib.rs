@@ -27,6 +27,7 @@
 //! }
 //! ```
 
+pub mod content_addressed_storage;
 pub mod database;
 pub mod kiln_integration;
 pub mod kiln_pipeline_connector;
@@ -44,6 +45,7 @@ pub mod embedding_config;
 pub mod embedding_pipeline;
 pub mod embedding_pool;
 
+pub use content_addressed_storage::ContentAddressedStorageSurrealDB;
 pub use database::SurrealEmbeddingDatabase;
 pub use kiln_store::{InMemoryKilnStore, KilnStore};
 pub use schema_types::*;

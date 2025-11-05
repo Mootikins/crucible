@@ -5,9 +5,11 @@ pub mod crdt;
 pub mod crucible_core;
 pub mod database;
 pub mod document;
+pub mod hashing;
 pub mod parser;
 pub mod properties;
 pub mod sink;
+pub mod storage;
 pub mod test_support;
 pub mod traits;
 pub mod types;
@@ -24,15 +26,15 @@ pub use config::{
 pub use crucible_core::CrucibleCore;
 
 // Re-export core traits (abstractions for Dependency Inversion)
-pub use traits::{
-    AgentProvider, MarkdownParser, Storage, ToolExecutor,
-};
+pub use traits::{AgentProvider, MarkdownParser, Storage, ToolExecutor};
 
 // Re-export key types used across module boundaries
 pub use types::{
     // Storage trait types (from traits/storage.rs)
     // Note: Parser types (ParsedDocument, Wikilink, Tag, etc.) are exported from parser:: module below
-    ExecutionContext, ToolDefinition, ToolExample,
+    ExecutionContext,
+    ToolDefinition,
+    ToolExample,
 };
 
 pub use database::{
@@ -108,8 +110,17 @@ pub use database::{
 };
 pub use document::{DocumentNode, ViewportState};
 pub use parser::{
-    CodeBlock, DocumentContent, Frontmatter, FrontmatterFormat, Heading,
-    ParsedDocument, ParserCapabilities, ParserError, ParserResult, Tag, Wikilink,
+    CodeBlock,
+    DocumentContent,
+    Frontmatter,
+    FrontmatterFormat,
+    Heading,
+    ParsedDocument,
+    ParserCapabilities,
+    ParserError,
+    ParserResult,
+    Tag,
+    Wikilink,
     // Note: MarkdownParser trait is exported from traits:: module above
 };
 pub use properties::{PropertyMap, PropertyValue};

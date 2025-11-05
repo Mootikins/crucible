@@ -176,10 +176,7 @@ impl Record {
 
     /// Create a new record with an ID
     pub fn with_id(id: RecordId, data: HashMap<String, serde_json::Value>) -> Self {
-        Self {
-            id: Some(id),
-            data,
-        }
+        Self { id: Some(id), data }
     }
 }
 

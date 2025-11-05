@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, OnceLock};
 use uuid::Uuid;
 
 /// Simple tool definition for basic tool registration
@@ -262,25 +262,20 @@ pub async fn execute_tool(
 }
 
 /// Simplified global tool registry for Phase 3.1
-static mut GLOBAL_TOOL_REGISTRY: Option<std::sync::Arc<tokio::sync::RwLock<ToolFunctionRegistry>>> =
-    None;
-static REGISTRY_INIT: std::sync::Once = std::sync::Once::new();
+static GLOBAL_TOOL_REGISTRY: OnceLock<std::sync::Arc<tokio::sync::RwLock<ToolFunctionRegistry>>> = OnceLock::new();
 
 /// Initialize the global tool registry
 pub async fn initialize_tool_registry() {
-    REGISTRY_INIT.call_once(|| {
+    GLOBAL_TOOL_REGISTRY.get_or_init(|| {
         let registry: ToolFunctionRegistry = HashMap::new();
-        unsafe {
-            GLOBAL_TOOL_REGISTRY = Some(std::sync::Arc::new(tokio::sync::RwLock::new(registry)));
-        }
+        std::sync::Arc::new(tokio::sync::RwLock::new(registry))
     });
 }
 
 /// Get the global tool registry
-#[allow(static_mut_refs)]
 pub async fn get_tool_registry() -> std::sync::Arc<tokio::sync::RwLock<ToolFunctionRegistry>> {
     initialize_tool_registry().await;
-    unsafe { GLOBAL_TOOL_REGISTRY.as_ref().unwrap().clone() }
+    GLOBAL_TOOL_REGISTRY.get().unwrap().clone()
 }
 
 /// Register a tool function
