@@ -1,0 +1,39 @@
+[package]
+name = "crucible-parser"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Async runtime
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Regular expressions
+regex = { workspace = true }
+
+# Time handling
+chrono = { workspace = true, features = ["serde"] }
+
+# Parsing
+pulldown-cmark = { workspace = true, default-features = false }
+serde_yaml = { workspace = true }
+toml = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[features]
+default = ["full-featured"]
+full-featured = []
+
+[lib]
+name = "crucible_parser"
+path = "src/lib.rs"
