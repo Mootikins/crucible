@@ -1,11 +1,15 @@
 pub mod config;
+pub mod diff;
 pub mod fuzzy;
 pub mod fuzzy_interactive;
 pub mod note;
+pub mod parse;
 pub mod process;
 pub mod repl;
 pub mod search;
 pub mod secure_filesystem;
 pub mod semantic;
 pub mod stats;
+pub mod status;
+pub mod storage;
 pub mod test_tools;

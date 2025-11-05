@@ -3,6 +3,7 @@ use anyhow::Result;
 use colored::Colorize;
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Cell, Color, Table};
 use serde_json;
+use std::io::{self, Write};
 
 /// Format search results
 pub fn format_search_results(
@@ -132,6 +133,32 @@ pub fn format_stats(stats: &std::collections::HashMap<String, i64>) -> String {
     }
 
     table.to_string()
+}
+
+/// Print a formatted header
+pub fn header(title: &str) {
+    println!("\n{}", title.bold().underline());
+    println!("{}", "─".repeat(title.len()));
+}
+
+/// Print an info message
+pub fn info(message: &str) {
+    println!("{} {}", "ℹ".blue(), message);
+}
+
+/// Print a success message
+pub fn success(message: &str) {
+    println!("{} {}", "✓".green(), message);
+}
+
+/// Print an error message
+pub fn error(message: &str) {
+    eprintln!("{} {}", "✗".red(), message);
+}
+
+/// Print a warning message
+pub fn warning(message: &str) {
+    println!("{} {}", "⚠".yellow(), message);
 }
 
 #[cfg(test)]
