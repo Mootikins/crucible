@@ -230,49 +230,119 @@ impl ProcessingResult {
     }
 }
 
-/// Ensure file watcher is running for the kiln
+/// Process all pending files on startup using integrated blocking processing
 ///
-/// Spawns a background task that watches for file changes and queues them for processing.
-/// Follows industry best practices: enabled by default, graceful degradation on failure.
+/// This function implements the single-binary architecture by:
+/// 1. Scanning for all files that need processing
+/// 2. Processing them immediately using the integrated pipeline
+/// 3. Waiting for completion before returning
+/// 4. Providing progress feedback to the user
+/// 5. Using BatchAwareSurrealClient for consistency
 ///
-/// Returns a shared queue of pending files that the main process should periodically check.
-pub async fn ensure_watcher_running(
+/// This replaces the legacy daemon-based file watching with in-process processing.
+pub async fn process_files_on_startup(
     config: &crate::config::CliConfig,
-) -> Result<std::sync::Arc<std::sync::RwLock<std::collections::HashSet<std::path::PathBuf>>>> {
-    use std::collections::HashSet;
-    use std::sync::{Arc, RwLock};
+) -> Result<()> {
+    use std::time::Instant;
+    use indicatif::{ProgressBar, ProgressStyle};
 
-    // Check if enabled in config (default: true)
+    // Check if file processing is enabled (default: true)
     if !config.file_watching.enabled {
-        debug!("File watching disabled by configuration");
-        return Ok(Arc::new(RwLock::new(HashSet::new())));
+        debug!("File processing disabled by configuration");
+        return Ok(());
     }
 
     info!(
-        "Initializing file watcher for: {}",
+        "🚀 Starting integrated file processing for kiln: {}",
         config.kiln.path.display()
     );
 
-    // Create shared queue for pending files
-    let pending_files = Arc::new(RwLock::new(HashSet::new()));
-    let pending_files_clone = Arc::clone(&pending_files);
+    let start_time = Instant::now();
 
-    // Spawn the entire watcher + event handling in a background task
-    let kiln_path = config.kiln.path.clone();
-    let watcher_config = config.file_watching.clone();
+    // Initialize database connection
+    let db_config = crucible_surrealdb::SurrealDbConfig {
+        namespace: "crucible".to_string(),
+        database: "kiln".to_string(),
+        path: config.database_path_str()?,
+        max_connections: Some(10),
+        timeout_seconds: Some(30),
+    };
 
-    std::thread::spawn(move || {
-        // Create a new Tokio runtime for this thread
-        let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
-        rt.block_on(async move {
-            run_file_watcher(kiln_path, watcher_config, pending_files_clone).await;
-        });
-    });
+    let client = match crucible_surrealdb::SurrealClient::new(db_config).await {
+        Ok(client) => client,
+        Err(e) => {
+            warn!("Failed to connect to database for file processing: {}", e);
+            info!("Continuing without file processing - database unavailable");
+            return Ok(()); // Graceful degradation
+        }
+    };
 
-    // Give the watcher a moment to initialize before continuing
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    // Use process_incremental_changes which handles change detection automatically
+    let scan_config = crucible_surrealdb::kiln_scanner::KilnScannerConfig::default();
+    let files = match crucible_surrealdb::kiln_processor::scan_kiln_directory(
+        &config.kiln.path,
+        &scan_config,
+    )
+    .await {
+        Ok(files) => files,
+        Err(e) => {
+            error!("Failed to scan kiln directory: {}", e);
+            return Err(anyhow::anyhow!("File scanning failed: {}", e));
+        }
+    };
 
-    Ok(pending_files)
+    if files.is_empty() {
+        info!("📂 No files found to process");
+        return Ok(());
+    }
+
+    info!(
+        "📚 Found {} files, checking for changes...",
+        files.len()
+    );
+
+    // Use incremental processing which automatically detects changes
+    let result = match crucible_surrealdb::kiln_processor::process_incremental_changes(
+        &files,
+        &client,
+        &scan_config,
+        None, // No embedding pool for basic processing
+        &config.kiln.path,
+    )
+    .await {
+        Ok(result) => result,
+        Err(e) => {
+            error!("Failed to process files incrementally: {}", e);
+            return Err(anyhow::anyhow!("File processing failed: {}", e));
+        }
+    };
+
+    // If no files needed processing, we're done
+    if result.processed_count == 0 && result.failed_count == 0 {
+        info!("✅ All files are up to date");
+        return Ok(());
+    }
+
+    info!(
+        "🔄 Processed {} file(s) with {} failures...",
+        result.processed_count,
+        result.failed_count
+    );
+
+    let total_time = start_time.elapsed();
+
+    info!(
+        "🎯 File processing completed: {} successful, {} failed in {:?}",
+        result.processed_count,
+        result.failed_count,
+        total_time
+    );
+
+    if result.failed_count > 0 {
+        warn!("Some files failed to process - check logs for details");
+    }
+
+    Ok(())
 }
 
 /// Run file watcher in background task
