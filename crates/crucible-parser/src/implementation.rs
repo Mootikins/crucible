@@ -118,10 +118,10 @@ impl MarkdownParserImplementation for CrucibleParser {
         self.validate_file_size(size)?;
 
         // Parse content
-        self.parse_content(&content, path)
+        self.parse_content(&content, path).await
     }
 
-    fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedDocument> {
+    async fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedDocument> {
         // Parse frontmatter
         let (_frontmatter_raw, content) = self.parse_frontmatter(content);
 
@@ -142,7 +142,7 @@ impl MarkdownParserImplementation for CrucibleParser {
         // Apply syntax extensions
         for extension in self.extensions.enabled_extensions() {
             if extension.can_handle(content) {
-                let errors = extension.parse(content, &mut document_content);
+                let errors = extension.parse(content, &mut document_content).await;
 
                 // For now, we'll log errors but not fail parsing
                 // In a production system, we might want to collect these
@@ -199,7 +199,7 @@ mod tests {
         let path = PathBuf::from("test.md");
         let parser = CrucibleParser::new();
 
-        let result = parser.parse_content(content, &path);
+        let result = parser.parse_content(content, &path).await;
 
         assert!(result.is_ok());
         let doc = result.unwrap();
@@ -207,13 +207,13 @@ mod tests {
         assert_eq!(doc.content.word_count, 4);
     }
 
-    #[test]
-    fn test_parse_content_with_frontmatter() {
+    #[tokio::test]
+    async fn test_parse_content_with_frontmatter() {
         let content = "---\ntitle: Test Note\ntags: [test]\n---\n# Content\n\nTest content.";
         let path = PathBuf::from("test.md");
         let parser = CrucibleParser::new();
 
-        let result = parser.parse_content(content, &path);
+        let result = parser.parse_content(content, &path).await;
         assert!(result.is_ok());
 
         let doc = result.unwrap();

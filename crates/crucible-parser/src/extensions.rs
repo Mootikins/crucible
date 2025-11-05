@@ -5,6 +5,7 @@
 
 use super::error::ParseError;
 use super::types::DocumentContent;
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,6 +14,7 @@ use std::sync::Arc;
 ///
 /// Extensions are the primary way to add new syntax features to the parser
 /// without modifying the core parsing logic.
+#[async_trait]
 pub trait SyntaxExtension: Send + Sync {
     /// Get the unique name of this extension
     fn name(&self) -> &'static str;
@@ -41,7 +43,7 @@ pub trait SyntaxExtension: Send + Sync {
     ///
     /// # Returns
     /// A list of parse errors encountered (non-fatal)
-    fn parse(
+    async fn parse(
         &self,
         content: &str,
         doc_content: &mut DocumentContent,
@@ -56,6 +58,37 @@ pub trait SyntaxExtension: Send + Sync {
     fn is_enabled(&self) -> bool {
         true // Default to enabled
     }
+
+    /// Process content synchronously (convenience method for tests)
+    fn process_content(&self, content: &str) -> DocumentContent {
+        let mut doc_content = DocumentContent::new();
+        // Use block_in_place to bridge async to sync for tests
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(async {
+            self.parse(content, &mut doc_content).await;
+        });
+        doc_content
+    }
+
+    /// Get extension capabilities (convenience method)
+    fn capabilities(&self) -> ExtensionCapabilities {
+        ExtensionCapabilities {
+            name: self.name().to_string(),
+            priority: self.priority(),
+            enabled: self.is_enabled(),
+        }
+    }
+}
+
+/// Extension capabilities metadata
+#[derive(Debug, Clone)]
+pub struct ExtensionCapabilities {
+    /// Extension name
+    pub name: String,
+    /// Priority (higher = applied first)
+    pub priority: u8,
+    /// Whether extension is enabled
+    pub enabled: bool,
 }
 
 /// Registry for managing syntax extensions
@@ -169,7 +202,7 @@ impl ExtensionRegistry {
 
         for extension in self.enabled_extensions() {
             if extension.can_handle(content) {
-                let errors = extension.parse(content, doc_content);
+                let errors = extension.parse(content, doc_content).await;
                 all_errors.extend(errors);
             }
         }

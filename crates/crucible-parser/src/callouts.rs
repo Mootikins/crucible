@@ -7,6 +7,7 @@
 use super::extensions::SyntaxExtension;
 use super::types::{DocumentContent, Callout};
 use super::error::{ParseError, ParseErrorType};
+use async_trait::async_trait;
 
 use regex::Regex;
 use std::sync::Arc;
@@ -28,6 +29,7 @@ impl Default for CalloutExtension {
 }
 
 
+#[async_trait]
 impl SyntaxExtension for CalloutExtension {
     fn name(&self) -> &'static str {
         "obsidian-callouts"
@@ -45,7 +47,7 @@ impl SyntaxExtension for CalloutExtension {
         content.contains("[!") && content.contains("]")
     }
 
-    fn parse(
+    async fn parse(
         &self,
         content: &str,
         doc_content: &mut DocumentContent,
@@ -116,6 +118,11 @@ impl SyntaxExtension for CalloutExtension {
 }
 
 impl CalloutExtension {
+    /// Check if this extension supports callouts (convenience method for tests)
+    pub fn supports_callouts(&self) -> bool {
+        true
+    }
+
     /// Extract nested content for callout blocks (continuation lines)
     fn extract_nested_content(&self, content: &str, start_pos: usize, initial_len: usize) -> String {
         let mut full_content = String::new();

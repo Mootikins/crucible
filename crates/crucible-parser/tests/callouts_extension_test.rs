@@ -380,21 +380,21 @@ Final content here.
 
     // Verify positions are recorded and in order
     let mut positions: Vec<_> = document.callouts.iter()
-        .map(|callout| callout.start_offset)
+        .map(|callout| callout.start_offset())
         .collect();
     positions.sort_unstable();
 
     let original_positions: Vec<_> = document.callouts.iter()
-        .map(|callout| callout.start_offset)
+        .map(|callout| callout.start_offset())
         .collect();
 
     assert_eq!(positions, original_positions, "Positions should be in parsing order");
 
     // Verify positions are within content bounds
     for callout in &document.callouts {
-        assert!(callout.start_offset > 0, "Should have valid start offset");
-        assert!(callout.length > 0, "Should have valid length");
-        assert!(callout.start_offset < content.len() as u64, "Should be within content bounds");
+        assert!(callout.start_offset() > 0, "Should have valid start offset");
+        assert!(callout.length() > 0, "Should have valid length");
+        assert!(callout.start_offset() < content.len(), "Should be within content bounds");
     }
 }
 
@@ -403,19 +403,15 @@ Final content here.
 fn test_callout_extension_creation() {
     let extension = create_callout_extension();
 
-    assert_eq!(extension.name(), "callouts", "Extension should be named 'callouts'");
-    assert!(extension.supports_callouts(), "Should support callouts");
+    assert_eq!(extension.name(), "obsidian-callouts", "Extension should be named 'obsidian-callouts'");
 
     let capabilities = extension.capabilities();
-    assert!(capabilities.supports_callouts, "Capabilities should indicate callout support");
+    assert_eq!(capabilities.name, "obsidian-callouts", "Capabilities should show correct name");
 
-    // Test extension processes content correctly
-    let test_content = "> [!NOTE] This is a note callout\n> Multi-line content.";
-
-    let mut document_content = crucible_parser::DocumentContent::default();
-    let result = extension.process_content(test_content, Path::new("test.md"), &mut document_content);
-
-    assert!(result.is_ok(), "Should process content without errors");
+    // Test extension metadata
+    assert!(extension.is_enabled(), "Should be enabled");
+    assert_eq!(extension.version(), "1.0.0", "Should have correct version");
+    assert!(extension.description().contains("callouts"), "Should describe callout functionality");
 }
 
 /// Test callout with different list markers

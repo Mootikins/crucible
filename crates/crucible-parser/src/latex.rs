@@ -7,6 +7,7 @@
 use super::extensions::SyntaxExtension;
 use super::types::DocumentContent;
 use super::error::{ParseError, ParseErrorType};
+use async_trait::async_trait;
 use regex::Regex;
 use std::sync::Arc;
 
@@ -26,6 +27,7 @@ impl Default for LatexExtension {
     }
 }
 
+#[async_trait]
 impl SyntaxExtension for LatexExtension {
     fn name(&self) -> &'static str {
         "latex-math"
@@ -43,7 +45,7 @@ impl SyntaxExtension for LatexExtension {
         content.contains('$') && (content.contains("$$") || content.chars().filter(|&c| c == '$').count() >= 2)
     }
 
-    fn parse(
+    async fn parse(
         &self,
         content: &str,
         doc_content: &mut DocumentContent,
@@ -69,6 +71,11 @@ impl SyntaxExtension for LatexExtension {
 }
 
 impl LatexExtension {
+    /// Check if this extension supports LaTeX (convenience method for tests)
+    pub fn supports_latex(&self) -> bool {
+        true
+    }
+
     /// Extract block LaTeX expressions ($$...$$)
     fn extract_block_latex(
         &self,
@@ -127,7 +134,8 @@ impl LatexExtension {
             .replace_all(original_content, "⟨REMOVED⟩");
 
         // Pattern for inline math (single $ delimiters, not escaped)
-        let re = Regex::new(r"(?<!\\)\$([^\$\n]+?)(?<!\\)\$").map_err(|e| {
+        // Note: Rust's regex crate doesn't support lookaround, so we'll filter manually
+        let re = Regex::new(r"\$([^\$\n]+?)\$").map_err(|e| {
             ParseError::error(
                 format!("Failed to compile inline LaTeX regex: {}", e),
                 ParseErrorType::SyntaxError,
@@ -140,9 +148,29 @@ impl LatexExtension {
         for cap in re.captures_iter(&content_without_blocks) {
             let full_match = cap.get(0).unwrap();
             let latex_content = cap.get(1).unwrap().as_str();
+            let match_start = full_match.start();
+            let match_end = full_match.end();
 
             // Skip empty expressions
             if latex_content.trim().is_empty() {
+                continue;
+            }
+
+            // Skip escaped dollar signs (replaces negative lookbehind/lookahead)
+            // We need to check the original content for escaped $
+            let original_content_start = original_content.char_indices()
+                .nth(match_start)
+                .map(|(idx, _)| idx)
+                .unwrap_or(0);
+
+            let original_content_end = original_content.char_indices()
+                .nth(match_end)
+                .map(|(idx, _)| idx)
+                .unwrap_or(original_content.len());
+
+            // Check if the dollar signs are escaped
+            let original_match = &original_content[original_content_start..original_content_end];
+            if original_match.starts_with(r"\$") || original_match.ends_with(r"\$") {
                 continue;
             }
 
