@@ -293,10 +293,7 @@ mod tests {
     fn test_builder_requires_storage() {
         let result = CrucibleCore::builder().build();
         assert!(result.is_err());
-        assert_eq!(
-            result.err().unwrap(),
-            "Storage implementation is required"
-        );
+        assert_eq!(result.err().unwrap(), "Storage implementation is required");
     }
 
     #[tokio::test]

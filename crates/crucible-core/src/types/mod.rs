@@ -21,25 +21,25 @@ pub use crate::parser::types::{
 
 // Re-export database domain types
 pub use crate::database::{
+    // Additional types
+    BatchResult,
+    // Note: Other database types remain in database module for now
     // Core types
     DbError,
     DbResult,
-    QueryResult,
-    Record,
-    RecordId,
     // Graph types
     Direction,
-    Edge,
-    EdgeId,
-    Node,
-    NodeId,
     // Document types
     Document,
     DocumentId,
     DocumentMetadata,
-    // Additional types
-    BatchResult,
-    // Note: Other database types remain in database module for now
+    Edge,
+    EdgeId,
+    Node,
+    NodeId,
+    QueryResult,
+    Record,
+    RecordId,
 };
 
 // Re-export document types
