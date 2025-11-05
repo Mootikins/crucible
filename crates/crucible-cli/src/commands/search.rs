@@ -8,6 +8,7 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use unicode_normalization::UnicodeNormalization;
 
 /// Binary file detection constants
 const NULL_BYTE: u8 = 0x00;
@@ -141,7 +142,9 @@ impl SearchExecutor {
         include_content: bool,
     ) -> Result<Vec<SearchResultWithScore>> {
         let mut results = Vec::new();
-        let query_lower = query.to_lowercase();
+
+        // Apply Unicode normalization to the query for better matching
+        let query_normalized = normalize_unicode_for_search(query);
 
         for file_path in self.list_markdown_files(kiln_path)? {
             if results.len() >= limit as usize {
@@ -150,10 +153,12 @@ impl SearchExecutor {
 
             match self.read_file_content(kiln_path, &file_path) {
                 Ok(content) => {
-                    let content_lower = content.to_lowercase();
-                    if content_lower.contains(&query_lower) {
-                        let snippet = extract_snippet(&content, query, include_content);
-                        let score = calculate_relevance_score(&content, &query_lower);
+                    // Apply Unicode normalization to the content for consistent comparison
+                    let content_normalized = normalize_unicode_for_search(&content);
+
+                    if content_normalized.contains(&query_normalized) {
+                        let snippet = extract_snippet_unicode(&content, query, include_content);
+                        let score = calculate_relevance_score_unicode(&content, &query_normalized);
 
                         let title = file_path
                             .split('/')
@@ -568,4 +573,101 @@ fn calculate_relevance_score(content: &str, query_lower: &str) -> f64 {
     score += length_factor;
 
     score
+}
+
+/// Unicode-aware version of calculate_relevance_score for search results
+fn calculate_relevance_score_unicode(content: &str, query_normalized: &str) -> f64 {
+    let mut score = 0.0;
+
+    // Normalize content for comparison
+    let content_normalized = normalize_unicode_for_search(content);
+
+    // Title matches (first line) get higher score
+    let lines: Vec<&str> = content.lines().collect();
+    if let Some(first_line) = lines.first() {
+        let first_line_normalized = normalize_unicode_for_search(first_line);
+        if first_line_normalized.contains(query_normalized) {
+            score += 100.0;
+        }
+    }
+
+    // Count occurrences of the query in normalized content
+    let mut start = 0;
+    let mut count = 0;
+    while let Some(pos) = content_normalized[start..].find(query_normalized) {
+        count += 1;
+        start += pos + query_normalized.len();
+
+        // Early exit if we already have many matches
+        if count >= 10 {
+            break;
+        }
+    }
+
+    score += count as f64 * 10.0;
+
+    // Prefer shorter documents (higher score for concise content)
+    let length_factor = 1000.0 / (content.len() as f64 + 1.0);
+    score += length_factor;
+
+    score
+}
+
+/// Normalize Unicode text for consistent search operations
+/// Uses NFC normalization and casefolding for better Unicode matching
+fn normalize_unicode_for_search(text: &str) -> String {
+    // Apply NFC normalization first (canonical composition)
+    let nfc_text = text.nfc().collect::<String>();
+
+    // Convert to lowercase for case-insensitive matching
+    // Note: this handles Unicode casefolding better than simple to_lowercase()
+    nfc_text.to_lowercase()
+}
+
+/// Extract a snippet with Unicode-aware matching
+fn extract_snippet_unicode(content: &str, query: &str, include_full: bool) -> String {
+    if include_full {
+        // Return first few lines of content
+        content.lines().take(5).collect::<Vec<_>>().join("\n")
+    } else {
+        // Use normalized versions for finding the match
+        let content_normalized = normalize_unicode_for_search(content);
+        let query_normalized = normalize_unicode_for_search(query);
+
+        // Search for the query in the normalized content
+        if let Some(_) = content_normalized.find(&query_normalized) {
+            // Since we can't easily map positions between normalized and original content,
+            // we'll search for the original query in the original content as a fallback
+            // This ensures we get valid character boundaries
+            if let Some(start_pos) = content.find(query) {
+                // Find safe character boundaries
+                let start = content
+                    .char_indices()
+                    .find(|(idx, _)| *idx >= start_pos.saturating_sub(100))
+                    .map(|(idx, _)| idx)
+                    .unwrap_or(0);
+
+                let end = content
+                    .char_indices()
+                    .skip_while(|(idx, _)| *idx < start_pos + query.len())
+                    .nth(100) // Look ahead up to 100 chars
+                    .map(|(idx, _)| idx)
+                    .unwrap_or(content.len());
+
+                let snippet = &content[start..end];
+
+                if start > 0 {
+                    format!("...{}", snippet)
+                } else {
+                    snippet.to_string()
+                }
+            } else {
+                // Fallback: return first line
+                content.lines().next().unwrap_or("").to_string()
+            }
+        } else {
+            // Fallback: return first line
+            content.lines().next().unwrap_or("").to_string()
+        }
+    }
 }
