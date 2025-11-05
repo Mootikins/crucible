@@ -1,9 +1,4 @@
-# cli-integration-testing Specification
-
-## Purpose
-Defines comprehensive testing and bug fixing for CLI integration with the storage layer, focusing on Unicode support, error handling, and end-to-end workflow reliability.
-
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Unicode Character Support in Search
 The system SHALL provide robust Unicode character support in search functionality to enable global language and emoji usage.
@@ -151,29 +146,3 @@ The system SHALL implement robust error recovery mechanisms for CLI operations.
 - **AND** implement safe operation modes with reduced functionality
 - **AND** prioritize critical operations during resource constraints
 - **AND** provide guidance for resource optimization
-
-## Implementation Notes
-
-### Unicode Normalization Strategy
-- Use Unicode NFC normalization for consistent character handling
-- Implement proper UTF-8 validation in search preprocessing
-- Add encoding detection for mixed-content files
-- Maintain character integrity throughout processing pipeline
-
-### Binary Detection Heuristics
-- Implement content-based binary file detection (magic numbers, byte patterns)
-- Add file extension-based binary exclusion lists
-- Use streaming analysis for large files to prevent loading entire content
-- Validate text content before processing to prevent crashes
-
-### Integration Testing Framework
-- Leverage existing test infrastructure in `crucible-cli/tests/common/`
-- Use comprehensive test data from `examples/test-kiln/`
-- Implement mock storage backends for isolated testing
-- Create automated regression testing for critical workflows
-
-### Performance Testing Metrics
-- Search response time targets: <100ms for 1000+ documents
-- Memory usage limits: <100MB for typical operations
-- Concurrency support: 10+ simultaneous operations
-- Database connection pooling: Configurable pool sizes and timeouts
