@@ -166,7 +166,7 @@ impl Default for SurrealDBAdapter {
 mod tests {
     use super::*;
     use crate::parser::types::{
-        DocumentContent, Frontmatter, FrontmatterFormat, Heading, Tag, Wikilink,
+        DocumentContent, FootnoteMap, Frontmatter, FrontmatterFormat, Heading, Tag, Wikilink,
     };
 
     fn create_test_document() -> ParsedDocument {
@@ -192,6 +192,8 @@ mod tests {
                     id: Some("test".to_string()),
                 }],
                 code_blocks: vec![],
+                latex_expressions: vec![],
+                callouts: vec![],
             },
             wikilinks: vec![Wikilink {
                 target: "link".to_string(),
@@ -206,9 +208,13 @@ mod tests {
                 path: vec!["tag".to_string()],
                 offset: 48,
             }],
+            callouts: Vec::new(),
+            latex_expressions: Vec::new(),
+            footnotes: FootnoteMap::new(),
             parsed_at: Utc::now(),
             content_hash: "test_hash_123".to_string(),
             file_size: 100,
+            parse_errors: Vec::new(),
         }
     }
 
@@ -337,12 +343,18 @@ mod tests {
                 code_blocks: vec![],
                 paragraphs: vec![],
                 lists: vec![],
+                latex_expressions: vec![],
+                callouts: vec![],
             },
             wikilinks: vec![],
             tags: vec![],
+            callouts: Vec::new(),
+            latex_expressions: Vec::new(),
+            footnotes: FootnoteMap::new(),
             parsed_at: Utc::now(),
             content_hash: "simple_hash".to_string(),
             file_size: 14,
+            parse_errors: Vec::new(),
         };
 
         let record = adapter
