@@ -119,7 +119,7 @@ $$
 
     let test_path = Path::new("test_latex.md");
     let document = parser.parse_content(test_content, test_path)
-        .expect("Should parse LaTeX content");
+        .await.expect("Should parse LaTeX content");
 
     // Should find multiple LaTeX expressions
     assert!(document.latex_expressions.len() >= 4,
@@ -178,7 +178,7 @@ async fn test_obsidian_callout_parsing() {
 
     let test_path = Path::new("test_callouts.md");
     let document = parser.parse_content(test_content, test_path)
-        .expect("Should parse callout content");
+        .await.expect("Should parse callout content");
 
     // Should find multiple callouts
     assert!(document.callouts.len() >= 5,
@@ -241,7 +241,7 @@ Edge cases: #A, #B, #X and #snake_case_example.
 
     let test_path = Path::new("test_hashtags.md");
     let document = parser.parse_content(test_content, test_path)
-        .expect("Should parse hashtag content");
+        .await.expect("Should parse hashtag content");
 
     // Should find multiple hashtags
     assert!(document.tags.len() >= 15,
@@ -307,7 +307,7 @@ Mixed content:
 
     let test_path = Path::new("test_tasks.md");
     let document = parser.parse_content(test_content, test_path)
-        .expect("Should parse task list content");
+        .await.expect("Should parse task list content");
 
     // Should find task lists
     let task_lists: Vec<_> = document.content.lists.iter()
@@ -383,7 +383,7 @@ Self-referential behavior[^self-ref] and duplicate references[^duplicate], [^dup
 
     let test_path = Path::new("test_footnotes.md");
     let document = parser.parse_content(test_content, test_path)
-        .expect("Should parse footnote content");
+        .await.expect("Should parse footnote content");
 
     // Should find footnote references and definitions
     assert!(!document.footnotes.references.is_empty(), "Should find footnote references");
@@ -481,7 +481,7 @@ References for #Phase1B implementation[^phase1b-docs].
 
     let test_path = Path::new("test_mixed.md");
     let document = parser.parse_content(test_content, test_path)
-        .expect("Should parse mixed Phase 1B content");
+        .await.expect("Should parse mixed Phase 1B content");
 
     // Should extract all feature types
     assert!(!document.latex_expressions.is_empty(), "Should have LaTeX");
