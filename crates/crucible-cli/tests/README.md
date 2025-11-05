@@ -10,7 +10,7 @@ This directory contains integration tests for the Crucible CLI components.
 
 **Test Count:** 17 tests
 
-**Purpose:** Verify TUI event loop correctly integrates with daemon components (logs, REPL, status updates)
+**Purpose:** Verify TUI event loop correctly integrates with CLI components (logs, REPL, status updates)
 
 **Documentation:** See `TUI_INTEGRATION_TEST_SUMMARY.md` for detailed test descriptions and implementation guidance.
 

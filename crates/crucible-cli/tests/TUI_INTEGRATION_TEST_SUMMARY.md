@@ -2,7 +2,7 @@
 
 ## Overview
 
-Created comprehensive integration tests for TUI event loop integration with daemon components following TDD principles.
+Created comprehensive integration tests for TUI event loop integration with CLI components following TDD principles.
 
 **File:** `/home/moot/crucible/crates/crucible-cli/tests/tui_integration.rs`
 
@@ -115,7 +115,7 @@ running 17 tests
 
 test test_channel_capacity_handling ... FAILED
 test test_concurrent_updates ... FAILED
-test test_daemon_status_updates ... FAILED
+test test_status_updates ... FAILED
 test test_log_buffer_displays_messages ... FAILED
 test test_log_buffer_scrolling ... FAILED
 test test_log_buffer_size_limit ... FAILED
@@ -184,7 +184,7 @@ Tests use **ratatui::backend::TestBackend** for headless testing:
 - Captures rendering output in buffer
 - Allows assertions on what text appears where
 
-Tests use **mpsc channels** to simulate daemon events:
+Tests use **mpsc channels** to simulate CLI events:
 - Log entries from worker threads
 - Status updates from file watcher
 - REPL results from query executor

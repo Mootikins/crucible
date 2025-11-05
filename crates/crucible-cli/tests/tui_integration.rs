@@ -1,6 +1,6 @@
-//! Integration tests for TUI event loop and daemon integration
+//! Integration tests for TUI event loop and CLI integration
 //!
-//! Tests verify the TUI correctly displays daemon state and user interactions.
+//! Tests verify the TUI correctly displays CLI state and user interactions.
 //!
 //! These tests follow TDD principles:
 //! - Tests are written first with `todo!()` placeholders (RED phase)
@@ -511,8 +511,8 @@ async fn test_repl_command_execution() {
 // ============================================================================
 
 #[tokio::test]
-async fn test_daemon_status_updates() {
-    // Test: Daemon status reflected in header
+async fn test_status_updates() {
+    // Test: CLI status reflected in header
     //
     // This test verifies that StatusUpdate events correctly
     // update the status bar state.
