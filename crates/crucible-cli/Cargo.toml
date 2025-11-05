@@ -29,12 +29,15 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 
+# Table formatting
+tabled = "0.15"
+
+# Date/time handling
+chrono = { workspace = true }
+
 # Error handling
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-
-# Date/time
-chrono = { workspace = true }
 
 # Output formatting
 comfy-table = { workspace = true }

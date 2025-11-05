@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/crucible-core",
+    "crates/crucible-parser",
     "crates/crucible-tauri",
     "crates/crucible-cli",
     "crates/crucible-sync",
@@ -36,6 +37,7 @@ categories = ["development-tools", "text-processing", "database"]
 yrs = "0.24"
 tokio = { version = "1.48", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
+crucible-parser = { path = "crates/crucible-parser" }
 serde_json = "1.0"
 serde_yaml = "0.9"
 uuid = { version = "1.11", features = ["v4", "serde"] }
@@ -89,7 +91,7 @@ notify-debouncer-full = "0.5"
 globset = "0.4"
 num_cpus = "1.16"
 flume = "0.11"
-pulldown-cmark = "0.13"
+pulldown-cmark = { version = "0.13", default-features = false }
 toml = "0.9"
 futures-util = "0.3"
 tokio-stream = "0.1"

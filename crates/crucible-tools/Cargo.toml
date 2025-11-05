@@ -74,7 +74,7 @@ walkdir = "2.4"
 serde_yaml = "0.9"
 
 # Markdown parsing
-pulldown-cmark = { workspace = true }
+pulldown-cmark = { workspace = true, default-features = false }
 
 # Additional dependencies for Rune
 parking_lot = { workspace = true }
