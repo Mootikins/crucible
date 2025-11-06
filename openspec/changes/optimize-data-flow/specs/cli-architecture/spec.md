@@ -3,6 +3,8 @@
 ### Requirement: Integrated File Processing on Startup
 The system SHALL process file changes efficiently using incremental change detection before executing CLI commands.
 
+**Implementation:** `crucible-cli` orchestrates components from `crucible-watch` (file scanning/detection), `crucible-core` (hashing/diffing), and `crucible-surrealdb` (storage)
+
 #### Scenario: Fast Startup Processing
 - **WHEN** CLI command is invoked with kiln containing unchanged files
 - **THEN** system completes file processing in milliseconds rather than seconds

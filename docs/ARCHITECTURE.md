@@ -1,6 +1,21 @@
 # Crucible Architecture (2025 roadmap)
 
-Crucible is evolving toward a layered architecture where every interface (CLI today, desktop/agent integrations tomorrow) talks only to `crucible-core`. The core owns the domain model, agent orchestration, and the façades that hide storage and tooling details. Infrastructure crates stay reusable, while UIs remain thin and testable.
+Crucible is a **plaintext-first agent framework** built around metadata-rich knowledge graphs. The current MVP focuses on verifying that graph structure (wikilinks, tags, embeddings) enables better agent accuracy through agent-friendly CLI primitives. Future enhancements include RL techniques, custom agent definitions, and definable workflows via Markdown.
+
+The architecture is evolving toward a layered system where every interface (CLI today, desktop/agent integrations tomorrow) talks only to `crucible-core`. The core owns the domain model, agent orchestration, and the façades that hide storage and tooling details. Infrastructure crates stay reusable, while UIs remain thin and testable.
+
+## Design Philosophy
+
+**Portable & Open**: Markdown files are the source of truth, ensuring portability across devices (even those without databases) and avoiding vendor lock-in.
+
+**Agent-First UX**: Rather than pre-selecting context, Crucible provides simple CLI primitives (`cru semantic`, `cru query`) that agents can call with their native tool-calling capabilities to explore and discover relevant knowledge.
+
+**Metadata-Rich Graphs**:
+- **Wikilinks ARE the graph**: `[[Note Name]]` links define entities and relationships directly in plaintext
+- **Notes ARE entities**: No extraction needed - `Machine Learning.md` is the entity itself
+- **Block-level granularity**: Semantic search, embeddings, and results operate at AST block level (paragraphs, headings, lists)
+
+**Incremental Optimization**: The architecture supports future enhancements (reinforcement learning for context selection, custom agent definitions, workflow automation) while maintaining the plaintext-first foundation.
 
 ## High-Level Layout
 
@@ -77,11 +92,18 @@ graph TD
 - **User Control**: `--no-process` flag skips processing for quick commands, `--process-timeout` controls duration
 - **Incremental Updates**: Only changed files are reprocessed, providing fast subsequent startups
 
-### Tool / Agent Invocation
+### Tool / Agent Invocation (Current MVP)
+**Agent-Friendly CLI Primitives**: Agents call simple commands with their native tool-calling:
+- `cru semantic "machine learning concepts"` - Block-level semantic search using embeddings
+- `cru query 'SELECT * FROM notes WHERE tags CONTAINS "AI"'` - Flexible SurrealQL queries for graph traversal
+- `cru fuzzy "neural networks"` - Fast content search across vault
+- Agents use their `Read` tool to pull full note content when specific context is needed
+
+**Future (Planned)**:
 1. UI or automation calls `Core::execute_tool(...)`.
 2. Core checks configuration, prepares context, and delegates to `crucible-tools`.
 3. Results stream back through the façade; errors are normalized for every UI.
-4. Agents reuse the same pathway, enabling automated workflows.
+4. Agents reuse the same pathway, enabling automated workflows with RL-optimized context selection.
 
 ### Sync & Collaboration (Planned)
 1. Core exposes session APIs to subscribe to CRDT updates.
