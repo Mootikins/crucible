@@ -48,6 +48,16 @@ impl Default for SurrealDbConfig {
     }
 }
 
+impl SurrealDbConfig {
+    /// Create an in-memory database configuration (useful for testing)
+    pub fn memory() -> Self {
+        Self {
+            path: ":memory:".to_string(),
+            ..Default::default()
+        }
+    }
+}
+
 // ==============================================================================
 // ERROR TYPES
 // ==============================================================================
