@@ -23,6 +23,77 @@ use crate::transaction_queue::{TransactionQueue, TransactionQueueConfig};
 use crate::SurrealClient;
 use crucible_core::types::ParsedDocument;
 
+/// Performance metrics for change detection operations
+#[derive(Debug, Clone, Default)]
+pub struct ChangeDetectionMetrics {
+    /// Total number of files scanned
+    pub total_files: usize,
+    /// Number of files that had changes
+    pub changed_files: usize,
+    /// Number of files skipped (unchanged)
+    pub skipped_files: usize,
+    /// Time taken for change detection
+    pub change_detection_time: Duration,
+    /// Number of database round trips
+    pub database_round_trips: usize,
+    /// Cache hit rate (0.0 to 1.0)
+    pub cache_hit_rate: f64,
+    /// Files processed per second
+    pub files_per_second: f64,
+}
+
+impl ChangeDetectionMetrics {
+    /// Create new metrics
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Calculate performance summary
+    pub fn performance_summary(&self) -> String {
+        format!(
+            "Scanned {} files: {} changed, {} skipped ({:.1}% unchanged) \
+             in {:?} ({:.0} files/sec, {} DB queries, {:.1}% cache hit)",
+            self.total_files,
+            self.changed_files,
+            self.skipped_files,
+            if self.total_files > 0 {
+                (self.skipped_files as f64 / self.total_files as f64) * 100.0
+            } else {
+                0.0
+            },
+            self.change_detection_time,
+            self.files_per_second,
+            self.database_round_trips,
+            self.cache_hit_rate * 100.0
+        )
+    }
+
+    /// Log performance metrics
+    pub fn log_metrics(&self) {
+        info!("📊 Change Detection Performance:");
+        info!("  📁 Total files scanned: {}", self.total_files);
+        info!("  📝 Files that changed: {}", self.changed_files);
+        info!("  ⏭️  Files skipped: {} ({:.1}%)",
+              self.skipped_files,
+              if self.total_files > 0 {
+                  (self.skipped_files as f64 / self.total_files as f64) * 100.0
+              } else {
+                  0.0
+              });
+        info!("  ⏱️  Change detection time: {:?}", self.change_detection_time);
+        info!("  🗄️  Database round trips: {}", self.database_round_trips);
+        info!("  🚀 Processing speed: {:.0} files/second", self.files_per_second);
+        info!("  💾 Cache hit rate: {:.1}%", self.cache_hit_rate * 100.0);
+
+        if self.skipped_files > 0 {
+            let time_saved = self.change_detection_time.mul_f64(
+                self.skipped_files as f64 / self.total_files.max(1) as f64
+            );
+            info!("  ⚡ Estimated time saved: {:?}", time_saved);
+        }
+    }
+}
+
 /// Scan a kiln directory recursively and return discovered files
 pub async fn scan_kiln_directory(
     kiln_path: &PathBuf,
@@ -377,7 +448,7 @@ pub async fn process_single_file_with_recovery(
     Ok(false)
 }
 
-/// Perform incremental processing of changed files only
+/// Perform incremental processing of changed files only using efficient batch hash comparison
 pub async fn process_incremental_changes(
     all_files: &[KilnFileInfo],
     client: &SurrealClient,
@@ -395,34 +466,45 @@ pub async fn process_incremental_changes(
     let mut errors = Vec::new();
 
     info!(
-        "Performing incremental processing for {} files",
+        "🔍 Performing incremental processing for {} files",
         all_files.len()
     );
 
-    // For each file, check if it needs processing
-    let mut files_to_process = Vec::new();
+    // Filter to only accessible markdown files
+    let markdown_files: Vec<&KilnFileInfo> = all_files
+        .iter()
+        .filter(|f| f.is_markdown && f.is_accessible)
+        .collect();
 
-    for file_info in all_files {
-        if !file_info.is_markdown || !file_info.is_accessible {
-            continue;
-        }
-
-        if needs_processing(file_info, client).await? {
-            files_to_process.push(file_info);
-        }
+    if markdown_files.is_empty() {
+        info!("📂 No markdown files found to process");
+        return Ok(KilnProcessResult {
+            processed_count: 0,
+            failed_count: 0,
+            errors: Vec::new(),
+            total_processing_time: start_time.elapsed(),
+            average_processing_time_per_document: Duration::from_secs(0),
+        });
     }
 
+    // Use efficient batch change detection
+    let change_detection_start = std::time::Instant::now();
+    let (changed_files, change_metrics) = detect_changed_files_efficient(
+        client,
+        &markdown_files,
+        kiln_root,
+    ).await?;
+    let change_detection_time = change_detection_start.elapsed();
+
+    // Log comprehensive change detection metrics
     info!(
-        "Found {} files that need processing",
-        files_to_process.len()
+        "📊 {}",
+        change_metrics.performance_summary()
     );
 
-    if !files_to_process.is_empty() {
+    if !changed_files.is_empty() {
         let result = process_kiln_files(
-            &files_to_process
-                .iter()
-                .map(|&f| f.clone())
-                .collect::<Vec<_>>(),
+            &changed_files,
             client,
             config,
             embedding_pool,
@@ -440,6 +522,36 @@ pub async fn process_incremental_changes(
     } else {
         Duration::from_secs(0)
     };
+
+    // Calculate final performance summary
+    let total_skipped = change_metrics.skipped_files;
+    let total_change_time = change_metrics.change_detection_time;
+
+    info!(
+        "🎯 Incremental processing completed: {} processed, {} failed, {} skipped in {:?}",
+        processed_count,
+        failed_count,
+        total_skipped,
+        total_processing_time
+    );
+
+    // Performance impact analysis
+    if total_skipped > 0 {
+        let time_saved_percentage = (total_skipped as f64 / markdown_files.len() as f64) * 100.0;
+        info!(
+            "⚡ Performance impact: skipped {:.1}% of files, saved estimated processing time",
+            time_saved_percentage
+        );
+
+        if total_change_time.as_millis() > 100 {
+            info!(
+                "📈 Change detection efficiency: {:?} to scan {} files ({:.0} files/sec)",
+                total_change_time,
+                change_metrics.total_files,
+                change_metrics.files_per_second
+            );
+        }
+    }
 
     Ok(KilnProcessResult {
         processed_count,
@@ -673,9 +785,9 @@ async fn process_single_file_internal(
         debug!("  ⏭️  Skipping embeddings (no pool available)");
     }
 
-    // Update processed timestamp
-    debug!("  ⏰ Updating timestamp...");
-    update_document_processed_timestamp(client, &doc_id).await?;
+    // Update processed timestamp and content hash
+    debug!("  ⏰ Updating timestamp and content hash...");
+    crate::kiln_integration::update_document_processing_metadata(client, &doc_id, &file_info).await?;
 
     info!("✅ Successfully completed: {}", file_info.path.display());
 
@@ -685,27 +797,48 @@ async fn process_single_file_internal(
 // Embedding processing functions removed for now - to be implemented properly later
 
 pub async fn needs_processing(file_info: &KilnFileInfo, client: &SurrealClient) -> Result<bool> {
-    // Check if document exists in database
-    let doc_id = find_document_id_by_path(client, &file_info.relative_path).await?;
+    // Validate input parameters
+    if file_info.relative_path.is_empty() {
+        warn!("Empty relative path provided, treating as needs processing");
+        return Ok(true);
+    }
+
+    // Check if document exists in database with error handling
+    let doc_id = match find_document_id_by_path(client, &file_info.relative_path).await {
+        Ok(id) => id,
+        Err(e) => {
+            warn!("Database error checking document existence for {}: {}, treating as needs processing",
+                  file_info.relative_path, e);
+            return Ok(true); // Conservative approach: process if we can't determine status
+        }
+    };
 
     if doc_id.is_empty() {
+        debug!("Document {} not found in database, needs processing", file_info.relative_path);
         return Ok(true); // New document
     }
 
-    // Check if document exists and compare content hash
+    // Check if document exists and compare file hash with error handling
     // Note: Using string formatting for now since mock client doesn't support parameters
     let path_str = file_info.relative_path.replace('\'', "''");
     let sql = format!(
-        "SELECT content_hash, processed_at FROM notes WHERE path = '{}'",
+        "SELECT file_hash, processed_at FROM notes WHERE path = '{}'",
         path_str
     );
 
-    let result = client.query(&sql, &[]).await?;
+    let result = match client.query(&sql, &[]).await {
+        Ok(result) => result,
+        Err(e) => {
+            warn!("Database error querying document {} for {}: {}, treating as needs processing",
+                  doc_id, file_info.relative_path, e);
+            return Ok(true); // Conservative approach: process if query fails
+        }
+    };
 
     if let Some(record) = result.records.first() {
-        let stored_hash = record
+        let stored_hash_hex = record
             .data
-            .get("content_hash")
+            .get("file_hash")
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
@@ -716,15 +849,53 @@ pub async fn needs_processing(file_info: &KilnFileInfo, client: &SurrealClient) 
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
             .map(|dt| dt.with_timezone(&chrono::Utc));
 
-        // Check if content hash matches or if file was modified after processing
-        if stored_hash == file_info.content_hash {
+        // Validate stored hash format
+        if stored_hash_hex.len() != 64 || !stored_hash_hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            warn!(
+                "Invalid stored hash format for {}: {}, treating as needs processing",
+                file_info.relative_path,
+                if stored_hash_hex.len() > 8 { &stored_hash_hex[..8] } else { stored_hash_hex }
+            );
+            return Ok(true);
+        }
+
+        // Validate current hash format
+        let current_hash_hex = file_info.content_hash_hex();
+        if current_hash_hex.len() != 64 || !current_hash_hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            warn!(
+                "Invalid current hash format for {}: {}, treating as needs processing",
+                file_info.relative_path,
+                &current_hash_hex[..8]
+            );
+            return Ok(true);
+        }
+
+        // Check if content hash matches
+        if stored_hash_hex == current_hash_hex {
+            // Hashes match, check if file was modified after processing timestamp
             if let Some(processed_time) = processed_at {
                 let processed_system_time: std::time::SystemTime = processed_time.into();
                 if file_info.modified_time <= processed_system_time {
+                    debug!("Document {} unchanged (hash matches and file not modified after processing)",
+                           file_info.relative_path);
                     return Ok(false); // No changes needed
+                } else {
+                    debug!("Document {} modified after processing (file: {:?}, processed: {:?})",
+                           file_info.relative_path, file_info.modified_time, processed_time);
                 }
+            } else {
+                warn!("No processed_at timestamp for {}, treating as needs processing",
+                      file_info.relative_path);
+                return Ok(true);
             }
+        } else {
+            debug!("Document {} hash mismatch (stored: {}..., current: {}...)",
+                   file_info.relative_path, &stored_hash_hex[..8], &current_hash_hex[..8]);
         }
+    } else {
+        warn!("No record found for document {} despite finding ID, treating as needs processing",
+              file_info.relative_path);
+        return Ok(true);
     }
 
     Ok(true) // Needs processing
@@ -816,7 +987,7 @@ async fn bulk_query_document_hashes(
         .collect();
 
     let sql = format!(
-        "SELECT path, content_hash FROM notes WHERE path IN [{}]",
+        "SELECT path, file_hash FROM notes WHERE path IN [{}]",
         path_strings.join(", ")
     );
 
@@ -835,7 +1006,7 @@ async fn bulk_query_document_hashes(
     for (_i, record) in result.records.iter().enumerate() {
         if let Some(path_value) = record.data.get("path") {
             if let Some(rel_path_str) = path_value.as_str() {
-                if let Some(hash_value) = record.data.get("content_hash") {
+                if let Some(hash_value) = record.data.get("file_hash") {
                     if let Some(hash_str) = hash_value.as_str() {
                         let rel_path = PathBuf::from(rel_path_str);
                         // Find the absolute path that corresponds to this relative path
@@ -912,11 +1083,13 @@ async fn convert_paths_to_file_infos(
             }
         };
 
-        // Use SHA-256 hash to match what the parser uses
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(&content);
-        let content_hash = format!("{:x}", hasher.finalize());
+        // Use BLAKE3 hash for content change detection
+        use blake3::Hasher;
+        let mut hasher = Hasher::new();
+        hasher.update(content.as_bytes());
+        let blake3_hash = hasher.finalize();
+        let mut content_hash = [0u8; 32];
+        content_hash.copy_from_slice(blake3_hash.as_bytes());
 
         // Get modification time
         let modified_time = metadata
@@ -950,6 +1123,247 @@ async fn convert_paths_to_file_infos(
     );
 
     Ok(file_infos)
+}
+
+/// Detect which files have changed by comparing content hashes using efficient batch lookup
+///
+/// This function uses the hash_lookup module to perform efficient batch queries
+/// for stored file hashes, minimizing database round trips and maximizing performance.
+/// It compares BLAKE3 content hashes to identify actual changes and prevents
+/// unnecessary reprocessing of unchanged files.
+///
+/// # Performance Characteristics
+/// - Batch database queries (max 100 files per query by default)
+/// - In-memory hash comparison (very fast)
+/// - Cached lookups within the same session
+/// - Minimal database round trips: O(n/batch_size) instead of O(n)
+/// - Robust error handling with graceful degradation
+///
+/// # Arguments
+/// * `client` - SurrealDB client connection
+/// * `file_infos` - List of file references to check for changes
+/// * `kiln_root` - Root directory for resolving relative paths
+///
+/// # Returns
+/// Filtered list containing only files that have actually changed
+///
+/// # Errors
+/// Returns an error only if critical database operations fail. Individual file
+/// lookup errors are logged but don't stop the overall operation.
+///
+/// # Example
+/// ```ignore
+/// let all_files = scan_kiln_directory(&kiln_path, &config).await?;
+/// let markdown_files: Vec<&KilnFileInfo> = all_files.iter()
+///     .filter(|f| f.is_markdown && f.is_accessible)
+///     .collect();
+/// let (changed_files, metrics) = detect_changed_files_efficient(&client, &markdown_files, kiln_root).await?;
+/// println!("Found {} changed files out of {}", changed_files.len(), markdown_files.len());
+/// metrics.log_metrics();
+/// ```
+async fn detect_changed_files_efficient(
+    client: &SurrealClient,
+    file_infos: &[&KilnFileInfo],
+    kiln_root: &Path,
+) -> Result<(Vec<KilnFileInfo>, ChangeDetectionMetrics)> {
+    if file_infos.is_empty() {
+        debug!("No files to check for changes");
+        return Ok((Vec::new(), ChangeDetectionMetrics::new()));
+    }
+
+    let start_time = std::time::Instant::now();
+    let total_files = file_infos.len();
+
+    info!(
+        "🔍 Detecting changes in {} files using efficient batch lookup",
+        total_files
+    );
+
+    // Extract relative paths for batch query
+    let relative_paths: Vec<String> = file_infos
+        .iter()
+        .map(|fi| fi.relative_path.clone())
+        .collect();
+
+    // Use efficient batch hash lookup with caching and error handling
+    let lookup_config = crate::hash_lookup::BatchLookupConfig::default();
+    let mut hash_cache = crate::hash_lookup::HashLookupCache::new();
+
+    let lookup_result = match crate::hash_lookup::lookup_file_hashes_batch_cached(
+        client,
+        &relative_paths,
+        Some(lookup_config),
+        &mut hash_cache,
+    ).await {
+        Ok(result) => result,
+        Err(e) => {
+            error!("❌ Database lookup failed, falling back to individual file processing: {}", e);
+            // Fallback: treat all files as changed if database lookup fails
+            warn!("⚠️ Graceful degradation: processing all {} files as changed", total_files);
+            let fallback_metrics = ChangeDetectionMetrics {
+                total_files,
+                changed_files: total_files,
+                skipped_files: 0,
+                change_detection_time: start_time.elapsed(),
+                database_round_trips: 0,
+                cache_hit_rate: 0.0,
+                files_per_second: total_files as f64 / start_time.elapsed().as_secs_f64().max(0.001),
+            };
+            return Ok((file_infos.iter().map(|&fi| fi.clone()).collect(), fallback_metrics));
+        }
+    };
+
+    debug!(
+        "Hash lookup completed: {}/{} files found in {} round trips",
+        lookup_result.found_files.len(),
+        lookup_result.total_queried,
+        lookup_result.database_round_trips
+    );
+
+    // Compare hashes to find changed files with robust error handling
+    let mut changed_files = Vec::new();
+    let mut unchanged_files = Vec::new();
+    let mut error_count = 0;
+
+    for file_info in file_infos {
+        match lookup_result.found_files.get(&file_info.relative_path) {
+            Some(stored_hash) => {
+                // File exists in database - compare hashes
+                let current_hash_hex = file_info.content_hash_hex();
+
+                // Validate hash format before comparison
+                if current_hash_hex.len() != 64 || !current_hash_hex.chars().all(|c| c.is_ascii_hexdigit()) {
+                    warn!(
+                        "⚠️ Invalid current hash format for {}: {} - treating as changed",
+                        file_info.relative_path,
+                        &current_hash_hex[..current_hash_hex.len().min(8)]
+                    );
+                    changed_files.push((*file_info).clone());
+                    continue;
+                }
+
+                if stored_hash.file_hash.len() != 64 || !stored_hash.file_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+                    warn!(
+                        "⚠️ Invalid stored hash format for {}: {} - treating as changed",
+                        file_info.relative_path,
+                        &stored_hash.file_hash[..stored_hash.file_hash.len().min(8)]
+                    );
+                    changed_files.push((*file_info).clone());
+                    continue;
+                }
+
+                if stored_hash.file_hash != current_hash_hex {
+                    debug!(
+                        "📝 File changed (hash mismatch): {} (stored: {}..., current: {}...)",
+                        file_info.relative_path,
+                        &stored_hash.file_hash[..8],
+                        &current_hash_hex[..8]
+                    );
+                    changed_files.push((*file_info).clone());
+                } else {
+                    // Also check if file was modified after processing timestamp
+                    let processed_system_time: std::time::SystemTime = stored_hash.modified_at.into();
+                    if file_info.modified_time > processed_system_time {
+                        debug!(
+                            "📝 File changed (timestamp mismatch): {} (file modified: {:?}, processed: {:?})",
+                            file_info.relative_path,
+                            file_info.modified_time,
+                            stored_hash.modified_at
+                        );
+                        changed_files.push((*file_info).clone());
+                    } else {
+                        unchanged_files.push(file_info.relative_path.clone());
+                    }
+                }
+            }
+            None => {
+                // File not in database - treat as new/changed
+                debug!(
+                    "🆕 New file (not in database): {}",
+                    file_info.relative_path
+                );
+                changed_files.push((*file_info).clone());
+            }
+        }
+    }
+
+    let change_detection_time = start_time.elapsed();
+
+    // Calculate performance metrics
+    let cache_stats = hash_cache.stats();
+    let cache_hit_rate = if cache_stats.hits + cache_stats.misses > 0 {
+        cache_stats.hit_rate
+    } else {
+        0.0
+    };
+
+    let files_per_second = total_files as f64 / change_detection_time.as_secs_f64().max(0.001);
+
+    let metrics = ChangeDetectionMetrics {
+        total_files,
+        changed_files: changed_files.len(),
+        skipped_files: unchanged_files.len(),
+        change_detection_time,
+        database_round_trips: lookup_result.database_round_trips,
+        cache_hit_rate,
+        files_per_second,
+    };
+
+    // Report cache statistics
+    if cache_stats.hits + cache_stats.misses > 0 {
+        debug!(
+            "Cache performance: {} hits, {} misses, {:.1}% hit rate",
+            cache_stats.hits,
+            cache_stats.misses,
+            cache_hit_rate * 100.0
+        );
+    }
+
+    // Log sample of unchanged files for debugging (limited to avoid spam)
+    if !unchanged_files.is_empty() {
+        let sample_size = unchanged_files.len().min(5);
+        debug!(
+            "✅ Sample of unchanged files: {}",
+            unchanged_files[..sample_size].join(", ")
+        );
+    }
+
+    // Report any errors encountered
+    if error_count > 0 {
+        warn!(
+            "⚠️ Encountered {} errors during change detection (see logs for details)",
+            error_count
+        );
+    }
+
+    info!(
+        "✅ Change detection completed in {:?}: {} changed, {} unchanged out of {} total",
+        change_detection_time,
+        changed_files.len(),
+        unchanged_files.len(),
+        total_files
+    );
+
+    // Performance analysis for larger batches
+    if total_files > 10 {
+        let effective_batch_size = if lookup_result.database_round_trips > 0 {
+            (total_files + lookup_result.database_round_trips - 1) / lookup_result.database_round_trips
+        } else {
+            total_files
+        };
+
+        info!(
+            "⚡ Performance: {:.0} files/second, {} database round trips (effective batch size: {})",
+            files_per_second,
+            lookup_result.database_round_trips,
+            effective_batch_size
+        );
+    }
+
+    // Log detailed metrics
+    metrics.log_metrics();
+
+    Ok((changed_files, metrics))
 }
 
 /// Detect which files have changed by comparing content hashes
@@ -1001,14 +1415,15 @@ async fn detect_changed_files(
         match stored_hashes.get(&file_info.path) {
             Some(stored_hash) => {
                 // File exists in database - compare hashes
-                if stored_hash != &file_info.content_hash {
+                // Convert stored hex string to current file's hex for comparison
+                if stored_hash != &file_info.content_hash_hex() {
                     debug!(
                         "file changed (hash mismatch): {} (stored: {}..., current: {}...)",
                         file_info.path.display(),
-                        &stored_hash[..8],
-                        &file_info.content_hash[..8]
+                        &stored_hash[..stored_hash.len().min(8)],
+                        &file_info.content_hash_hex()[..8]
                     );
-                    changed_files.push(file_info.clone());
+                    changed_files.push((*file_info).clone());
                 } else {
                     debug!("file unchanged: {}", file_info.path.display());
                 }
@@ -1016,7 +1431,7 @@ async fn detect_changed_files(
             None => {
                 // File not in database - treat as new/changed
                 debug!("new file (not in database): {}", file_info.path.display());
-                changed_files.push(file_info.clone());
+                changed_files.push((*file_info).clone());
             }
         }
     }
@@ -1173,4 +1588,113 @@ pub async fn process_kiln_delta(
             Duration::from_secs(0)
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kiln_scanner::KilnFileInfo;
+    use std::path::PathBuf;
+    use std::time::SystemTime;
+
+    #[tokio::test]
+    async fn test_change_detection_metrics() {
+        let metrics = ChangeDetectionMetrics {
+            total_files: 100,
+            changed_files: 20,
+            skipped_files: 80,
+            change_detection_time: Duration::from_millis(500),
+            database_round_trips: 2,
+            cache_hit_rate: 0.75,
+            files_per_second: 200.0,
+        };
+
+        let summary = metrics.performance_summary();
+        assert!(summary.contains("100 files"));
+        assert!(summary.contains("20 changed"));
+        assert!(summary.contains("80 skipped"));
+        assert!(summary.contains("80.0% unchanged"));
+    }
+
+    #[tokio::test]
+    async fn test_empty_file_list_change_detection() {
+        let client = crate::SurrealClient::new_memory().await.unwrap();
+        let kiln_root = PathBuf::from("/test");
+        let files: Vec<&KilnFileInfo> = vec![];
+
+        let (changed_files, metrics) = detect_changed_files_efficient(
+            &client,
+            &files,
+            &kiln_root,
+        ).await.unwrap();
+
+        assert!(changed_files.is_empty());
+        assert_eq!(metrics.total_files, 0);
+        assert_eq!(metrics.changed_files, 0);
+        assert_eq!(metrics.skipped_files, 0);
+    }
+
+    #[tokio::test]
+    async fn test_needs_processing_with_invalid_data() {
+        let client = crate::SurrealClient::new_memory().await.unwrap();
+
+        let file_info = KilnFileInfo {
+            path: PathBuf::from("/test.md"),
+            relative_path: String::new(),
+            file_size: 100,
+            modified_time: SystemTime::now(),
+            is_markdown: true,
+            is_accessible: true,
+            content_hash: [1u8; 32],
+        };
+
+        let result = needs_processing(&file_info, &client).await.unwrap();
+        assert!(result, "Should return true for empty relative path");
+    }
+
+    #[tokio::test]
+    async fn test_change_detection_with_new_files() {
+        let client = crate::SurrealClient::new_memory().await.unwrap();
+        let kiln_root = PathBuf::from("/test");
+
+        let file_info = KilnFileInfo {
+            path: PathBuf::from("/test.md"),
+            relative_path: "test.md".to_string(),
+            file_size: 100,
+            modified_time: SystemTime::now(),
+            is_markdown: true,
+            is_accessible: true,
+            content_hash: [1u8; 32],
+        };
+
+        let files = vec![&file_info];
+        let (changed_files, metrics) = detect_changed_files_efficient(
+            &client,
+            &files,
+            &kiln_root,
+        ).await.unwrap();
+
+        assert_eq!(changed_files.len(), 1);
+        assert_eq!(metrics.changed_files, 1);
+        assert_eq!(metrics.total_files, 1);
+        assert_eq!(metrics.skipped_files, 0);
+    }
+
+    #[tokio::test]
+    async fn test_file_info_hash_validation() {
+        let file_info = KilnFileInfo {
+            path: PathBuf::from("/test.md"),
+            relative_path: "test.md".to_string(),
+            file_size: 100,
+            modified_time: SystemTime::now(),
+            is_markdown: true,
+            is_accessible: true,
+            content_hash: [0x42; 32],
+        };
+
+        let hash_hex = file_info.content_hash_hex();
+        assert_eq!(hash_hex.len(), 64);
+        assert!(hash_hex.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(hash_hex, "4242424242424242424242424242424242424242424242424242424242424242");
+    }
 }

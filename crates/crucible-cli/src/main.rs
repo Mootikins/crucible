@@ -1,14 +1,148 @@
 use anyhow::Result;
 use clap::Parser;
 use std::sync::Arc;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, info, warn, error, Level};
 
 use crucible_cli::{
     cli::{Cli, Commands},
     commands, config,
 };
-use crucible_core::CrucibleCore;
-use crucible_surrealdb::{SurrealClient, SurrealDbConfig};
+use crucible_core::{CrucibleCore, types::hashing::HashAlgorithm};
+use crucible_surrealdb::{SurrealClient, SurrealDbConfig, KilnFileInfo};
+use crucible_watch::FileType as WatchFileType;
+
+/// Process files using the integrated ChangeDetectionService
+///
+/// This function uses the new ChangeDetectionService that integrates
+/// FileScanningService with ChangeDetector and SurrealHashLookup for
+/// efficient selective processing based on ChangeSet.
+async fn process_files_with_change_detection(config: &crate::config::CliConfig) -> Result<()> {
+    use crucible_cli::common::ChangeDetectionService;
+    use std::time::Instant;
+
+    // Check if file processing is enabled (default: true)
+    if !config.file_watching.enabled {
+        debug!("File processing disabled by configuration");
+        return Ok(());
+    }
+
+    info!(
+        "🚀 Starting file processing with ChangeDetectionService for kiln: {}",
+        config.kiln.path.display()
+    );
+
+    let start_time = Instant::now();
+
+    // Initialize database connection
+    let db_config = crucible_surrealdb::SurrealDbConfig {
+        namespace: "crucible".to_string(),
+        database: "kiln".to_string(),
+        path: config.database_path_str()?,
+        max_connections: Some(10),
+        timeout_seconds: Some(30),
+    };
+
+    let client = match crucible_surrealdb::SurrealClient::new(db_config).await {
+        Ok(client) => client,
+        Err(e) => {
+            warn!("Failed to connect to database for file processing: {}", e);
+            info!("Continuing without file processing - database unavailable");
+            return Ok(()); // Graceful degradation
+        }
+    };
+    let client = Arc::new(client);
+
+    // Create ChangeDetectionService with appropriate configuration
+    let service_config = if cfg!(debug_assertions) {
+        crucible_cli::common::change_detection_development_config()
+    } else {
+        crucible_cli::common::change_detection_production_config()
+    };
+
+    let change_detection_service = match ChangeDetectionService::new(
+        &config.kiln.path,
+        client.clone(),
+        HashAlgorithm::Blake3,
+        service_config,
+    ).await {
+        Ok(service) => service,
+        Err(e) => {
+            error!("Failed to create ChangeDetectionService: {}", e);
+            return Err(anyhow::anyhow!("ChangeDetectionService initialization failed: {}", e));
+        }
+    };
+
+    // Perform the complete change detection and processing cycle
+    let result = match change_detection_service.detect_and_process_changes().await {
+        Ok(result) => result,
+        Err(e) => {
+            error!("Change detection and processing failed: {}", e);
+            return Err(anyhow::anyhow!("File processing failed: {}", e));
+        }
+    };
+
+    // Display comprehensive results
+    let total_time = start_time.elapsed();
+
+    if result.metrics.changes_detected == 0 {
+        info!("✅ All files are up to date - no changes detected");
+    } else {
+        info!(
+            "🔄 Change detection completed: {} files scanned, {} changes detected",
+            result.metrics.files_scanned,
+            result.metrics.changes_detected
+        );
+
+        if let Some(processing_result) = result.processing_result {
+            info!(
+                "🎯 Processing completed: {} successful, {} failed in {:?}",
+                processing_result.processed_count,
+                processing_result.failed_count,
+                processing_result.processing_time
+            );
+
+            if processing_result.failed_count > 0 {
+                warn!("Some files failed to process - check logs for details");
+                if !processing_result.failed_files.is_empty() {
+                    debug!("Failed files: {:?}", processing_result.failed_files);
+                }
+            }
+        } else {
+            info!("ℹ️  Changes detected but auto-processing is disabled");
+        }
+    }
+
+    // Display performance metrics
+    info!(
+        "📊 Performance: Scan {:?}, Detection {:?}, Total {:?}",
+        result.metrics.scan_time,
+        result.metrics.change_detection_time,
+        total_time
+    );
+
+    if result.metrics.database_round_trips > 0 {
+        info!(
+            "🗄️  Database: {} round trips, {:.1}% cache hit rate",
+            result.metrics.database_round_trips,
+            result.metrics.cache_hit_rate * 100.0
+        );
+    }
+
+    // Get and display detailed statistics in debug mode
+    if tracing::enabled!(Level::DEBUG) {
+        let scanner_stats = change_detection_service.get_file_scanner_statistics().await?;
+        debug!("File scanner statistics: {}", scanner_stats.summary());
+
+        let detector_stats = change_detection_service.get_change_detector_statistics().await?;
+        debug!("Change detector statistics: {}", detector_stats);
+    }
+
+    // Explicitly drop the client and service to ensure all database connections are closed
+    drop(change_detection_service);
+    drop(client);
+
+    Ok(())
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -57,7 +191,7 @@ async fn main() -> Result<()> {
 
                 let result = tokio::time::timeout(
                     timeout_duration.unwrap_or(std::time::Duration::from_secs(u64::MAX)),
-                    crucible_cli::common::kiln_processor::process_files_on_startup(&config)
+                    process_files_with_change_detection(&config)
                 ).await;
 
                 match result {
