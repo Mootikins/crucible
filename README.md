@@ -1,22 +1,37 @@
 # 🔥 Crucible
 
-> Where ideas transform through linked thinking
+> A plaintext-first agent framework for metadata-rich knowledge graphs
 
-A high-performance knowledge management system that combines hierarchical organization, real-time collaboration, and AI agent integration. Crucible promotes **linked thinking** – the seamless connection and evolution of ideas across time and context – by routing every UI (CLI today, desktop/agent integrations tomorrow) through a shared `crucible-core` façade that orchestrates configuration, storage, agents, and tools behind the scenes.
+Crucible is a high-performance knowledge management system built around a simple principle: **wikilinks define the knowledge graph, and agents explore it through simple CLI primitives.** By combining portable markdown files with block-level embeddings, graph traversal, and semantic search, Crucible enables testing whether metadata-rich knowledge graphs improve agent accuracy—with a clear path toward RL optimization, custom agent definitions, and markdown-based workflows.
 
-> **Status Note (2025-10-30):** The legacy “service” command surface has been retired. The roadmap now centers on a lightweight, local-first core that keeps orchestration inside `crucible-core` while the CLI stays focused on knowledge management tasks.
+> **Current MVP Focus (2025-11):** Validating that wikilink-based knowledge graphs, tags, and block-level embeddings enable better agent context discovery through agent-friendly commands (`cru semantic`, `cru query`). Future enhancements include reinforcement learning for context selection and definable workflows via markdown.
+
+> **Architecture Note:** The system routes every interface (CLI today, desktop/agent integrations tomorrow) through a shared `crucible-core` façade. Markdown files remain the source of truth for portability and lock-in avoidance—the database is optional infrastructure for rich queries.
 
 ## ✨ Key Features
 
-- 🔍 **Advanced Search**: Fuzzy search, semantic search with embeddings, and SurrealQL queries
+### Agent-First Knowledge Discovery
+- 🧠 **Wikilink-Based Graph**: `[[Note Name]]` links define entities and relationships—no extraction needed
+- 🎯 **Block-Level Granularity**: Semantic search and embeddings operate at paragraph/heading level for precise context
+- 🔍 **Hybrid Search**: Combine semantic similarity, graph structure, tags, and fuzzy matching
+- 🤖 **Agent-Friendly CLI**: Simple primitives (`cru semantic`, `cru query`) that agents call with native tool-calling
+
+### Performance & Portability
+- 📄 **Plaintext-First**: Markdown files are source of truth—works on devices without database
+- ⚡ **Incremental Processing**: Only changed files are reprocessed for fast startup (Phase 1 in progress)
+- 🗃️ **Optional Database**: SurrealDB provides rich queries (SurrealQL) when available, but system works file-only
+- 🔒 **Memory Safety**: Large file protection, UTF-8 safety, and input validation
+
+### Developer Experience
 - 🖥️ **Interactive REPL**: Full-featured terminal interface with syntax highlighting and auto-completion
-- 🤖 **AI Agent Integration**: Multiple AI agents share the same core APIs as human operators
-- 🔧 **Tool Orchestration**: Shared execution layer available to the CLI, agents, and future desktop UI
-- 🔄 **Sync & Collaboration (roadmap)**: CRDT-backed document sync and multi-user sessions coordinated by the core
 - 📊 **Operational Insights**: Core-level metrics, tooling diagnostics, and performance tracking
-- ⚡ **High Performance**: Simplified architecture with 83% complexity reduction and 51% fewer dependencies
-- 🛡️ **Security First**: Multiple security levels, sandboxed execution, and comprehensive validation
-- 🔒 **Memory Safety**: Large file protection, UTF-8 safety, and input validation for search operations
+- 🔧 **Clean Architecture**: 83% complexity reduction, 51% fewer dependencies
+- 🛡️ **Security First**: Multiple security levels, sandboxed execution, comprehensive validation
+
+### Future Roadmap
+- 🔄 **RL Optimization**: Reinforcement learning for context selection and agent accuracy tuning
+- 📝 **Markdown Workflows**: Definable agent workflows and custom agent definitions via markdown
+- 🤝 **Sync & Collaboration**: CRDT-backed document sync for multi-device, multi-user scenarios
 
 ## 🚀 Quick Start
 
@@ -186,26 +201,37 @@ SELECT title, tags FROM notes WHERE tags CONTAINS '#project';
 
 ## 🔥 Roadmap Focus
 
-### Core-Orchestrated Architecture (in progress)
-- **UI → Core → Infra Flow**: CLI now targets the shared core façade before hitting storage/tools
-- **Integrated Agents & Tools**: Agents, LLM utilities, and tool execution move behind the core façade so automated workflows and humans share the same APIs
-- **Shared Fixtures**: `crucible_core::test_support` centralises kiln/document builders for every layer
-- **Dependency Cleanup**: Roadmap phases focus on removing direct UI → infrastructure calls
+### Current MVP: Agent Context Accuracy Testing (2025-11)
+**Goal**: Validate that metadata-rich knowledge graphs (wikilinks, tags, block embeddings) improve agent accuracy through simple CLI primitives agents can call with native tool-calling.
 
-### Enhanced CLI Capabilities
-- **Core Commands**: Search, notes, statistics, kiln processing, and tooling utilities
-- **Interactive REPL**: Syntax highlighting, auto-completion, and tool execution via the shared core façade
-- **Search Safety**: Built-in memory protection and input validation
+**What's Working**:
+- ✅ Wikilink parsing and backlink queries (SurrealQL)
+- ✅ Tag indexing and querying
+- ✅ Block-level semantic search with embeddings
+- ✅ Agent-friendly commands (`cru semantic`, `cru query`)
+- ✅ Portable markdown-first architecture
 
-### Multi-Client & Collaboration (planned)
-- **Sync Engine**: CRDT-powered document sync between devices through the core façade
-- **Shared Sessions**: Core-managed collaboration channels so multiple users can edit the same knowledge base in real time
-- **Agent Collaboration**: Agents consume the same APIs and tools as humans, enabling automated document curation and cross-device assistance
+**In Progress**:
+- ⚙️ **Incremental File Processing** (optimize-data-flow): Make CLI startup sub-second for large vaults by processing only changed files
+- ⚙️ **Architecture Refactoring**: Clean SOLID-compliant module boundaries for maintainability
 
-### Migration & Maintenance
-- **Automation**: Tool migration helpers with validation and rollback paths
-- **Legacy Docs**: Historical ScriptEngine documentation has been removed; consult Git history if needed
-- **Roadmap Driven**: See `ROADMAP.md` for the staged core-centric refactor
+**What This Enables**:
+- Agents manually suggest relevant searches during conversations
+- Agents explore vault content using their native `Read` tool
+- Testing which metadata signals (graph structure, embeddings, tags) improve agent responses
+
+### Future Enhancements (Post-MVP)
+- **Reinforcement Learning**: Optimize context selection based on agent accuracy metrics
+- **Custom Agent Definitions**: Define specialized agents and their behaviors via markdown
+- **Markdown Workflows**: Declarative workflow automation in markdown files
+- **Multi-Device Sync**: CRDT-backed sync for collaborative knowledge bases
+- **Advanced Context Assembly**: Automated topic extraction and hybrid retrieval pipelines
+
+### Core Architecture Evolution (In Progress)
+- **UI → Core → Infra Flow**: CLI targets shared core façade before hitting storage/tools
+- **Integrated Agents & Tools**: Agents and humans share the same APIs through the core
+- **Shared Fixtures**: `crucible_core::test_support` centralizes kiln/document builders
+- **Dependency Cleanup**: Removing direct UI → infrastructure calls for clean boundaries
 
 ## License
 
