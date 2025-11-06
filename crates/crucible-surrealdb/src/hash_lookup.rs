@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use tracing::{debug, warn, info};
 use async_trait::async_trait;
 use crate::SurrealClient;
-use crate::types::{Record, RecordId};
+use crate::types::Record;
 
 // Import the trait and related types from crucible-core
 use crucible_core::traits::change_detection::{
@@ -890,7 +890,7 @@ impl<'a> HashLookupStorage for SurrealHashLookupStorage<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::SurrealDbConfig;
+    use crate::types::{SurrealDbConfig, RecordId};
     use std::path::PathBuf;
 
     #[tokio::test]

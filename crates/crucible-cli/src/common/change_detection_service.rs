@@ -15,17 +15,14 @@ use crucible_core::{
         ChangeDetector as ChangeDetectorTrait, ChangeSet, HashLookupStorage,
         ChangeDetectionResult, ChangeDetectionMetrics, StoredHash,
     },
-    types::hashing::{HashAlgorithm, FileHash, HashError},
+    types::hashing::{HashAlgorithm, HashError},
     FileHashInfo,
 };
 use std::collections::HashMap;
-use crucible_watch::{
-    ChangeDetector, ChangeDetectorConfig, FileInfo, ScanResult,
-};
+use crucible_watch::ChangeDetectorConfig;
 use crucible_surrealdb::{
     SurrealClient, hash_lookup::SurrealHashLookupStorage,
 };
-use std::pin::Pin;
 
 use super::FileScanningService;
 
@@ -557,7 +554,8 @@ impl ChangeDetectionService {
             debug!("Processing batch of {} files", chunk.len());
 
             // Use the existing processing pipeline
-            let scan_config = crucible_surrealdb::kiln_scanner::KilnScannerConfig::default();
+            let mut scan_config = crucible_surrealdb::kiln_scanner::KilnScannerConfig::default();
+            scan_config.parallel_processing = 1; // Disable parallel processing to ensure all files complete
             match crucible_surrealdb::kiln_processor::process_incremental_changes(
                 chunk,
                 self.client.as_ref(),

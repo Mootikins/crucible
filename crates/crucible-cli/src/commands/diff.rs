@@ -7,10 +7,10 @@ use tabled::{Table, Tabled, settings::Style};
 use crate::config::CliConfig;
 use crate::output;
 use crucible_core::storage::builder::{ContentAddressedStorageBuilder, StorageBackendType, HasherConfig};
-use crucible_core::storage::{ContentAddressedStorage, ContentHasher, MerkleTree, StorageResult, EnhancedTreeChange, StorageBackend};
-use crucible_core::storage::diff::{EnhancedChangeDetector, DiffConfig};
+use crucible_core::storage::{ContentAddressedStorage, ContentHasher, MerkleTree, StorageResult, EnhancedTreeChange};
+use crucible_core::storage::diff::EnhancedChangeDetector;
 use crucible_core::hashing::blake3::Blake3Hasher;
-use crucible_core::storage::{HashedBlock, BlockSize};
+use crucible_core::storage::HashedBlock;
 use std::sync::Arc;
 
 /// Output formats for diff command

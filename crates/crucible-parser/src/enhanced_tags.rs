@@ -90,7 +90,7 @@ impl EnhancedTagsExtension {
     fn extract_hashtags(
         &self,
         content: &str,
-        doc_content: &mut DocumentContent,
+        _doc_content: &mut DocumentContent,
     ) -> Result<(), ParseError> {
         // Pattern to match #hashtags (excluding URLs like http:// and # in code blocks)
         // Note: Rust's regex crate doesn't support lookbehind, so we'll filter matches manually
@@ -126,7 +126,7 @@ impl EnhancedTagsExtension {
                     continue;
                 }
 
-                let tag = Tag {
+                let _tag = Tag {
                     name: hashtag.to_string(),
                     path: hashtag.split('-').map(|s| s.to_string()).collect(),
                     offset,
@@ -299,9 +299,15 @@ impl EnhancedTagsExtension {
     }
 
     /// Parse task status from checkbox content with enhanced support
-    fn parse_task_status(checkbox_content: &str, line_number: usize) -> Result<Option<TaskStatus>, ParseError> {
+    fn parse_task_status(checkbox_content: &str, _line_number: usize) -> Result<Option<TaskStatus>, ParseError> {
+        // Handle whitespace-only content (space, full-width space)
+        // Empty string should return None, but whitespace should return Pending
+        if !checkbox_content.is_empty() && checkbox_content.trim().is_empty() {
+            return Ok(Some(TaskStatus::Pending));
+        }
+
         match checkbox_content.trim() {
-            " " | "　" => Ok(Some(TaskStatus::Pending)),
+            "" => Ok(None), // Empty string after trim
             "x" | "X" => Ok(Some(TaskStatus::Completed)),
             "-" | "~" => Ok(Some(TaskStatus::Pending)), // Common alternative syntax
             _ => {
@@ -509,13 +515,28 @@ Regular paragraph text.
         // Should have multiple separate lists due to interruptions
         assert!(doc_content.lists.len() >= 3);
 
-        // Only task list items should be captured
+        // Only task list items should be captured (those with checkboxes)
+        // Regular list items (without checkboxes) should NOT be captured
         for list in &doc_content.lists {
             for item in &list.items {
                 assert!(item.task_status.is_some(), "All captured items should have task status");
-                assert!(item.content.contains("Task"), "All captured items should contain 'Task'");
+                // Verify that "Regular list item (not a task)" was NOT captured
+                assert!(!item.content.contains("Regular list item"),
+                    "Regular list items without checkboxes should not be captured");
             }
         }
+
+        // Verify we captured the correct task items
+        let all_items: Vec<&str> = doc_content.lists.iter()
+            .flat_map(|list| list.items.iter())
+            .map(|item| item.content.as_str())
+            .collect();
+        assert!(all_items.contains(&"Task item 1"));
+        assert!(all_items.contains(&"Task item 2"));
+        assert!(all_items.contains(&"Different marker, new list"));
+        assert!(all_items.contains(&"Back to dash, new list again"));
+        assert!(all_items.contains(&"New task list after paragraph"));
+        assert!(!all_items.iter().any(|&item| item.contains("Regular list item")));
     }
 
     #[tokio::test]

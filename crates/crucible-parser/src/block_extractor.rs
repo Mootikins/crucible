@@ -580,6 +580,7 @@ impl ContentMap {
 
 /// Types of content that can be extracted
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // Future extensions planned
 enum ExtractionType {
     Heading,
     CodeBlock,

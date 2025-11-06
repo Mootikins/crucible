@@ -4,7 +4,7 @@
 //! the basic content-addressed storage functionality. These traits enable
 //! efficient duplicate detection, analysis, and storage optimization.
 
-use crate::storage::{StorageResult, StorageError};
+use crate::storage::StorageResult;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,10 @@ pub trait DeduplicationStorage: Send + Sync {
 
     /// Get deduplication statistics for specific block hashes
     async fn get_block_deduplication_stats(&self, block_hashes: &[String]) -> StorageResult<HashMap<String, usize>>;
+
+    /// Get deduplication statistics for all blocks (hash -> count mapping)
+    /// This is a low-level method that returns raw counts for all unique blocks
+    async fn get_all_block_deduplication_stats(&self) -> StorageResult<HashMap<String, usize>>;
 
     /// Get comprehensive deduplication statistics for all blocks
     async fn get_all_deduplication_stats(&self) -> StorageResult<DeduplicationStats>;

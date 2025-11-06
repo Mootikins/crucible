@@ -843,13 +843,8 @@ impl FileScanner {
             });
         }
 
-        // Check if file is accessible
-        if metadata.permissions().readonly() {
-            return Some(SkipReason {
-                path: file_path.to_path_buf(),
-                reason: SkipType::NotAccessible("file is read-only".to_string()),
-            });
-        }
+        // Note: We don't skip read-only files because we can still read them for scanning.
+        // Read-only just means we can't write to them, which is fine for our purposes.
 
         None
     }
@@ -1039,14 +1034,17 @@ impl ScanStatistics {
 }
 
 /// Helper function to check if a path is hidden
+///
+/// A file is considered hidden if its filename (not any parent directory) starts with a dot.
+/// For example:
+/// - `/path/to/.hidden_file` -> true (filename starts with dot)
+/// - `/tmp/.tmpdir/file.txt` -> false (only parent directory has dot, not the filename)
+/// - `/.git/config` -> false (we're checking the file, not the directory)
 fn is_hidden(path: &Path) -> bool {
-    path.components()
-        .any(|component| {
-            component.as_os_str()
-                .to_str()
-                .map(|name| name.starts_with('.'))
-                .unwrap_or(false)
-        })
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.starts_with('.'))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

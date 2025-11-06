@@ -1,14 +1,14 @@
-//! AST Block hashing implementation using the ContentHasher trait
+//! AST Block hashing implementation using generic hashing algorithms
 //!
 //! This module provides a specialized implementation for hashing AST blocks extracted
-//! from markdown documents. It uses BLAKE3 for consistent, fast hashing and supports
-//! the ContentHasher trait interface.
+//! from markdown documents. It now uses a generic HashingAlgorithm trait for flexibility
+//! and supports pluggable hash algorithms (BLAKE3, SHA256, etc.).
 //!
 //! # Architecture
 //!
 //! The `BlockHasher` is designed to be:
 //! - **Content-Aware**: Serializes both content and metadata for comprehensive hashing
-//! - **Consistent**: Uses the same BLAKE3 algorithm as file hashing for uniformity
+//! - **Algorithm-Agnostic**: Uses generic HashingAlgorithm trait (OCP compliant)
 //! - **Batch-Optimized**: Supports efficient batch processing of multiple blocks
 //! - **Metadata-Inclusive**: Includes block type and metadata in hash computation
 //!
@@ -30,7 +30,8 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let hasher = BlockHasher::new();
+//!     use crucible_core::hashing::algorithm::Blake3Algorithm;
+//!     let hasher = BlockHasher::new(Blake3Algorithm);
 //!
 //!     let metadata = ASTBlockMetadata::heading(1, Some("title".to_string()));
 //!     let block = ASTBlock::new(
@@ -49,11 +50,11 @@
 //! ```
 
 use async_trait::async_trait;
-use blake3::Hasher as Blake3Hasher;
-use sha2::{Digest, Sha256};
 use serde::Serialize;
 use std::collections::HashMap;
 
+use crate::hashing::algorithm::HashingAlgorithm;
+use crate::hashing::ast_converter::ASTBlockConverter;
 use crate::traits::change_detection::ContentHasher;
 use crate::types::hashing::{
     BlockHash, BlockHashInfo, FileHash, FileHashInfo, HashAlgorithm, HashError,
@@ -61,16 +62,23 @@ use crate::types::hashing::{
 use crate::storage::{HashedBlock, MerkleTree, ContentHasher as StorageContentHasher};
 
 // Import AST block types from the parser crate
-use crucible_parser::types::{ASTBlock, ASTBlockMetadata, ASTBlockType};
+use crucible_parser::types::{ASTBlock, ASTBlockMetadata};
+
+#[cfg(test)]
+use crucible_parser::types::ASTBlockType;
 
 /// Maximum serialization buffer size for block content
 const MAX_SERIALIZATION_SIZE: usize = 10 * 1024 * 1024; // 10MB
 
 /// Implementation of the ContentHasher trait for AST block operations
 ///
-/// This struct provides efficient AST block hashing using BLAKE3 or SHA256 algorithms.
+/// This struct provides efficient AST block hashing using a pluggable hashing algorithm.
 /// It serializes block content and metadata in a deterministic way to ensure
 /// consistent hashes across different parsing sessions.
+///
+/// # Generic Parameters
+///
+/// * `A` - The hashing algorithm to use (implements `HashingAlgorithm`)
 ///
 /// # Performance Characteristics
 ///
@@ -97,42 +105,49 @@ const MAX_SERIALIZATION_SIZE: usize = 10 * 1024 * 1024; // 10MB
 /// The `BlockHasher` is `Send + Sync` and can be safely shared across threads.
 /// All operations are async and non-blocking.
 #[derive(Debug, Clone)]
-pub struct BlockHasher {
-    algorithm: HashAlgorithm,
+pub struct BlockHasher<A: HashingAlgorithm> {
+    algorithm: A,
+    /// Legacy algorithm enum for compatibility (will be removed in future)
+    legacy_algorithm: HashAlgorithm,
+    /// Converter for transforming AST blocks to HashedBlock format
+    converter: ASTBlockConverter<A>,
 }
 
-impl BlockHasher {
-    /// Create a new BlockHasher with BLAKE3 algorithm (recommended)
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use crucible_core::hashing::block_hasher::BlockHasher;
-    ///
-    /// let hasher = BlockHasher::new();
-    /// ```
-    pub fn new() -> Self {
-        Self {
-            algorithm: HashAlgorithm::Blake3,
-        }
-    }
-
-    /// Create a new BlockHasher with the specified algorithm
+impl<A: HashingAlgorithm> BlockHasher<A> {
+    /// Create a new BlockHasher with the specified hashing algorithm
     ///
     /// # Arguments
     ///
-    /// * `algorithm` - The hash algorithm to use (BLAKE3 or SHA256)
+    /// * `algorithm` - The hash algorithm implementation to use
     ///
     /// # Examples
     ///
     /// ```rust
     /// use crucible_core::hashing::block_hasher::BlockHasher;
-    /// use crucible_core::types::hashing::HashAlgorithm;
+    /// use crucible_core::hashing::algorithm::Blake3Algorithm;
     ///
-    /// let hasher = BlockHasher::with_algorithm(HashAlgorithm::Blake3);
+    /// let hasher = BlockHasher::new(Blake3Algorithm);
     /// ```
-    pub fn with_algorithm(algorithm: HashAlgorithm) -> Self {
-        Self { algorithm }
+    pub fn new(algorithm: A) -> Self {
+        // Map algorithm name to legacy enum for backwards compatibility
+        // Use case-insensitive comparison to handle both "blake3" and "BLAKE3"
+        let name = algorithm.algorithm_name();
+        let legacy_algorithm = if name.eq_ignore_ascii_case("blake3") {
+            HashAlgorithm::Blake3
+        } else if name.eq_ignore_ascii_case("sha256") {
+            HashAlgorithm::Sha256
+        } else {
+            HashAlgorithm::Blake3 // Default fallback
+        };
+
+        // Create converter with the same algorithm
+        let converter = ASTBlockConverter::new(algorithm.clone());
+
+        Self {
+            algorithm,
+            legacy_algorithm,
+            converter,
+        }
     }
 
     /// Serialize an AST block to a deterministic string format
@@ -167,20 +182,10 @@ impl BlockHasher {
         Ok(serialized)
     }
 
-    /// Compute hash of serialized block content
+    /// Compute hash of serialized block content using the generic algorithm
     async fn hash_serialized_content(&self, content: &str) -> Result<Vec<u8>, HashError> {
-        match self.algorithm {
-            HashAlgorithm::Blake3 => {
-                let mut hasher = Blake3Hasher::new();
-                hasher.update(content.as_bytes());
-                Ok(hasher.finalize().as_bytes().to_vec())
-            }
-            HashAlgorithm::Sha256 => {
-                let mut hasher = Sha256::new();
-                hasher.update(content.as_bytes());
-                Ok(hasher.finalize().to_vec())
-            }
-        }
+        // Use the generic algorithm trait
+        Ok(self.algorithm.hash(content.as_bytes()))
     }
 
     /// Hash a single AST block with metadata
@@ -267,7 +272,7 @@ impl BlockHasher {
             block_type,
             block.start_offset,
             block.end_offset,
-            self.algorithm,
+            self.legacy_algorithm,
         ))
     }
 
@@ -331,8 +336,10 @@ impl BlockHasher {
 
     /// Convert AST blocks to HashedBlock format for Merkle tree construction
     ///
-    /// This method converts AST blocks to the HashedBlock format expected by
-    /// the MerkleTree implementation, preserving block indices and offsets.
+    /// This method delegates to the `ASTBlockConverter` to convert AST blocks
+    /// to the HashedBlock format expected by the MerkleTree implementation.
+    /// This follows the Single Responsibility Principle by separating hashing
+    /// concerns from conversion concerns.
     ///
     /// # Arguments
     ///
@@ -344,27 +351,16 @@ impl BlockHasher {
     ///
     /// # Errors
     ///
-    /// Returns `HashError` if block hashing fails
+    /// Returns `HashError` if block conversion fails
+    ///
+    /// # Design Note
+    ///
+    /// This method now uses `ASTBlockConverter` internally, following SRP.
+    /// The converter handles all conversion logic, while BlockHasher focuses
+    /// on hashing operations.
     pub async fn ast_blocks_to_hashed_blocks(&self, blocks: &[ASTBlock]) -> Result<Vec<HashedBlock>, HashError> {
-        let mut hashed_blocks = Vec::with_capacity(blocks.len());
-
-        for (index, block) in blocks.iter().enumerate() {
-            // Hash the AST block
-            let block_hash = self.hash_ast_block(block).await?;
-
-            // Convert to HashedBlock format
-            let hashed_block = HashedBlock::new(
-                block_hash.to_hex(), // Convert to hex string for storage compatibility
-                block.content.as_bytes().to_vec(),
-                index,
-                block.start_offset,
-                index == blocks.len() - 1, // Last block indicator
-            );
-
-            hashed_blocks.push(hashed_block);
-        }
-
-        Ok(hashed_blocks)
+        // Delegate to the converter for AST block conversion
+        self.converter.convert_batch(blocks).await
     }
 
     /// Build a Merkle tree from a collection of AST blocks
@@ -393,7 +389,8 @@ impl BlockHasher {
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let hasher = BlockHasher::new();
+    ///     use crucible_core::hashing::algorithm::Blake3Algorithm;
+    ///     let hasher = BlockHasher::new(Blake3Algorithm);
     ///
     ///     let blocks = vec![
     ///         ASTBlock::new(
@@ -565,15 +562,15 @@ impl BlockHasher {
             tree_depth: tree.depth,
             node_count: tree.nodes.len(),
             leaf_count: tree.leaf_hashes.len(),
-            algorithm: self.algorithm,
+            algorithm: self.legacy_algorithm,
         }
     }
 }
 
 #[async_trait]
-impl ContentHasher for BlockHasher {
+impl<A: HashingAlgorithm> ContentHasher for BlockHasher<A> {
     fn algorithm(&self) -> HashAlgorithm {
-        self.algorithm
+        self.legacy_algorithm
     }
 
     async fn hash_file(&self, _path: &std::path::Path) -> Result<FileHash, HashError> {
@@ -642,7 +639,7 @@ impl ContentHasher for BlockHasher {
             block_type,
             start_offset,
             end_offset,
-            self.algorithm,
+            self.legacy_algorithm,
         ))
     }
 
@@ -761,36 +758,27 @@ impl SerializableMetadata {
 
 // ==================== STORAGE CONTENTHASHER IMPLEMENTATION ====================
 
-impl StorageContentHasher for BlockHasher {
+impl<A: HashingAlgorithm> StorageContentHasher for BlockHasher<A> {
     fn hash_block(&self, data: &[u8]) -> String {
-        match self.algorithm {
-            HashAlgorithm::Blake3 => {
-                let mut hasher = Blake3Hasher::new();
-                hasher.update(data);
-                hex::encode(hasher.finalize().as_bytes())
-            }
-            HashAlgorithm::Sha256 => {
-                let mut hasher = Sha256::new();
-                hasher.update(data);
-                hex::encode(hasher.finalize())
-            }
-        }
+        // Use the generic algorithm
+        let hash_bytes = self.algorithm.hash(data);
+        self.algorithm.to_hex(&hash_bytes)
     }
 
     fn hash_nodes(&self, left: &str, right: &str) -> String {
-        let combined = format!("{}{}", left, right);
-        StorageContentHasher::hash_block(self, combined.as_bytes())
+        // Use the generic algorithm's hash_nodes method
+        let left_bytes = self.algorithm.from_hex(left).unwrap_or_default();
+        let right_bytes = self.algorithm.from_hex(right).unwrap_or_default();
+        let hash_bytes = self.algorithm.hash_nodes(&left_bytes, &right_bytes);
+        self.algorithm.to_hex(&hash_bytes)
     }
 
     fn algorithm_name(&self) -> &'static str {
-        match self.algorithm {
-            HashAlgorithm::Blake3 => "blake3",
-            HashAlgorithm::Sha256 => "sha256",
-        }
+        self.algorithm.algorithm_name()
     }
 
     fn hash_length(&self) -> usize {
-        self.algorithm.output_size()
+        self.algorithm.hash_length()
     }
 }
 
@@ -938,14 +926,50 @@ impl MerkleTreeStats {
     }
 }
 
-/// Constants for commonly used hashers
-pub const BLAKE3_BLOCK_HASHER: BlockHasher = BlockHasher {
-    algorithm: HashAlgorithm::Blake3,
-};
+/// Type alias for commonly used BLAKE3 block hasher
+pub type Blake3BlockHasher = BlockHasher<crate::hashing::algorithm::Blake3Algorithm>;
 
-pub const SHA256_BLOCK_HASHER: BlockHasher = BlockHasher {
-    algorithm: HashAlgorithm::Sha256,
-};
+/// Type alias for commonly used SHA256 block hasher
+pub type Sha256BlockHasher = BlockHasher<crate::hashing::algorithm::Sha256Algorithm>;
+
+/// Helper function to create a BLAKE3 block hasher
+///
+/// This function replaces the previous `BLAKE3_BLOCK_HASHER` constant,
+/// which could not be const due to the converter initialization.
+///
+/// # Examples
+///
+/// ```rust
+/// use crucible_core::hashing::block_hasher::new_blake3_block_hasher;
+///
+/// let hasher = new_blake3_block_hasher();
+/// ```
+pub fn new_blake3_block_hasher() -> Blake3BlockHasher {
+    BlockHasher::new(crate::hashing::algorithm::Blake3Algorithm)
+}
+
+/// Helper function to create a SHA256 block hasher
+///
+/// This function replaces the previous `SHA256_BLOCK_HASHER` constant,
+/// which could not be const due to the converter initialization.
+///
+/// # Examples
+///
+/// ```rust
+/// use crucible_core::hashing::block_hasher::new_sha256_block_hasher;
+///
+/// let hasher = new_sha256_block_hasher();
+/// ```
+pub fn new_sha256_block_hasher() -> Sha256BlockHasher {
+    BlockHasher::new(crate::hashing::algorithm::Sha256Algorithm)
+}
+
+// Keep the old constants as deprecated aliases for backward compatibility
+#[deprecated(since = "0.2.0", note = "Use `new_blake3_block_hasher()` instead")]
+pub const BLAKE3_BLOCK_HASHER: fn() -> Blake3BlockHasher = new_blake3_block_hasher;
+
+#[deprecated(since = "0.2.0", note = "Use `new_sha256_block_hasher()` instead")]
+pub const SHA256_BLOCK_HASHER: fn() -> Sha256BlockHasher = new_sha256_block_hasher;
 
 #[cfg(test)]
 mod tests {
@@ -954,16 +978,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_block_hasher_creation() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::{Blake3Algorithm, Sha256Algorithm};
+
+        let hasher = BlockHasher::new(Blake3Algorithm);
         assert_eq!(hasher.algorithm(), HashAlgorithm::Blake3);
 
-        let sha256_hasher = BlockHasher::with_algorithm(HashAlgorithm::Sha256);
+        let sha256_hasher = BlockHasher::new(Sha256Algorithm);
         assert_eq!(sha256_hasher.algorithm(), HashAlgorithm::Sha256);
     }
 
     #[tokio::test]
     async fn test_heading_block_hashing() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
         let metadata = ASTBlockMetadata::heading(1, Some("test-heading".to_string()));
         let block = ASTBlock::new(
             ASTBlockType::Heading,
@@ -985,7 +1012,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_code_block_hashing() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
         let metadata = ASTBlockMetadata::code(Some("rust".to_string()), 3);
         let block = ASTBlock::new(
             ASTBlockType::Code,
@@ -1012,7 +1040,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_paragraph_block_hashing() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
         let metadata = ASTBlockMetadata::generic();
         let block = ASTBlock::new(
             ASTBlockType::Paragraph,
@@ -1037,7 +1066,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_block_hashing() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
         let metadata = ASTBlockMetadata::list(ListType::Ordered, 3);
         let block = ASTBlock::new(
             ASTBlockType::List,
@@ -1053,7 +1083,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_callout_block_hashing() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
         let metadata = ASTBlockMetadata::callout(
             "note".to_string(),
             Some("Important Note".to_string()),
@@ -1073,7 +1104,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_hashing() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
 
         let blocks = vec![
             ASTBlock::new(
@@ -1114,7 +1146,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_block_info_hashing() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
         let metadata = ASTBlockMetadata::heading(2, Some("subtitle".to_string()));
         let block = ASTBlock::new(
             ASTBlockType::Heading,
@@ -1136,7 +1169,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_content_hasher_trait_compatibility() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
 
         // Test simple content hashing
         let content = "Hello, world!";
@@ -1167,7 +1201,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_block_handling() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
         let metadata = ASTBlockMetadata::generic();
         let empty_block = ASTBlock::new(
             ASTBlockType::Paragraph,
@@ -1197,7 +1232,8 @@ mod tests {
             metadata,
         );
 
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
         let serialized = hasher.serialize_block(&block).unwrap();
 
         // Verify JSON format
@@ -1236,14 +1272,18 @@ mod tests {
     }
 
     #[test]
-    fn test_constants() {
-        assert_eq!(BLAKE3_BLOCK_HASHER.algorithm(), HashAlgorithm::Blake3);
-        assert_eq!(SHA256_BLOCK_HASHER.algorithm(), HashAlgorithm::Sha256);
+    fn test_helper_functions() {
+        let blake3_hasher = new_blake3_block_hasher();
+        assert_eq!(blake3_hasher.algorithm(), HashAlgorithm::Blake3);
+
+        let sha256_hasher = new_sha256_block_hasher();
+        assert_eq!(sha256_hasher.algorithm(), HashAlgorithm::Sha256);
     }
 
     #[tokio::test]
     async fn test_error_handling() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
 
         // Test file hashing (not supported)
         let result = hasher.hash_file(std::path::Path::new("test.txt")).await;
@@ -1257,8 +1297,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_algorithm_consistency() {
-        let blake3_hasher = BlockHasher::with_algorithm(HashAlgorithm::Blake3);
-        let sha256_hasher = BlockHasher::with_algorithm(HashAlgorithm::Sha256);
+        use crate::hashing::algorithm::{Blake3Algorithm, Sha256Algorithm};
+        let blake3_hasher = BlockHasher::new(Blake3Algorithm);
+        let sha256_hasher = BlockHasher::new(Sha256Algorithm);
 
         let metadata = ASTBlockMetadata::generic();
         let block = ASTBlock::new(
@@ -1282,7 +1323,8 @@ mod tests {
 
     #[test]
     fn test_large_content_protection() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
 
         // Create a block with extremely large content
         let large_content = "x".repeat(MAX_SERIALIZATION_SIZE + 1);
@@ -1303,7 +1345,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_merkle_tree_single_block() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
 
         let metadata = ASTBlockMetadata::heading(1, Some("title".to_string()));
         let block = ASTBlock::new(
@@ -1330,7 +1373,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_merkle_tree_multiple_blocks() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
 
         let blocks = vec![
             ASTBlock::new(
@@ -1375,7 +1419,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_merkle_tree_empty_blocks_error() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
         let blocks: Vec<ASTBlock> = vec![];
 
         let result = hasher.build_merkle_tree_from_blocks(&blocks).await;
@@ -1385,7 +1430,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_merkle_tree_from_precomputed_hashes() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
 
         let blocks = vec![
             ASTBlock::new(
@@ -1423,7 +1469,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_merkle_tree_verification() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
 
         let blocks = vec![
             ASTBlock::new(
@@ -1462,7 +1509,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_merkle_tree_comparison() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
 
         let blocks1 = vec![
             ASTBlock::new(
@@ -1511,7 +1559,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_ast_blocks_to_hashed_blocks_conversion() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
 
         let blocks = vec![
             ASTBlock::new(
@@ -1555,7 +1604,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_merkle_tree_statistics() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
 
         let blocks = vec![
             ASTBlock::new(ASTBlockType::Heading, "H1".to_string(), 0, 2, ASTBlockMetadata::heading(1, None)),
@@ -1588,7 +1638,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_merkle_tree_large_block_count() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
 
         // Create a larger number of blocks to test tree construction
         let mut blocks = Vec::new();
@@ -1619,7 +1670,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_merkle_tree_with_different_block_types() {
-        let hasher = BlockHasher::new();
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
 
         let blocks = vec![
             ASTBlock::new(
@@ -1677,8 +1729,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_merkle_tree_algorithm_consistency() {
-        let blake3_hasher = BlockHasher::with_algorithm(HashAlgorithm::Blake3);
-        let sha256_hasher = BlockHasher::with_algorithm(HashAlgorithm::Sha256);
+        use crate::hashing::algorithm::{Blake3Algorithm, Sha256Algorithm};
+        let blake3_hasher = BlockHasher::new(Blake3Algorithm);
+        let sha256_hasher = BlockHasher::new(Sha256Algorithm);
 
         // Use multiple blocks to ensure internal nodes are created
         let blocks = vec![
@@ -1763,7 +1816,8 @@ mod tests {
 
     #[test]
     fn test_storage_content_hasher_implementation() {
-        let hasher = BlockHasher::with_algorithm(HashAlgorithm::Blake3);
+        use crate::hashing::algorithm::Blake3Algorithm;
+        let hasher = BlockHasher::new(Blake3Algorithm);
 
         // Test hash_block
         let data = b"Hello, World!";

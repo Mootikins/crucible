@@ -18,7 +18,7 @@ use walkdir::{DirEntry, WalkDir};
 
 use crate::embedding_pool::EmbeddingThreadPool;
 use crate::kiln_integration::*;
-use crate::hash_lookup::{lookup_file_hashes_batch_cached, HashLookupCache, BatchLookupConfig, StoredFileHash};
+use crate::hash_lookup::{lookup_file_hashes_batch_cached, HashLookupCache, BatchLookupConfig};
 use crate::SurrealClient;
 use crucible_core::types::ParsedDocument;
 

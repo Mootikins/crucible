@@ -1,8 +1,34 @@
 //! Shared testing utilities for Crucible components.
 //!
-//! These helpers create temporary kilns with predictable content so tests
-//! across crates can exercise document indexing and search behaviour without
-//! duplicating setup logic.
+//! This module provides comprehensive testing infrastructure including:
+//!
+//! - **Temporary Kilns**: Helper functions for creating test file structures
+//! - **Mock Implementations**: Deterministic, observable mocks for all core traits
+//! - **Test Utilities**: Common helpers for test setup and teardown
+//!
+//! ## Modules
+//!
+//! - [`mocks`]: Mock implementations of traits (hasher, storage, change detector)
+//!
+//! ## Usage in Tests
+//!
+//! ```rust
+//! use crucible_core::test_support::{create_basic_kiln, mocks::MockHashingAlgorithm};
+//! use crucible_core::hashing::algorithm::HashingAlgorithm;
+//!
+//! # fn example() -> anyhow::Result<()> {
+//! // Create temporary test kiln
+//! let kiln = create_basic_kiln()?;
+//!
+//! // Use mock hasher for deterministic testing
+//! let hasher = MockHashingAlgorithm::new();
+//! let hash = hasher.hash(b"test");
+//! assert_eq!(hash.len(), 32);
+//! # Ok(())
+//! # }
+//! ```
+
+pub mod mocks;
 
 use anyhow::{Context, Result};
 use std::path::Path;

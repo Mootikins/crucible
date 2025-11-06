@@ -1,41 +1,125 @@
-//! Duplicate Block Detection for SurrealDB Storage
+//! Duplicate Block Detection for Storage Backends
 //!
 //! This module implements advanced deduplication detection and analysis
-//! specifically for the SurrealDB storage backend.
+//! that works with any storage backend implementing the DeduplicationStorage trait.
+//!
+//! # Generic Design
+//!
+//! The `DeduplicationDetector` is generic over the storage backend, following
+//! the Open-Closed Principle (OCP) from SOLID principles. This allows it to work
+//! with different storage implementations without modification.
+//!
+//! # Examples
+//!
+//! ```rust,no_run
+//! use crucible_surrealdb::{ContentAddressedStorageSurrealDB, SurrealDbConfig};
+//! use crucible_surrealdb::deduplication_detector::DeduplicationDetector;
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let config = SurrealDbConfig::memory();
+//!     let storage = ContentAddressedStorageSurrealDB::new(config).await?;
+//!
+//!     // Create detector with generic storage backend
+//!     let detector = DeduplicationDetector::new(storage);
+//!
+//!     // Use detector...
+//!     Ok(())
+//! }
+//! ```
 
 use crate::content_addressed_storage::ContentAddressedStorageSurrealDB;
-use crate::hash_lookup::BatchLookupConfig;
 use crucible_core::storage::{
-    DeduplicationStorage, StorageResult, StorageError, BlockInfo,
+    DeduplicationStorage, StorageResult, BlockInfo,
     DuplicateBlockInfo, StorageUsageStats
 };
 use crucible_core::storage::deduplication_traits::DeduplicationStats;
 use async_trait::async_trait;
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 
-/// Deduplication detector for SurrealDB storage
-pub struct SurrealDeduplicationDetector {
-    storage: ContentAddressedStorageSurrealDB,
-    /// Average block size for estimations
+/// Generic deduplication detector that works with any storage backend
+///
+/// This struct implements advanced deduplication detection and analysis
+/// for storage backends that implement the `DeduplicationStorage` trait.
+///
+/// # Generic Parameters
+///
+/// * `S` - The storage backend type (implements `DeduplicationStorage`)
+///
+/// # Thread Safety
+///
+/// The detector is `Send + Sync` if the underlying storage is `Send + Sync`,
+/// allowing it to be safely shared across threads.
+#[derive(Debug, Clone)]
+pub struct DeduplicationDetector<S: DeduplicationStorage> {
+    storage: S,
+    /// Average block size for estimations when content is not available
     average_block_size: usize,
 }
 
-impl SurrealDeduplicationDetector {
-    /// Create a new deduplication detector
-    pub fn new(storage: ContentAddressedStorageSurrealDB) -> Self {
+impl<S: DeduplicationStorage> DeduplicationDetector<S> {
+    /// Create a new deduplication detector with the given storage backend
+    ///
+    /// # Arguments
+    ///
+    /// * `storage` - The storage backend implementing `DeduplicationStorage`
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use crucible_surrealdb::{ContentAddressedStorageSurrealDB, SurrealDbConfig};
+    /// use crucible_surrealdb::deduplication_detector::DeduplicationDetector;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let config = SurrealDbConfig::memory();
+    ///     let storage = ContentAddressedStorageSurrealDB::new(config).await?;
+    ///     let detector = DeduplicationDetector::new(storage);
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn new(storage: S) -> Self {
         Self {
             storage,
-            average_block_size: 200, // Default estimate
+            average_block_size: 200, // Default estimate based on typical markdown blocks
         }
     }
 
-    /// Create with custom average block size
-    pub fn with_average_block_size(storage: ContentAddressedStorageSurrealDB, average_block_size: usize) -> Self {
+    /// Create a detector with a custom average block size for better estimates
+    ///
+    /// # Arguments
+    ///
+    /// * `storage` - The storage backend implementing `DeduplicationStorage`
+    /// * `average_block_size` - Average block size in bytes for estimations
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use crucible_surrealdb::{ContentAddressedStorageSurrealDB, SurrealDbConfig};
+    /// use crucible_surrealdb::deduplication_detector::DeduplicationDetector;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let config = SurrealDbConfig::memory();
+    ///     let storage = ContentAddressedStorageSurrealDB::new(config).await?;
+    ///     let detector = DeduplicationDetector::with_average_block_size(storage, 500);
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn with_average_block_size(storage: S, average_block_size: usize) -> Self {
         Self {
             storage,
             average_block_size,
         }
+    }
+
+    /// Get a reference to the underlying storage backend
+    ///
+    /// This method allows access to the storage backend for operations
+    /// not covered by the deduplication interface.
+    pub fn storage(&self) -> &S {
+        &self.storage
     }
 
     /// Estimate block size based on content length
@@ -58,7 +142,7 @@ impl SurrealDeduplicationDetector {
 }
 
 #[async_trait]
-impl DeduplicationStorage for SurrealDeduplicationDetector {
+impl<S: DeduplicationStorage> DeduplicationStorage for DeduplicationDetector<S> {
     async fn find_documents_with_block(&self, block_hash: &str) -> StorageResult<Vec<String>> {
         self.storage.find_documents_with_block(block_hash).await
     }
@@ -106,6 +190,10 @@ impl DeduplicationStorage for SurrealDeduplicationDetector {
 
     async fn get_block_deduplication_stats(&self, block_hashes: &[String]) -> StorageResult<HashMap<String, usize>> {
         self.storage.get_block_deduplication_stats(block_hashes).await
+    }
+
+    async fn get_all_block_deduplication_stats(&self) -> StorageResult<HashMap<String, usize>> {
+        self.storage.get_all_block_deduplication_stats().await
     }
 
     async fn get_all_deduplication_stats(&self) -> StorageResult<DeduplicationStats> {
@@ -176,13 +264,13 @@ impl DeduplicationStorage for SurrealDeduplicationDetector {
 
         let mut duplicates = Vec::new();
 
-        for (block_hash, occurrence_count) in all_stats {
+        for (block_hash, &occurrence_count) in &all_stats {
             if occurrence_count >= min_occurrences {
                 // Get documents containing this block
-                let documents = self.storage.find_documents_with_block(&block_hash).await?;
+                let documents = self.storage.find_documents_with_block(block_hash).await?;
 
                 // Get block info for content preview and type
-                let block_info = self.get_block_by_hash(&block_hash).await?;
+                let block_info = self.get_block_by_hash(block_hash).await?;
 
                 let (block_type, content_preview, estimated_size) = if let Some(info) = block_info {
                     (
@@ -199,7 +287,7 @@ impl DeduplicationStorage for SurrealDeduplicationDetector {
                 };
 
                 duplicates.push(DuplicateBlockInfo {
-                    block_hash: block_hash.clone(),
+                    block_hash: block_hash.to_string(),
                     occurrence_count,
                     documents,
                     estimated_block_size: estimated_size,
@@ -266,6 +354,15 @@ impl DeduplicationStorage for SurrealDeduplicationDetector {
     }
 }
 
+// ==================== TYPE ALIASES FOR BACKWARDS COMPATIBILITY ====================
+
+/// Type alias for SurrealDB-based deduplication detector
+///
+/// This provides backwards compatibility with existing code that uses
+/// `SurrealDeduplicationDetector`. New code should prefer the generic
+/// `DeduplicationDetector<S>` where appropriate.
+pub type SurrealDeduplicationDetector = DeduplicationDetector<ContentAddressedStorageSurrealDB>;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,7 +372,7 @@ mod tests {
     async fn test_create_deduplication_detector() {
         let config = SurrealDbConfig::memory();
         let storage = ContentAddressedStorageSurrealDB::new(config).await.unwrap();
-        let detector = SurrealDeduplicationDetector::new(storage);
+        let detector = DeduplicationDetector::new(storage);
 
         // Test creation succeeds
         assert_eq!(detector.average_block_size, 200);
@@ -285,18 +382,26 @@ mod tests {
     async fn test_create_with_custom_block_size() {
         let config = SurrealDbConfig::memory();
         let storage = ContentAddressedStorageSurrealDB::new(config).await.unwrap();
-        let detector = SurrealDeduplicationDetector::with_average_block_size(storage, 500);
+        let detector = DeduplicationDetector::with_average_block_size(storage, 500);
 
         assert_eq!(detector.average_block_size, 500);
     }
 
-    #[test]
-    fn test_generate_content_preview() {
+    #[tokio::test]
+    async fn test_type_alias_compatibility() {
         let config = SurrealDbConfig::memory();
-        let detector = SurrealDeduplicationDetector::with_average_block_size(
-            unsafe { std::mem::zeroed() }, // Unsafe but just for testing
-            200
-        );
+        let storage = ContentAddressedStorageSurrealDB::new(config).await.unwrap();
+
+        // Test that the type alias works correctly
+        let detector: SurrealDeduplicationDetector = SurrealDeduplicationDetector::new(storage);
+        assert_eq!(detector.average_block_size, 200);
+    }
+
+    #[tokio::test]
+    async fn test_generate_content_preview() {
+        let config = SurrealDbConfig::memory();
+        let storage = ContentAddressedStorageSurrealDB::new(config).await.unwrap();
+        let detector = DeduplicationDetector::new(storage);
 
         let short_content = "Short content";
         let preview = detector.generate_content_preview(short_content, 50);
@@ -307,13 +412,11 @@ mod tests {
         assert_eq!(preview, "This is a very lo...");
     }
 
-    #[test]
-    fn test_estimate_block_size() {
+    #[tokio::test]
+    async fn test_estimate_block_size() {
         let config = SurrealDbConfig::memory();
-        let detector = SurrealDeduplicationDetector::with_average_block_size(
-            unsafe { std::mem::zeroed() }, // Unsafe but just for testing
-            200
-        );
+        let storage = ContentAddressedStorageSurrealDB::new(config).await.unwrap();
+        let detector = DeduplicationDetector::new(storage);
 
         let empty_content = "";
         let size = detector.estimate_block_size(empty_content);
@@ -322,5 +425,18 @@ mod tests {
         let content = "This is some content";
         let size = detector.estimate_block_size(content);
         assert_eq!(size, content.len());
+    }
+
+    #[tokio::test]
+    async fn test_storage_accessor() {
+        let config = SurrealDbConfig::memory();
+        let storage = ContentAddressedStorageSurrealDB::new(config).await.unwrap();
+        let detector = DeduplicationDetector::new(storage.clone());
+
+        // Test that we can access the underlying storage
+        let storage_ref = detector.storage();
+
+        // Verify it's the same type
+        let _: &ContentAddressedStorageSurrealDB = storage_ref;
     }
 }

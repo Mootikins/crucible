@@ -2,14 +2,19 @@
 //!
 //! This module provides high-level operations for storing and retrieving blocks
 //! in the content-addressed storage system with document awareness.
+//!
+//! The storage is generic over the hashing algorithm, allowing for flexible
+//! algorithm selection (BLAKE3, SHA256, etc.) following the Open/Closed Principle.
 
 use crate::content_addressed_storage::ContentAddressedStorageSurrealDB;
 use crate::SurrealDbConfig;
 use async_trait::async_trait;
+use crucible_core::hashing::algorithm::HashingAlgorithm;
 use crucible_core::storage::{StorageError, StorageResult};
 use crucible_parser::types::{ASTBlock, ASTBlockType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::marker::PhantomData;
 
 /// Block storage interface for document-aware operations
 #[async_trait]
@@ -92,22 +97,79 @@ pub struct DuplicateBlockInfo {
     pub storage_saved: usize,
 }
 
-/// Block storage implementation using SurrealDB
-pub struct BlockStorageSurrealDB {
+/// Block storage implementation using SurrealDB with generic hashing algorithm
+///
+/// # Generic Parameters
+///
+/// * `A` - The hashing algorithm to use (implements `HashingAlgorithm`)
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use crucible_surrealdb::block_storage::BlockStorageSurrealDB;
+/// use crucible_core::hashing::algorithm::Blake3Algorithm;
+/// use crucible_surrealdb::SurrealDbConfig;
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let config = SurrealDbConfig {
+///     namespace: "test".to_string(),
+///     database: "test".to_string(),
+///     path: ":memory:".to_string(),
+///     max_connections: Some(10),
+///     timeout_seconds: Some(30),
+/// };
+///
+/// let storage = BlockStorageSurrealDB::new(Blake3Algorithm, config).await?;
+/// # Ok(())
+/// # }
+/// ```
+pub struct BlockStorageSurrealDB<A: HashingAlgorithm> {
     storage: ContentAddressedStorageSurrealDB,
+    algorithm: A,
+    _phantom: PhantomData<A>,
 }
 
-impl BlockStorageSurrealDB {
-    /// Create a new block storage instance
-    pub async fn new(config: SurrealDbConfig) -> StorageResult<Self> {
+impl<A: HashingAlgorithm> BlockStorageSurrealDB<A> {
+    /// Create a new block storage instance with the specified hashing algorithm
+    ///
+    /// # Arguments
+    ///
+    /// * `algorithm` - The hashing algorithm to use for content addressing
+    /// * `config` - SurrealDB configuration
+    ///
+    /// # Returns
+    ///
+    /// A new BlockStorageSurrealDB instance or error
+    pub async fn new(algorithm: A, config: SurrealDbConfig) -> StorageResult<Self> {
         let storage = ContentAddressedStorageSurrealDB::new(config).await?;
-        Ok(Self { storage })
+        Ok(Self {
+            storage,
+            algorithm,
+            _phantom: PhantomData,
+        })
     }
 
-    /// Create an in-memory block storage for testing
-    pub async fn new_memory() -> StorageResult<Self> {
+    /// Create an in-memory block storage for testing with the specified algorithm
+    ///
+    /// # Arguments
+    ///
+    /// * `algorithm` - The hashing algorithm to use for content addressing
+    ///
+    /// # Returns
+    ///
+    /// A new BlockStorageSurrealDB instance with in-memory storage
+    pub async fn new_memory(algorithm: A) -> StorageResult<Self> {
         let storage = ContentAddressedStorageSurrealDB::new_memory().await?;
-        Ok(Self { storage })
+        Ok(Self {
+            storage,
+            algorithm,
+            _phantom: PhantomData,
+        })
+    }
+
+    /// Get the hashing algorithm used by this storage
+    pub fn algorithm(&self) -> &A {
+        &self.algorithm
     }
 
     /// Convert AST block type to string
@@ -148,7 +210,7 @@ impl BlockStorageSurrealDB {
 }
 
 #[async_trait]
-impl BlockStorage for BlockStorageSurrealDB {
+impl<A: HashingAlgorithm> BlockStorage for BlockStorageSurrealDB<A> {
     async fn store_document_blocks(
         &self,
         document_id: &str,
@@ -281,9 +343,21 @@ impl BlockStorage for BlockStorageSurrealDB {
     }
 }
 
+/// Type alias for BlockStorageSurrealDB using BLAKE3 hashing algorithm
+///
+/// This is the recommended default for most use cases due to BLAKE3's
+/// superior performance characteristics.
+pub type Blake3BlockStorage = BlockStorageSurrealDB<crucible_core::hashing::algorithm::Blake3Algorithm>;
+
+/// Type alias for BlockStorageSurrealDB using SHA256 hashing algorithm
+///
+/// Use this for compatibility with existing systems that require SHA256.
+pub type Sha256BlockStorage = BlockStorageSurrealDB<crucible_core::hashing::algorithm::Sha256Algorithm>;
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::hashing::algorithm::Blake3Algorithm;
     use crucible_parser::types::{ASTBlock, ASTBlockMetadata, ASTBlockType};
 
     /// Create a test AST block
@@ -314,7 +388,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_store_and_get_document_blocks() {
-        let storage = BlockStorageSurrealDB::new_memory().await.unwrap();
+        let storage = BlockStorageSurrealDB::new_memory(Blake3Algorithm).await.unwrap();
 
         let document_id = "test/document.md";
         let blocks = vec![
@@ -344,7 +418,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_find_documents_with_block() {
-        let storage = BlockStorageSurrealDB::new_memory().await.unwrap();
+        let storage = BlockStorageSurrealDB::new_memory(Blake3Algorithm).await.unwrap();
 
         let document1 = "doc1.md";
         let document2 = "doc2.md";
@@ -372,7 +446,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_block_by_hash() {
-        let storage = BlockStorageSurrealDB::new_memory().await.unwrap();
+        let storage = BlockStorageSurrealDB::new_memory(Blake3Algorithm).await.unwrap();
 
         let document_id = "test.md";
         let block = create_test_ast_block("Test content", ASTBlockType::Paragraph, 0, 12);
@@ -391,7 +465,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_document_blocks() {
-        let storage = BlockStorageSurrealDB::new_memory().await.unwrap();
+        let storage = BlockStorageSurrealDB::new_memory(Blake3Algorithm).await.unwrap();
 
         let document_id = "test.md";
         let blocks = vec![
@@ -415,7 +489,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_deduplication_stats() {
-        let storage = BlockStorageSurrealDB::new_memory().await.unwrap();
+        let storage = BlockStorageSurrealDB::new_memory(Blake3Algorithm).await.unwrap();
 
         let common_content = "Shared block content";
         let common_block = create_test_ast_block(common_content, ASTBlockType::Paragraph, 0, common_content.len());

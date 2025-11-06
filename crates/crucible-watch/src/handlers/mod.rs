@@ -83,7 +83,7 @@ impl Default for HandlerRegistry {
 
 /// Create a default set of handlers for a typical Crucible installation.
 pub fn create_default_handlers() -> Result<HandlerRegistry> {
-    let mut registry = HandlerRegistry::new();
+    let registry = HandlerRegistry::new();
 
     // Register default handlers
     // TODO: Re-enable when crucible_mcp is available

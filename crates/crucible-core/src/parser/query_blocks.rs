@@ -66,7 +66,7 @@ impl SyntaxExtension for QueryBlockExtension {
         for cap in re.captures_iter(content) {
             let full_match = cap.get(0).unwrap();
             let query_type = cap.get(1).unwrap().as_str().trim();
-            let query_content = cap.get(2).unwrap().as_str();
+            let query_content = cap.get(2).unwrap().as_str().trim_end();
 
             // Count lines up to this match to calculate line offset
             line_offset += content[..full_match.start()].matches('\n').count();

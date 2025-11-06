@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use crucible_core::storage::{
     ContentAddressedStorage, MerkleTree, StorageError, StorageResult,
 };
-use crucible_core::storage::traits::StorageStats;
+use crucible_core::storage::traits::{BlockOperations, TreeOperations, StorageStats};
 use crucible_parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -417,8 +417,10 @@ impl ContentAddressedStorageSurrealDB {
     }
 }
 
+// ==================== BLOCK OPERATIONS TRAIT IMPLEMENTATION ====================
+
 #[async_trait]
-impl ContentAddressedStorage for ContentAddressedStorageSurrealDB {
+impl crucible_core::storage::traits::BlockOperations for ContentAddressedStorageSurrealDB {
     async fn store_block(&self, hash: &str, data: &[u8]) -> StorageResult<()> {
         if hash.is_empty() {
             return Err(StorageError::InvalidHash("Empty hash provided".to_string()));
@@ -464,6 +466,49 @@ impl ContentAddressedStorage for ContentAddressedStorageSurrealDB {
         }
     }
 
+    async fn block_exists(&self, hash: &str) -> StorageResult<bool> {
+        if hash.is_empty() {
+            return Err(StorageError::InvalidHash("Empty hash provided".to_string()));
+        }
+
+        let query = format!("SELECT count() FROM content_blocks WHERE hash = '{}'", hash);
+        let result = self.client
+            .query(&query, &[])
+            .await
+            .map_err(|e| StorageError::backend(format!("Failed to check block existence: {}", e)))?;
+
+        // Check if we got any results
+        Ok(!result.records.is_empty())
+    }
+
+    async fn delete_block(&self, hash: &str) -> StorageResult<bool> {
+        if hash.is_empty() {
+            return Err(StorageError::InvalidHash("Empty hash provided".to_string()));
+        }
+
+        // Check if block exists before deletion
+        let existed = BlockOperations::block_exists(self, hash).await?;
+        if !existed {
+            return Ok(false);
+        }
+
+        // Delete the block
+        let query = format!("DELETE FROM content_blocks:`{}`", hash);
+        let result = self.client
+            .query(&query, &[])
+            .await
+            .map_err(|e| StorageError::backend(format!("Failed to delete block: {}", e)))?;
+
+        // Verify deletion was successful by checking if it still exists
+        let exists_after = BlockOperations::block_exists(self, hash).await?;
+        Ok(!exists_after)
+    }
+}
+
+// ==================== TREE OPERATIONS TRAIT IMPLEMENTATION ====================
+
+#[async_trait]
+impl crucible_core::storage::traits::TreeOperations for ContentAddressedStorageSurrealDB {
     async fn store_tree(&self, root_hash: &str, tree: &MerkleTree) -> StorageResult<()> {
         if root_hash.is_empty() {
             return Err(StorageError::InvalidHash("Empty root hash provided".to_string()));
@@ -513,21 +558,6 @@ impl ContentAddressedStorage for ContentAddressedStorageSurrealDB {
         }
     }
 
-    async fn block_exists(&self, hash: &str) -> StorageResult<bool> {
-        if hash.is_empty() {
-            return Err(StorageError::InvalidHash("Empty hash provided".to_string()));
-        }
-
-        let query = format!("SELECT count() FROM content_blocks WHERE hash = '{}'", hash);
-        let result = self.client
-            .query(&query, &[])
-            .await
-            .map_err(|e| StorageError::backend(format!("Failed to check block existence: {}", e)))?;
-
-        // Check if we got any results
-        Ok(!result.records.is_empty())
-    }
-
     async fn tree_exists(&self, root_hash: &str) -> StorageResult<bool> {
         if root_hash.is_empty() {
             return Err(StorageError::InvalidHash("Empty root hash provided".to_string()));
@@ -543,36 +573,13 @@ impl ContentAddressedStorage for ContentAddressedStorageSurrealDB {
         Ok(!result.records.is_empty())
     }
 
-    async fn delete_block(&self, hash: &str) -> StorageResult<bool> {
-        if hash.is_empty() {
-            return Err(StorageError::InvalidHash("Empty hash provided".to_string()));
-        }
-
-        // Check if block exists before deletion
-        let existed = self.block_exists(hash).await?;
-        if !existed {
-            return Ok(false);
-        }
-
-        // Delete the block
-        let query = format!("DELETE FROM content_blocks:`{}`", hash);
-        let result = self.client
-            .query(&query, &[])
-            .await
-            .map_err(|e| StorageError::backend(format!("Failed to delete block: {}", e)))?;
-
-        // Verify deletion was successful by checking if it still exists
-        let exists_after = self.block_exists(hash).await?;
-        Ok(!exists_after)
-    }
-
     async fn delete_tree(&self, root_hash: &str) -> StorageResult<bool> {
         if root_hash.is_empty() {
             return Err(StorageError::InvalidHash("Empty root hash provided".to_string()));
         }
 
         // Check if tree exists before deletion
-        let existed = self.tree_exists(root_hash).await?;
+        let existed = TreeOperations::tree_exists(self, root_hash).await?;
         if !existed {
             return Ok(false);
         }
@@ -585,10 +592,15 @@ impl ContentAddressedStorage for ContentAddressedStorageSurrealDB {
             .map_err(|e| StorageError::backend(format!("Failed to delete Merkle tree: {}", e)))?;
 
         // Verify deletion was successful by checking if it still exists
-        let exists_after = self.tree_exists(root_hash).await?;
+        let exists_after = TreeOperations::tree_exists(self, root_hash).await?;
         Ok(!exists_after)
     }
+}
 
+// ==================== STORAGE MANAGEMENT TRAIT IMPLEMENTATION ====================
+
+#[async_trait]
+impl crucible_core::storage::traits::StorageManagement for ContentAddressedStorageSurrealDB {
     async fn get_stats(&self) -> StorageResult<StorageStats> {
         // Get block statistics - use proper SurrealDB count query syntax
         let block_count_query = "SELECT * FROM content_blocks";
@@ -657,6 +669,11 @@ impl ContentAddressedStorage for ContentAddressedStorageSurrealDB {
         Ok(())
     }
 }
+
+// ==================== CONTENT ADDRESSED STORAGE BLANKET IMPLEMENTATION ====================
+
+/// Blanket implementation of ContentAddressedStorage since we implement all required traits
+impl ContentAddressedStorage for ContentAddressedStorageSurrealDB {}
 
 impl ContentAddressedStorageSurrealDB {
     // ========================================================================
@@ -1083,11 +1100,117 @@ impl ContentAddressedStorageSurrealDB {
     }
 }
 
+// ==================== DEDUPLICATION STORAGE TRAIT IMPLEMENTATION ====================
+
+#[async_trait]
+impl crucible_core::storage::DeduplicationStorage for ContentAddressedStorageSurrealDB {
+    async fn find_documents_with_block(&self, block_hash: &str) -> crucible_core::storage::StorageResult<Vec<String>> {
+        self.find_documents_with_block(block_hash).await
+    }
+
+    async fn get_document_blocks(&self, document_id: &str) -> crucible_core::storage::StorageResult<Vec<crucible_core::storage::BlockInfo>> {
+        let records = self.get_document_blocks(document_id).await?;
+        let blocks = records.into_iter().map(|record| {
+            crucible_core::storage::BlockInfo {
+                block_hash: record.block_hash,
+                document_id: record.document_id,
+                block_index: record.block_index,
+                block_type: record.block_type,
+                block_content: record.block_content,
+                start_offset: record.start_offset,
+                end_offset: record.end_offset,
+                block_metadata: record.block_metadata,
+                created_at: record.created_at,
+                updated_at: record.updated_at,
+            }
+        }).collect();
+        Ok(blocks)
+    }
+
+    async fn get_block_by_hash(&self, block_hash: &str) -> crucible_core::storage::StorageResult<Option<crucible_core::storage::BlockInfo>> {
+        if let Some(record) = self.get_block_by_hash(block_hash).await? {
+            Ok(Some(crucible_core::storage::BlockInfo {
+                block_hash: record.block_hash,
+                document_id: record.document_id,
+                block_index: record.block_index,
+                block_type: record.block_type,
+                block_content: record.block_content,
+                start_offset: record.start_offset,
+                end_offset: record.end_offset,
+                block_metadata: record.block_metadata,
+                created_at: record.created_at,
+                updated_at: record.updated_at,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn get_block_deduplication_stats(&self, block_hashes: &[String]) -> crucible_core::storage::StorageResult<std::collections::HashMap<String, usize>> {
+        ContentAddressedStorageSurrealDB::get_block_deduplication_stats(self, block_hashes).await
+    }
+
+    async fn get_all_block_deduplication_stats(&self) -> crucible_core::storage::StorageResult<std::collections::HashMap<String, usize>> {
+        ContentAddressedStorageSurrealDB::get_all_block_deduplication_stats(self).await
+    }
+
+    async fn get_all_deduplication_stats(&self) -> crucible_core::storage::StorageResult<crucible_core::storage::deduplication_traits::DeduplicationStats> {
+        // This method is intentionally not delegated to ContentAddressedStorageSurrealDB
+        // because the storage doesn't implement the full DeduplicationStats computation.
+        // The DeduplicationDetector wrapper provides this functionality.
+        Err(crucible_core::storage::StorageError::Io(
+            "get_all_deduplication_stats not implemented on storage - use DeduplicationDetector wrapper".to_string()
+        ))
+    }
+
+    async fn find_duplicate_blocks(&self, _min_occurrences: usize) -> crucible_core::storage::StorageResult<Vec<crucible_core::storage::DuplicateBlockInfo>> {
+        // This method is intentionally not delegated to ContentAddressedStorageSurrealDB
+        // because the storage doesn't implement the full duplicate block analysis.
+        // The DeduplicationDetector wrapper provides this functionality.
+        Err(crucible_core::storage::StorageError::Io(
+            "find_duplicate_blocks not implemented on storage - use DeduplicationDetector wrapper".to_string()
+        ))
+    }
+
+    async fn get_storage_usage_stats(&self) -> crucible_core::storage::StorageResult<crucible_core::storage::StorageUsageStats> {
+        // This method is intentionally not delegated to ContentAddressedStorageSurrealDB
+        // because the storage doesn't implement the full storage usage statistics.
+        // The DeduplicationDetector wrapper provides this functionality.
+        Err(crucible_core::storage::StorageError::Io(
+            "get_storage_usage_stats not implemented on storage - use DeduplicationDetector wrapper".to_string()
+        ))
+    }
+
+    async fn find_documents_with_blocks(&self, block_hashes: &[String]) -> crucible_core::storage::StorageResult<std::collections::HashMap<String, Vec<String>>> {
+        ContentAddressedStorageSurrealDB::find_documents_with_blocks(self, block_hashes).await
+    }
+
+    async fn get_blocks_by_hashes(&self, block_hashes: &[String]) -> crucible_core::storage::StorageResult<std::collections::HashMap<String, crucible_core::storage::BlockInfo>> {
+        let records = ContentAddressedStorageSurrealDB::get_blocks_by_hashes(self, block_hashes).await?;
+        let hash_to_block = records.into_iter().map(|(hash, record)| {
+            (hash, crucible_core::storage::BlockInfo {
+                block_hash: record.block_hash,
+                document_id: record.document_id,
+                block_index: record.block_index,
+                block_type: record.block_type,
+                block_content: record.block_content,
+                start_offset: record.start_offset,
+                end_offset: record.end_offset,
+                block_metadata: record.block_metadata,
+                created_at: record.created_at,
+                updated_at: record.updated_at,
+            })
+        }).collect();
+        Ok(hash_to_block)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crucible_core::hashing::blake3::Blake3Hasher;
     use crucible_core::storage::{HashedBlock, ContentHasher};
+    use crucible_core::storage::traits::{BlockOperations, TreeOperations, StorageManagement};
 
     /// Test helper to create a test storage instance
     async fn create_test_storage() -> ContentAddressedStorageSurrealDB {

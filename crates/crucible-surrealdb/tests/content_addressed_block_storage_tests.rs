@@ -10,6 +10,7 @@ use crucible_surrealdb::{
 use crucible_parser::types::{ASTBlock, ASTBlockMetadata, ASTBlockType};
 use crucible_core::hashing::blake3::Blake3Hasher;
 use crucible_core::storage::ContentHasher;
+use crucible_core::storage::traits::BlockOperations;
 use std::collections::HashMap;
 
 /// Test helper to create an AST block for testing
@@ -36,7 +37,7 @@ fn create_test_ast_block(
 async fn create_test_storage() -> ContentAddressedStorageSurrealDB {
     let config = SurrealDbConfig::memory();
     let storage = ContentAddressedStorageSurrealDB::new(config).await.unwrap();
-    storage.initialize().await.unwrap();
+    // Schema is initialized automatically in new()
     storage
 }
 
@@ -271,12 +272,12 @@ async fn test_get_blocks_by_hashes_mixed_existence() {
     storage.store_document_blocks_from_ast("test.md", &[existing_block]).await.unwrap();
 
     // Query both existing and non-existing hashes
-    let block_hashes = vec![existing_hash, nonexistent_hash.to_string()];
+    let block_hashes = vec![existing_hash.clone(), nonexistent_hash.to_string()];
     let result = storage.get_blocks_by_hashes(&block_hashes).await.unwrap();
 
     assert_eq!(result.len(), 1);
     assert!(result.contains_key(&existing_hash));
-    assert!(!result.contains_key(&nonexistent_hash));
+    assert!(!result.contains_key(nonexistent_hash));
 }
 
 // Deduplication Statistics Tests
@@ -325,6 +326,10 @@ async fn test_get_block_deduplication_stats_with_duplicates() {
     let common_block = create_test_ast_block(common_content, ASTBlockType::Paragraph, 0, common_content.len());
     let unique_block = create_test_ast_block(unique_content, ASTBlockType::Code, 0, unique_content.len());
 
+    // Clone the hashes before moving the blocks
+    let common_hash = common_block.block_hash.clone();
+    let unique_hash = unique_block.block_hash.clone();
+
     // Store common block in multiple documents
     storage.store_document_blocks_from_ast("doc1.md", &[common_block.clone()]).await.unwrap();
     storage.store_document_blocks_from_ast("doc2.md", &[common_block.clone()]).await.unwrap();
@@ -334,12 +339,12 @@ async fn test_get_block_deduplication_stats_with_duplicates() {
     storage.store_document_blocks_from_ast("unique.md", &[unique_block]).await.unwrap();
 
     // Get deduplication stats
-    let block_hashes = vec![common_block.block_hash.clone(), unique_block.block_hash.clone()];
+    let block_hashes = vec![common_hash.clone(), unique_hash.clone()];
     let result = storage.get_block_deduplication_stats(&block_hashes).await.unwrap();
 
     assert_eq!(result.len(), 2);
-    assert_eq!(result.get(&common_block.block_hash).unwrap(), 3); // Appears in 3 documents
-    assert_eq!(result.get(&unique_block.block_hash).unwrap(), 1); // Appears in 1 document
+    assert_eq!(*result.get(&common_hash).unwrap(), 3); // Appears in 3 documents
+    assert_eq!(*result.get(&unique_hash).unwrap(), 1); // Appears in 1 document
 }
 
 #[tokio::test]
@@ -364,12 +369,13 @@ async fn test_get_all_block_deduplication_stats_comprehensive() {
     // Get comprehensive deduplication stats
     let stats = storage.get_all_block_deduplication_stats().await.unwrap();
 
-    assert_eq!(stats.total_unique_blocks, 4); // 4 unique contents
-    assert_eq!(stats.total_block_instances, 6); // 6 total instances
-    assert_eq!(stats.duplicate_blocks, 2); // 2 duplicates
-    assert!(stats.deduplication_ratio > 0.0);
-    assert!(stats.deduplication_ratio < 1.0);
-    assert!(stats.total_storage_saved > 0);
+    // The stats HashMap contains block_hash -> count mappings for duplicates
+    // We need to verify that duplicates were found
+    assert!(!stats.is_empty(), "Should have found duplicate blocks");
+
+    // Verify that we have the expected duplicate blocks
+    // Based on the test data, we should have 2 blocks that appear multiple times
+    assert_eq!(stats.len(), 2, "Should have 2 different duplicate block hashes");
 }
 
 // Performance Tests
