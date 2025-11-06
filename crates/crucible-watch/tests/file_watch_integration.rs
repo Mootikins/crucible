@@ -16,11 +16,11 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use crucible_watch::{
-    DebounceConfig, EventFilter, EventHandler, FileEvent, FileEventKind, WatchManager,
+    EventFilter, EventHandler, FileEvent, FileEventKind, WatchManager,
     WatchManagerConfig,
 };
-// Use TraitWatchConfig from prelude to avoid confusion with config::WatchConfig
-use crucible_watch::prelude::TraitWatchConfig as WatchConfig;
+// Use TraitWatchConfig and TraitDebounceConfig from prelude to match WatchConfig
+use crucible_watch::prelude::{TraitWatchConfig as WatchConfig, TraitDebounceConfig as DebounceConfig};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tempfile::TempDir;

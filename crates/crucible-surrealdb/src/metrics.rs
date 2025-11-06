@@ -5,10 +5,10 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{RwLock, RwLockReadGuard};
+use std::sync::RwLock;
 use std::time::{Duration, Instant};
 use tokio::sync::watch;
-use tracing::{debug, info};
+use tracing::debug;
 
 /// Health status levels for the system
 #[derive(Debug, Clone, PartialEq)]

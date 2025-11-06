@@ -5,7 +5,8 @@
 
 use crucible_surrealdb::{
     ContentAddressedStorageSurrealDB, SurrealDbConfig,
-    deduplication_detector::SurrealDeduplicationDetector,
+    deduplication_detector::DeduplicationDetector,
+    SurrealDeduplicationDetector,
 };
 use crucible_parser::types::{ASTBlock, ASTBlockMetadata, ASTBlockType};
 use crucible_core::storage::DeduplicationStorage;
@@ -17,15 +18,14 @@ use std::collections::HashMap;
 async fn create_test_storage() -> ContentAddressedStorageSurrealDB {
     let config = SurrealDbConfig::memory();
     let storage = ContentAddressedStorageSurrealDB::new(config).await.unwrap();
-    storage.initialize().await.unwrap();
+    // Schema is initialized automatically in new()
     storage
 }
 
-/// Create a test deduplication detector with storage reference
-async fn create_test_detector_with_storage(storage: &ContentAddressedStorageSurrealDB) -> SurrealDeduplicationDetector {
-    // Note: This is not ideal either, but let's fix the detector to take references instead
-    // For now, we'll work around the ownership issues
-    SurrealDeduplicationDetector::new(create_test_storage().await)
+/// Create a test deduplication detector with storage
+async fn create_test_detector() -> DeduplicationDetector<ContentAddressedStorageSurrealDB> {
+    let storage = create_test_storage().await;
+    DeduplicationDetector::new(storage)
 }
 
 /// Create a test AST block for testing
@@ -245,7 +245,7 @@ async fn test_find_duplicate_blocks_high_threshold() {
 #[tokio::test]
 async fn test_find_duplicate_blocks_no_matches() {
     let storage = create_test_storage().await;
-    let detector = SurrealDeduplicationDetector::new(storage);
+    let detector = SurrealDeduplicationDetector::new(storage.clone());
 
     // Store only unique blocks
     let block1 = create_test_ast_block("Unique 1", ASTBlockType::Paragraph, 0, 8);
@@ -314,7 +314,7 @@ async fn test_get_storage_usage_stats() {
 #[tokio::test]
 async fn test_find_documents_with_blocks_batch() {
     let storage = create_test_storage().await;
-    let detector = SurrealDeduplicationDetector::new(storage);
+    let detector = SurrealDeduplicationDetector::new(storage.clone());
     let block_to_documents = setup_deduplication_test_data(&storage).await;
 
     // Get block hashes to query
@@ -344,7 +344,7 @@ async fn test_find_documents_with_blocks_batch() {
 #[tokio::test]
 async fn test_get_blocks_by_hashes_batch() {
     let storage = create_test_storage().await;
-    let detector = SurrealDeduplicationDetector::new(storage);
+    let detector = SurrealDeduplicationDetector::new(storage.clone());
     let _block_to_documents = setup_deduplication_test_data(&storage).await;
 
     // Store a specific block to test with
@@ -381,7 +381,7 @@ async fn test_batch_queries_empty_list() {
 #[tokio::test]
 async fn test_get_block_deduplication_stats_batch() {
     let storage = create_test_storage().await;
-    let detector = SurrealDeduplicationDetector::new(storage);
+    let detector = SurrealDeduplicationDetector::new(storage.clone());
     let block_to_documents = setup_deduplication_test_data(&storage).await;
 
     // Get stats for specific blocks
@@ -479,10 +479,10 @@ async fn test_concurrent_deduplication_queries() {
 
             // Perform different types of queries
             match i % 4 {
-                0 => detector.find_duplicate_blocks(2).await,
-                1 => detector.get_all_deduplication_stats().await,
-                2 => detector.get_storage_usage_stats().await,
-                3 => detector.find_documents_with_block("some_hash").await,
+                0 => detector.find_duplicate_blocks(2).await.map(|_| ()),
+                1 => detector.get_all_deduplication_stats().await.map(|_| ()),
+                2 => detector.get_storage_usage_stats().await.map(|_| ()),
+                3 => detector.find_documents_with_block("some_hash").await.map(|_| ()),
                 _ => unreachable!(),
             }
         });
@@ -501,7 +501,7 @@ async fn test_concurrent_deduplication_queries() {
 #[tokio::test]
 async fn test_deduplication_integration_with_storage() {
     let storage = create_test_storage().await;
-    let detector = SurrealDeduplicationDetector::new(storage);
+    let detector = SurrealDeduplicationDetector::new(storage.clone());
 
     // Test that deduplication detector works seamlessly with storage
     let blocks = vec![
@@ -510,7 +510,7 @@ async fn test_deduplication_integration_with_storage() {
         create_test_ast_block("Paragraph 1", ASTBlockType::Paragraph, 10, 21), // Duplicate
     ];
 
-    detector.storage.store_document_blocks_from_ast("integration_test.md", &blocks).await.unwrap();
+    detector.storage().store_document_blocks_from_ast("integration_test.md", &blocks).await.unwrap();
 
     // Verify all deduplication methods work together
     let doc_blocks = detector.get_document_blocks("integration_test.md").await.unwrap();
@@ -528,11 +528,11 @@ async fn test_deduplication_integration_with_storage() {
 #[tokio::test]
 async fn test_custom_average_block_size() {
     let storage = create_test_storage().await;
-    let detector = SurrealDeduplicationDetector::with_average_block_size(storage, 500);
+    let detector = SurrealDeduplicationDetector::with_average_block_size(storage.clone(), 500);
 
     // Store test data
     let block = create_test_ast_block("Test content", ASTBlockType::Paragraph, 0, 12);
-    detector.storage.store_document_blocks_from_ast("test.md", &[block]).await.unwrap();
+    detector.storage().store_document_blocks_from_ast("test.md", &[block]).await.unwrap();
 
     // Get stats to verify custom block size is used
     let stats = detector.get_all_deduplication_stats().await.unwrap();

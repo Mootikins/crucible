@@ -18,17 +18,14 @@ use crate::parser::storage_bridge::{
 };
 use crate::parser::error::ParserResult;
 use crate::storage::{
-    ContentAddressedStorage, ContentHasher, MerkleTree, HashedBlock,
-    StorageResult, StorageError, EnhancedTreeChange, ChangeSource
+    ContentAddressedStorage, MerkleTree,
+    StorageResult, EnhancedTreeChange
 };
-use crate::storage::builder::{ContentAddressedStorageBuilder, StorageBackendType, HasherConfig};
-use crate::storage::diff::EnhancedChangeDetector;
 use crate::hashing::blake3::Blake3Hasher;
-use crate::parser::traits::MarkdownParser;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::collections::{HashMap, HashSet};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -402,6 +399,7 @@ impl DefaultParserStorageCoordinator {
     }
 
     /// Generate a unique operation ID
+    #[allow(dead_code)] // Reserved for future operation tracking
     fn generate_operation_id(&self) -> String {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -764,6 +762,7 @@ impl DefaultParserStorageCoordinator {
 
 /// Mock storage backend for testing
 #[derive(Debug)]
+#[allow(dead_code)] // Test infrastructure
 pub struct MockStorageBackend {
     name: String,
 }

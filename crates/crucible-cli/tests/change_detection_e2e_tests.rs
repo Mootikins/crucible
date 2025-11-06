@@ -23,6 +23,7 @@ use tokio::time::timeout;
 use crucible_cli::common::{ChangeDetectionService, FileScanningService};
 use crucible_core::{
     hashing::file_hasher::FileHasher,
+    hashing::algorithm::Blake3Algorithm,
     traits::change_detection::{ChangeSet, ContentHasher},
     types::hashing::{HashAlgorithm, FileHash, FileHashInfo},
 };
@@ -204,6 +205,10 @@ impl ChangeDetectionE2ETestHarness {
 
         let client = Arc::new(SurrealClient::new(db_config).await
             .context("Failed to create SurrealClient")?);
+
+        // Initialize the database schema (required for hash storage)
+        crucible_surrealdb::kiln_integration::initialize_kiln_schema(&client).await
+            .context("Failed to initialize kiln schema")?;
 
         // Create change detection service
         let service = Arc::new(
@@ -1070,7 +1075,7 @@ async fn run_file_scanner_integration_test() -> Result<()> {
     // Step 4: Validate hash consistency
     println!("\n🔐 Step 4: Validating hash consistency");
 
-    let file_hasher = FileHasher::new(scanner.algorithm());
+    let file_hasher = FileHasher::new(Blake3Algorithm);
 
     for file_info in &discovered_files {
         if file_info.content_hash() == FileHash::zero() {

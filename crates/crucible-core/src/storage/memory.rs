@@ -135,6 +135,7 @@ impl BlockData {
         self.last_accessed.store(now, Ordering::Relaxed);
     }
 
+    #[allow(dead_code)] // Reserved for cache eviction strategies
     fn last_accessed(&self) -> u64 {
         self.last_accessed.load(Ordering::Relaxed)
     }
@@ -189,6 +190,7 @@ impl TreeData {
         self.last_accessed.store(now, Ordering::Relaxed);
     }
 
+    #[allow(dead_code)] // Reserved for cache eviction strategies
     fn last_accessed(&self) -> u64 {
         self.last_accessed.load(Ordering::Relaxed)
     }
@@ -240,6 +242,7 @@ impl MemoryStats {
         }
     }
 
+    #[allow(dead_code)] // Reserved for memory analysis features
     fn average_block_size(&self) -> f64 {
         let count = self.block_count.load(Ordering::Relaxed);
         if count == 0 {

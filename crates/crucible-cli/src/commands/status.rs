@@ -7,7 +7,7 @@ use tabled::{Table, Tabled, settings::Style};
 
 use crate::config::CliConfig;
 use crate::output;
-use crucible_core::storage::{ContentAddressedStorage, MerkleTree, StorageResult, traits::StorageStats};
+use crucible_core::storage::{ContentAddressedStorage, StorageResult};
 use crucible_core::storage::builder::{ContentAddressedStorageBuilder, StorageBackendType, HasherConfig};
 use crucible_core::hashing::blake3::Blake3Hasher;
 use crucible_core::parser::{StorageAwareParser, PulldownParser};

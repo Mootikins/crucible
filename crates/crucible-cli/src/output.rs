@@ -3,7 +3,6 @@ use anyhow::Result;
 use colored::Colorize;
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Cell, Color, Table};
 use serde_json;
-use std::io::{self, Write};
 
 /// Format search results
 pub fn format_search_results(

@@ -30,6 +30,7 @@ pub mod change_application;
 pub mod memory;
 pub mod deduplicator;
 pub mod deduplication_traits;
+pub mod factory;
 
 // Re-export main types for convenience
 pub use traits::{ContentAddressedStorage, ContentHasher, StorageBackend};
@@ -57,4 +58,7 @@ pub use deduplicator::{
 pub use deduplication_traits::{
     DeduplicationStorage, DeduplicationCapable, BlockInfo, DuplicateBlockInfo,
     StorageUsageStats
+};
+pub use factory::{
+    StorageFactory, StorageConfig, BackendConfig, HashAlgorithm
 };

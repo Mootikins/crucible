@@ -373,7 +373,7 @@ mod tests {
         let errors = registry.apply_extensions("test content", &mut doc_content).await;
         assert_eq!(errors.len(), 0);
 
-        let errors = registry.apply_extensions("error content", &mut doc_content).await;
+        let errors = registry.apply_extensions("test error content", &mut doc_content).await;
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].error_type, ParseErrorType::SyntaxError);
     }

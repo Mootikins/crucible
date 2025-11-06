@@ -106,7 +106,7 @@ impl ContentHasher for Blake3Hasher {
 
     /// Get the name of the hash algorithm
     fn algorithm_name(&self) -> &'static str {
-        "BLAKE3"
+        "blake3"
     }
 
     /// Get the length of the hash in bytes
@@ -154,7 +154,7 @@ mod tests {
     #[test]
     fn test_algorithm_name() {
         let hasher = Blake3Hasher::new();
-        assert_eq!(hasher.algorithm_name(), "BLAKE3");
+        assert_eq!(hasher.algorithm_name(), "blake3");
     }
 
     #[test]

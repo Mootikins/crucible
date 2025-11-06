@@ -413,7 +413,7 @@ impl ChangeApplicationSystem {
     pub fn rollback_changes<H>(
         &self,
         rollback_info: &RollbackInfo,
-        hasher: &H,
+        _hasher: &H,
     ) -> StorageResult<MerkleTree>
     where
         H: ContentHasher,

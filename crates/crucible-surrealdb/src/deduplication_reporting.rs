@@ -3,7 +3,7 @@
 //! This module provides comprehensive reporting functionality for block deduplication
 //! analysis, including formatted reports, visualizations, and export capabilities.
 
-use crate::deduplication_detector::SurrealDeduplicationDetector;
+use crate::deduplication_detector::{DeduplicationDetector, SurrealDeduplicationDetector};
 use crate::SurrealDbConfig;
 use crucible_core::storage::{DeduplicationStorage, StorageResult, StorageError};
 use serde::{Deserialize, Serialize};
@@ -230,19 +230,37 @@ impl Default for ReportOptions {
 }
 
 /// Deduplication report generator
-pub struct DeduplicationReportGenerator {
-    detector: SurrealDeduplicationDetector,
+/// Generic deduplication report generator
+///
+/// This struct generates comprehensive deduplication reports for any storage
+/// backend that implements the `DeduplicationStorage` trait.
+///
+/// # Generic Parameters
+///
+/// * `S` - The storage backend type (implements `DeduplicationStorage`)
+pub struct DeduplicationReportGenerator<S: DeduplicationStorage> {
+    detector: DeduplicationDetector<S>,
 }
 
-impl DeduplicationReportGenerator {
-    /// Create a new report generator
-    pub async fn new(config: SurrealDbConfig) -> StorageResult<Self> {
-        let storage = crate::content_addressed_storage::ContentAddressedStorageSurrealDB::new(config).await?;
-        let detector = SurrealDeduplicationDetector::new(storage);
-        Ok(Self { detector })
+impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
+    /// Create a new report generator from a detector
+    ///
+    /// # Arguments
+    ///
+    /// * `detector` - The deduplication detector to use for report generation
+    pub fn from_detector(detector: DeduplicationDetector<S>) -> Self {
+        Self { detector }
     }
 
     /// Generate a comprehensive deduplication report
+    ///
+    /// # Arguments
+    ///
+    /// * `options` - Report generation options
+    ///
+    /// # Returns
+    ///
+    /// A complete deduplication report with statistics, analysis, and recommendations
     pub async fn generate_report(&self, options: ReportOptions) -> StorageResult<DeduplicationReport> {
         // Get comprehensive deduplication statistics
         let stats = self.detector.get_all_deduplication_stats().await?;
@@ -583,6 +601,28 @@ impl DeduplicationReportGenerator {
     }
 }
 
+// ==================== SURREALDB-SPECIFIC IMPLEMENTATION ====================
+
+/// SurrealDB-specific implementation for convenience constructors
+impl DeduplicationReportGenerator<crate::content_addressed_storage::ContentAddressedStorageSurrealDB> {
+    /// Create a new report generator with SurrealDB backend
+    ///
+    /// This is a convenience constructor for the common SurrealDB use case.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - SurrealDB configuration
+    ///
+    /// # Returns
+    ///
+    /// A report generator ready to use with SurrealDB storage
+    pub async fn new(config: SurrealDbConfig) -> StorageResult<Self> {
+        let storage = crate::content_addressed_storage::ContentAddressedStorageSurrealDB::new(config).await?;
+        let detector = DeduplicationDetector::new(storage);
+        Ok(Self { detector })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -597,10 +637,13 @@ mod tests {
         assert!(matches!(options.export_format, ExportFormat::Text));
     }
 
-    #[test]
-    fn test_format_as_text() {
+    #[tokio::test]
+    async fn test_format_as_text() {
         let config = SurrealDbConfig::memory();
-        let detector = unsafe { std::mem::zeroed::<SurrealDeduplicationDetector>() }; // Just for testing
+        let storage = crate::content_addressed_storage::ContentAddressedStorageSurrealDB::new(config)
+            .await
+            .expect("Failed to create storage");
+        let detector = DeduplicationDetector::new(storage);
         let generator = DeduplicationReportGenerator { detector };
 
         let report = DeduplicationReport {

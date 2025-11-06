@@ -110,6 +110,70 @@ graph TD
 2. Transport plugins (desktop, server relay, p2p) forward updates between devices.
 3. Conflict resolution stays inside the CRDT layer; UIs render merged documents.
 
+## Data Flow Optimization (2025-11)
+
+### Content-Addressed Storage Architecture
+
+The refactoring introduced a **content-addressed storage** layer with block-level deduplication and efficient change detection:
+
+#### Core Components
+
+1. **Content Hashers** (`crucible-core/src/hashing/`)
+   - `ContentHasher` trait: Abstract interface for different hash algorithms (BLAKE3, SHA-256)
+   - `BlockHasher`: Converts AST blocks to content-addressed `HashedBlock` structures
+   - `FileHasher`: Streaming file-level hashing for large documents
+   - Factory functions for algorithm selection: `new_blake3_block_hasher()`, `new_sha256_block_hasher()`
+
+2. **Storage Layer** (`crucible-core/src/storage/`)
+   - `ContentAddressedStorage` trait: Read/write operations for blocks and Merkle trees
+   - `MemoryStorage`: In-memory implementation for testing and caching
+   - `EnhancedChangeDetector`: Detects modifications, additions, and deletions with similarity scoring
+   - `ChangeApplication`: Apply detected changes to existing trees with rollback support
+   - `Deduplicator`: Analyzes duplicate content patterns and calculates storage savings
+
+3. **Parser Integration** (`crucible-core/src/parser/`)
+   - `ParserStorageCoordinator`: Orchestrates parsing with automatic storage integration
+   - `StorageAwareParser`: Wraps base parser to add content hashing and change detection
+   - Batch operations support for processing multiple documents efficiently
+   - Comprehensive error recovery and operation tracking
+
+#### Data Flow
+
+```
+Markdown File
+    ↓
+Parser → AST Blocks
+    ↓
+BlockHasher → HashedBlock[]
+    ↓
+ContentAddressedStorage
+    ├─→ Block Storage (deduplicated)
+    └─→ Merkle Tree Storage (for change detection)
+    ↓
+EnhancedChangeDetector
+    └─→ ChangeMetadata (similarity, confidence)
+```
+
+#### Key Benefits
+
+1. **Deduplication**: Identical blocks stored once across all documents
+2. **Efficient Change Detection**: Merkle trees enable O(log n) comparison
+3. **Incremental Processing**: Only changed blocks need reprocessing
+4. **Algorithm Flexibility**: Easy to switch between BLAKE3 and SHA-256
+5. **Storage Backends**: Pluggable storage (memory, SurrealDB, future backends)
+6. **Comprehensive Tracking**: Detailed metrics on operations, deduplication, and performance
+
+#### Implementation Highlights
+
+- **Zero-copy where possible**: Hashing operates on borrowed slices
+- **Streaming for large files**: File hasher uses buffered I/O
+- **Parallel-ready**: Architecture supports future parallel processing
+- **Type safety**: Strong typing prevents hash algorithm mismatches
+- **Error handling**: Comprehensive `StorageError` and `ParserError` types
+- **Testing**: Mock implementations for all major traits
+
+This architecture provides the foundation for efficient file processing in the single-binary CLI, enabling fast incremental updates and intelligent change detection while maintaining data integrity through content addressing.
+
 ## Testing Strategy
 - **Unit Tests** live alongside modules and target pure logic.
 - **Fixtures** come from `crucible_core::test_support`, ensuring consistent kiln/document data across crates.

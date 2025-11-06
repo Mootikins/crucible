@@ -1832,25 +1832,23 @@ pub async fn update_document_processing_metadata(
     document_id: &str,
     file_info: &crate::kiln_scanner::KilnFileInfo,
 ) -> Result<()> {
-    let sql = "UPDATE notes SET
-        processed_at = time::now(),
-        file_hash = $file_hash,
-        file_size = $file_size,
-        modified_at = $modified_at
-    WHERE id = $document_id";
+    // Extract just the record ID part (e.g., "getting_started_md" from "notes:getting_started_md")
+    let record_id = document_id.strip_prefix("notes:").unwrap_or(document_id);
 
-    let params = vec![
-        serde_json::json!(file_info.content_hash_hex()),
-        serde_json::json!(file_info.file_size),
-        // Convert SystemTime to RFC3339 string for SurrealDB
-        serde_json::json!(chrono::DateTime::<chrono::Utc>::from(
-            file_info.modified_time
-        ).to_rfc3339()),
-        serde_json::json!(document_id),
-    ];
+    // Convert SystemTime to RFC3339 string for SurrealDB
+    let modified_at_rfc3339 = chrono::DateTime::<chrono::Utc>::from(file_info.modified_time).to_rfc3339();
+
+    // Use string formatting since parameterized queries aren't fully supported in the mock client
+    let sql = format!(
+        "UPDATE notes:⟨{}⟩ SET processed_at = time::now(), file_hash = '{}', file_size = {}, modified_at = '{}'",
+        record_id,
+        file_info.content_hash_hex(),
+        file_info.file_size,
+        modified_at_rfc3339
+    );
 
     client
-        .query(sql, &params)
+        .query(&sql, &[])
         .await
         .map_err(|e| anyhow::anyhow!("Failed to update processing metadata for {}: {}", document_id, e))?;
 

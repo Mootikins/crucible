@@ -6,8 +6,9 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
+use crucible_core::hashing::algorithm::Blake3Algorithm;
 use crucible_core::hashing::file_hasher::FileHasher;
 use crucible_core::traits::change_detection::ContentHasher;
 use crucible_core::types::hashing::HashAlgorithm;
@@ -44,8 +45,11 @@ impl FileScanningService {
     ///
     /// Returns Error if the root path doesn't exist or isn't accessible
     pub fn new(root_path: &Path, algorithm: HashAlgorithm) -> Result<Self, crucible_watch::Error> {
-        // Create the hasher implementation
-        let hasher = Arc::new(FileHasher::new(algorithm));
+        // Create the hasher implementation based on the algorithm enum
+        let hasher: Arc<dyn ContentHasher> = match algorithm {
+            HashAlgorithm::Blake3 => Arc::new(FileHasher::new(Blake3Algorithm)),
+            HashAlgorithm::Sha256 => Arc::new(FileHasher::new(crucible_core::hashing::algorithm::Sha256Algorithm)),
+        };
 
         // Create the progress reporter
         let progress_reporter = Arc::new(NoOpProgressReporter);
@@ -94,8 +98,11 @@ impl FileScanningService {
         algorithm: HashAlgorithm,
         scan_config: ScanConfig,
     ) -> Result<Self, crucible_watch::Error> {
-        // Create the hasher implementation
-        let hasher = Arc::new(FileHasher::new(algorithm));
+        // Create the hasher implementation based on the algorithm enum
+        let hasher: Arc<dyn ContentHasher> = match algorithm {
+            HashAlgorithm::Blake3 => Arc::new(FileHasher::new(Blake3Algorithm)),
+            HashAlgorithm::Sha256 => Arc::new(FileHasher::new(crucible_core::hashing::algorithm::Sha256Algorithm)),
+        };
 
         // Create the progress reporter
         let progress_reporter = Arc::new(NoOpProgressReporter);
@@ -309,7 +316,7 @@ pub fn performance_scan_config() -> ScanConfig {
 pub fn development_scan_config() -> ScanConfig {
     let mut config = performance_scan_config();
     // Lower max file size for development (exclude large binaries)
-    config.max_file_size = 10 * 1024 * 1024; // 10MB
+    config.max_file_size = 5 * 1024 * 1024; // 5MB (lower than default 10MB)
     // Shallower depth for faster scans during development
     config.max_depth = Some(10);
     config

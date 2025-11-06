@@ -62,4 +62,5 @@ parallel-processing = ["rayon"]
 tokio = { workspace = true, features = ["test-util", "full"] }
 tracing-subscriber = { workspace = true }
 tempfile = "3.0"
+serial_test = "3.0"
 
