@@ -777,7 +777,7 @@ impl MockStorageBackend {
 }
 
 #[async_trait::async_trait]
-impl ContentAddressedStorage for MockStorageBackend {
+impl crate::storage::traits::BlockOperations for MockStorageBackend {
     async fn store_block(&self, _hash: &str, _data: &[u8]) -> StorageResult<()> {
         Ok(())
     }
@@ -786,6 +786,17 @@ impl ContentAddressedStorage for MockStorageBackend {
         Ok(None)
     }
 
+    async fn block_exists(&self, _hash: &str) -> StorageResult<bool> {
+        Ok(false)
+    }
+
+    async fn delete_block(&self, _hash: &str) -> StorageResult<bool> {
+        Ok(false)
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::storage::traits::TreeOperations for MockStorageBackend {
     async fn store_tree(&self, _root_hash: &str, _tree: &MerkleTree) -> StorageResult<()> {
         Ok(())
     }
@@ -794,22 +805,17 @@ impl ContentAddressedStorage for MockStorageBackend {
         Ok(None)
     }
 
-    async fn block_exists(&self, _hash: &str) -> StorageResult<bool> {
-        Ok(false)
-    }
-
     async fn tree_exists(&self, _root_hash: &str) -> StorageResult<bool> {
-        Ok(false)
-    }
-
-    async fn delete_block(&self, _hash: &str) -> StorageResult<bool> {
         Ok(false)
     }
 
     async fn delete_tree(&self, _root_hash: &str) -> StorageResult<bool> {
         Ok(false)
     }
+}
 
+#[async_trait::async_trait]
+impl crate::storage::traits::StorageManagement for MockStorageBackend {
     async fn get_stats(&self) -> StorageResult<crate::storage::traits::StorageStats> {
         Ok(crate::storage::traits::StorageStats {
             backend: crate::storage::traits::StorageBackend::InMemory,
@@ -828,6 +834,9 @@ impl ContentAddressedStorage for MockStorageBackend {
         Ok(())
     }
 }
+
+// Blanket implementation for the composite trait
+impl ContentAddressedStorage for MockStorageBackend {}
 
 /// Factory functions for creating coordinators
 pub mod factory {
