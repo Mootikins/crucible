@@ -7,9 +7,10 @@
 use crate::{SurrealClient, SurrealDbConfig};
 use async_trait::async_trait;
 use crucible_core::storage::{
-    ContentAddressedStorage, ContentHasher, MerkleTree, StorageError, StorageResult,
+    ContentAddressedStorage, MerkleTree, StorageError, StorageResult,
 };
 use crucible_core::storage::traits::StorageStats;
+use crucible_parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -59,6 +60,31 @@ struct MerkleTreeRecord {
     pub updated_at: chrono::DateTime<chrono::Utc>,
     /// Optional metadata
     pub metadata: Option<HashMap<String, serde_json::Value>>,
+}
+
+/// Database record for document-block mapping
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentBlockRecord {
+    /// Document identifier (file path)
+    pub document_id: String,
+    /// Block index within the document
+    pub block_index: usize,
+    /// Content hash of the block
+    pub block_hash: String,
+    /// Block type for context
+    pub block_type: String,
+    /// Start position in source document
+    pub start_offset: usize,
+    /// End position in source document
+    pub end_offset: usize,
+    /// Block content
+    pub block_content: String,
+    /// Block metadata
+    pub block_metadata: HashMap<String, serde_json::Value>,
+    /// Creation timestamp
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// Last updated timestamp
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl ContentAddressedStorageSurrealDB {
@@ -268,6 +294,126 @@ impl ContentAddressedStorageSurrealDB {
             .map_err(|e| StorageError::backend(format!("Failed to store Merkle tree: {}", e)))?;
 
         Ok(())
+    }
+
+    /// Store blocks for a document (BlockStorage trait implementation)
+    pub async fn store_document_blocks_from_ast(
+        &self,
+        document_id: &str,
+        blocks: &[ASTBlock],
+    ) -> StorageResult<()> {
+        for (index, block) in blocks.iter().enumerate() {
+            let block_type = self.ast_block_type_to_string(&block.block_type);
+            let block_metadata = Some(self.ast_block_to_metadata(block));
+
+            // Store document block directly (inline store_document_block logic)
+            if document_id.is_empty() {
+                return Err(StorageError::InvalidOperation("Empty document_id provided".to_string()));
+            }
+
+            if block.block_hash.is_empty() {
+                return Err(StorageError::InvalidHash("Empty block_hash provided".to_string()));
+            }
+
+            let now = chrono::Utc::now();
+            let query = format!(
+                "UPSERT document_blocks:`{}:{}` CONTENT {{
+                    document_id: '{}',
+                    block_index: {},
+                    block_hash: '{}',
+                    block_type: '{}',
+                    start_offset: {},
+                    end_offset: {},
+                    block_content: '{}',
+                    block_metadata: '{}',
+                    created_at: '{}',
+                    updated_at: '{}'
+                }}",
+                document_id.replace('/', "_").replace("\\", "_"), // Sanitize ID
+                index,
+                document_id.replace("'", "''"), // Escape quotes
+                index,
+                block.block_hash.replace("'", "''"),
+                block_type.replace("'", "''"),
+                block.start_offset,
+                block.end_offset,
+                block.content.replace("'", "''").replace("\n", "\\n"),
+                serde_json::to_string(&block_metadata.unwrap_or_default()).unwrap_or_default(),
+                now.to_rfc3339(),
+                now.to_rfc3339()
+            );
+
+            self.client
+                .query(&query, &[])
+                .await
+                .map_err(|e| StorageError::backend(format!("Failed to store document block: {}", e)))?;
+        }
+
+        Ok(())
+    }
+
+    /// Convert AST block type to string
+    fn ast_block_type_to_string(&self, block_type: &ASTBlockType) -> String {
+        match block_type {
+            ASTBlockType::Heading => "heading".to_string(),
+            ASTBlockType::Paragraph => "paragraph".to_string(),
+            ASTBlockType::List => "list".to_string(),
+            ASTBlockType::Code => "code".to_string(),
+            ASTBlockType::Callout => "callout".to_string(),
+            ASTBlockType::Latex => "latex".to_string(),
+            ASTBlockType::Blockquote => "blockquote".to_string(),
+            ASTBlockType::Table => "table".to_string(),
+            ASTBlockType::HorizontalRule => "horizontal_rule".to_string(),
+            ASTBlockType::ThematicBreak => "thematic_break".to_string(),
+        }
+    }
+
+    /// Convert AST block to metadata
+    fn ast_block_to_metadata(&self, block: &ASTBlock) -> HashMap<String, serde_json::Value> {
+        let mut metadata = HashMap::new();
+
+        // Store block-specific metadata based on type
+        match &block.metadata {
+            ASTBlockMetadata::Heading { level, id } => {
+                metadata.insert("level".to_string(), serde_json::Value::Number(
+                    serde_json::Number::from(*level as i64)
+                ));
+                if let Some(id) = id {
+                    metadata.insert("id".to_string(), serde_json::Value::String(id.to_string()));
+                }
+            }
+            ASTBlockMetadata::Code { language, line_count } => {
+                if let Some(lang) = language {
+                    metadata.insert("language".to_string(), serde_json::Value::String(lang.to_string()));
+                }
+                metadata.insert("line_count".to_string(), serde_json::Value::Number(
+                    serde_json::Number::from(*line_count as i64)
+                ));
+            }
+            ASTBlockMetadata::List { list_type, item_count } => {
+                metadata.insert("list_type".to_string(), serde_json::Value::String(
+                    format!("{:?}", list_type)
+                ));
+                metadata.insert("item_count".to_string(), serde_json::Value::Number(
+                    serde_json::Number::from(*item_count as i64)
+                ));
+            }
+            ASTBlockMetadata::Callout { callout_type, title, is_standard_type } => {
+                metadata.insert("callout_type".to_string(), serde_json::Value::String(callout_type.clone()));
+                metadata.insert("is_standard_type".to_string(), serde_json::Value::Bool(*is_standard_type));
+                if let Some(title) = title {
+                    metadata.insert("title".to_string(), serde_json::Value::String(title.to_string()));
+                }
+            }
+            ASTBlockMetadata::Latex { is_block } => {
+                metadata.insert("is_block".to_string(), serde_json::Value::Bool(*is_block));
+            }
+            ASTBlockMetadata::Generic => {
+                // No additional metadata for generic blocks
+            }
+        }
+
+        metadata
     }
 }
 
@@ -497,6 +643,12 @@ impl ContentAddressedStorage for ContentAddressedStorageSurrealDB {
             .await
             .map_err(|e| StorageError::backend(format!("Failed to perform cleanup: {}", e)))?;
 
+        // Clean up orphaned document_blocks (if any)
+        self.client
+            .query("DELETE FROM document_blocks WHERE created_at < (time::now() - 30d)", &[])
+            .await
+            .map_err(|e| StorageError::backend(format!("Failed to perform document_blocks cleanup: {}", e)))?;
+
         // Optimize indexes - use proper SurrealDB syntax
         // Note: ANALYZE INDEX might not be the correct syntax, let's use simpler maintenance
         // For now, we'll skip index optimization and focus on the cleanup
@@ -506,11 +658,436 @@ impl ContentAddressedStorage for ContentAddressedStorageSurrealDB {
     }
 }
 
+impl ContentAddressedStorageSurrealDB {
+    // ========================================================================
+    // Document-Block Mapping Methods
+    // ========================================================================
+
+    /// Store a document-block mapping
+    ///
+    /// This maps a block to its document context, enabling content-addressed storage
+    /// with document awareness for change detection and deduplication.
+    pub async fn store_document_block(
+        &self,
+        document_id: &str,
+        block_index: usize,
+        block_hash: &str,
+        block_type: &str,
+        start_offset: usize,
+        end_offset: usize,
+        block_content: &str,
+        block_metadata: Option<HashMap<String, serde_json::Value>>,
+    ) -> StorageResult<()> {
+        if document_id.is_empty() {
+            return Err(StorageError::InvalidOperation("Empty document_id provided".to_string()));
+        }
+
+        if block_hash.is_empty() {
+            return Err(StorageError::InvalidHash("Empty block_hash provided".to_string()));
+        }
+
+        let now = chrono::Utc::now();
+        let record = DocumentBlockRecord {
+            document_id: document_id.to_string(),
+            block_index,
+            block_hash: block_hash.to_string(),
+            block_type: block_type.to_string(),
+            start_offset,
+            end_offset,
+            block_content: block_content.to_string(),
+            block_metadata: block_metadata.unwrap_or_default(),
+            created_at: now,
+            updated_at: now,
+        };
+
+        // Use UPSERT to handle both creation and updates
+        let query = format!(
+            "UPSERT document_blocks:`{}:{}` CONTENT {{
+                document_id: '{}',
+                block_index: {},
+                block_hash: '{}',
+                block_type: '{}',
+                start_offset: {},
+                end_offset: {},
+                block_content: '{}',
+                block_metadata: '{}',
+                created_at: '{}',
+                updated_at: '{}'
+            }}",
+            document_id.replace('/', "_").replace("\\", "_"), // Sanitize ID
+            block_index,
+            document_id.replace("'", "''"), // Escape quotes
+            block_index,
+            block_hash.replace("'", "''"),
+            block_type.replace("'", "''"),
+            start_offset,
+            end_offset,
+            block_content.replace("'", "''"),
+            serde_json::to_string(&record.block_metadata).unwrap_or_default().replace("'", "''"),
+            now.to_rfc3339(),
+            now.to_rfc3339()
+        );
+
+        self.client
+            .query(&query, &[])
+            .await
+            .map_err(|e| StorageError::backend(format!("Failed to store document block mapping: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Get all blocks for a document
+    pub async fn get_document_blocks(&self, document_id: &str) -> StorageResult<Vec<DocumentBlockRecord>> {
+        if document_id.is_empty() {
+            return Err(StorageError::InvalidOperation("Empty document_id provided".to_string()));
+        }
+
+        let query = format!(
+            "SELECT * FROM document_blocks WHERE document_id = '{}' ORDER BY block_index",
+            document_id.replace("'", "''")
+        );
+
+        let result = self.client
+            .query(&query, &[])
+            .await
+            .map_err(|e| StorageError::backend(format!("Failed to retrieve document blocks: {}", e)))?;
+
+        let mut blocks = Vec::new();
+        for record in result.records {
+            // Convert Record to DocumentBlockRecord manually
+            let block_record = DocumentBlockRecord {
+                document_id: record.data.get("document_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("").to_string(),
+                block_index: record.data.get("block_index")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize,
+                block_hash: record.data.get("block_hash")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("").to_string(),
+                block_type: record.data.get("block_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("").to_string(),
+                start_offset: record.data.get("start_offset")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize,
+                end_offset: record.data.get("end_offset")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize,
+                block_content: record.data.get("block_content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("").to_string(),
+                block_metadata: record.data.get("block_metadata")
+                    .and_then(|v| v.as_object())
+                    .cloned()
+                    .map(|map| map.into_iter().collect())
+                    .unwrap_or_default(),
+                created_at: record.data.get("created_at")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .unwrap_or_else(|| chrono::Utc::now()),
+                updated_at: record.data.get("updated_at")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .unwrap_or_else(|| chrono::Utc::now()),
+            };
+            blocks.push(block_record);
+        }
+
+        Ok(blocks)
+    }
+
+    /// Find documents containing a specific block hash
+    pub async fn find_documents_with_block(&self, block_hash: &str) -> StorageResult<Vec<String>> {
+        if block_hash.is_empty() {
+            return Err(StorageError::InvalidHash("Empty block_hash provided".to_string()));
+        }
+
+        let query = format!(
+            "SELECT document_id FROM document_blocks WHERE block_hash = '{}'",
+            block_hash.replace("'", "''")
+        );
+
+        let result = self.client
+            .query(&query, &[])
+            .await
+            .map_err(|e| StorageError::backend(format!("Failed to find documents with block: {}", e)))?;
+
+        let mut document_ids = Vec::new();
+        for record in result.records {
+            if let Some(doc_id) = record.data.get("document_id") {
+                if let Ok(id_str) = serde_json::from_value::<String>(doc_id.clone()) {
+                    document_ids.push(id_str);
+                }
+            }
+        }
+
+        Ok(document_ids)
+    }
+
+    /// Get block content by hash
+    pub async fn get_block_by_hash(&self, block_hash: &str) -> StorageResult<Option<DocumentBlockRecord>> {
+        if block_hash.is_empty() {
+            return Err(StorageError::InvalidHash("Empty block_hash provided".to_string()));
+        }
+
+        let query = format!(
+            "SELECT * FROM document_blocks WHERE block_hash = '{}' LIMIT 1",
+            block_hash.replace("'", "''")
+        );
+
+        let result = self.client
+            .query(&query, &[])
+            .await
+            .map_err(|e| StorageError::backend(format!("Failed to get block by hash: {}", e)))?;
+
+        if let Some(record) = result.records.first() {
+            // Convert Record to DocumentBlockRecord manually
+            let block_record = DocumentBlockRecord {
+                document_id: record.data.get("document_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("").to_string(),
+                block_index: record.data.get("block_index")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize,
+                block_hash: record.data.get("block_hash")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("").to_string(),
+                block_type: record.data.get("block_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("").to_string(),
+                start_offset: record.data.get("start_offset")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize,
+                end_offset: record.data.get("end_offset")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize,
+                block_content: record.data.get("block_content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("").to_string(),
+                block_metadata: record.data.get("block_metadata")
+                    .and_then(|v| v.as_object())
+                    .cloned()
+                    .map(|map| map.into_iter().collect())
+                    .unwrap_or_default(),
+                created_at: record.data.get("created_at")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .unwrap_or_else(|| chrono::Utc::now()),
+                updated_at: record.data.get("updated_at")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .unwrap_or_else(|| chrono::Utc::now()),
+            };
+            Ok(Some(block_record))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Find documents containing multiple block hashes (batch query)
+    pub async fn find_documents_with_blocks(&self, block_hashes: &[String]) -> StorageResult<std::collections::HashMap<String, Vec<String>>> {
+        if block_hashes.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        // Create IN clause with properly escaped hashes
+        let escaped_hashes: Vec<String> = block_hashes.iter()
+            .map(|hash| format!("'{}'", hash.replace("'", "''")))
+            .collect();
+
+        let query = format!(
+            "SELECT block_hash, document_id FROM document_blocks WHERE block_hash IN ({})",
+            escaped_hashes.join(",")
+        );
+
+        let result = self.client
+            .query(&query, &[])
+            .await
+            .map_err(|e| StorageError::backend(format!("Failed to find documents with blocks: {}", e)))?;
+
+        let mut hash_to_documents: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+
+        for record in result.records {
+            if let (Some(block_hash), Some(document_id)) = (
+                record.data.get("block_hash").and_then(|v| v.as_str()),
+                record.data.get("document_id").and_then(|v| v.as_str())
+            ) {
+                let hash_str = block_hash.to_string();
+                let doc_id_str = document_id.to_string();
+
+                hash_to_documents.entry(hash_str)
+                    .or_insert_with(Vec::new)
+                    .push(doc_id_str);
+            }
+        }
+
+        Ok(hash_to_documents)
+    }
+
+    /// Get multiple blocks by their hashes (batch query)
+    pub async fn get_blocks_by_hashes(&self, block_hashes: &[String]) -> StorageResult<std::collections::HashMap<String, DocumentBlockRecord>> {
+        if block_hashes.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        // Create IN clause with properly escaped hashes
+        let escaped_hashes: Vec<String> = block_hashes.iter()
+            .map(|hash| format!("'{}'", hash.replace("'", "''")))
+            .collect();
+
+        let query = format!(
+            "SELECT * FROM document_blocks WHERE block_hash IN ({})",
+            escaped_hashes.join(",")
+        );
+
+        let result = self.client
+            .query(&query, &[])
+            .await
+            .map_err(|e| StorageError::backend(format!("Failed to get blocks by hashes: {}", e)))?;
+
+        let mut hash_to_block: std::collections::HashMap<String, DocumentBlockRecord> = std::collections::HashMap::new();
+
+        for record in result.records {
+            if let Some(block_hash) = record.data.get("block_hash").and_then(|v| v.as_str()) {
+                let block_record = DocumentBlockRecord {
+                    document_id: record.data.get("document_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("").to_string(),
+                    block_index: record.data.get("block_index")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as usize,
+                    block_hash: block_hash.to_string(),
+                    block_type: record.data.get("block_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("").to_string(),
+                    start_offset: record.data.get("start_offset")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as usize,
+                    end_offset: record.data.get("end_offset")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as usize,
+                    block_content: record.data.get("block_content")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("").to_string(),
+                    block_metadata: record.data.get("block_metadata")
+                        .and_then(|v| v.as_object())
+                        .cloned()
+                        .map(|map| map.into_iter().collect())
+                        .unwrap_or_default(),
+                    created_at: record.data.get("created_at")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(|| chrono::Utc::now()),
+                    updated_at: record.data.get("updated_at")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(|| chrono::Utc::now()),
+                };
+
+                hash_to_block.insert(block_hash.to_string(), block_record);
+            }
+        }
+
+        Ok(hash_to_block)
+    }
+
+    /// Get deduplication statistics for specific block hashes
+    pub async fn get_block_deduplication_stats(&self, block_hashes: &[String]) -> StorageResult<std::collections::HashMap<String, usize>> {
+        if block_hashes.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        // Create IN clause with properly escaped hashes
+        let escaped_hashes: Vec<String> = block_hashes.iter()
+            .map(|hash| format!("'{}'", hash.replace("'", "''")))
+            .collect();
+
+        let query = format!(
+            "SELECT block_hash, count() as occurrence_count FROM document_blocks WHERE block_hash IN ({}) GROUP BY block_hash",
+            escaped_hashes.join(",")
+        );
+
+        let result = self.client
+            .query(&query, &[])
+            .await
+            .map_err(|e| StorageError::backend(format!("Failed to get block deduplication stats: {}", e)))?;
+
+        let mut hash_to_count: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+
+        for record in result.records {
+            if let (Some(block_hash), Some(count)) = (
+                record.data.get("block_hash").and_then(|v| v.as_str()),
+                record.data.get("occurrence_count").and_then(|v| v.as_u64())
+            ) {
+                hash_to_count.insert(block_hash.to_string(), count as usize);
+            }
+        }
+
+        Ok(hash_to_count)
+    }
+
+    /// Delete all blocks for a document
+    pub async fn delete_document_blocks(&self, document_id: &str) -> StorageResult<usize> {
+        if document_id.is_empty() {
+            return Err(StorageError::InvalidOperation("Empty document_id provided".to_string()));
+        }
+
+        let query = format!(
+            "DELETE FROM document_blocks WHERE document_id = '{}'",
+            document_id.replace("'", "''")
+        );
+
+        let result = self.client
+            .query(&query, &[])
+            .await
+            .map_err(|e| StorageError::backend(format!("Failed to delete document blocks: {}", e)))?;
+
+        // Count how many were deleted (approximate)
+        Ok(result.records.len())
+    }
+
+    /// Get deduplication statistics for all blocks
+    pub async fn get_all_block_deduplication_stats(&self) -> StorageResult<HashMap<String, usize>> {
+        let query = "
+            SELECT block_hash, math::count() as duplicate_count
+            FROM document_blocks
+            GROUP BY block_hash
+            HAVING duplicate_count > 1
+        ";
+
+        let result = self.client
+            .query(query, &[])
+            .await
+            .map_err(|e| StorageError::backend(format!("Failed to get deduplication stats: {}", e)))?;
+
+        let mut stats = HashMap::new();
+        for record in result.records {
+            if let (Some(block_hash), Some(count)) = (record.data.get("block_hash"), record.data.get("duplicate_count")) {
+                if let (Ok(hash_str), Ok(count_val)) = (
+                    serde_json::from_value::<String>(block_hash.clone()),
+                    serde_json::from_value::<usize>(count.clone())
+                ) {
+                    stats.insert(hash_str, count_val);
+                }
+            }
+        }
+
+        Ok(stats)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crucible_core::hashing::blake3::Blake3Hasher;
-    use crucible_core::storage::HashedBlock;
+    use crucible_core::storage::{HashedBlock, ContentHasher};
 
     /// Test helper to create a test storage instance
     async fn create_test_storage() -> ContentAddressedStorageSurrealDB {

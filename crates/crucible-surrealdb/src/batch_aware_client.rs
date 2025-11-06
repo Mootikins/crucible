@@ -50,7 +50,7 @@ pub struct FileDocumentState {
     pub path: String,
 
     /// Document content hash
-    pub content_hash: Option<String>,
+    pub file_hash: Option<String>,
 
     /// Document metadata (from database)
     pub metadata: Option<serde_json::Value>,
@@ -129,7 +129,7 @@ impl BatchAwareSurrealClient {
     ) -> FileDocumentState {
         let base_state = db_state.unwrap_or_else(|| FileDocumentState {
             path: file_path.to_string_lossy().to_string(),
-            content_hash: None,
+            file_hash: None,
             metadata: None,
             exists: false,
             pending_operations: PendingOperationsResult::none(),
@@ -289,7 +289,7 @@ impl BatchAwareSurrealClient {
                     let record = &query_result.records[0];
                     Ok(Some(FileDocumentState {
                         path: file_path.to_string_lossy().to_string(),
-                        content_hash: record.data.get("content_hash").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        file_hash: record.data.get("file_hash").and_then(|v| v.as_str()).map(|s| s.to_string()),
                         metadata: record.data.get("metadata").cloned(),
                         exists: true,
                         pending_operations: PendingOperationsResult::none(),
@@ -298,7 +298,7 @@ impl BatchAwareSurrealClient {
                 } else {
                     Ok(Some(FileDocumentState {
                         path: file_path.to_string_lossy().to_string(),
-                        content_hash: None,
+                        file_hash: None,
                         metadata: None,
                         exists: false,
                         pending_operations: PendingOperationsResult::none(),

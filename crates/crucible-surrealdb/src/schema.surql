@@ -1,8 +1,9 @@
 -- ============================================================================
 -- Crucible Knowledge Kiln - SurrealDB Schema
 -- ============================================================================
--- Version: 1.0.0
+-- Version: 2.0.0
 -- Created: 2025-10-19
+-- Updated: 2025-11-06 (Added document_blocks table for block-level storage)
 -- Purpose: Define tables, relations, and indexes for knowledge kiln indexing
 --
 -- Usage:
@@ -42,6 +43,11 @@ DEFINE FIELD title ON TABLE notes
 
 DEFINE FIELD content ON TABLE notes
     TYPE string;
+
+-- File hash for change detection
+DEFINE FIELD file_hash ON TABLE notes
+    TYPE string
+    ASSERT $value != NONE AND string::len($value) == 64;
 
 -- Timestamps
 DEFINE FIELD created_at ON TABLE notes
@@ -95,6 +101,9 @@ DEFINE FIELD file_name ON TABLE notes
 DEFINE INDEX unique_path ON TABLE notes
     COLUMNS path
     UNIQUE;
+
+DEFINE INDEX file_hash_idx ON TABLE notes
+    COLUMNS file_hash;
 
 DEFINE INDEX tags_idx ON TABLE notes
     COLUMNS tags;
@@ -289,6 +298,83 @@ DEFINE INDEX score_idx ON TABLE relates_to
     COLUMNS score;
 
 -- ============================================================================
+-- TABLE: document_blocks
+-- ============================================================================
+-- Maps documents to their blocks for content-addressed storage and deduplication
+
+DEFINE TABLE document_blocks SCHEMAFULL;
+
+-- Reference to source document
+DEFINE FIELD document_id ON TABLE document_blocks
+    TYPE string
+    ASSERT $value != NONE;
+
+-- Block index within the document (0-based)
+DEFINE FIELD block_index ON TABLE document_blocks
+    TYPE int
+    ASSERT $value >= 0;
+
+-- Content hash of the block (BLAKE3, 64-char hex)
+DEFINE FIELD block_hash ON TABLE document_blocks
+    TYPE string
+    ASSERT $value != NONE AND string::len($value) == 64;
+
+-- Block type for context and analysis
+DEFINE FIELD block_type ON TABLE document_blocks
+    TYPE string
+    ASSERT $value != NONE;  -- "heading", "paragraph", "list", "code", etc.
+
+-- Start and end positions in the source document
+DEFINE FIELD start_offset ON TABLE document_blocks
+    TYPE int
+    ASSERT $value >= 0;
+
+DEFINE FIELD end_offset ON TABLE document_blocks
+    TYPE int
+    ASSERT $value >= 0;
+
+-- Block content (for retrieval and analysis)
+DEFINE FIELD block_content ON TABLE document_blocks
+    TYPE string
+    ASSERT $value != NONE;
+
+-- Block metadata (preserved from AST)
+DEFINE FIELD block_metadata ON TABLE document_blocks
+    TYPE object
+    DEFAULT {};
+
+-- Creation timestamp
+DEFINE FIELD created_at ON TABLE document_blocks
+    TYPE datetime
+    DEFAULT time::now();
+
+-- Last updated timestamp
+DEFINE FIELD updated_at ON TABLE document_blocks
+    TYPE datetime
+    DEFAULT time::now();
+
+-- Indexes for efficient queries
+DEFINE INDEX document_blocks_idx ON TABLE document_blocks
+    COLUMNS document_id, block_index;
+
+DEFINE INDEX block_hash_idx ON TABLE document_blocks
+    COLUMNS block_hash;
+
+DEFINE INDEX document_id_idx ON TABLE document_blocks
+    COLUMNS document_id;
+
+DEFINE INDEX block_type_idx ON TABLE document_blocks
+    COLUMNS block_type;
+
+DEFINE INDEX created_at_idx ON TABLE document_blocks
+    COLUMNS created_at;
+
+-- Unique constraint to prevent duplicate blocks in same document
+DEFINE INDEX unique_document_block ON TABLE document_blocks
+    COLUMNS document_id, block_index
+    UNIQUE;
+
+-- ============================================================================
 -- TABLE: metadata (system metadata)
 -- ============================================================================
 -- Stores schema version and system configuration
@@ -305,8 +391,15 @@ DEFINE FIELD updated_at ON TABLE metadata
 
 -- Initialize system metadata
 CREATE metadata:system SET
-    schema_version = 1,
+    schema_version = 2,
     updated_at = time::now();
+
+-- Schema migration to version 2.0.0
+-- Add document_blocks table and update version
+UPDATE metadata:system SET
+    schema_version = 2,
+    updated_at = time::now()
+WHERE schema_version < 2;
 
 -- ============================================================================
 -- OPTIONAL: metadata_index table
