@@ -1,0 +1,1346 @@
+//! File information and metadata types for the crucible-watch system
+//!
+//! This module defines the core data structures used to represent file information
+//! throughout the file watching architecture. It provides a clean, focused approach
+//! to file metadata management with proper integration to the crucible-core hashing system.
+
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
+
+use serde::{Deserialize, Serialize};
+
+use crate::error::Error;
+use crucible_core::types::hashing::{FileHash, HashAlgorithm};
+
+/// Comprehensive file information for the crucible-watch system
+///
+/// This struct represents all the metadata needed for file operations, change detection,
+/// and processing within the file watching architecture. It serves as the primary
+/// data structure for file information throughout the system.
+///
+/// ## Design Principles
+///
+/// - **Type Safety**: Uses proper `FileHash` type instead of raw bytes
+/// - **Performance Optimized**: Contains all metadata needed for efficient change detection
+/// - **Serialization Ready**: Supports serde for persistent storage and IPC
+/// - **Integration Focused**: Designed to work seamlessly with crucible-core traits
+///
+/// ## Fields
+///
+/// - `path`: Absolute filesystem path for direct file access
+/// - `relative_path`: Relative path from the monitored root directory
+/// - `content_hash`: BLAKE3 content hash for change detection (from crucible-core)
+/// - `file_size`: File size in bytes for quick change detection
+/// - `modified_time`: Last modification timestamp from filesystem metadata
+/// - `file_type`: Categorized file type for processing decisions
+/// - `is_accessible`: Whether the file can be read and processed
+/// - `created_time`: Optional file creation timestamp for additional metadata
+/// - `permissions`: Optional file permissions metadata
+///
+/// ## Examples
+///
+/// ```rust
+/// use crucible_watch::types::{FileInfo, FileType};
+/// use crucible_core::types::hashing::FileHash;
+/// use std::time::SystemTime;
+/// use std::path::PathBuf;
+///
+/// let file_info = FileInfo::builder()
+///     .path(PathBuf::from("/home/user/vault/docs/README.md"))
+///     .relative_path("docs/README.md".to_string())
+///     .content_hash(FileHash::new([42u8; 32]))
+///     .file_size(1024)
+///     .modified_time(SystemTime::now())
+///     .file_type(FileType::Markdown)
+///     .is_accessible(true)
+///     .build()
+///     .unwrap();
+///
+/// assert_eq!(file_info.relative_path(), "docs/README.md");
+/// assert!(file_info.is_markdown());
+/// assert!(!file_info.content_hash().is_zero());
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileInfo {
+    /// Absolute path to the file in the filesystem
+    path: PathBuf,
+
+    /// Relative path from the monitored root directory
+    relative_path: String,
+
+    /// BLAKE3 hash of file content for change detection
+    content_hash: FileHash,
+
+    /// File size in bytes
+    file_size: u64,
+
+    /// Last modification time from filesystem metadata
+    modified_time: SystemTime,
+
+    /// Categorized file type for processing decisions
+    file_type: FileType,
+
+    /// Whether the file is accessible and can be read
+    is_accessible: bool,
+
+    /// Optional file creation timestamp
+    created_time: Option<SystemTime>,
+
+    /// Optional file permissions metadata
+    permissions: Option<FilePermissions>,
+}
+
+impl FileInfo {
+    /// Create a new FileInfo with the essential fields
+    ///
+    /// This constructor creates a FileInfo with the minimum required fields.
+    /// Use the builder pattern for more flexible construction with optional fields.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Absolute path to the file
+    /// * `relative_path` - Relative path from the monitored root
+    /// * `content_hash` - Content hash for change detection
+    /// * `file_size` - File size in bytes
+    /// * `modified_time` - Last modification timestamp
+    /// * `file_type` - Categorized file type
+    ///
+    /// # Returns
+    ///
+    /// A new FileInfo instance
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use crucible_watch::types::{FileInfo, FileType};
+    /// use crucible_core::types::hashing::FileHash;
+    /// use std::time::SystemTime;
+    /// use std::path::PathBuf;
+    ///
+    /// let file_info = FileInfo::new(
+    ///     PathBuf::from("/path/to/file.md"),
+    ///     "file.md".to_string(),
+    ///     FileHash::new([1u8; 32]),
+    ///     2048,
+    ///     SystemTime::now(),
+    ///     FileType::Markdown,
+    /// );
+    /// ```
+    pub fn new(
+        path: PathBuf,
+        relative_path: String,
+        content_hash: FileHash,
+        file_size: u64,
+        modified_time: SystemTime,
+        file_type: FileType,
+    ) -> Self {
+        Self {
+            path,
+            relative_path,
+            content_hash,
+            file_size,
+            modified_time,
+            file_type,
+            is_accessible: true, // Default to accessible
+            created_time: None,
+            permissions: None,
+        }
+    }
+
+    /// Create a FileInfo builder for flexible construction
+    ///
+    /// Returns a builder that allows setting all fields with validation.
+    /// This is the preferred method for creating FileInfo instances with optional fields.
+    ///
+    /// # Returns
+    ///
+    /// A FileInfoBuilder instance
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use crucible_watch::types::{FileInfo, FileType};
+    /// use crucible_core::types::hashing::FileHash;
+    /// use std::time::SystemTime;
+    /// use std::path::PathBuf;
+    ///
+    /// let file_info = FileInfo::builder()
+    ///     .path(PathBuf::from("/path/to/file.md"))
+    ///     .relative_path("file.md".to_string())
+    ///     .content_hash(FileHash::zero())
+    ///     .file_size(1024)
+    ///     .modified_time(SystemTime::now())
+    ///     .file_type(FileType::Markdown)
+    ///     .is_accessible(false)
+    ///     .build()
+    ///     .unwrap();
+    /// ```
+    pub fn builder() -> FileInfoBuilder {
+        FileInfoBuilder::new()
+    }
+
+    /// Create a FileInfo with zero hash for placeholder purposes
+    ///
+    /// This method is useful when you need to create a FileInfo entry
+    /// before the actual content hash is calculated.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Absolute path to the file
+    /// * `relative_path` - Relative path from the monitored root
+    /// * `file_size` - File size in bytes
+    /// * `modified_time` - Last modification timestamp
+    /// * `file_type` - Categorized file type
+    ///
+    /// # Returns
+    ///
+    /// A FileInfo with zero content hash
+    pub fn with_zero_hash(
+        path: PathBuf,
+        relative_path: String,
+        file_size: u64,
+        modified_time: SystemTime,
+        file_type: FileType,
+    ) -> Self {
+        Self::new(
+            path,
+            relative_path,
+            FileHash::zero(),
+            file_size,
+            modified_time,
+            file_type,
+        )
+    }
+
+    /// Get the absolute path to the file
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Get the relative path from the monitored root
+    pub fn relative_path(&self) -> &str {
+        &self.relative_path
+    }
+
+    /// Get the content hash for change detection
+    pub fn content_hash(&self) -> FileHash {
+        self.content_hash
+    }
+
+    /// Get the content hash as a hex string
+    pub fn content_hash_hex(&self) -> String {
+        self.content_hash.to_hex()
+    }
+
+    /// Get the file size in bytes
+    pub fn file_size(&self) -> u64 {
+        self.file_size
+    }
+
+    /// Get the last modification time
+    pub fn modified_time(&self) -> SystemTime {
+        self.modified_time
+    }
+
+    /// Get the file type
+    pub fn file_type(&self) -> FileType {
+        self.file_type
+    }
+
+    /// Check if the file is accessible
+    pub fn is_accessible(&self) -> bool {
+        self.is_accessible
+    }
+
+    /// Get the optional creation time
+    pub fn created_time(&self) -> Option<SystemTime> {
+        self.created_time
+    }
+
+    /// Get the optional file permissions
+    pub fn permissions(&self) -> Option<&FilePermissions> {
+        self.permissions.as_ref()
+    }
+
+    /// Check if the file is a markdown file
+    pub fn is_markdown(&self) -> bool {
+        matches!(self.file_type, FileType::Markdown)
+    }
+
+    /// Check if the file is a text file
+    pub fn is_text(&self) -> bool {
+        matches!(self.file_type, FileType::Text | FileType::Markdown | FileType::Code)
+    }
+
+    /// Check if the file is a code file
+    pub fn is_code(&self) -> bool {
+        matches!(self.file_type, FileType::Code)
+    }
+
+    /// Check if the file is a binary file
+    pub fn is_binary(&self) -> bool {
+        matches!(self.file_type, FileType::Binary)
+    }
+
+    /// Check if the content hash is zero (placeholder)
+    pub fn has_zero_hash(&self) -> bool {
+        self.content_hash.is_zero()
+    }
+
+    /// Update the content hash
+    ///
+    /// This method is useful when you initially create a FileInfo with a zero hash
+    /// and later calculate the actual content hash.
+    ///
+    /// # Arguments
+    ///
+    /// * `content_hash` - The new content hash
+    pub fn update_content_hash(&mut self, content_hash: FileHash) {
+        self.content_hash = content_hash;
+    }
+
+    /// Update file metadata from filesystem
+    ///
+    /// This method refreshes the file metadata by querying the filesystem.
+    /// Returns an error if the file cannot be accessed.
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) if metadata was updated successfully, Err(Error) otherwise
+    pub fn update_metadata(&mut self) -> Result<(), Error> {
+        use std::fs;
+
+        let metadata = fs::metadata(&self.path)
+            .map_err(|e| Error::FileIoError {
+                path: self.path.clone(),
+                error: e.to_string(),
+            })?;
+
+        self.file_size = metadata.len();
+        self.modified_time = metadata.modified()
+            .map_err(|e| Error::FileIoError {
+                path: self.path.clone(),
+                error: e.to_string(),
+            })?;
+
+        self.created_time = metadata.created().ok();
+        self.is_accessible = true;
+
+        // Update permissions if supported on this platform
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if metadata.permissions().readonly() {
+                self.permissions = Some(FilePermissions::ReadOnly);
+            } else {
+                self.permissions = Some(FilePermissions::Writable(
+                    metadata.permissions().mode()
+                ));
+            }
+        }
+
+        #[cfg(not(unix))]
+        {
+            if metadata.permissions().readonly() {
+                self.permissions = Some(FilePermissions::ReadOnly);
+            } else {
+                self.permissions = Some(FilePermissions::Writable);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check if this file has the same content as another FileInfo
+    ///
+    /// This method compares only the content hash, making it efficient
+    /// for change detection operations.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The other FileInfo to compare with
+    ///
+    /// # Returns
+    ///
+    /// true if the content hashes are identical
+    pub fn content_matches(&self, other: &FileInfo) -> bool {
+        self.content_hash == other.content_hash
+    }
+
+    /// Check if file metadata matches (size and modification time)
+    ///
+    /// This method provides a quick check that can be used before
+    /// calculating content hashes for efficiency.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The other FileInfo to compare with
+    ///
+    /// # Returns
+    ///
+    /// true if size and modification time are identical
+    pub fn metadata_matches(&self, other: &FileInfo) -> bool {
+        self.file_size == other.file_size && self.modified_time == other.modified_time
+    }
+
+    /// Convert to crucible-core FileHashInfo for trait integration
+    ///
+    /// This method converts the FileInfo to a FileHashInfo which can be used
+    /// with the crucible-core change detection traits.
+    ///
+    /// # Returns
+    ///
+    /// A FileHashInfo compatible with crucible-core traits
+    pub fn to_file_hash_info(&self) -> crucible_core::types::hashing::FileHashInfo {
+        crucible_core::types::hashing::FileHashInfo::new(
+            self.content_hash,
+            self.file_size,
+            self.modified_time,
+            HashAlgorithm::Blake3, // We always use BLAKE3 for content hashing
+            self.relative_path.clone(),
+        )
+    }
+
+    /// Create from crucible-core FileHashInfo
+    ///
+    /// This method creates a FileInfo from a FileHashInfo, useful when
+    /// working with the crucible-core change detection system.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_hash_info` - The FileHashInfo to convert
+    /// * `root_path` - The root path to resolve absolute paths
+    ///
+    /// # Returns
+    ///
+    /// A FileInfo instance
+    pub fn from_file_hash_info(
+        file_hash_info: crucible_core::types::hashing::FileHashInfo,
+        root_path: &Path,
+    ) -> Self {
+        let absolute_path = root_path.join(&file_hash_info.relative_path);
+        let file_type = FileType::from_path(&absolute_path);
+
+        Self {
+            path: absolute_path,
+            relative_path: file_hash_info.relative_path,
+            content_hash: file_hash_info.content_hash,
+            file_size: file_hash_info.size,
+            modified_time: file_hash_info.modified,
+            file_type,
+            is_accessible: true,
+            created_time: None,
+            permissions: None,
+        }
+    }
+}
+
+/// Builder for FileInfo with validation
+///
+/// Provides a fluent interface for constructing FileInfo instances
+/// with proper validation of all fields.
+#[derive(Debug, Clone)]
+pub struct FileInfoBuilder {
+    path: Option<PathBuf>,
+    relative_path: Option<String>,
+    content_hash: Option<FileHash>,
+    file_size: Option<u64>,
+    modified_time: Option<SystemTime>,
+    file_type: Option<FileType>,
+    is_accessible: Option<bool>,
+    created_time: Option<SystemTime>,
+    permissions: Option<FilePermissions>,
+}
+
+impl FileInfoBuilder {
+    /// Create a new FileInfoBuilder
+    pub fn new() -> Self {
+        Self {
+            path: None,
+            relative_path: None,
+            content_hash: None,
+            file_size: None,
+            modified_time: None,
+            file_type: None,
+            is_accessible: Some(true), // Default to accessible
+            created_time: None,
+            permissions: None,
+        }
+    }
+
+    /// Set the absolute path to the file
+    pub fn path(mut self, path: PathBuf) -> Self {
+        self.path = Some(path);
+        self
+    }
+
+    /// Set the relative path from the monitored root
+    pub fn relative_path(mut self, relative_path: String) -> Self {
+        self.relative_path = Some(relative_path);
+        self
+    }
+
+    /// Set the content hash
+    pub fn content_hash(mut self, content_hash: FileHash) -> Self {
+        self.content_hash = Some(content_hash);
+        self
+    }
+
+    /// Set the file size in bytes
+    pub fn file_size(mut self, file_size: u64) -> Self {
+        self.file_size = Some(file_size);
+        self
+    }
+
+    /// Set the last modification time
+    pub fn modified_time(mut self, modified_time: SystemTime) -> Self {
+        self.modified_time = Some(modified_time);
+        self
+    }
+
+    /// Set the file type
+    pub fn file_type(mut self, file_type: FileType) -> Self {
+        self.file_type = Some(file_type);
+        self
+    }
+
+    /// Set whether the file is accessible
+    pub fn is_accessible(mut self, is_accessible: bool) -> Self {
+        self.is_accessible = Some(is_accessible);
+        self
+    }
+
+    /// Set the optional creation time
+    pub fn created_time(mut self, created_time: SystemTime) -> Self {
+        self.created_time = Some(created_time);
+        self
+    }
+
+    /// Set the optional file permissions
+    pub fn permissions(mut self, permissions: FilePermissions) -> Self {
+        self.permissions = Some(permissions);
+        self
+    }
+
+    /// Build the FileInfo after validation
+    ///
+    /// # Returns
+    ///
+    /// Ok(FileInfo) if all required fields are present and valid,
+    /// Err(Error) if validation fails
+    pub fn build(self) -> Result<FileInfo, Error> {
+        let path = self.path.ok_or_else(|| Error::ValidationError {
+            field: "path".to_string(),
+            message: "Path is required".to_string(),
+        })?;
+
+        let relative_path = self.relative_path.ok_or_else(|| Error::ValidationError {
+            field: "relative_path".to_string(),
+            message: "Relative path is required".to_string(),
+        })?;
+
+        let content_hash = self.content_hash.unwrap_or_else(FileHash::zero);
+        let file_size = self.file_size.unwrap_or(0);
+        let modified_time = self.modified_time.unwrap_or_else(SystemTime::now);
+        let file_type = self.file_type.unwrap_or_else(|| FileType::from_path(&path));
+
+        Ok(FileInfo {
+            path,
+            relative_path,
+            content_hash,
+            file_size,
+            modified_time,
+            file_type,
+            is_accessible: self.is_accessible.unwrap_or(true),
+            created_time: self.created_time,
+            permissions: self.permissions,
+        })
+    }
+}
+
+impl Default for FileInfoBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Categorized file types for processing decisions
+///
+/// This enum provides a high-level categorization of file types to help
+/// the file watching system make appropriate processing decisions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum FileType {
+    /// Markdown files (.md, .markdown)
+    Markdown,
+    /// Plain text files (.txt, .text)
+    Text,
+    /// Source code files (.rs, .js, .py, etc.)
+    Code,
+    /// Configuration files (.yaml, .json, .toml, etc.)
+    Config,
+    /// Document files (.pdf, .doc, .odt, etc.)
+    Document,
+    /// Image files (.png, .jpg, .svg, etc.)
+    Image,
+    /// Audio files (.mp3, .wav, .ogg, etc.)
+    Audio,
+    /// Video files (.mp4, .avi, .mov, etc.)
+    Video,
+    /// Archive files (.zip, .tar, .gz, etc.)
+    Archive,
+    /// Binary files (executables, compiled libraries, etc.)
+    Binary,
+    /// Unknown file type
+    Unknown,
+}
+
+impl FileType {
+    /// Determine file type from path extension
+    ///
+    /// This method examines the file extension to determine the appropriate
+    /// file type category. It's case-insensitive and handles common extensions.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The file path to examine
+    ///
+    /// # Returns
+    ///
+    /// The determined FileType
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use crucible_watch::types::FileType;
+    /// use std::path::PathBuf;
+    ///
+    /// assert_eq!(FileType::from_path(&PathBuf::from("file.md")), FileType::Markdown);
+    /// assert_eq!(FileType::from_path(&PathBuf::from("script.rs")), FileType::Code);
+    /// assert_eq!(FileType::from_path(&PathBuf::from("config.yaml")), FileType::Config);
+    /// ```
+    pub fn from_path(path: &Path) -> Self {
+        let extension = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_lowercase());
+
+        match extension.as_deref() {
+            Some("md") | Some("markdown") => FileType::Markdown,
+            Some("txt") | Some("text") => FileType::Text,
+            Some("rs") | Some("py") | Some("js") | Some("ts") | Some("jsx") | Some("tsx") |
+            Some("go") | Some("java") | Some("c") | Some("cpp") | Some("h") | Some("hpp") |
+            Some("cs") | Some("php") | Some("rb") | Some("swift") | Some("kt") |
+            Some("scala") | Some("clj") | Some("hs") | Some("ml") | Some("sh") => FileType::Code,
+            Some("yaml") | Some("yml") | Some("json") | Some("toml") | Some("ini") |
+            Some("cfg") | Some("conf") | Some("xml") | Some("plist") => FileType::Config,
+            Some("pdf") | Some("doc") | Some("docx") | Some("odt") | Some("rtf") => FileType::Document,
+            Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("svg") | Some("bmp") |
+            Some("webp") | Some("ico") => FileType::Image,
+            Some("mp3") | Some("wav") | Some("ogg") | Some("flac") | Some("aac") => FileType::Audio,
+            Some("mp4") | Some("avi") | Some("mov") | Some("wmv") | Some("flv") | Some("webm") => FileType::Video,
+            Some("zip") | Some("tar") | Some("gz") | Some("bz2") | Some("xz") | Some("7z") |
+            Some("rar") | Some("deb") | Some("rpm") => FileType::Archive,
+            Some("exe") | Some("dll") | Some("so") | Some("dylib") | Some("bin") | Some("app") => FileType::Binary,
+            _ => FileType::Unknown,
+        }
+    }
+
+    /// Check if this file type should be processed for content
+    ///
+    /// Returns true for file types that contain extractable text content
+    /// that should be indexed and processed.
+    pub fn should_process_content(&self) -> bool {
+        matches!(
+            self,
+            FileType::Markdown | FileType::Text | FileType::Code | FileType::Config
+        )
+    }
+
+    /// Check if this file type should be watched for changes
+    ///
+    /// Returns true for file types that are meaningful to watch.
+    /// Some file types (like temporary files or caches) might be ignored.
+    pub fn should_watch(&self) -> bool {
+        !matches!(
+            self,
+            FileType::Binary | FileType::Archive | FileType::Unknown
+        )
+    }
+
+    /// Get the file type as a string
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FileType::Markdown => "markdown",
+            FileType::Text => "text",
+            FileType::Code => "code",
+            FileType::Config => "config",
+            FileType::Document => "document",
+            FileType::Image => "image",
+            FileType::Audio => "audio",
+            FileType::Video => "video",
+            FileType::Archive => "archive",
+            FileType::Binary => "binary",
+            FileType::Unknown => "unknown",
+        }
+    }
+}
+
+impl std::fmt::Display for FileType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+/// File permissions metadata
+///
+/// Represents file permissions in a cross-platform way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum FilePermissions {
+    /// File is read-only
+    ReadOnly,
+    /// File is writable (platform-specific mode)
+    Writable(u32),
+    /// File is executable (Unix-specific)
+    Executable(u32),
+}
+
+impl FilePermissions {
+    /// Check if the file is read-only
+    pub fn is_readonly(&self) -> bool {
+        matches!(self, FilePermissions::ReadOnly)
+    }
+
+    /// Check if the file is writable
+    pub fn is_writable(&self) -> bool {
+        !matches!(self, FilePermissions::ReadOnly)
+    }
+
+    /// Check if the file is executable (Unix systems only)
+    pub fn is_executable(&self) -> bool {
+        matches!(self, FilePermissions::Executable(_))
+    }
+
+    /// Get the permission mode (Unix systems only)
+    pub fn mode(&self) -> Option<u32> {
+        match self {
+            FilePermissions::Writable(mode) | FilePermissions::Executable(mode) => Some(*mode),
+            FilePermissions::ReadOnly => None,
+        }
+    }
+}
+
+impl std::fmt::Display for FilePermissions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FilePermissions::ReadOnly => write!(f, "read-only"),
+            FilePermissions::Writable(mode) => write!(f, "writable({:#o})", mode),
+            FilePermissions::Executable(mode) => write!(f, "executable({:#o})", mode),
+        }
+    }
+}
+
+/// Configuration for file scanning operations
+///
+/// This struct provides configuration options for how files are scanned
+/// and processed by the file watching system.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanConfig {
+    /// Maximum file size to process (in bytes)
+    pub max_file_size: u64,
+
+    /// File types to include in scanning
+    pub include_types: Vec<FileType>,
+
+    /// File types to exclude from scanning
+    pub exclude_types: Vec<FileType>,
+
+    /// File patterns to exclude (glob patterns)
+    pub exclude_patterns: Vec<String>,
+
+    /// Whether to follow symbolic links
+    pub follow_symlinks: bool,
+
+    /// Whether to calculate content hashes for all files
+    pub calculate_hashes: bool,
+
+    /// Maximum depth for directory traversal
+    pub max_depth: Option<usize>,
+
+    /// Whether to ignore hidden files and directories
+    pub ignore_hidden: bool,
+}
+
+impl Default for ScanConfig {
+    fn default() -> Self {
+        Self {
+            max_file_size: 10 * 1024 * 1024, // 10MB
+            include_types: vec![
+                FileType::Markdown,
+                FileType::Text,
+                FileType::Code,
+                FileType::Config,
+            ],
+            exclude_types: vec![
+                FileType::Binary,
+                FileType::Archive,
+            ],
+            exclude_patterns: vec![
+                "*.tmp".to_string(),
+                "*.cache".to_string(),
+                ".git/*".to_string(),
+                "node_modules/*".to_string(),
+                "target/*".to_string(),
+            ],
+            follow_symlinks: false,
+            calculate_hashes: true,
+            max_depth: Some(50),
+            ignore_hidden: true,
+        }
+    }
+}
+
+impl ScanConfig {
+    /// Create a new ScanConfig with default values
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Check if a file type should be included in scanning
+    pub fn should_include_type(&self, file_type: FileType) -> bool {
+        // Check exclusions first
+        if self.exclude_types.contains(&file_type) {
+            return false;
+        }
+
+        // If include_types is empty, include all non-excluded types
+        if self.include_types.is_empty() {
+            return true;
+        }
+
+        // Check if the type is explicitly included
+        self.include_types.contains(&file_type)
+    }
+
+    /// Check if a file should be included based on size
+    pub fn should_include_size(&self, file_size: u64) -> bool {
+        file_size <= self.max_file_size
+    }
+
+    /// Check if a path matches any exclude patterns
+    pub fn matches_exclude_pattern(&self, path: &Path) -> bool {
+        let path_str = path.to_string_lossy();
+
+        for pattern in &self.exclude_patterns {
+            if let Ok(glob_pattern) = glob::Pattern::new(pattern) {
+                if glob_pattern.matches(&path_str) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Create a configuration that includes all file types
+    pub fn include_all() -> Self {
+        let mut config = Self::default();
+        config.include_types.clear();
+        config.exclude_types.clear();
+        config
+    }
+
+    /// Create a configuration for markdown files only
+    pub fn markdown_only() -> Self {
+        let mut config = Self::default();
+        config.include_types = vec![FileType::Markdown];
+        config
+    }
+
+    /// Create a configuration for code files only
+    pub fn code_only() -> Self {
+        let mut config = Self::default();
+        config.include_types = vec![FileType::Code];
+        config
+    }
+}
+
+/// Result of a file scanning operation
+///
+/// Contains comprehensive information about the results of scanning
+/// a directory tree for files.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScanResult {
+    /// Files that were discovered and successfully processed
+    pub discovered_files: Vec<FileInfo>,
+
+    /// Paths that were skipped and why
+    pub skipped_paths: Vec<SkipReason>,
+
+    /// Errors that occurred during scanning
+    pub scan_errors: Vec<ScanError>,
+
+    /// Total number of files considered
+    pub total_considered: usize,
+
+    /// Number of files successfully processed
+    pub successful_files: usize,
+
+    /// Number of files skipped
+    pub skipped_files: usize,
+
+    /// Duration of the scan operation
+    pub scan_duration: std::time::Duration,
+
+    /// Size of all successfully processed files
+    pub total_size: u64,
+}
+
+impl ScanResult {
+    /// Create a new empty ScanResult
+    pub fn new() -> Self {
+        Self {
+            discovered_files: Vec::new(),
+            skipped_paths: Vec::new(),
+            scan_errors: Vec::new(),
+            total_considered: 0,
+            successful_files: 0,
+            skipped_files: 0,
+            scan_duration: std::time::Duration::from_secs(0),
+            total_size: 0,
+        }
+    }
+
+    /// Check if the scan was successful
+    pub fn is_successful(&self) -> bool {
+        self.scan_errors.is_empty() || self.successful_files > 0
+    }
+
+    /// Get the success rate as a percentage
+    pub fn success_rate(&self) -> f64 {
+        if self.total_considered == 0 {
+            1.0
+        } else {
+            self.successful_files as f64 / self.total_considered as f64
+        }
+    }
+
+    /// Get files by type
+    pub fn files_by_type(&self, file_type: FileType) -> Vec<&FileInfo> {
+        self.discovered_files
+            .iter()
+            .filter(|file| file.file_type() == file_type)
+            .collect()
+    }
+
+    /// Get markdown files
+    pub fn markdown_files(&self) -> Vec<&FileInfo> {
+        self.files_by_type(FileType::Markdown)
+    }
+
+    /// Get code files
+    pub fn code_files(&self) -> Vec<&FileInfo> {
+        self.files_by_type(FileType::Code)
+    }
+
+    /// Get summary statistics
+    pub fn summary(&self) -> ScanSummary {
+        ScanSummary {
+            total_files: self.total_considered,
+            successful_files: self.successful_files,
+            skipped_files: self.skipped_files,
+            error_count: self.scan_errors.len(),
+            scan_duration: self.scan_duration,
+            total_size: self.total_size,
+            success_rate: self.success_rate(),
+        }
+    }
+}
+
+impl Default for ScanResult {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Summary statistics for a scan operation
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScanSummary {
+    pub total_files: usize,
+    pub successful_files: usize,
+    pub skipped_files: usize,
+    pub error_count: usize,
+    pub scan_duration: std::time::Duration,
+    pub total_size: u64,
+    pub success_rate: f64,
+}
+
+/// Reason why a file or directory was skipped during scanning
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SkipReason {
+    pub path: PathBuf,
+    pub reason: SkipType,
+}
+
+/// Types of skip reasons
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum SkipType {
+    /// File type is excluded by configuration
+    ExcludedType(FileType),
+    /// File size exceeds maximum limit
+    TooLarge(u64),
+    /// Path matches exclude pattern
+    ExcludedPattern(String),
+    /// Hidden file or directory (when ignore_hidden is true)
+    HiddenFile,
+    /// Symbolic link (when follow_symlinks is false)
+    Symlink,
+    /// Maximum directory depth exceeded
+    DepthLimit,
+    /// File is not accessible
+    NotAccessible(String),
+}
+
+/// Error that occurred during scanning
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScanError {
+    pub path: PathBuf,
+    pub error_type: ScanErrorType,
+    pub message: String,
+}
+
+/// Types of scan errors
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ScanErrorType {
+    /// I/O error accessing file or directory
+    IoError,
+    /// Error calculating file hash
+    HashError,
+    /// Invalid path or file name
+    InvalidPath,
+    /// Permission denied
+    PermissionDenied,
+    /// File system error
+    FileSystemError,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::UNIX_EPOCH;
+
+    #[test]
+    fn test_file_info_creation() {
+        let path = PathBuf::from("/test/file.md");
+        let relative_path = "file.md".to_string();
+        let content_hash = FileHash::new([42u8; 32]);
+        let file_size = 1024;
+        let modified_time = SystemTime::now();
+        let file_type = FileType::Markdown;
+
+        let file_info = FileInfo::new(
+            path.clone(),
+            relative_path.clone(),
+            content_hash,
+            file_size,
+            modified_time,
+            file_type,
+        );
+
+        assert_eq!(file_info.path(), &path);
+        assert_eq!(file_info.relative_path(), &relative_path);
+        assert_eq!(file_info.content_hash(), content_hash);
+        assert_eq!(file_info.file_size(), file_size);
+        assert_eq!(file_info.modified_time(), modified_time);
+        assert_eq!(file_info.file_type(), file_type);
+        assert!(file_info.is_accessible());
+        assert!(file_info.is_markdown());
+        assert!(file_info.is_text());
+        assert!(!file_info.is_code());
+        assert!(!file_info.is_binary());
+    }
+
+    #[test]
+    fn test_file_info_builder() {
+        let path = PathBuf::from("/test/file.rs");
+        let relative_path = "file.rs".to_string();
+        let content_hash = FileHash::new([123u8; 32]);
+
+        let file_info = FileInfo::builder()
+            .path(path.clone())
+            .relative_path(relative_path)
+            .content_hash(content_hash)
+            .file_size(2048)
+            .modified_time(UNIX_EPOCH)
+            .file_type(FileType::Code)
+            .is_accessible(false)
+            .build()
+            .unwrap();
+
+        assert_eq!(file_info.path(), &path);
+        assert_eq!(file_info.content_hash(), content_hash);
+        assert_eq!(file_info.file_type(), FileType::Code);
+        assert!(!file_info.is_accessible());
+        assert!(file_info.is_code());
+        assert!(file_info.is_text());
+        assert!(!file_info.is_markdown());
+    }
+
+    #[test]
+    fn test_file_info_builder_validation() {
+        let result = FileInfo::builder()
+            .path(PathBuf::from("/test/file.md"))
+            // Missing required relative_path
+            .build();
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            Error::ValidationError { field, .. } => {
+                assert_eq!(field, "relative_path");
+            }
+            _ => panic!("Expected ValidationError"),
+        }
+    }
+
+    #[test]
+    fn test_file_type_detection() {
+        assert_eq!(FileType::from_path(&PathBuf::from("file.md")), FileType::Markdown);
+        assert_eq!(FileType::from_path(&PathBuf::from("script.rs")), FileType::Code);
+        assert_eq!(FileType::from_path(&PathBuf::from("config.yaml")), FileType::Config);
+        assert_eq!(FileType::from_path(&PathBuf::from("image.png")), FileType::Image);
+        assert_eq!(FileType::from_path(&PathBuf::from("unknown.xyz")), FileType::Unknown);
+
+        // Test case insensitivity
+        assert_eq!(FileType::from_path(&PathBuf::from("FILE.MD")), FileType::Markdown);
+        assert_eq!(FileType::from_path(&PathBuf::from("SCRIPT.RS")), FileType::Code);
+    }
+
+    #[test]
+    fn test_file_type_properties() {
+        assert!(FileType::Markdown.should_process_content());
+        assert!(FileType::Code.should_process_content());
+        assert!(FileType::Config.should_process_content());
+        assert!(!FileType::Image.should_process_content());
+        assert!(!FileType::Binary.should_process_content());
+
+        assert!(FileType::Markdown.should_watch());
+        assert!(FileType::Code.should_watch());
+        assert!(!FileType::Binary.should_watch());
+        assert!(!FileType::Unknown.should_watch());
+    }
+
+    #[test]
+    fn test_file_permissions() {
+        let readonly = FilePermissions::ReadOnly;
+        assert!(readonly.is_readonly());
+        assert!(!readonly.is_writable());
+        assert!(!readonly.is_executable());
+
+        let writable = FilePermissions::Writable(0o644);
+        assert!(!writable.is_readonly());
+        assert!(writable.is_writable());
+        assert!(!writable.is_executable());
+        assert_eq!(writable.mode(), Some(0o644));
+
+        let executable = FilePermissions::Executable(0o755);
+        assert!(!executable.is_readonly());
+        assert!(executable.is_writable());
+        assert!(executable.is_executable());
+        assert_eq!(executable.mode(), Some(0o755));
+    }
+
+    #[test]
+    fn test_scan_config() {
+        let config = ScanConfig::default();
+
+        assert!(config.should_include_type(FileType::Markdown));
+        assert!(config.should_include_type(FileType::Code));
+        assert!(!config.should_include_type(FileType::Binary));
+        assert!(!config.should_include_type(FileType::Archive));
+
+        assert!(config.should_include_size(1024));
+        assert!(config.should_include_size(config.max_file_size));
+        assert!(!config.should_include_size(config.max_file_size + 1));
+    }
+
+    #[test]
+    fn test_scan_config_specialized() {
+        let markdown_config = ScanConfig::markdown_only();
+        assert!(markdown_config.should_include_type(FileType::Markdown));
+        assert!(!markdown_config.should_include_type(FileType::Code));
+        assert_eq!(markdown_config.include_types.len(), 1);
+
+        let code_config = ScanConfig::code_only();
+        assert!(!code_config.should_include_type(FileType::Markdown));
+        assert!(code_config.should_include_type(FileType::Code));
+        assert_eq!(code_config.include_types.len(), 1);
+
+        let all_config = ScanConfig::include_all();
+        assert!(all_config.should_include_type(FileType::Markdown));
+        assert!(all_config.should_include_type(FileType::Code));
+        assert!(all_config.should_include_type(FileType::Binary));
+        assert!(all_config.include_types.is_empty());
+        assert!(all_config.exclude_types.is_empty());
+    }
+
+    #[test]
+    fn test_file_info_content_matching() {
+        let hash1 = FileHash::new([1u8; 32]);
+        let hash2 = FileHash::new([2u8; 32]);
+        let modified_time = UNIX_EPOCH;
+
+        let file1 = FileInfo::new(
+            PathBuf::from("/test/file1.md"),
+            "file1.md".to_string(),
+            hash1,
+            1024,
+            modified_time,
+            FileType::Markdown,
+        );
+
+        let file2 = FileInfo::new(
+            PathBuf::from("/test/file2.md"),
+            "file2.md".to_string(),
+            hash1, // Same hash
+            2048,  // Different size
+            modified_time,
+            FileType::Markdown,
+        );
+
+        let file3 = FileInfo::new(
+            PathBuf::from("/test/file3.md"),
+            "file3.md".to_string(),
+            hash2, // Different hash
+            1024,
+            modified_time,
+            FileType::Markdown,
+        );
+
+        assert!(file1.content_matches(&file2)); // Same content hash
+        assert!(!file1.content_matches(&file3)); // Different content hash
+
+        assert!(!file1.metadata_matches(&file2)); // Different size
+        assert!(file1.metadata_matches(&file3)); // Same metadata (except hash)
+    }
+
+    #[test]
+    fn test_file_info_hash_operations() {
+        let mut file_info = FileInfo::with_zero_hash(
+            PathBuf::from("/test/file.md"),
+            "file.md".to_string(),
+            1024,
+            UNIX_EPOCH,
+            FileType::Markdown,
+        );
+
+        assert!(file_info.has_zero_hash());
+        assert_eq!(file_info.content_hash(), FileHash::zero());
+
+        let new_hash = FileHash::new([42u8; 32]);
+        file_info.update_content_hash(new_hash);
+
+        assert!(!file_info.has_zero_hash());
+        assert_eq!(file_info.content_hash(), new_hash);
+        assert_eq!(file_info.content_hash_hex(), new_hash.to_hex());
+    }
+
+    #[test]
+    fn test_file_info_conversion() {
+        let file_info = FileInfo::new(
+            PathBuf::from("/test/file.md"),
+            "file.md".to_string(),
+            FileHash::new([1u8; 32]),
+            1024,
+            UNIX_EPOCH,
+            FileType::Markdown,
+        );
+
+        // Test conversion to FileHashInfo
+        let hash_info = file_info.to_file_hash_info();
+        assert_eq!(hash_info.content_hash, file_info.content_hash());
+        assert_eq!(hash_info.size, file_info.file_size());
+        assert_eq!(hash_info.relative_path, file_info.relative_path());
+
+        // Test conversion from FileHashInfo
+        let converted_back = FileInfo::from_file_hash_info(hash_info, &PathBuf::from("/test"));
+        assert_eq!(converted_back.relative_path(), file_info.relative_path());
+        assert_eq!(converted_back.content_hash(), file_info.content_hash());
+        assert_eq!(converted_back.file_size(), file_info.file_size());
+    }
+
+    #[test]
+    fn test_scan_result() {
+        let mut result = ScanResult::new();
+
+        assert!(result.is_successful());
+        assert_eq!(result.success_rate(), 1.0);
+        assert_eq!(result.total_considered, 0);
+
+        // Add some mock data
+        result.total_considered = 10;
+        result.successful_files = 8;
+        result.skipped_files = 2;
+        result.scan_duration = std::time::Duration::from_millis(100);
+        result.total_size = 8192;
+
+        assert_eq!(result.success_rate(), 0.8);
+
+        let summary = result.summary();
+        assert_eq!(summary.total_files, 10);
+        assert_eq!(summary.successful_files, 8);
+        assert_eq!(summary.skipped_files, 2);
+        assert_eq!(summary.success_rate, 0.8);
+        assert_eq!(summary.total_size, 8192);
+    }
+
+    #[test]
+    fn test_skip_reason_and_error_types() {
+        let skip_reason = SkipReason {
+            path: PathBuf::from("/test/large_file.bin"),
+            reason: SkipType::TooLarge(100 * 1024 * 1024),
+        };
+
+        assert_eq!(skip_reason.path, PathBuf::from("/test/large_file.bin"));
+        let expected_size = 100 * 1024 * 1024;
+        assert!(matches!(skip_reason.reason, SkipType::TooLarge(size) if size == expected_size));
+
+        let scan_error = ScanError {
+            path: PathBuf::from("/test/inaccessible"),
+            error_type: ScanErrorType::PermissionDenied,
+            message: "Permission denied".to_string(),
+        };
+
+        assert_eq!(scan_error.path, PathBuf::from("/test/inaccessible"));
+        assert_eq!(scan_error.error_type, ScanErrorType::PermissionDenied);
+        assert_eq!(scan_error.message, "Permission denied");
+    }
+
+    #[test]
+    fn test_file_type_display() {
+        assert_eq!(FileType::Markdown.to_string(), "markdown");
+        assert_eq!(FileType::Code.to_string(), "code");
+        assert_eq!(FileType::Binary.to_string(), "binary");
+        assert_eq!(FileType::Unknown.to_string(), "unknown");
+    }
+
+    #[test]
+    fn test_file_permissions_display() {
+        assert_eq!(FilePermissions::ReadOnly.to_string(), "read-only");
+        assert_eq!(FilePermissions::Writable(0o644).to_string(), "writable(0o644)");
+        assert_eq!(FilePermissions::Executable(0o755).to_string(), "executable(0o755)");
+    }
+
+    #[test]
+    fn test_zero_hash_file_info() {
+        let file_info = FileInfo::with_zero_hash(
+            PathBuf::from("/test/placeholder.md"),
+            "placeholder.md".to_string(),
+            1024,
+            UNIX_EPOCH,
+            FileType::Markdown,
+        );
+
+        assert!(file_info.has_zero_hash());
+        assert_eq!(file_info.content_hash(), FileHash::zero());
+        assert_eq!(file_info.content_hash_hex(), "0".repeat(64));
+    }
+}

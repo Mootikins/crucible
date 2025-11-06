@@ -9,6 +9,7 @@ description = "SurrealDB backend for the Crucible knowledge management system"
 [dependencies]
 # Now depends on crucible-core for trait definitions (Dependency Inversion)
 crucible-core = { path = "../crucible-core" }
+crucible-parser = { path = "../crucible-parser" }
 crucible-llm = { workspace = true, features = ["test-utils"] }
 crucible-config = { workspace = true, features = ["test-utils"] }
 serde = { workspace = true }
@@ -36,6 +37,7 @@ futures = "0.3"
 # File system operations
 walkdir = "2.4"
 sha2 = "0.10"
+blake3 = "1.0"
 
 [features]
 default = []

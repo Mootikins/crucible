@@ -27,12 +27,14 @@
 //! ```
 
 pub mod agent;
+pub mod change_detection;
 pub mod parser;
 pub mod storage;
 pub mod tools;
 
 // Re-export key traits
 pub use agent::AgentProvider;
+pub use change_detection::{ChangeDetector, ContentHasher, HashLookupStorage};
 pub use parser::MarkdownParser;
 pub use storage::Storage;
 pub use tools::ToolExecutor;

@@ -58,29 +58,47 @@
 #![deny(unsafe_code)]
 
 mod backends;
+mod change_detector;
 mod config;
 mod embedding_events;
 mod error;
 mod event_driven_embedding_processor;
 mod events;
+mod file_scanner;
 mod handlers;
 mod manager;
 mod message_channel_infrastructure;
 mod traits;
+mod types;
 mod utils;
 
 pub use backends::*;
-pub use config::*;
+pub use change_detector::{
+    ChangeDetector, ChangeDetectorConfig, ChangeDetectorStatistics, CacheStatistics,
+};
+pub use config::{
+    FileWatchingConfig, WatchPerformanceConfig, EventProcessingConfig,
+    FilterConfig, GlobalWatchConfig, WatchManagerConfig, WatchProfile,
+    WatchPath, WatchModeConfig, DebounceConfig, BackpressureStrategy,
+    MemoryConfig, CpuConfig, MonitoringConfig, ExportConfig, ExportFormat,
+    AdvancedFilterConfig, TimeWindowConfig, FrequencyLimitConfig,
+    WatchLoggingConfig, ConfigValidator, ValidationError,
+};
 pub use embedding_events::*;
 pub use error::*;
 pub use event_driven_embedding_processor::*;
 pub use events::*;
+pub use file_scanner::{
+    FileScanner, ScanProgressReporter, NoOpProgressReporter, ScanStatistics,
+    WatchConfig, WatchResult,
+};
 pub use handlers::*;
 pub use manager::*;
 pub use message_channel_infrastructure::*;
 pub use traits::{
-    BackendCapabilities, DebounceConfig, EventHandler, FileWatcher, WatchHandle, WatchMode,
+    BackendCapabilities, EventHandler, FileWatcher, WatchHandle, WatchMode,
 };
+pub use types::*;
 
 /// Available file watching backends.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq, Hash)]

@@ -43,7 +43,10 @@ pub mod transaction_queue;
 pub mod transaction_consumer;
 pub mod simple_integration;
 pub mod metrics;
+pub mod migration;
 pub mod types;
+pub mod hash_lookup;
+// Block storage functionality is now integrated into content_addressed_storage.rs
 
 // Embedding modules
 pub mod embedding;
@@ -92,6 +95,7 @@ pub use kiln_scanner::{
     validate_kiln_scanner_config, ChangeDetectionMethod, ErrorHandlingMode, KilnFileInfo,
     KilnProcessError, KilnProcessResult, KilnScanError, KilnScanResult, KilnScanner,
     KilnScannerConfig, KilnScannerErrorType, KilnScannerMetrics, KilnScannerState,
+    ChangeDetectionSummary,
 };
 
 // Kiln pipeline connector exports
@@ -111,4 +115,26 @@ pub use metrics::{
     SystemMetrics, SystemMetricsSnapshot, HealthStatus, HealthReport, get_global_metrics,
     record_transaction_success, record_transaction_failure, update_queue_depth, get_system_health,
     get_system_health_report, get_health_status,
+};
+
+// Hash lookup exports
+pub use hash_lookup::{
+    lookup_file_hash, lookup_file_hashes_batch, lookup_file_hashes_batch_cached, lookup_files_by_content_hashes,
+    lookup_changed_files_since, check_file_needs_update, BatchLookupConfig, HashLookupResult,
+    StoredFileHash, HashLookupCache, CacheStats,
+};
+
+// Block storage functionality is integrated into ContentAddressedStorageSurrealDB
+pub use content_addressed_storage::DocumentBlockRecord;
+
+// Deduplication detection functionality
+pub mod deduplication_detector;
+pub use deduplication_detector::SurrealDeduplicationDetector;
+
+// Deduplication reporting functionality
+pub mod deduplication_reporting;
+pub use deduplication_reporting::{
+    DeduplicationReportGenerator, DeduplicationReport, ReportOptions, ExportFormat,
+    ReportMetadata, ExecutiveSummary, Recommendation, RecommendationPriority,
+    ImplementationEffort
 };
