@@ -56,7 +56,7 @@ pub async fn initialize_kiln_schema(client: &SurrealClient) -> Result<()> {
                 default_value: None,
             },
             ColumnDefinition {
-                name: "content_hash".to_string(),
+                name: "file_hash".to_string(),
                 data_type: DataType::String,
                 nullable: false,
                 unique: false,
@@ -215,7 +215,7 @@ pub async fn store_parsed_document(
 
     // File metadata
     record_data.insert(
-        "content_hash".to_string(),
+        "file_hash".to_string(),
         serde_json::Value::String(doc.content_hash.clone()),
     );
     record_data.insert(
@@ -560,7 +560,7 @@ async fn convert_record_to_parsed_document(record: &Record) -> Result<ParsedDocu
 
     doc.content_hash = record
         .data
-        .get("content_hash")
+        .get("file_hash")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
@@ -1826,6 +1826,43 @@ pub async fn update_document_processed_timestamp(
     Ok(())
 }
 
+/// Update document processing metadata including content hash and timestamps
+pub async fn update_document_processing_metadata(
+    client: &SurrealClient,
+    document_id: &str,
+    file_info: &crate::kiln_scanner::KilnFileInfo,
+) -> Result<()> {
+    let sql = "UPDATE notes SET
+        processed_at = time::now(),
+        file_hash = $file_hash,
+        file_size = $file_size,
+        modified_at = $modified_at
+    WHERE id = $document_id";
+
+    let params = vec![
+        serde_json::json!(file_info.content_hash_hex()),
+        serde_json::json!(file_info.file_size),
+        // Convert SystemTime to RFC3339 string for SurrealDB
+        serde_json::json!(chrono::DateTime::<chrono::Utc>::from(
+            file_info.modified_time
+        ).to_rfc3339()),
+        serde_json::json!(document_id),
+    ];
+
+    client
+        .query(sql, &params)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to update processing metadata for {}: {}", document_id, e))?;
+
+    debug!(
+        "Updated processing metadata for document {}: hash={}..., size={} bytes",
+        document_id,
+        &file_info.content_hash_hex()[..8],
+        file_info.file_size
+    );
+    Ok(())
+}
+
 /// Update document content in database
 pub async fn update_document_content(
     client: &SurrealClient,
@@ -1843,7 +1880,7 @@ pub async fn update_document_content(
         serde_json::Value::String(document.content.plain_text.clone()),
     );
     update_data.insert(
-        "content_hash".to_string(),
+        "file_hash".to_string(),
         serde_json::Value::String(document.content_hash.clone()),
     );
     update_data.insert(
