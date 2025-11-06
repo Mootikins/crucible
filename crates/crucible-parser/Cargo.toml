@@ -7,6 +7,7 @@ edition = "2021"
 # Async runtime
 async-trait = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+futures = "0.3"
 
 # Serialization
 serde = { workspace = true }
@@ -26,6 +27,10 @@ chrono = { workspace = true, features = ["serde"] }
 pulldown-cmark = { workspace = true }
 serde_yaml = { workspace = true }
 toml = { workspace = true }
+
+# Hashing
+blake3 = "1.0"
+hex = "0.4"
 
 [dev-dependencies]
 tokio-test = "0.4"
