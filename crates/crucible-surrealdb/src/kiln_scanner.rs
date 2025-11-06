@@ -8,15 +8,17 @@ use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use num_cpus;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use blake3::Hasher;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
-use tokio::fs;
-use tracing::{debug, warn};
+use tokio::fs::{self, File};
+use tokio::io::{AsyncReadExt, BufReader};
+use tracing::{debug, warn, info};
 use walkdir::{DirEntry, WalkDir};
 
 use crate::embedding_pool::EmbeddingThreadPool;
 use crate::kiln_integration::*;
+use crate::hash_lookup::{lookup_file_hashes_batch_cached, HashLookupCache, BatchLookupConfig, StoredFileHash};
 use crate::SurrealClient;
 use crucible_core::types::ParsedDocument;
 
@@ -254,6 +256,8 @@ pub struct KilnScanner {
     error_count: u32,
     circuit_breaker_triggered: bool,
     circuit_breaker_time: Option<DateTime<Utc>>,
+    // Hash lookup cache for change detection
+    hash_cache: HashLookupCache,
 }
 
 /// Scanner state tracking
@@ -266,15 +270,62 @@ pub struct KilnScannerState {
 }
 
 /// File information discovered during scanning
+///
+/// Contains metadata about files discovered in the kiln, including a BLAKE3 content hash
+/// for efficient change detection and incremental processing.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KilnFileInfo {
+    /// Absolute path to the file in the filesystem
     pub path: PathBuf,
+    /// Relative path from the kiln root directory
     pub relative_path: String,
+    /// File size in bytes
     pub file_size: u64,
+    /// Last modification time from filesystem metadata
     pub modified_time: SystemTime,
-    pub content_hash: String,
+    /// BLAKE3 hash of file content as raw 32 bytes for change detection
+    pub content_hash: [u8; 32],
+    /// Whether the file is a markdown file based on extension
     pub is_markdown: bool,
+    /// Whether the file is accessible and can be read
     pub is_accessible: bool,
+}
+
+impl KilnFileInfo {
+    /// Returns the content hash as a hex string for display purposes
+    ///
+    /// This method converts the raw 32-byte BLAKE3 hash to a 64-character
+    /// hex string representation suitable for logging, debugging, or
+    /// user interface display.
+    pub fn content_hash_hex(&self) -> String {
+        self.content_hash
+            .iter()
+            .map(|byte| format!("{:02x}", byte))
+            .collect()
+    }
+
+    /// Creates a new KilnFileInfo with a zeroed content hash
+    ///
+    /// This is useful for creating placeholder file info entries
+    /// where the actual hash will be calculated later.
+    pub fn with_zero_hash(
+        path: PathBuf,
+        relative_path: String,
+        file_size: u64,
+        modified_time: SystemTime,
+        is_markdown: bool,
+        is_accessible: bool,
+    ) -> Self {
+        Self {
+            path,
+            relative_path,
+            file_size,
+            modified_time,
+            content_hash: [0u8; 32],
+            is_markdown,
+            is_accessible,
+        }
+    }
 }
 
 /// Result of a kiln scan operation
@@ -289,6 +340,8 @@ pub struct KilnScanResult {
     pub scan_duration: Duration,
     pub circuit_breaker_triggered: bool,
     pub early_termination: bool,
+    /// Hash lookup results for change detection
+    pub hash_lookup_results: Option<crate::hash_lookup::HashLookupResult>,
 }
 
 /// Error information for scanning operations
@@ -336,6 +389,16 @@ pub struct KilnScannerMetrics {
     pub last_scan_time: DateTime<Utc>,
 }
 
+/// Summary of change detection results
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChangeDetectionSummary {
+    pub total_files: usize,
+    pub unchanged_files: usize,
+    pub changed_files: usize,
+    pub new_files: usize,
+    pub hash_lookup_stats: Option<crate::hash_lookup::HashLookupResult>,
+}
+
 /// Create a new kiln scanner with the given configuration
 pub async fn create_kiln_scanner(config: KilnScannerConfig) -> Result<KilnScanner> {
     validate_kiln_scanner_config(&config).await?;
@@ -353,6 +416,7 @@ pub async fn create_kiln_scanner(config: KilnScannerConfig) -> Result<KilnScanne
         error_count: 0,
         circuit_breaker_triggered: false,
         circuit_breaker_time: None,
+        hash_cache: HashLookupCache::new(),
     })
 }
 
@@ -515,6 +579,7 @@ impl KilnScanner {
             scan_duration,
             circuit_breaker_triggered: self.circuit_breaker_triggered,
             early_termination: self.circuit_breaker_triggered,
+            hash_lookup_results: None, // Will be populated by hash lookup methods
         })
     }
 
@@ -524,9 +589,115 @@ impl KilnScanner {
             return self.scan_kiln_directory(kiln_path).await;
         }
 
-        // For now, delegate to regular scan
-        // In a full implementation, this would check for changes since last scan
-        self.scan_kiln_directory(kiln_path).await
+        // Perform enhanced incremental scan with hash lookups
+        self.scan_kiln_directory_with_hash_lookup(kiln_path).await
+    }
+
+    /// Scan a kiln directory with hash lookup for change detection
+    /// This method enhances the regular scan by:
+    /// 1. Performing the initial file discovery
+    /// 2. Looking up existing file hashes in the database
+    /// 3. Comparing stored hashes with newly computed hashes
+    /// 4. Returning detailed change detection information
+    pub async fn scan_kiln_directory_with_hash_lookup(&mut self, kiln_path: &PathBuf) -> Result<KilnScanResult> {
+        // First perform the basic scan to discover files
+        let mut scan_result = self.scan_kiln_directory(kiln_path).await?;
+
+        // If we don't have a database client or no files were found, return early
+        let client = match self.client.as_ref() {
+            Some(client) => client,
+            None => {
+                debug!("No database client available, skipping hash lookup");
+                return Ok(scan_result);
+            }
+        };
+
+        if scan_result.discovered_files.is_empty() {
+            debug!("No files discovered, skipping hash lookup");
+            return Ok(scan_result);
+        }
+
+        // Extract relative paths for hash lookup
+        let relative_paths: Vec<String> = scan_result.discovered_files
+            .iter()
+            .map(|file_info| file_info.relative_path.clone())
+            .collect();
+
+        info!("Performing hash lookup for {} discovered files", relative_paths.len());
+
+        // Configure batch lookup for optimal performance
+        let batch_config = BatchLookupConfig {
+            max_batch_size: self.config.batch_size.min(100),
+            use_parameterized_queries: true,
+            enable_session_cache: true,
+        };
+
+        // Perform batch hash lookup with caching
+        let hash_lookup_result = lookup_file_hashes_batch_cached(
+            client,
+            &relative_paths,
+            Some(batch_config),
+            &mut self.hash_cache,
+        ).await.map_err(|e| {
+            warn!("Hash lookup failed during scan: {}", e);
+            // Continue without hash lookup results rather than failing the entire scan
+            e
+        });
+
+        match hash_lookup_result {
+            Ok(hash_result) => {
+                // Log hash lookup statistics
+                let cache_stats = self.hash_cache.stats();
+                info!("Hash lookup complete: {}/{} files found, cache hit rate: {:.1}%",
+                    hash_result.found_files.len(),
+                    hash_result.total_queried,
+                    cache_stats.hit_rate * 100.0
+                );
+
+                // Store hash lookup results in the scan result
+                scan_result.hash_lookup_results = Some(hash_result);
+
+                // Perform change detection analysis
+                let mut unchanged_files = 0;
+                let mut changed_files = 0;
+                let mut new_files = 0;
+
+                for file_info in &scan_result.discovered_files {
+                    if let Some(hash_result) = &scan_result.hash_lookup_results {
+                        let current_hash_hex = file_info.content_hash_hex();
+
+                        match hash_result.found_files.get(&file_info.relative_path) {
+                            Some(stored_hash) => {
+                                if stored_hash.file_hash == current_hash_hex {
+                                    unchanged_files += 1;
+                                } else {
+                                    changed_files += 1;
+                                    debug!("File changed: {} (stored: {}..., current: {}...)",
+                                        file_info.relative_path,
+                                        &stored_hash.file_hash[..8],
+                                        &current_hash_hex[..8]
+                                    );
+                                }
+                            }
+                            None => {
+                                new_files += 1;
+                                debug!("New file detected: {}", file_info.relative_path);
+                            }
+                        }
+                    }
+                }
+
+                info!("Change detection: {} unchanged, {} changed, {} new files",
+                    unchanged_files, changed_files, new_files);
+
+            }
+            Err(e) => {
+                warn!("Hash lookup failed, continuing without change detection: {}", e);
+                scan_result.hash_lookup_results = None;
+            }
+        }
+
+        Ok(scan_result)
     }
 
     /// Process discovered kiln files
@@ -607,19 +778,18 @@ impl KilnScanner {
         if !self.config.include_hidden_files {
             if let Some(name) = path.file_name() {
                 if name.to_string_lossy().starts_with('.') {
-                    return Ok(KilnFileInfo {
-                        path: path.to_path_buf(),
-                        relative_path: path
+                    return Ok(KilnFileInfo::with_zero_hash(
+                        path.to_path_buf(),
+                        path
                             .strip_prefix(kiln_path)
                             .unwrap_or(path)
                             .to_string_lossy()
                             .to_string(),
-                        file_size: 0,
-                        modified_time: SystemTime::now(),
-                        content_hash: String::new(),
-                        is_markdown: false,
-                        is_accessible: false,
-                    });
+                        0,
+                        SystemTime::now(),
+                        false,
+                        false,
+                    ));
                 }
             }
         }
@@ -644,11 +814,20 @@ impl KilnScanner {
             return Err(anyhow!("File too large: {} bytes", file_size));
         }
 
-        // Calculate content hash for markdown files
+        // Calculate content hash for markdown files with error handling
         let content_hash = if is_markdown {
-            self.calculate_file_hash(path).await?
+            match self.calculate_file_hash(path).await {
+                Ok(hash) => {
+                    debug!("Successfully calculated hash for {}", path.display());
+                    hash
+                }
+                Err(e) => {
+                    warn!("Failed to calculate hash for {}: {}, using zero hash", path.display(), e);
+                    [0u8; 32]
+                }
+            }
         } else {
-            String::new()
+            [0u8; 32]
         };
 
         let relative_path = path
@@ -668,11 +847,100 @@ impl KilnScanner {
         })
     }
 
-    async fn calculate_file_hash(&self, path: &Path) -> Result<String> {
-        let content = fs::read(path).await?;
-        let mut hasher = Sha256::new();
-        hasher.update(&content);
-        Ok(format!("{:x}", hasher.finalize()))
+    async fn calculate_file_hash(&self, path: &Path) -> Result<[u8; 32]> {
+        // Stream the file in chunks to avoid loading large files into memory
+        const CHUNK_SIZE: usize = 64 * 1024; // 64KB chunks for good balance
+
+        debug!("Calculating BLAKE3 hash for file: {}", path.display());
+        let start_time = std::time::Instant::now();
+
+        // Open the file for streaming read with specific error handling
+        let file = match File::open(path).await {
+            Ok(file) => file,
+            Err(e) => {
+                let error_details = match e.kind() {
+                    std::io::ErrorKind::NotFound => {
+                        format!("File not found: {}", path.display())
+                    }
+                    std::io::ErrorKind::PermissionDenied => {
+                        format!("Permission denied accessing file: {}", path.display())
+                    }
+                    std::io::ErrorKind::InvalidData => {
+                        format!("Invalid data in file: {} (file may be corrupted)", path.display())
+                    }
+                    _ => {
+                        format!("Failed to open file {}: {}", path.display(), e)
+                    }
+                };
+                return Err(anyhow!(error_details));
+            }
+        };
+
+        let mut reader = BufReader::new(file);
+        let mut hasher = Hasher::new();
+        let mut buffer = vec![0u8; CHUNK_SIZE];
+        let mut total_bytes_read = 0u64;
+
+        loop {
+            match reader.read(&mut buffer).await {
+                Ok(0) => break, // End of file reached
+                Ok(bytes_read) => {
+                    // Update hasher with the chunk
+                    hasher.update(&buffer[..bytes_read]);
+                    total_bytes_read += bytes_read as u64;
+
+                    // Log progress for large files (>10MB)
+                    if total_bytes_read > 10 * 1024 * 1024 && total_bytes_read % (5 * 1024 * 1024) == 0 {
+                        debug!("Hashing progress for {}: {} MB processed",
+                            path.display(),
+                            total_bytes_read / (1024 * 1024)
+                        );
+                    }
+                }
+                Err(e) => {
+                    let error_details = match e.kind() {
+                        std::io::ErrorKind::UnexpectedEof => {
+                            format!("Unexpected end of file while reading: {}", path.display())
+                        }
+                        std::io::ErrorKind::InvalidData => {
+                            format!("Invalid data encountered while reading: {} (file may be corrupted)", path.display())
+                        }
+                        _ => {
+                            format!("Failed to read from file {}: {}", path.display(), e)
+                        }
+                    };
+                    return Err(anyhow!(error_details));
+                }
+            }
+        }
+
+        // Finalize the hash
+        let hash = hasher.finalize();
+        let hash_bytes = hash.as_bytes();
+        let mut result = [0u8; 32];
+        result.copy_from_slice(hash_bytes);
+
+        let duration = start_time.elapsed();
+
+        // Use different log levels based on file size
+        if total_bytes_read > 50 * 1024 * 1024 { // > 50MB
+            info!("Hashed large file {} ({} bytes, {:.2} MB) in {:?} - hash: {:02x}{:02x}{:02x}{:02x}...",
+                path.display(),
+                total_bytes_read,
+                total_bytes_read as f64 / (1024.0 * 1024.0),
+                duration,
+                result[0], result[1], result[2], result[3]
+            );
+        } else {
+            debug!("Hashed {} ({} bytes) in {:?} - hash: {:02x}{:02x}{:02x}{:02x}...",
+                path.display(),
+                total_bytes_read,
+                duration,
+                result[0], result[1], result[2], result[3]
+            );
+        }
+
+        Ok(result)
     }
 
     async fn process_single_file(
@@ -745,6 +1013,80 @@ impl KilnScanner {
     fn should_trigger_circuit_breaker(&self) -> bool {
         self.error_count >= self.config.error_threshold_circuit_breaker
     }
+
+    /// Get hash cache statistics
+    pub fn get_hash_cache_stats(&self) -> crate::hash_lookup::CacheStats {
+        self.hash_cache.stats()
+    }
+
+    /// Clear the hash cache
+    pub fn clear_hash_cache(&mut self) {
+        self.hash_cache.clear();
+        debug!("Hash cache cleared");
+    }
+
+    /// Get files that need processing based on hash comparison
+    pub fn get_files_needing_processing<'a>(&self, scan_result: &'a KilnScanResult) -> Vec<&'a KilnFileInfo> {
+        let mut files_needing_processing = Vec::new();
+
+        if let Some(hash_result) = &scan_result.hash_lookup_results {
+            for file_info in &scan_result.discovered_files {
+                let current_hash_hex = file_info.content_hash_hex();
+
+                match hash_result.found_files.get(&file_info.relative_path) {
+                    Some(stored_hash) => {
+                        // File exists in database, check if hash changed
+                        if stored_hash.file_hash != current_hash_hex {
+                            files_needing_processing.push(file_info);
+                        }
+                    }
+                    None => {
+                        // New file, needs processing
+                        files_needing_processing.push(file_info);
+                    }
+                }
+            }
+        } else {
+            // No hash lookup results, assume all files need processing
+            files_needing_processing.extend(scan_result.discovered_files.iter());
+        }
+
+        files_needing_processing
+    }
+
+    /// Get change detection summary from scan results
+    pub fn get_change_detection_summary(&self, scan_result: &KilnScanResult) -> Option<ChangeDetectionSummary> {
+        let hash_result = scan_result.hash_lookup_results.as_ref()?;
+
+        let mut unchanged = 0;
+        let mut changed = 0;
+        let mut new_files = 0;
+
+        for file_info in &scan_result.discovered_files {
+            let current_hash_hex = file_info.content_hash_hex();
+
+            match hash_result.found_files.get(&file_info.relative_path) {
+                Some(stored_hash) => {
+                    if stored_hash.file_hash == current_hash_hex {
+                        unchanged += 1;
+                    } else {
+                        changed += 1;
+                    }
+                }
+                None => {
+                    new_files += 1;
+                }
+            }
+        }
+
+        Some(ChangeDetectionSummary {
+            total_files: scan_result.discovered_files.len(),
+            unchanged_files: unchanged,
+            changed_files: changed,
+            new_files: new_files,
+            hash_lookup_stats: Some(hash_result.clone()),
+        })
+    }
 }
 
 /// Parse a file to ParsedDocument
@@ -760,8 +1102,7 @@ pub async fn parse_file_to_document(file_path: &Path) -> Result<ParsedDocument> 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use tempfile::TempDir;
+      use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_kiln_scanner_creation() {
@@ -915,5 +1256,138 @@ More content here.
             .contains("This is a test document"));
         assert!(!document.wikilinks.is_empty() || document.wikilinks.is_empty());
         // Should work either way
+    }
+
+    #[tokio::test]
+    async fn test_streaming_blake3_hashing() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_path = temp_dir.path();
+
+        // Create test files of various sizes
+        let small_file = test_path.join("small.md");
+        let medium_file = test_path.join("medium.md");
+        let large_file = test_path.join("large.md");
+
+        // Small file (1KB)
+        let small_content = "# Small File\n\nThis is a small file.\n".repeat(10);
+        tokio::fs::write(&small_file, small_content).await.unwrap();
+
+        // Medium file (100KB)
+        let medium_content = "# Medium File\n\nThis is a medium file with more content.\n".repeat(1000);
+        tokio::fs::write(&medium_file, medium_content).await.unwrap();
+
+        // Large file (1MB) - create with std::fs for better performance
+        let large_content = "# Large File\n\nThis is a large file with lots of content.\n".repeat(10000);
+        std::fs::write(&large_file, large_content).unwrap();
+
+        // Create scanner
+        let config = KilnScannerConfig::default();
+        let scanner = create_kiln_scanner(config).await.unwrap();
+
+        // Test hashing small file
+        let small_hash = scanner.calculate_file_hash(&small_file).await.unwrap();
+        assert_ne!(small_hash, [0u8; 32]); // Should not be zero hash
+
+        // Test hashing medium file
+        let medium_hash = scanner.calculate_file_hash(&medium_file).await.unwrap();
+        assert_ne!(medium_hash, [0u8; 32]); // Should not be zero hash
+        assert_ne!(medium_hash, small_hash); // Different files should have different hashes
+
+        // Test hashing large file
+        let large_hash = scanner.calculate_file_hash(&large_file).await.unwrap();
+        assert_ne!(large_hash, [0u8; 32]); // Should not be zero hash
+        assert_ne!(large_hash, small_hash); // Different files should have different hashes
+        assert_ne!(large_hash, medium_hash); // Different files should have different hashes
+
+        // Test hash consistency - hashing same file twice should give same result
+        let small_hash2 = scanner.calculate_file_hash(&small_file).await.unwrap();
+        assert_eq!(small_hash, small_hash2);
+
+        // Test hash changes when content changes
+        let original_hash = scanner.calculate_file_hash(&small_file).await.unwrap();
+
+        // Modify the file
+        let modified_content = "# Modified Small File\n\nThis content has been changed.\n";
+        tokio::fs::write(&small_file, modified_content).await.unwrap();
+
+        let modified_hash = scanner.calculate_file_hash(&small_file).await.unwrap();
+        assert_ne!(original_hash, modified_hash);
+
+        println!("Small file hash: {:02x?}", small_hash);
+        println!("Medium file hash: {:02x?}", medium_hash);
+        println!("Large file hash: {:02x?}", large_hash);
+    }
+
+    #[tokio::test]
+    async fn test_streaming_hashing_error_handling() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_path = temp_dir.path();
+
+        // Create scanner
+        let config = KilnScannerConfig::default();
+        let scanner = create_kiln_scanner(config).await.unwrap();
+
+        // Test with non-existent file
+        let non_existent = test_path.join("non_existent.md");
+        let result = scanner.calculate_file_hash(&non_existent).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("File not found"));
+
+        // Test with a directory instead of file
+        let dir_path = test_path.join("test_dir");
+        tokio::fs::create_dir(&dir_path).await.unwrap();
+        let result = scanner.calculate_file_hash(&dir_path).await;
+        assert!(result.is_err()); // Should fail when trying to hash a directory
+    }
+
+    #[tokio::test]
+    async fn test_hashing_integration_with_scanner() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_path = temp_dir.path().to_path_buf();
+
+        // Create test markdown files
+        tokio::fs::write(
+            test_path.join("test1.md"),
+            "# Test Document 1\n\nContent here.",
+        )
+        .await
+        .unwrap();
+        tokio::fs::write(
+            test_path.join("test2.md"),
+            "# Test Document 2\n\nDifferent content here.",
+        )
+        .await
+        .unwrap();
+
+        // Test scanning with hashing
+        let config = KilnScannerConfig::default();
+        let mut scanner = create_kiln_scanner(config).await.unwrap();
+
+        let result = scanner.scan_kiln_directory(&test_path).await.unwrap();
+
+        // Verify that hashes were calculated for markdown files
+        let markdown_files: Vec<_> = result.discovered_files.iter()
+            .filter(|f| f.is_markdown)
+            .collect();
+
+        assert_eq!(markdown_files.len(), 2); // Should have 2 markdown files
+
+        for file_info in markdown_files {
+            // Each markdown file should have a non-zero content hash
+            assert_ne!(file_info.content_hash, [0u8; 32]);
+            println!("File: {} - Hash: {:02x?}",
+                file_info.relative_path,
+                file_info.content_hash
+            );
+        }
+
+        // Verify that non-markdown files (if any) have zero hash
+        let non_markdown_files: Vec<_> = result.discovered_files.iter()
+            .filter(|f| !f.is_markdown)
+            .collect();
+
+        for file_info in non_markdown_files {
+            assert_eq!(file_info.content_hash, [0u8; 32]);
+        }
     }
 }
