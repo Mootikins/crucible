@@ -9,6 +9,86 @@ use std::sync::OnceLock;
 // Re-export ParseError
 pub use crate::error::ParseError;
 
+/// A BLAKE3 hash used for block-level content addressing
+///
+/// Similar to FileHash but specifically used for individual content blocks
+/// extracted from documents (headings, paragraphs, code blocks, etc.).
+///
+/// This is a local copy of the type from crucible-core to avoid circular dependencies.
+/// The types are kept in sync for compatibility.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct BlockHash([u8; 32]);
+
+impl BlockHash {
+    /// Create a new BlockHash from raw bytes
+    pub fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    /// Get the hash as a byte slice
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    /// Get the hash as a hex string
+    pub fn to_hex(&self) -> String {
+        hex::encode(self.0)
+    }
+
+    /// Create a BlockHash from a hex string
+    pub fn from_hex(hex: &str) -> Result<Self, String> {
+        let bytes = hex::decode(hex).map_err(|_| "Invalid hex format".to_string())?;
+        if bytes.len() != 32 {
+            return Err("Invalid hash length: expected 32 bytes".to_string());
+        }
+        let mut array = [0u8; 32];
+        array.copy_from_slice(&bytes);
+        Ok(Self(array))
+    }
+
+    /// Create a zero hash
+    pub fn zero() -> Self {
+        Self([0u8; 32])
+    }
+
+    /// Check if this is a zero hash
+    pub fn is_zero(&self) -> bool {
+        self.0 == [0u8; 32]
+    }
+}
+
+impl Default for BlockHash {
+    fn default() -> Self {
+        Self::zero()
+    }
+}
+
+impl From<[u8; 32]> for BlockHash {
+    fn from(bytes: [u8; 32]) -> Self {
+        Self::new(bytes)
+    }
+}
+
+impl From<&[u8; 32]> for BlockHash {
+    fn from(bytes: &[u8; 32]) -> Self {
+        Self::new(*bytes)
+    }
+}
+
+impl std::fmt::Display for BlockHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_hex())
+    }
+}
+
+impl std::str::FromStr for BlockHash {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_hex(s)
+    }
+}
+
 /// A fully parsed markdown document with extracted metadata
 ///
 /// This structure represents the parsed and indexed form of a markdown file,
@@ -25,6 +105,8 @@ pub use crate::error::ParseError;
 /// - LaTeX: ~60 bytes × 2 avg = 120 bytes (new)
 /// - Footnotes: ~70 bytes × 5 avg = 350 bytes (new)
 /// - Content: ~1 KB (plain text excerpt)
+/// - Block hashes: ~64 bytes × 5 avg = 320 bytes (Phase 2 enhancement)
+/// - Merkle root: 32 bytes (Phase 2 enhancement)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParsedDocument {
     /// Original file path (absolute)
@@ -62,6 +144,28 @@ pub struct ParsedDocument {
 
     /// Parsing errors encountered (non-fatal)
     pub parse_errors: Vec<ParseError>,
+
+    /// Block-level content hashes for Phase 2 optimize-data-flow
+    ///
+    /// This field stores hashes of individual content blocks (headings, paragraphs,
+    /// code blocks, etc.) enabling fine-grained change detection and Merkle tree diffing.
+    /// Each block hash represents a discrete semantic unit within the document.
+    ///
+    /// Empty until Phase 2 implementation populates it during parsing.
+    /// Maintained for backward compatibility - existing documents will have empty vectors.
+    #[serde(default)]
+    pub block_hashes: Vec<BlockHash>,
+
+    /// Merkle root hash of all block hashes for Phase 2 optimize-data-flow
+    ///
+    /// This field stores the root hash of the Merkle tree constructed from all
+    /// block hashes in the document. It enables efficient document-level change
+    /// detection while supporting fine-grained diffing when needed.
+    ///
+    /// None until Phase 2 implementation computes it during parsing.
+    /// Maintained for backward compatibility - existing documents will have None.
+    #[serde(default)]
+    pub merkle_root: Option<BlockHash>,
 }
 
 impl ParsedDocument {
@@ -90,6 +194,8 @@ impl ParsedDocument {
             content_hash,
             file_size,
             parse_errors: Vec::new(),
+            block_hashes: Vec::new(), // Phase 2: empty by default for backward compatibility
+            merkle_root: None, // Phase 2: None by default for backward compatibility
         }
     }
 
@@ -125,6 +231,49 @@ impl ParsedDocument {
     /// Get the first heading as a fallback title
     pub fn first_heading(&self) -> Option<&str> {
         self.content.headings.first().map(|h| h.text.as_str())
+    }
+
+    /// Check if this document has block hashes (Phase 2 support)
+    pub fn has_block_hashes(&self) -> bool {
+        !self.block_hashes.is_empty()
+    }
+
+    /// Get the number of block hashes
+    pub fn block_hash_count(&self) -> usize {
+        self.block_hashes.len()
+    }
+
+    /// Check if this document has a Merkle root (Phase 2 support)
+    pub fn has_merkle_root(&self) -> bool {
+        self.merkle_root.is_some()
+    }
+
+    /// Get the Merkle root hash if available
+    pub fn get_merkle_root(&self) -> Option<BlockHash> {
+        self.merkle_root
+    }
+
+    /// Set block hashes (for Phase 2 parser implementation)
+    pub fn with_block_hashes(mut self, block_hashes: Vec<BlockHash>) -> Self {
+        self.block_hashes = block_hashes;
+        self
+    }
+
+    /// Set Merkle root (for Phase 2 parser implementation)
+    pub fn with_merkle_root(mut self, merkle_root: Option<BlockHash>) -> Self {
+        self.merkle_root = merkle_root;
+        self
+    }
+
+    /// Add a single block hash (for incremental building)
+    pub fn add_block_hash(&mut self, block_hash: BlockHash) {
+        self.block_hashes.push(block_hash);
+    }
+
+    /// Clear all block hashes and Merkle root
+    pub fn clear_hash_data(&mut self) {
+        self.block_hashes.clear();
+        self.merkle_root = None;
     }
 }
 
@@ -640,6 +789,263 @@ pub enum TaskStatus {
     Pending,
 }
 
+/// AST block type enumeration
+///
+/// Represents the different types of semantic blocks that can be extracted
+/// from a markdown document. Each block type corresponds to a natural
+/// semantic boundary that aligns with user mental model and HTML rendering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ASTBlockType {
+    /// Heading block (# ## ### etc.)
+    Heading,
+    /// Paragraph block (plain text content)
+    Paragraph,
+    /// Code block (```language ... ````)
+    Code,
+    /// List block (ordered or unordered lists)
+    List,
+    /// Callout block (> [!type] ...)
+    Callout,
+    /// LaTeX mathematical expression ($...$ or $$...$$)
+    Latex,
+    /// Block quote (> content)
+    Blockquote,
+    /// Table block
+    Table,
+    /// Horizontal rule (--- or ***)
+    HorizontalRule,
+    /// Thematic break or divider
+    ThematicBreak,
+}
+
+/// AST Block representing a semantic unit in a markdown document
+///
+/// AST blocks are natural semantic boundaries that correspond to complete
+/// structural elements in markdown. Each block represents one coherent
+/// unit that would typically render as a single HTML element or related
+/// group of elements.
+///
+/// # Memory Characteristics
+///
+/// Estimated size: ~200-500 bytes per block depending on content length
+/// - content: variable (main contributor)
+/// - block_hash: 32 bytes (BLAKE3 hash)
+/// - metadata: ~50 bytes
+///
+/// # Block Boundaries and Semantics
+///
+/// Blocks align with:
+/// - User mental model (editing a paragraph = one block changed)
+/// - HTML rendering (one block = one or more related HTML elements)
+/// - AST node boundaries without artificial chunking
+/// - Natural content units (complete paragraphs, full code blocks, etc.)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ASTBlock {
+    /// Type of this block
+    pub block_type: ASTBlockType,
+
+    /// The actual content of this block
+    pub content: String,
+
+    /// Character offset where this block starts in the source document
+    pub start_offset: usize,
+
+    /// Character offset where this block ends in the source document
+    pub end_offset: usize,
+
+    /// Cryptographic hash of the block content (BLAKE3)
+    ///
+    /// This hash uniquely identifies the content of the block and is used
+    /// for change detection, deduplication, and content-addressed storage.
+    pub block_hash: String,
+
+    /// Block-level metadata that varies by type
+    ///
+    /// For headings: level (1-6)
+    /// For code blocks: language identifier
+    /// For callouts: callout type
+    /// For lists: ordered/unordered flag
+    pub metadata: ASTBlockMetadata,
+}
+
+impl ASTBlock {
+    /// Create a new AST block
+    pub fn new(
+        block_type: ASTBlockType,
+        content: String,
+        start_offset: usize,
+        end_offset: usize,
+        metadata: ASTBlockMetadata,
+    ) -> Self {
+        let block_hash = Self::compute_hash(&content);
+        Self {
+            block_type,
+            content,
+            start_offset,
+            end_offset,
+            block_hash,
+            metadata,
+        }
+    }
+
+    /// Create a new AST block with explicit hash (for loading from storage)
+    pub fn with_hash(
+        block_type: ASTBlockType,
+        content: String,
+        start_offset: usize,
+        end_offset: usize,
+        block_hash: String,
+        metadata: ASTBlockMetadata,
+    ) -> Self {
+        Self {
+            block_type,
+            content,
+            start_offset,
+            end_offset,
+            block_hash,
+            metadata,
+        }
+    }
+
+    /// Compute BLAKE3 hash of block content
+    fn compute_hash(content: &str) -> String {
+        use blake3::Hasher;
+        let mut hasher = Hasher::new();
+        hasher.update(content.as_bytes());
+        let result = hasher.finalize();
+        hex::encode(result.as_bytes())
+    }
+
+    /// Get the length of this block in characters
+    pub fn length(&self) -> usize {
+        self.end_offset - self.start_offset
+    }
+
+    /// Get the length of the content (excluding markdown syntax)
+    pub fn content_length(&self) -> usize {
+        self.content.len()
+    }
+
+    /// Check if this block contains any content
+    pub fn is_empty(&self) -> bool {
+        self.content.trim().is_empty()
+    }
+
+    /// Get a string representation of this block type
+    pub fn type_name(&self) -> &'static str {
+        match self.block_type {
+            ASTBlockType::Heading => "heading",
+            ASTBlockType::Paragraph => "paragraph",
+            ASTBlockType::Code => "code",
+            ASTBlockType::List => "list",
+            ASTBlockType::Callout => "callout",
+            ASTBlockType::Latex => "latex",
+            ASTBlockType::Blockquote => "blockquote",
+            ASTBlockType::Table => "table",
+            ASTBlockType::HorizontalRule => "horizontal_rule",
+            ASTBlockType::ThematicBreak => "thematic_break",
+        }
+    }
+
+    /// Check if this block is a heading level
+    pub fn is_heading_level(&self, level: u8) -> bool {
+        matches!(self.block_type, ASTBlockType::Heading)
+            && matches!(&self.metadata, ASTBlockMetadata::Heading { level: l, .. } if *l == level)
+    }
+
+    /// Check if this block is a code block with specific language
+    pub fn is_code_language(&self, language: &str) -> bool {
+        matches!(self.block_type, ASTBlockType::Code)
+            && matches!(&self.metadata, ASTBlockMetadata::Code { language: lang, .. }
+                if lang.as_ref().map_or(false, |l| l == language))
+    }
+
+    /// Check if this block is a specific callout type
+    pub fn is_callout_type(&self, callout_type: &str) -> bool {
+        matches!(self.block_type, ASTBlockType::Callout)
+            && matches!(&self.metadata, ASTBlockMetadata::Callout { callout_type: ct, .. } if ct == callout_type)
+    }
+}
+
+/// Block-specific metadata that varies by block type
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ASTBlockMetadata {
+    /// Heading metadata
+    Heading {
+        /// Heading level (1-6)
+        level: u8,
+        /// Generated heading ID for linking
+        id: Option<String>,
+    },
+
+    /// Code block metadata
+    Code {
+        /// Programming language identifier (if specified)
+        language: Option<String>,
+        /// Number of lines in the code block
+        line_count: usize,
+    },
+
+    /// List metadata
+    List {
+        /// List type (ordered or unordered)
+        list_type: ListType,
+        /// Number of items in the list
+        item_count: usize,
+    },
+
+    /// Callout metadata
+    Callout {
+        /// Callout type (note, tip, warning, etc.)
+        callout_type: String,
+        /// Callout title (optional)
+        title: Option<String>,
+        /// Whether this is a standard callout type
+        is_standard_type: bool,
+    },
+
+    /// LaTeX metadata
+    Latex {
+        /// Whether this is block ($$) or inline ($) math
+        is_block: bool,
+    },
+
+    /// Generic metadata for block types that don't need specific fields
+    Generic,
+}
+
+impl ASTBlockMetadata {
+    /// Create heading metadata
+    pub fn heading(level: u8, id: Option<String>) -> Self {
+        Self::Heading { level, id }
+    }
+
+    /// Create code block metadata
+    pub fn code(language: Option<String>, line_count: usize) -> Self {
+        Self::Code { language, line_count }
+    }
+
+    /// Create list metadata
+    pub fn list(list_type: ListType, item_count: usize) -> Self {
+        Self::List { list_type, item_count }
+    }
+
+    /// Create callout metadata
+    pub fn callout(callout_type: String, title: Option<String>, is_standard_type: bool) -> Self {
+        Self::Callout { callout_type, title, is_standard_type }
+    }
+
+    /// Create LaTeX metadata
+    pub fn latex(is_block: bool) -> Self {
+        Self::Latex { is_block }
+    }
+
+    /// Create generic metadata
+    pub fn generic() -> Self {
+        Self::Generic
+    }
+}
+
 /// Obsidian-style callout > [!type]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Callout {
@@ -872,6 +1278,8 @@ pub struct ParsedDocumentBuilder {
     content_hash: String,
     file_size: u64,
     parse_errors: Vec<ParseError>,
+    block_hashes: Vec<BlockHash>,
+    merkle_root: Option<BlockHash>,
 }
 
 impl ParsedDocumentBuilder {
@@ -890,6 +1298,8 @@ impl ParsedDocumentBuilder {
             content_hash: String::new(),
             file_size: 0,
             parse_errors: Vec::new(),
+            block_hashes: Vec::new(),
+            merkle_root: None,
         }
     }
 
@@ -935,6 +1345,18 @@ impl ParsedDocumentBuilder {
         self
     }
 
+    /// Set block hashes (Phase 2)
+    pub fn with_block_hashes(mut self, block_hashes: Vec<BlockHash>) -> Self {
+        self.block_hashes = block_hashes;
+        self
+    }
+
+    /// Set Merkle root (Phase 2)
+    pub fn with_merkle_root(mut self, merkle_root: Option<BlockHash>) -> Self {
+        self.merkle_root = merkle_root;
+        self
+    }
+
     /// Build the ParsedDocument
     pub fn build(self) -> ParsedDocument {
         ParsedDocument {
@@ -950,6 +1372,8 @@ impl ParsedDocumentBuilder {
             content_hash: self.content_hash,
             file_size: self.file_size,
             parse_errors: self.parse_errors,
+            block_hashes: self.block_hashes,
+            merkle_root: self.merkle_root,
         }
     }
 }
@@ -1028,5 +1452,342 @@ mod tests {
         assert_eq!(all_tags.len(), 4);
         assert!(all_tags.contains(&"rust".to_string()));
         assert!(all_tags.contains(&"project".to_string()));
+    }
+
+    #[test]
+    fn test_ast_block_creation() {
+        let metadata = ASTBlockMetadata::heading(1, Some("test-heading".to_string()));
+        let block = ASTBlock::new(
+            ASTBlockType::Heading,
+            "Test Heading".to_string(),
+            0,
+            12,
+            metadata,
+        );
+
+        assert_eq!(block.block_type, ASTBlockType::Heading);
+        assert_eq!(block.content, "Test Heading");
+        assert_eq!(block.start_offset, 0);
+        assert_eq!(block.end_offset, 12);
+        assert_eq!(block.length(), 12);
+        assert_eq!(block.content_length(), 12);
+        assert!(!block.is_empty());
+        assert_eq!(block.type_name(), "heading");
+        assert!(block.is_heading_level(1));
+        assert!(!block.is_heading_level(2));
+    }
+
+    #[test]
+    fn test_ast_block_code_creation() {
+        let metadata = ASTBlockMetadata::code(Some("rust".to_string()), 3);
+        let block = ASTBlock::new(
+            ASTBlockType::Code,
+            "let x = 42;".to_string(),
+            20,
+            31,
+            metadata,
+        );
+
+        assert_eq!(block.block_type, ASTBlockType::Code);
+        assert_eq!(block.content, "let x = 42;");
+        assert!(block.is_code_language("rust"));
+        assert!(!block.is_code_language("python"));
+        assert_eq!(block.type_name(), "code");
+    }
+
+    #[test]
+    fn test_ast_block_callout_creation() {
+        let metadata = ASTBlockMetadata::callout(
+            "note".to_string(),
+            Some("Important Note".to_string()),
+            true,
+        );
+        let block = ASTBlock::new(
+            ASTBlockType::Callout,
+            "This is an important note".to_string(),
+            50,
+            78,
+            metadata,
+        );
+
+        assert_eq!(block.block_type, ASTBlockType::Callout);
+        assert!(block.is_callout_type("note"));
+        assert!(!block.is_callout_type("warning"));
+        assert_eq!(block.type_name(), "callout");
+    }
+
+    #[test]
+    fn test_ast_block_hash_computation() {
+        let content = "Test content";
+        let metadata = ASTBlockMetadata::generic();
+        let block1 = ASTBlock::new(
+            ASTBlockType::Paragraph,
+            content.to_string(),
+            0,
+            content.len(),
+            metadata.clone(),
+        );
+
+        let block2 = ASTBlock::new(
+            ASTBlockType::Paragraph,
+            content.to_string(),
+            10,
+            10 + content.len(),
+            metadata,
+        );
+
+        // Same content should produce same hash
+        assert_eq!(block1.block_hash, block2.block_hash);
+        assert_eq!(block1.block_hash.len(), 64); // BLAKE3 produces 32-byte hash = 64 hex chars
+    }
+
+    #[test]
+    fn test_ast_block_with_explicit_hash() {
+        let metadata = ASTBlockMetadata::generic();
+        let block = ASTBlock::with_hash(
+            ASTBlockType::Paragraph,
+            "Test content".to_string(),
+            0,
+            12,
+            "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262".to_string(),
+            metadata,
+        );
+
+        assert_eq!(
+            block.block_hash,
+            "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        );
+    }
+
+    #[test]
+    fn test_ast_block_type_display() {
+        let metadata = ASTBlockMetadata::generic();
+
+        let paragraph = ASTBlock::new(
+            ASTBlockType::Paragraph,
+            "Test".to_string(),
+            0,
+            4,
+            metadata.clone(),
+        );
+        assert_eq!(paragraph.type_name(), "paragraph");
+
+        let heading = ASTBlock::new(
+            ASTBlockType::Heading,
+            "Test".to_string(),
+            0,
+            4,
+            metadata.clone(),
+        );
+        assert_eq!(heading.type_name(), "heading");
+
+        let code = ASTBlock::new(
+            ASTBlockType::Code,
+            "Test".to_string(),
+            0,
+            4,
+            metadata,
+        );
+        assert_eq!(code.type_name(), "code");
+    }
+
+    #[test]
+    fn test_ast_block_metadata_creation() {
+        // Test all metadata creation methods
+        let heading_meta = ASTBlockMetadata::heading(2, Some("test".to_string()));
+        if let ASTBlockMetadata::Heading { level, id } = heading_meta {
+            assert_eq!(level, 2);
+            assert_eq!(id, Some("test".to_string()));
+        } else {
+            panic!("Expected heading metadata");
+        }
+
+        let code_meta = ASTBlockMetadata::code(Some("rust".to_string()), 10);
+        if let ASTBlockMetadata::Code { language, line_count } = code_meta {
+            assert_eq!(language, Some("rust".to_string()));
+            assert_eq!(line_count, 10);
+        } else {
+            panic!("Expected code metadata");
+        }
+
+        let list_meta = ASTBlockMetadata::list(ListType::Ordered, 5);
+        if let ASTBlockMetadata::List { list_type, item_count } = list_meta {
+            assert_eq!(list_type, ListType::Ordered);
+            assert_eq!(item_count, 5);
+        } else {
+            panic!("Expected list metadata");
+        }
+
+        let callout_meta = ASTBlockMetadata::callout(
+            "warning".to_string(),
+            Some("Watch out".to_string()),
+            true,
+        );
+        if let ASTBlockMetadata::Callout {
+            callout_type,
+            title,
+            is_standard_type,
+        } = callout_meta
+        {
+            assert_eq!(callout_type, "warning");
+            assert_eq!(title, Some("Watch out".to_string()));
+            assert!(is_standard_type);
+        } else {
+            panic!("Expected callout metadata");
+        }
+
+        let latex_meta = ASTBlockMetadata::latex(true);
+        if let ASTBlockMetadata::Latex { is_block } = latex_meta {
+            assert!(is_block);
+        } else {
+            panic!("Expected latex metadata");
+        }
+
+        let generic_meta = ASTBlockMetadata::generic();
+        matches!(generic_meta, ASTBlockMetadata::Generic);
+    }
+
+    #[test]
+    fn test_parsed_document_with_block_hashes() {
+        let mut doc = ParsedDocument::new(PathBuf::from("test.md"));
+
+        // Create some test block hashes
+        let hash1 = BlockHash::new([
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+            0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+            0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+            0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+        ]);
+
+        let hash2 = BlockHash::new([
+            0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28,
+            0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30,
+            0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38,
+            0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40,
+        ]);
+
+        let merkle_root = BlockHash::new([
+            0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
+            0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50,
+            0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58,
+            0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f, 0x60,
+        ]);
+
+        // Test adding block hashes
+        doc.add_block_hash(hash1);
+        doc.add_block_hash(hash2);
+
+        assert_eq!(doc.block_hash_count(), 2);
+        assert!(doc.has_block_hashes());
+        assert_eq!(doc.block_hashes[0], hash1);
+        assert_eq!(doc.block_hashes[1], hash2);
+
+        // Test setting Merkle root
+        doc = doc.with_merkle_root(Some(merkle_root));
+        assert!(doc.has_merkle_root());
+        assert_eq!(doc.get_merkle_root(), Some(merkle_root));
+
+        // Test clearing hash data
+        doc.clear_hash_data();
+        assert!(!doc.has_block_hashes());
+        assert!(!doc.has_merkle_root());
+        assert_eq!(doc.block_hash_count(), 0);
+    }
+
+    #[test]
+    fn test_parsed_document_builder_with_hashes() {
+        let hash1 = BlockHash::new([
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+            0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+            0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+            0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+        ]);
+
+        let merkle_root = BlockHash::new([
+            0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
+            0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50,
+            0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58,
+            0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f, 0x60,
+        ]);
+
+        let doc = ParsedDocument::builder(PathBuf::from("test.md"))
+            .with_block_hashes(vec![hash1])
+            .with_merkle_root(Some(merkle_root))
+            .build();
+
+        assert!(doc.has_block_hashes());
+        assert_eq!(doc.block_hash_count(), 1);
+        assert_eq!(doc.block_hashes[0], hash1);
+        assert!(doc.has_merkle_root());
+        assert_eq!(doc.get_merkle_root(), Some(merkle_root));
+    }
+
+    #[test]
+    fn test_parsed_document_backward_compatibility() {
+        // Test that legacy constructor still works with empty hash fields
+        let path = PathBuf::from("test.md");
+        let frontmatter = None;
+        let wikilinks = vec![];
+        let tags = vec![];
+        let content = DocumentContent::new();
+        let parsed_at = Utc::now();
+        let content_hash = "test_hash".to_string();
+        let file_size = 1024;
+
+        let doc = ParsedDocument::legacy(
+            path.clone(),
+            frontmatter,
+            wikilinks,
+            tags,
+            content,
+            parsed_at,
+            content_hash.clone(),
+            file_size,
+        );
+
+        // Legacy documents should have empty hash fields
+        assert!(!doc.has_block_hashes());
+        assert_eq!(doc.block_hash_count(), 0);
+        assert!(!doc.has_merkle_root());
+        assert_eq!(doc.get_merkle_root(), None);
+
+        // But other fields should still work
+        assert_eq!(doc.path, path);
+        assert_eq!(doc.content_hash, content_hash);
+        assert_eq!(doc.file_size, file_size);
+    }
+
+    #[test]
+    fn test_parsed_document_serialization_with_hashes() {
+        let hash1 = BlockHash::new([
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+            0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+            0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+            0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+        ]);
+
+        let merkle_root = BlockHash::new([
+            0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
+            0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50,
+            0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58,
+            0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f, 0x60,
+        ]);
+
+        let original_doc = ParsedDocument::builder(PathBuf::from("test.md"))
+            .with_block_hashes(vec![hash1])
+            .with_merkle_root(Some(merkle_root))
+            .build();
+
+        // Test JSON serialization
+        let json = serde_json::to_string(&original_doc).expect("Failed to serialize");
+        let deserialized_doc: ParsedDocument = serde_json::from_str(&json).expect("Failed to deserialize");
+
+        // Verify the fields are preserved
+        assert!(deserialized_doc.has_block_hashes());
+        assert_eq!(deserialized_doc.block_hash_count(), 1);
+        assert_eq!(deserialized_doc.block_hashes[0], hash1);
+        assert!(deserialized_doc.has_merkle_root());
+        assert_eq!(deserialized_doc.get_merkle_root(), Some(merkle_root));
+        assert_eq!(deserialized_doc.path, original_doc.path);
     }
 }
