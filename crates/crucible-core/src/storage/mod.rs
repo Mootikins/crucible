@@ -28,6 +28,8 @@ pub mod builder;
 pub mod diff;
 pub mod change_application;
 pub mod memory;
+pub mod deduplicator;
+pub mod deduplication_traits;
 
 // Re-export main types for convenience
 pub use traits::{ContentAddressedStorage, ContentHasher, StorageBackend};
@@ -46,4 +48,13 @@ pub use change_application::{
 pub use memory::{
     MemoryStorage, MemoryStorageConfig, MemoryStorageBuilder, MemoryStorageSnapshot,
     StorageEvent, MemoryStorageShutdown
+};
+pub use deduplicator::{
+    Deduplicator, DefaultDeduplicator, DeduplicationAnalysis, DuplicateGroup,
+    DeduplicationStats, StorageSavings, BlockUsagePattern, UsageEvent, UsageEventType,
+    DocumentDuplicationPattern, DocumentSimilarity, StorageSavingsByType
+};
+pub use deduplication_traits::{
+    DeduplicationStorage, DeduplicationCapable, BlockInfo, DuplicateBlockInfo,
+    StorageUsageStats
 };

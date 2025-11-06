@@ -58,6 +58,10 @@ pub struct Note {
     /// File path (relative to kiln root)
     pub path: String,
 
+    /// BLAKE3 hash of file content as hex string (64 characters) for change detection
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_hash: Option<String>,
+
     /// Document title (extracted from frontmatter or first heading)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -124,6 +128,7 @@ impl Note {
         Self {
             id: None,
             path,
+            file_hash: None,
             title: None,
             content: content.clone(),
             created_at: now,
@@ -139,6 +144,12 @@ impl Note {
             folder: None,
             file_name: None,
         }
+    }
+
+    /// Set file hash
+    pub fn with_file_hash(mut self, hash: impl Into<String>) -> Self {
+        self.file_hash = Some(hash.into());
+        self
     }
 
     /// Set title (also updates title_text)
