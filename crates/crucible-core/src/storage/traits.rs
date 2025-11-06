@@ -7,17 +7,16 @@ use async_trait::async_trait;
 use crate::storage::{StorageResult, MerkleTree};
 use serde::{Deserialize, Serialize};
 
-/// Core trait for content-addressed storage backends
+/// Block storage operations for content-addressed storage
 ///
-/// This trait provides a unified interface for storing and retrieving content
-/// based on its cryptographic hash. Implementations can use different storage
-/// mechanisms like SurrealDB, file system, or in-memory storage.
+/// This trait provides basic block storage and retrieval operations.
+/// It follows the Interface Segregation Principle by focusing solely on block-level operations.
 #[async_trait]
-pub trait ContentAddressedStorage: Send + Sync {
+pub trait BlockOperations: Send + Sync {
     /// Store a block of content with its hash as the key
     ///
     /// # Arguments
-    /// * `hash` - The SHA256 hash of the block content
+    /// * `hash` - The cryptographic hash of the block content
     /// * `data` - The raw block data to store
     ///
     /// # Returns
@@ -27,12 +26,37 @@ pub trait ContentAddressedStorage: Send + Sync {
     /// Retrieve a block by its hash
     ///
     /// # Arguments
-    /// * `hash` - The SHA256 hash of the block to retrieve
+    /// * `hash` - The hash of the block to retrieve
     ///
     /// # Returns
     /// `Some(Vec<u8>)` if the block exists, `None` if not found, or error if retrieval fails
     async fn get_block(&self, hash: &str) -> StorageResult<Option<Vec<u8>>>;
 
+    /// Check if a block exists in storage
+    ///
+    /// # Arguments
+    /// * `hash` - The hash of the block to check
+    ///
+    /// # Returns
+    /// `true` if the block exists, `false` otherwise
+    async fn block_exists(&self, hash: &str) -> StorageResult<bool>;
+
+    /// Delete a block from storage
+    ///
+    /// # Arguments
+    /// * `hash` - The hash of the block to delete
+    ///
+    /// # Returns
+    /// `Ok(true)` if deleted, `Ok(false)` if it didn't exist, `Err` if deletion failed
+    async fn delete_block(&self, hash: &str) -> StorageResult<bool>;
+}
+
+/// Merkle tree storage operations for content-addressed storage
+///
+/// This trait provides operations for storing and retrieving Merkle tree structures.
+/// Separated from block operations to follow the Interface Segregation Principle.
+#[async_trait]
+pub trait TreeOperations: Send + Sync {
     /// Store a complete Merkle tree structure
     ///
     /// # Arguments
@@ -52,15 +76,6 @@ pub trait ContentAddressedStorage: Send + Sync {
     /// `Some(MerkleTree)` if the tree exists, `None` if not found, or error if retrieval fails
     async fn get_tree(&self, root_hash: &str) -> StorageResult<Option<MerkleTree>>;
 
-    /// Check if a block exists in storage
-    ///
-    /// # Arguments
-    /// * `hash` - The hash of the block to check
-    ///
-    /// # Returns
-    /// `true` if the block exists, `false` otherwise
-    async fn block_exists(&self, hash: &str) -> StorageResult<bool>;
-
     /// Check if a Merkle tree exists in storage
     ///
     /// # Arguments
@@ -70,15 +85,6 @@ pub trait ContentAddressedStorage: Send + Sync {
     /// `true` if the tree exists, `false` otherwise
     async fn tree_exists(&self, root_hash: &str) -> StorageResult<bool>;
 
-    /// Delete a block from storage
-    ///
-    /// # Arguments
-    /// * `hash` - The hash of the block to delete
-    ///
-    /// # Returns
-    /// `Ok(true)` if deleted, `Ok(false)` if it didn't exist, `Err` if deletion failed
-    async fn delete_block(&self, hash: &str) -> StorageResult<bool>;
-
     /// Delete a Merkle tree from storage
     ///
     /// # Arguments
@@ -87,7 +93,14 @@ pub trait ContentAddressedStorage: Send + Sync {
     /// # Returns
     /// `Ok(true)` if deleted, `Ok(false)` if it didn't exist, `Err` if deletion failed
     async fn delete_tree(&self, root_hash: &str) -> StorageResult<bool>;
+}
 
+/// Storage management and maintenance operations
+///
+/// This trait provides operations for managing storage state, statistics, and maintenance.
+/// Separated to allow implementations that don't need full management capabilities.
+#[async_trait]
+pub trait StorageManagement: Send + Sync {
     /// Get storage statistics
     ///
     /// # Returns
@@ -100,6 +113,94 @@ pub trait ContentAddressedStorage: Send + Sync {
     /// `Ok(())` if successful, `Err(StorageError)` if maintenance fails
     async fn maintenance(&self) -> StorageResult<()>;
 }
+
+/// Complete content-addressed storage interface
+///
+/// This trait composes BlockOperations, TreeOperations, and StorageManagement
+/// to provide a full-featured storage backend. Implementations can choose to
+/// implement only the sub-traits they need, or implement this composite trait
+/// for full functionality.
+///
+/// # Design Pattern
+///
+/// This follows the Interface Segregation Principle (ISP) by splitting a large
+/// interface into focused sub-interfaces. Clients can depend on only what they need.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// // A component that only needs block operations
+/// fn process_blocks<S: BlockOperations>(storage: &S) { ... }
+///
+/// // A component that needs full storage functionality
+/// fn manage_storage<S: ContentAddressedStorage>(storage: &S) { ... }
+/// ```
+pub trait ContentAddressedStorage: BlockOperations + TreeOperations + StorageManagement {}
+
+// Blanket implementations for Arc<T> where T implements the storage traits
+#[async_trait]
+impl<T> BlockOperations for std::sync::Arc<T>
+where
+    T: BlockOperations + ?Sized,
+{
+    async fn store_block(&self, hash: &str, data: &[u8]) -> StorageResult<()> {
+        (**self).store_block(hash, data).await
+    }
+
+    async fn get_block(&self, hash: &str) -> StorageResult<Option<Vec<u8>>> {
+        (**self).get_block(hash).await
+    }
+
+    async fn block_exists(&self, hash: &str) -> StorageResult<bool> {
+        (**self).block_exists(hash).await
+    }
+
+    async fn delete_block(&self, hash: &str) -> StorageResult<bool> {
+        (**self).delete_block(hash).await
+    }
+}
+
+#[async_trait]
+impl<T> TreeOperations for std::sync::Arc<T>
+where
+    T: TreeOperations + ?Sized,
+{
+    async fn store_tree(&self, root_hash: &str, tree: &MerkleTree) -> StorageResult<()> {
+        (**self).store_tree(root_hash, tree).await
+    }
+
+    async fn get_tree(&self, root_hash: &str) -> StorageResult<Option<MerkleTree>> {
+        (**self).get_tree(root_hash).await
+    }
+
+    async fn tree_exists(&self, root_hash: &str) -> StorageResult<bool> {
+        (**self).tree_exists(root_hash).await
+    }
+
+    async fn delete_tree(&self, root_hash: &str) -> StorageResult<bool> {
+        (**self).delete_tree(root_hash).await
+    }
+}
+
+#[async_trait]
+impl<T> StorageManagement for std::sync::Arc<T>
+where
+    T: StorageManagement + ?Sized,
+{
+    async fn get_stats(&self) -> StorageResult<StorageStats> {
+        (**self).get_stats().await
+    }
+
+    async fn maintenance(&self) -> StorageResult<()> {
+        (**self).maintenance().await
+    }
+}
+
+// Blanket implementation for the composite trait
+impl<T> ContentAddressedStorage for std::sync::Arc<T>
+where
+    T: ContentAddressedStorage + ?Sized,
+{}
 
 /// Trait for pluggable content hashing algorithms
 ///

@@ -33,7 +33,7 @@
 
 use crate::storage::{
     ContentAddressedStorage, MerkleTree, StorageResult, StorageError,
-    traits::{StorageBackend, StorageStats, QuotaUsage}
+    traits::{BlockOperations, TreeOperations, StorageManagement, StorageBackend, StorageStats, QuotaUsage}
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -582,8 +582,9 @@ impl MemoryStorage {
     }
 }
 
+// Implementation of BlockOperations trait
 #[async_trait]
-impl ContentAddressedStorage for MemoryStorage {
+impl BlockOperations for MemoryStorage {
     async fn store_block(&self, hash: &str, data: &[u8]) -> StorageResult<()> {
         if self.is_shutdown() {
             return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
@@ -691,6 +692,52 @@ impl ContentAddressedStorage for MemoryStorage {
         Ok(result)
     }
 
+    async fn block_exists(&self, hash: &str) -> StorageResult<bool> {
+        if self.is_shutdown() {
+            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
+        }
+
+        let blocks = self.blocks.read().unwrap();
+        Ok(blocks.contains_key(hash))
+    }
+
+    async fn delete_block(&self, hash: &str) -> StorageResult<bool> {
+        if self.is_shutdown() {
+            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
+        }
+
+        let result = {
+            let mut blocks = self.blocks.write().unwrap();
+            if let Some(block_data) = blocks.remove(hash) {
+                self.stats.block_count.fetch_sub(1, Ordering::Relaxed);
+                self.stats.total_block_size.fetch_sub(block_data.size, Ordering::Relaxed);
+                Some(block_data.size)
+            } else {
+                None
+            }
+        };
+
+        if let Some(_size) = result {
+            self.remove_from_lru(hash).await;
+
+            self.record_event(StorageEvent::BlockDeleted {
+                hash: hash.to_string(),
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
+            }).await;
+
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+}
+
+// Implementation of TreeOperations trait
+#[async_trait]
+impl TreeOperations for MemoryStorage {
     async fn store_tree(&self, root_hash: &str, tree: &MerkleTree) -> StorageResult<()> {
         if self.is_shutdown() {
             return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
@@ -752,15 +799,6 @@ impl ContentAddressedStorage for MemoryStorage {
         Ok(result)
     }
 
-    async fn block_exists(&self, hash: &str) -> StorageResult<bool> {
-        if self.is_shutdown() {
-            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
-        }
-
-        let blocks = self.blocks.read().unwrap();
-        Ok(blocks.contains_key(hash))
-    }
-
     async fn tree_exists(&self, root_hash: &str) -> StorageResult<bool> {
         if self.is_shutdown() {
             return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
@@ -768,39 +806,6 @@ impl ContentAddressedStorage for MemoryStorage {
 
         let trees = self.trees.read().unwrap();
         Ok(trees.contains_key(root_hash))
-    }
-
-    async fn delete_block(&self, hash: &str) -> StorageResult<bool> {
-        if self.is_shutdown() {
-            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
-        }
-
-        let result = {
-            let mut blocks = self.blocks.write().unwrap();
-            if let Some(block_data) = blocks.remove(hash) {
-                self.stats.block_count.fetch_sub(1, Ordering::Relaxed);
-                self.stats.total_block_size.fetch_sub(block_data.size, Ordering::Relaxed);
-                Some(block_data.size)
-            } else {
-                None
-            }
-        };
-
-        if let Some(_size) = result {
-            self.remove_from_lru(hash).await;
-
-            self.record_event(StorageEvent::BlockDeleted {
-                hash: hash.to_string(),
-                timestamp: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64,
-            }).await;
-
-            Ok(true)
-        } else {
-            Ok(false)
-        }
     }
 
     async fn delete_tree(&self, root_hash: &str) -> StorageResult<bool> {
@@ -830,7 +835,11 @@ impl ContentAddressedStorage for MemoryStorage {
 
         Ok(result)
     }
+}
 
+// Implementation of StorageManagement trait
+#[async_trait]
+impl StorageManagement for MemoryStorage {
     async fn get_stats(&self) -> StorageResult<StorageStats> {
         if self.is_shutdown() {
             return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
@@ -878,6 +887,10 @@ impl ContentAddressedStorage for MemoryStorage {
         Ok(())
     }
 }
+
+// Blanket implementation of the composite ContentAddressedStorage trait
+// Since MemoryStorage implements all three sub-traits, it automatically implements the composite
+impl ContentAddressedStorage for MemoryStorage {}
 
 /// Builder for creating MemoryStorage with custom configuration
 #[derive(Debug, Clone)]
