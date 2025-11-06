@@ -7,6 +7,8 @@
 //! - Dependency inversion support for testing
 //! - High-performance parsing with sub-100ms target
 
+pub mod block_extractor;
+pub mod block_hasher;
 pub mod callouts;
 pub mod enhanced_tags;
 pub mod error;
@@ -18,14 +20,16 @@ pub mod traits;
 pub mod types;
 
 // Re-export main types for convenience
+pub use block_extractor::{BlockExtractor, ExtractionConfig};
+pub use block_hasher::SimpleBlockHasher;
 pub use error::{ParseError, ParseErrorType, ParserError, ParserResult};
 pub use extensions::{ExtensionRegistry, ExtensionRegistryBuilder, ExtensionRegistryStats, SyntaxExtension};
-pub use implementation::CrucibleParser;
+pub use implementation::{BlockProcessingConfig, CrucibleParser};
 pub use traits::{MarkdownParserImplementation, ParserCapabilities};
 pub use types::{
-    Callout, CodeBlock, DocumentContent, FootnoteDefinition, FootnoteMap, FootnoteReference,
-    Frontmatter, FrontmatterFormat, Heading, LatexExpression, ListBlock, ListItem, ListType,
-    ParsedDocument, ParsedDocumentBuilder, Tag, TaskStatus, Wikilink,
+    ASTBlock, ASTBlockMetadata, ASTBlockType, BlockHash, Callout, CodeBlock, DocumentContent, FootnoteDefinition,
+    FootnoteMap, FootnoteReference, Frontmatter, FrontmatterFormat, Heading, LatexExpression,
+    ListBlock, ListItem, ListType, ParsedDocument, ParsedDocumentBuilder, Tag, TaskStatus, Wikilink,
 };
 
 // Convenience factory functions

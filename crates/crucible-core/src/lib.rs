@@ -34,7 +34,7 @@ pub use processing::{
 };
 
 // Re-export core traits (abstractions for Dependency Inversion)
-pub use traits::{AgentProvider, MarkdownParser, Storage, ToolExecutor};
+pub use traits::{AgentProvider, ChangeDetector, ContentHasher, HashLookupStorage, MarkdownParser, Storage, ToolExecutor};
 
 // Re-export key types used across module boundaries
 pub use types::{
@@ -43,6 +43,10 @@ pub use types::{
     ExecutionContext,
     ToolDefinition,
     ToolExample,
+    // Hashing types
+    BlockHash, BlockHashInfo, FileHash, FileHashInfo, HashAlgorithm, HashError,
+    // Change detection types
+    ChangeSet, ChangeSummary,
 };
 
 pub use database::{
