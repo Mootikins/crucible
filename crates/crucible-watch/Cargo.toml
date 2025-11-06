@@ -36,6 +36,7 @@ flume = { workspace = true }
 
 # Pattern matching
 globset = { workspace = true }
+glob = { workspace = true }
 regex = { workspace = true }
 
 # CPU information

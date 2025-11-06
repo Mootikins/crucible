@@ -10,8 +10,11 @@
 //! - Database types: `database` (Record, QueryResult, Node, Edge, Document, etc.)
 //! - Document types: `document` (DocumentNode, ViewportState)
 //! - Property types: `properties` (PropertyMap, PropertyValue)
+//! - Hashing types: `hashing` (FileHash, BlockHash, HashAlgorithm, etc.)
 //!
 //! This module serves as a central re-export point for types that cross module boundaries.
+
+pub mod hashing;
 
 // Re-export parser domain types
 pub use crate::parser::types::{
@@ -47,6 +50,14 @@ pub use crate::document::{DocumentNode, ViewportState};
 
 // Re-export property types
 pub use crate::properties::{PropertyMap, PropertyValue};
+
+// Re-export hashing types
+pub use crate::types::hashing::{
+    BlockHash, BlockHashInfo, FileHash, FileHashInfo, HashAlgorithm, HashError,
+};
+
+// Re-export change detection types
+pub use crate::traits::change_detection::{ChangeSet, ChangeSummary};
 
 // Re-export trait types (these are associated with traits but used as data)
 pub use crate::traits::storage::{Record as StorageRecord, RecordId as StorageRecordId};

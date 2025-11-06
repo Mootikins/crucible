@@ -57,6 +57,20 @@ pub enum Error {
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
 
+    /// Validation error for missing or invalid fields.
+    #[error("Validation error for field '{field}': {message}")]
+    ValidationError {
+        field: String,
+        message: String,
+    },
+
+    /// File I/O error with path context.
+    #[error("File I/O error at path '{path}': {error}")]
+    FileIoError {
+        path: std::path::PathBuf,
+        error: String,
+    },
+
     /// Timeout occurred.
     #[error("Operation timed out after {0}ms")]
     Timeout(u64),
