@@ -244,7 +244,7 @@ pub async fn process_files_on_startup(
     config: &crate::config::CliConfig,
 ) -> Result<()> {
     use std::time::Instant;
-    use indicatif::{ProgressBar, ProgressStyle};
+    
 
     // Check if file processing is enabled (default: true)
     if !config.file_watching.enabled {

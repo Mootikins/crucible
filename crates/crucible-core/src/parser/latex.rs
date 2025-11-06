@@ -128,7 +128,8 @@ impl LatexExtension {
             .replace_all(original_content, "⟨REMOVED⟩");
 
         // Pattern for inline math (single $ delimiters, not escaped)
-        let re = Regex::new(r"(?<!\\)\$([^\$\n]+?)(?<!\\)\$").map_err(|e| {
+        // Note: Rust regex doesn't support lookbehind, so we match and filter manually
+        let re = Regex::new(r"\$([^\$\n]+?)\$").map_err(|e| {
             ParseError::error(
                 format!("Failed to compile inline LaTeX regex: {}", e),
                 ParseErrorType::SyntaxError,
@@ -145,6 +146,15 @@ impl LatexExtension {
             // Skip empty expressions
             if latex_content.trim().is_empty() {
                 continue;
+            }
+
+            // Check if the $ is escaped (preceded by backslash in original content)
+            let match_start = full_match.start();
+            if match_start > 0 {
+                let chars_before: Vec<char> = content_without_blocks.chars().collect();
+                if chars_before.get(match_start.saturating_sub(1)) == Some(&'\\') {
+                    continue; // Skip escaped dollar signs
+                }
             }
 
             // Basic LaTeX validation
@@ -267,7 +277,9 @@ mod tests {
         let errors = extension.parse(content, &mut doc_content).await;
 
         assert_eq!(errors.len(), 0);
-        // Note: We need to modify DocumentContent to have latex_expressions field
+        assert_eq!(doc_content.latex_expressions.len(), 1);
+        assert_eq!(doc_content.latex_expressions[0].expression, "E=mc^2");
+        assert_eq!(doc_content.latex_expressions[0].is_block, false);
     }
 
     #[tokio::test]
@@ -283,7 +295,9 @@ This is the result.
         let errors = extension.parse(content, &mut doc_content).await;
 
         assert_eq!(errors.len(), 0);
-        // Check that block LaTeX is extracted
+        assert_eq!(doc_content.latex_expressions.len(), 1);
+        assert_eq!(doc_content.latex_expressions[0].expression.trim(), "\\int_0^1 f(x)dx = F(1) - F(0)");
+        assert_eq!(doc_content.latex_expressions[0].is_block, true);
     }
 
     #[tokio::test]
@@ -312,6 +326,10 @@ This is the result.
         let errors = extension.parse(content, &mut doc_content).await;
 
         assert_eq!(errors.len(), 0);
+        assert_eq!(doc_content.latex_expressions.len(), 2);
+        // Should extract both inline and block
+        assert!(doc_content.latex_expressions.iter().any(|e| !e.is_block && e.expression == "x+y"));
+        assert!(doc_content.latex_expressions.iter().any(|e| e.is_block && e.expression.trim() == "\\frac{a}{b}"));
     }
 
     #[tokio::test]

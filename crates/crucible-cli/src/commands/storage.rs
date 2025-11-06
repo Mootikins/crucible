@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH, Instant};
+use std::time::Instant;
 use std::sync::Arc;
 use serde_json;
 use tabled::{Table, Tabled, settings::Style};

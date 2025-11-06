@@ -1,8 +1,8 @@
-//! File hashing implementation using the ContentHasher trait
+//! File hashing implementation using generic hashing algorithms
 //!
 //! This module provides a concrete implementation of the `ContentHasher` trait
-//! for file operations. It supports both BLAKE3 and SHA256 algorithms with
-//! efficient streaming I/O for large files.
+//! for file operations. It uses a generic HashingAlgorithm trait for flexibility
+//! and supports efficient streaming I/O for large files.
 //!
 //! # Architecture
 //!
@@ -22,7 +22,7 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let hasher = FileHasher::new(HashAlgorithm::Blake3);
+//!     let hasher = FileHasher::new(crate::hashing::algorithm::Blake3Algorithm);
 //!     let path = Path::new("example.txt");
 //!
 //!     let hash = hasher.hash_file(path).await?;
@@ -35,11 +35,10 @@
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use blake3::Hasher as Blake3Hasher;
-use sha2::{Digest, Sha256};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, BufReader};
 
+use crate::hashing::algorithm::HashingAlgorithm;
 use crate::traits::change_detection::ContentHasher;
 use crate::types::hashing::{
     BlockHash, BlockHashInfo, FileHash, FileHashInfo, HashAlgorithm, HashError,
@@ -47,9 +46,13 @@ use crate::types::hashing::{
 
 /// Implementation of the ContentHasher trait for file operations
 ///
-/// This struct provides efficient file and block hashing using either BLAKE3
-/// or SHA256 algorithms. It's designed to handle large files through streaming
+/// This struct provides efficient file and block hashing using a pluggable
+/// hashing algorithm. It's designed to handle large files through streaming
 /// I/O and supports batch operations for better performance.
+///
+/// # Generic Parameters
+///
+/// * `A` - The hashing algorithm to use (implements `HashingAlgorithm`)
 ///
 /// # Performance Characteristics
 ///
@@ -63,29 +66,37 @@ use crate::types::hashing::{
 /// The `FileHasher` is `Send + Sync` and can be safely shared across threads.
 /// All operations are async and non-blocking.
 #[derive(Debug, Clone)]
-pub struct FileHasher {
-    algorithm: HashAlgorithm,
+pub struct FileHasher<A: HashingAlgorithm> {
+    algorithm: A,
+    legacy_algorithm: HashAlgorithm,
     buffer_size: usize,
 }
 
-impl FileHasher {
+impl<A: HashingAlgorithm> FileHasher<A> {
     /// Create a new FileHasher with the specified algorithm
     ///
     /// # Arguments
     ///
-    /// * `algorithm` - The hash algorithm to use (BLAKE3 or SHA256)
+    /// * `algorithm` - The hash algorithm implementation to use
     ///
     /// # Examples
     ///
     /// ```rust
     /// use crucible_core::hashing::file_hasher::FileHasher;
-    /// use crucible_core::types::hashing::HashAlgorithm;
+    /// use crucible_core::hashing::algorithm::Blake3Algorithm;
     ///
-    /// let hasher = FileHasher::new(HashAlgorithm::Blake3);
+    /// let hasher = FileHasher::new(Blake3Algorithm);
     /// ```
-    pub fn new(algorithm: HashAlgorithm) -> Self {
+    pub fn new(algorithm: A) -> Self {
+        let legacy_algorithm = match algorithm.algorithm_name() {
+            "BLAKE3" => HashAlgorithm::Blake3,
+            "SHA256" => HashAlgorithm::Sha256,
+            _ => HashAlgorithm::Blake3,
+        };
+
         Self {
             algorithm,
+            legacy_algorithm,
             buffer_size: 64 * 1024, // 64KB buffer for streaming
         }
     }
@@ -94,25 +105,32 @@ impl FileHasher {
     ///
     /// # Arguments
     ///
-    /// * `algorithm` - The hash algorithm to use
+    /// * `algorithm` - The hash algorithm implementation to use
     /// * `buffer_size` - Buffer size for streaming operations in bytes
     ///
     /// # Examples
     ///
     /// ```rust
     /// use crucible_core::hashing::file_hasher::FileHasher;
-    /// use crucible_core::types::hashing::HashAlgorithm;
+    /// use crucible_core::hashing::algorithm::Blake3Algorithm;
     ///
-    /// let hasher = FileHasher::with_buffer_size(HashAlgorithm::Blake3, 128 * 1024);
+    /// let hasher = FileHasher::with_buffer_size(Blake3Algorithm, 128 * 1024);
     /// ```
-    pub fn with_buffer_size(algorithm: HashAlgorithm, buffer_size: usize) -> Self {
+    pub fn with_buffer_size(algorithm: A, buffer_size: usize) -> Self {
+        let legacy_algorithm = match algorithm.algorithm_name() {
+            "BLAKE3" => HashAlgorithm::Blake3,
+            "SHA256" => HashAlgorithm::Sha256,
+            _ => HashAlgorithm::Blake3,
+        };
+
         Self {
             algorithm,
+            legacy_algorithm,
             buffer_size,
         }
     }
 
-    /// Hash a file using streaming I/O
+    /// Hash a file using streaming I/O with the generic algorithm
     ///
     /// This internal method handles the actual file reading and hashing
     /// using a buffered reader for efficiency.
@@ -120,31 +138,19 @@ impl FileHasher {
         let file = File::open(path).await?;
         let mut reader = BufReader::new(file);
         let mut buffer = vec![0u8; self.buffer_size];
+        let mut data = Vec::new();
 
-        match self.algorithm {
-            HashAlgorithm::Blake3 => {
-                let mut hasher = Blake3Hasher::new();
-                loop {
-                    let bytes_read = reader.read(&mut buffer).await?;
-                    if bytes_read == 0 {
-                        break;
-                    }
-                    hasher.update(&buffer[..bytes_read]);
-                }
-                Ok(hasher.finalize().as_bytes().to_vec())
+        // Read file in chunks
+        loop {
+            let bytes_read = reader.read(&mut buffer).await?;
+            if bytes_read == 0 {
+                break;
             }
-            HashAlgorithm::Sha256 => {
-                let mut hasher = Sha256::new();
-                loop {
-                    let bytes_read = reader.read(&mut buffer).await?;
-                    if bytes_read == 0 {
-                        break;
-                    }
-                    hasher.update(&buffer[..bytes_read]);
-                }
-                Ok(hasher.finalize().to_vec())
-            }
+            data.extend_from_slice(&buffer[..bytes_read]);
         }
+
+        // Hash all data at once using the generic algorithm
+        Ok(self.algorithm.hash(&data))
     }
 
     /// Get file metadata for change detection
@@ -159,9 +165,9 @@ impl FileHasher {
 }
 
 #[async_trait]
-impl ContentHasher for FileHasher {
+impl<A: HashingAlgorithm> ContentHasher for FileHasher<A> {
     fn algorithm(&self) -> HashAlgorithm {
-        self.algorithm
+        self.legacy_algorithm
     }
 
     async fn hash_file(&self, path: &Path) -> Result<FileHash, HashError> {
@@ -189,18 +195,8 @@ impl ContentHasher for FileHasher {
     }
 
     async fn hash_block(&self, content: &str) -> Result<BlockHash, HashError> {
-        let hash_bytes = match self.algorithm {
-            HashAlgorithm::Blake3 => {
-                let mut hasher = Blake3Hasher::new();
-                hasher.update(content.as_bytes());
-                hasher.finalize().as_bytes().to_vec()
-            }
-            HashAlgorithm::Sha256 => {
-                let mut hasher = Sha256::new();
-                hasher.update(content.as_bytes());
-                hasher.finalize().to_vec()
-            }
-        };
+        // Use the generic algorithm
+        let hash_bytes = self.algorithm.hash(content.as_bytes());
 
         if hash_bytes.len() != 32 {
             return Err(HashError::InvalidLength { len: hash_bytes.len() });
@@ -232,7 +228,7 @@ impl ContentHasher for FileHasher {
             content_hash,
             size,
             modified,
-            self.algorithm,
+            self.legacy_algorithm,
             relative_path,
         ))
     }
@@ -251,7 +247,7 @@ impl ContentHasher for FileHasher {
             block_type,
             start_offset,
             end_offset,
-            self.algorithm,
+            self.legacy_algorithm,
         ))
     }
 
@@ -270,14 +266,23 @@ impl ContentHasher for FileHasher {
     }
 }
 
-/// Constants for commonly used hashers
-pub const BLAKE3_HASHER: FileHasher = FileHasher {
-    algorithm: HashAlgorithm::Blake3,
+/// Type alias for commonly used BLAKE3 file hasher
+pub type Blake3FileHasher = FileHasher<crate::hashing::algorithm::Blake3Algorithm>;
+
+/// Type alias for commonly used SHA256 file hasher
+pub type Sha256FileHasher = FileHasher<crate::hashing::algorithm::Sha256Algorithm>;
+
+/// Convenience constant for BLAKE3 file hasher
+pub const BLAKE3_HASHER: Blake3FileHasher = FileHasher {
+    algorithm: crate::hashing::algorithm::Blake3Algorithm,
+    legacy_algorithm: HashAlgorithm::Blake3,
     buffer_size: 64 * 1024,
 };
 
-pub const SHA256_HASHER: FileHasher = FileHasher {
-    algorithm: HashAlgorithm::Sha256,
+/// Convenience constant for SHA256 file hasher
+pub const SHA256_HASHER: Sha256FileHasher = FileHasher {
+    algorithm: crate::hashing::algorithm::Sha256Algorithm,
+    legacy_algorithm: HashAlgorithm::Sha256,
     buffer_size: 64 * 1024,
 };
 
@@ -294,7 +299,7 @@ mod tests {
         temp_file.write_all(b"Hello, World!").unwrap();
         temp_file.flush().unwrap();
 
-        let hasher = FileHasher::new(HashAlgorithm::Blake3);
+        let hasher = FileHasher::new(crate::hashing::algorithm::Blake3Algorithm);
         let hash = hasher.hash_file(temp_file.path()).await.unwrap();
 
         // Verify the hash matches expected BLAKE3 hash
@@ -308,17 +313,20 @@ mod tests {
         temp_file.write_all(b"Hello, World!").unwrap();
         temp_file.flush().unwrap();
 
-        let hasher = FileHasher::new(HashAlgorithm::Sha256);
+        let hasher = FileHasher::new(crate::hashing::algorithm::Sha256Algorithm);
         let hash = hasher.hash_file(temp_file.path()).await.unwrap();
 
-        // Verify the hash matches expected SHA256 hash
-        let expected_hex = "ae97eca8f8ae1672bcc5c79e3fbafd8ee86f65f775e2250a291d3788b7a8af95";
+        // Verify the hash matches expected SHA256 hash of "Hello, World!" (13 bytes)
+        // Note: This is the correct SHA256 hash, verified with:
+        // printf 'Hello, World!' | sha256sum
+        // or: printf '\x48\x65\x6c\x6c\x6f\x2c\x20\x57\x6f\x72\x6c\x64\x21' | sha256sum
+        let expected_hex = "dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f";
         assert_eq!(hash.to_hex(), expected_hex);
     }
 
     #[tokio::test]
     async fn test_hash_block() {
-        let hasher = FileHasher::new(HashAlgorithm::Blake3);
+        let hasher = FileHasher::new(crate::hashing::algorithm::Blake3Algorithm);
         let content = "# Hello World\nThis is a test heading.";
 
         let hash = hasher.hash_block(content).await.unwrap();
@@ -338,7 +346,7 @@ mod tests {
         temp_file2.write_all(b"File 2 content").unwrap();
         temp_file2.flush().unwrap();
 
-        let hasher = FileHasher::new(HashAlgorithm::Blake3);
+        let hasher = FileHasher::new(crate::hashing::algorithm::Blake3Algorithm);
         let paths = vec![
             temp_file1.path().to_path_buf(),
             temp_file2.path().to_path_buf(),
@@ -360,7 +368,7 @@ mod tests {
         temp_file.write_all(b"Test content").unwrap();
         temp_file.flush().unwrap();
 
-        let hasher = FileHasher::new(HashAlgorithm::Blake3);
+        let hasher = FileHasher::new(crate::hashing::algorithm::Blake3Algorithm);
         let relative_path = "test.txt".to_string();
 
         let info = hasher.hash_file_info(temp_file.path(), relative_path.clone()).await.unwrap();
@@ -377,7 +385,7 @@ mod tests {
         temp_file.write_all(b"Verification test").unwrap();
         temp_file.flush().unwrap();
 
-        let hasher = FileHasher::new(HashAlgorithm::Blake3);
+        let hasher = FileHasher::new(crate::hashing::algorithm::Blake3Algorithm);
         let correct_hash = hasher.hash_file(temp_file.path()).await.unwrap();
 
         // Test correct hash verification
@@ -390,7 +398,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_block_hash() {
-        let hasher = FileHasher::new(HashAlgorithm::Blake3);
+        let hasher = FileHasher::new(crate::hashing::algorithm::Blake3Algorithm);
         let content = "Test block content";
 
         let correct_hash = hasher.hash_block(content).await.unwrap();
@@ -411,7 +419,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_error_handling() {
-        let hasher = FileHasher::new(HashAlgorithm::Blake3);
+        let hasher = FileHasher::new(crate::hashing::algorithm::Blake3Algorithm);
         let non_existent_path = Path::new("/non/existent/file.txt");
 
         // Should handle missing file gracefully

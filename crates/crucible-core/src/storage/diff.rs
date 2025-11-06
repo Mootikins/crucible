@@ -376,6 +376,7 @@ impl EnhancedChangeDetector {
 
     /// Fallback sequential tree comparison when parallel processing is disabled
     #[cfg(not(feature = "parallel-processing"))]
+    #[allow(dead_code)] // Reserved for parallel processing feature
     fn compare_trees_parallel<H>(
         &self,
         old_tree: &MerkleTree,
@@ -391,6 +392,7 @@ impl EnhancedChangeDetector {
     }
 
     /// Try parallel processing with proper Sized constraints
+    #[allow(dead_code)] // Reserved for parallel processing feature
     fn try_compare_trees_parallel<H>(
         &self,
         old_tree: &MerkleTree,
@@ -780,6 +782,7 @@ impl EnhancedChangeDetector {
     }
 
     /// Compare two blocks in parallel processing
+    #[allow(dead_code)] // Reserved for parallel processing feature
     fn compare_blocks_parallel(
         &self,
         old_idx: usize,
@@ -809,6 +812,7 @@ impl EnhancedChangeDetector {
     }
 
     /// Detect structural changes between trees
+    #[allow(dead_code)] // Reserved for enhanced change detection
     fn detect_structural_changes(
         &self,
         old_tree: &MerkleTree,

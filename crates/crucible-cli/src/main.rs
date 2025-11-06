@@ -8,8 +8,7 @@ use crucible_cli::{
     commands, config,
 };
 use crucible_core::{CrucibleCore, types::hashing::HashAlgorithm};
-use crucible_surrealdb::{SurrealClient, SurrealDbConfig, KilnFileInfo};
-use crucible_watch::FileType as WatchFileType;
+use crucible_surrealdb::{SurrealClient, SurrealDbConfig};
 
 /// Process files using the integrated ChangeDetectionService
 ///

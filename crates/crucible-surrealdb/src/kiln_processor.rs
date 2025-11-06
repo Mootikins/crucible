@@ -19,7 +19,7 @@ use crate::kiln_scanner::{
     KilnFileInfo, KilnProcessError, KilnProcessResult, KilnScannerConfig, KilnScannerErrorType,
 };
 use crate::simple_integration;
-use crate::transaction_queue::{TransactionQueue, TransactionQueueConfig};
+use crate::transaction_queue::TransactionQueue;
 use crate::SurrealClient;
 use crucible_core::types::ParsedDocument;
 
@@ -1223,7 +1223,7 @@ async fn detect_changed_files_efficient(
     // Compare hashes to find changed files with robust error handling
     let mut changed_files = Vec::new();
     let mut unchanged_files = Vec::new();
-    let mut error_count = 0;
+    let error_count = 0;
 
     for file_info in file_infos {
         match lookup_result.found_files.get(&file_info.relative_path) {

@@ -23,18 +23,18 @@
 
 use crate::parser::error::ParserResult;
 use crate::parser::traits::{MarkdownParser, ParserCapabilities};
-use crate::parser::types::{ParsedDocument, DocumentContent};
+use crate::parser::types::ParsedDocument;
 use crate::storage::{
     ContentAddressedStorage, ContentHasher, MerkleTree, HashedBlock,
-    BlockSize, StorageResult, StorageError, EnhancedTreeChange, ChangeSource
+    BlockSize, EnhancedTreeChange, ChangeSource
 };
-use crate::storage::builder::{ContentAddressedStorageBuilder, StorageBackendType, HasherConfig};
+use crate::storage::builder::ContentAddressedStorageBuilder;
 use crate::storage::diff::EnhancedChangeDetector;
 use crate::hashing::blake3::Blake3Hasher;
 use async_trait::async_trait;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -231,6 +231,7 @@ pub struct StorageAwareParser {
     /// Content hasher for block processing
     hasher: Arc<dyn ContentHasher>,
     /// Enhanced change detector
+    #[allow(dead_code)] // Reserved for future change detection improvements
     change_detector: EnhancedChangeDetector,
 }
 
@@ -385,7 +386,7 @@ impl StorageAwareParser {
         &self,
         blocks: &[HashedBlock],
         tree: &MerkleTree,
-        document: &ParsedDocument,
+        _document: &ParsedDocument,
         storage: Arc<dyn ContentAddressedStorage>,
     ) -> ParserResult<StorageOperationResult> {
         let start_time = SystemTime::now();
@@ -450,7 +451,7 @@ impl StorageAwareParser {
     /// Detected changes
     async fn detect_changes(
         &self,
-        new_blocks: &[HashedBlock],
+        _new_blocks: &[HashedBlock],
         new_tree: &MerkleTree,
         previous_result: &StorageAwareParseResult,
     ) -> ParserResult<Option<Vec<EnhancedTreeChange>>> {
@@ -1002,7 +1003,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_parse_content_with_storage_no_backend() {
         let parser = factory::create_storage_aware_parser();
         let content = "# Test Document\n\nThis is a test document with some content.";
@@ -1033,7 +1034,7 @@ mod tests {
         assert!(parse_result.storage_result.is_none());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_parse_and_compare() {
         let parser = factory::create_storage_aware_parser();
         let content1 = "# Version 1\n\nThis is the first version.";

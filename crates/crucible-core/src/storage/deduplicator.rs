@@ -4,7 +4,7 @@
 //! across documents in the knowledge management system. It enables storage optimization
 //! by identifying identical content blocks and tracking their reuse patterns.
 
-use crate::storage::{ContentAddressedStorage, StorageError, StorageResult};
+use crate::storage::{ContentAddressedStorage, StorageResult};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -188,6 +188,7 @@ pub struct DocumentSimilarity {
 }
 
 /// Default deduplicator implementation
+#[allow(dead_code)] // Fields reserved for future deduplication strategies
 pub struct DefaultDeduplicator<S> {
     storage: S,
     /// Average block size for estimations
@@ -215,6 +216,7 @@ where
     }
 
     /// Estimate block size based on content
+    #[allow(dead_code)] // Reserved for adaptive block sizing
     fn estimate_block_size(&self, _content: &str) -> usize {
         // For now, use the configured average size
         // In the future, could analyze actual content length
@@ -282,7 +284,7 @@ where
         })
     }
 
-    async fn find_duplicates(&self, min_occurrences: usize) -> StorageResult<Vec<DuplicateGroup>> {
+    async fn find_duplicates(&self, _min_occurrences: usize) -> StorageResult<Vec<DuplicateGroup>> {
         // This would require querying all blocks and filtering by occurrence count
         // For now, return empty list
         Ok(Vec::new())

@@ -414,7 +414,7 @@ impl DatabaseTransactionConsumer {
                 // Create operations have no dependencies
                 true
             }
-            DatabaseTransaction::Update { document, .. } => {
+            DatabaseTransaction::Update {  .. } => {
                 // Update operations depend on document existing, but for simplicity we'll allow them
                 // The intelligent consumer will handle create vs update logic
                 true
@@ -861,7 +861,7 @@ impl DatabaseTransactionConsumer {
     async fn delete_document_completely(&self, document_id: &str, _kiln_root: &std::path::Path) -> Result<()> {
         info!("Deleting document: {}", document_id);
 
-        use crate::schema_types::RecordId;
+        
 
         // Delete the main document record
         let delete_note_query = format!("DELETE FROM note WHERE id = type::thing('note', '{}')", document_id);

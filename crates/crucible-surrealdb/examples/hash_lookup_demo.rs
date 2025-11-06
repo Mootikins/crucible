@@ -6,7 +6,8 @@
 use anyhow::Result;
 use crucible_surrealdb::{
     SurrealClient, create_kiln_scanner_with_embeddings, KilnScannerConfig,
-    lookup_file_hash, lookup_file_hashes_batch, BatchLookupConfig, HashLookupCache
+    lookup_file_hash, lookup_file_hashes_batch, BatchLookupConfig, HashLookupCache,
+    EmbeddingConfig, EmbeddingThreadPool
 };
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -14,9 +15,6 @@ use tokio::fs;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt::init();
-
     println!("🔍 Hash Lookup Demo for Crucible");
     println!("================================");
 
@@ -35,11 +33,7 @@ async fn main() -> Result<()> {
         ..Default::default()
     };
     let client = SurrealClient::new(db_config).await?;
-    println!("🗄️  Initialized database");
-
-    // Initialize schema
-    crucible_surrealdb::initialize_kiln_schema(&client).await?;
-    println!("📋 Initialized database schema");
+    println!("🗄️  Initialized database (schema auto-initialized)");
 
     // Create scanner with hash lookup enabled
     let mut config = KilnScannerConfig::default();
@@ -47,10 +41,13 @@ async fn main() -> Result<()> {
     config.track_file_changes = true;
     config.change_detection_method = crucible_surrealdb::ChangeDetectionMethod::ContentHash;
 
+    let embedding_config = EmbeddingConfig::default();
+    let embedding_pool = EmbeddingThreadPool::new(embedding_config).await?;
+
     let mut scanner = create_kiln_scanner_with_embeddings(
         config,
         &client,
-        &crucible_surrealdb::EmbeddingThreadPool::new(1)?,
+        &embedding_pool,
     ).await?;
     println!("🔬 Created scanner with hash lookup");
 

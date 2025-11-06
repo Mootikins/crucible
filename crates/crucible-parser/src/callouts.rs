@@ -73,7 +73,7 @@ impl SyntaxExtension for CalloutExtension {
             let full_match = cap.get(0).unwrap();
             let callout_type = cap.get(2).unwrap().as_str().trim().to_lowercase();
             let title = cap.get(3).map(|m| m.as_str().trim());
-            let callout_content = cap.get(4).unwrap().as_str().trim_end();
+            let _callout_content = cap.get(4).unwrap().as_str().trim_end();
 
             // Validate callout type
             if !self.is_valid_callout_type(&callout_type) {
@@ -126,7 +126,7 @@ impl CalloutExtension {
     /// Extract nested content for callout blocks (continuation lines)
     fn extract_nested_content(&self, content: &str, start_pos: usize, initial_len: usize) -> String {
         let mut full_content = String::new();
-        let mut in_callout = true;
+        let _in_callout = true;
 
         // Add the initial content
         if let Some(initial_match) = content.get(start_pos..start_pos + initial_len) {
@@ -238,7 +238,7 @@ Second line of info
     #[tokio::test]
     async fn test_unknown_callout_type() {
         let extension = CalloutExtension::new();
-        let content = "> [!unknown-type] Custom callout";
+        let content = "> [!unknowntype] Custom callout\nSome content";
         let mut doc_content = DocumentContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;

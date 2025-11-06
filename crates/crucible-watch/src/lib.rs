@@ -135,6 +135,9 @@ pub mod prelude {
     // Re-export both WatchConfig types with clear names
     pub use crate::config::WatchConfig as ConfigWatchConfig;
     pub use crate::traits::WatchConfig as TraitWatchConfig;
+    // Re-export both DebounceConfig types with clear names
+    pub use crate::config::DebounceConfig as ConfigDebounceConfig;
+    pub use crate::traits::DebounceConfig as TraitDebounceConfig;
 }
 
 #[cfg(test)]

@@ -26,14 +26,14 @@
 //! ```
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use async_trait::async_trait;
 use chrono;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn, trace};
+use tracing::{debug, info, warn, trace};
 
 use crate::error::Error;
 use crate::types::FileInfo;
@@ -46,7 +46,7 @@ use crucible_core::traits::change_detection::{
 use crucible_core::traits::change_detection::{
     HashLookupStorage, StoredHash, BatchLookupConfig as StorageBatchConfig,
 };
-use crucible_core::types::hashing::{FileHash, FileHashInfo, HashError, HashAlgorithm};
+use crucible_core::types::hashing::{FileHashInfo, HashError, HashAlgorithm};
 
 /// Configuration for change detection operations
 ///
@@ -569,7 +569,7 @@ impl ChangeDetectorTrait for ChangeDetector {
         let start_time = Instant::now();
         info!("Detecting changes for {} specific paths", paths.len());
 
-        let mut changes = ChangeSet::new();
+        let changes = ChangeSet::new();
 
         // Batch lookup the specified paths
         let lookup_result = self.batch_lookup_with_cache(paths).await?;
@@ -994,6 +994,7 @@ impl std::fmt::Debug for ChangeDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::FileHash;
     use std::collections::HashMap;
     use std::time::UNIX_EPOCH;
     use tempfile::TempDir;

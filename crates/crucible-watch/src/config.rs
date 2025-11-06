@@ -108,6 +108,25 @@ pub struct DebounceConfig {
     pub deduplicate: Option<bool>,
 }
 
+impl DebounceConfig {
+    /// Create a new debounce configuration with the specified delay.
+    ///
+    /// # Arguments
+    ///
+    /// * `delay_ms` - Debounce delay in milliseconds
+    ///
+    /// # Returns
+    ///
+    /// A new DebounceConfig with default values for optional fields
+    pub fn new(delay_ms: u64) -> Self {
+        Self {
+            delay_ms,
+            max_batch_size: None,
+            deduplicate: None,
+        }
+    }
+}
+
 /// Event processing configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EventProcessingConfig {

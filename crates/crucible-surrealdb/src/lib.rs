@@ -46,7 +46,8 @@ pub mod metrics;
 pub mod migration;
 pub mod types;
 pub mod hash_lookup;
-// Block storage functionality is now integrated into content_addressed_storage.rs
+// Block storage module (currently has compilation errors, being refactored)
+// pub mod block_storage;
 
 // Embedding modules
 pub mod embedding;
@@ -129,7 +130,7 @@ pub use content_addressed_storage::DocumentBlockRecord;
 
 // Deduplication detection functionality
 pub mod deduplication_detector;
-pub use deduplication_detector::SurrealDeduplicationDetector;
+pub use deduplication_detector::{DeduplicationDetector, SurrealDeduplicationDetector};
 
 // Deduplication reporting functionality
 pub mod deduplication_reporting;

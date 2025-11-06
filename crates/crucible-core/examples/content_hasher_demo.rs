@@ -17,7 +17,7 @@ use crucible_core::{
         ChangeDetectionMetrics, ChangeStatistics
     },
     types::hashing::{FileHash, FileHashInfo, HashAlgorithm, HashError},
-    hashing::FileHasher,
+    hashing::{FileHasher, algorithm::{Blake3Algorithm, Sha256Algorithm}},
     ChangeSet,
 };
 
@@ -298,7 +298,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n1️⃣  Basic File Hashing");
     println!("--------------------");
 
-    let hasher = FileHasher::new(HashAlgorithm::Blake3);
+    let hasher = FileHasher::new(Blake3Algorithm);
 
     // Create test files
     let file1_path = temp_path.join("document.md");
@@ -445,8 +445,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let test_content = "This is test content for algorithm comparison.";
 
-    let blake3_hasher = FileHasher::new(HashAlgorithm::Blake3);
-    let sha256_hasher = FileHasher::new(HashAlgorithm::Sha256);
+    let blake3_hasher = FileHasher::new(Blake3Algorithm);
+    let sha256_hasher = FileHasher::new(Sha256Algorithm);
 
     let blake3_hash = blake3_hasher.hash_block(test_content).await?;
     let sha256_hash = sha256_hasher.hash_block(test_content).await?;

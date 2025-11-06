@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use std::sync::Arc;
@@ -9,8 +9,7 @@ use crate::config::CliConfig;
 use crate::output;
 use crucible_core::storage::builder::{ContentAddressedStorageBuilder, StorageBackendType, HasherConfig};
 use crucible_core::storage::{ContentAddressedStorage, MerkleTree, HashedBlock, StorageResult, ContentHasher};
-use crucible_core::hashing::blake3::Blake3Hasher;
-use crucible_core::parser::{StorageAwareParser, PulldownParser, MarkdownParser};
+use crucible_core::parser::{StorageAwareParser, PulldownParser};
 
 /// Output formats for parse command
 #[derive(Debug, Clone)]
