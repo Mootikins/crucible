@@ -103,6 +103,7 @@ tokio-test = { workspace = true }
 wiremock = { workspace = true }
 mockall = { workspace = true }
 toml = { workspace = true }
+blake3 = "1.5"  # For hash verification tests
 
 # Additional dependencies for resource constraint testing
 rand = "0.8"
