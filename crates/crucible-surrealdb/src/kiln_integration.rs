@@ -693,14 +693,16 @@ async fn find_or_create_target_document(
 
 async fn ensure_tag_exists(client: &SurrealClient, tag_name: &str) -> Result<()> {
     let normalized_name = normalize_tag_name(tag_name);
-    // Use CREATE for proper upsert behavior - creates or replaces the tag
-    let tag_data = serde_json::json!({
-        "name": tag_name,
-        "created_at": "time::now()"
-    });
-    let create_sql = format!("CREATE tag:{} CONTENT {}", normalized_name, tag_data);
 
-    client.query(&create_sql, &[]).await?;
+    // Use UPDATE with RETURN NONE to create-or-update the tag without failing on duplicates
+    // This is idempotent and won't error if the tag already exists
+    let upsert_sql = format!(
+        "UPDATE tag:{} SET name = '{}', created_at = created_at OR time::now() RETURN NONE",
+        normalized_name,
+        tag_name.replace('\'', "\\'") // Escape single quotes
+    );
+
+    client.query(&upsert_sql, &[]).await?;
     Ok(())
 }
 
