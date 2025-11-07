@@ -1852,8 +1852,26 @@ pub async fn update_document_processing_metadata(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to update processing metadata for {}: {}", document_id, e))?;
 
+    // SYNCHRONIZATION FIX: Verify the hash was actually written to the database
+    // This forces the database to commit the transaction before we continue,
+    // preventing false positive "changed" detections in subsequent scans
+    let verify_sql = format!(
+        "SELECT file_hash FROM notes:⟨{}⟩ LIMIT 1",
+        record_id
+    );
+    let verify_result = client.query(&verify_sql, &[]).await
+        .map_err(|e| anyhow::anyhow!("Failed to verify hash write for {}: {}", document_id, e))?;
+
+    // Check that the verification query returned a result
+    if verify_result.records.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Hash write verification failed: no record found for {}",
+            document_id
+        ));
+    }
+
     debug!(
-        "Updated processing metadata for document {}: hash={}..., size={} bytes",
+        "Updated and verified processing metadata for document {}: hash={}..., size={} bytes",
         document_id,
         &file_info.content_hash_hex()[..8],
         file_info.file_size
