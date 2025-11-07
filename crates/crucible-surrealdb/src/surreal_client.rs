@@ -167,11 +167,22 @@ impl SurrealClient {
     /// # Errors
     ///
     /// Returns an error if the query fails to execute or parse.
-    pub async fn query(&self, sql: &str, _params: &[Value]) -> DbResult<QueryResult> {
+    pub async fn query(&self, sql: &str, params: &[Value]) -> DbResult<QueryResult> {
+        // Build query with parameter binding
+        let mut query = self.inner.db.query(sql);
+
+        // Bind parameters from the params array
+        // Parameters can be passed as objects: {"key": value, "key2": value2}
+        for param in params {
+            if let Value::Object(map) = param {
+                for (key, value) in map {
+                    query = query.bind((key.clone(), value.clone()));
+                }
+            }
+        }
+
         // Execute the query
-        let response = self
-            .inner.db
-            .query(sql)
+        let response = query
             .await
             .map_err(|e| DbError::Query(format!("Query execution failed: {}", e)))?;
 
