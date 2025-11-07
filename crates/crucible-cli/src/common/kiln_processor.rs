@@ -277,72 +277,72 @@ pub async fn process_files_on_startup(
         }
     };
 
-    // Use process_incremental_changes which handles change detection automatically
-    let scan_config = crucible_surrealdb::kiln_scanner::KilnScannerConfig::default();
-    let files = match crucible_surrealdb::kiln_processor::scan_kiln_directory(
+    // Use ChangeDetectionService for proper single-pass architecture
+    use crate::common::{ChangeDetectionService, ChangeDetectionServiceConfig};
+    use crucible_core::HashAlgorithm;
+    use std::sync::Arc;
+
+    // Create change detection service
+    let service = match ChangeDetectionService::new(
         &config.kiln.path,
-        &scan_config,
+        Arc::new(client.clone()),
+        HashAlgorithm::Blake3,
+        ChangeDetectionServiceConfig {
+            change_detector: crucible_watch::ChangeDetectorConfig::default(),
+            auto_process_changes: true,  // Process changes automatically
+            continue_on_processing_error: true,  // Continue on errors
+            max_processing_batch_size: 10,
+        },
     )
     .await {
-        Ok(files) => files,
+        Ok(service) => service,
         Err(e) => {
-            error!("Failed to scan kiln directory: {}", e);
-            return Err(anyhow::anyhow!("File scanning failed: {}", e));
+            error!("Failed to create change detection service: {}", e);
+            return Err(anyhow::anyhow!("Change detection initialization failed: {}", e));
         }
     };
 
-    if files.is_empty() {
-        info!("📂 No files found to process");
-        // Explicitly drop the client to ensure database connections are closed
-        drop(client);
-        return Ok(());
-    }
-
-    info!(
-        "📚 Found {} files, checking for changes...",
-        files.len()
-    );
-
-    // Use incremental processing which automatically detects changes
-    let result = match crucible_surrealdb::kiln_processor::process_incremental_changes(
-        &files,
-        &client,
-        &scan_config,
-        None, // No embedding pool for basic processing
-        &config.kiln.path,
-    )
-    .await {
+    // Detect and process changes in a single pass
+    let result = match service.detect_and_process_changes().await {
         Ok(result) => result,
         Err(e) => {
-            error!("Failed to process files incrementally: {}", e);
+            error!("Failed to detect and process changes: {}", e);
             return Err(anyhow::anyhow!("File processing failed: {}", e));
         }
     };
 
-    // If no files needed processing, we're done
-    if result.processed_count == 0 && result.failed_count == 0 {
+    // Check if any changes were detected
+    if result.metrics.changes_detected == 0 {
         info!("✅ All files are up to date");
         // Explicitly drop the client to ensure database connections are closed
         drop(client);
         return Ok(());
     }
 
+    // Extract processing results
+    let (processed_count, failed_count) = if let Some(processing_result) = &result.processing_result {
+        (processing_result.processed_count, processing_result.failed_count)
+    } else {
+        (0, 0)
+    };
+
     info!(
         "🔄 Processed {} file(s) with {} failures...",
-        result.processed_count,
-        result.failed_count
+        processed_count,
+        failed_count
     );
 
     let total_time = start_time.elapsed();
 
     info!(
-        "🎯 File processing completed: {} successful, {} failed in {:?}",
-        result.processed_count,
-        result.failed_count,
+        "🎯 File processing completed: {} changes detected, {} processed, {} failed in {:?}",
+        result.metrics.changes_detected,
+        processed_count,
+        failed_count,
         total_time
     );
 
-    if result.failed_count > 0 {
+    if failed_count > 0 {
         warn!("Some files failed to process - check logs for details");
     }
 

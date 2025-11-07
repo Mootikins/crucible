@@ -787,9 +787,9 @@ impl Default for ScanConfig {
             exclude_patterns: vec![
                 "*.tmp".to_string(),
                 "*.cache".to_string(),
-                ".git/*".to_string(),
-                "node_modules/*".to_string(),
-                "target/*".to_string(),
+                ".git/**".to_string(),
+                "node_modules/**".to_string(),  // Match any depth in node_modules
+                "target/**".to_string(),
             ],
             follow_symlinks: false,
             calculate_hashes: true,
