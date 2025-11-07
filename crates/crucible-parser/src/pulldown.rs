@@ -43,23 +43,38 @@ impl Default for PulldownParser {
 #[async_trait]
 impl MarkdownParser for PulldownParser {
     async fn parse_file(&self, path: &Path) -> ParserResult<ParsedDocument> {
-        // Read file content
-        let content = tokio::fs::read_to_string(path).await?;
+        // Read file as raw bytes first (matches scanner behavior for consistent hashing)
+        let bytes = tokio::fs::read(path).await?;
 
         // Check file size limit
         if let Some(max_size) = self.capabilities.max_file_size {
-            if content.len() > max_size {
+            if bytes.len() > max_size {
                 return Err(super::error::ParserError::FileTooLarge {
-                    size: content.len(),
+                    size: bytes.len(),
                     max: max_size,
                 });
             }
         }
 
-        self.parse_content(&content, path)
+        // Convert to UTF-8 string for parsing
+        let content = String::from_utf8(bytes.clone()).map_err(|e| {
+            super::error::ParserError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("File is not valid UTF-8: {}", e),
+            ))
+        })?;
+
+        // Parse with the raw bytes for consistent hashing with scanner
+        self.parse_content_with_bytes(&content, &bytes, path)
     }
 
     fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedDocument> {
+        // For backwards compatibility, hash the content string
+        // Note: New code should use parse_content_with_bytes for consistent hashing
+        self.parse_content_with_bytes(content, content.as_bytes(), source_path)
+    }
+
+    fn parse_content_with_bytes(&self, content: &str, raw_bytes: &[u8], source_path: &Path) -> ParserResult<ParsedDocument> {
         // Extract frontmatter (YAML between --- delimiters)
         let (frontmatter, body) = extract_frontmatter(content)?;
 
@@ -72,13 +87,14 @@ impl MarkdownParser for PulldownParser {
         // Parse content structure with pulldown-cmark
         let doc_content = parse_content_structure(body)?;
 
-        // Calculate content hash using BLAKE3 (same as FileScanner)
+        // Calculate content hash using BLAKE3 on raw bytes (matches FileScanner behavior)
+        // This ensures parser and scanner produce identical hashes for the same file
         let mut hasher = blake3::Hasher::new();
-        hasher.update(content.as_bytes());
+        hasher.update(raw_bytes);
         let content_hash = hasher.finalize().to_hex().to_string();
 
-        // Get file size
-        let file_size = content.len() as u64;
+        // Get file size from raw bytes (matches actual file size)
+        let file_size = raw_bytes.len() as u64;
 
         Ok(ParsedDocument {
             path: source_path.to_path_buf(),
