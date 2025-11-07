@@ -332,6 +332,16 @@ impl ChangeDetectionE2ETestHarness {
         let result = self.service.detect_and_process_changes().await
             .context("Change detection failed")?;
 
+        // SYNCHRONIZATION FIX: Wait for database operations to complete if files were processed
+        // This ensures subsequent change detection sees the updated hashes in the database
+        if let Some(processing_result) = &result.processing_result {
+            if processing_result.processed_count > 0 {
+                // Substantial delay to ensure all async database operations complete
+                // SurrealDB commits are async and may take time to fully persist
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            }
+        }
+
         let elapsed = start_time.elapsed();
 
         Ok((result, elapsed))
@@ -429,6 +439,15 @@ async fn run_basic_workflow_test() -> Result<()> {
 
     // Verify the ChangeSet contains the correct file
     let changeset = &result2.changeset;
+
+    // Debug: Print which files were detected as changed
+    if changeset.changed.len() != 1 {
+        println!("\n🐛 DEBUG: Expected 1 changed file, got {}:", changeset.changed.len());
+        for (i, file) in changeset.changed.iter().enumerate() {
+            println!("  {}. {}", i + 1, file.relative_path);
+        }
+    }
+
     assert_eq!(changeset.changed.len(), 1, "Should have exactly one changed file");
     assert_eq!(changeset.new.len(), 0, "Should have no new files");
     assert_eq!(changeset.deleted.len(), 0, "Should have no deleted files");
@@ -457,6 +476,22 @@ async fn run_basic_workflow_test() -> Result<()> {
 
     // Verify the ChangeSet contains the deletion
     let changeset = &result3.changeset;
+
+    // Debug: Print changeset details
+    println!("\n🐛 DEBUG Step 6 changeset:");
+    println!("  Changed files: {}", changeset.changed.len());
+    for file in &changeset.changed {
+        println!("    - {}", file.relative_path);
+    }
+    println!("  New files: {}", changeset.new.len());
+    for file in &changeset.new {
+        println!("    - {}", file.relative_path);
+    }
+    println!("  Deleted files: {}", changeset.deleted.len());
+    for path in &changeset.deleted {
+        println!("    - {}", path);
+    }
+
     assert_eq!(changeset.changed.len(), 0, "Should have no changed files");
     assert_eq!(changeset.new.len(), 0, "Should have no new files");
     assert_eq!(changeset.deleted.len(), 1, "Should have exactly one deleted file");
@@ -1133,7 +1168,10 @@ async fn run_file_scanner_integration_test() -> Result<()> {
     println!("   - Hash algorithm: {:?}", stats.hash_algorithm);
     println!("   - Last scan time: {:?}", stats.last_scan_time);
 
-    assert_eq!(stats.scan_count, 1, "Should have performed 1 scan");
+    // Note: We perform 2 scans in this test:
+    // 1. Direct call to scanner.scan_directory() in Step 2
+    // 2. Indirect call via ChangeDetectionService.detect_and_process_changes() in Step 6
+    assert_eq!(stats.scan_count, 2, "Should have performed 2 scans (1 direct + 1 via ChangeDetectionService)");
     assert_eq!(stats.root_path, harness.vault_path(), "Root path should match");
     assert_eq!(stats.hash_algorithm, HashAlgorithm::Blake3, "Should use Blake3 algorithm");
 
