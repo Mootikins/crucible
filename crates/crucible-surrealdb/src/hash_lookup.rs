@@ -80,7 +80,7 @@ pub async fn lookup_file_hash(
     debug!("Looking up hash for file: {}", relative_path);
 
     let sql = "SELECT id, path, file_hash, file_size, modified_at FROM notes WHERE path = $path LIMIT 1";
-    let params = vec![serde_json::json!(relative_path)];
+    let params = vec![serde_json::json!({"path": relative_path})];
 
     let result = client
         .query(sql, &params)
