@@ -16,7 +16,7 @@ use crucible_core::{
         ChangeDetectionResult, ChangeDetectionMetrics, StoredHash,
     },
     types::hashing::{HashAlgorithm, HashError},
-    FileHashInfo,
+    FileHash, FileHashInfo,
 };
 use std::collections::HashMap;
 use crucible_watch::ChangeDetectorConfig;
@@ -87,11 +87,14 @@ impl SimpleChangeDetector {
 
     /// Detect changes by comparing current files with stored hashes
     pub async fn detect_changes(&self, current_files: &[FileHashInfo]) -> Result<ChangeDetectionResult, HashError> {
+        eprintln!("\n🔍 DEBUG: detect_changes() called with {} current files", current_files.len());
         let start_time = std::time::Instant::now();
         let mut changes = ChangeSet::new();
 
         // Get all stored hashes
+        eprintln!("   - Fetching stored hashes from database...");
         let stored_hashes = self.storage.get_all_hashes().await?;
+        eprintln!("   - Got {} stored hashes", stored_hashes.len());
 
         // Process each current file
         for current_file in current_files {
@@ -119,11 +122,20 @@ impl SimpleChangeDetector {
             .map(|f| f.relative_path.clone())
             .collect();
 
+        eprintln!("\n🔍 DEBUG: Deletion detection:");
+        eprintln!("   - Current files on disk: {}", current_files.len());
+        eprintln!("   - Current paths: {:?}", current_paths);
+        eprintln!("   - Stored hashes in DB: {}", stored_hashes.len());
+        eprintln!("   - Stored paths: {:?}", stored_hashes.keys().collect::<Vec<_>>());
+
         for stored_path in stored_hashes.keys() {
             if !current_paths.contains(stored_path) {
+                eprintln!("   - Detected deletion: {}", stored_path);
                 changes.add_deleted(stored_path.clone());
             }
         }
+
+        eprintln!("   - Total deletions found: {}", changes.deleted.len());
 
         let total_duration = start_time.elapsed();
         let metrics = ChangeDetectionMetrics {
@@ -340,22 +352,10 @@ impl ChangeDetectionService {
             .map_err(|e| anyhow!("File scanning failed: {}", e))?;
         let scan_time = scan_start.elapsed();
 
+        // Note: Don't return early when no files found - we still need to detect deletions!
+        // If all files were deleted, we'd have 0 current files but need to compare against stored hashes
         if scan_result.successful_files == 0 {
-            info!("No files found during scan");
-            return Ok(ChangeDetectionServiceResult {
-                changeset: ChangeSet::new(),
-                metrics: ChangeDetectionServiceMetrics {
-                    total_time: start_time.elapsed(),
-                    scan_time,
-                    change_detection_time: std::time::Duration::from_secs(0),
-                    processing_time: None,
-                    files_scanned: 0,
-                    changes_detected: 0,
-                    database_round_trips: 0,
-                    cache_hit_rate: 1.0,
-                },
-                processing_result: None,
-            });
+            info!("No files found during scan - will check for deletions");
         }
 
         info!("Scanned {} files in {:?}", scan_result.successful_files, scan_time);
@@ -553,10 +553,10 @@ impl ChangeDetectionService {
         for chunk in kiln_files.chunks(self.config.max_processing_batch_size) {
             debug!("Processing batch of {} files", chunk.len());
 
-            // Use the existing processing pipeline
-            let mut scan_config = crucible_surrealdb::kiln_scanner::KilnScannerConfig::default();
-            scan_config.parallel_processing = 1; // Disable parallel processing to ensure all files complete
-            match crucible_surrealdb::kiln_processor::process_incremental_changes(
+            // Use the single-pass processing pipeline (no internal change detection)
+            let scan_config = crucible_surrealdb::kiln_scanner::KilnScannerConfig::default();
+            // process_files processes ONLY what we give it - no duplicate detection
+            match crucible_surrealdb::kiln_processor::process_files(
                 chunk,
                 self.client.as_ref(),
                 &scan_config,
@@ -570,11 +570,22 @@ impl ChangeDetectionService {
                     // Note: The processing pipeline doesn't provide individual failed file info,
                     // so we'll track failures at the batch level
                     if result.failed_count > 0 {
+                        eprintln!("\n🔍 DEBUG: Processing failures detected in batch");
+                        eprintln!("   - Batch size: {}", chunk.len());
+                        eprintln!("   - Processed: {}", result.processed_count);
+                        eprintln!("   - Failed: {}", result.failed_count);
+                        eprintln!("   - Files in batch: {:?}", chunk.iter().map(|f| &f.relative_path).collect::<Vec<_>>());
+                        eprintln!("   - Errors: {:?}", result.errors);
+
                         failed_files.extend(
                             chunk.iter()
                                 .map(|f| f.relative_path.clone())
+                                .skip(result.processed_count)  // Skip successful files
                                 .take(result.failed_count)
                         );
+
+                        eprintln!("   - Identified failed files (may be incorrect): {:?}",
+                                 &failed_files[failed_files.len().saturating_sub(result.failed_count)..]);
                     }
 
                     if !self.config.continue_on_processing_error && result.failed_count > 0 {
