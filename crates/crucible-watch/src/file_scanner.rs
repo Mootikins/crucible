@@ -785,6 +785,16 @@ impl FileScanner {
             });
         }
 
+        // Early check for common excluded directories to avoid unnecessary traversal
+        if let Some(dir_name) = dir_path.file_name().and_then(|n| n.to_str()) {
+            if dir_name == "node_modules" || dir_name == "target" || dir_name == ".git" {
+                return Some(SkipReason {
+                    path: dir_path.to_path_buf(),
+                    reason: SkipType::ExcludedPattern(format!("excluded directory: {}", dir_name)),
+                });
+            }
+        }
+
         // Check exclude patterns
         if self.config.matches_exclude_pattern(dir_path) {
             return Some(SkipReason {

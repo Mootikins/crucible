@@ -449,6 +449,14 @@ pub async fn process_single_file_with_recovery(
 }
 
 /// Perform incremental processing of changed files only using efficient batch hash comparison
+///
+/// **DEPRECATED:** This function performs duplicate change detection internally.
+/// Use `ChangeDetectionService` for change detection, then call `process_files()` instead.
+/// This function will be removed in a future version.
+#[deprecated(
+    since = "0.1.0",
+    note = "Use ChangeDetectionService for detection, then process_files() for processing"
+)]
 pub async fn process_incremental_changes(
     all_files: &[KilnFileInfo],
     client: &SurrealClient,
@@ -562,6 +570,111 @@ pub async fn process_incremental_changes(
     })
 }
 
+/// Process pre-filtered files through the kiln pipeline (Single-Pass Architecture)
+///
+/// This function processes ONLY the files provided - it does NOT perform change detection.
+/// Change detection should be performed beforehand using `ChangeDetectionService`.
+///
+/// # Single-Pass Architecture
+///
+/// This function is part of the single-pass change detection architecture where:
+/// 1. **ChangeDetectionService** performs change detection (queries database once)
+/// 2. **process_files** processes the resulting filtered list (no additional queries)
+///
+/// This ensures:
+/// - **No race conditions**: Single database query means consistent state
+/// - **Better performance**: 50% fewer database queries
+/// - **Clear separation**: Detection logic separate from processing logic
+/// - **Deterministic results**: Same input always produces same output
+///
+/// # Arguments
+///
+/// * `files_to_process` - Pre-filtered list of files that need processing (new or changed)
+/// * `client` - SurrealDB client for database operations
+/// * `config` - Scanner configuration settings
+/// * `embedding_pool` - Optional embedding thread pool for vector operations
+/// * `kiln_root` - Root path of the kiln directory
+///
+/// # Returns
+///
+/// Processing results including counts of successful/failed operations and timing metrics
+///
+/// # Example
+///
+/// ```no_run
+/// use crucible_cli::common::ChangeDetectionService;
+///
+/// // Step 1: Detect changes
+/// let service = ChangeDetectionService::new(...).await?;
+/// let detection_result = service.detect_changes().await?;
+///
+/// // Step 2: Process only the changed files
+/// let files_to_process = detection_result.changes.new
+///     .into_iter()
+///     .chain(detection_result.changes.changed)
+///     .collect();
+/// let result = process_files(&files_to_process, client, config, None, kiln_root).await?;
+/// ```
+///
+/// # Migration Note
+///
+/// This replaces the old `process_incremental_changes` which performed duplicate
+/// change detection internally, causing race conditions and wasted database queries.
+pub async fn process_files(
+    files_to_process: &[KilnFileInfo],
+    client: &SurrealClient,
+    config: &KilnScannerConfig,
+    embedding_pool: Option<&EmbeddingThreadPool>,
+    kiln_root: &Path,
+) -> Result<KilnProcessResult> {
+    let start_time = std::time::Instant::now();
+
+    if files_to_process.is_empty() {
+        info!("📂 No files to process");
+        return Ok(KilnProcessResult {
+            processed_count: 0,
+            failed_count: 0,
+            errors: Vec::new(),
+            total_processing_time: start_time.elapsed(),
+            average_processing_time_per_document: Duration::from_secs(0),
+        });
+    }
+
+    info!("🚀 Processing {} pre-filtered files", files_to_process.len());
+
+    // Process the files directly (no change detection)
+    let result = process_kiln_files(
+        files_to_process,
+        client,
+        config,
+        embedding_pool,
+        kiln_root,
+    )
+    .await?;
+
+    let total_processing_time = start_time.elapsed();
+    let avg_time_per_doc = if result.processed_count > 0 {
+        total_processing_time / result.processed_count as u32
+    } else {
+        Duration::from_secs(0)
+    };
+
+    info!(
+        "✅ Processing completed: {} successful, {} failed in {:?}",
+        result.processed_count,
+        result.failed_count,
+        total_processing_time
+    );
+
+    Ok(KilnProcessResult {
+        processed_count: result.processed_count,
+        failed_count: result.failed_count,
+        errors: result.errors,
+        total_processing_time,
+        average_processing_time_per_document: avg_time_per_doc,
+    })
+}
+
 /// Process embeddings for a list of documents (mocked for now)
 pub async fn process_document_embeddings(
     documents: &[ParsedDocument],
@@ -619,8 +732,11 @@ async fn process_files_parallel(
     let client = Arc::new(client.clone());
     let kiln_root = Arc::new(kiln_root.to_path_buf());
 
-    let results = stream::iter(files)
-        .map(|file_info| {
+    // Store file info for error reporting
+    let file_infos: Vec<&KilnFileInfo> = files.iter().copied().collect();
+
+    let results = stream::iter(files.iter().enumerate())
+        .map(|(index, file_info)| {
             let semaphore = semaphore.clone();
             let client = client.clone();
             let embedding_pool = embedding_pool.cloned();
@@ -628,14 +744,15 @@ async fn process_files_parallel(
 
             async move {
                 let _permit = semaphore.acquire().await?;
-                process_single_file_with_recovery(
+                let result = process_single_file_with_recovery(
                     file_info,
                     &client,
                     config,
                     embedding_pool.as_ref(),
                     &kiln_root,
                 )
-                .await
+                .await;
+                Ok::<(usize, Result<bool>), anyhow::Error>((index, result))
             }
         })
         .buffer_unordered(config.parallel_processing)
@@ -644,17 +761,56 @@ async fn process_files_parallel(
 
     let mut processed_count = 0;
     let mut failed_count = 0;
+    let mut errors = Vec::new();
 
     for result in results {
         match result {
-            Ok(success) => {
-                if success {
-                    processed_count += 1;
-                } else {
-                    failed_count += 1;
+            Ok((index, inner_result)) => {
+                match inner_result {
+                    Ok(success) => {
+                        if success {
+                            processed_count += 1;
+                        } else {
+                            failed_count += 1;
+                            // File failed but error was already logged by recovery function
+                            errors.push(KilnProcessError {
+                                file_path: file_infos[index].path.clone(),
+                                error_message: format!("Processing failed for {}", file_infos[index].path.display()),
+                                error_type: KilnScannerErrorType::ParseError,
+                                timestamp: chrono::Utc::now(),
+                                retry_attempts: 0,
+                                recovered: false,
+                                final_error_message: None,
+                            });
+                        }
+                    }
+                    Err(e) => {
+                        failed_count += 1;
+                        errors.push(KilnProcessError {
+                            file_path: file_infos[index].path.clone(),
+                            error_message: format!("{}", e),
+                            error_type: KilnScannerErrorType::IoError,
+                            timestamp: chrono::Utc::now(),
+                            retry_attempts: 0,
+                            recovered: false,
+                            final_error_message: Some(format!("{}", e)),
+                        });
+                    }
                 }
             }
-            Err(_) => failed_count += 1,
+            Err(e) => {
+                failed_count += 1;
+                // Can't associate with specific file when semaphore acquire fails
+                errors.push(KilnProcessError {
+                    file_path: PathBuf::from("unknown"),
+                    error_message: format!("Parallel processing error: {}", e),
+                    error_type: KilnScannerErrorType::IoError,
+                    timestamp: chrono::Utc::now(),
+                    retry_attempts: 0,
+                    recovered: false,
+                    final_error_message: Some(format!("{}", e)),
+                });
+            }
         }
     }
 
@@ -668,7 +824,7 @@ async fn process_files_parallel(
     Ok(KilnProcessResult {
         processed_count,
         failed_count,
-        errors: Vec::new(), // Errors handled in recovery function
+        errors,
         total_processing_time,
         average_processing_time_per_document: avg_time_per_doc,
     })
@@ -684,6 +840,7 @@ async fn process_files_sequential(
     let start_time = std::time::Instant::now();
     let mut processed_count = 0;
     let mut failed_count = 0;
+    let mut errors = Vec::new();
 
     for file_info in files {
         match process_single_file_with_recovery(
@@ -700,9 +857,30 @@ async fn process_files_sequential(
                     processed_count += 1;
                 } else {
                     failed_count += 1;
+                    // File failed but error was already logged by recovery function
+                    errors.push(KilnProcessError {
+                        file_path: file_info.path.clone(),
+                        error_message: format!("Processing failed for {}", file_info.path.display()),
+                        error_type: KilnScannerErrorType::ParseError,
+                        timestamp: chrono::Utc::now(),
+                        retry_attempts: 0,
+                        recovered: false,
+                        final_error_message: None,
+                    });
                 }
             }
-            Err(_) => failed_count += 1,
+            Err(e) => {
+                failed_count += 1;
+                errors.push(KilnProcessError {
+                    file_path: file_info.path.clone(),
+                    error_message: format!("{}", e),
+                    error_type: KilnScannerErrorType::IoError,
+                    timestamp: chrono::Utc::now(),
+                    retry_attempts: 0,
+                    recovered: false,
+                    final_error_message: Some(format!("{}", e)),
+                });
+            }
         }
     }
 
@@ -716,7 +894,7 @@ async fn process_files_sequential(
     Ok(KilnProcessResult {
         processed_count,
         failed_count,
-        errors: Vec::new(), // Errors handled in recovery function
+        errors,
         total_processing_time,
         average_processing_time_per_document: avg_time_per_doc,
     })
