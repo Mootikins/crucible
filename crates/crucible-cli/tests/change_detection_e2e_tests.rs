@@ -186,21 +186,59 @@ pub struct ChangeDetectionE2ETestHarness {
 }
 
 impl ChangeDetectionE2ETestHarness {
+    /// Explicitly shutdown the database connection to release file handles
+    pub async fn shutdown(self) -> Result<TempDir> {
+        // Drop the service first (it holds a reference to the client)
+        drop(self.service);
+
+        // Try to unwrap the Arc to get exclusive ownership
+        // This ensures the database connection is fully closed
+        match Arc::try_unwrap(self.client) {
+            Ok(_client) => {
+                // Client is dropped here, closing the database connection
+            }
+            Err(_arc) => {
+                // There are still other references - wait a bit and retry
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        }
+
+        // Give OS time to release file handles
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        Ok(self.temp_dir)
+    }
+
     /// Create a new test harness with a temporary vault
     pub async fn new() -> Result<Self> {
+        Self::new_with_db_type(false).await
+    }
+
+    /// Create a new test harness with option to use in-memory database
+    pub async fn new_with_db_type(use_memory_db: bool) -> Result<Self> {
         let temp_dir = TempDir::new()?;
         let vault_path = temp_dir.path();
 
         // Initialize test vault structure
         Self::initialize_vault_structure(vault_path)?;
 
-        // Create database client
-        let db_config = SurrealDbConfig {
-            namespace: "crucible_test".to_string(),
-            database: "change_detection_test".to_string(),
-            path: vault_path.join(".crucible/test.db").to_string_lossy().to_string(),
-            max_connections: Some(10),
-            timeout_seconds: Some(30),
+        // Create database client - use in-memory for tests with multiple harnesses
+        let db_config = if use_memory_db {
+            SurrealDbConfig {
+                namespace: "crucible_test".to_string(),
+                database: format!("test_{}", uuid::Uuid::new_v4()),  // Unique DB name
+                path: ":memory:".to_string(),
+                max_connections: Some(10),
+                timeout_seconds: Some(30),
+            }
+        } else {
+            SurrealDbConfig {
+                namespace: "crucible_test".to_string(),
+                database: "change_detection_test".to_string(),
+                path: vault_path.join(".crucible/test.db").to_string_lossy().to_string(),
+                max_connections: Some(10),
+                timeout_seconds: Some(30),
+            }
         };
 
         let client = Arc::new(SurrealClient::new(db_config).await
@@ -319,6 +357,10 @@ impl ChangeDetectionE2ETestHarness {
     /// Create a new file in the vault
     pub async fn create_new_file(&mut self, filename: &str, content: &str) -> Result<PathBuf> {
         let file_path = self.temp_dir.path().join(filename);
+        // Create parent directories if they don't exist
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
         fs::write(&file_path, content)?;
         self.file_paths.insert(filename.to_string(), file_path.clone());
         println!("🆕 Created new file: {}", filename);
@@ -878,8 +920,16 @@ async fn test_e2e_error_handling_and_edge_cases() -> Result<()> {
 
     match test_result {
         Ok(result) => {
-            println!("✅ E2E error handling test completed successfully");
-            result
+            match result {
+                Ok(_) => {
+                    println!("✅ E2E error handling test completed successfully");
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("❌ E2E error handling test failed: {:#?}", e);
+                    Err(e)
+                }
+            }
         }
         Err(_) => {
             panic!("⏰ E2E error handling test timed out after {} seconds", TEST_TIMEOUT_SECS);
@@ -887,10 +937,11 @@ async fn test_e2e_error_handling_and_edge_cases() -> Result<()> {
     }
 }
 
-async fn run_error_handling_test() -> Result<()> {
+async fn run_error_handling_test() -> Result<Vec<TempDir>> {
     // Test Case 1: Empty vault
+    // Use in-memory databases for this test to avoid RocksDB file handle cleanup issues
     println!("\n📁 Test Case 1: Empty vault handling");
-    let empty_harness = ChangeDetectionE2ETestHarness::new().await?;
+    let empty_harness = ChangeDetectionE2ETestHarness::new_with_db_type(true).await?;
 
     let (empty_result, empty_elapsed) = empty_harness.run_change_detection().await?;
     assert_eq!(empty_result.metrics.files_scanned, 0, "Empty vault should scan 0 files");
@@ -900,7 +951,7 @@ async fn run_error_handling_test() -> Result<()> {
 
     // Test Case 2: Single file operations
     println!("\n📝 Test Case 2: Single file operations");
-    let mut single_harness = ChangeDetectionE2ETestHarness::new().await?;
+    let mut single_harness = ChangeDetectionE2ETestHarness::new_with_db_type(true).await?;
 
     // Create a single file
     single_harness.create_new_file("single.md", "# Single File\n\nJust one file here.").await?;
@@ -928,7 +979,7 @@ async fn run_error_handling_test() -> Result<()> {
 
     // Test Case 3: Special characters in filenames
     println!("\n🔤 Test Case 3: Special characters in filenames");
-    let mut special_harness = ChangeDetectionE2ETestHarness::new().await?;
+    let mut special_harness = ChangeDetectionE2ETestHarness::new_with_db_type(true).await?;
 
     let special_files = vec![
         ("file with spaces.md", "# File with Spaces\n\nTesting space handling."),
@@ -961,7 +1012,7 @@ async fn run_error_handling_test() -> Result<()> {
 
     // Test Case 4: Deep directory structure
     println!("\n📂 Test Case 4: Deep directory structure");
-    let mut deep_harness = ChangeDetectionE2ETestHarness::new().await?;
+    let mut deep_harness = ChangeDetectionE2ETestHarness::new_with_db_type(true).await?;
 
     // Create nested directory structure
     let deep_paths = vec![
@@ -985,7 +1036,7 @@ async fn run_error_handling_test() -> Result<()> {
 
     // Test Case 5: Binary file handling (should be skipped)
     println!("\n🔢 Test Case 5: Binary file handling");
-    let mut binary_harness = ChangeDetectionE2ETestHarness::new().await?;
+    let mut binary_harness = ChangeDetectionE2ETestHarness::new_with_db_type(true).await?;
 
     // Create some text files first
     binary_harness.create_new_file("text1.md", "# Text File 1\n\nPlain text content.").await?;
@@ -1011,7 +1062,15 @@ async fn run_error_handling_test() -> Result<()> {
     println!("\n✅ E2E error handling and edge cases test PASSED");
     println!("   📊 All edge cases handled gracefully:");
 
-    Ok(())
+    // Leak all harnesses to skip cleanup - they will be cleaned up by OS later
+    // This avoids potential race conditions during test cleanup with multiple databases
+    std::mem::forget(binary_harness);
+    std::mem::forget(deep_harness);
+    std::mem::forget(special_harness);
+    std::mem::forget(single_harness);
+    std::mem::forget(empty_harness);
+
+    Ok(vec![])
 }
 
 /// Test 6: Integration with file scanner directly
