@@ -726,7 +726,7 @@ impl ChangeSet {
 
     /// Get number of files that need processing
     pub fn files_to_process(&self) -> usize {
-        self.changed.len() + self.new.len()
+        self.changed.len() + self.new.len() + self.deleted.len()
     }
 
     /// Add an unchanged file
