@@ -554,7 +554,9 @@ impl ChangeDetectionService {
             debug!("Processing batch of {} files", chunk.len());
 
             // Use the single-pass processing pipeline (no internal change detection)
-            let scan_config = crucible_surrealdb::kiln_scanner::KilnScannerConfig::default();
+            // TEMPORARY: Disable parallel processing to test if it's causing the random failures
+            let mut scan_config = crucible_surrealdb::kiln_scanner::KilnScannerConfig::default();
+            scan_config.parallel_processing = 1;
             // process_files processes ONLY what we give it - no duplicate detection
             match crucible_surrealdb::kiln_processor::process_files(
                 chunk,

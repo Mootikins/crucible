@@ -358,12 +358,8 @@ pub async fn process_kiln_files_with_error_handling(
         )
         .await
         {
-            Ok(success) => {
-                if success {
-                    processed_count += 1;
-                } else {
-                    failed_count += 1;
-                }
+            Ok(()) => {
+                processed_count += 1;
             }
             Err(e) => {
                 failed_count += 1;
@@ -404,7 +400,7 @@ pub async fn process_single_file_with_recovery(
     config: &KilnScannerConfig,
     embedding_pool: Option<&EmbeddingThreadPool>,
     kiln_root: &std::path::Path,
-) -> Result<bool> {
+) -> Result<()> {
     let mut last_error = None;
 
     info!("📝 Queuing file for processing: {}", file_info.path.display());
@@ -419,7 +415,7 @@ pub async fn process_single_file_with_recovery(
                         attempt
                     );
                 }
-                return Ok(true);
+                return Ok(());
             }
             Err(e) => {
                 last_error = Some(anyhow::anyhow!("{}", e));
@@ -438,14 +434,15 @@ pub async fn process_single_file_with_recovery(
         }
     }
 
+    let final_error = last_error.unwrap_or_else(|| anyhow!("Unknown error"));
     error!(
         "❌ FAILED to process file {} after {} attempts: {}",
         file_info.path.display(),
         config.error_retry_attempts + 1,
-        last_error.unwrap_or_else(|| anyhow!("Unknown error"))
+        final_error
     );
 
-    Ok(false)
+    Err(final_error)
 }
 
 /// Perform incremental processing of changed files only using efficient batch hash comparison
@@ -752,7 +749,7 @@ async fn process_files_parallel(
                     &kiln_root,
                 )
                 .await;
-                Ok::<(usize, Result<bool>), anyhow::Error>((index, result))
+                Ok::<(usize, Result<()>), anyhow::Error>((index, result))
             }
         })
         .buffer_unordered(config.parallel_processing)
@@ -767,29 +764,15 @@ async fn process_files_parallel(
         match result {
             Ok((index, inner_result)) => {
                 match inner_result {
-                    Ok(success) => {
-                        if success {
-                            processed_count += 1;
-                        } else {
-                            failed_count += 1;
-                            // File failed but error was already logged by recovery function
-                            errors.push(KilnProcessError {
-                                file_path: file_infos[index].path.clone(),
-                                error_message: format!("Processing failed for {}", file_infos[index].path.display()),
-                                error_type: KilnScannerErrorType::ParseError,
-                                timestamp: chrono::Utc::now(),
-                                retry_attempts: 0,
-                                recovered: false,
-                                final_error_message: None,
-                            });
-                        }
+                    Ok(()) => {
+                        processed_count += 1;
                     }
                     Err(e) => {
                         failed_count += 1;
                         errors.push(KilnProcessError {
                             file_path: file_infos[index].path.clone(),
                             error_message: format!("{}", e),
-                            error_type: KilnScannerErrorType::IoError,
+                            error_type: KilnScannerErrorType::ParseError,
                             timestamp: chrono::Utc::now(),
                             retry_attempts: 0,
                             recovered: false,
@@ -852,29 +835,15 @@ async fn process_files_sequential(
         )
         .await
         {
-            Ok(success) => {
-                if success {
-                    processed_count += 1;
-                } else {
-                    failed_count += 1;
-                    // File failed but error was already logged by recovery function
-                    errors.push(KilnProcessError {
-                        file_path: file_info.path.clone(),
-                        error_message: format!("Processing failed for {}", file_info.path.display()),
-                        error_type: KilnScannerErrorType::ParseError,
-                        timestamp: chrono::Utc::now(),
-                        retry_attempts: 0,
-                        recovered: false,
-                        final_error_message: None,
-                    });
-                }
+            Ok(()) => {
+                processed_count += 1;
             }
             Err(e) => {
                 failed_count += 1;
                 errors.push(KilnProcessError {
                     file_path: file_info.path.clone(),
                     error_message: format!("{}", e),
-                    error_type: KilnScannerErrorType::IoError,
+                    error_type: KilnScannerErrorType::ParseError,
                     timestamp: chrono::Utc::now(),
                     retry_attempts: 0,
                     recovered: false,
