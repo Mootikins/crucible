@@ -72,11 +72,10 @@ impl MarkdownParser for PulldownParser {
         // Parse content structure with pulldown-cmark
         let doc_content = parse_content_structure(body)?;
 
-        // Calculate content hash using SHA-256
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(content);
-        let content_hash = format!("{:x}", hasher.finalize());
+        // Calculate content hash using BLAKE3 (matches scanner behavior for consistent hashing)
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(content.as_bytes());
+        let content_hash = hasher.finalize().to_hex().to_string();
 
         // Get file size
         let file_size = content.len() as u64;
