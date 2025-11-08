@@ -1,12 +1,12 @@
 # 🔥 Crucible
 
-> A plaintext-first agent framework for metadata-rich knowledge graphs
+> A plaintext-first knowledge management system for metadata-rich knowledge graphs
 
-Crucible is a high-performance knowledge management system built around a simple principle: **wikilinks define the knowledge graph, and agents explore it through simple CLI primitives.** By combining portable markdown files with block-level embeddings, graph traversal, and semantic search, Crucible enables testing whether metadata-rich knowledge graphs improve agent accuracy—with a clear path toward RL optimization, custom agent definitions, and markdown-based workflows.
+Crucible is a high-performance knowledge management system built around a simple principle: **wikilinks define the knowledge graph, and applications explore it through a unified core API.** By combining portable markdown files with block-level embeddings, graph traversal, and semantic search, Crucible enables testing whether metadata-rich knowledge graphs improve agent accuracy—with a clear path toward RL optimization, custom agent definitions, and markdown-based workflows.
 
-> **Current MVP Focus (2025-11):** Validating that wikilink-based knowledge graphs, tags, and block-level embeddings enable better agent context discovery through agent-friendly commands (`cru semantic`, `cru query`). Future enhancements include reinforcement learning for context selection and definable workflows via markdown.
+> **Current MVP Focus (2025-11):** Validating that wikilink-based knowledge graphs, tags, and block-level embeddings enable better agent context discovery through the Agent Context Protocol (ACP). The CLI provides a chat interface for testing, with future desktop and web interfaces planned.
 
-> **Architecture Note:** The system routes every interface (CLI today, desktop/agent integrations tomorrow) through a shared `crucible-core` façade. Markdown files remain the source of truth for portability and lock-in avoidance—the database is optional infrastructure for rich queries.
+> **Architecture Note:** The system routes every interface (CLI chat today, desktop/web/agent integrations tomorrow) through a shared `crucible-core` façade. Markdown files remain the source of truth for portability and lock-in avoidance—the database is optional infrastructure for rich queries.
 
 ## ✨ Key Features
 
@@ -14,7 +14,7 @@ Crucible is a high-performance knowledge management system built around a simple
 - 🧠 **Wikilink-Based Graph**: `[[Note Name]]` links define entities and relationships—no extraction needed
 - 🎯 **Block-Level Granularity**: Semantic search and embeddings operate at paragraph/heading level for precise context
 - 🔍 **Hybrid Search**: Combine semantic similarity, graph structure, tags, and fuzzy matching
-- 🤖 **Agent-Friendly CLI**: Simple primitives (`cru semantic`, `cru query`) that agents call with native tool-calling
+- 🤖 **Agent Context Protocol (ACP)**: Built on Zed's ACP implementation for standardized agent interactions
 
 ### Performance & Portability
 - 📄 **Plaintext-First**: Markdown files are source of truth—works on devices without database
@@ -23,9 +23,9 @@ Crucible is a high-performance knowledge management system built around a simple
 - 🔒 **Memory Safety**: Large file protection, UTF-8 safety, and input validation
 
 ### Developer Experience
-- 🖥️ **Interactive REPL**: Full-featured terminal interface with syntax highlighting and auto-completion
+- 🖥️ **Multiple Interfaces**: CLI chat interface today, desktop and web UIs planned
 - 📊 **Operational Insights**: Core-level metrics, tooling diagnostics, and performance tracking
-- 🔧 **Clean Architecture**: 83% complexity reduction, 51% fewer dependencies
+- 🔧 **Clean Architecture**: SOLID principles with dependency injection, trait-based extensibility
 - 🛡️ **Security First**: Multiple security levels, sandboxed execution, comprehensive validation
 
 ### Future Roadmap
@@ -40,102 +40,80 @@ Crucible is a high-performance knowledge management system built around a simple
 git clone https://github.com/matthewkrohn/crucible.git
 cd crucible
 
-# Build and install CLI
-cargo build -p crucible-cli
+# Build the system
+cargo build --release
 
-# Start interactive REPL (default behavior)
+# Start chat interface (default behavior)
 cru
 
 # Show available commands
 cru --help
 ```
 
-## 🔁 Execution Flow (Baseline → Target)
+## 🔁 Architecture Evolution (In Progress)
 
-**Baseline (2025-10-30)**
-1. `main.rs` parses CLI args with Clap and loads `CliConfig`.
-2. Global singletons spin up on demand (kiln watcher, `CrucibleToolManager`).
-3. Commands hit filesystem/SurrealDB/tool layers directly.
-4. REPL starts with its own copies of the same globals.
+**Current State (2025-11)**
+- EPR (Entity-Property-Relation) schema provides unified document storage
+- Hash-based change detection using hybrid Merkle trees
+- File processing integrated into startup with incremental updates
+- CLI provides chat interface for ACP-based agent interactions
 
-**Target (Roadmap)**
-1. UI adapters parse input then hand control to a `CliApp` (or desktop equivalent) constructed from `crucible-core`.
-2. The core façade exposes agent, tool, and storage traits; concrete implementations stay inside core.
-3. Commands/REPL interact only with the façade, making orchestration identical across UIs.
-4. Sync & collaboration piggyback on the same façade so multiple devices/users share state through CRDT updates coordinated by the core.
+**Target Architecture**
+1. **Unified Core**: All interfaces (CLI chat, desktop, web) route through `crucible-core` façade
+2. **Trait-Based APIs**: Storage, embedding, and agent services exposed via DI-friendly traits
+3. **ACP Integration**: Agent Context Protocol provides standardized agent interaction layer
+4. **Multi-Interface**: Chat CLI today, desktop/web UIs sharing the same core tomorrow
 
-During the transition you may still encounter global managers or direct CLI → infrastructure calls; the roadmap tracks the steps that retire those paths.
+**Migration Progress**
+- ✅ EPR schema and hash lookup migrated to entity-based storage
+- ✅ Change detection using EPR metadata instead of legacy `notes` table
+- 🔄 Hybrid Merkle integration for section-level change tracking
+- 🔄 Database capability traits for ACP service layer
+- 📋 Legacy cleanup and CLI chat interface implementation
 
-## 🖥️ CLI Overview
+## 🖥️ Current Interface: Chat CLI
 
-The Crucible CLI (`cru`) provides comprehensive command-line tools for knowledge management, service orchestration, and AI integration:
+The Crucible CLI (`cru`) currently provides a chat-based interface for interacting with your knowledge base. This is a transitional interface while the ACP integration is being developed.
 
-### Core Commands
+### Getting Started
 ```bash
-# Interactive REPL with SurrealQL support
+# Start chat interface (processes files on startup)
 cru
 
-# Search operations (with built-in safety)
-cru search "your query" --limit 20 --format table
-cru fuzzy "concept" --content --tags --paths
-cru semantic "machine learning concepts" --show-scores
+# Skip file processing for quick commands
+cru --no-process
 
-# File Processing Options
-cru --no-process search "query"           # Skip file processing for quick commands
-cru --process-timeout 60 semantic "ml"   # Set custom processing timeout
-
-# Search automatically handles:
-# - Large files (>10MB skipped, >1MB content limited)
-# - UTF-8 encoding errors (graceful recovery)
-# - Input validation (2-1000 character queries)
-
-# Note management
-cru note create projects/research.md --edit
-cru note get projects/research.md --format json
-cru note list --format table
+# Set custom processing timeout
+cru --process-timeout 60
 ```
 
-### Integrated File Processing
-
-Crucible now processes files automatically on startup to ensure all data is up-to-date:
-
-```bash
-# Files are processed automatically when CLI starts
-cru semantic "recent changes"    # Uses latest processed data
-
-# Control file processing behavior
-cru --no-process fuzzy "concept"         # Use existing data (faster)
-cru --process-timeout 120 stats          # Custom timeout (seconds)
-```
+### File Processing
+Crucible automatically processes files on startup to ensure data is up-to-date:
 
 **What happens automatically:**
-- ✅ Scans for new and modified files
+- ✅ Scans for new and modified files using hash-based change detection
 - ✅ Updates embeddings for semantic search
 - ✅ Processes only changed files (incremental)
 - ✅ Shows progress and handles errors gracefully
 - ✅ Continues even if processing fails (graceful degradation)
 
-### Tooling & Automation
+### Planned Features (ACP Integration)
+The CLI will transition to a chat-oriented interface that:
+- Provides natural language interaction with your knowledge base
+- Uses Agent Context Protocol for standardized agent communication
+- Offers simple status and diff commands
+- Minimizes direct database access in favor of ACP service layer
+
+### Legacy Commands (Being Phased Out)
+The following commands exist but will be replaced by ACP-based interactions:
 ```bash
-# Run custom Rune scripts
-crucible-cli run my-analysis-script.rn --args '{"query": "test", "limit": 10}'
-crucible-cli commands  # List available commands
+cru search "query"           # Text search
+cru fuzzy "concept"          # Fuzzy matching
+cru semantic "ml"            # Semantic search
+cru note create path.md      # Note management
 ```
 
-### REPL Commands
-Inside the interactive REPL:
-```sql
--- SurrealQL queries
-SELECT * FROM notes ORDER BY created DESC LIMIT 10;
-SELECT title, tags FROM notes WHERE tags CONTAINS '#project';
-
--- REPL built-in commands
-:tools          # List available tools
-:run search-tool "query"
-:stats          # Show kiln statistics
-:config         # Show configuration
-:help           # Show help
-```
+**Note:** The SurrealQL REPL and direct database commands are being phased out in favor of the ACP chat interface.
 
 ## 🏗️ Architecture Highlights
 
@@ -201,37 +179,35 @@ SELECT title, tags FROM notes WHERE tags CONTAINS '#project';
 
 ## 🔥 Roadmap Focus
 
-### Current MVP: Agent Context Accuracy Testing (2025-11)
-**Goal**: Validate that metadata-rich knowledge graphs (wikilinks, tags, block embeddings) improve agent accuracy through simple CLI primitives agents can call with native tool-calling.
+### Current Phase: ACP + Chat CLI (2025-11)
+**Goal**: Build Agent Context Protocol integration with a chat-oriented CLI interface, establishing the foundation for agent-driven knowledge exploration.
 
-**What's Working**:
-- ✅ Wikilink parsing and backlink queries (SurrealQL)
-- ✅ Tag indexing and querying
-- ✅ Block-level semantic search with embeddings
-- ✅ Agent-friendly commands (`cru semantic`, `cru query`)
-- ✅ Portable markdown-first architecture
+**Completed**:
+- ✅ EPR schema migration (Entity-Property-Relation model)
+- ✅ Hash-based change detection using hybrid Merkle trees
+- ✅ Incremental file processing on startup
+- ✅ Wikilink parsing and graph structure
+- ✅ Tag indexing and block-level embeddings
 
-**In Progress**:
-- ⚙️ **Incremental File Processing** (optimize-data-flow): Make CLI startup sub-second for large vaults by processing only changed files
-- ⚙️ **Architecture Refactoring**: Clean SOLID-compliant module boundaries for maintainability
+**In Progress** (per STATUS.md):
+1. **Hybrid Merkle Integration**: Persist section/block hashes for fine-grained change detection
+2. **Legacy Cleanup**: Remove `notes:` table dependencies and normalize to EPR entities
+3. **Database Capability Traits**: Introduce trait layers (`EntityStore`, `RelationStore`) for ACP services
+4. **Chunk Hash Coverage**: Integration tests for incremental embedding updates
+5. **ACP + Chat CLI**: Port Zed's ACP implementation and replace CLI with chat interface
 
-**What This Enables**:
-- Agents manually suggest relevant searches during conversations
-- Agents explore vault content using their native `Read` tool
-- Testing which metadata signals (graph structure, embeddings, tags) improve agent responses
+**Guiding Principles** (from STATUS.md):
+- **Start-from-scratch mindset**: Use EPR schema everywhere, defer CRDT until ACP + chat MVP is solid
+- **SOLID + DI-first**: Traits over concrete implementations for testability and flexibility
+- **Concise MVP**: Build only surfaces needed for ACP + chat; delete scope creep
+- **Surreal-first ACP**: ACP precedes the CLI chat shell
 
-### Future Enhancements (Post-MVP)
-- **Reinforcement Learning**: Optimize context selection based on agent accuracy metrics
-- **Custom Agent Definitions**: Define specialized agents and their behaviors via markdown
-- **Markdown Workflows**: Declarative workflow automation in markdown files
-- **Multi-Device Sync**: CRDT-backed sync for collaborative knowledge bases
-- **Advanced Context Assembly**: Automated topic extraction and hybrid retrieval pipelines
-
-### Core Architecture Evolution (In Progress)
-- **UI → Core → Infra Flow**: CLI targets shared core façade before hitting storage/tools
-- **Integrated Agents & Tools**: Agents and humans share the same APIs through the core
-- **Shared Fixtures**: `crucible_core::test_support` centralizes kiln/document builders
-- **Dependency Cleanup**: Removing direct UI → infrastructure calls for clean boundaries
+### Future Enhancements (Post-ACP)
+- **Desktop & Web UIs**: Additional interfaces sharing the same `crucible-core` façade
+- **CRDT Sync**: Multi-device collaboration through Yjs integration
+- **Plugin System**: Rune-based extensibility for custom workflows
+- **Reinforcement Learning**: Context selection optimization based on agent accuracy metrics
+- **Custom Agent Definitions**: Markdown-based agent behavior specifications
 
 ## License
 
