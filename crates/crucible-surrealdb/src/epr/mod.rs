@@ -1,9 +1,15 @@
 //! Entity/Property/Relation (EPR) data structures and helpers.
 //!
 //! This module defines strongly-typed structs that mirror the new schema in
-//! `schema_epr.surql`. The goal is to provide a small, composable API surface
-//! that other crates can consume without worrying about raw SurrealDB records.
+//! `schema_epr.surql` and provides higher-level storage helpers used by the
+//! ingestion pipeline.
 
 pub mod types;
+pub mod schema;
+pub mod store;
+pub mod ingest;
 
 pub use types::*;
+pub use schema::apply_epr_schema;
+pub use store::EprStore;
+pub use ingest::DocumentIngestor;
