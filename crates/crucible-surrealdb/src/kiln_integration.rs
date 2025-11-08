@@ -5,16 +5,18 @@
 //! Includes comprehensive vector embedding support for semantic search and processing.
 
 use crate::embedding_config::*;
+use crucible_core::parser::types::Wikilink;
 use crucible_core::types::{FrontmatterFormat, ParsedDocument, Tag};
 use crate::types::{ColumnDefinition, DatabaseStats, DataType, Record, RecordId, TableSchema};
 use crate::SurrealClient;
 use crate::epr::{
     DocumentIngestor, EprStore, EntityRecord as EprEntityRecord, EntityTag, EntityTagRecord,
-    RecordId as EprRecordId, Tag as EprTag, TagRecord,
+    RecordId as EprRecordId, Relation, RelationRecord, Tag as EprTag, TagRecord,
 };
 use anyhow::{anyhow, Result};
+use serde_json::json;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use tracing::{debug, error, info, warn};
 
 /// Initialize the kiln schema in the database
@@ -311,9 +313,81 @@ pub async fn create_wikilink_edges(
     client: &SurrealClient,
     doc_id: &str,
     doc: &ParsedDocument,
+    kiln_root: &Path,
 ) -> Result<()> {
-    let _ = (client, doc_id, doc);
-    debug!("wikilink edge creation deferred to EPR-native implementation");
+    if doc.wikilinks.is_empty() {
+        debug!("no wikilinks detected for {}", doc.path.display());
+        return Ok(());
+    }
+
+    let entity_id = parse_entity_record_id(doc_id)?;
+    let store = EprStore::new(client.clone());
+    store
+        .delete_relations_from(&entity_id, "wikilink")
+        .await?;
+
+    let mut created = 0usize;
+    for (index, wikilink) in doc.wikilinks.iter().enumerate() {
+        if wikilink.is_embed {
+            continue;
+        }
+
+        let Some(relative_path) = resolve_wikilink_target(doc, kiln_root, wikilink) else {
+            debug!(
+                "Skipping wikilink '{}' from {} because target path could not be resolved",
+                wikilink.target,
+                doc.path.display()
+            );
+            continue;
+        };
+
+        let target_id = EprRecordId::new("entities", format!("note:{}", relative_path));
+        store
+            .ensure_note_entity(&target_id, wikilink.display())
+            .await?;
+
+        let relation = Relation {
+            id: Some(relation_record_id(
+                &entity_id,
+                &target_id,
+                "wikilink",
+                index,
+            )),
+            from_id: entity_id.clone(),
+            to_id: target_id.clone(),
+            relation_type: "wikilink".to_string(),
+            weight: 1.0,
+            directed: true,
+            confidence: 1.0,
+            source: "parser".to_string(),
+            position: Some(index as i32),
+            metadata: json!({
+                "alias": wikilink.alias,
+                "heading_ref": wikilink.heading_ref,
+                "block_ref": wikilink.block_ref,
+            }),
+            created_at: chrono::Utc::now(),
+        };
+
+        store.upsert_relation(&relation).await?;
+        create_backlink_relation(
+            &store,
+            &target_id,
+            &entity_id,
+            "wikilink",
+            index,
+            json!({ "source_title": doc.title() }),
+        )
+        .await?;
+        created += 1;
+    }
+
+    debug!(
+        "created {} wikilink relations for {}",
+        created,
+        doc.path.display()
+    );
+
     Ok(())
 }
 
@@ -394,6 +468,21 @@ fn entity_tag_record_id(
     EprRecordId::new("entity_tags", format!("{}:{}", entity_part, tag_part))
 }
 
+fn relation_record_id(
+    from_id: &EprRecordId<EprEntityRecord>,
+    to_id: &EprRecordId<EprEntityRecord>,
+    relation_type: &str,
+    position: usize,
+) -> EprRecordId<RelationRecord> {
+    let from_part = from_id.id.replace(':', "_");
+    let to_part = to_id.id.replace(':', "_");
+    let rel_part = relation_type.replace(':', "_");
+    EprRecordId::new(
+        "relations",
+        format!("rel:{}:{}:{}:{}", from_part, rel_part, to_part, position),
+    )
+}
+
 fn normalize_tag_identifier(path: &str) -> String {
     path.trim()
         .to_lowercase()
@@ -458,6 +547,88 @@ async fn ensure_tag_hierarchy(
     }
 
     Ok(parent)
+}
+
+fn resolve_wikilink_target(
+    doc: &ParsedDocument,
+    kiln_root: &Path,
+    wikilink: &Wikilink,
+) -> Option<String> {
+    let mut target = wikilink.target.trim().replace('\\', "/");
+    if target.is_empty() {
+        return None;
+    }
+
+    let mut is_absolute = false;
+    if target.starts_with('/') {
+        target = target.trim_start_matches('/').to_string();
+        is_absolute = true;
+    }
+
+    let lowercase = target.to_ascii_lowercase();
+    if !(lowercase.ends_with(".md") || lowercase.ends_with(".markdown")) {
+        target.push_str(".md");
+    }
+
+    let mut candidate = PathBuf::from(target);
+    if !is_absolute {
+        let relative_doc = PathBuf::from(resolve_relative_path(&doc.path, kiln_root));
+        let parent = relative_doc.parent().map(|p| p.to_path_buf()).unwrap_or_else(PathBuf::new);
+        candidate = parent.join(candidate);
+    }
+
+    let normalized = clean_relative_path(&candidate)?;
+    Some(normalized.to_string_lossy().replace('\\', "/"))
+}
+
+fn clean_relative_path(path: &Path) -> Option<PathBuf> {
+    let mut stack: Vec<PathBuf> = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if stack.pop().is_none() {
+                    return None;
+                }
+            }
+            Component::Normal(part) => stack.push(PathBuf::from(part)),
+            Component::Prefix(_) | Component::RootDir => return None,
+        }
+    }
+
+    let mut normalized = PathBuf::new();
+    for part in stack {
+        normalized.push(part);
+    }
+
+    Some(normalized)
+}
+
+async fn create_backlink_relation(
+    store: &EprStore,
+    from_id: &EprRecordId<EprEntityRecord>,
+    to_id: &EprRecordId<EprEntityRecord>,
+    edge_type: &str,
+    position: usize,
+    metadata: serde_json::Value,
+) -> Result<()> {
+    let relation_type = format!("{}_backlink", edge_type);
+    let relation = Relation {
+        id: Some(relation_record_id(from_id, to_id, &relation_type, position)),
+        from_id: from_id.clone(),
+        to_id: to_id.clone(),
+        relation_type,
+        weight: 1.0,
+        directed: true,
+        confidence: 1.0,
+        source: "parser".to_string(),
+        position: Some(position as i32),
+        metadata,
+        created_at: chrono::Utc::now(),
+    };
+
+    store.upsert_relation(&relation).await?;
+    Ok(())
 }
 
 /// Get documents linked via wikilinks
@@ -719,9 +890,73 @@ pub async fn create_embed_relationships(
     client: &SurrealClient,
     doc_id: &str,
     doc: &ParsedDocument,
+    kiln_root: &Path,
 ) -> Result<()> {
-    let _ = (client, doc_id, doc);
-    debug!("embed relationship creation deferred to EPR-native implementation");
+    let embeds: Vec<(usize, &Wikilink)> = doc
+        .wikilinks
+        .iter()
+        .enumerate()
+        .filter(|(_, link)| link.is_embed)
+        .collect();
+
+    if embeds.is_empty() {
+        debug!("no embeds detected for {}", doc.path.display());
+        return Ok(());
+    }
+
+    let entity_id = parse_entity_record_id(doc_id)?;
+    let store = EprStore::new(client.clone());
+    store
+        .delete_relations_from(&entity_id, "embed")
+        .await?;
+
+    for (index, wikilink) in embeds {
+        let Some(relative_path) = resolve_wikilink_target(doc, kiln_root, wikilink) else {
+            debug!(
+                "Skipping embed '{}' from {} because target path could not be resolved",
+                wikilink.target,
+                doc.path.display()
+            );
+            continue;
+        };
+
+        let target_id = EprRecordId::new("entities", format!("note:{}", relative_path));
+        store
+            .ensure_note_entity(&target_id, wikilink.display())
+            .await?;
+
+        let embed_type = determine_embed_type(wikilink);
+        let relation = Relation {
+            id: Some(relation_record_id(&entity_id, &target_id, "embed", index)),
+            from_id: entity_id.clone(),
+            to_id: target_id.clone(),
+            relation_type: "embed".to_string(),
+            weight: 1.0,
+            directed: true,
+            confidence: 1.0,
+            source: "parser".to_string(),
+            position: Some(index as i32),
+            metadata: json!({
+                "embed_type": embed_type,
+                "alias": wikilink.alias,
+                "heading_ref": wikilink.heading_ref,
+                "block_ref": wikilink.block_ref,
+            }),
+            created_at: chrono::Utc::now(),
+        };
+        store.upsert_relation(&relation).await?;
+
+        create_backlink_relation(
+            &store,
+            &target_id,
+            &entity_id,
+            "embed",
+            index,
+            json!({ "embed_type": embed_type }),
+        )
+        .await?;
+    }
+
     Ok(())
 }
 
@@ -2475,6 +2710,7 @@ mod tests {
     use crate::epr::apply_epr_schema;
     use crate::SurrealClient;
     use std::path::PathBuf;
+    use crucible_core::parser::types::Wikilink;
 
     #[tokio::test]
     async fn test_store_embedding_with_graph_relations() {
@@ -2645,6 +2881,121 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(entity_tags.records.len(), 2);
+    }
+    #[tokio::test]
+    async fn wikilink_edges_create_relations_and_placeholders() {
+        let client = SurrealClient::new_memory().await.unwrap();
+        apply_epr_schema(&client).await.unwrap();
+        let kiln_root = PathBuf::from("/vault");
+
+        let mut doc = ParsedDocument::new(kiln_root.join("projects/source.md"));
+        doc.content_hash = "wikihash".into();
+        doc.content.plain_text = "Scenario with wikilinks".into();
+        doc.wikilinks.push(Wikilink::new("TargetNote", 5));
+        doc.wikilinks
+            .push(Wikilink::new("../Shared/OtherDoc", 15));
+
+        let doc_id = store_parsed_document(&client, &doc, &kiln_root)
+            .await
+            .unwrap();
+
+        create_wikilink_edges(&client, &doc_id, &doc, &kiln_root)
+            .await
+            .unwrap();
+
+        let relations = client
+            .query("SELECT relation_type, out, in FROM relations ORDER BY relation_type", &[])
+            .await
+            .unwrap();
+        assert_eq!(relations.records.len(), 4);
+
+        let targets: Vec<String> = relations
+            .records
+            .iter()
+            .filter_map(|record| record.data.get("out").and_then(|v| v.as_str()))
+            .map(|s| s.to_string())
+            .collect();
+        assert!(
+            targets
+                .iter()
+                .any(|t| t.contains("projects/TargetNote.md"))
+        );
+        assert!(
+            targets
+                .iter()
+                .any(|t| t.contains("Shared/OtherDoc.md"))
+        );
+
+        let relation_types: Vec<String> = relations
+            .records
+            .iter()
+            .filter_map(|record| record.data.get("relation_type").and_then(|v| v.as_str()))
+            .map(|s| s.to_string())
+            .collect();
+        assert!(relation_types.iter().any(|t| t == "wikilink"));
+        assert!(relation_types.iter().any(|t| t == "wikilink_backlink"));
+
+        let placeholder = client
+            .query(
+                "SELECT data FROM type::thing('entities', 'note:Shared/OtherDoc.md')",
+                &[],
+            )
+            .await
+            .unwrap();
+        assert_eq!(placeholder.records.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn embed_relationships_create_relations_and_backlinks() {
+        let client = SurrealClient::new_memory().await.unwrap();
+        apply_epr_schema(&client).await.unwrap();
+        let kiln_root = PathBuf::from("/vault");
+
+        let mut doc = ParsedDocument::new(kiln_root.join("media/source.md"));
+        doc.content_hash = "embedhash".into();
+        doc.content.plain_text = "Doc with embeds".into();
+        doc.wikilinks.push(Wikilink::embed("Assets/Diagram", 3));
+
+        let doc_id = store_parsed_document(&client, &doc, &kiln_root)
+            .await
+            .unwrap();
+
+        create_embed_relationships(&client, &doc_id, &doc, &kiln_root)
+            .await
+            .unwrap();
+
+        let relations = client
+            .query("SELECT relation_type, out, in FROM relations", &[])
+            .await
+            .unwrap();
+        assert_eq!(relations.records.len(), 2);
+        let mut has_forward = false;
+        let mut has_backlink = false;
+        for record in &relations.records {
+            match record.data.get("relation_type").and_then(|v| v.as_str()) {
+                Some("embed") => {
+                    has_forward = true;
+                    assert!(record
+                        .data
+                        .get("out")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.contains("Assets/Diagram.md"))
+                        .unwrap_or(false));
+                }
+                Some("embed_backlink") => {
+                    has_backlink = true;
+                    assert!(record
+                        .data
+                        .get("out")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.contains("media/source.md"))
+                        .unwrap_or(false));
+                }
+                _ => {}
+            }
+        }
+        assert!(has_forward);
+        assert!(has_backlink);
     }
 }
 

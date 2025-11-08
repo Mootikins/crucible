@@ -558,7 +558,7 @@ impl DatabaseTransactionConsumer {
                 ).await?;
 
                 // Create all related entities (links, embeds, tags) automatically
-                self.create_document_relationships(&document_id, document).await?;
+                self.create_document_relationships(&document_id, document, kiln_root).await?;
             }
 
             DatabaseTransaction::Update { document, kiln_root, .. } => {
@@ -579,7 +579,7 @@ impl DatabaseTransactionConsumer {
                         document,
                         kiln_root
                     ).await?;
-                    self.create_document_relationships(&created_id, document).await?;
+                    self.create_document_relationships(&created_id, document, kiln_root).await?;
                 }
             }
 
@@ -815,11 +815,15 @@ impl DatabaseTransactionConsumer {
         &self,
         document_id: &str,
         document: &crucible_core::types::ParsedDocument,
+        kiln_root: &std::path::Path,
     ) -> Result<()> {
         // Create wikilink edges
         if !document.wikilinks.is_empty() {
-            crate::kiln_integration::create_wikilink_edges(&self.client, document_id, document).await?;
+            crate::kiln_integration::create_wikilink_edges(&self.client, document_id, document, kiln_root).await?;
         }
+
+        // Create embed relations
+        crate::kiln_integration::create_embed_relationships(&self.client, document_id, document, kiln_root).await?;
 
         // Create tag associations
         if !document.tags.is_empty() {
@@ -854,7 +858,7 @@ impl DatabaseTransactionConsumer {
         // The consumer is "intelligent" because it figures out what to do automatically
         // without the processing layer having to specify granular operations
         let document_id = crate::kiln_integration::store_parsed_document(&self.client, new, kiln_root).await?;
-        self.create_document_relationships(&document_id, new).await?;
+        self.create_document_relationships(&document_id, new, kiln_root).await?;
 
         Ok(())
     }

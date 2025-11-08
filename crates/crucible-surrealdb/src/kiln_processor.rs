@@ -899,8 +899,8 @@ async fn process_single_file_internal(
 
     // Create relationships
     debug!("  🔗 Creating relationships...");
-    create_wikilink_edges(client, &doc_id, &document).await?;
-    create_embed_relationships(client, &doc_id, &document).await?;
+    create_wikilink_edges(client, &doc_id, &document, kiln_root).await?;
+    create_embed_relationships(client, &doc_id, &document, kiln_root).await?;
     create_tag_associations(client, &doc_id, &document).await?;
     debug!("  ✅ Relationships created");
 
