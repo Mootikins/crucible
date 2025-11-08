@@ -631,8 +631,94 @@ async fn create_backlink_relation(
     Ok(())
 }
 
-/// Get documents linked via wikilinks
-pub async fn get_linked_documents(
+fn record_ref_to_string(value: &serde_json::Value) -> Option<String> {
+    if let Some(s) = value.as_str() {
+        return Some(s.to_string());
+    }
+
+    if let Some(obj) = value.as_object() {
+        if let Some(thing) = obj.get("thing").and_then(|v| v.as_str()) {
+            return Some(thing.to_string());
+        }
+        let table = obj.get("tb")?.as_str()?;
+        let id = obj.get("id")?.as_str()?;
+        return Some(format!("{}:{}", table, id));
+    }
+
+    None
+}
+
+fn embed_type_from_metadata(value: &serde_json::Value) -> String {
+    value
+        .as_object()
+        .and_then(|obj| obj.get("embed_type"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("simple")
+        .to_string()
+}
+
+async fn fetch_document_by_id(
+    client: &SurrealClient,
+    record_id: &str,
+) -> Result<Option<ParsedDocument>> {
+    let (table, id) = match record_id.split_once(':') {
+        Some((table, id)) => (table.to_string(), id.to_string()),
+        None => return Ok(None),
+    };
+    let sql = r#"SELECT * FROM type::thing($table, $id)"#;
+    let result = client
+        .query(sql, &[json!({ "table": table, "id": id })])
+        .await?;
+    if let Some(first) = result.records.first() {
+        let doc = convert_record_to_parsed_document(first).await?;
+        Ok(Some(doc))
+    } else {
+        Ok(None)
+    }
+}
+
+async fn query_relation_documents(
+    client: &SurrealClient,
+    doc_id: &str,
+    relation_type: &str,
+) -> Result<Vec<ParsedDocument>> {
+    let entity = parse_entity_record_id(doc_id)?;
+    let sql = r#"
+        SELECT out AS target
+        FROM relations
+        WHERE relation_type = $relation_type
+          AND in = type::thing($table, $id)
+    "#;
+
+    let result = client
+        .query(
+            sql,
+            &[json!({
+                "relation_type": relation_type,
+                "table": entity.table,
+                "id": entity.id,
+            })],
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to query {} relations: {}", relation_type, e))?;
+
+    let mut documents = Vec::new();
+    for record in result.records {
+        if let Some(target_id) = record
+            .data
+            .get("target")
+            .and_then(record_ref_to_string)
+        {
+            if let Some(doc) = fetch_document_by_id(client, &target_id).await? {
+                documents.push(doc);
+            }
+        }
+    }
+
+    Ok(documents)
+}
+
+async fn legacy_get_linked_documents(
     client: &SurrealClient,
     doc_id: &str,
 ) -> Result<Vec<ParsedDocument>> {
@@ -641,13 +727,12 @@ pub async fn get_linked_documents(
     let result = client
         .query(&sql, &[])
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to query linked documents: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to query legacy linked documents: {}", e))?;
 
     let mut documents = Vec::new();
     for record in result.records {
         if let Some(target_data) = record.data.get("target") {
             if let serde_json::Value::Object(target_obj) = target_data {
-                // Convert target data back to a record format
                 let target_record = Record {
                     id: None,
                     data: target_obj
@@ -664,8 +749,90 @@ pub async fn get_linked_documents(
     Ok(documents)
 }
 
-/// Get documents by tag
-pub async fn get_documents_by_tag(
+async fn find_entity_id_by_title(
+    client: &SurrealClient,
+    title: &str,
+) -> Result<Option<EprRecordId<EprEntityRecord>>> {
+    let sql = r#"
+        SELECT entity_id
+        FROM properties
+        WHERE namespace = "core"
+          AND key = "title"
+          AND value_text = $title
+        LIMIT 1
+    "#;
+
+    let result = client.query(sql, &[json!({ "title": title })]).await?;
+    if let Some(record) = result.records.first() {
+        if let Some(entity_str) = record
+            .data
+            .get("entity_id")
+            .and_then(record_ref_to_string)
+        {
+            if let Some((table, id)) = entity_str.split_once(':') {
+                return Ok(Some(EprRecordId::new(table, id)));
+            }
+        }
+    }
+    Ok(None)
+}
+
+async fn legacy_get_wikilink_relations(
+    client: &SurrealClient,
+    doc_id: &str,
+) -> Result<Vec<LinkRelation>> {
+    let sql = format!("SELECT * FROM wikilink WHERE from = {}", doc_id);
+
+    let result = client
+        .query(&sql, &[])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to query legacy wikilink relations: {}", e))?;
+
+    let mut relations = Vec::new();
+    for record in result.records {
+        let target_title = record
+            .data
+            .get("target")
+            .and_then(|t| t.as_object())
+            .and_then(|obj| obj.get("title"))
+            .and_then(|title| title.as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+
+        relations.push(LinkRelation {
+            relation_type: "wikilink".to_string(),
+            is_embed: false,
+            target: target_title,
+        });
+    }
+
+    Ok(relations)
+}
+
+async fn legacy_get_embedded_documents(
+    client: &SurrealClient,
+    doc_id: &str,
+) -> Result<Vec<ParsedDocument>> {
+    let sql = format!("SELECT out FROM {}->embeds", doc_id);
+
+    let result = client
+        .query(&sql, &[])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to query legacy embeds: {}", e))?;
+
+    let mut documents = Vec::new();
+    for record in result.records {
+        if let Some(out_id) = record.data.get("out").and_then(|v| v.as_str()) {
+            if let Some(doc) = fetch_document_by_id(client, out_id).await? {
+                documents.push(doc);
+            }
+        }
+    }
+
+    Ok(documents)
+}
+
+async fn legacy_get_documents_by_tag(
     client: &SurrealClient,
     tag: &str,
 ) -> Result<Vec<ParsedDocument>> {
@@ -678,7 +845,7 @@ pub async fn get_documents_by_tag(
     let result = client
         .query(&sql, &[])
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to query documents by tag: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to query legacy documents by tag: {}", e))?;
 
     let mut documents = Vec::new();
     for record in result.records {
@@ -695,6 +862,302 @@ pub async fn get_documents_by_tag(
                 documents.push(doc);
             }
         }
+    }
+
+    Ok(documents)
+}
+
+async fn legacy_get_embed_metadata(
+    client: &SurrealClient,
+    doc_id: &str,
+) -> Result<Vec<EmbedMetadata>> {
+    let sql = format!("SELECT * FROM {}->embeds", doc_id);
+
+    let result = client
+        .query(&sql, &[])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to query legacy embed metadata: {}", e))?;
+
+    let mut metadata_list = Vec::new();
+    for record in result.records {
+        let target_id = record
+            .data
+            .get("out")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+
+        let target_sql = format!("SELECT title FROM {}", target_id);
+        let target_result = client.query(&target_sql, &[]).await?;
+        let target_title = target_result
+            .records
+            .first()
+            .and_then(|r| r.data.get("title"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+
+        let reference_target = record
+            .data
+            .get("reference_target")
+            .and_then(|r| r.as_str())
+            .map(|s| s.to_string());
+        let alias = record
+            .data
+            .get("display_alias")
+            .and_then(|a| a.as_str())
+            .map(|s| s.to_string());
+        let position = record
+            .data
+            .get("position")
+            .and_then(|p| p.as_u64())
+            .unwrap_or(0) as usize;
+        let (heading_ref, block_ref) = parse_reference_target(reference_target);
+
+        metadata_list.push(EmbedMetadata {
+            target: target_title,
+            is_embed: true,
+            heading_ref,
+            block_ref,
+            alias,
+            position,
+        });
+    }
+
+    Ok(metadata_list)
+}
+
+async fn legacy_get_embed_relations(
+    client: &SurrealClient,
+    doc_id: &str,
+) -> Result<Vec<EmbedRelation>> {
+    let sql = format!("SELECT * FROM embeds WHERE from = {}", doc_id);
+
+    let result = client
+        .query(&sql, &[])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to query legacy embed relations: {}", e))?;
+
+    let mut relations = Vec::new();
+    for record in result.records {
+        let target = record
+            .data
+            .get("target")
+            .and_then(|t| t.as_object())
+            .and_then(|obj| obj.get("title"))
+            .and_then(|title| title.as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+        let embed_type = record
+            .data
+            .get("embed_type")
+            .and_then(|t| t.as_str())
+            .unwrap_or("simple")
+            .to_string();
+
+        relations.push(EmbedRelation {
+            relation_type: "embed".to_string(),
+            is_embed: true,
+            target,
+            embed_type,
+        });
+    }
+
+    Ok(relations)
+}
+
+async fn legacy_get_embedded_documents_by_type(
+    client: &SurrealClient,
+    doc_id: &str,
+    embed_type: &str,
+) -> Result<Vec<ParsedDocument>> {
+    let sql = format!(
+        "SELECT target.* FROM embeds WHERE from = {} AND embed_type = '{}'",
+        doc_id, embed_type
+    );
+
+    let result = client
+        .query(&sql, &[])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to query legacy embeds by type: {}", e))?;
+
+    let mut documents = Vec::new();
+    for record in result.records {
+        if let Some(target_data) = record.data.get("target") {
+            if let serde_json::Value::Object(target_obj) = target_data {
+                let target_record = Record {
+                    id: None,
+                    data: target_obj
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                };
+                let doc = convert_record_to_parsed_document(&target_record).await?;
+                documents.push(doc);
+            }
+        }
+    }
+
+    Ok(documents)
+}
+
+async fn legacy_get_embedding_documents(
+    client: &SurrealClient,
+    target_title: &str,
+) -> Result<Vec<ParsedDocument>> {
+    let sql = format!(
+        "SELECT source.* FROM embeds WHERE to = (SELECT id FROM notes WHERE title = '{}')",
+        target_title.replace('\'', "''")
+    );
+
+    let result = client
+        .query(&sql, &[])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to query legacy embedding documents: {}", e))?;
+
+    let mut documents = Vec::new();
+    for record in result.records {
+        if let Some(source_data) = record.data.get("source") {
+            if let serde_json::Value::Object(source_obj) = source_data {
+                let source_record = Record {
+                    id: None,
+                    data: source_obj
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                };
+                let doc = convert_record_to_parsed_document(&source_record).await?;
+                documents.push(doc);
+            }
+        }
+    }
+
+    Ok(documents)
+}
+
+async fn query_embedding_sources_for_entity(
+    client: &SurrealClient,
+    entity_id: &EprRecordId<EprEntityRecord>,
+) -> Result<Vec<ParsedDocument>> {
+    let pairs = fetch_embed_relation_pairs(client).await?;
+    let target_key = entity_id.id.clone();
+    let mut documents = Vec::new();
+
+    for (source, target) in pairs {
+        if record_body(&target) == target_key {
+            if let Some(doc) = fetch_document_by_id(client, &source).await? {
+                documents.push(doc);
+            }
+        }
+    }
+
+    Ok(documents)
+}
+
+async fn query_embedding_sources_by_title(
+    client: &SurrealClient,
+    target_title: &str,
+) -> Result<Vec<ParsedDocument>> {
+    let pairs = fetch_embed_relation_pairs(client).await?;
+    let mut documents = Vec::new();
+
+    for (source, target) in pairs {
+        if let Some(target_doc) = fetch_document_by_id(client, &target).await? {
+            if target_doc.title() == target_title {
+                if let Some(doc) = fetch_document_by_id(client, &source).await? {
+                    documents.push(doc);
+                }
+            }
+        }
+    }
+
+    Ok(documents)
+}
+
+async fn fetch_embed_relation_pairs(
+    client: &SurrealClient,
+) -> Result<Vec<(String, String)>> {
+    let sql = r#"
+        SELECT in AS source, out AS target
+        FROM relations
+        WHERE relation_type = "embed"
+    "#;
+
+    let result = client.query(sql, &[]).await?;
+    let mut pairs = Vec::new();
+
+    for record in result.records {
+        let Some(source_id) = record
+            .data
+            .get("source")
+            .and_then(record_ref_to_string) else {
+            continue;
+        };
+        let Some(target_id) = record
+            .data
+            .get("target")
+            .and_then(record_ref_to_string) else {
+            continue;
+        };
+        pairs.push((source_id, target_id));
+    }
+
+    Ok(pairs)
+}
+
+fn record_body(reference: &str) -> &str {
+    if let Some((prefix, rest)) = reference.split_once(':') {
+        if prefix == "entities" || prefix == "notes" {
+            return rest;
+        }
+    }
+    reference
+}
+
+/// Get documents linked via wikilinks
+pub async fn get_linked_documents(
+    client: &SurrealClient,
+    doc_id: &str,
+) -> Result<Vec<ParsedDocument>> {
+    let mut documents = query_relation_documents(client, doc_id, "wikilink").await?;
+    if documents.is_empty() {
+        documents = legacy_get_linked_documents(client, doc_id).await?;
+    }
+    Ok(documents)
+}
+
+/// Get documents by tag
+pub async fn get_documents_by_tag(
+    client: &SurrealClient,
+    tag: &str,
+) -> Result<Vec<ParsedDocument>> {
+    let normalized = normalize_tag_identifier(tag);
+    let sql = r#"
+        SELECT entity_id
+        FROM entity_tags
+        WHERE tag_id = type::thing("tags", $tag_id)
+    "#;
+
+    let result = client
+        .query(sql, &[json!({ "tag_id": format!("tag:{}", normalized) })])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to query documents by tag: {}", e))?;
+
+    let mut documents = Vec::new();
+    for record in &result.records {
+        if let Some(source_id) = record
+            .data
+            .get("entity_id")
+            .and_then(record_ref_to_string)
+        {
+            if let Some(doc) = fetch_document_by_id(client, &source_id).await? {
+                documents.push(doc);
+            }
+        }
+    }
+
+    if documents.is_empty() {
+        documents = legacy_get_documents_by_tag(client, tag).await?;
     }
 
     Ok(documents)
@@ -965,34 +1428,11 @@ pub async fn get_embedded_documents(
     client: &SurrealClient,
     doc_id: &str,
 ) -> Result<Vec<ParsedDocument>> {
-    // SurrealDB graph query: SELECT out FROM record->relation gets the target nodes
-    let sql = format!("SELECT out FROM {}->embeds", doc_id);
-
-    let result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query embedded documents: {}", e))?;
-
-    let mut documents = Vec::new();
-    for record in result.records {
-        if let Some(out_id) = record.data.get("out") {
-            // The 'out' field contains the record ID of the target document
-            // We need to fetch the actual document
-            let target_id_str = out_id
-                .as_str()
-                .ok_or_else(|| anyhow::anyhow!("Invalid out field in embed relation"))?;
-
-            let doc_sql = format!("SELECT * FROM {}", target_id_str);
-            let doc_result = client.query(&doc_sql, &[]).await?;
-
-            if let Some(doc_record) = doc_result.records.first() {
-                let doc = convert_record_to_parsed_document(doc_record).await?;
-                documents.push(doc);
-            }
-        }
+    let mut docs = query_relation_documents(client, doc_id, "embed").await?;
+    if docs.is_empty() {
+        docs = legacy_get_embedded_documents(client, doc_id).await?;
     }
-
-    Ok(documents)
+    Ok(docs)
 }
 
 /// Get embed metadata for a document
@@ -1000,63 +1440,62 @@ pub async fn get_embed_metadata(
     client: &SurrealClient,
     doc_id: &str,
 ) -> Result<Vec<EmbedMetadata>> {
-    // Query the embed edges from this document
-    let sql = format!("SELECT * FROM {}->embeds", doc_id);
+    let entity = parse_entity_record_id(doc_id)?;
+    let sql = r#"
+        SELECT out, metadata, position
+        FROM relations
+        WHERE relation_type = "embed"
+          AND in = type::thing($table, $id)
+    "#;
 
     let result = client
-        .query(&sql, &[])
+        .query(
+            sql,
+            &[json!({
+                "table": entity.table,
+                "id": entity.id,
+            })],
+        )
         .await
         .map_err(|e| anyhow::anyhow!("Failed to query embed metadata: {}", e))?;
 
+    if result.records.is_empty() {
+        return legacy_get_embed_metadata(client, doc_id).await;
+    }
+
     let mut metadata_list = Vec::new();
     for record in result.records {
-        // Get the target document ID from 'out' field
-        let target_id = record
+        let target_id = match record
             .data
             .get("out")
+            .and_then(record_ref_to_string)
+        {
+            Some(id) => id,
+            None => continue,
+        };
+        let target_title = fetch_document_by_id(client, &target_id)
+            .await?
+            .map(|doc| doc.title())
+            .unwrap_or_else(|| "Unknown".to_string());
+
+        let metadata = record
+            .data
+            .get("metadata")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+
+        let heading_ref = metadata
+            .get("heading_ref")
             .and_then(|v| v.as_str())
-            .unwrap_or("Unknown")
-            .to_string();
-
-        // Fetch the target document to get its title
-        let target_sql = format!("SELECT title FROM {}", target_id);
-        let target_result = client.query(&target_sql, &[]).await?;
-
-        let target_title = target_result
-            .records
-            .first()
-            .and_then(|r| r.data.get("title"))
+            .map(|s| s.to_string());
+        let block_ref = metadata
+            .get("block_ref")
             .and_then(|v| v.as_str())
-            .unwrap_or("Unknown")
-            .to_string();
-
-        let _embed_type = record
-            .data
-            .get("embed_type")
-            .and_then(|t| t.as_str())
-            .unwrap_or("simple")
-            .to_string();
-
-        let reference_target = record
-            .data
-            .get("reference_target")
-            .and_then(|r| r.as_str())
             .map(|s| s.to_string());
-
-        let alias = record
-            .data
-            .get("display_alias")
-            .and_then(|a| a.as_str())
+        let alias = metadata
+            .get("alias")
+            .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-
-        let position = record
-            .data
-            .get("position")
-            .and_then(|p| p.as_u64())
-            .unwrap_or(0) as usize;
-
-        // Parse reference target to determine heading_ref and block_ref
-        let (heading_ref, block_ref) = parse_reference_target(reference_target);
 
         metadata_list.push(EmbedMetadata {
             target: target_title,
@@ -1064,7 +1503,11 @@ pub async fn get_embed_metadata(
             heading_ref,
             block_ref,
             alias,
-            position,
+            position: record
+                .data
+                .get("position")
+                .and_then(|p| p.as_i64())
+                .unwrap_or(0) as usize,
         });
     }
 
@@ -1096,31 +1539,48 @@ pub async fn get_embedded_documents_by_type(
     doc_id: &str,
     embed_type: &str,
 ) -> Result<Vec<ParsedDocument>> {
-    let sql = format!(
-        "SELECT target.* FROM embeds WHERE from = {} AND embed_type = '{}'",
-        doc_id, embed_type
-    );
+    let entity = parse_entity_record_id(doc_id)?;
+    let sql = r#"
+        SELECT out, metadata
+        FROM relations
+        WHERE relation_type = "embed"
+          AND in = type::thing($table, $id)
+    "#;
 
     let result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query embedded documents by type: {}", e))?;
+        .query(
+            sql,
+            &[json!({
+                "table": entity.table,
+                "id": entity.id,
+            })],
+        )
+        .await?;
 
     let mut documents = Vec::new();
-    for record in result.records {
-        if let Some(target_data) = record.data.get("target") {
-            if let serde_json::Value::Object(target_obj) = target_data {
-                let target_record = Record {
-                    id: None,
-                    data: target_obj
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
-                };
-                let doc = convert_record_to_parsed_document(&target_record).await?;
+    for record in result.records.iter() {
+        let relation_embed_type = record
+            .data
+            .get("metadata")
+            .and_then(|m| m.get("embed_type"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("simple");
+        if !relation_embed_type.eq_ignore_ascii_case(embed_type) {
+            continue;
+        }
+        if let Some(target_id) = record
+            .data
+            .get("out")
+            .and_then(record_ref_to_string)
+        {
+            if let Some(doc) = fetch_document_by_id(client, &target_id).await? {
                 documents.push(doc);
             }
         }
+    }
+
+    if documents.is_empty() {
+        documents = legacy_get_embedded_documents_by_type(client, doc_id, embed_type).await?;
     }
 
     Ok(documents)
@@ -1178,30 +1638,10 @@ pub async fn get_wikilinked_documents(
     client: &SurrealClient,
     doc_id: &str,
 ) -> Result<Vec<ParsedDocument>> {
-    let sql = format!("SELECT target.* FROM wikilink WHERE from = {}", doc_id);
-
-    let result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query wikilinked documents: {}", e))?;
-
-    let mut documents = Vec::new();
-    for record in result.records {
-        if let Some(target_data) = record.data.get("target") {
-            if let serde_json::Value::Object(target_obj) = target_data {
-                let target_record = Record {
-                    id: None,
-                    data: target_obj
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
-                };
-                let doc = convert_record_to_parsed_document(&target_record).await?;
-                documents.push(doc);
-            }
-        }
+    let mut documents = query_relation_documents(client, doc_id, "wikilink").await?;
+    if documents.is_empty() {
+        documents = legacy_get_linked_documents(client, doc_id).await?;
     }
-
     Ok(documents)
 }
 
@@ -1210,27 +1650,56 @@ pub async fn get_wikilink_relations(
     client: &SurrealClient,
     doc_id: &str,
 ) -> Result<Vec<LinkRelation>> {
-    let sql = format!("SELECT * FROM wikilink WHERE from = {}", doc_id);
+    let entity = parse_entity_record_id(doc_id)?;
+    let sql = r#"
+        SELECT out, metadata
+        FROM relations
+        WHERE relation_type = "wikilink"
+          AND in = type::thing($table, $id)
+    "#;
 
     let result = client
-        .query(&sql, &[])
+        .query(
+            sql,
+            &[json!({
+                "table": entity.table,
+                "id": entity.id,
+            })],
+        )
         .await
         .map_err(|e| anyhow::anyhow!("Failed to query wikilink relations: {}", e))?;
 
+    if result.records.is_empty() {
+        return legacy_get_wikilink_relations(client, doc_id).await;
+    }
+
     let mut relations = Vec::new();
     for record in result.records {
-        let target_title = record
+        let target_id = match record
             .data
-            .get("target")
-            .and_then(|t| t.as_object())
-            .and_then(|obj| obj.get("title"))
-            .and_then(|title| title.as_str())
-            .unwrap_or("Unknown")
-            .to_string();
+            .get("out")
+            .and_then(record_ref_to_string)
+        {
+            Some(id) => id,
+            None => continue,
+        };
+        let target_title = fetch_document_by_id(client, &target_id)
+            .await?
+            .map(|doc| doc.title())
+            .unwrap_or_else(|| "Unknown".to_string());
+
+        let metadata = record
+            .data
+            .get("metadata")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
 
         relations.push(LinkRelation {
             relation_type: "wikilink".to_string(),
-            is_embed: false,
+            is_embed: metadata
+                .get("is_embed")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             target: target_title,
         });
     }
@@ -1243,30 +1712,46 @@ pub async fn get_embed_relations(
     client: &SurrealClient,
     doc_id: &str,
 ) -> Result<Vec<EmbedRelation>> {
-    let sql = format!("SELECT * FROM embeds WHERE from = {}", doc_id);
+    let entity = parse_entity_record_id(doc_id)?;
+    let sql = r#"
+        SELECT out, metadata
+        FROM relations
+        WHERE relation_type = "embed"
+          AND in = type::thing($table, $id)
+    "#;
 
     let result = client
-        .query(&sql, &[])
+        .query(
+            sql,
+            &[json!({
+                "table": entity.table,
+                "id": entity.id,
+            })],
+        )
         .await
         .map_err(|e| anyhow::anyhow!("Failed to query embed relations: {}", e))?;
 
+    if result.records.is_empty() {
+        return legacy_get_embed_relations(client, doc_id).await;
+    }
+
     let mut relations = Vec::new();
     for record in result.records {
-        let target_title = record
+        let target_id = record
             .data
-            .get("target")
-            .and_then(|t| t.as_object())
-            .and_then(|obj| obj.get("title"))
-            .and_then(|title| title.as_str())
-            .unwrap_or("Unknown")
-            .to_string();
+            .get("out")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let target_title = fetch_document_by_id(client, target_id)
+            .await?
+            .map(|doc| doc.title())
+            .unwrap_or_else(|| "Unknown".to_string());
 
         let embed_type = record
             .data
-            .get("embed_type")
-            .and_then(|t| t.as_str())
-            .unwrap_or("simple")
-            .to_string();
+            .get("metadata")
+            .map(embed_type_from_metadata)
+            .unwrap_or_else(|| "simple".to_string());
 
         relations.push(EmbedRelation {
             relation_type: "embed".to_string(),
@@ -1284,34 +1769,19 @@ pub async fn get_embedding_documents(
     client: &SurrealClient,
     target_title: &str,
 ) -> Result<Vec<ParsedDocument>> {
-    let sql = format!(
-        "SELECT source.* FROM embeds WHERE to = (SELECT id FROM notes WHERE title = '{}')",
-        target_title
-    );
-
-    let result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query embedding documents: {}", e))?;
-
-    let mut documents = Vec::new();
-    for record in result.records {
-        if let Some(source_data) = record.data.get("source") {
-            if let serde_json::Value::Object(source_obj) = source_data {
-                let source_record = Record {
-                    id: None,
-                    data: source_obj
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
-                };
-                let doc = convert_record_to_parsed_document(&source_record).await?;
-                documents.push(doc);
-            }
+    if let Some(entity_id) = find_entity_id_by_title(client, target_title).await? {
+        let docs = query_embedding_sources_for_entity(client, &entity_id).await?;
+        if !docs.is_empty() {
+            return Ok(docs);
         }
     }
 
-    Ok(documents)
+    let docs = query_embedding_sources_by_title(client, target_title).await?;
+    if !docs.is_empty() {
+        return Ok(docs);
+    }
+
+    legacy_get_embedding_documents(client, target_title).await
 }
 
 /// Get specific embed with metadata
@@ -2881,6 +3351,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(entity_tags.records.len(), 2);
+
+        let docs = get_documents_by_tag(&client, "project/crucible")
+            .await
+            .unwrap();
+        assert_eq!(docs.len(), 1);
     }
     #[tokio::test]
     async fn wikilink_edges_create_relations_and_placeholders() {
@@ -2894,6 +3369,13 @@ mod tests {
         doc.wikilinks.push(Wikilink::new("TargetNote", 5));
         doc.wikilinks
             .push(Wikilink::new("../Shared/OtherDoc", 15));
+
+        let mut target_doc = ParsedDocument::new(kiln_root.join("projects/TargetNote.md"));
+        target_doc.content_hash = "targethash".into();
+        target_doc.content.plain_text = "Target note".into();
+        store_parsed_document(&client, &target_doc, &kiln_root)
+            .await
+            .unwrap();
 
         let doc_id = store_parsed_document(&client, &doc, &kiln_root)
             .await
@@ -2935,6 +3417,16 @@ mod tests {
         assert!(relation_types.iter().any(|t| t == "wikilink"));
         assert!(relation_types.iter().any(|t| t == "wikilink_backlink"));
 
+        let linked = get_linked_documents(&client, &doc_id)
+            .await
+            .unwrap();
+        assert_eq!(linked.len(), 2);
+
+        let relation_list = get_wikilink_relations(&client, &doc_id)
+            .await
+            .unwrap();
+        assert_eq!(relation_list.len(), 2);
+
         let placeholder = client
             .query(
                 "SELECT data FROM type::thing('entities', 'note:Shared/OtherDoc.md')",
@@ -2955,6 +3447,13 @@ mod tests {
         doc.content_hash = "embedhash".into();
         doc.content.plain_text = "Doc with embeds".into();
         doc.wikilinks.push(Wikilink::embed("Assets/Diagram", 3));
+
+        let mut target_doc = ParsedDocument::new(kiln_root.join("media/Assets/Diagram.md"));
+        target_doc.content_hash = "diagramhash".into();
+        target_doc.content.plain_text = "Diagram content".into();
+        store_parsed_document(&client, &target_doc, &kiln_root)
+            .await
+            .unwrap();
 
         let doc_id = store_parsed_document(&client, &doc, &kiln_root)
             .await
@@ -2978,7 +3477,7 @@ mod tests {
                     assert!(record
                         .data
                         .get("out")
-                        .and_then(|v| v.as_str())
+                        .and_then(record_ref_to_string)
                         .map(|s| s.contains("Assets/Diagram.md"))
                         .unwrap_or(false));
                 }
@@ -2987,7 +3486,7 @@ mod tests {
                     assert!(record
                         .data
                         .get("out")
-                        .and_then(|v| v.as_str())
+                        .and_then(record_ref_to_string)
                         .map(|s| s.contains("media/source.md"))
                         .unwrap_or(false));
                 }
@@ -2996,6 +3495,79 @@ mod tests {
         }
         assert!(has_forward);
         assert!(has_backlink);
+        let embed_target_ids: Vec<String> = relations
+            .records
+            .iter()
+            .filter(|record| {
+                record
+                    .data
+                    .get("relation_type")
+                    .and_then(|v| v.as_str())
+                    == Some("embed")
+            })
+            .filter_map(|record| record.data.get("out").and_then(record_ref_to_string))
+            .collect();
+        assert!(embed_target_ids
+            .iter()
+            .any(|id| id.contains("Assets/Diagram.md")));
+
+        let embed_relations = get_embed_relations(&client, &doc_id)
+            .await
+            .unwrap();
+        assert_eq!(embed_relations.len(), 1);
+
+        let entity = super::find_entity_id_by_title(&client, "Diagram")
+            .await
+            .unwrap()
+            .expect("entity for Diagram should exist");
+        assert!(entity.id.contains("Assets/Diagram"));
+
+        let embed_pairs = super::fetch_embed_relation_pairs(&client)
+            .await
+            .unwrap();
+        assert_eq!(embed_pairs.len(), 1);
+        assert!(
+            embed_pairs[0].1.contains("Assets/Diagram.md"),
+            "pair target {}",
+            embed_pairs[0].1
+        );
+        assert_eq!(
+            super::record_body(&embed_pairs[0].1),
+            entity.id,
+            "normalized target {} expected {}",
+            super::record_body(&embed_pairs[0].1),
+            entity.id
+        );
+
+        let backlink_sources =
+            super::query_embedding_sources_for_entity(&client, &entity)
+                .await
+                .unwrap();
+        assert_eq!(backlink_sources.len(), 1);
+
+        let filtered_docs = get_embedded_documents_by_type(
+            &client,
+            &doc_id,
+            &embed_relations[0].embed_type,
+        )
+        .await
+        .unwrap();
+        assert_eq!(filtered_docs.len(), 1);
+
+        let embedded_docs = get_embedded_documents(&client, &doc_id)
+            .await
+            .unwrap();
+        assert_eq!(embedded_docs.len(), 1);
+
+        let metadata = get_embed_metadata(&client, &doc_id)
+            .await
+            .unwrap();
+        assert_eq!(metadata.len(), 1);
+
+        let embedding_docs = get_embedding_documents(&client, "Diagram")
+            .await
+            .unwrap();
+        assert_eq!(embedding_docs.len(), 1);
     }
 }
 
