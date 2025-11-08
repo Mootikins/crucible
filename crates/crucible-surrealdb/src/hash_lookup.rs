@@ -7,24 +7,24 @@
 //! This module also implements the HashLookupStorage trait from crucible-core,
 //! providing a complete abstraction layer for hash storage and retrieval operations.
 
-use anyhow::{anyhow, Result};
-use std::collections::HashMap;
-use tracing::{debug, warn, info};
-use async_trait::async_trait;
-use crate::SurrealClient;
 use crate::types::Record;
+use crate::SurrealClient;
+use anyhow::{anyhow, Result};
+use async_trait::async_trait;
+use std::collections::HashMap;
+use tracing::{debug, info, warn};
 
 // Import the trait and related types from crucible-core
 use crucible_core::traits::change_detection::{
-    HashLookupStorage, HashLookupResult as CoreHashLookupResult,
-    BatchLookupConfig as CoreBatchLookupConfig, StoredHash
+    BatchLookupConfig as CoreBatchLookupConfig, HashLookupResult as CoreHashLookupResult,
+    HashLookupStorage, StoredHash,
 };
-use crucible_core::{FileHashInfo, HashError, FileHash, HashAlgorithm};
+use crucible_core::{FileHash, FileHashInfo, HashAlgorithm, HashError};
 
 /// Information about a stored file hash from the database
 #[derive(Debug, Clone, PartialEq)]
 pub struct StoredFileHash {
-    /// The database record ID (e.g., "notes:Projects_file_md")
+    /// The database record ID (e.g., "entities:note:Projects/file.md")
     pub record_id: String,
     /// The relative file path (e.g., "Projects/file.md")
     pub relative_path: String,
@@ -47,6 +47,30 @@ pub struct HashLookupResult {
     pub total_queried: usize,
     /// Number of database round trips
     pub database_round_trips: usize,
+}
+
+fn normalize_relative_path(path: &str) -> String {
+    let mut normalized = path.replace('\\', "/");
+    while normalized.starts_with("./") {
+        normalized = normalized.trim_start_matches("./").to_string();
+    }
+    if normalized.starts_with('/') {
+        normalized = normalized.trim_start_matches('/').to_string();
+    }
+    normalized.replace(':', "_")
+}
+
+fn entity_id_body_from_path(relative_path: &str) -> String {
+    let normalized = normalize_relative_path(relative_path);
+    if normalized.starts_with("note:") {
+        normalized
+    } else {
+        format!("note:{}", normalized)
+    }
+}
+
+fn entity_record_id(relative_path: &str) -> String {
+    format!("entities:{}", entity_id_body_from_path(relative_path))
 }
 
 /// Batch hash lookup configuration
@@ -79,8 +103,19 @@ pub async fn lookup_file_hash(
 ) -> Result<Option<StoredFileHash>> {
     debug!("Looking up hash for file: {}", relative_path);
 
-    let sql = "SELECT id, path, file_hash, file_size, modified_at FROM notes WHERE path = $path LIMIT 1";
-    let params = vec![serde_json::json!({"path": relative_path})];
+    let sql = "
+        SELECT
+            id,
+            data.relative_path AS relative_path,
+            content_hash,
+            data.file_size AS file_size,
+            data.source_modified_at AS source_modified_at,
+            data.parsed_at AS parsed_at,
+            updated_at
+        FROM type::thing('entities', $id)
+        LIMIT 1
+    ";
+    let params = vec![serde_json::json!({"id": entity_id_body_from_path(relative_path)})];
 
     let result = client
         .query(sql, &params)
@@ -89,7 +124,8 @@ pub async fn lookup_file_hash(
 
     if let Some(record) = result.records.first() {
         let stored_hash = convert_record_to_stored_hash(&record)?;
-        debug!("Found hash for {}: {} (record: {})",
+        debug!(
+            "Found hash for {}: {} (record: {})",
             relative_path,
             &stored_hash.file_hash[..8], // Show first 8 chars for debugging
             stored_hash.record_id
@@ -118,7 +154,8 @@ pub async fn lookup_file_hashes_batch(
         });
     }
 
-    info!("Looking up hashes for {} files in batches of max {}",
+    info!(
+        "Looking up hashes for {} files in batches of max {}",
         relative_paths.len(),
         config.max_batch_size
     );
@@ -130,13 +167,13 @@ pub async fn lookup_file_hashes_batch(
     // Process in batches to avoid overwhelming the database
     for chunk in relative_paths.chunks(config.max_batch_size) {
         round_trips += 1;
-        debug!("Processing batch of {} files (round trip {})", chunk.len(), round_trips);
+        debug!(
+            "Processing batch of {} files (round trip {})",
+            chunk.len(),
+            round_trips
+        );
 
-        let batch_result = lookup_file_hashes_batch_internal(
-            client,
-            chunk,
-            &config
-        ).await?;
+        let batch_result = lookup_file_hashes_batch_internal(client, chunk, &config).await?;
 
         // Merge results
         let found_count = batch_result.found_files.len();
@@ -145,9 +182,9 @@ pub async fn lookup_file_hashes_batch(
         found_files.extend(batch_result.found_files);
         missing_files.extend(batch_result.missing_files);
 
-        debug!("Batch complete: {} found, {} missing",
-            found_count,
-            missing_count
+        debug!(
+            "Batch complete: {} found, {} missing",
+            found_count, missing_count
         );
     }
 
@@ -158,7 +195,8 @@ pub async fn lookup_file_hashes_batch(
         database_round_trips: round_trips,
     };
 
-    info!("Hash lookup complete: {}/{} files found in {} round trips",
+    info!(
+        "Hash lookup complete: {}/{} files found in {} round trips",
         total_result.found_files.len(),
         total_result.total_queried,
         total_result.database_round_trips
@@ -182,9 +220,19 @@ async fn lookup_file_hashes_batch_internal(
         });
     }
 
-    // Build query with array parameter for SurrealDB
-    // SurrealDB expects named parameters as objects, not positional parameters
-    let sql = "SELECT id, path, file_hash, file_size, modified_at FROM notes WHERE path IN $paths";
+    // Build query with array parameter for SurrealDB against the entity payload
+    let sql = "
+        SELECT
+            id,
+            data.relative_path AS relative_path,
+            content_hash,
+            data.file_size AS file_size,
+            data.source_modified_at AS source_modified_at,
+            data.parsed_at AS parsed_at,
+            updated_at
+        FROM entities
+        WHERE data.relative_path IN $paths
+    ";
 
     // Create parameter object with the paths array
     let params = vec![serde_json::json!({
@@ -217,7 +265,8 @@ async fn lookup_file_hashes_batch_internal(
         .cloned()
         .collect();
 
-    debug!("Batch query returned {} records, {} files missing",
+    debug!(
+        "Batch query returned {} records, {} files missing",
         result.records.len(),
         missing_files.len()
     );
@@ -239,11 +288,25 @@ pub async fn lookup_files_by_content_hashes(
         return Ok(HashMap::new());
     }
 
-    debug!("Looking up files by {} content hashes", content_hashes.len());
+    debug!(
+        "Looking up files by {} content hashes",
+        content_hashes.len()
+    );
 
     // Build query with array parameter for SurrealDB
     // SurrealDB expects named parameters as objects, not positional parameters
-    let sql = "SELECT id, path, file_hash, file_size, modified_at FROM notes WHERE file_hash IN $hashes";
+    let sql = "
+        SELECT
+            id,
+            data.relative_path AS relative_path,
+            content_hash,
+            data.file_size AS file_size,
+            data.source_modified_at AS source_modified_at,
+            data.parsed_at AS parsed_at,
+            updated_at
+        FROM entities
+        WHERE content_hash IN $hashes
+    ";
 
     // Create parameter object with the hashes array
     let params = vec![serde_json::json!({
@@ -265,7 +328,8 @@ pub async fn lookup_files_by_content_hashes(
             .push(stored_hash);
     }
 
-    debug!("Found {} files matching {} content hashes",
+    debug!(
+        "Found {} files matching {} content hashes",
         hash_to_files.values().map(|v| v.len()).sum::<usize>(),
         content_hashes.len()
     );
@@ -281,12 +345,24 @@ pub async fn lookup_changed_files_since(
 ) -> Result<Vec<StoredFileHash>> {
     debug!("Looking up files changed since {}", since);
 
-    let limit_clause = limit
-        .map(|l| format!(" LIMIT {}", l))
-        .unwrap_or_default();
+    let limit_clause = limit.map(|l| format!(" LIMIT {}", l)).unwrap_or_default();
 
     let sql = format!(
-        "SELECT id, path, file_hash, file_size, modified_at FROM notes WHERE modified_at > time::('{}') ORDER BY modified_at DESC{}",
+        "
+        SELECT
+            id,
+            data.relative_path AS relative_path,
+            content_hash,
+            data.file_size AS file_size,
+            data.source_modified_at AS source_modified_at,
+            data.parsed_at AS parsed_at,
+            updated_at
+        FROM entities
+        WHERE entity_type = 'note'
+          AND updated_at > time::('{}')
+        ORDER BY updated_at DESC
+        {}
+        ",
         since.to_rfc3339(),
         limit_clause
     );
@@ -304,7 +380,11 @@ pub async fn lookup_changed_files_since(
         }
     }
 
-    debug!("Found {} files changed since {}", changed_files.len(), since);
+    debug!(
+        "Found {} files changed since {}",
+        changed_files.len(),
+        since
+    );
     Ok(changed_files)
 }
 
@@ -318,13 +398,15 @@ pub async fn check_file_needs_update(
         Some(stored_hash) => {
             let needs_update = stored_hash.file_hash != new_hash;
             if needs_update {
-                debug!("File {} needs update (stored: {}, new: {})",
+                debug!(
+                    "File {} needs update (stored: {}, new: {})",
                     relative_path,
                     &stored_hash.file_hash[..8],
                     &new_hash[..8]
                 );
             } else {
-                debug!("File {} unchanged (hash: {})",
+                debug!(
+                    "File {} unchanged (hash: {})",
                     relative_path,
                     &new_hash[..8]
                 );
@@ -332,7 +414,10 @@ pub async fn check_file_needs_update(
             Ok(needs_update)
         }
         None => {
-            debug!("File {} not found in database, needs processing", relative_path);
+            debug!(
+                "File {} not found in database, needs processing",
+                relative_path
+            );
             Ok(true) // File doesn't exist, needs processing
         }
     }
@@ -341,8 +426,9 @@ pub async fn check_file_needs_update(
 /// Convert StoredFileHash to the core StoredHash type
 pub fn convert_to_core_stored_hash(stored: &StoredFileHash) -> Result<StoredHash, HashError> {
     // Parse the file_hash string into a FileHash
-    let content_hash = FileHash::from_hex(&stored.file_hash)
-        .map_err(|e| HashError::IoError { error: format!("Failed to parse hash: {}", e) })?;
+    let content_hash = FileHash::from_hex(&stored.file_hash).map_err(|e| HashError::IoError {
+        error: format!("Failed to parse hash: {}", e),
+    })?;
 
     Ok(StoredHash::new(
         stored.record_id.clone(),
@@ -365,7 +451,9 @@ pub fn convert_from_core_stored_hash(stored: &StoredHash) -> StoredFileHash {
 }
 
 /// Convert local HashLookupResult to core HashLookupResult
-pub fn convert_to_core_hash_lookup_result(local: &crate::hash_lookup::HashLookupResult) -> Result<CoreHashLookupResult, HashError> {
+pub fn convert_to_core_hash_lookup_result(
+    local: &crate::hash_lookup::HashLookupResult,
+) -> Result<CoreHashLookupResult, HashError> {
     let mut found_files = HashMap::new();
 
     for (path, stored) in &local.found_files {
@@ -383,11 +471,13 @@ pub fn convert_to_core_hash_lookup_result(local: &crate::hash_lookup::HashLookup
 
 /// Convert core BatchLookupConfig to local BatchLookupConfig
 pub fn convert_from_core_batch_config(config: Option<CoreBatchLookupConfig>) -> BatchLookupConfig {
-    config.map(|core_config| BatchLookupConfig {
-        max_batch_size: core_config.max_batch_size,
-        use_parameterized_queries: core_config.use_parameterized_queries,
-        enable_session_cache: core_config.enable_session_cache,
-    }).unwrap_or_default()
+    config
+        .map(|core_config| BatchLookupConfig {
+            max_batch_size: core_config.max_batch_size,
+            use_parameterized_queries: core_config.use_parameterized_queries,
+            enable_session_cache: core_config.enable_session_cache,
+        })
+        .unwrap_or_default()
 }
 
 /// Convert a database record to StoredFileHash
@@ -400,32 +490,45 @@ fn convert_record_to_stored_hash(record: &Record) -> Result<StoredFileHash> {
 
     let relative_path = record
         .data
-        .get("path")
+        .get("relative_path")
+        .or_else(|| record.data.get("path"))
+        .or_else(|| record.data.get("data").and_then(|v| v.get("relative_path")))
         .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("Missing or invalid path in record"))?
+        .ok_or_else(|| anyhow!("Missing or invalid relative_path in record"))?
         .to_string();
 
     let file_hash = record
         .data
         .get("file_hash")
+        .or_else(|| record.data.get("content_hash"))
+        .or_else(|| record.data.get("data").and_then(|v| v.get("content_hash")))
         .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("Missing or invalid file_hash in record"))?
+        .ok_or_else(|| anyhow!("Missing or invalid content_hash in record"))?
         .to_string();
 
     // Validate hash format (should be 64 hex characters for BLAKE3)
     if file_hash.len() != 64 || !file_hash.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(anyhow!("Invalid file_hash format: {} (expected 64 hex chars)", file_hash));
+        return Err(anyhow!(
+            "Invalid file_hash format: {} (expected 64 hex chars)",
+            file_hash
+        ));
     }
 
     let file_size = record
         .data
         .get("file_size")
+        .or_else(|| record.data.get("data").and_then(|v| v.get("file_size")))
         .and_then(|v| v.as_u64())
         .ok_or_else(|| anyhow!("Missing or invalid file_size in record"))?;
 
     let modified_at = record
         .data
-        .get("modified_at")
+        .get("source_modified_at")
+        .or_else(|| record.data.get("modified_at"))
+        .or_else(|| record.data.get("parsed_at"))
+        .or_else(|| record.data.get("updated_at"))
+        .or_else(|| record.data.get("data").and_then(|v| v.get("source_modified_at")))
+        .or_else(|| record.data.get("data").and_then(|v| v.get("parsed_at")))
         .and_then(|v| v.as_str())
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
         .map(|dt| dt.with_timezone(&chrono::Utc))
@@ -465,7 +568,10 @@ impl HashLookupCache {
     }
 
     /// Get multiple values from cache, returning which ones are cached and which are not
-    pub fn get_cached_keys(&self, keys: &[String]) -> (HashMap<String, Option<StoredFileHash>>, Vec<String>) {
+    pub fn get_cached_keys(
+        &self,
+        keys: &[String],
+    ) -> (HashMap<String, Option<StoredFileHash>>, Vec<String>) {
         let mut cached = HashMap::new();
         let mut uncached = Vec::new();
 
@@ -550,7 +656,11 @@ pub async fn lookup_file_hashes_batch_cached(
         (HashMap::new(), relative_paths.to_vec())
     };
 
-    debug!("Cache hit: {} cached, {} uncached", cached_results.len(), uncached_paths.len());
+    debug!(
+        "Cache hit: {} cached, {} uncached",
+        cached_results.len(),
+        uncached_paths.len()
+    );
 
     // Update cache statistics
     if config.enable_session_cache {
@@ -576,7 +686,8 @@ pub async fn lookup_file_hashes_batch_cached(
 
     // Query uncached files
     if !uncached_paths.is_empty() {
-        let db_result = lookup_file_hashes_batch(client, &uncached_paths, Some(config.clone())).await?;
+        let db_result =
+            lookup_file_hashes_batch(client, &uncached_paths, Some(config.clone())).await?;
 
         // Cache the database results
         if config.enable_session_cache {
@@ -602,7 +713,9 @@ pub async fn lookup_file_hashes_batch_cached(
         found_files: final_found_files,
         missing_files: final_missing_files,
         total_queried: relative_paths.len(),
-        database_round_trips: if uncached_paths.is_empty() { 0 } else {
+        database_round_trips: if uncached_paths.is_empty() {
+            0
+        } else {
             (uncached_paths.len() + config.max_batch_size - 1) / config.max_batch_size
         },
     })
@@ -638,7 +751,9 @@ impl<'a> HashLookupStorage for SurrealHashLookupStorage<'a> {
                 Ok(Some(core_stored))
             }
             Ok(None) => Ok(None),
-            Err(e) => Err(HashError::IoError { error: e.to_string() }),
+            Err(e) => Err(HashError::IoError {
+                error: e.to_string(),
+            }),
         }
     }
 
@@ -652,7 +767,9 @@ impl<'a> HashLookupStorage for SurrealHashLookupStorage<'a> {
 
         match lookup_file_hashes_batch(self.client, relative_paths, Some(local_config)).await {
             Ok(result) => convert_to_core_hash_lookup_result(&result),
-            Err(e) => Err(HashError::IoError { error: e.to_string() }),
+            Err(e) => Err(HashError::IoError {
+                error: e.to_string(),
+            }),
         }
     }
 
@@ -661,10 +778,7 @@ impl<'a> HashLookupStorage for SurrealHashLookupStorage<'a> {
         &self,
         content_hashes: &[FileHash],
     ) -> Result<HashMap<String, Vec<StoredHash>>, HashError> {
-        let hash_strings: Vec<String> = content_hashes
-            .iter()
-            .map(|hash| hash.to_hex())
-            .collect();
+        let hash_strings: Vec<String> = content_hashes.iter().map(|hash| hash.to_hex()).collect();
 
         match lookup_files_by_content_hashes(self.client, &hash_strings).await {
             Ok(local_results) => {
@@ -683,7 +797,9 @@ impl<'a> HashLookupStorage for SurrealHashLookupStorage<'a> {
 
                 Ok(core_results)
             }
-            Err(e) => Err(HashError::IoError { error: e.to_string() }),
+            Err(e) => Err(HashError::IoError {
+                error: e.to_string(),
+            }),
         }
     }
 
@@ -704,7 +820,9 @@ impl<'a> HashLookupStorage for SurrealHashLookupStorage<'a> {
 
                 Ok(core_files)
             }
-            Err(e) => Err(HashError::IoError { error: e.to_string() }),
+            Err(e) => Err(HashError::IoError {
+                error: e.to_string(),
+            }),
         }
     }
 
@@ -718,7 +836,9 @@ impl<'a> HashLookupStorage for SurrealHashLookupStorage<'a> {
 
         match check_file_needs_update(self.client, relative_path, &new_hash_string).await {
             Ok(needs_update) => Ok(needs_update),
-            Err(e) => Err(HashError::IoError { error: e.to_string() }),
+            Err(e) => Err(HashError::IoError {
+                error: e.to_string(),
+            }),
         }
     }
 
@@ -730,42 +850,78 @@ impl<'a> HashLookupStorage for SurrealHashLookupStorage<'a> {
 
         debug!("Storing hashes for {} files", files.len());
 
-        // Build the batch upsert query
-        let mut values = Vec::new();
         for file_info in files {
-            let record_id = format!("notes:{}", file_info.relative_path.replace(':', "_"));
+            let record_body = entity_id_body_from_path(&file_info.relative_path);
             let modified_at = chrono::DateTime::<chrono::Utc>::from(file_info.modified);
-
-            values.push(serde_json::json!({
-                "id": record_id,
-                "path": file_info.relative_path,
-                "file_hash": file_info.content_hash.to_hex(),
+            let params = serde_json::json!({
+                "id": record_body,
+                "relative_path": file_info.relative_path,
+                "content_hash": file_info.content_hash.to_hex(),
                 "file_size": file_info.size,
-                "modified_at": modified_at.to_rfc3339(),
+                "source_modified_at": modified_at.to_rfc3339(),
                 "algorithm": file_info.algorithm.to_string()
-            }));
+            });
+
+            let update_sql = "
+                UPDATE type::thing('entities', $id)
+                SET
+                    entity_type = entity_type ?? 'note',
+                    content_hash = $content_hash,
+                    data.relative_path = $relative_path,
+                    data.path = $relative_path,
+                    data.file_size = $file_size,
+                    data.source_modified_at = $source_modified_at,
+                    data.hash_algorithm = $algorithm,
+                    data.content_hash = $content_hash,
+                    updated_at = time::now()
+                RETURN NONE;
+            ";
+
+            let result = match self.client.query(update_sql, &[params.clone()]).await {
+                Ok(r) => r,
+                Err(e) => {
+                    warn!(
+                        "Failed to update hash metadata for {}: {}",
+                        file_info.relative_path, e
+                    );
+                    return Err(HashError::IoError {
+                        error: e.to_string(),
+                    });
+                }
+            };
+
+            if result.records.is_empty() {
+                let create_sql = "
+                    CREATE type::thing('entities', $id)
+                    CONTENT {
+                        entity_type: 'note',
+                        content_hash: $content_hash,
+                        data: {
+                            relative_path: $relative_path,
+                            path: $relative_path,
+                            file_size: $file_size,
+                            source_modified_at: $source_modified_at,
+                            hash_algorithm: $algorithm,
+                            content_hash: $content_hash
+                        }
+                    }
+                    RETURN NONE;
+                ";
+
+                if let Err(e) = self.client.query(create_sql, &[params]).await {
+                    warn!(
+                        "Failed to create hash metadata for {}: {}",
+                        file_info.relative_path, e
+                    );
+                    return Err(HashError::IoError {
+                        error: e.to_string(),
+                    });
+                }
+            }
         }
 
-        // Use UPSERT to either create or update records
-        let sql = "
-            UPSERT INTO notes (id, path, file_hash, file_size, modified_at, algorithm)
-            VALUES $values
-        ";
-
-        let params = vec![serde_json::json!({
-            "values": values
-        })];
-
-        match self.client.query(sql, &params).await {
-            Ok(_) => {
-                debug!("Successfully stored hashes for {} files", files.len());
-                Ok(())
-            }
-            Err(e) => {
-                warn!("Failed to store hashes for {} files: {}", files.len(), e);
-                Err(HashError::IoError { error: e.to_string() })
-            }
-        }
+        debug!("Successfully stored hashes for {} files", files.len());
+        Ok(())
     }
 
     /// Remove hash information for specific files
@@ -776,33 +932,23 @@ impl<'a> HashLookupStorage for SurrealHashLookupStorage<'a> {
 
         debug!("Removing hashes for {} files", paths.len());
 
-        // Build record IDs from paths
-        let record_ids: Vec<String> = paths
-            .iter()
-            .map(|path| format!("notes:{}", path.replace(':', "_")))
-            .collect();
+        let sql = "
+            DELETE entities
+            WHERE entity_type = 'note'
+              AND data.relative_path IN $paths
+        ";
+        let params = vec![serde_json::json!({ "paths": paths })];
 
-        // Create parameter placeholders
-        let param_placeholders: Vec<String> = (0..record_ids.len())
-            .map(|i| format!("${}", i))
-            .collect();
-
-        let in_clause = param_placeholders.join(", ");
-        let sql = format!("DELETE FROM notes WHERE id IN ({})", in_clause);
-
-        let params: Vec<serde_json::Value> = record_ids
-            .into_iter()
-            .map(|id| serde_json::json!(id))
-            .collect();
-
-        match self.client.query(&sql, &params).await {
+        match self.client.query(sql, &params).await {
             Ok(_) => {
                 debug!("Successfully removed hashes for {} files", paths.len());
                 Ok(())
             }
             Err(e) => {
                 warn!("Failed to remove hashes for {} files: {}", paths.len(), e);
-                Err(HashError::IoError { error: e.to_string() })
+                Err(HashError::IoError {
+                    error: e.to_string(),
+                })
             }
         }
     }
@@ -811,7 +957,20 @@ impl<'a> HashLookupStorage for SurrealHashLookupStorage<'a> {
     async fn get_all_hashes(&self) -> Result<HashMap<String, FileHashInfo>, HashError> {
         debug!("Retrieving all stored hashes");
 
-        let sql = "SELECT id, path, file_hash, file_size, modified_at FROM notes ORDER BY path";
+        let sql = "
+            SELECT
+                id,
+                data.relative_path AS relative_path,
+                content_hash,
+                data.file_size AS file_size,
+                data.source_modified_at AS source_modified_at,
+                data.parsed_at AS parsed_at,
+                updated_at
+            FROM entities
+            WHERE entity_type = 'note'
+              AND content_hash != NONE
+            ORDER BY data.relative_path
+        ";
 
         match self.client.query(sql, &[]).await {
             Ok(result) => {
@@ -821,9 +980,11 @@ impl<'a> HashLookupStorage for SurrealHashLookupStorage<'a> {
                     match convert_record_to_stored_hash(&record) {
                         Ok(stored) => {
                             // Convert to FileHashInfo
-                            let content_hash = FileHash::from_hex(&stored.file_hash)
-                                .map_err(|e| HashError::IoError {
-                                    error: format!("Failed to parse hash: {}", e)
+                            let content_hash =
+                                FileHash::from_hex(&stored.file_hash).map_err(|e| {
+                                    HashError::IoError {
+                                        error: format!("Failed to parse hash: {}", e),
+                                    }
                                 })?;
 
                             let file_info = FileHashInfo::new(
@@ -848,7 +1009,9 @@ impl<'a> HashLookupStorage for SurrealHashLookupStorage<'a> {
             }
             Err(e) => {
                 warn!("Failed to retrieve all hashes: {}", e);
-                Err(HashError::IoError { error: e.to_string() })
+                Err(HashError::IoError {
+                    error: e.to_string(),
+                })
             }
         }
     }
@@ -857,7 +1020,7 @@ impl<'a> HashLookupStorage for SurrealHashLookupStorage<'a> {
     async fn clear_all_hashes(&self) -> Result<(), HashError> {
         debug!("Clearing all stored hashes");
 
-        let sql = "DELETE FROM notes";
+        let sql = "DELETE entities WHERE entity_type = 'note'";
 
         match self.client.query(sql, &[]).await {
             Ok(_) => {
@@ -866,7 +1029,9 @@ impl<'a> HashLookupStorage for SurrealHashLookupStorage<'a> {
             }
             Err(e) => {
                 warn!("Failed to clear all hashes: {}", e);
-                Err(HashError::IoError { error: e.to_string() })
+                Err(HashError::IoError {
+                    error: e.to_string(),
+                })
             }
         }
     }
@@ -875,28 +1040,42 @@ impl<'a> HashLookupStorage for SurrealHashLookupStorage<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{SurrealDbConfig, RecordId};
+    use crate::kiln_integration::initialize_kiln_schema;
+    use crate::types::RecordId;
+    use crate::SurrealClient;
     use std::path::PathBuf;
+
+    async fn setup_client() -> SurrealClient {
+        let client = SurrealClient::new_memory().await.unwrap();
+        initialize_kiln_schema(&client).await.unwrap();
+        client
+    }
 
     #[tokio::test]
     async fn test_convert_record_to_stored_hash() {
         let record = Record {
-            id: Some(RecordId("notes:test_file".to_string())),
+            id: Some(RecordId("entities:note:test_file".to_string())),
             data: serde_json::json!({
-                "path": "test/path.md",
-                "file_hash": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                "relative_path": "test/path.md",
+                "content_hash": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
                 "file_size": 1024,
-                "modified_at": "2023-01-01T00:00:00Z"
-            }).as_object().unwrap().iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
+                "source_modified_at": "2023-01-01T00:00:00Z"
+            })
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
         };
 
         let result = convert_record_to_stored_hash(&record).unwrap();
 
-        assert_eq!(result.record_id, "notes:test_file");
+        assert_eq!(result.record_id, "entities:note:test_file");
         assert_eq!(result.relative_path, "test/path.md");
-        assert_eq!(result.file_hash, "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+        assert_eq!(
+            result.file_hash,
+            "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+        );
         assert_eq!(result.file_size, 1024);
     }
 
@@ -909,9 +1088,10 @@ mod tests {
 
         // Test setting and getting
         let test_hash = StoredFileHash {
-            record_id: "notes:test".to_string(),
+            record_id: "entities:note:test".to_string(),
             relative_path: "test.md".to_string(),
-            file_hash: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
+            file_hash: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+                .to_string(),
             file_size: 1024,
             modified_at: chrono::Utc::now(),
         };
@@ -936,11 +1116,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hash_lookup_empty_paths() {
-        let config = SurrealDbConfig {
-            path: ":memory:".to_string(),
-            ..Default::default()
-        };
-        let client = SurrealClient::new(config).await.unwrap();
+        let client = setup_client().await;
 
         let result = lookup_file_hashes_batch(&client, &[], None).await.unwrap();
         assert_eq!(result.total_queried, 0);
@@ -951,11 +1127,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hash_lookup_storage_trait_implementation() {
-        let config = SurrealDbConfig {
-            path: ":memory:".to_string(),
-            ..Default::default()
-        };
-        let client = SurrealClient::new(config).await.unwrap();
+        let client = setup_client().await;
         let storage = SurrealHashLookupStorage::new(&client);
 
         // Test lookup_file_hash for non-existent file
@@ -984,11 +1156,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_hash_lookup_storage_store_and_retrieve() {
-        let config = SurrealDbConfig {
-            path: ":memory:".to_string(),
-            ..Default::default()
-        };
-        let client = SurrealClient::new(config).await.unwrap();
+        let client = setup_client().await;
         let storage = SurrealHashLookupStorage::new(&client);
 
         // Create test file hash info
@@ -1014,11 +1182,16 @@ mod tests {
 
         // Test batch lookup
         let paths = vec!["test.md".to_string(), "missing.md".to_string()];
-        let batch_result = storage.lookup_file_hashes_batch(&paths, None).await.unwrap();
+        let batch_result = storage
+            .lookup_file_hashes_batch(&paths, None)
+            .await
+            .unwrap();
         assert_eq!(batch_result.found_files.len(), 1);
         assert_eq!(batch_result.missing_files.len(), 1);
         assert!(batch_result.found_files.contains_key("test.md"));
-        assert!(batch_result.missing_files.contains(&"missing.md".to_string()));
+        assert!(batch_result
+            .missing_files
+            .contains(&"missing.md".to_string()));
 
         // Test get_all_hashes
         let all_hashes = storage.get_all_hashes().await.unwrap();
@@ -1026,15 +1199,24 @@ mod tests {
         assert!(all_hashes.contains_key("test.md"));
 
         // Test check_file_needs_update
-        let needs_update_same = storage.check_file_needs_update("test.md", &hash).await.unwrap();
+        let needs_update_same = storage
+            .check_file_needs_update("test.md", &hash)
+            .await
+            .unwrap();
         assert!(!needs_update_same);
 
         let different_hash = FileHash::new([2u8; 32]);
-        let needs_update_diff = storage.check_file_needs_update("test.md", &different_hash).await.unwrap();
+        let needs_update_diff = storage
+            .check_file_needs_update("test.md", &different_hash)
+            .await
+            .unwrap();
         assert!(needs_update_diff);
 
         // Test remove_hashes
-        storage.remove_hashes(&["test.md".to_string()]).await.unwrap();
+        storage
+            .remove_hashes(&["test.md".to_string()])
+            .await
+            .unwrap();
         let result_after_removal = storage.lookup_file_hash("test.md").await.unwrap();
         assert!(result_after_removal.is_none());
     }
@@ -1042,9 +1224,10 @@ mod tests {
     #[tokio::test]
     async fn test_conversion_functions() {
         let stored = StoredFileHash {
-            record_id: "notes:test".to_string(),
+            record_id: "entities:note:test".to_string(),
             relative_path: "test.md".to_string(),
-            file_hash: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
+            file_hash: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+                .to_string(),
             file_size: 1024,
             modified_at: chrono::Utc::now(),
         };
@@ -1071,8 +1254,14 @@ mod tests {
 
         let local_config = convert_from_core_batch_config(Some(core_config.clone()));
         assert_eq!(local_config.max_batch_size, core_config.max_batch_size);
-        assert_eq!(local_config.use_parameterized_queries, core_config.use_parameterized_queries);
-        assert_eq!(local_config.enable_session_cache, core_config.enable_session_cache);
+        assert_eq!(
+            local_config.use_parameterized_queries,
+            core_config.use_parameterized_queries
+        );
+        assert_eq!(
+            local_config.enable_session_cache,
+            core_config.enable_session_cache
+        );
 
         // Test default conversion
         let default_config = convert_from_core_batch_config(None);
