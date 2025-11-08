@@ -5,7 +5,7 @@ use crate::SurrealClient;
 
 use super::types::{
     BlockNode, EmbeddingVector, Entity, EntityRecord, EntityTag, EntityTagRecord, EntityType,
-    Property, PropertyRecord, PropertyValue, RecordId, Tag, TagRecord,
+    Property, PropertyRecord, PropertyValue, RecordId, Relation, RelationRecord, Tag, TagRecord,
 };
 use surrealdb::sql::Thing;
 
@@ -290,6 +290,61 @@ impl EprStore {
         Ok(())
     }
 
+    /// Check whether an entity exists.
+    pub async fn entity_exists(&self, entity_id: &RecordId<EntityRecord>) -> Result<bool> {
+        let result = self
+            .client
+            .query(
+                r#"
+                SELECT id FROM type::thing($table, $id) LIMIT 1;
+                "#,
+                &[json!({
+                    "table": entity_id.table,
+                    "id": entity_id.id,
+                })],
+            )
+            .await?;
+
+        Ok(!result.records.is_empty())
+    }
+
+    /// Create a placeholder note entity if one doesn't already exist.
+    pub async fn ensure_note_entity(
+        &self,
+        entity_id: &RecordId<EntityRecord>,
+        placeholder_title: &str,
+    ) -> Result<()> {
+        if self.entity_exists(entity_id).await? {
+            return Ok(());
+        }
+
+        self.client
+            .query(
+                r#"
+                CREATE type::thing($table, $id)
+                CONTENT {
+                    entity_type: "note",
+                    created_at: time::now(),
+                    updated_at: time::now(),
+                    version: 1,
+                    data: {
+                        placeholder: true,
+                        title: $title
+                    }
+                }
+                RETURN NONE;
+                "#,
+                &[json!({
+                    "table": entity_id.table,
+                    "id": entity_id.id,
+                    "title": placeholder_title,
+                })],
+            )
+            .await?;
+
+        Ok(())
+    }
+
     /// Upsert (or create) a tag entry.
     pub async fn upsert_tag(&self, tag: &Tag) -> Result<RecordId<TagRecord>> {
         let id = tag
@@ -436,6 +491,99 @@ impl EprStore {
         }
 
         Ok(())
+    }
+
+    /// Delete all relations of a given type for the provided entity.
+    pub async fn delete_relations_from(
+        &self,
+        entity_id: &RecordId<EntityRecord>,
+        relation_type: &str,
+    ) -> Result<()> {
+        self.client
+            .query(
+                r#"
+                DELETE relations
+                WHERE relation_type = $relation_type
+                  AND in = type::thing($entity_table, $entity_id);
+                "#,
+                &[json!({
+                    "relation_type": relation_type,
+                    "entity_table": entity_id.table,
+                    "entity_id": entity_id.id,
+                })],
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    /// Upsert a relation record.
+    pub async fn upsert_relation(&self, relation: &Relation) -> Result<RecordId<RelationRecord>> {
+        let id = relation
+            .id
+            .as_ref()
+            .ok_or_else(|| anyhow!("relation id must be provided"))?;
+
+        let params = json!({
+            "table": id.table,
+            "id": id.id,
+            "from_table": relation.from_id.table,
+            "from_id": relation.from_id.id,
+            "to_table": relation.to_id.table,
+            "to_id": relation.to_id.id,
+            "relation_type": relation.relation_type,
+            "weight": relation.weight,
+            "directed": relation.directed,
+            "confidence": relation.confidence,
+            "source": relation.source,
+            "position": relation.position,
+            "metadata": relation.metadata,
+        });
+
+        let result = self
+            .client
+            .query(
+                r#"
+                UPDATE type::thing($table, $id)
+                SET
+                    in = type::thing($from_table, $from_id),
+                    out = type::thing($to_table, $to_id),
+                    relation_type = $relation_type,
+                    weight = $weight,
+                    directed = $directed,
+                    confidence = $confidence,
+                    source = $source,
+                    position = $position,
+                    metadata = $metadata
+                RETURN NONE;
+                "#,
+                &[params.clone()],
+            )
+            .await?;
+
+        if result.records.is_empty() {
+            self.client
+                .query(
+                    r#"
+                    CREATE type::thing($table, $id)
+                    SET
+                        in = type::thing($from_table, $from_id),
+                        out = type::thing($to_table, $to_id),
+                        relation_type = $relation_type,
+                        weight = $weight,
+                        directed = $directed,
+                        confidence = $confidence,
+                        source = $source,
+                        position = $position,
+                        metadata = $metadata
+                    RETURN NONE;
+                    "#,
+                    &[params],
+                )
+                .await?;
+        }
+
+        Ok(id.clone())
     }
 }
 
