@@ -73,22 +73,30 @@ impl ChangeDetectionMetrics {
         info!("📊 Change Detection Performance:");
         info!("  📁 Total files scanned: {}", self.total_files);
         info!("  📝 Files that changed: {}", self.changed_files);
-        info!("  ⏭️  Files skipped: {} ({:.1}%)",
-              self.skipped_files,
-              if self.total_files > 0 {
-                  (self.skipped_files as f64 / self.total_files as f64) * 100.0
-              } else {
-                  0.0
-              });
-        info!("  ⏱️  Change detection time: {:?}", self.change_detection_time);
+        info!(
+            "  ⏭️  Files skipped: {} ({:.1}%)",
+            self.skipped_files,
+            if self.total_files > 0 {
+                (self.skipped_files as f64 / self.total_files as f64) * 100.0
+            } else {
+                0.0
+            }
+        );
+        info!(
+            "  ⏱️  Change detection time: {:?}",
+            self.change_detection_time
+        );
         info!("  🗄️  Database round trips: {}", self.database_round_trips);
-        info!("  🚀 Processing speed: {:.0} files/second", self.files_per_second);
+        info!(
+            "  🚀 Processing speed: {:.0} files/second",
+            self.files_per_second
+        );
         info!("  💾 Cache hit rate: {:.1}%", self.cache_hit_rate * 100.0);
 
         if self.skipped_files > 0 {
-            let time_saved = self.change_detection_time.mul_f64(
-                self.skipped_files as f64 / self.total_files.max(1) as f64
-            );
+            let time_saved = self
+                .change_detection_time
+                .mul_f64(self.skipped_files as f64 / self.total_files.max(1) as f64);
             info!("  ⚡ Estimated time saved: {:?}", time_saved);
         }
     }
@@ -127,7 +135,10 @@ pub async fn process_kiln_files(
         .filter(|f| f.is_markdown && f.is_accessible)
         .collect();
 
-    info!("📚 Found {} markdown files to process", markdown_files.len());
+    info!(
+        "📚 Found {} markdown files to process",
+        markdown_files.len()
+    );
     for (i, file) in markdown_files.iter().enumerate() {
         info!("  File {}: {}", i + 1, file.path.display());
     }
@@ -271,13 +282,14 @@ pub async fn process_kiln_files_with_queue(
     info!("📚 Found {} markdown files to queue", markdown_files.len());
 
     // Convert file paths to Path references for queue processing
-    let file_paths: Vec<&std::path::Path> = markdown_files
-        .iter()
-        .map(|f| f.path.as_path())
-        .collect();
+    let file_paths: Vec<&std::path::Path> =
+        markdown_files.iter().map(|f| f.path.as_path()).collect();
 
     // Enqueue all documents for processing
-    debug!("📤 Enqueuing {} documents for queue processing", file_paths.len());
+    debug!(
+        "📤 Enqueuing {} documents for queue processing",
+        file_paths.len()
+    );
     match simple_integration::enqueue_documents(queue, client, &file_paths, kiln_root).await {
         Ok(document_ids) => {
             processed_count = document_ids.len();
@@ -313,7 +325,10 @@ pub async fn process_single_file_with_queue(
     queue: &TransactionQueue,
     kiln_root: &std::path::Path,
 ) -> Result<bool> {
-    info!("📝 Queuing file for processing: {}", file_info.path.display());
+    info!(
+        "📝 Queuing file for processing: {}",
+        file_info.path.display()
+    );
 
     match simple_integration::enqueue_document(queue, client, &file_info.path, kiln_root).await {
         Ok(document_id) => {
@@ -321,7 +336,11 @@ pub async fn process_single_file_with_queue(
             Ok(true)
         }
         Err(e) => {
-            error!("❌ Failed to enqueue document {}: {}", file_info.path.display(), e);
+            error!(
+                "❌ Failed to enqueue document {}: {}",
+                file_info.path.display(),
+                e
+            );
             Err(e)
         }
     }
@@ -403,7 +422,10 @@ pub async fn process_single_file_with_recovery(
 ) -> Result<()> {
     let mut last_error = None;
 
-    info!("📝 Queuing file for processing: {}", file_info.path.display());
+    info!(
+        "📝 Queuing file for processing: {}",
+        file_info.path.display()
+    );
 
     for attempt in 0..=config.error_retry_attempts {
         match process_single_file_internal(file_info, client, embedding_pool, kiln_root).await {
@@ -494,28 +516,16 @@ pub async fn process_incremental_changes(
 
     // Use efficient batch change detection
     let change_detection_start = std::time::Instant::now();
-    let (changed_files, change_metrics) = detect_changed_files_efficient(
-        client,
-        &markdown_files,
-        kiln_root,
-    ).await?;
+    let (changed_files, change_metrics) =
+        detect_changed_files_efficient(client, &markdown_files, kiln_root).await?;
     let change_detection_time = change_detection_start.elapsed();
 
     // Log comprehensive change detection metrics
-    info!(
-        "📊 {}",
-        change_metrics.performance_summary()
-    );
+    info!("📊 {}", change_metrics.performance_summary());
 
     if !changed_files.is_empty() {
-        let result = process_kiln_files(
-            &changed_files,
-            client,
-            config,
-            embedding_pool,
-            kiln_root,
-        )
-        .await?;
+        let result =
+            process_kiln_files(&changed_files, client, config, embedding_pool, kiln_root).await?;
         processed_count = result.processed_count;
         failed_count = result.failed_count;
         errors = result.errors;
@@ -534,10 +544,7 @@ pub async fn process_incremental_changes(
 
     info!(
         "🎯 Incremental processing completed: {} processed, {} failed, {} skipped in {:?}",
-        processed_count,
-        failed_count,
-        total_skipped,
-        total_processing_time
+        processed_count, failed_count, total_skipped, total_processing_time
     );
 
     // Performance impact analysis
@@ -551,9 +558,7 @@ pub async fn process_incremental_changes(
         if total_change_time.as_millis() > 100 {
             info!(
                 "📈 Change detection efficiency: {:?} to scan {} files ({:.0} files/sec)",
-                total_change_time,
-                change_metrics.total_files,
-                change_metrics.files_per_second
+                total_change_time, change_metrics.total_files, change_metrics.files_per_second
             );
         }
     }
@@ -637,17 +642,14 @@ pub async fn process_files(
         });
     }
 
-    info!("🚀 Processing {} pre-filtered files", files_to_process.len());
+    info!(
+        "🚀 Processing {} pre-filtered files",
+        files_to_process.len()
+    );
 
     // Process the files directly (no change detection)
-    let result = process_kiln_files(
-        files_to_process,
-        client,
-        config,
-        embedding_pool,
-        kiln_root,
-    )
-    .await?;
+    let result =
+        process_kiln_files(files_to_process, client, config, embedding_pool, kiln_root).await?;
 
     let total_processing_time = start_time.elapsed();
     let avg_time_per_doc = if result.processed_count > 0 {
@@ -658,9 +660,7 @@ pub async fn process_files(
 
     info!(
         "✅ Processing completed: {} successful, {} failed in {:?}",
-        result.processed_count,
-        result.failed_count,
-        total_processing_time
+        result.processed_count, result.failed_count, total_processing_time
     );
 
     Ok(KilnProcessResult {
@@ -762,25 +762,23 @@ async fn process_files_parallel(
 
     for result in results {
         match result {
-            Ok((index, inner_result)) => {
-                match inner_result {
-                    Ok(()) => {
-                        processed_count += 1;
-                    }
-                    Err(e) => {
-                        failed_count += 1;
-                        errors.push(KilnProcessError {
-                            file_path: file_infos[index].path.clone(),
-                            error_message: format!("{}", e),
-                            error_type: KilnScannerErrorType::ParseError,
-                            timestamp: chrono::Utc::now(),
-                            retry_attempts: 0,
-                            recovered: false,
-                            final_error_message: Some(format!("{}", e)),
-                        });
-                    }
+            Ok((index, inner_result)) => match inner_result {
+                Ok(()) => {
+                    processed_count += 1;
                 }
-            }
+                Err(e) => {
+                    failed_count += 1;
+                    errors.push(KilnProcessError {
+                        file_path: file_infos[index].path.clone(),
+                        error_message: format!("{}", e),
+                        error_type: KilnScannerErrorType::ParseError,
+                        timestamp: chrono::Utc::now(),
+                        retry_attempts: 0,
+                        recovered: false,
+                        final_error_message: Some(format!("{}", e)),
+                    });
+                }
+            },
             Err(e) => {
                 failed_count += 1;
                 // Can't associate with specific file when semaphore acquire fails
@@ -932,10 +930,6 @@ async fn process_single_file_internal(
         debug!("  ⏭️  Skipping embeddings (no pool available)");
     }
 
-    // Update processed timestamp and content hash
-    debug!("  ⏰ Updating timestamp and content hash...");
-    crate::kiln_integration::update_document_processing_metadata(client, &doc_id, &file_info).await?;
-
     info!("✅ Successfully completed: {}", file_info.path.display());
 
     Ok(())
@@ -950,118 +944,73 @@ pub async fn needs_processing(file_info: &KilnFileInfo, client: &SurrealClient) 
         return Ok(true);
     }
 
-    // Check if document exists in database with error handling
-    let doc_id = match find_document_id_by_path(client, &file_info.relative_path).await {
-        Ok(id) => id,
-        Err(e) => {
-            warn!("Database error checking document existence for {}: {}, treating as needs processing",
-                  file_info.relative_path, e);
-            return Ok(true); // Conservative approach: process if we can't determine status
-        }
-    };
-
-    if doc_id.is_empty() {
-        debug!("Document {} not found in database, needs processing", file_info.relative_path);
-        return Ok(true); // New document
-    }
-
-    // Check if document exists and compare file hash with error handling
-    // Note: Using string formatting for now since mock client doesn't support parameters
-    let path_str = file_info.relative_path.replace('\'', "''");
-    let sql = format!(
-        "SELECT file_hash, processed_at FROM notes WHERE path = '{}'",
-        path_str
-    );
-
-    let result = match client.query(&sql, &[]).await {
-        Ok(result) => result,
-        Err(e) => {
-            warn!("Database error querying document {} for {}: {}, treating as needs processing",
-                  doc_id, file_info.relative_path, e);
-            return Ok(true); // Conservative approach: process if query fails
-        }
-    };
-
-    if let Some(record) = result.records.first() {
-        let stored_hash_hex = record
-            .data
-            .get("file_hash")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        let processed_at = record
-            .data
-            .get("processed_at")
-            .and_then(|v| v.as_str())
-            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.with_timezone(&chrono::Utc));
-
-        // Validate stored hash format
-        if stored_hash_hex.len() != 64 || !stored_hash_hex.chars().all(|c| c.is_ascii_hexdigit()) {
-            warn!(
-                "Invalid stored hash format for {}: {}, treating as needs processing",
-                file_info.relative_path,
-                if stored_hash_hex.len() > 8 { &stored_hash_hex[..8] } else { stored_hash_hex }
+    let stored_hash = match crate::hash_lookup::lookup_file_hash(client, &file_info.relative_path)
+        .await?
+    {
+        Some(hash) => hash,
+        None => {
+            debug!(
+                "Document {} not found in database, needs processing",
+                file_info.relative_path
             );
             return Ok(true);
         }
+    };
 
-        // Validate current hash format
-        let current_hash_hex = file_info.content_hash_hex();
-        if current_hash_hex.len() != 64 || !current_hash_hex.chars().all(|c| c.is_ascii_hexdigit()) {
-            warn!(
-                "Invalid current hash format for {}: {}, treating as needs processing",
-                file_info.relative_path,
-                &current_hash_hex[..8]
-            );
-            return Ok(true);
-        }
+    let stored_hash_hex = stored_hash.file_hash;
+    let current_hash_hex = file_info.content_hash_hex();
 
-        // Check if content hash matches
-        if stored_hash_hex == current_hash_hex {
-            // Hashes match, check if file was modified after processing timestamp
-            if let Some(processed_time) = processed_at {
-                let processed_system_time: std::time::SystemTime = processed_time.into();
-                if file_info.modified_time <= processed_system_time {
-                    debug!("Document {} unchanged (hash matches and file not modified after processing)",
-                           file_info.relative_path);
-                    return Ok(false); // No changes needed
-                } else {
-                    debug!("Document {} modified after processing (file: {:?}, processed: {:?})",
-                           file_info.relative_path, file_info.modified_time, processed_time);
-                }
+    if stored_hash_hex.len() != 64 || !stored_hash_hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        warn!(
+            "Invalid stored hash format for {}: {}, treating as needs processing",
+            file_info.relative_path,
+            if stored_hash_hex.len() > 8 {
+                &stored_hash_hex[..8]
             } else {
-                warn!("No processed_at timestamp for {}, treating as needs processing",
-                      file_info.relative_path);
-                return Ok(true);
+                stored_hash_hex.as_str()
             }
-        } else {
-            debug!("Document {} hash mismatch (stored: {}..., current: {}...)",
-                   file_info.relative_path, &stored_hash_hex[..8], &current_hash_hex[..8]);
-        }
-    } else {
-        warn!("No record found for document {} despite finding ID, treating as needs processing",
-              file_info.relative_path);
+        );
         return Ok(true);
     }
 
-    Ok(true) // Needs processing
-}
-
-async fn find_document_id_by_path(client: &SurrealClient, relative_path: &str) -> Result<String> {
-    // Note: Using string formatting for now since mock client doesn't support parameters
-    let path_str = relative_path.replace('\'', "''");
-    let sql = format!("SELECT id FROM notes WHERE path = '{}'", path_str);
-
-    let result = client.query(&sql, &[]).await?;
-
-    if let Some(record) = result.records.first() {
-        if let Some(id) = &record.id {
-            return Ok(id.0.clone());
-        }
+    if current_hash_hex.len() != 64 || !current_hash_hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        warn!(
+            "Invalid current hash format for {}: {}, treating as needs processing",
+            file_info.relative_path,
+            if current_hash_hex.len() > 8 {
+                &current_hash_hex[..8]
+            } else {
+                current_hash_hex.as_str()
+            }
+        );
+        return Ok(true);
     }
 
-    Ok(String::new()) // Not found
+    if stored_hash_hex == current_hash_hex {
+        let processed_time = stored_hash.modified_at;
+        let processed_system_time: std::time::SystemTime = processed_time.into();
+        if file_info.modified_time <= processed_system_time {
+            debug!(
+                "Document {} unchanged (hash matches and file not modified after processing)",
+                file_info.relative_path
+            );
+            return Ok(false);
+        }
+
+        debug!(
+            "Document {} modified after processing (file: {:?}, processed: {:?})",
+            file_info.relative_path, file_info.modified_time, processed_time
+        );
+    } else {
+        debug!(
+            "Document {} hash mismatch (stored: {}..., current: {}...)",
+            file_info.relative_path,
+            &stored_hash_hex[..8],
+            &current_hash_hex[..8]
+        );
+    }
+
+    Ok(true)
 }
 
 /// Query document hashes for multiple files in a single database call
@@ -1341,12 +1290,20 @@ async fn detect_changed_files_efficient(
         &relative_paths,
         Some(lookup_config),
         &mut hash_cache,
-    ).await {
+    )
+    .await
+    {
         Ok(result) => result,
         Err(e) => {
-            error!("❌ Database lookup failed, falling back to individual file processing: {}", e);
+            error!(
+                "❌ Database lookup failed, falling back to individual file processing: {}",
+                e
+            );
             // Fallback: treat all files as changed if database lookup fails
-            warn!("⚠️ Graceful degradation: processing all {} files as changed", total_files);
+            warn!(
+                "⚠️ Graceful degradation: processing all {} files as changed",
+                total_files
+            );
             let fallback_metrics = ChangeDetectionMetrics {
                 total_files,
                 changed_files: total_files,
@@ -1354,9 +1311,13 @@ async fn detect_changed_files_efficient(
                 change_detection_time: start_time.elapsed(),
                 database_round_trips: 0,
                 cache_hit_rate: 0.0,
-                files_per_second: total_files as f64 / start_time.elapsed().as_secs_f64().max(0.001),
+                files_per_second: total_files as f64
+                    / start_time.elapsed().as_secs_f64().max(0.001),
             };
-            return Ok((file_infos.iter().map(|&fi| fi.clone()).collect(), fallback_metrics));
+            return Ok((
+                file_infos.iter().map(|&fi| fi.clone()).collect(),
+                fallback_metrics,
+            ));
         }
     };
 
@@ -1379,7 +1340,9 @@ async fn detect_changed_files_efficient(
                 let current_hash_hex = file_info.content_hash_hex();
 
                 // Validate hash format before comparison
-                if current_hash_hex.len() != 64 || !current_hash_hex.chars().all(|c| c.is_ascii_hexdigit()) {
+                if current_hash_hex.len() != 64
+                    || !current_hash_hex.chars().all(|c| c.is_ascii_hexdigit())
+                {
                     warn!(
                         "⚠️ Invalid current hash format for {}: {} - treating as changed",
                         file_info.relative_path,
@@ -1389,7 +1352,9 @@ async fn detect_changed_files_efficient(
                     continue;
                 }
 
-                if stored_hash.file_hash.len() != 64 || !stored_hash.file_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+                if stored_hash.file_hash.len() != 64
+                    || !stored_hash.file_hash.chars().all(|c| c.is_ascii_hexdigit())
+                {
                     warn!(
                         "⚠️ Invalid stored hash format for {}: {} - treating as changed",
                         file_info.relative_path,
@@ -1409,7 +1374,8 @@ async fn detect_changed_files_efficient(
                     changed_files.push((*file_info).clone());
                 } else {
                     // Also check if file was modified after processing timestamp
-                    let processed_system_time: std::time::SystemTime = stored_hash.modified_at.into();
+                    let processed_system_time: std::time::SystemTime =
+                        stored_hash.modified_at.into();
                     if file_info.modified_time > processed_system_time {
                         debug!(
                             "📝 File changed (timestamp mismatch): {} (file modified: {:?}, processed: {:?})",
@@ -1425,10 +1391,7 @@ async fn detect_changed_files_efficient(
             }
             None => {
                 // File not in database - treat as new/changed
-                debug!(
-                    "🆕 New file (not in database): {}",
-                    file_info.relative_path
-                );
+                debug!("🆕 New file (not in database): {}", file_info.relative_path);
                 changed_files.push((*file_info).clone());
             }
         }
@@ -1494,7 +1457,8 @@ async fn detect_changed_files_efficient(
     // Performance analysis for larger batches
     if total_files > 10 {
         let effective_batch_size = if lookup_result.database_round_trips > 0 {
-            (total_files + lookup_result.database_round_trips - 1) / lookup_result.database_round_trips
+            (total_files + lookup_result.database_round_trips - 1)
+                / lookup_result.database_round_trips
         } else {
             total_files
         };
@@ -1769,11 +1733,9 @@ mod tests {
         let kiln_root = PathBuf::from("/test");
         let files: Vec<&KilnFileInfo> = vec![];
 
-        let (changed_files, metrics) = detect_changed_files_efficient(
-            &client,
-            &files,
-            &kiln_root,
-        ).await.unwrap();
+        let (changed_files, metrics) = detect_changed_files_efficient(&client, &files, &kiln_root)
+            .await
+            .unwrap();
 
         assert!(changed_files.is_empty());
         assert_eq!(metrics.total_files, 0);
@@ -1815,11 +1777,9 @@ mod tests {
         };
 
         let files = vec![&file_info];
-        let (changed_files, metrics) = detect_changed_files_efficient(
-            &client,
-            &files,
-            &kiln_root,
-        ).await.unwrap();
+        let (changed_files, metrics) = detect_changed_files_efficient(&client, &files, &kiln_root)
+            .await
+            .unwrap();
 
         assert_eq!(changed_files.len(), 1);
         assert_eq!(metrics.changed_files, 1);
@@ -1842,6 +1802,9 @@ mod tests {
         let hash_hex = file_info.content_hash_hex();
         assert_eq!(hash_hex.len(), 64);
         assert!(hash_hex.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_eq!(hash_hex, "4242424242424242424242424242424242424242424242424242424242424242");
+        assert_eq!(
+            hash_hex,
+            "4242424242424242424242424242424242424242424242424242424242424242"
+        );
     }
 }
