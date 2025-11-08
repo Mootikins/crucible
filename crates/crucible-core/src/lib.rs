@@ -6,6 +6,7 @@ pub mod crucible_core;
 pub mod database;
 pub mod document;
 pub mod hashing;
+pub mod merkle;
 pub mod parser;
 pub mod processing;
 pub mod properties;
