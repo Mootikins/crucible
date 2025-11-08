@@ -551,14 +551,14 @@ impl DatabaseTransactionConsumer {
                 debug!("Creating document: {}", document.path.display());
 
                 // Store the document and all its relationships in one operation
-                crate::kiln_integration::store_parsed_document(
+                let document_id = crate::kiln_integration::store_parsed_document(
                     &self.client,
                     document,
                     kiln_root
                 ).await?;
 
                 // Create all related entities (links, embeds, tags) automatically
-                self.create_document_relationships(document).await?;
+                self.create_document_relationships(&document_id, document).await?;
             }
 
             DatabaseTransaction::Update { document, kiln_root, .. } => {
@@ -574,12 +574,12 @@ impl DatabaseTransactionConsumer {
                 } else {
                     // Document doesn't exist, treat as create
                     info!("Document {} not found, treating as create", document_id);
-                    crate::kiln_integration::store_parsed_document(
+                    let created_id = crate::kiln_integration::store_parsed_document(
                         &self.client,
                         document,
                         kiln_root
                     ).await?;
-                    self.create_document_relationships(document).await?;
+                    self.create_document_relationships(&created_id, document).await?;
                 }
             }
 
@@ -811,17 +811,19 @@ impl DatabaseTransactionConsumer {
     }
 
     /// Helper method to create all document relationships (wikilinks, embeds, tags)
-    async fn create_document_relationships(&self, document: &crucible_core::types::ParsedDocument) -> Result<()> {
+    async fn create_document_relationships(
+        &self,
+        document_id: &str,
+        document: &crucible_core::types::ParsedDocument,
+    ) -> Result<()> {
         // Create wikilink edges
         if !document.wikilinks.is_empty() {
-            let document_id = crate::kiln_integration::generate_document_id(&document.path, &std::path::PathBuf::from("/tmp")); // TODO: get actual kiln_root
-            crate::kiln_integration::create_wikilink_edges(&self.client, &document_id, document).await?;
+            crate::kiln_integration::create_wikilink_edges(&self.client, document_id, document).await?;
         }
 
         // Create tag associations
         if !document.tags.is_empty() {
-            let document_id = crate::kiln_integration::generate_document_id(&document.path, &std::path::PathBuf::from("/tmp")); // TODO: get actual kiln_root
-            crate::kiln_integration::create_tag_associations(&self.client, &document_id, document).await?;
+            crate::kiln_integration::create_tag_associations(&self.client, document_id, document).await?;
         }
 
         // Note: embeds are handled through content processing, not as separate relationships
@@ -851,8 +853,8 @@ impl DatabaseTransactionConsumer {
         // Simple intelligent update: just store the new document
         // The consumer is "intelligent" because it figures out what to do automatically
         // without the processing layer having to specify granular operations
-        crate::kiln_integration::store_parsed_document(&self.client, new, kiln_root).await?;
-        self.create_document_relationships(new).await?;
+        let document_id = crate::kiln_integration::store_parsed_document(&self.client, new, kiln_root).await?;
+        self.create_document_relationships(&document_id, new).await?;
 
         Ok(())
     }

@@ -8,8 +8,12 @@ use crate::embedding_config::*;
 use crucible_core::types::{FrontmatterFormat, ParsedDocument, Tag};
 use crate::types::{ColumnDefinition, DatabaseStats, DataType, Record, RecordId, TableSchema};
 use crate::SurrealClient;
+use crate::epr::{
+    DocumentIngestor, EprStore, EntityRecord as EprEntityRecord, EntityTag, EntityTagRecord,
+    RecordId as EprRecordId, Tag as EprTag, TagRecord,
+};
 use anyhow::{anyhow, Result};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use tracing::{debug, error, info, warn};
 
@@ -176,121 +180,43 @@ pub async fn store_parsed_document(
     doc: &ParsedDocument,
     kiln_root: &std::path::Path,
 ) -> Result<String> {
-    use crate::generate_document_id_from_path;
-
-    // Generate relative document ID (e.g., "Projects_Crucible_file_md")
-    let relative_id = generate_document_id_from_path(&doc.path, kiln_root);
-
-    // Create full record ID (e.g., "notes:Projects_Crucible_file_md")
-    let record_id = format!("notes:{}", relative_id);
-
-    // Convert ParsedDocument to a format compatible with SurrealDB
-    let mut record_data = HashMap::new();
-
-    // Store the relative path (for display only, not for ID generation)
-    let relative_path = doc.path.strip_prefix(kiln_root).unwrap_or(&doc.path);
-    let relative_path_str = relative_path.display().to_string();
-    debug!("Storing document with relative path: {}", relative_path_str);
-    debug!("Document content_hash: {}", doc.content_hash);
-    record_data.insert(
-        "path".to_string(),
-        serde_json::Value::String(relative_path_str),
-    );
-
-    record_data.insert("title".to_string(), serde_json::Value::String(doc.title()));
-    record_data.insert(
-        "content".to_string(),
-        serde_json::Value::String(doc.content.plain_text.clone()),
-    );
-
-    // Timestamps
-    record_data.insert(
-        "created_at".to_string(),
-        serde_json::Value::String(doc.parsed_at.to_rfc3339()),
-    );
-    record_data.insert(
-        "modified_at".to_string(),
-        serde_json::Value::String(doc.parsed_at.to_rfc3339()),
-    );
-
-    // File metadata
-    record_data.insert(
-        "file_hash".to_string(),
-        serde_json::Value::String(doc.content_hash.clone()),
-    );
-    record_data.insert(
-        "file_size".to_string(),
-        serde_json::Value::Number(serde_json::Number::from(doc.file_size)),
-    );
-
-    // Folder path extraction
-    let folder = doc
-        .path
-        .parent()
-        .and_then(|p| p.to_str())
-        .unwrap_or("")
-        .to_string();
-    record_data.insert("folder".to_string(), serde_json::Value::String(folder));
-
-    // Tags (combine frontmatter and inline tags)
-    let all_tags = doc.all_tags();
-    record_data.insert(
-        "tags".to_string(),
-        serde_json::Value::Array(
-            all_tags
-                .into_iter()
-                .map(serde_json::Value::String)
-                .collect(),
-        ),
-    );
-
-    // Frontmatter metadata
-    let mut metadata = serde_json::Map::new();
-    if let Some(frontmatter) = &doc.frontmatter {
-        for (key, value) in frontmatter.properties() {
-            metadata.insert(key.clone(), value.clone());
-        }
-    }
-    record_data.insert("metadata".to_string(), serde_json::Value::Object(metadata));
-
-    // Store the record with explicit ID
-    // First try UPDATE (for existing records), then CREATE if it doesn't exist
-    let json_data = serde_json::to_string(&record_data)?;
-
-    // Try UPDATE first
-    let update_sql = format!("UPDATE notes:⟨{}⟩ CONTENT {}", relative_id, json_data);
-    let update_result = client.query(&update_sql, &[]).await;
-
-    match update_result {
-        Ok(result) if !result.records.is_empty() => {
-            // Update succeeded
-            debug!("Updated existing document: {}", record_id);
-        }
-        _ => {
-            // Record doesn't exist, create it
-            let create_sql = format!("CREATE notes:⟨{}⟩ CONTENT {}", relative_id, json_data);
-            client.query(&create_sql, &[]).await.map_err(|e| {
-                // If CREATE also fails with "already exists", try UPDATE one more time
-                if e.to_string().contains("already exists") {
-                    warn!(
-                        "Race condition detected, will retry UPDATE for {}",
-                        record_id
-                    );
-                    anyhow::anyhow!("Race condition: {}", e)
-                } else {
-                    anyhow::anyhow!("Failed to create document: {}", e)
-                }
-            })?;
-            debug!("Created new document: {}", record_id);
-        }
-    }
+    let store = EprStore::new(client.clone());
+    let ingestor = DocumentIngestor::new(&store);
+    let relative_path = resolve_relative_path(&doc.path, kiln_root);
+    let entity_id = ingestor.ingest(doc, &relative_path).await?;
+    let record_id = format!("entities:{}", entity_id.id);
 
     info!(
-        "Stored document: {} (ID: {})",
-        doc.path.display(),
-        record_id
+        "Stored document {} with {} wikilinks and {} tags (relations pending)",
+        record_id,
+        doc.wikilinks.len(),
+        doc.tags.len()
     );
+
     Ok(record_id)
+}
+
+fn resolve_relative_path(path: &std::path::Path, kiln_root: &std::path::Path) -> String {
+    let relative = path
+        .strip_prefix(kiln_root)
+        .unwrap_or(path)
+        .to_path_buf();
+
+    let mut normalized = relative.to_string_lossy().replace('\\', "/");
+    if normalized.starts_with("./") {
+        normalized = normalized.trim_start_matches("./").to_string();
+    }
+    if normalized.starts_with('/') {
+        normalized = normalized.trim_start_matches('/').to_string();
+    }
+    if normalized.is_empty() {
+        return path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("note")
+            .to_string();
+    }
+    normalized
 }
 
 /// Retrieve a ParsedDocument from the database by ID
@@ -386,48 +312,8 @@ pub async fn create_wikilink_edges(
     doc_id: &str,
     doc: &ParsedDocument,
 ) -> Result<()> {
-    for wikilink in &doc.wikilinks {
-        // Skip embeds - they're not considered linked documents for relationship purposes
-        if wikilink.is_embed {
-            continue;
-        }
-
-        // For now, create placeholder target documents if they don't exist
-        // In a full implementation, we'd want to resolve the actual target document IDs
-        let target_path = format!("/kiln/{}.md", wikilink.target);
-
-        // Create or find the target document
-        let display_name = wikilink.display();
-        let target_id = find_or_create_target_document(client, &target_path, display_name).await?;
-
-        // Create the wikilink relationship
-        let mut edge_data = HashMap::new();
-        edge_data.insert(
-            "link_text".to_string(),
-            serde_json::Value::String(wikilink.display().to_string()),
-        );
-        edge_data.insert(
-            "position".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(wikilink.offset)),
-        );
-        edge_data.insert(
-            "created_at".to_string(),
-            serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
-        );
-
-        // Store the relationship
-        let relation_sql =
-            format!(
-            "RELATE {}->wikilink->{} CONTENT {{link_text: '{}', position: {}, created_at: '{}'}}",
-            doc_id, target_id, wikilink.display(), wikilink.offset, chrono::Utc::now().to_rfc3339()
-        );
-
-        client
-            .query(&relation_sql, &[])
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to create wikilink relationship: {}", e))?;
-    }
-
+    let _ = (client, doc_id, doc);
+    debug!("wikilink edge creation deferred to EPR-native implementation");
     Ok(())
 }
 
@@ -437,29 +323,141 @@ pub async fn create_tag_associations(
     doc_id: &str,
     doc: &ParsedDocument,
 ) -> Result<()> {
-    // Process tags from both frontmatter and inline tags
-    let all_tags = doc.all_tags();
+    let mut unique_tags = HashSet::new();
+    let tags: Vec<String> = doc
+        .all_tags()
+        .into_iter()
+        .filter(|tag| {
+            let trimmed = tag.trim();
+            !trimmed.is_empty() && unique_tags.insert(trimmed.to_string())
+        })
+        .collect();
 
-    for tag_name in all_tags {
-        // Ensure the tag exists
-        ensure_tag_exists(client, &tag_name).await?;
-
-        // Create the relationship
-        // Use record ID with angle brackets to handle special characters
-        let relation_sql = format!(
-            "RELATE notes:⟨{}⟩->tagged_with->tag:⟨{}⟩ CONTENT {{added_at: '{}'}}",
-            doc_id.strip_prefix("notes:").unwrap_or(doc_id),
-            normalize_tag_name(&tag_name),
-            chrono::Utc::now().to_rfc3339()
-        );
-
-        client
-            .query(&relation_sql, &[])
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to create tag association: {}", e))?;
+    if tags.is_empty() {
+        debug!("no tags detected for {}", doc.path.display());
+        return Ok(());
     }
 
+    let entity_id = parse_entity_record_id(doc_id)?;
+    let store = EprStore::new(client.clone());
+
+    store.delete_entity_tags(&entity_id).await?;
+
+    let mut created = 0usize;
+    for tag in tags {
+        if let Some(tag_id) = ensure_tag_hierarchy(&store, &tag).await? {
+            let mapping = EntityTag {
+                id: Some(entity_tag_record_id(&entity_id, &tag_id)),
+                entity_id: entity_id.clone(),
+                tag_id,
+                source: "parser".into(),
+                confidence: 1.0,
+            };
+            store.upsert_entity_tag(&mapping).await?;
+            created += 1;
+        }
+    }
+
+    debug!(
+        "created {} tag associations for {}",
+        created,
+        doc.path.display()
+    );
+
     Ok(())
+}
+
+fn parse_entity_record_id(
+    doc_id: &str,
+) -> Result<EprRecordId<EprEntityRecord>> {
+    let (table, id) = doc_id
+        .split_once(':')
+        .ok_or_else(|| anyhow!("invalid document id '{}'", doc_id))?;
+
+    if table != "entities" {
+        return Err(anyhow!(
+            "expected entities table for document id '{}', got '{}'",
+            doc_id,
+            table
+        ));
+    }
+
+    Ok(EprRecordId::new(table, id))
+}
+
+fn entity_tag_record_id(
+    entity_id: &EprRecordId<EprEntityRecord>,
+    tag_id: &EprRecordId<TagRecord>,
+) -> EprRecordId<EntityTagRecord> {
+    let entity_part = entity_id.id.replace(':', "_");
+    let tag_part = tag_id.id.replace(':', "_");
+    EprRecordId::new("entity_tags", format!("{}:{}", entity_part, tag_part))
+}
+
+fn normalize_tag_identifier(path: &str) -> String {
+    path.trim()
+        .to_lowercase()
+        .replace('#', "")
+        .replace([' ', '\t'], "_")
+        .replace(['/', '\\'], "__")
+        .replace(':', "_")
+}
+
+fn tag_segments(tag_path: &str) -> Vec<String> {
+    tag_path
+        .trim()
+        .trim_start_matches('#')
+        .split('/')
+        .filter_map(|segment| {
+            let trimmed = segment.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        })
+        .collect()
+}
+
+async fn ensure_tag_hierarchy(
+    store: &EprStore,
+    tag_path: &str,
+) -> Result<Option<EprRecordId<TagRecord>>> {
+    let segments = tag_segments(tag_path);
+    if segments.is_empty() {
+        return Ok(None);
+    }
+
+    let mut current_path = String::new();
+    let mut parent: Option<EprRecordId<TagRecord>> = None;
+
+    for (depth, segment) in segments.iter().enumerate() {
+        if !current_path.is_empty() {
+            current_path.push('/');
+        }
+        current_path.push_str(segment);
+
+        let tag_id = EprRecordId::new(
+            "tags",
+            format!("tag:{}", normalize_tag_identifier(&current_path)),
+        );
+
+        let record = EprTag {
+            id: Some(tag_id.clone()),
+            name: current_path.clone(),
+            parent_id: parent.clone(),
+            path: current_path.clone(),
+            depth: depth as i32,
+            description: None,
+            color: None,
+            icon: None,
+        };
+
+        store.upsert_tag(&record).await?;
+        parent = Some(tag_id);
+    }
+
+    Ok(parent)
 }
 
 /// Get documents linked via wikilinks
@@ -722,74 +720,8 @@ pub async fn create_embed_relationships(
     doc_id: &str,
     doc: &ParsedDocument,
 ) -> Result<()> {
-    for wikilink in &doc.wikilinks {
-        // Only process embeds
-        if !wikilink.is_embed {
-            continue;
-        }
-
-        // Determine embed type
-        let embed_type = determine_embed_type(wikilink);
-
-        // Create or find the target document
-        let target_path = format!("/kiln/{}.md", wikilink.target);
-        let target_id =
-            find_or_create_target_document(client, &target_path, &wikilink.target).await?;
-
-        // Prepare embed relationship data
-        let mut embed_data = HashMap::new();
-        embed_data.insert(
-            "embed_type".to_string(),
-            serde_json::Value::String(embed_type.clone()),
-        );
-        embed_data.insert(
-            "position".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(wikilink.offset)),
-        );
-        embed_data.insert(
-            "created_at".to_string(),
-            serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
-        );
-
-        // Add reference target for heading or block embeds
-        if let Some(heading_ref) = &wikilink.heading_ref {
-            embed_data.insert(
-                "reference_target".to_string(),
-                serde_json::Value::String(heading_ref.clone()),
-            );
-        } else if let Some(block_ref) = &wikilink.block_ref {
-            embed_data.insert(
-                "reference_target".to_string(),
-                serde_json::Value::String(format!("#^{}", block_ref)),
-            );
-        }
-
-        // Add display alias if present
-        if let Some(alias) = &wikilink.alias {
-            embed_data.insert(
-                "display_alias".to_string(),
-                serde_json::Value::String(alias.clone()),
-            );
-        }
-
-        // Store the embed relationship
-        let embed_content = serde_json::Value::Object(embed_data.into_iter().collect());
-        let relation_sql = format!(
-            "RELATE {}->embeds->{} CONTENT {}",
-            doc_id, target_id, embed_content
-        );
-
-        client
-            .query(&relation_sql, &[])
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to create embed relationship: {}", e))?;
-
-        debug!(
-            "Created embed relationship: {} -> {} ({})",
-            doc_id, target_id, embed_type
-        );
-    }
-
+    let _ = (client, doc_id, doc);
+    debug!("embed relationship creation deferred to EPR-native implementation");
     Ok(())
 }
 
@@ -2540,6 +2472,7 @@ fn generate_mock_semantic_results(query: &str, _limit: usize) -> Vec<(String, f6
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::epr::apply_epr_schema;
     use crate::SurrealClient;
     use std::path::PathBuf;
 
@@ -2683,6 +2616,35 @@ mod tests {
         );
 
         println!("✓ Multiple chunks graph relations test passed!");
+    }
+
+    #[tokio::test]
+    async fn tag_associations_create_hierarchy() {
+        let client = SurrealClient::new_memory().await.unwrap();
+        apply_epr_schema(&client).await.unwrap();
+
+        let kiln_root = PathBuf::from("/vault");
+        let mut doc = ParsedDocument::new(kiln_root.join("projects/sample.md"));
+        doc.content_hash = "tag-hash-1".into();
+        doc.tags.push(Tag::new("project/crucible", 0));
+        doc.tags.push(Tag::new("design/ui", 0));
+
+        let doc_id = store_parsed_document(&client, &doc, &kiln_root)
+            .await
+            .unwrap();
+
+        create_tag_associations(&client, &doc_id, &doc)
+            .await
+            .unwrap();
+
+        let tags = client.query("SELECT * FROM tags", &[]).await.unwrap();
+        assert_eq!(tags.records.len(), 4);
+
+        let entity_tags = client
+            .query("SELECT * FROM entity_tags", &[])
+            .await
+            .unwrap();
+        assert_eq!(entity_tags.records.len(), 2);
     }
 }
 
