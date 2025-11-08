@@ -8,9 +8,9 @@
 //! - Validation for orphaned references and duplicate definitions
 //! - Sequential numbering for ordered footnote display
 
-use super::extensions::SyntaxExtension;
-use super::types::{DocumentContent, FootnoteReference, FootnoteDefinition};
 use super::error::{ParseError, ParseErrorType};
+use super::extensions::SyntaxExtension;
+use super::types::{DocumentContent, FootnoteDefinition, FootnoteReference};
 use async_trait::async_trait;
 
 use regex::Regex;
@@ -41,7 +41,6 @@ impl Default for FootnoteExtension {
     }
 }
 
-
 #[async_trait]
 impl SyntaxExtension for FootnoteExtension {
     fn name(&self) -> &'static str {
@@ -60,11 +59,7 @@ impl SyntaxExtension for FootnoteExtension {
         content.contains("[^") || content.contains('^')
     }
 
-    async fn parse(
-        &self,
-        content: &str,
-        doc_content: &mut DocumentContent,
-    ) -> Vec<ParseError> {
+    async fn parse(&self, content: &str, doc_content: &mut DocumentContent) -> Vec<ParseError> {
         let mut errors = Vec::new();
         let footnotes = &mut doc_content.footnotes;
 
@@ -98,7 +93,12 @@ impl SyntaxExtension for FootnoteExtension {
             }
 
             // Extract multi-line content
-            let footnote_content = self.extract_multiline_definition(content, offset, full_match.len(), initial_content);
+            let footnote_content = self.extract_multiline_definition(
+                content,
+                offset,
+                full_match.len(),
+                initial_content,
+            );
 
             let definition = FootnoteDefinition::new(
                 identifier.to_string(),
@@ -124,12 +124,12 @@ impl SyntaxExtension for FootnoteExtension {
         let chars: Vec<char> = content.chars().collect();
         let mut i = 0;
         while i < chars.len() {
-            if chars[i] == '^' && i > 0 && chars[i-1] != '[' {
+            if chars[i] == '^' && i > 0 && chars[i - 1] != '[' {
                 // Find closing ^
-                if let Some(end_pos) = content[i+1..].find('^') {
+                if let Some(end_pos) = content[i + 1..].find('^') {
                     let inline_end = i + 1 + end_pos;
                     if inline_end < chars.len() {
-                        let inline_content = &content[i+1..inline_end];
+                        let inline_content = &content[i + 1..inline_end];
                         // Only consider it a valid inline footnote if it has meaningful content
                         if !inline_content.is_empty() && inline_content.len() > 1 {
                             let offset = i;
@@ -146,7 +146,8 @@ impl SyntaxExtension for FootnoteExtension {
                             );
 
                             // Create reference for inline footnote
-                            let reference = FootnoteReference::new(inline_identifier.clone(), offset);
+                            let reference =
+                                FootnoteReference::new(inline_identifier.clone(), offset);
 
                             definitions_found.insert(inline_identifier, definition);
                             references_found.push(reference);
@@ -162,7 +163,8 @@ impl SyntaxExtension for FootnoteExtension {
 
         // Filter out references that are actually footnote definitions
         // But keep inline footnote references (they have same position as their definitions)
-        let definition_positions: HashSet<usize> = definitions_found.values()
+        let definition_positions: HashSet<usize> = definitions_found
+            .values()
             .filter(|def| !def.identifier.starts_with("inline-"))
             .map(|def| def.offset)
             .collect();
@@ -222,7 +224,13 @@ impl FootnoteExtension {
     /// Extract multi-line footnote definition content
     ///
     /// Handles indented continuation lines and proper paragraph separation.
-    fn extract_multiline_definition(&self, content: &str, start_pos: usize, _initial_len: usize, initial_content: &str) -> String {
+    fn extract_multiline_definition(
+        &self,
+        content: &str,
+        start_pos: usize,
+        _initial_len: usize,
+        initial_content: &str,
+    ) -> String {
         let mut full_content = initial_content.to_string();
 
         // Find the position after the definition line
@@ -267,13 +275,18 @@ impl FootnoteExtension {
         // Find orphaned references
         let mut reference_counts: HashMap<String, usize> = HashMap::new();
         for reference in references {
-            *reference_counts.entry(reference.identifier.clone()).or_insert(0) += 1;
+            *reference_counts
+                .entry(reference.identifier.clone())
+                .or_insert(0) += 1;
         }
 
         for reference in references {
             if !definitions.contains_key(&reference.identifier) {
                 errors.push(ParseError::warning(
-                    format!("Orphaned footnote reference: '{}' (no definition found)", reference.identifier),
+                    format!(
+                        "Orphaned footnote reference: '{}' (no definition found)",
+                        reference.identifier
+                    ),
                     ParseErrorType::OrphanedFootnoteReference,
                     0, // We don't have line number here
                     0,
@@ -286,7 +299,10 @@ impl FootnoteExtension {
         for definition_identifier in definitions.keys() {
             if !reference_counts.contains_key(definition_identifier) {
                 errors.push(ParseError::warning(
-                    format!("Unused footnote definition: '{}' (no references found)", definition_identifier),
+                    format!(
+                        "Unused footnote definition: '{}' (no references found)",
+                        definition_identifier
+                    ),
                     ParseErrorType::UnusedFootnoteDefinition,
                     definitions.get(definition_identifier).unwrap().line_number,
                     0,
@@ -375,7 +391,10 @@ mod tests {
         assert_eq!(doc_content.footnotes.references.len(), 1);
         assert_eq!(doc_content.footnotes.definitions.len(), 1);
 
-        let definition = doc_content.footnotes.get_definition(&doc_content.footnotes.references[0].identifier).unwrap();
+        let definition = doc_content
+            .footnotes
+            .get_definition(&doc_content.footnotes.references[0].identifier)
+            .unwrap();
         assert_eq!(definition.content, "inline footnote");
     }
 
@@ -395,8 +414,18 @@ mod tests {
         assert_eq!(doc_content.footnotes.definitions.len(), 2);
 
         // Check order numbering
-        let ref1 = doc_content.footnotes.references.iter().find(|r| r.identifier == "1").unwrap();
-        let ref2 = doc_content.footnotes.references.iter().find(|r| r.identifier == "2").unwrap();
+        let ref1 = doc_content
+            .footnotes
+            .references
+            .iter()
+            .find(|r| r.identifier == "1")
+            .unwrap();
+        let ref2 = doc_content
+            .footnotes
+            .references
+            .iter()
+            .find(|r| r.identifier == "2")
+            .unwrap();
         assert_eq!(ref1.order_number, Some(1));
         assert_eq!(ref2.order_number, Some(2));
     }
@@ -413,7 +442,10 @@ mod tests {
         let errors = extension.parse(content, &mut doc_content).await;
 
         assert_eq!(errors.len(), 1);
-        assert_eq!(errors[0].error_type, ParseErrorType::DuplicateFootnoteDefinition);
+        assert_eq!(
+            errors[0].error_type,
+            ParseErrorType::DuplicateFootnoteDefinition
+        );
         assert_eq!(errors[0].severity, ErrorSeverity::Error);
         // Should only keep the first definition
         assert_eq!(doc_content.footnotes.definitions.len(), 1);
@@ -428,7 +460,10 @@ mod tests {
         let errors = extension.parse(content, &mut doc_content).await;
 
         assert_eq!(errors.len(), 1);
-        assert_eq!(errors[0].error_type, ParseErrorType::OrphanedFootnoteReference);
+        assert_eq!(
+            errors[0].error_type,
+            ParseErrorType::OrphanedFootnoteReference
+        );
         assert_eq!(errors[0].severity, ErrorSeverity::Warning);
         assert_eq!(doc_content.footnotes.references.len(), 1);
         assert_eq!(doc_content.footnotes.definitions.len(), 0);
@@ -445,7 +480,10 @@ mod tests {
         let errors = extension.parse(content, &mut doc_content).await;
 
         assert_eq!(errors.len(), 1);
-        assert_eq!(errors[0].error_type, ParseErrorType::UnusedFootnoteDefinition);
+        assert_eq!(
+            errors[0].error_type,
+            ParseErrorType::UnusedFootnoteDefinition
+        );
         assert_eq!(errors[0].severity, ErrorSeverity::Warning);
         assert_eq!(doc_content.footnotes.references.len(), 0);
         assert_eq!(doc_content.footnotes.definitions.len(), 1);
@@ -465,7 +503,10 @@ mod tests {
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.footnotes.references.len(), 2);
         assert_eq!(doc_content.footnotes.definitions.len(), 2);
-        assert!(doc_content.footnotes.get_definition("custom-note").is_some());
+        assert!(doc_content
+            .footnotes
+            .get_definition("custom-note")
+            .is_some());
         assert!(doc_content.footnotes.get_definition("123").is_some());
     }
 
@@ -484,7 +525,10 @@ mod tests {
         assert_eq!(doc_content.footnotes.definitions.len(), 1);
 
         // Only the first reference should have an order number
-        let ordered_refs: Vec<_> = doc_content.footnotes.references.iter()
+        let ordered_refs: Vec<_> = doc_content
+            .footnotes
+            .references
+            .iter()
             .filter(|r| r.order_number.is_some())
             .collect();
         assert_eq!(ordered_refs.len(), 1);

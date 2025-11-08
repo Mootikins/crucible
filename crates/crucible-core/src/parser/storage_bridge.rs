@@ -21,22 +21,22 @@
 //! - **Change Detection Integration**: Tracks parsing changes over time
 //! - **Dependency Inversion**: Flexible trait-based architecture
 
+use crate::hashing::blake3::Blake3Hasher;
 use crate::parser::error::ParserResult;
 use crate::parser::traits::{MarkdownParser, ParserCapabilities};
 use crate::parser::types::ParsedDocument;
-use crate::storage::{
-    ContentAddressedStorage, ContentHasher, MerkleTree, HashedBlock,
-    BlockSize, EnhancedTreeChange, ChangeSource
-};
 use crate::storage::builder::ContentAddressedStorageBuilder;
 use crate::storage::diff::EnhancedChangeDetector;
-use crate::hashing::blake3::Blake3Hasher;
+use crate::storage::{
+    BlockSize, ChangeSource, ContentAddressedStorage, ContentHasher, EnhancedTreeChange,
+    HashedBlock, MerkleTree,
+};
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 
 /// Configuration for storage-aware parsing
 #[derive(Debug, Clone)]
@@ -175,7 +175,7 @@ pub trait StorageAwareMarkdownParser: MarkdownParser + Send + Sync {
     async fn parse_file_with_storage(
         &self,
         path: &Path,
-        storage: Option<Arc<dyn ContentAddressedStorage>>
+        storage: Option<Arc<dyn ContentAddressedStorage>>,
     ) -> ParserResult<StorageAwareParseResult>;
 
     /// Parse content with storage integration
@@ -191,7 +191,7 @@ pub trait StorageAwareMarkdownParser: MarkdownParser + Send + Sync {
         &self,
         content: &str,
         source_path: &Path,
-        storage: Option<Arc<dyn ContentAddressedStorage>>
+        storage: Option<Arc<dyn ContentAddressedStorage>>,
     ) -> ParserResult<StorageAwareParseResult>;
 
     /// Compare with previous parse result and detect changes
@@ -209,7 +209,7 @@ pub trait StorageAwareMarkdownParser: MarkdownParser + Send + Sync {
         new_content: &str,
         source_path: &Path,
         previous_result: &StorageAwareParseResult,
-        storage: Option<Arc<dyn ContentAddressedStorage>>
+        storage: Option<Arc<dyn ContentAddressedStorage>>,
     ) -> ParserResult<StorageAwareParseResult>;
 
     /// Get the parser configuration
@@ -312,11 +312,14 @@ impl StorageAwareParser {
     /// Vector of hashed blocks
     fn create_hashed_blocks(&self, content: &str) -> ParserResult<Vec<HashedBlock>> {
         let content_bytes = content.as_bytes();
-        let block_size = self.config.block_size.calculate_optimal(content_bytes.len());
+        let block_size = self
+            .config
+            .block_size
+            .calculate_optimal(content_bytes.len());
 
         if content_bytes.is_empty() {
             return Err(crate::parser::error::ParserError::ParseFailed(
-                "Cannot create blocks from empty content".to_string()
+                "Cannot create blocks from empty content".to_string(),
             ));
         }
 
@@ -331,17 +334,14 @@ impl StorageAwareParser {
             let chunk_data = content_bytes[offset..chunk_end].to_vec();
             let is_last = chunk_end == content_bytes.len();
 
-            let block = HashedBlock::from_data(
-                chunk_data,
-                blocks.len(),
-                offset,
-                is_last,
-                &*self.hasher,
-            ).map_err(|e| {
-                crate::parser::error::ParserError::ParseFailed(
-                    format!("Failed to create hashed block: {}", e)
-                )
-            })?;
+            let block =
+                HashedBlock::from_data(chunk_data, blocks.len(), offset, is_last, &*self.hasher)
+                    .map_err(|e| {
+                        crate::parser::error::ParserError::ParseFailed(format!(
+                            "Failed to create hashed block: {}",
+                            e
+                        ))
+                    })?;
 
             blocks.push(block);
             offset = chunk_end;
@@ -360,16 +360,16 @@ impl StorageAwareParser {
     fn create_merkle_tree(&self, blocks: &[HashedBlock]) -> ParserResult<MerkleTree> {
         if blocks.is_empty() {
             return Err(crate::parser::error::ParserError::ParseFailed(
-                "Cannot create Merkle tree from empty blocks".to_string()
+                "Cannot create Merkle tree from empty blocks".to_string(),
             ));
         }
 
-        MerkleTree::from_blocks(blocks, &*self.hasher)
-            .map_err(|e| {
-                crate::parser::error::ParserError::ParseFailed(
-                    format!("Failed to create Merkle tree: {}", e)
-                )
-            })
+        MerkleTree::from_blocks(blocks, &*self.hasher).map_err(|e| {
+            crate::parser::error::ParserError::ParseFailed(format!(
+                "Failed to create Merkle tree: {}",
+                e
+            ))
+        })
     }
 
     /// Store content and metadata in storage backend
@@ -400,9 +400,10 @@ impl StorageAwareParser {
                 Ok(exists) => {
                     if !exists {
                         if let Err(e) = storage.store_block(&block.hash, &block.data).await {
-                            return Err(crate::parser::error::ParserError::ParseFailed(
-                                format!("Failed to store block: {}", e)
-                            ));
+                            return Err(crate::parser::error::ParserError::ParseFailed(format!(
+                                "Failed to store block: {}",
+                                e
+                            )));
                         }
                         blocks_stored += 1;
                     } else {
@@ -410,18 +411,20 @@ impl StorageAwareParser {
                     }
                 }
                 Err(e) => {
-                    return Err(crate::parser::error::ParserError::ParseFailed(
-                        format!("Failed to check block existence: {}", e)
-                    ));
+                    return Err(crate::parser::error::ParserError::ParseFailed(format!(
+                        "Failed to check block existence: {}",
+                        e
+                    )));
                 }
             }
         }
 
         // Store Merkle tree
         let tree_stored = if let Err(e) = storage.store_tree(&tree.root_hash, tree).await {
-            return Err(crate::parser::error::ParserError::ParseFailed(
-                format!("Failed to store Merkle tree: {}", e)
-            ));
+            return Err(crate::parser::error::ParserError::ParseFailed(format!(
+                "Failed to store Merkle tree: {}",
+                e
+            )));
         } else {
             true
         };
@@ -460,15 +463,14 @@ impl StorageAwareParser {
         }
 
         if let Some(previous_tree) = &previous_result.merkle_tree {
-            let changes = new_tree.compare_enhanced(
-                previous_tree,
-                &*self.hasher,
-                ChangeSource::UserEdit,
-            ).map_err(|e| {
-                crate::parser::error::ParserError::ParseFailed(
-                    format!("Failed to detect changes: {}", e)
-                )
-            })?;
+            let changes = new_tree
+                .compare_enhanced(previous_tree, &*self.hasher, ChangeSource::UserEdit)
+                .map_err(|e| {
+                    crate::parser::error::ParserError::ParseFailed(format!(
+                        "Failed to detect changes: {}",
+                        e
+                    ))
+                })?;
 
             Ok(Some(changes))
         } else {
@@ -567,7 +569,10 @@ impl StorageAwareMarkdownParser for StorageAwareParser {
         let storage_result = if let Some(storage_backend) = storage {
             if self.config.enable_storage && !blocks.is_empty() {
                 if let Some(ref tree) = merkle_tree {
-                    Some(self.store_content(&blocks, tree, &document, storage_backend).await?)
+                    Some(
+                        self.store_content(&blocks, tree, &document, storage_backend)
+                            .await?,
+                    )
                 } else {
                     None
                 }
@@ -645,7 +650,10 @@ impl StorageAwareMarkdownParser for StorageAwareParser {
         let storage_result = if let Some(storage_backend) = storage {
             if self.config.enable_storage && !blocks.is_empty() {
                 if let Some(ref tree) = merkle_tree {
-                    Some(self.store_content(&blocks, tree, &document, storage_backend).await?)
+                    Some(
+                        self.store_content(&blocks, tree, &document, storage_backend)
+                            .await?,
+                    )
                 } else {
                     None
                 }
@@ -721,17 +729,21 @@ impl StorageAwareMarkdownParser for StorageAwareParser {
         };
 
         // Detect changes
-        let changes = if let (Some(ref tree), true) = (&merkle_tree, self.config.enable_change_detection) {
-            self.detect_changes(&blocks, tree, previous_result).await?
-        } else {
-            None
-        };
+        let changes =
+            if let (Some(ref tree), true) = (&merkle_tree, self.config.enable_change_detection) {
+                self.detect_changes(&blocks, tree, previous_result).await?
+            } else {
+                None
+            };
 
         // Store content if storage is provided
         let storage_result = if let Some(storage_backend) = storage {
             if self.config.enable_storage && !blocks.is_empty() {
                 if let Some(ref tree) = merkle_tree {
-                    Some(self.store_content(&blocks, tree, &document, storage_backend).await?)
+                    Some(
+                        self.store_content(&blocks, tree, &document, storage_backend)
+                            .await?,
+                    )
                 } else {
                     None
                 }
@@ -829,11 +841,7 @@ pub mod factory {
         hasher: Arc<dyn ContentHasher>,
     ) -> impl StorageAwareMarkdownParser {
         let base_parser = Box::new(ParserAdapter::new());
-        StorageAwareParser::with_config(
-            base_parser,
-            StorageAwareParserConfig::default(),
-            hasher,
-        )
+        StorageAwareParser::with_config(base_parser, StorageAwareParserConfig::default(), hasher)
     }
 
     /// Create a storage-aware parser from a base parser
@@ -1009,7 +1017,9 @@ mod tests {
         let content = "# Test Document\n\nThis is a test document with some content.";
         let source_path = Path::new("test.md");
 
-        let result = parser.parse_content_with_storage(content, source_path, None).await;
+        let result = parser
+            .parse_content_with_storage(content, source_path, None)
+            .await;
 
         assert!(result.is_ok());
         let parse_result = result.unwrap();
@@ -1027,7 +1037,10 @@ mod tests {
 
         // Check statistics
         assert!(parse_result.statistics.parse_time_ms > 0);
-        assert_eq!(parse_result.statistics.block_count, parse_result.blocks.len());
+        assert_eq!(
+            parse_result.statistics.block_count,
+            parse_result.blocks.len()
+        );
         assert!(parse_result.statistics.content_size_bytes > 0);
 
         // No storage backend provided, so no storage result
@@ -1042,10 +1055,16 @@ mod tests {
         let source_path = Path::new("test.md");
 
         // Parse initial version
-        let result1 = parser.parse_content_with_storage(content1, source_path, None).await.unwrap();
+        let result1 = parser
+            .parse_content_with_storage(content1, source_path, None)
+            .await
+            .unwrap();
 
         // Parse and compare with new version
-        let result2 = parser.parse_and_compare(content2, source_path, &result1, None).await.unwrap();
+        let result2 = parser
+            .parse_and_compare(content2, source_path, &result1, None)
+            .await
+            .unwrap();
 
         // Check that both results have structure
         assert!(!result2.document.content.plain_text.is_empty());

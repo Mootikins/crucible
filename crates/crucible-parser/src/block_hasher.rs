@@ -4,9 +4,9 @@
 //! depend on crucible-core to avoid circular dependencies. It uses BLAKE3
 //! for consistent, fast hashing of AST blocks.
 
+use crate::types::{ASTBlock, ASTBlockMetadata};
 use blake3::Hasher;
 use serde::Serialize;
-use crate::types::{ASTBlock, ASTBlockMetadata};
 
 /// Simple block hasher for AST blocks
 ///
@@ -39,7 +39,10 @@ impl SimpleBlockHasher {
     }
 
     /// Hash multiple AST blocks in parallel
-    pub async fn hash_blocks_batch(&self, blocks: &[ASTBlock]) -> Result<Vec<crate::types::BlockHash>, String> {
+    pub async fn hash_blocks_batch(
+        &self,
+        blocks: &[ASTBlock],
+    ) -> Result<Vec<crate::types::BlockHash>, String> {
         let mut results = Vec::with_capacity(blocks.len());
 
         // Process blocks concurrently for better performance
@@ -73,7 +76,10 @@ impl SimpleBlockHasher {
     }
 
     /// Build a simple Merkle tree from block hashes
-    pub async fn build_merkle_root(&self, blocks: &[ASTBlock]) -> Result<crate::types::BlockHash, String> {
+    pub async fn build_merkle_root(
+        &self,
+        blocks: &[ASTBlock],
+    ) -> Result<crate::types::BlockHash, String> {
         if blocks.is_empty() {
             return Err("Cannot build Merkle tree from empty block list".to_string());
         }
@@ -139,10 +145,7 @@ impl SerializableBlock {
 #[serde(tag = "type")]
 enum SerializableMetadata {
     /// Heading metadata
-    Heading {
-        level: u8,
-        id: Option<String>,
-    },
+    Heading { level: u8, id: Option<String> },
     /// Code block metadata
     Code {
         language: Option<String>,
@@ -160,9 +163,7 @@ enum SerializableMetadata {
         is_standard_type: bool,
     },
     /// LaTeX metadata
-    Latex {
-        is_block: bool,
-    },
+    Latex { is_block: bool },
     /// Generic metadata
     Generic,
 }
@@ -175,11 +176,17 @@ impl SerializableMetadata {
                 level: *level,
                 id: id.clone(),
             },
-            ASTBlockMetadata::Code { language, line_count } => Self::Code {
+            ASTBlockMetadata::Code {
+                language,
+                line_count,
+            } => Self::Code {
                 language: language.clone(),
                 line_count: *line_count,
             },
-            ASTBlockMetadata::List { list_type, item_count } => Self::List {
+            ASTBlockMetadata::List {
+                list_type,
+                item_count,
+            } => Self::List {
                 list_type: format!("{:?}", list_type),
                 item_count: *item_count,
             },
@@ -295,13 +302,7 @@ mod tests {
     #[test]
     fn test_serialization_format() {
         let metadata = ASTBlockMetadata::heading(1, Some("test".to_string()));
-        let block = ASTBlock::new(
-            ASTBlockType::Heading,
-            "Test".to_string(),
-            0,
-            4,
-            metadata,
-        );
+        let block = ASTBlock::new(ASTBlockType::Heading, "Test".to_string(), 0, 4, metadata);
 
         let hasher = SimpleBlockHasher::new();
         let serialized = hasher.serialize_block(&block).unwrap();

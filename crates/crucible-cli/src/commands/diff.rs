@@ -1,16 +1,20 @@
 use anyhow::{Context, Result};
+use serde_json;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use serde_json;
-use tabled::{Table, Tabled, settings::Style};
+use tabled::{settings::Style, Table, Tabled};
 
 use crate::config::CliConfig;
 use crate::output;
-use crucible_core::storage::builder::{ContentAddressedStorageBuilder, StorageBackendType, HasherConfig};
-use crucible_core::storage::{ContentAddressedStorage, ContentHasher, MerkleTree, StorageResult, EnhancedTreeChange};
-use crucible_core::storage::diff::EnhancedChangeDetector;
 use crucible_core::hashing::blake3::Blake3Hasher;
+use crucible_core::storage::builder::{
+    ContentAddressedStorageBuilder, HasherConfig, StorageBackendType,
+};
+use crucible_core::storage::diff::EnhancedChangeDetector;
 use crucible_core::storage::HashedBlock;
+use crucible_core::storage::{
+    ContentAddressedStorage, ContentHasher, EnhancedTreeChange, MerkleTree, StorageResult,
+};
 use std::sync::Arc;
 
 /// Output formats for diff command
@@ -69,8 +73,7 @@ pub async fn execute(
         return Err(anyhow::anyhow!("Path does not exist: {}", path2.display()));
     }
 
-    println!("📊 Comparing {} and {}",
-        path1.display(), path2.display());
+    println!("📊 Comparing {} and {}", path1.display(), path2.display());
 
     // Create storage backend
     let storage = create_storage_backend(&config)?;
@@ -94,19 +97,28 @@ pub async fn execute(
     output::info("Detecting changes...");
     let detector = EnhancedChangeDetector::new();
     let hasher = Blake3Hasher::new();
-    let changes = detector.compare_trees(&tree1, &tree2, &hasher, crucible_core::storage::diff::ChangeSource::UserEdit)
+    let changes = detector
+        .compare_trees(
+            &tree1,
+            &tree2,
+            &hasher,
+            crucible_core::storage::diff::ChangeSource::UserEdit,
+        )
         .context("Failed to detect changes")?;
 
     // Generate output
     match output_format {
         DiffOutputFormat::Plain => output_plain_format(&changes, show_unchanged),
         DiffOutputFormat::Json => output_json_format(&changes, &tree1, &tree2, show_similarity)?,
-        DiffOutputFormat::Detailed => output_detailed_format(&changes, show_similarity, show_unchanged)?,
+        DiffOutputFormat::Detailed => {
+            output_detailed_format(&changes, show_similarity, show_unchanged)?
+        }
     }
 
     // Show summary
     let duration = start_time.elapsed();
-    println!("✅ Diff completed in {:.2}s - {} changes detected",
+    println!(
+        "✅ Diff completed in {:.2}s - {} changes detected",
         duration.as_secs_f32(),
         changes.len()
     );
@@ -172,7 +184,10 @@ async fn process_path(
         let tree = MerkleTree::from_blocks(&[block], &hasher)?;
         Ok(tree)
     } else {
-        Err(anyhow::anyhow!("Path is neither file nor directory: {}", path.display()))
+        Err(anyhow::anyhow!(
+            "Path is neither file nor directory: {}",
+            path.display()
+        ))
     }
 }
 
@@ -188,12 +203,26 @@ fn output_plain_format(changes: &[EnhancedTreeChange], show_unchanged: bool) {
     for change in changes {
         match change {
             EnhancedTreeChange::AddedBlock { index, hash, .. } => {
-                output::success(&format!("+ Added block #{}: {}", index, hash[..8].to_string()));
+                output::success(&format!(
+                    "+ Added block #{}: {}",
+                    index,
+                    hash[..8].to_string()
+                ));
             }
             EnhancedTreeChange::DeletedBlock { index, hash, .. } => {
-                output::error(&format!("- Deleted block #{}: {}", index, hash[..8].to_string()));
+                output::error(&format!(
+                    "- Deleted block #{}: {}",
+                    index,
+                    hash[..8].to_string()
+                ));
             }
-            EnhancedTreeChange::ModifiedBlock { index, old_hash, new_hash, similarity_score, .. } => {
+            EnhancedTreeChange::ModifiedBlock {
+                index,
+                old_hash,
+                new_hash,
+                similarity_score,
+                ..
+            } => {
                 output::warning(&format!(
                     "~ Modified block #{}: {} -> {} ({}% similar)",
                     index,
@@ -202,7 +231,12 @@ fn output_plain_format(changes: &[EnhancedTreeChange], show_unchanged: bool) {
                     (similarity_score * 100.0) as u32
                 ));
             }
-            EnhancedTreeChange::MovedBlock { old_index, new_index, hash, .. } => {
+            EnhancedTreeChange::MovedBlock {
+                old_index,
+                new_index,
+                hash,
+                ..
+            } => {
                 output::info(&format!(
                     "↔ Moved block #{} → #{}: {}",
                     old_index,
@@ -293,73 +327,103 @@ fn output_detailed_format(
         return Ok(());
     }
 
-    let rows: Vec<ChangeRow> = changes.iter().map(|change| {
-        match change {
-            EnhancedTreeChange::AddedBlock { index, hash, metadata } => ChangeRow {
-                change_type: "Added".to_string(),
-                index: *index,
-                hash: hash[..8].to_string(),
-                similarity: "-".to_string(),
-                size: "-".to_string(), // Size not available in ChangeMetadata
-                timestamp: format_timestamp(metadata.timestamp),
-            },
-            EnhancedTreeChange::DeletedBlock { index, hash, metadata } => ChangeRow {
-                change_type: "Deleted".to_string(),
-                index: *index,
-                hash: hash[..8].to_string(),
-                similarity: "-".to_string(),
-                size: "-".to_string(), // Size not available in ChangeMetadata
-                timestamp: format_timestamp(metadata.timestamp),
-            },
-            EnhancedTreeChange::ModifiedBlock { index, old_hash, new_hash, similarity_score, metadata } => {
-                let similarity_str = if show_similarity {
-                    format!("{:.1}%", similarity_score * 100.0)
-                } else {
-                    "-".to_string()
-                };
-
-                ChangeRow {
-                    change_type: "Modified".to_string(),
+    let rows: Vec<ChangeRow> = changes
+        .iter()
+        .map(|change| {
+            match change {
+                EnhancedTreeChange::AddedBlock {
+                    index,
+                    hash,
+                    metadata,
+                } => ChangeRow {
+                    change_type: "Added".to_string(),
                     index: *index,
-                    hash: format!("{} → {}", &old_hash[..8], &new_hash[..8]),
-                    similarity: similarity_str,
+                    hash: hash[..8].to_string(),
+                    similarity: "-".to_string(),
                     size: "-".to_string(), // Size not available in ChangeMetadata
                     timestamp: format_timestamp(metadata.timestamp),
+                },
+                EnhancedTreeChange::DeletedBlock {
+                    index,
+                    hash,
+                    metadata,
+                } => ChangeRow {
+                    change_type: "Deleted".to_string(),
+                    index: *index,
+                    hash: hash[..8].to_string(),
+                    similarity: "-".to_string(),
+                    size: "-".to_string(), // Size not available in ChangeMetadata
+                    timestamp: format_timestamp(metadata.timestamp),
+                },
+                EnhancedTreeChange::ModifiedBlock {
+                    index,
+                    old_hash,
+                    new_hash,
+                    similarity_score,
+                    metadata,
+                } => {
+                    let similarity_str = if show_similarity {
+                        format!("{:.1}%", similarity_score * 100.0)
+                    } else {
+                        "-".to_string()
+                    };
+
+                    ChangeRow {
+                        change_type: "Modified".to_string(),
+                        index: *index,
+                        hash: format!("{} → {}", &old_hash[..8], &new_hash[..8]),
+                        similarity: similarity_str,
+                        size: "-".to_string(), // Size not available in ChangeMetadata
+                        timestamp: format_timestamp(metadata.timestamp),
+                    }
                 }
-            },
-            EnhancedTreeChange::MovedBlock { old_index, new_index, hash, metadata } => {
-                ChangeRow {
+                EnhancedTreeChange::MovedBlock {
+                    old_index,
+                    new_index,
+                    hash,
+                    metadata,
+                } => ChangeRow {
                     change_type: "Moved".to_string(),
                     index: *old_index,
                     hash: format!("{} → #{}", &hash[..8], new_index),
                     similarity: "-".to_string(),
                     size: "-".to_string(),
                     timestamp: format_timestamp(metadata.timestamp),
-                }
-            },
-            _ => ChangeRow {
-                change_type: "Unknown".to_string(),
-                index: 0,
-                hash: "-".to_string(),
-                similarity: "-".to_string(),
-                size: "-".to_string(),
-                timestamp: "-".to_string(),
-            },
-        }
-    }).collect();
+                },
+                _ => ChangeRow {
+                    change_type: "Unknown".to_string(),
+                    index: 0,
+                    hash: "-".to_string(),
+                    similarity: "-".to_string(),
+                    size: "-".to_string(),
+                    timestamp: "-".to_string(),
+                },
+            }
+        })
+        .collect();
 
-    let table = Table::new(&rows)
-        .with(Style::modern())
-        .to_string();
+    let table = Table::new(&rows).with(Style::modern()).to_string();
 
     output::header("Detailed Changes:");
     println!("{}", table);
 
     // Show change summary
-    let added = changes.iter().filter(|c| matches!(c, EnhancedTreeChange::AddedBlock { .. })).count();
-    let deleted = changes.iter().filter(|c| matches!(c, EnhancedTreeChange::DeletedBlock { .. })).count();
-    let modified = changes.iter().filter(|c| matches!(c, EnhancedTreeChange::ModifiedBlock { .. })).count();
-    let moved = changes.iter().filter(|c| matches!(c, EnhancedTreeChange::MovedBlock { .. })).count();
+    let added = changes
+        .iter()
+        .filter(|c| matches!(c, EnhancedTreeChange::AddedBlock { .. }))
+        .count();
+    let deleted = changes
+        .iter()
+        .filter(|c| matches!(c, EnhancedTreeChange::DeletedBlock { .. }))
+        .count();
+    let modified = changes
+        .iter()
+        .filter(|c| matches!(c, EnhancedTreeChange::ModifiedBlock { .. }))
+        .count();
+    let moved = changes
+        .iter()
+        .filter(|c| matches!(c, EnhancedTreeChange::MovedBlock { .. }))
+        .count();
 
     println!("\n📊 Summary:");
     println!("  Added: {} blocks", added);
@@ -394,8 +458,7 @@ fn format_timestamp(timestamp: u64) -> String {
     if timestamp == 0 {
         "-".to_string()
     } else {
-        let datetime = chrono::DateTime::from_timestamp(timestamp as i64, 0)
-            .unwrap_or_default();
+        let datetime = chrono::DateTime::from_timestamp(timestamp as i64, 0).unwrap_or_default();
         datetime.format("%Y-%m-%d %H:%M:%S").to_string()
     }
 }

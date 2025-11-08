@@ -81,11 +81,13 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use crate::hashing::algorithm::HashingAlgorithm;
-use crate::storage::traits::{BlockOperations, StorageManagement, StorageStats, StorageBackend, TreeOperations};
-use crate::storage::{MerkleTree, StorageResult, StorageError};
+use crate::storage::traits::{
+    BlockOperations, StorageBackend, StorageManagement, StorageStats, TreeOperations,
+};
+use crate::storage::{MerkleTree, StorageError, StorageResult};
 use crate::traits::change_detection::{
-    ContentHasher, HashLookupStorage, StoredHash, HashLookupResult, BatchLookupConfig,
-    ChangeDetector, ChangeSet, ChangeDetectionResult, ChangeDetectionMetrics, ChangeStatistics,
+    BatchLookupConfig, ChangeDetectionMetrics, ChangeDetectionResult, ChangeDetector, ChangeSet,
+    ChangeStatistics, ContentHasher, HashLookupResult, HashLookupStorage, StoredHash,
 };
 use crate::types::hashing::{
     BlockHash, BlockHashInfo, FileHash, FileHashInfo, HashAlgorithm, HashError,
@@ -445,7 +447,12 @@ impl StorageManagement for MockStorage {
         } else {
             0.0
         };
-        let largest_block = state.blocks.values().map(|v| v.len() as u64).max().unwrap_or(0);
+        let largest_block = state
+            .blocks
+            .values()
+            .map(|v| v.len() as u64)
+            .max()
+            .unwrap_or(0);
 
         Ok(StorageStats {
             backend: StorageBackend::InMemory,
@@ -592,7 +599,9 @@ impl ContentHasher for MockContentHasher {
         let mut state = self.state.lock().unwrap();
 
         if state.simulate_errors {
-            return Err(HashError::IoError { error: state.error_message.clone() });
+            return Err(HashError::IoError {
+                error: state.error_message.clone(),
+            });
         }
 
         state.hash_file_count += 1;
@@ -614,7 +623,10 @@ impl ContentHasher for MockContentHasher {
         Ok(FileHash::new(hash))
     }
 
-    async fn hash_files_batch(&self, paths: &[std::path::PathBuf]) -> Result<Vec<FileHash>, HashError> {
+    async fn hash_files_batch(
+        &self,
+        paths: &[std::path::PathBuf],
+    ) -> Result<Vec<FileHash>, HashError> {
         let mut results = Vec::with_capacity(paths.len());
         for path in paths {
             results.push(self.hash_file(path).await?);
@@ -626,7 +638,9 @@ impl ContentHasher for MockContentHasher {
         let mut state = self.state.lock().unwrap();
 
         if state.simulate_errors {
-            return Err(HashError::IoError { error: state.error_message.clone() });
+            return Err(HashError::IoError {
+                error: state.error_message.clone(),
+            });
         }
 
         state.hash_block_count += 1;
@@ -654,7 +668,11 @@ impl ContentHasher for MockContentHasher {
         Ok(results)
     }
 
-    async fn hash_file_info(&self, path: &Path, relative_path: String) -> Result<FileHashInfo, HashError> {
+    async fn hash_file_info(
+        &self,
+        path: &Path,
+        relative_path: String,
+    ) -> Result<FileHashInfo, HashError> {
         let hash = self.hash_file(path).await?;
 
         // Mock file size and modification time
@@ -688,12 +706,20 @@ impl ContentHasher for MockContentHasher {
         ))
     }
 
-    async fn verify_file_hash(&self, path: &Path, expected_hash: &FileHash) -> Result<bool, HashError> {
+    async fn verify_file_hash(
+        &self,
+        path: &Path,
+        expected_hash: &FileHash,
+    ) -> Result<bool, HashError> {
         let actual_hash = self.hash_file(path).await?;
         Ok(actual_hash == *expected_hash)
     }
 
-    async fn verify_block_hash(&self, content: &str, expected_hash: &BlockHash) -> Result<bool, HashError> {
+    async fn verify_block_hash(
+        &self,
+        content: &str,
+        expected_hash: &BlockHash,
+    ) -> Result<bool, HashError> {
         let actual_hash = self.hash_block(content).await?;
         Ok(actual_hash == *expected_hash)
     }
@@ -769,7 +795,11 @@ impl MockHashLookupStorage {
     /// Get operation counts: (lookups, batch_lookups, stores)
     pub fn operation_counts(&self) -> (usize, usize, usize) {
         let state = self.state.lock().unwrap();
-        (state.lookup_count, state.batch_lookup_count, state.store_count)
+        (
+            state.lookup_count,
+            state.batch_lookup_count,
+            state.store_count,
+        )
     }
 
     /// Reset all data and statistics
@@ -796,7 +826,9 @@ impl HashLookupStorage for MockHashLookupStorage {
         let mut state = self.state.lock().unwrap();
 
         if state.simulate_errors {
-            return Err(HashError::IoError { error: state.error_message.clone() });
+            return Err(HashError::IoError {
+                error: state.error_message.clone(),
+            });
         }
 
         state.lookup_count += 1;
@@ -811,7 +843,9 @@ impl HashLookupStorage for MockHashLookupStorage {
         let mut state = self.state.lock().unwrap();
 
         if state.simulate_errors {
-            return Err(HashError::IoError { error: state.error_message.clone() });
+            return Err(HashError::IoError {
+                error: state.error_message.clone(),
+            });
         }
 
         state.batch_lookup_count += 1;
@@ -841,7 +875,9 @@ impl HashLookupStorage for MockHashLookupStorage {
         let state = self.state.lock().unwrap();
 
         if state.simulate_errors {
-            return Err(HashError::IoError { error: state.error_message.clone() });
+            return Err(HashError::IoError {
+                error: state.error_message.clone(),
+            });
         }
 
         let mut result: HashMap<String, Vec<StoredHash>> = HashMap::new();
@@ -866,7 +902,9 @@ impl HashLookupStorage for MockHashLookupStorage {
         let state = self.state.lock().unwrap();
 
         if state.simulate_errors {
-            return Err(HashError::IoError { error: state.error_message.clone() });
+            return Err(HashError::IoError {
+                error: state.error_message.clone(),
+            });
         }
 
         let mut results: Vec<StoredHash> = state
@@ -891,7 +929,9 @@ impl HashLookupStorage for MockHashLookupStorage {
         let state = self.state.lock().unwrap();
 
         if state.simulate_errors {
-            return Err(HashError::IoError { error: state.error_message.clone() });
+            return Err(HashError::IoError {
+                error: state.error_message.clone(),
+            });
         }
 
         match state.stored_hashes.get(relative_path) {
@@ -904,7 +944,9 @@ impl HashLookupStorage for MockHashLookupStorage {
         let mut state = self.state.lock().unwrap();
 
         if state.simulate_errors {
-            return Err(HashError::IoError { error: state.error_message.clone() });
+            return Err(HashError::IoError {
+                error: state.error_message.clone(),
+            });
         }
 
         state.store_count += files.len();
@@ -917,7 +959,9 @@ impl HashLookupStorage for MockHashLookupStorage {
                 file.size,
                 chrono::Utc::now(),
             );
-            state.stored_hashes.insert(file.relative_path.clone(), stored);
+            state
+                .stored_hashes
+                .insert(file.relative_path.clone(), stored);
         }
 
         Ok(())
@@ -927,7 +971,9 @@ impl HashLookupStorage for MockHashLookupStorage {
         let mut state = self.state.lock().unwrap();
 
         if state.simulate_errors {
-            return Err(HashError::IoError { error: state.error_message.clone() });
+            return Err(HashError::IoError {
+                error: state.error_message.clone(),
+            });
         }
 
         for path in paths {
@@ -941,7 +987,9 @@ impl HashLookupStorage for MockHashLookupStorage {
         let state = self.state.lock().unwrap();
 
         if state.simulate_errors {
-            return Err(HashError::IoError { error: state.error_message.clone() });
+            return Err(HashError::IoError {
+                error: state.error_message.clone(),
+            });
         }
 
         let mut result = HashMap::new();
@@ -959,7 +1007,9 @@ impl HashLookupStorage for MockHashLookupStorage {
         let mut state = self.state.lock().unwrap();
 
         if state.simulate_errors {
-            return Err(HashError::IoError { error: state.error_message.clone() });
+            return Err(HashError::IoError {
+                error: state.error_message.clone(),
+            });
         }
 
         state.stored_hashes.clear();
@@ -1097,7 +1147,10 @@ impl ChangeDetector for MockChangeDetector {
         since: chrono::DateTime<chrono::Utc>,
         limit: Option<usize>,
     ) -> Result<Vec<FileHashInfo>, HashError> {
-        let stored = self.storage.lookup_changed_files_since(since, limit).await?;
+        let stored = self
+            .storage
+            .lookup_changed_files_since(since, limit)
+            .await?;
         Ok(stored
             .into_iter()
             .map(|s| s.to_file_hash_info(HashAlgorithm::Blake3))
@@ -1116,7 +1169,10 @@ impl ChangeDetector for MockChangeDetector {
         Ok(results)
     }
 
-    async fn detect_deleted_files(&self, current_paths: &[String]) -> Result<Vec<String>, HashError> {
+    async fn detect_deleted_files(
+        &self,
+        current_paths: &[String],
+    ) -> Result<Vec<String>, HashError> {
         let all_stored = self.storage.get_all_hashes().await?;
         let current_set: std::collections::HashSet<_> = current_paths.iter().collect();
 
@@ -1316,7 +1372,10 @@ mod tests {
             "file2.md".to_string(),
             "missing.md".to_string(),
         ];
-        let result = storage.lookup_file_hashes_batch(&paths, None).await.unwrap();
+        let result = storage
+            .lookup_file_hashes_batch(&paths, None)
+            .await
+            .unwrap();
 
         assert_eq!(result.found_files.len(), 2);
         assert_eq!(result.missing_files.len(), 1);
@@ -1335,7 +1394,9 @@ mod tests {
             1024,
             chrono::Utc::now(),
         );
-        detector.storage().add_stored_hash("existing.md".to_string(), stored);
+        detector
+            .storage()
+            .add_stored_hash("existing.md".to_string(), stored);
 
         // Current files: one changed, one new
         let current_files = vec![
@@ -1362,7 +1423,10 @@ mod tests {
         assert!(changes.has_changes());
 
         // Detect with metrics
-        let result = detector.detect_changes_with_metrics(&current_files).await.unwrap();
+        let result = detector
+            .detect_changes_with_metrics(&current_files)
+            .await
+            .unwrap();
         assert!(result.has_changes());
         assert_eq!(result.metrics.total_files, 2);
     }

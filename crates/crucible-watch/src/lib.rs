@@ -74,30 +74,27 @@ mod utils;
 
 pub use backends::*;
 pub use change_detector::{
-    ChangeDetector, ChangeDetectorConfig, ChangeDetectorStatistics, CacheStatistics,
+    CacheStatistics, ChangeDetector, ChangeDetectorConfig, ChangeDetectorStatistics,
 };
 pub use config::{
-    FileWatchingConfig, WatchPerformanceConfig, EventProcessingConfig,
-    FilterConfig, GlobalWatchConfig, WatchManagerConfig, WatchProfile,
-    WatchPath, WatchModeConfig, DebounceConfig, BackpressureStrategy,
-    MemoryConfig, CpuConfig, MonitoringConfig, ExportConfig, ExportFormat,
-    AdvancedFilterConfig, TimeWindowConfig, FrequencyLimitConfig,
-    WatchLoggingConfig, ConfigValidator, ValidationError,
+    AdvancedFilterConfig, BackpressureStrategy, ConfigValidator, CpuConfig, DebounceConfig,
+    EventProcessingConfig, ExportConfig, ExportFormat, FileWatchingConfig, FilterConfig,
+    FrequencyLimitConfig, GlobalWatchConfig, MemoryConfig, MonitoringConfig, TimeWindowConfig,
+    ValidationError, WatchLoggingConfig, WatchManagerConfig, WatchModeConfig, WatchPath,
+    WatchPerformanceConfig, WatchProfile,
 };
 pub use embedding_events::*;
 pub use error::*;
 pub use event_driven_embedding_processor::*;
 pub use events::*;
 pub use file_scanner::{
-    FileScanner, ScanProgressReporter, NoOpProgressReporter, ScanStatistics,
-    WatchConfig, WatchResult,
+    FileScanner, NoOpProgressReporter, ScanProgressReporter, ScanStatistics, WatchConfig,
+    WatchResult,
 };
 pub use handlers::*;
 pub use manager::*;
 pub use message_channel_infrastructure::*;
-pub use traits::{
-    BackendCapabilities, EventHandler, FileWatcher, WatchHandle, WatchMode,
-};
+pub use traits::{BackendCapabilities, EventHandler, FileWatcher, WatchHandle, WatchMode};
 pub use types::*;
 
 /// Available file watching backends.

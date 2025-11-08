@@ -26,14 +26,16 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use async_trait::async_trait;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn, trace};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::error::Error;
-use crate::types::{FileInfo, FileType, ScanConfig, ScanResult, SkipReason, SkipType, ScanError, ScanErrorType};
+use crate::types::{
+    FileInfo, FileType, ScanConfig, ScanError, ScanErrorType, ScanResult, SkipReason, SkipType,
+};
 
 // Import the ContentHasher trait from crucible-core
 use crucible_core::traits::change_detection::ContentHasher;
@@ -52,7 +54,12 @@ pub trait ScanProgressReporter: Send + Sync {
     /// * `current` - Current number of files processed
     /// * `total` - Total number of files to process (None if unknown)
     /// * `current_file` - Path to the file currently being processed
-    async fn report_progress(&self, current: usize, total: Option<usize>, current_file: Option<&Path>);
+    async fn report_progress(
+        &self,
+        current: usize,
+        total: Option<usize>,
+        current_file: Option<&Path>,
+    );
 
     /// Report that scanning has started
     async fn scan_started(&self);
@@ -77,7 +84,12 @@ pub struct NoOpProgressReporter;
 
 #[async_trait]
 impl ScanProgressReporter for NoOpProgressReporter {
-    async fn report_progress(&self, _current: usize, _total: Option<usize>, _current_file: Option<&Path>) {
+    async fn report_progress(
+        &self,
+        _current: usize,
+        _total: Option<usize>,
+        _current_file: Option<&Path>,
+    ) {
         // No-op implementation
     }
 
@@ -385,11 +397,10 @@ impl FileScanner {
         result.scan_errors.clear();
 
         // Perform the actual scan
-        if let Err(e) = self.scan_directory_recursive(
-            &self.root_path,
-            0,
-            &mut result,
-        ).await {
+        if let Err(e) = self
+            .scan_directory_recursive(&self.root_path, 0, &mut result)
+            .await
+        {
             error!("Directory scan failed: {}", e);
             self.progress_reporter.scan_error(&e).await;
             return Err(e);
@@ -406,7 +417,9 @@ impl FileScanner {
         state.discovered_files = result.discovered_files.clone();
 
         // Calculate total size
-        result.total_size = result.discovered_files.iter()
+        result.total_size = result
+            .discovered_files
+            .iter()
             .map(|file| file.file_size())
             .sum();
 
@@ -458,11 +471,9 @@ impl FileScanner {
 
         for (index, file_path) in files.iter().enumerate() {
             // Report progress
-            self.progress_reporter.report_progress(
-                index,
-                Some(files.len()),
-                Some(file_path)
-            ).await;
+            self.progress_reporter
+                .report_progress(index, Some(files.len()), Some(file_path))
+                .await;
 
             trace!("Processing file: {:?}", file_path);
 
@@ -491,14 +502,14 @@ impl FileScanner {
         }
 
         // Final progress report
-        self.progress_reporter.report_progress(
-            files.len(),
-            Some(files.len()),
-            None
-        ).await;
+        self.progress_reporter
+            .report_progress(files.len(), Some(files.len()), None)
+            .await;
 
         result.scan_duration = start_time.elapsed();
-        result.total_size = result.discovered_files.iter()
+        result.total_size = result
+            .discovered_files
+            .iter()
             .map(|file| file.file_size())
             .sum();
 
@@ -624,11 +635,9 @@ impl FileScanner {
 
         // Check each file for changes
         for (index, file_path) in files_to_check.iter().enumerate() {
-            self.progress_reporter.report_progress(
-                index,
-                Some(files_to_check.len()),
-                Some(file_path)
-            ).await;
+            self.progress_reporter
+                .report_progress(index, Some(files_to_check.len()), Some(file_path))
+                .await;
 
             match self.check_file_changed(file_path).await {
                 Ok(Some(file_info)) => {
@@ -652,14 +661,15 @@ impl FileScanner {
         }
 
         result.scan_duration = start_time.elapsed();
-        result.total_size = result.discovered_files.iter()
+        result.total_size = result
+            .discovered_files
+            .iter()
             .map(|file| file.file_size())
             .sum();
 
         info!(
             "Changed files scan completed in {:?}: {} files changed",
-            result.scan_duration,
-            result.successful_files
+            result.scan_duration, result.successful_files
         );
 
         self.progress_reporter.scan_completed(&result).await;
@@ -716,11 +726,9 @@ impl FileScanner {
 
                 // Report progress periodically
                 if result.total_considered % 100 == 0 {
-                    self.progress_reporter.report_progress(
-                        result.total_considered,
-                        None,
-                        Some(&path)
-                    ).await;
+                    self.progress_reporter
+                        .report_progress(result.total_considered, None, Some(&path))
+                        .await;
                 }
 
                 // Handle directories
@@ -733,7 +741,10 @@ impl FileScanner {
                     }
 
                     // Recursively scan subdirectory
-                    if let Err(e) = self.scan_directory_recursive(&path, depth + 1, result).await {
+                    if let Err(e) = self
+                        .scan_directory_recursive(&path, depth + 1, result)
+                        .await
+                    {
                         error!("Error scanning subdirectory {:?}: {}", path, e);
                         result.scan_errors.push(ScanError {
                             path: path.clone(),
@@ -876,7 +887,8 @@ impl FileScanner {
         })?;
 
         // Determine relative path from root
-        let relative_path = file_path.strip_prefix(&self.root_path)
+        let relative_path = file_path
+            .strip_prefix(&self.root_path)
             .map_err(|_| Error::FileIoError {
                 path: file_path.to_path_buf(),
                 error: "File is not under root path".to_string(),
@@ -888,12 +900,13 @@ impl FileScanner {
 
         // Calculate content hash if configured
         let content_hash = if self.config.calculate_hashes {
-            self.hasher.hash_file(file_path).await.map_err(|e| {
-                Error::FileIoError {
+            self.hasher
+                .hash_file(file_path)
+                .await
+                .map_err(|e| Error::FileIoError {
                     path: file_path.to_path_buf(),
                     error: format!("Hash calculation failed: {}", e),
-                }
-            })?
+                })?
         } else {
             FileHash::zero()
         };
@@ -934,30 +947,36 @@ impl FileScanner {
         // Check against previous scan data
         let state = self.state.read().await;
 
-        if let Some(previous_file) = state.discovered_files.iter()
-            .find(|f| f.path() == file_path) {
-
+        if let Some(previous_file) = state
+            .discovered_files
+            .iter()
+            .find(|f| f.path() == file_path)
+        {
             // Quick metadata check first
             if previous_file.file_size() == current_size
-                && previous_file.modified_time() == current_modified {
+                && previous_file.modified_time() == current_modified
+            {
                 return Ok(None); // File hasn't changed
             }
 
             // Metadata changed, check content hash
             if self.config.calculate_hashes {
-                let current_hash = self.hasher.hash_file(file_path).await.map_err(|e| {
-                    Error::FileIoError {
-                        path: file_path.to_path_buf(),
-                        error: format!("Hash calculation failed: {}", e),
-                    }
-                })?;
+                let current_hash =
+                    self.hasher
+                        .hash_file(file_path)
+                        .await
+                        .map_err(|e| Error::FileIoError {
+                            path: file_path.to_path_buf(),
+                            error: format!("Hash calculation failed: {}", e),
+                        })?;
 
                 if previous_file.content_hash() == current_hash {
                     return Ok(None); // Content hasn't changed
                 }
 
                 // File has changed, create updated FileInfo
-                let relative_path = file_path.strip_prefix(&self.root_path)
+                let relative_path = file_path
+                    .strip_prefix(&self.root_path)
                     .map_err(|_| Error::FileIoError {
                         path: file_path.to_path_buf(),
                         error: "File is not under root path".to_string(),
@@ -1083,37 +1102,88 @@ mod tests {
             self.algorithm
         }
 
-        async fn hash_file(&self, path: &Path) -> Result<FileHash, crucible_core::types::hashing::HashError> {
+        async fn hash_file(
+            &self,
+            path: &Path,
+        ) -> Result<FileHash, crucible_core::types::hashing::HashError> {
             // In the mock, we want to use actual file metadata but return a mock hash
-            let _metadata = std::fs::metadata(path).map_err(|_| crucible_core::types::hashing::HashError::IoError { error: "Cannot read metadata".to_string() })?;
+            let _metadata = std::fs::metadata(path).map_err(|_| {
+                crucible_core::types::hashing::HashError::IoError {
+                    error: "Cannot read metadata".to_string(),
+                }
+            })?;
             Ok(FileHash::new([42u8; 32]))
         }
 
-        async fn hash_files_batch(&self, paths: &[std::path::PathBuf]) -> Result<Vec<FileHash>, crucible_core::types::hashing::HashError> {
+        async fn hash_files_batch(
+            &self,
+            paths: &[std::path::PathBuf],
+        ) -> Result<Vec<FileHash>, crucible_core::types::hashing::HashError> {
             Ok(vec![FileHash::new([42u8; 32]); paths.len()])
         }
 
-        async fn hash_block(&self, _content: &str) -> Result<crucible_core::types::hashing::BlockHash, crucible_core::types::hashing::HashError> {
+        async fn hash_block(
+            &self,
+            _content: &str,
+        ) -> Result<
+            crucible_core::types::hashing::BlockHash,
+            crucible_core::types::hashing::HashError,
+        > {
             Ok(crucible_core::types::hashing::BlockHash::new([42u8; 32]))
         }
 
-        async fn hash_blocks_batch(&self, contents: &[String]) -> Result<Vec<crucible_core::types::hashing::BlockHash>, crucible_core::types::hashing::HashError> {
-            Ok(vec![crucible_core::types::hashing::BlockHash::new([42u8; 32]); contents.len()])
+        async fn hash_blocks_batch(
+            &self,
+            contents: &[String],
+        ) -> Result<
+            Vec<crucible_core::types::hashing::BlockHash>,
+            crucible_core::types::hashing::HashError,
+        > {
+            Ok(vec![
+                crucible_core::types::hashing::BlockHash::new(
+                    [42u8; 32]
+                );
+                contents.len()
+            ])
         }
 
-        async fn hash_file_info(&self, path: &Path, relative_path: String) -> Result<crucible_core::types::hashing::FileHashInfo, crucible_core::types::hashing::HashError> {
+        async fn hash_file_info(
+            &self,
+            path: &Path,
+            relative_path: String,
+        ) -> Result<
+            crucible_core::types::hashing::FileHashInfo,
+            crucible_core::types::hashing::HashError,
+        > {
             let hash = self.hash_file(path).await?;
-            let metadata = std::fs::metadata(path).map_err(|e| crucible_core::types::hashing::HashError::IoError { error: e.to_string() })?;
+            let metadata = std::fs::metadata(path).map_err(|e| {
+                crucible_core::types::hashing::HashError::IoError {
+                    error: e.to_string(),
+                }
+            })?;
             Ok(crucible_core::types::hashing::FileHashInfo::new(
                 hash,
                 metadata.len(),
-                metadata.modified().map_err(|e| crucible_core::types::hashing::HashError::IoError { error: e.to_string() })?,
+                metadata.modified().map_err(|e| {
+                    crucible_core::types::hashing::HashError::IoError {
+                        error: e.to_string(),
+                    }
+                })?,
                 self.algorithm,
                 relative_path,
             ))
         }
 
-        async fn hash_block_info(&self, content: &str, block_type: String, start_offset: usize, end_offset: usize) -> Result<crucible_core::types::hashing::BlockHashInfo, crucible_core::types::hashing::HashError> {
+        async fn hash_block_info(
+            &self,
+            content: &str,
+            block_type: String,
+            start_offset: usize,
+            end_offset: usize,
+        ) -> Result<
+            crucible_core::types::hashing::BlockHashInfo,
+            crucible_core::types::hashing::HashError,
+        > {
             let hash = self.hash_block(content).await?;
             Ok(crucible_core::types::hashing::BlockHashInfo::new(
                 hash,
@@ -1124,12 +1194,20 @@ mod tests {
             ))
         }
 
-        async fn verify_file_hash(&self, path: &Path, expected_hash: &FileHash) -> Result<bool, crucible_core::types::hashing::HashError> {
+        async fn verify_file_hash(
+            &self,
+            path: &Path,
+            expected_hash: &FileHash,
+        ) -> Result<bool, crucible_core::types::hashing::HashError> {
             let hash = self.hash_file(path).await?;
             Ok(hash == *expected_hash)
         }
 
-        async fn verify_block_hash(&self, content: &str, expected_hash: &crucible_core::types::hashing::BlockHash) -> Result<bool, crucible_core::types::hashing::HashError> {
+        async fn verify_block_hash(
+            &self,
+            content: &str,
+            expected_hash: &crucible_core::types::hashing::BlockHash,
+        ) -> Result<bool, crucible_core::types::hashing::HashError> {
             let hash = self.hash_block(content).await?;
             Ok(hash == *expected_hash)
         }
@@ -1154,17 +1232,24 @@ mod tests {
 
     #[async_trait]
     impl ScanProgressReporter for MockProgressReporter {
-        async fn report_progress(&self, current: usize, total: Option<usize>, _current_file: Option<&Path>) {
+        async fn report_progress(
+            &self,
+            current: usize,
+            total: Option<usize>,
+            _current_file: Option<&Path>,
+        ) {
             let mut calls = self.progress_calls.lock().unwrap();
             calls.push((current, total));
         }
 
         async fn scan_started(&self) {
-            self.start_called.store(true, std::sync::atomic::Ordering::SeqCst);
+            self.start_called
+                .store(true, std::sync::atomic::Ordering::SeqCst);
         }
 
         async fn scan_completed(&self, _result: &ScanResult) {
-            self.completed_called.store(true, std::sync::atomic::Ordering::SeqCst);
+            self.completed_called
+                .store(true, std::sync::atomic::Ordering::SeqCst);
         }
 
         async fn scan_error(&self, _error: &Error) {
@@ -1178,11 +1263,9 @@ mod tests {
         let hasher = Arc::new(MockContentHasher::new());
         let progress_reporter = Arc::new(NoOpProgressReporter);
 
-        let scanner = FileScanner::with_defaults(
-            temp_dir.path(),
-            hasher.clone(),
-            progress_reporter.clone(),
-        ).unwrap();
+        let scanner =
+            FileScanner::with_defaults(temp_dir.path(), hasher.clone(), progress_reporter.clone())
+                .unwrap();
 
         assert_eq!(scanner.root_path, temp_dir.path());
         assert!(matches!(scanner.hasher.algorithm(), HashAlgorithm::Blake3));
@@ -1214,11 +1297,8 @@ mod tests {
         let hasher = Arc::new(MockContentHasher::new());
         let progress_reporter = Arc::new(NoOpProgressReporter);
 
-        let scanner = FileScanner::with_defaults(
-            temp_dir.path(),
-            hasher,
-            progress_reporter,
-        ).unwrap();
+        let scanner =
+            FileScanner::with_defaults(temp_dir.path(), hasher, progress_reporter).unwrap();
 
         let result = scanner.scan_directory().await.unwrap();
 
@@ -1243,12 +1323,7 @@ mod tests {
         let config = ScanConfig::default();
 
         // Test that we can create a scanner with files present
-        let scanner = FileScanner::new(
-            temp_dir.path(),
-            config,
-            hasher,
-            progress_reporter,
-        ).unwrap();
+        let scanner = FileScanner::new(temp_dir.path(), config, hasher, progress_reporter).unwrap();
 
         // Basic test that scanner can be created and run
         let result = scanner.scan_directory().await.unwrap();
@@ -1268,11 +1343,8 @@ mod tests {
         let hasher = Arc::new(MockContentHasher::new());
         let progress_reporter = Arc::new(NoOpProgressReporter);
 
-        let scanner = FileScanner::with_defaults(
-            temp_dir.path(),
-            hasher,
-            progress_reporter,
-        ).unwrap();
+        let scanner =
+            FileScanner::with_defaults(temp_dir.path(), hasher, progress_reporter).unwrap();
 
         let files_to_scan = vec![
             temp_dir.path().join("test1.md"),
@@ -1294,17 +1366,18 @@ mod tests {
         let hasher = Arc::new(MockContentHasher::new());
         let mock_reporter = Arc::new(MockProgressReporter::new());
 
-        let scanner = FileScanner::with_defaults(
-            temp_dir.path(),
-            hasher,
-            mock_reporter.clone(),
-        ).unwrap();
+        let scanner =
+            FileScanner::with_defaults(temp_dir.path(), hasher, mock_reporter.clone()).unwrap();
 
         let result = scanner.scan_directory().await.unwrap();
 
         // Check that progress reporter was called
-        assert!(mock_reporter.start_called.load(std::sync::atomic::Ordering::SeqCst));
-        assert!(mock_reporter.completed_called.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(mock_reporter
+            .start_called
+            .load(std::sync::atomic::Ordering::SeqCst));
+        assert!(mock_reporter
+            .completed_called
+            .load(std::sync::atomic::Ordering::SeqCst));
 
         let progress_calls = mock_reporter.progress_calls.lock().unwrap();
         // Progress calls are made every 100 files, so with only 1 file, we might not get any
@@ -1320,11 +1393,8 @@ mod tests {
         let hasher = Arc::new(MockContentHasher::new());
         let progress_reporter = Arc::new(NoOpProgressReporter);
 
-        let scanner = FileScanner::with_defaults(
-            temp_dir.path(),
-            hasher,
-            progress_reporter,
-        ).unwrap();
+        let scanner =
+            FileScanner::with_defaults(temp_dir.path(), hasher, progress_reporter).unwrap();
 
         // Initial statistics
         let stats = scanner.get_scan_statistics().await;
@@ -1369,12 +1439,7 @@ mod tests {
         let mut config = ScanConfig::default();
         config.max_depth = Some(0);
 
-        let result = FileScanner::new(
-            temp_dir.path(),
-            config,
-            hasher,
-            progress_reporter,
-        );
+        let result = FileScanner::new(temp_dir.path(), config, hasher, progress_reporter);
 
         assert!(result.is_err());
         match result.expect_err("Should have failed") {
@@ -1391,11 +1456,8 @@ mod tests {
         let hasher = Arc::new(MockContentHasher::new());
         let progress_reporter = Arc::new(NoOpProgressReporter);
 
-        let scanner = FileScanner::with_defaults(
-            temp_dir.path(),
-            hasher,
-            progress_reporter,
-        ).unwrap();
+        let scanner =
+            FileScanner::with_defaults(temp_dir.path(), hasher, progress_reporter).unwrap();
 
         let watch_config = WatchConfig::default();
         let result = scanner.watch_directory(watch_config).await.unwrap();

@@ -154,7 +154,10 @@ impl<A: HashingAlgorithm> FileHasher<A> {
     }
 
     /// Get file metadata for change detection
-    async fn get_file_metadata(&self, path: &Path) -> Result<(u64, std::time::SystemTime), HashError> {
+    async fn get_file_metadata(
+        &self,
+        path: &Path,
+    ) -> Result<(u64, std::time::SystemTime), HashError> {
         let metadata = tokio::fs::metadata(path).await?;
         let size = metadata.len();
         let modified = metadata
@@ -173,7 +176,9 @@ impl<A: HashingAlgorithm> ContentHasher for FileHasher<A> {
     async fn hash_file(&self, path: &Path) -> Result<FileHash, HashError> {
         let hash_bytes = self.hash_file_streaming(path).await?;
         if hash_bytes.len() != 32 {
-            return Err(HashError::InvalidLength { len: hash_bytes.len() });
+            return Err(HashError::InvalidLength {
+                len: hash_bytes.len(),
+            });
         }
         let mut array = [0u8; 32];
         array.copy_from_slice(&hash_bytes);
@@ -199,7 +204,9 @@ impl<A: HashingAlgorithm> ContentHasher for FileHasher<A> {
         let hash_bytes = self.algorithm.hash(content.as_bytes());
 
         if hash_bytes.len() != 32 {
-            return Err(HashError::InvalidLength { len: hash_bytes.len() });
+            return Err(HashError::InvalidLength {
+                len: hash_bytes.len(),
+            });
         }
         let mut array = [0u8; 32];
         array.copy_from_slice(&hash_bytes);
@@ -210,7 +217,10 @@ impl<A: HashingAlgorithm> ContentHasher for FileHasher<A> {
         let mut results = Vec::with_capacity(contents.len());
 
         // Process blocks concurrently
-        let futures: Vec<_> = contents.iter().map(|content| self.hash_block(content)).collect();
+        let futures: Vec<_> = contents
+            .iter()
+            .map(|content| self.hash_block(content))
+            .collect();
         let hash_results = futures::future::join_all(futures).await;
 
         for result in hash_results {
@@ -220,7 +230,11 @@ impl<A: HashingAlgorithm> ContentHasher for FileHasher<A> {
         Ok(results)
     }
 
-    async fn hash_file_info(&self, path: &Path, relative_path: String) -> Result<FileHashInfo, HashError> {
+    async fn hash_file_info(
+        &self,
+        path: &Path,
+        relative_path: String,
+    ) -> Result<FileHashInfo, HashError> {
         let content_hash = self.hash_file(path).await?;
         let (size, modified) = self.get_file_metadata(path).await?;
 
@@ -251,14 +265,22 @@ impl<A: HashingAlgorithm> ContentHasher for FileHasher<A> {
         ))
     }
 
-    async fn verify_file_hash(&self, path: &Path, expected_hash: &FileHash) -> Result<bool, HashError> {
+    async fn verify_file_hash(
+        &self,
+        path: &Path,
+        expected_hash: &FileHash,
+    ) -> Result<bool, HashError> {
         match self.hash_file(path).await {
             Ok(actual_hash) => Ok(actual_hash == *expected_hash),
             Err(_) => Ok(false), // If we can't hash the file, consider it failed
         }
     }
 
-    async fn verify_block_hash(&self, content: &str, expected_hash: &BlockHash) -> Result<bool, HashError> {
+    async fn verify_block_hash(
+        &self,
+        content: &str,
+        expected_hash: &BlockHash,
+    ) -> Result<bool, HashError> {
         match self.hash_block(content).await {
             Ok(actual_hash) => Ok(actual_hash == *expected_hash),
             Err(_) => Ok(false),
@@ -371,7 +393,10 @@ mod tests {
         let hasher = FileHasher::new(crate::hashing::algorithm::Blake3Algorithm);
         let relative_path = "test.txt".to_string();
 
-        let info = hasher.hash_file_info(temp_file.path(), relative_path.clone()).await.unwrap();
+        let info = hasher
+            .hash_file_info(temp_file.path(), relative_path.clone())
+            .await
+            .unwrap();
 
         assert_eq!(info.relative_path, relative_path);
         assert_eq!(info.size, 12); // "Test content" length
@@ -389,11 +414,17 @@ mod tests {
         let correct_hash = hasher.hash_file(temp_file.path()).await.unwrap();
 
         // Test correct hash verification
-        assert!(hasher.verify_file_hash(temp_file.path(), &correct_hash).await.unwrap());
+        assert!(hasher
+            .verify_file_hash(temp_file.path(), &correct_hash)
+            .await
+            .unwrap());
 
         // Test incorrect hash verification
         let wrong_hash = FileHash::new([0u8; 32]);
-        assert!(!hasher.verify_file_hash(temp_file.path(), &wrong_hash).await.unwrap());
+        assert!(!hasher
+            .verify_file_hash(temp_file.path(), &wrong_hash)
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
@@ -404,11 +435,17 @@ mod tests {
         let correct_hash = hasher.hash_block(content).await.unwrap();
 
         // Test correct hash verification
-        assert!(hasher.verify_block_hash(content, &correct_hash).await.unwrap());
+        assert!(hasher
+            .verify_block_hash(content, &correct_hash)
+            .await
+            .unwrap());
 
         // Test incorrect hash verification
         let wrong_hash = BlockHash::new([0u8; 32]);
-        assert!(!hasher.verify_block_hash(content, &wrong_hash).await.unwrap());
+        assert!(!hasher
+            .verify_block_hash(content, &wrong_hash)
+            .await
+            .unwrap());
     }
 
     #[test]

@@ -13,7 +13,7 @@ use crucible_core::hashing::file_hasher::FileHasher;
 use crucible_core::traits::change_detection::ContentHasher;
 use crucible_core::types::hashing::HashAlgorithm;
 use crucible_watch::{
-    FileScanner, FileInfo, FileType, NoOpProgressReporter, ScanConfig, ScanResult, WatchConfig,
+    FileInfo, FileScanner, FileType, NoOpProgressReporter, ScanConfig, ScanResult, WatchConfig,
 };
 
 /// File scanning service with dependency injection
@@ -48,7 +48,9 @@ impl FileScanningService {
         // Create the hasher implementation based on the algorithm enum
         let hasher: Arc<dyn ContentHasher> = match algorithm {
             HashAlgorithm::Blake3 => Arc::new(FileHasher::new(Blake3Algorithm)),
-            HashAlgorithm::Sha256 => Arc::new(FileHasher::new(crucible_core::hashing::algorithm::Sha256Algorithm)),
+            HashAlgorithm::Sha256 => Arc::new(FileHasher::new(
+                crucible_core::hashing::algorithm::Sha256Algorithm,
+            )),
         };
 
         // Create the progress reporter
@@ -67,8 +69,7 @@ impl FileScanningService {
 
         info!(
             "Created FileScanningService for: {:?} using {} algorithm",
-            root_path,
-            algorithm
+            root_path, algorithm
         );
 
         Ok(Self {
@@ -101,7 +102,9 @@ impl FileScanningService {
         // Create the hasher implementation based on the algorithm enum
         let hasher: Arc<dyn ContentHasher> = match algorithm {
             HashAlgorithm::Blake3 => Arc::new(FileHasher::new(Blake3Algorithm)),
-            HashAlgorithm::Sha256 => Arc::new(FileHasher::new(crucible_core::hashing::algorithm::Sha256Algorithm)),
+            HashAlgorithm::Sha256 => Arc::new(FileHasher::new(
+                crucible_core::hashing::algorithm::Sha256Algorithm,
+            )),
         };
 
         // Create the progress reporter
@@ -117,8 +120,7 @@ impl FileScanningService {
 
         info!(
             "Created FileScanningService for: {:?} using {} algorithm with custom config",
-            root_path,
-            algorithm
+            root_path, algorithm
         );
 
         Ok(Self {
@@ -184,7 +186,10 @@ impl FileScanningService {
     /// # Returns
     ///
     /// Scan result for the specified files
-    pub async fn scan_files(&self, files: Vec<PathBuf>) -> Result<ScanResult, crucible_watch::Error> {
+    pub async fn scan_files(
+        &self,
+        files: Vec<PathBuf>,
+    ) -> Result<ScanResult, crucible_watch::Error> {
         info!("Scanning {} specific files", files.len());
         let start_time = std::time::Instant::now();
 
@@ -218,8 +223,7 @@ impl FileScanningService {
         let elapsed = start_time.elapsed();
         info!(
             "Changed files scan completed in {:?}: {} files changed",
-            elapsed,
-            result.successful_files
+            elapsed, result.successful_files
         );
 
         Ok(result)
@@ -237,15 +241,24 @@ impl FileScanningService {
     /// # Returns
     ///
     /// Watch result indicating success and any warnings
-    pub async fn watch_directory(&self, watch_config: WatchConfig) -> Result<crucible_watch::WatchResult, crucible_watch::Error> {
+    pub async fn watch_directory(
+        &self,
+        watch_config: WatchConfig,
+    ) -> Result<crucible_watch::WatchResult, crucible_watch::Error> {
         info!("Setting up file watching for: {:?}", self.root_path);
 
         let result = self.scanner.watch_directory(watch_config).await?;
 
         if result.success {
-            info!("File watching established successfully for {} files", result.watched_files);
+            info!(
+                "File watching established successfully for {} files",
+                result.watched_files
+            );
         } else {
-            warn!("File watching setup failed with {} warnings", result.warnings.len());
+            warn!(
+                "File watching setup failed with {} warnings",
+                result.warnings.len()
+            );
             for warning in &result.warnings {
                 warn!("File watching warning: {}", warning);
             }
@@ -296,11 +309,7 @@ pub fn performance_scan_config() -> ScanConfig {
     // Enable hash calculation for change detection
     config.calculate_hashes = true;
     // Include common file types
-    config.include_types = vec![
-        FileType::Markdown,
-        FileType::Text,
-        FileType::Code,
-    ];
+    config.include_types = vec![FileType::Markdown, FileType::Text, FileType::Code];
     // Exclude common non-content files
     config.exclude_patterns = vec![
         "*.git*".to_string(),
@@ -317,7 +326,7 @@ pub fn development_scan_config() -> ScanConfig {
     let mut config = performance_scan_config();
     // Lower max file size for development (exclude large binaries)
     config.max_file_size = 5 * 1024 * 1024; // 5MB (lower than default 10MB)
-    // Shallower depth for faster scans during development
+                                            // Shallower depth for faster scans during development
     config.max_depth = Some(10);
     config
 }
@@ -325,9 +334,9 @@ pub fn development_scan_config() -> ScanConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
     use std::io::Write;
+    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_file_scanning_service_creation() {

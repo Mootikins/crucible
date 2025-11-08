@@ -5,166 +5,25 @@
 //! Includes comprehensive vector embedding support for semantic search and processing.
 
 use crate::embedding_config::*;
+use crate::epr::{
+    apply_epr_schema, DocumentIngestor, EntityRecord as EprEntityRecord, EntityTag,
+    EntityTagRecord, EprStore, RecordId as EprRecordId, Relation, RelationRecord, Tag as EprTag,
+    TagRecord,
+};
+use crate::types::{DatabaseStats, Record};
+use crate::SurrealClient;
+use anyhow::{anyhow, Result};
 use crucible_core::parser::types::Wikilink;
 use crucible_core::types::{FrontmatterFormat, ParsedDocument, Tag};
-use crate::types::{ColumnDefinition, DatabaseStats, DataType, Record, RecordId, TableSchema};
-use crate::SurrealClient;
-use crate::epr::{
-    DocumentIngestor, EprStore, EntityRecord as EprEntityRecord, EntityTag, EntityTagRecord,
-    RecordId as EprRecordId, Relation, RelationRecord, Tag as EprTag, TagRecord,
-};
-use anyhow::{anyhow, Result};
 use serde_json::json;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 use tracing::{debug, error, info, warn};
 
 /// Initialize the kiln schema in the database
 pub async fn initialize_kiln_schema(client: &SurrealClient) -> Result<()> {
-
-    // Create notes table
-    let notes_schema = TableSchema {
-        name: "notes".to_string(),
-        columns: vec![
-            ColumnDefinition {
-                name: "path".to_string(),
-                data_type: DataType::String,
-                nullable: false,
-                unique: true,
-                default_value: None,
-            },
-            ColumnDefinition {
-                name: "title".to_string(),
-                data_type: DataType::String,
-                nullable: true,
-                unique: false,
-                default_value: None,
-            },
-            ColumnDefinition {
-                name: "content".to_string(),
-                data_type: DataType::String,
-                nullable: false,
-                unique: false,
-                default_value: None,
-            },
-            ColumnDefinition {
-                name: "metadata".to_string(),
-                data_type: DataType::Json,
-                nullable: true,
-                unique: false,
-                default_value: None,
-            },
-            ColumnDefinition {
-                name: "tags".to_string(),
-                data_type: DataType::Array(Box::new(DataType::String)),
-                nullable: false,
-                unique: false,
-                default_value: None,
-            },
-            ColumnDefinition {
-                name: "file_hash".to_string(),
-                data_type: DataType::String,
-                nullable: false,
-                unique: false,
-                default_value: None,
-            },
-            ColumnDefinition {
-                name: "file_size".to_string(),
-                data_type: DataType::Integer,
-                nullable: false,
-                unique: false,
-                default_value: None,
-            },
-            ColumnDefinition {
-                name: "folder".to_string(),
-                data_type: DataType::String,
-                nullable: true,
-                unique: false,
-                default_value: None,
-            },
-            ColumnDefinition {
-                name: "processed_at".to_string(),
-                data_type: DataType::DateTime,
-                nullable: true,
-                unique: false,
-                default_value: None,
-            },
-        ],
-        primary_key: None, // SurrealDB handles IDs automatically
-        foreign_keys: vec![],
-        indexes: vec![],
-    };
-
-    client
-        .create_table("notes", notes_schema)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to create notes table: {}", e))?;
-
-    // Create embeddings table
-    let embeddings_schema = TableSchema {
-        name: "embeddings".to_string(),
-        columns: vec![
-            ColumnDefinition {
-                name: "chunk_id".to_string(),
-                data_type: DataType::String,
-                nullable: true,
-                unique: false,
-                default_value: None,
-            },
-            ColumnDefinition {
-                name: "vector".to_string(),
-                data_type: DataType::Array(Box::new(DataType::Float)),
-                nullable: false,
-                unique: false,
-                default_value: None,
-            },
-            ColumnDefinition {
-                name: "embedding_model".to_string(),
-                data_type: DataType::String,
-                nullable: false,
-                unique: false,
-                default_value: None,
-            },
-            ColumnDefinition {
-                name: "chunk_size".to_string(),
-                data_type: DataType::Integer,
-                nullable: false,
-                unique: false,
-                default_value: None,
-            },
-            ColumnDefinition {
-                name: "chunk_position".to_string(),
-                data_type: DataType::Integer,
-                nullable: true,
-                unique: false,
-                default_value: None,
-            },
-            ColumnDefinition {
-                name: "created_at".to_string(),
-                data_type: DataType::DateTime,
-                nullable: false,
-                unique: false,
-                default_value: None,
-            },
-            ColumnDefinition {
-                name: "chunk_hash".to_string(),
-                data_type: DataType::String,
-                nullable: true, // Nullable for backward compatibility with existing data
-                unique: false,
-                default_value: None,
-            },
-        ],
-        primary_key: None,
-        foreign_keys: vec![],
-        indexes: vec![],
-    };
-
-    client
-        .create_table("embeddings", embeddings_schema)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to create embeddings table: {}", e))?;
-
-    info!("Kiln schema with embeddings initialized successfully");
+    apply_epr_schema(client).await?;
+    info!("Kiln schema initialized using EPR definitions");
     Ok(())
 }
 
@@ -176,7 +35,7 @@ pub async fn initialize_kiln_schema(client: &SurrealClient) -> Result<()> {
 /// * `kiln_root` - Root path of the kiln (for generating relative IDs)
 ///
 /// # Returns
-/// The record ID (e.g., "notes:Projects_file_md")
+/// The record ID (e.g., "entities:note:Projects/file.md")
 pub async fn store_parsed_document(
     client: &SurrealClient,
     doc: &ParsedDocument,
@@ -199,10 +58,7 @@ pub async fn store_parsed_document(
 }
 
 fn resolve_relative_path(path: &std::path::Path, kiln_root: &std::path::Path) -> String {
-    let relative = path
-        .strip_prefix(kiln_root)
-        .unwrap_or(path)
-        .to_path_buf();
+    let relative = path.strip_prefix(kiln_root).unwrap_or(path).to_path_buf();
 
     let mut normalized = relative.to_string_lossy().replace('\\', "/");
     if normalized.starts_with("./") {
@@ -221,40 +77,151 @@ fn resolve_relative_path(path: &std::path::Path, kiln_root: &std::path::Path) ->
     normalized
 }
 
-/// Retrieve a ParsedDocument from the database by ID
-pub async fn retrieve_parsed_document(client: &SurrealClient, id: &str) -> Result<ParsedDocument> {
-    // Direct record ID lookup
-    // id should be in format "notes:Projects_file_md" or just "Projects_file_md"
-    let (table, record_id) = if let Some((table, record)) = id.split_once(':') {
-        (table.to_string(), record.to_string())
-    } else {
-        ("notes".to_string(), id.to_string())
-    };
-
-    let mut sql = format!("SELECT * FROM {}:⟨{}⟩", table, record_id);
-    let mut result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query document: {}", e))?;
-
-    if result.records.is_empty() {
-        sql = format!(
-            "SELECT * FROM {} WHERE id = type::thing('{}', '{}') LIMIT 1",
-            table, table, record_id
-        );
-        result = client
-            .query(&sql, &[])
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to query document: {}", e))?;
+pub fn normalize_document_id(doc_id: &str) -> String {
+    if doc_id.starts_with("entities:") {
+        return doc_id.to_string();
     }
 
-    let record = result
-        .records
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("Document not found: {}", id))?;
+    if doc_id.starts_with("note:") {
+        return format!("entities:{}", doc_id);
+    }
 
-    // Convert back to ParsedDocument
-    convert_record_to_parsed_document(record).await
+    if let Some(stripped) = doc_id.strip_prefix("notes:") {
+        if stripped.starts_with("note:") {
+            return format!("entities:{}", stripped);
+        }
+        return format!("entities:note:{}", stripped);
+    }
+
+    format!("entities:{}", doc_id)
+}
+
+fn chunk_namespace(normalized_doc_id: &str) -> String {
+    let body = record_body(normalized_doc_id);
+    let trimmed = body.trim_start_matches("note:");
+    trimmed
+        .trim_start_matches(std::path::MAIN_SEPARATOR)
+        .replace(['\\', '/', ':'], "_")
+}
+
+const EMBEDDING_DIMENSION: usize = 384;
+
+fn normalize_embedding_vector(mut vector: Vec<f32>) -> Vec<f32> {
+    if vector.len() > EMBEDDING_DIMENSION {
+        vector.truncate(EMBEDDING_DIMENSION);
+        vector
+    } else if vector.len() < EMBEDDING_DIMENSION {
+        vector.resize(EMBEDDING_DIMENSION, 0.0);
+        vector
+    } else {
+        vector
+    }
+}
+
+fn escape_record_id(value: &str) -> String {
+    value.replace('\'', "\\'")
+}
+
+fn chunk_record_body(chunk_id: &str) -> &str {
+    chunk_id.strip_prefix("embeddings:").unwrap_or(chunk_id)
+}
+
+async fn upsert_embedding_record(
+    client: &SurrealClient,
+    chunk_id: &str,
+    normalized_entity_id: &str,
+    vector: &[f32],
+    dims: usize,
+    stored_model: &str,
+    model_version: &str,
+    content_used: &str,
+) -> Result<()> {
+    let chunk_body = chunk_record_body(chunk_id);
+    let escaped_chunk = escape_record_id(chunk_body);
+    let escaped_entity = escape_record_id(record_body(normalized_entity_id));
+    let params = json!({
+        "embedding": vector,
+        "dimensions": dims as i64,
+        "model": stored_model,
+        "model_version": model_version,
+        "content_used": content_used,
+    });
+
+    let update_sql = format!(
+        "
+        UPDATE embeddings:⟨{chunk}⟩
+        SET
+            entity_id = entities:⟨{entity}⟩,
+            embedding = $embedding,
+            dimensions = $dimensions,
+            model = $model,
+            model_version = $model_version,
+            content_used = $content_used
+        RETURN NONE;
+    ",
+        chunk = escaped_chunk,
+        entity = escaped_entity
+    );
+    let result = client.query(&update_sql, &[params.clone()]).await?;
+
+    if result.records.is_empty() {
+        let create_sql = format!(
+            "
+            CREATE embeddings:⟨{chunk}⟩
+            SET
+                entity_id = entities:⟨{entity}⟩,
+                embedding = $embedding,
+                dimensions = $dimensions,
+                model = $model,
+                model_version = $model_version,
+                content_used = $content_used
+            RETURN NONE;
+        ",
+            chunk = escaped_chunk,
+            entity = escaped_entity
+        );
+        client
+            .query(&create_sql, &[params])
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to insert embedding: {}", e))?;
+    }
+
+    Ok(())
+}
+
+async fn relate_embedding_record(
+    client: &SurrealClient,
+    normalized_entity_id: &str,
+    chunk_id: &str,
+) -> Result<()> {
+    let escaped_entity = escape_record_id(record_body(normalized_entity_id));
+    let escaped_chunk = escape_record_id(chunk_record_body(chunk_id));
+    let sql = format!(
+        "
+        RELATE entities:⟨{entity}⟩
+            -> has_embedding ->
+        embeddings:⟨{chunk}⟩;
+    ",
+        entity = escaped_entity,
+        chunk = escaped_chunk
+    );
+
+    client
+        .query(&sql, &[])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to create graph relation: {}", e))?;
+
+    Ok(())
+}
+
+/// Retrieve a ParsedDocument from the database by ID
+pub async fn retrieve_parsed_document(client: &SurrealClient, id: &str) -> Result<ParsedDocument> {
+    let normalized = normalize_document_id(id);
+    if let Some(doc) = fetch_document_by_id(client, &normalized).await? {
+        Ok(doc)
+    } else {
+        Err(anyhow::anyhow!("Document not found: {}", normalized))
+    }
 }
 
 /// Remove all stored embeddings and associated edges.
@@ -322,9 +289,7 @@ pub async fn create_wikilink_edges(
 
     let entity_id = parse_entity_record_id(doc_id)?;
     let store = EprStore::new(client.clone());
-    store
-        .delete_relations_from(&entity_id, "wikilink")
-        .await?;
+    store.delete_relations_from(&entity_id, "wikilink").await?;
 
     let mut created = 0usize;
     for (index, wikilink) in doc.wikilinks.iter().enumerate() {
@@ -348,10 +313,7 @@ pub async fn create_wikilink_edges(
 
         let relation = Relation {
             id: Some(relation_record_id(
-                &entity_id,
-                &target_id,
-                "wikilink",
-                index,
+                &entity_id, &target_id, "wikilink", index,
             )),
             from_id: entity_id.clone(),
             to_id: target_id.clone(),
@@ -441,22 +403,12 @@ pub async fn create_tag_associations(
     Ok(())
 }
 
-fn parse_entity_record_id(
-    doc_id: &str,
-) -> Result<EprRecordId<EprEntityRecord>> {
-    let (table, id) = doc_id
+pub(crate) fn parse_entity_record_id(doc_id: &str) -> Result<EprRecordId<EprEntityRecord>> {
+    let normalized = normalize_document_id(doc_id);
+    let (_, id) = normalized
         .split_once(':')
         .ok_or_else(|| anyhow!("invalid document id '{}'", doc_id))?;
-
-    if table != "entities" {
-        return Err(anyhow!(
-            "expected entities table for document id '{}', got '{}'",
-            doc_id,
-            table
-        ));
-    }
-
-    Ok(EprRecordId::new(table, id))
+    Ok(EprRecordId::new("entities", id))
 }
 
 fn entity_tag_record_id(
@@ -573,7 +525,10 @@ fn resolve_wikilink_target(
     let mut candidate = PathBuf::from(target);
     if !is_absolute {
         let relative_doc = PathBuf::from(resolve_relative_path(&doc.path, kiln_root));
-        let parent = relative_doc.parent().map(|p| p.to_path_buf()).unwrap_or_else(PathBuf::new);
+        let parent = relative_doc
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(PathBuf::new);
         candidate = parent.join(candidate);
     }
 
@@ -661,7 +616,8 @@ async fn fetch_document_by_id(
     client: &SurrealClient,
     record_id: &str,
 ) -> Result<Option<ParsedDocument>> {
-    let (table, id) = match record_id.split_once(':') {
+    let normalized = normalize_document_id(record_id);
+    let (table, id) = match normalized.split_once(':') {
         Some((table, id)) => (table.to_string(), id.to_string()),
         None => return Ok(None),
     };
@@ -704,43 +660,8 @@ async fn query_relation_documents(
 
     let mut documents = Vec::new();
     for record in result.records {
-        if let Some(target_id) = record
-            .data
-            .get("target")
-            .and_then(record_ref_to_string)
-        {
+        if let Some(target_id) = record.data.get("target").and_then(record_ref_to_string) {
             if let Some(doc) = fetch_document_by_id(client, &target_id).await? {
-                documents.push(doc);
-            }
-        }
-    }
-
-    Ok(documents)
-}
-
-async fn legacy_get_linked_documents(
-    client: &SurrealClient,
-    doc_id: &str,
-) -> Result<Vec<ParsedDocument>> {
-    let sql = format!("SELECT target.* FROM wikilink WHERE from = {}", doc_id);
-
-    let result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query legacy linked documents: {}", e))?;
-
-    let mut documents = Vec::new();
-    for record in result.records {
-        if let Some(target_data) = record.data.get("target") {
-            if let serde_json::Value::Object(target_obj) = target_data {
-                let target_record = Record {
-                    id: None,
-                    data: target_obj
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
-                };
-                let doc = convert_record_to_parsed_document(&target_record).await?;
                 documents.push(doc);
             }
         }
@@ -764,275 +685,13 @@ async fn find_entity_id_by_title(
 
     let result = client.query(sql, &[json!({ "title": title })]).await?;
     if let Some(record) = result.records.first() {
-        if let Some(entity_str) = record
-            .data
-            .get("entity_id")
-            .and_then(record_ref_to_string)
-        {
+        if let Some(entity_str) = record.data.get("entity_id").and_then(record_ref_to_string) {
             if let Some((table, id)) = entity_str.split_once(':') {
                 return Ok(Some(EprRecordId::new(table, id)));
             }
         }
     }
     Ok(None)
-}
-
-async fn legacy_get_wikilink_relations(
-    client: &SurrealClient,
-    doc_id: &str,
-) -> Result<Vec<LinkRelation>> {
-    let sql = format!("SELECT * FROM wikilink WHERE from = {}", doc_id);
-
-    let result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query legacy wikilink relations: {}", e))?;
-
-    let mut relations = Vec::new();
-    for record in result.records {
-        let target_title = record
-            .data
-            .get("target")
-            .and_then(|t| t.as_object())
-            .and_then(|obj| obj.get("title"))
-            .and_then(|title| title.as_str())
-            .unwrap_or("Unknown")
-            .to_string();
-
-        relations.push(LinkRelation {
-            relation_type: "wikilink".to_string(),
-            is_embed: false,
-            target: target_title,
-        });
-    }
-
-    Ok(relations)
-}
-
-async fn legacy_get_embedded_documents(
-    client: &SurrealClient,
-    doc_id: &str,
-) -> Result<Vec<ParsedDocument>> {
-    let sql = format!("SELECT out FROM {}->embeds", doc_id);
-
-    let result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query legacy embeds: {}", e))?;
-
-    let mut documents = Vec::new();
-    for record in result.records {
-        if let Some(out_id) = record.data.get("out").and_then(|v| v.as_str()) {
-            if let Some(doc) = fetch_document_by_id(client, out_id).await? {
-                documents.push(doc);
-            }
-        }
-    }
-
-    Ok(documents)
-}
-
-async fn legacy_get_documents_by_tag(
-    client: &SurrealClient,
-    tag: &str,
-) -> Result<Vec<ParsedDocument>> {
-    let normalized_tag = normalize_tag_name(tag);
-    let sql = format!(
-        "SELECT source.* FROM tagged_with WHERE to = tag:{}",
-        normalized_tag
-    );
-
-    let result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query legacy documents by tag: {}", e))?;
-
-    let mut documents = Vec::new();
-    for record in result.records {
-        if let Some(source_data) = record.data.get("source") {
-            if let serde_json::Value::Object(source_obj) = source_data {
-                let source_record = Record {
-                    id: None,
-                    data: source_obj
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
-                };
-                let doc = convert_record_to_parsed_document(&source_record).await?;
-                documents.push(doc);
-            }
-        }
-    }
-
-    Ok(documents)
-}
-
-async fn legacy_get_embed_metadata(
-    client: &SurrealClient,
-    doc_id: &str,
-) -> Result<Vec<EmbedMetadata>> {
-    let sql = format!("SELECT * FROM {}->embeds", doc_id);
-
-    let result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query legacy embed metadata: {}", e))?;
-
-    let mut metadata_list = Vec::new();
-    for record in result.records {
-        let target_id = record
-            .data
-            .get("out")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown")
-            .to_string();
-
-        let target_sql = format!("SELECT title FROM {}", target_id);
-        let target_result = client.query(&target_sql, &[]).await?;
-        let target_title = target_result
-            .records
-            .first()
-            .and_then(|r| r.data.get("title"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown")
-            .to_string();
-
-        let reference_target = record
-            .data
-            .get("reference_target")
-            .and_then(|r| r.as_str())
-            .map(|s| s.to_string());
-        let alias = record
-            .data
-            .get("display_alias")
-            .and_then(|a| a.as_str())
-            .map(|s| s.to_string());
-        let position = record
-            .data
-            .get("position")
-            .and_then(|p| p.as_u64())
-            .unwrap_or(0) as usize;
-        let (heading_ref, block_ref) = parse_reference_target(reference_target);
-
-        metadata_list.push(EmbedMetadata {
-            target: target_title,
-            is_embed: true,
-            heading_ref,
-            block_ref,
-            alias,
-            position,
-        });
-    }
-
-    Ok(metadata_list)
-}
-
-async fn legacy_get_embed_relations(
-    client: &SurrealClient,
-    doc_id: &str,
-) -> Result<Vec<EmbedRelation>> {
-    let sql = format!("SELECT * FROM embeds WHERE from = {}", doc_id);
-
-    let result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query legacy embed relations: {}", e))?;
-
-    let mut relations = Vec::new();
-    for record in result.records {
-        let target = record
-            .data
-            .get("target")
-            .and_then(|t| t.as_object())
-            .and_then(|obj| obj.get("title"))
-            .and_then(|title| title.as_str())
-            .unwrap_or("Unknown")
-            .to_string();
-        let embed_type = record
-            .data
-            .get("embed_type")
-            .and_then(|t| t.as_str())
-            .unwrap_or("simple")
-            .to_string();
-
-        relations.push(EmbedRelation {
-            relation_type: "embed".to_string(),
-            is_embed: true,
-            target,
-            embed_type,
-        });
-    }
-
-    Ok(relations)
-}
-
-async fn legacy_get_embedded_documents_by_type(
-    client: &SurrealClient,
-    doc_id: &str,
-    embed_type: &str,
-) -> Result<Vec<ParsedDocument>> {
-    let sql = format!(
-        "SELECT target.* FROM embeds WHERE from = {} AND embed_type = '{}'",
-        doc_id, embed_type
-    );
-
-    let result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query legacy embeds by type: {}", e))?;
-
-    let mut documents = Vec::new();
-    for record in result.records {
-        if let Some(target_data) = record.data.get("target") {
-            if let serde_json::Value::Object(target_obj) = target_data {
-                let target_record = Record {
-                    id: None,
-                    data: target_obj
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
-                };
-                let doc = convert_record_to_parsed_document(&target_record).await?;
-                documents.push(doc);
-            }
-        }
-    }
-
-    Ok(documents)
-}
-
-async fn legacy_get_embedding_documents(
-    client: &SurrealClient,
-    target_title: &str,
-) -> Result<Vec<ParsedDocument>> {
-    let sql = format!(
-        "SELECT source.* FROM embeds WHERE to = (SELECT id FROM notes WHERE title = '{}')",
-        target_title.replace('\'', "''")
-    );
-
-    let result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query legacy embedding documents: {}", e))?;
-
-    let mut documents = Vec::new();
-    for record in result.records {
-        if let Some(source_data) = record.data.get("source") {
-            if let serde_json::Value::Object(source_obj) = source_data {
-                let source_record = Record {
-                    id: None,
-                    data: source_obj
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
-                };
-                let doc = convert_record_to_parsed_document(&source_record).await?;
-                documents.push(doc);
-            }
-        }
-    }
-
-    Ok(documents)
 }
 
 async fn query_embedding_sources_for_entity(
@@ -1074,9 +733,7 @@ async fn query_embedding_sources_by_title(
     Ok(documents)
 }
 
-async fn fetch_embed_relation_pairs(
-    client: &SurrealClient,
-) -> Result<Vec<(String, String)>> {
+async fn fetch_embed_relation_pairs(client: &SurrealClient) -> Result<Vec<(String, String)>> {
     let sql = r#"
         SELECT in AS source, out AS target
         FROM relations
@@ -1087,16 +744,10 @@ async fn fetch_embed_relation_pairs(
     let mut pairs = Vec::new();
 
     for record in result.records {
-        let Some(source_id) = record
-            .data
-            .get("source")
-            .and_then(record_ref_to_string) else {
+        let Some(source_id) = record.data.get("source").and_then(record_ref_to_string) else {
             continue;
         };
-        let Some(target_id) = record
-            .data
-            .get("target")
-            .and_then(record_ref_to_string) else {
+        let Some(target_id) = record.data.get("target").and_then(record_ref_to_string) else {
             continue;
         };
         pairs.push((source_id, target_id));
@@ -1119,11 +770,7 @@ pub async fn get_linked_documents(
     client: &SurrealClient,
     doc_id: &str,
 ) -> Result<Vec<ParsedDocument>> {
-    let mut documents = query_relation_documents(client, doc_id, "wikilink").await?;
-    if documents.is_empty() {
-        documents = legacy_get_linked_documents(client, doc_id).await?;
-    }
-    Ok(documents)
+    query_relation_documents(client, doc_id, "wikilink").await
 }
 
 /// Get documents by tag
@@ -1145,19 +792,11 @@ pub async fn get_documents_by_tag(
 
     let mut documents = Vec::new();
     for record in &result.records {
-        if let Some(source_id) = record
-            .data
-            .get("entity_id")
-            .and_then(record_ref_to_string)
-        {
+        if let Some(source_id) = record.data.get("entity_id").and_then(record_ref_to_string) {
             if let Some(doc) = fetch_document_by_id(client, &source_id).await? {
                 documents.push(doc);
             }
         }
-    }
-
-    if documents.is_empty() {
-        documents = legacy_get_documents_by_tag(client, tag).await?;
     }
 
     Ok(documents)
@@ -1166,161 +805,116 @@ pub async fn get_documents_by_tag(
 // Helper functions
 
 async fn convert_record_to_parsed_document(record: &Record) -> Result<ParsedDocument> {
-    let mut doc = ParsedDocument::new(PathBuf::from(
-        record
-            .data
-            .get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown.md"),
-    ));
+    let data_map = record.data.get("data").and_then(|value| value.as_object());
 
-    // Set basic fields
-    doc.content.plain_text = record
-        .data
-        .get("content")
-        .and_then(|v| v.as_str())
+    let path = data_map
+        .and_then(|obj| obj.get("path").and_then(|v| v.as_str()))
+        .or_else(|| record.data.get("path").and_then(|v| v.as_str()))
+        .unwrap_or("unknown.md");
+
+    let mut doc = ParsedDocument::new(PathBuf::from(path));
+
+    doc.content.plain_text = data_map
+        .and_then(|obj| obj.get("content").and_then(|v| v.as_str()))
+        .or_else(|| record.data.get("content").and_then(|v| v.as_str()))
         .unwrap_or("")
         .to_string();
 
-    doc.parsed_at = record
-        .data
-        .get("created_at")
-        .and_then(|v| v.as_str())
-        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&chrono::Utc))
-        .unwrap_or_else(chrono::Utc::now);
+    doc.parsed_at = parse_timestamp(
+        data_map.and_then(|obj| obj.get("parsed_at")),
+        record.data.get("updated_at"),
+        record.data.get("created_at"),
+    );
 
     doc.content_hash = record
         .data
-        .get("file_hash")
+        .get("content_hash")
         .and_then(|v| v.as_str())
+        .or_else(|| data_map.and_then(|obj| obj.get("content_hash").and_then(|v| v.as_str())))
         .unwrap_or("")
         .to_string();
 
-    doc.file_size = record
-        .data
-        .get("file_size")
-        .and_then(|v| v.as_u64())
+    doc.file_size = data_map
+        .and_then(|obj| obj.get("file_size").and_then(|v| v.as_u64()))
+        .or_else(|| record.data.get("file_size").and_then(|v| v.as_u64()))
         .unwrap_or(0);
 
-    // Parse frontmatter from metadata if available
-    if let Some(metadata) = record.data.get("metadata") {
-        if let serde_json::Value::Object(mut metadata_map) = metadata.clone() {
-            // Ensure title is in metadata for doc.title() to work correctly
-            if let Some(title) = record.data.get("title") {
-                if !metadata_map.contains_key("title") {
-                    metadata_map.insert("title".to_string(), title.clone());
-                }
-            }
-
-            // Convert metadata back to YAML frontmatter
-            let yaml_str = serde_yaml::to_string(&metadata_map)
+    if let Some(frontmatter) = data_map
+        .and_then(|obj| obj.get("frontmatter"))
+        .and_then(|v| v.as_object())
+    {
+        let yaml_str = serde_yaml::to_string(frontmatter)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize frontmatter: {}", e))?;
+        doc.frontmatter = Some(crucible_core::parser::Frontmatter::new(
+            yaml_str,
+            FrontmatterFormat::Yaml,
+        ));
+    } else if let Some(title) = data_map
+        .and_then(|obj| obj.get("title").and_then(|v| v.as_str()))
+        .or_else(|| record.data.get("title").and_then(|v| v.as_str()))
+    {
+        let mut metadata_map = serde_json::Map::new();
+        metadata_map.insert(
+            "title".to_string(),
+            serde_json::Value::String(title.to_string()),
+        );
+        let yaml_str = serde_yaml::to_string(&metadata_map)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize title metadata: {}", e))?;
+        doc.frontmatter = Some(crucible_core::parser::Frontmatter::new(
+            yaml_str,
+            FrontmatterFormat::Yaml,
+        ));
+    } else if let Some(metadata) = record.data.get("metadata") {
+        if let serde_json::Value::Object(map) = metadata.clone() {
+            let yaml_str = serde_yaml::to_string(&map)
                 .map_err(|e| anyhow::anyhow!("Failed to serialize metadata: {}", e))?;
-
             doc.frontmatter = Some(crucible_core::parser::Frontmatter::new(
                 yaml_str,
                 FrontmatterFormat::Yaml,
             ));
         }
-    } else if let Some(title) = record.data.get("title") {
-        // No metadata but we have a title - create frontmatter with just the title
-        let mut metadata_map = serde_json::Map::new();
-        metadata_map.insert("title".to_string(), title.clone());
-
-        let yaml_str = serde_yaml::to_string(&metadata_map)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize title metadata: {}", e))?;
-
-        doc.frontmatter = Some(crucible_core::parser::Frontmatter::new(
-            yaml_str,
-            FrontmatterFormat::Yaml,
-        ));
     }
 
-    // Extract tags from array field
-    if let Some(tags_array) = record.data.get("tags") {
-        if let serde_json::Value::Array(tags) = tags_array {
-            for tag in tags {
-                if let Some(tag_str) = tag.as_str() {
-                    doc.tags.push(Tag::new(tag_str, 0)); // Offset unknown
-                }
-            }
-        }
+    if let Some(tags) = data_map
+        .and_then(|obj| obj.get("tags"))
+        .and_then(|value| value.as_array())
+    {
+        doc.tags = tags
+            .iter()
+            .filter_map(|tag| tag.as_str())
+            .map(|tag| Tag::new(tag, 0))
+            .collect();
+    } else if let Some(tags_array) = record.data.get("tags").and_then(|v| v.as_array()) {
+        doc.tags = tags_array
+            .iter()
+            .filter_map(|tag| tag.as_str())
+            .map(|tag| Tag::new(tag, 0))
+            .collect();
     }
 
     Ok(doc)
 }
 
-async fn find_or_create_target_document(
-    client: &SurrealClient,
-    path: &str,
-    title: &str,
-) -> Result<String> {
-    // First try to find existing document
-    let find_sql = format!("SELECT id, title FROM notes WHERE path = '{}'", path);
-    let result = client.query(&find_sql, &[]).await?;
+fn parse_timestamp(
+    primary: Option<&serde_json::Value>,
+    fallback_one: Option<&serde_json::Value>,
+    fallback_two: Option<&serde_json::Value>,
+) -> chrono::DateTime<chrono::Utc> {
+    let candidates = [
+        primary.and_then(|v| v.as_str()),
+        fallback_one.and_then(|v| v.as_str()),
+        fallback_two.and_then(|v| v.as_str()),
+    ];
 
-    if let Some(record) = result.records.first() {
-        if let Some(id) = &record.id {
-            // Check if the existing document has the right title, if not update it
-            let existing_title = record
-                .data
-                .get("title")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            if existing_title != title {
-                let update_sql =
-                    format!("UPDATE notes SET title = '{}' WHERE id = {}", title, id.0);
-                client.query(&update_sql, &[]).await?;
+    for candidate in candidates {
+        if let Some(ts) = candidate {
+            if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(ts) {
+                return parsed.with_timezone(&chrono::Utc);
             }
-            return Ok(id.0.clone());
         }
     }
 
-    // Create a placeholder document
-    let mut placeholder_data = HashMap::new();
-    placeholder_data.insert(
-        "path".to_string(),
-        serde_json::Value::String(path.to_string()),
-    );
-    placeholder_data.insert(
-        "title".to_string(),
-        serde_json::Value::String(title.to_string()),
-    );
-    placeholder_data.insert(
-        "content".to_string(),
-        serde_json::Value::String(format!("Placeholder for {}", title)),
-    );
-    placeholder_data.insert(
-        "created_at".to_string(),
-        serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
-    );
-    placeholder_data.insert(
-        "modified_at".to_string(),
-        serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
-    );
-    placeholder_data.insert("tags".to_string(), serde_json::Value::Array(vec![]));
-
-    // Store title in metadata as well so it gets properly reconstructed
-    let mut metadata = serde_json::Map::new();
-    metadata.insert(
-        "title".to_string(),
-        serde_json::Value::String(title.to_string()),
-    );
-    placeholder_data.insert("metadata".to_string(), serde_json::Value::Object(metadata));
-
-    let record = Record {
-        id: None,
-        data: placeholder_data,
-    };
-
-    let result = client.insert("notes", record).await?;
-    let record_id = result
-        .records
-        .first()
-        .and_then(|r| r.id.as_ref())
-        .ok_or_else(|| anyhow::anyhow!("Failed to create placeholder document"))?;
-
-    Ok(record_id.0.clone())
+    chrono::Utc::now()
 }
 
 async fn ensure_tag_exists(client: &SurrealClient, tag_name: &str) -> Result<()> {
@@ -1369,9 +963,7 @@ pub async fn create_embed_relationships(
 
     let entity_id = parse_entity_record_id(doc_id)?;
     let store = EprStore::new(client.clone());
-    store
-        .delete_relations_from(&entity_id, "embed")
-        .await?;
+    store.delete_relations_from(&entity_id, "embed").await?;
 
     for (index, wikilink) in embeds {
         let Some(relative_path) = resolve_wikilink_target(doc, kiln_root, wikilink) else {
@@ -1428,11 +1020,7 @@ pub async fn get_embedded_documents(
     client: &SurrealClient,
     doc_id: &str,
 ) -> Result<Vec<ParsedDocument>> {
-    let mut docs = query_relation_documents(client, doc_id, "embed").await?;
-    if docs.is_empty() {
-        docs = legacy_get_embedded_documents(client, doc_id).await?;
-    }
-    Ok(docs)
+    query_relation_documents(client, doc_id, "embed").await
 }
 
 /// Get embed metadata for a document
@@ -1459,17 +1047,9 @@ pub async fn get_embed_metadata(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to query embed metadata: {}", e))?;
 
-    if result.records.is_empty() {
-        return legacy_get_embed_metadata(client, doc_id).await;
-    }
-
     let mut metadata_list = Vec::new();
     for record in result.records {
-        let target_id = match record
-            .data
-            .get("out")
-            .and_then(record_ref_to_string)
-        {
+        let target_id = match record.data.get("out").and_then(record_ref_to_string) {
             Some(id) => id,
             None => continue,
         };
@@ -1514,25 +1094,6 @@ pub async fn get_embed_metadata(
     Ok(metadata_list)
 }
 
-/// Find a document by title
-pub async fn find_document_by_title(
-    client: &SurrealClient,
-    title: &str,
-) -> Result<Option<ParsedDocument>> {
-    let sql = format!("SELECT * FROM notes WHERE title = '{}'", title);
-    let result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query document by title: {}", e))?;
-
-    if let Some(record) = result.records.first() {
-        let doc = convert_record_to_parsed_document(record).await?;
-        Ok(Some(doc))
-    } else {
-        Ok(None)
-    }
-}
-
 /// Get embedded documents filtered by embed type
 pub async fn get_embedded_documents_by_type(
     client: &SurrealClient,
@@ -1568,69 +1129,14 @@ pub async fn get_embedded_documents_by_type(
         if !relation_embed_type.eq_ignore_ascii_case(embed_type) {
             continue;
         }
-        if let Some(target_id) = record
-            .data
-            .get("out")
-            .and_then(record_ref_to_string)
-        {
+        if let Some(target_id) = record.data.get("out").and_then(record_ref_to_string) {
             if let Some(doc) = fetch_document_by_id(client, &target_id).await? {
                 documents.push(doc);
             }
         }
     }
 
-    if documents.is_empty() {
-        documents = legacy_get_embedded_documents_by_type(client, doc_id, embed_type).await?;
-    }
-
     Ok(documents)
-}
-
-/// Get placeholder metadata for a document
-pub async fn get_placeholder_metadata(
-    client: &SurrealClient,
-    title: &str,
-) -> Result<PlaceholderMetadata> {
-    // Find the document by title
-    let doc = find_document_by_title(client, title)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("Document not found: {}", title))?;
-
-    // Check if it's a placeholder (empty content or contains "placeholder")
-    let is_placeholder = doc.content.plain_text.is_empty()
-        || doc
-            .content
-            .plain_text
-            .to_lowercase()
-            .contains("placeholder");
-
-    // Find documents that embed this document
-    let sql = format!(
-        "SELECT from FROM embeds WHERE to = (SELECT id FROM notes WHERE title = '{}')",
-        title
-    );
-    let result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to query embedding documents: {}", e))?;
-
-    let referenced_by: Vec<String> = result
-        .records
-        .iter()
-        .filter_map(|record| {
-            record
-                .data
-                .get("from")
-                .and_then(|from| from.as_str())
-                .map(|s| s.to_string())
-        })
-        .collect();
-
-    Ok(PlaceholderMetadata {
-        is_placeholder,
-        created_by_embed: is_placeholder && !referenced_by.is_empty(),
-        referenced_by,
-    })
 }
 
 /// Get documents linked via wikilinks (separate from embeds)
@@ -1638,11 +1144,7 @@ pub async fn get_wikilinked_documents(
     client: &SurrealClient,
     doc_id: &str,
 ) -> Result<Vec<ParsedDocument>> {
-    let mut documents = query_relation_documents(client, doc_id, "wikilink").await?;
-    if documents.is_empty() {
-        documents = legacy_get_linked_documents(client, doc_id).await?;
-    }
-    Ok(documents)
+    query_relation_documents(client, doc_id, "wikilink").await
 }
 
 /// Get wikilink relations for a document
@@ -1669,17 +1171,9 @@ pub async fn get_wikilink_relations(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to query wikilink relations: {}", e))?;
 
-    if result.records.is_empty() {
-        return legacy_get_wikilink_relations(client, doc_id).await;
-    }
-
     let mut relations = Vec::new();
     for record in result.records {
-        let target_id = match record
-            .data
-            .get("out")
-            .and_then(record_ref_to_string)
-        {
+        let target_id = match record.data.get("out").and_then(record_ref_to_string) {
             Some(id) => id,
             None => continue,
         };
@@ -1731,10 +1225,6 @@ pub async fn get_embed_relations(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to query embed relations: {}", e))?;
 
-    if result.records.is_empty() {
-        return legacy_get_embed_relations(client, doc_id).await;
-    }
-
     let mut relations = Vec::new();
     for record in result.records {
         let target_id = record
@@ -1776,12 +1266,7 @@ pub async fn get_embedding_documents(
         }
     }
 
-    let docs = query_embedding_sources_by_title(client, target_title).await?;
-    if !docs.is_empty() {
-        return Ok(docs);
-    }
-
-    legacy_get_embedding_documents(client, target_title).await
+    query_embedding_sources_by_title(client, target_title).await
 }
 
 /// Get specific embed with metadata
@@ -1838,19 +1323,6 @@ pub async fn get_embed_with_metadata(
         }))
     } else {
         Ok(None)
-    }
-}
-
-/// Find all placeholder documents for a target
-pub async fn find_all_placeholders_for_target(
-    client: &SurrealClient,
-    title: &str,
-) -> Result<Vec<ParsedDocument>> {
-    // This is essentially the same as find_document_by_title since there should only be one
-    if let Some(doc) = find_document_by_title(client, title).await? {
-        Ok(vec![doc])
-    } else {
-        Ok(vec![])
     }
 }
 
@@ -1920,13 +1392,6 @@ pub struct EmbedRelation {
     pub embed_type: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct PlaceholderMetadata {
-    pub is_placeholder: bool,
-    pub created_by_embed: bool,
-    pub referenced_by: Vec<String>,
-}
-
 // =============================================================================
 // EMBEDDING INTEGRATION FUNCTIONS
 // =============================================================================
@@ -1936,13 +1401,7 @@ pub async fn store_document_embedding(
     client: &SurrealClient,
     embedding: &DocumentEmbedding,
 ) -> Result<()> {
-    // Wrapper around store_embedding() to maintain API compatibility with tests
-    // Convert document_id to note_id format
-    let note_id = if embedding.document_id.starts_with("notes:") {
-        embedding.document_id.clone()
-    } else {
-        format!("notes:{}", embedding.document_id)
-    };
+    let note_id = normalize_document_id(&embedding.document_id);
 
     // Use store_embedding() with graph relations
     let chunk_position = embedding.chunk_position.unwrap_or(0);
@@ -1974,7 +1433,7 @@ pub async fn store_document_embedding(
 ///
 /// # Arguments
 /// * `client` - SurrealDB client
-/// * `note_id` - Full note record ID (format: "notes:Projects_file_md")
+/// * `note_id` - Document record ID (legacy values are normalized automatically)
 /// * `vector` - Embedding vector
 /// * `embedding_model` - Model name used for embedding
 /// * `chunk_size` - Size of the text chunk
@@ -1994,95 +1453,37 @@ pub async fn store_embedding(
     dimensions: Option<usize>,
     chunk_content: Option<&str>,
 ) -> Result<String> {
-    // Extract the relative path ID from the note_id
-    // note_id format: "notes:Projects_file_md"
-    let relative_id = note_id
-        .strip_prefix("notes:")
-        .ok_or_else(|| anyhow::anyhow!("Invalid note_id format, expected 'notes:...'"))?;
+    let _ = chunk_size;
+    let normalized_id = normalize_document_id(note_id);
+    let chunk_scope = chunk_namespace(&normalized_id);
+    let chunk_id = format!("embeddings:{}_chunk_{}", chunk_scope, chunk_position);
+    let adjusted_vector = normalize_embedding_vector(vector);
+    let dims = dimensions.unwrap_or(adjusted_vector.len());
+    let content_used = chunk_content.unwrap_or("");
 
-    // Generate deterministic chunk ID
-    let chunk_id = format!("embeddings:{}_chunk_{}", relative_id, chunk_position);
+    let chunk_body = chunk_record_body(&chunk_id).to_string();
+    let stored_model = format!("{}::{}", embedding_model, chunk_body);
+    upsert_embedding_record(
+        client,
+        &chunk_id,
+        &normalized_id,
+        &adjusted_vector,
+        dims,
+        &stored_model,
+        embedding_model,
+        content_used,
+    )
+    .await?;
 
-    // Create embedding record data (WITHOUT document_id field)
-    let mut embedding_data = HashMap::new();
-    embedding_data.insert(
-        "vector".to_string(),
-        serde_json::Value::Array(
-            vector
-                .iter()
-                .map(|v| {
-                    serde_json::Value::Number(
-                        serde_json::Number::from_f64(*v as f64)
-                            .unwrap_or(serde_json::Number::from(0)),
-                    )
-                })
-                .collect(),
-        ),
-    );
-    embedding_data.insert(
-        "embedding_model".to_string(),
-        serde_json::Value::String(embedding_model.to_string()),
-    );
-    embedding_data.insert(
-        "chunk_size".to_string(),
-        serde_json::Value::Number(serde_json::Number::from(chunk_size)),
-    );
-    embedding_data.insert(
-        "chunk_position".to_string(),
-        serde_json::Value::Number(serde_json::Number::from(chunk_position)),
-    );
-    embedding_data.insert(
-        "created_at".to_string(),
-        serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
-    );
-
-    // Store vector dimensions if provided (for compatibility checking)
-    if let Some(dims) = dimensions {
-        embedding_data.insert(
-            "vector_dimensions".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(dims)),
-        );
-    }
-
-    // Compute and store chunk hash for incremental re-embedding
-    if let Some(content) = chunk_content {
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(content.as_bytes());
-        let chunk_hash = format!("{:x}", hasher.finalize());
-        embedding_data.insert(
-            "chunk_hash".to_string(),
-            serde_json::Value::String(chunk_hash),
-        );
-    }
-
-    // Store the embedding record with explicit ID
-    let record = Record {
-        id: Some(RecordId(chunk_id.clone())),
-        data: embedding_data,
-    };
-
-    client
-        .insert("embeddings", record)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to insert embedding: {}", e))?;
-
-    // Create graph relation: notes:id -> has_embedding -> embeddings:chunk_id
-    let relate_sql = format!("RELATE {} -> has_embedding -> {}", note_id, chunk_id);
-
-    client
-        .query(&relate_sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to create graph relation: {}", e))?;
+    relate_embedding_record(client, &normalized_id, &chunk_id).await?;
 
     debug!(
         "Stored embedding {} with graph relation from {}",
-        chunk_id, note_id
+        chunk_id, normalized_id
     );
 
     Ok(chunk_id)
 }
-
 /// Store embedding with graph relations and optional chunk_id field (for backward compatibility)
 ///
 /// This is a wrapper around store_embedding() that also stores the logical chunk_id
@@ -2090,7 +1491,7 @@ pub async fn store_embedding(
 ///
 /// # Arguments
 /// * `client` - SurrealDB client
-/// * `note_id` - Full note record ID (format: "notes:Projects_file_md")
+/// * `note_id` - Document record ID (legacy `notes:` ids are normalized automatically)
 /// * `vector` - Embedding vector
 /// * `embedding_model` - Model name used for embedding
 /// * `chunk_size` - Size of the text chunk
@@ -2110,93 +1511,37 @@ pub async fn store_embedding_with_chunk_id(
     logical_chunk_id: Option<&str>,
     dimensions: Option<usize>,
 ) -> Result<String> {
-    // Extract the relative path ID from the note_id
-    // note_id format: "notes:Projects_file_md"
-    let relative_id = note_id
-        .strip_prefix("notes:")
-        .ok_or_else(|| anyhow::anyhow!("Invalid note_id format, expected 'notes:...'"))?;
-
-    // Generate deterministic chunk ID for the database record
-    // Use logical_chunk_id if provided to ensure uniqueness
+    let _ = chunk_size;
+    let normalized_id = normalize_document_id(note_id);
+    let chunk_scope = chunk_namespace(&normalized_id);
     let chunk_id = if let Some(logical_id) = logical_chunk_id {
-        // Sanitize logical_id for use in record ID (replace non-alphanumeric with underscore)
         let safe_logical_id = logical_id.replace(|c: char| !c.is_alphanumeric() && c != '-', "_");
-        format!("embeddings:{}_{}", relative_id, safe_logical_id)
+        format!("embeddings:{}_{}", chunk_scope, safe_logical_id)
     } else {
-        format!("embeddings:{}_chunk_{}", relative_id, chunk_position)
+        format!("embeddings:{}_chunk_{}", chunk_scope, chunk_position)
     };
+    let adjusted_vector = normalize_embedding_vector(vector);
+    let dims = dimensions.unwrap_or(adjusted_vector.len());
 
-    // Create embedding record data
-    let mut embedding_data = HashMap::new();
-    embedding_data.insert(
-        "vector".to_string(),
-        serde_json::Value::Array(
-            vector
-                .iter()
-                .map(|v| {
-                    serde_json::Value::Number(
-                        serde_json::Number::from_f64(*v as f64)
-                            .unwrap_or(serde_json::Number::from(0)),
-                    )
-                })
-                .collect(),
-        ),
-    );
-    embedding_data.insert(
-        "embedding_model".to_string(),
-        serde_json::Value::String(embedding_model.to_string()),
-    );
-    embedding_data.insert(
-        "chunk_size".to_string(),
-        serde_json::Value::Number(serde_json::Number::from(chunk_size)),
-    );
-    embedding_data.insert(
-        "chunk_position".to_string(),
-        serde_json::Value::Number(serde_json::Number::from(chunk_position)),
-    );
-    embedding_data.insert(
-        "created_at".to_string(),
-        serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
-    );
+    let chunk_body = chunk_record_body(&chunk_id).to_string();
+    let stored_model = format!("{}::{}", embedding_model, chunk_body);
+    upsert_embedding_record(
+        client,
+        &chunk_id,
+        &normalized_id,
+        &adjusted_vector,
+        dims,
+        &stored_model,
+        embedding_model,
+        "",
+    )
+    .await?;
 
-    // Store the logical chunk_id if provided (for backward compatibility)
-    if let Some(logical_id) = logical_chunk_id {
-        embedding_data.insert(
-            "chunk_id".to_string(),
-            serde_json::Value::String(logical_id.to_string()),
-        );
-    }
-
-    // Store vector dimensions if provided (for compatibility checking)
-    if let Some(dims) = dimensions {
-        embedding_data.insert(
-            "vector_dimensions".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(dims)),
-        );
-    }
-
-    // Store the embedding record with explicit ID
-    let record = Record {
-        id: Some(RecordId(chunk_id.clone())),
-        data: embedding_data,
-    };
-
-    client
-        .insert("embeddings", record)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to insert embedding: {}", e))?;
-
-    // Create graph relation: notes:id -> has_embedding -> embeddings:chunk_id
-    let relate_sql = format!("RELATE {} -> has_embedding -> {}", note_id, chunk_id);
-
-    client
-        .query(&relate_sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to create graph relation: {}", e))?;
+    relate_embedding_record(client, &normalized_id, &chunk_id).await?;
 
     debug!(
         "Stored embedding {} with graph relation from {} (logical_chunk_id: {:?})",
-        chunk_id, note_id, logical_chunk_id
+        chunk_id, normalized_id, logical_chunk_id
     );
 
     Ok(chunk_id)
@@ -2207,18 +1552,11 @@ pub async fn get_document_embeddings(
     client: &SurrealClient,
     document_id: &str,
 ) -> Result<Vec<DocumentEmbedding>> {
-    // Convert document_id to note_id format for graph traversal
-    let note_id = if document_id.starts_with("notes:") {
-        document_id.to_string()
-    } else {
-        format!("notes:{}", document_id)
-    };
-
-    // Use graph traversal to get embeddings via has_embedding edges
-    // The graph traversal returns the 'out' field which contains the embedding record IDs
+    let normalized_id = normalize_document_id(document_id);
+    let entity_body = escape_record_id(record_body(&normalized_id));
     let sql = format!(
-        "SELECT out FROM {}->has_embedding",
-        note_id.replace("'", "\\'")
+        "SELECT out FROM entities:⟨{entity}⟩->has_embedding",
+        entity = entity_body
     );
 
     let result = client
@@ -2306,56 +1644,6 @@ pub async fn clear_document_embeddings(client: &SurrealClient, document_id: &str
     Ok(())
 }
 
-/// Delete all embeddings for a specific document before reprocessing
-///
-/// This function removes all embedding records associated with a document ID,
-/// which is necessary before re-embedding a changed document to avoid duplicate
-/// or stale embeddings.
-///
-/// # Arguments
-/// * `client` - SurrealDB client connection
-/// * `doc_id` - Document ID in SurrealDB format (e.g., "notes:abc123")
-///
-/// # Returns
-/// The number of embedding records deleted
-///
-/// # Errors
-/// Returns an error if the database query fails
-///
-/// # Example
-/// ```ignore
-/// let deleted_count = delete_document_embeddings(&client, "notes:abc123").await?;
-/// println!("Deleted {} embeddings", deleted_count);
-/// ```
-pub async fn delete_document_embeddings(client: &SurrealClient, doc_id: &str) -> Result<usize> {
-    debug!("Deleting embeddings for document: {}", doc_id);
-
-    // Extract the relative path part from doc_id
-    let relative_id = doc_id.strip_prefix("notes:").unwrap_or(doc_id);
-
-    // Delete embeddings using ID pattern matching
-    let sql = format!(
-        "DELETE FROM embeddings WHERE id >= 'embeddings:{}' AND id < 'embeddings:{}~'",
-        relative_id.replace("'", "\\'"),
-        relative_id.replace("'", "\\'")
-    );
-
-    let result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to delete document embeddings: {}", e))?;
-
-    // Extract deletion count from result
-    let deletion_count = result.records.len();
-
-    debug!(
-        "Deleted {} embeddings for document {}",
-        deletion_count, doc_id
-    );
-
-    Ok(deletion_count)
-}
-
 /// Get existing chunk hashes for a document
 ///
 /// Returns a HashMap mapping chunk_position -> chunk_hash for existing embeddings
@@ -2365,14 +1653,14 @@ pub async fn get_document_chunk_hashes(
 ) -> Result<std::collections::HashMap<usize, String>> {
     debug!("Getting chunk hashes for document: {}", doc_id);
 
-    // Extract the relative path part from doc_id
-    let relative_id = doc_id.strip_prefix("notes:").unwrap_or(doc_id);
+    let normalized = normalize_document_id(doc_id);
+    let scope = chunk_namespace(&normalized);
 
     // Query embeddings to get chunk_position and chunk_hash
     let sql = format!(
         "SELECT chunk_position, chunk_hash FROM embeddings WHERE id >= 'embeddings:{}' AND id < 'embeddings:{}~'",
-        relative_id.replace("'", "\\'"),
-        relative_id.replace("'", "\\'")
+        scope.replace('\'', "\\'"),
+        scope.replace('\'', "\\'")
     );
 
     let result = client
@@ -2422,14 +1710,14 @@ pub async fn delete_document_chunks(
         doc_id
     );
 
-    // Extract the relative path part from doc_id
-    let relative_id = doc_id.strip_prefix("notes:").unwrap_or(doc_id);
+    let normalized = normalize_document_id(doc_id);
+    let scope = chunk_namespace(&normalized);
 
     let mut total_deleted = 0;
 
     // Delete each chunk individually
     for &pos in chunk_positions {
-        let chunk_id = format!("embeddings:{}_chunk_{}", relative_id, pos);
+        let chunk_id = format!("embeddings:{}_chunk_{}", scope, pos);
         let sql = format!("DELETE {}", chunk_id);
 
         let result = client
@@ -2447,200 +1735,34 @@ pub async fn delete_document_chunks(
     Ok(total_deleted)
 }
 
-/// Update document's processed timestamp
-pub async fn update_document_processed_timestamp(
-    client: &SurrealClient,
-    document_id: &str,
-) -> Result<()> {
-    let sql = format!(
-        "UPDATE notes SET processed_at = time::now() WHERE id = {}",
-        document_id
-    );
-    client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to update processed timestamp: {}", e))?;
-
-    debug!("Updated processed timestamp for document {}", document_id);
-    Ok(())
-}
-
-/// Update document processing metadata including content hash and timestamps
-pub async fn update_document_processing_metadata(
-    client: &SurrealClient,
-    document_id: &str,
-    file_info: &crate::kiln_scanner::KilnFileInfo,
-) -> Result<()> {
-    // Extract just the record ID part (e.g., "getting_started_md" from "notes:getting_started_md")
-    let record_id = document_id.strip_prefix("notes:").unwrap_or(document_id);
-
-    // Convert SystemTime to RFC3339 string for SurrealDB
-    let modified_at_rfc3339 = chrono::DateTime::<chrono::Utc>::from(file_info.modified_time).to_rfc3339();
-
-    // Use string formatting since parameterized queries aren't fully supported in the mock client
-    let sql = format!(
-        "UPDATE notes:⟨{}⟩ SET processed_at = time::now(), file_hash = '{}', file_size = {}, modified_at = '{}'",
-        record_id,
-        file_info.content_hash_hex(),
-        file_info.file_size,
-        modified_at_rfc3339
-    );
-
-    client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to update processing metadata for {}: {}", document_id, e))?;
-
-    // SYNCHRONIZATION FIX: Verify the hash was actually written to the database
-    // This forces the database to commit the transaction before we continue,
-    // preventing false positive "changed" detections in subsequent scans
-    let verify_sql = format!(
-        "SELECT file_hash FROM notes:⟨{}⟩ LIMIT 1",
-        record_id
-    );
-    let verify_result = client.query(&verify_sql, &[]).await
-        .map_err(|e| anyhow::anyhow!("Failed to verify hash write for {}: {}", document_id, e))?;
-
-    // Check that the verification query returned a result
-    if verify_result.records.is_empty() {
-        return Err(anyhow::anyhow!(
-            "Hash write verification failed: no record found for {}",
-            document_id
-        ));
-    }
-
-    debug!(
-        "Updated and verified processing metadata for document {}: hash={}..., size={} bytes",
-        document_id,
-        &file_info.content_hash_hex()[..8],
-        file_info.file_size
-    );
-    Ok(())
-}
-
-/// Update document content in database
-pub async fn update_document_content(
-    client: &SurrealClient,
-    document_id: &str,
-    document: &ParsedDocument,
-) -> Result<()> {
-    let mut update_data = HashMap::new();
-
-    update_data.insert(
-        "title".to_string(),
-        serde_json::Value::String(document.title()),
-    );
-    update_data.insert(
-        "content".to_string(),
-        serde_json::Value::String(document.content.plain_text.clone()),
-    );
-    update_data.insert(
-        "file_hash".to_string(),
-        serde_json::Value::String(document.content_hash.clone()),
-    );
-    update_data.insert(
-        "file_size".to_string(),
-        serde_json::Value::Number(serde_json::Number::from(document.file_size)),
-    );
-    update_data.insert(
-        "modified_at".to_string(),
-        serde_json::Value::String(document.parsed_at.to_rfc3339()),
-    );
-
-    // Update frontmatter metadata
-    let mut metadata = serde_json::Map::new();
-    if let Some(frontmatter) = &document.frontmatter {
-        for (key, value) in frontmatter.properties() {
-            metadata.insert(key.clone(), value.clone());
-        }
-    }
-    update_data.insert("metadata".to_string(), serde_json::Value::Object(metadata));
-
-    // Update tags
-    let all_tags = document.all_tags();
-    update_data.insert(
-        "tags".to_string(),
-        serde_json::Value::Array(
-            all_tags
-                .into_iter()
-                .map(serde_json::Value::String)
-                .collect(),
-        ),
-    );
-
-    let sql = format!(
-        "UPDATE notes SET {} WHERE id = {}",
-        format_update_fields(update_data),
-        document_id
-    );
-
-    client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to update document content: {}", e))?;
-
-    info!("Updated document content: {}", document.path.display());
-    Ok(())
-}
-
-/// Check if a document exists in the database
-pub async fn document_exists(client: &SurrealClient, document_id: &str) -> Result<bool> {
-    let sql = format!("SELECT id FROM notes WHERE id = {} LIMIT 1", document_id);
-    let result = client
-        .query(&sql, &[])
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to check document existence: {}", e))?;
-
-    Ok(!result.records.is_empty())
-}
-
 /// Get database statistics for embeddings
 pub async fn get_database_stats(client: &SurrealClient) -> Result<DatabaseStats> {
-    let notes_sql = "SELECT count() as total FROM notes GROUP ALL";
-    let embeddings_sql = "SELECT count() as total FROM embeddings GROUP ALL";
+    let documents_sql =
+        r#"SELECT count() AS total FROM entities WHERE entity_type = "note" GROUP ALL"#;
+    let embeddings_sql = "SELECT count() AS total FROM embeddings GROUP ALL";
 
-    eprintln!("DEBUG STATS: Querying database statistics");
-
-    let notes_result = client
-        .query(notes_sql, &[])
+    let documents_result = client
+        .query(documents_sql, &[])
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to query notes count: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to query document count: {}", e))?;
     let embeddings_result = client
         .query(embeddings_sql, &[])
         .await
         .map_err(|e| anyhow::anyhow!("Failed to query embeddings count: {}", e))?;
 
-    eprintln!(
-        "DEBUG STATS: Notes query returned {} records",
-        notes_result.records.len()
-    );
-    eprintln!(
-        "DEBUG STATS: Embeddings query returned {} records",
-        embeddings_result.records.len()
-    );
-
-    let total_documents = notes_result
+    let total_documents = documents_result
         .records
         .first()
         .and_then(|r| r.data.get("total"))
-        .and_then(|v| {
-            eprintln!("DEBUG STATS: Notes total value: {:?}", v);
-            v.as_u64()
-        })
+        .and_then(|v| v.as_u64())
         .unwrap_or(0);
 
     let total_embeddings = embeddings_result
         .records
         .first()
         .and_then(|r| r.data.get("total"))
-        .and_then(|v| {
-            eprintln!("DEBUG STATS: Embeddings total value: {:?}", v);
-            v.as_u64()
-        })
+        .and_then(|v| v.as_u64())
         .unwrap_or(0);
-
-    eprintln!("DEBUG STATS: Total documents: {}", total_documents);
-    eprintln!("DEBUG STATS: Total embeddings: {}", total_embeddings);
 
     Ok(DatabaseStats {
         total_documents,
@@ -2814,47 +1936,27 @@ pub async fn semantic_search_with_reranking(
         for (document_id, vec_score) in &initial_results {
             eprintln!("DEBUG RERANK: Fetching document_id: {}", document_id);
 
-            // Direct record ID lookup using note_id (O(1) lookup)
-            // document_id should already be in format "notes:Projects_file_md"
-            let note_id = if document_id.starts_with("notes:") {
-                document_id.clone()
-            } else {
-                format!("notes:{}", document_id)
-            };
-
-            let notes_sql = format!("SELECT * FROM {}", note_id);
-
-            let notes_result = match client.query(&notes_sql, &[]).await {
-                Ok(r) => r,
-                Err(e) => {
-                    eprintln!("DEBUG RERANK: Query failed for {}: {}", document_id, e);
-                    failed_retrievals += 1;
-                    continue;
+            let normalized_id = normalize_document_id(document_id);
+            match fetch_document_by_id(client, &normalized_id).await {
+                Ok(Some(doc)) => {
+                    let text = doc.content.plain_text.clone();
+                    eprintln!(
+                        "DEBUG RERANK: Retrieved document with {} chars of text",
+                        text.len()
+                    );
+                    documents.push((normalized_id, text, *vec_score));
                 }
-            };
-
-            match notes_result.records.first() {
-                Some(note_record) => match convert_record_to_parsed_document(note_record).await {
-                    Ok(doc) => {
-                        let text = doc.content.plain_text.clone();
-                        eprintln!(
-                            "DEBUG RERANK: Retrieved document with {} chars of text",
-                            text.len()
-                        );
-                        documents.push((document_id.clone(), text, *vec_score));
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "DEBUG RERANK: Failed to convert document {}: {}",
-                            document_id, e
-                        );
-                        failed_retrievals += 1;
-                    }
-                },
-                None => {
+                Ok(None) => {
                     eprintln!(
                         "DEBUG RERANK: Document not found for document_id: {}",
                         document_id
+                    );
+                    failed_retrievals += 1;
+                }
+                Err(e) => {
+                    eprintln!(
+                        "DEBUG RERANK: Failed to fetch document {}: {}",
+                        document_id, e
                     );
                     failed_retrievals += 1;
                 }
@@ -3045,41 +2147,6 @@ fn convert_record_to_document_embedding_with_id(
     Ok(embedding)
 }
 
-/// Format update fields for SQL UPDATE statement
-fn format_update_fields(fields: HashMap<String, serde_json::Value>) -> String {
-    fields
-        .iter()
-        .map(|(key, value)| format!("{} = {}", key, format_json_value(value)))
-        .collect::<Vec<String>>()
-        .join(", ")
-}
-
-/// Format JSON value for SQL
-fn format_json_value(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::String(s) => format!("'{}'", s.replace('\'', "''")),
-        serde_json::Value::Number(n) => n.to_string(),
-        serde_json::Value::Bool(b) => b.to_string(),
-        serde_json::Value::Array(arr) => {
-            let items = arr
-                .iter()
-                .map(format_json_value)
-                .collect::<Vec<String>>()
-                .join(", ");
-            format!("[{}]", items)
-        }
-        serde_json::Value::Object(obj) => {
-            let items = obj
-                .iter()
-                .map(|(k, v)| format!("'{}': {}", k, format_json_value(v)))
-                .collect::<Vec<String>>()
-                .join(", ");
-            format!("{{{}}}", items)
-        }
-        serde_json::Value::Null => "null".to_string(),
-    }
-}
-
 /// Calculate mock similarity score for testing
 #[allow(dead_code)]
 fn calculate_mock_similarity(query: &str, content: &str) -> f64 {
@@ -3152,7 +2219,6 @@ fn generate_mock_semantic_results(query: &str, _limit: usize) -> Vec<(String, f6
     results
 }
 
-
 // =============================================================================
 // SCHEMA MIGRATION FUNCTIONS
 // =============================================================================
@@ -3179,8 +2245,8 @@ mod tests {
     use super::*;
     use crate::epr::apply_epr_schema;
     use crate::SurrealClient;
-    use std::path::PathBuf;
     use crucible_core::parser::types::Wikilink;
+    use std::path::PathBuf;
 
     #[tokio::test]
     async fn test_store_embedding_with_graph_relations() {
@@ -3235,7 +2301,10 @@ mod tests {
         // Query embeddings using graph traversal
         // SurrealDB graph traversal: we need to get the out node of the edge
         // The ->has_embedding syntax returns the edge, we need to get 'out' to get the embedding
-        let traversal_sql = format!("SELECT out FROM {}->has_embedding", note_id);
+        let traversal_sql = format!(
+            "SELECT out FROM entities:⟨{}⟩->has_embedding",
+            note_id.strip_prefix("entities:").unwrap_or(&note_id)
+        );
         println!("Executing traversal query: {}", traversal_sql);
 
         let result = client.query(&traversal_sql, &[]).await.unwrap();
@@ -3306,7 +2375,10 @@ mod tests {
 
         // Query all embeddings using graph traversal
         // SurrealDB graph traversal: we need to get the out node of the edge
-        let traversal_sql = format!("SELECT out FROM {}->has_embedding", note_id);
+        let traversal_sql = format!(
+            "SELECT out FROM entities:⟨{}⟩->has_embedding",
+            note_id.strip_prefix("entities:").unwrap_or(&note_id)
+        );
         let result = client.query(&traversal_sql, &[]).await.unwrap();
 
         println!(
@@ -3367,8 +2439,7 @@ mod tests {
         doc.content_hash = "wikihash".into();
         doc.content.plain_text = "Scenario with wikilinks".into();
         doc.wikilinks.push(Wikilink::new("TargetNote", 5));
-        doc.wikilinks
-            .push(Wikilink::new("../Shared/OtherDoc", 15));
+        doc.wikilinks.push(Wikilink::new("../Shared/OtherDoc", 15));
 
         let mut target_doc = ParsedDocument::new(kiln_root.join("projects/TargetNote.md"));
         target_doc.content_hash = "targethash".into();
@@ -3386,7 +2457,10 @@ mod tests {
             .unwrap();
 
         let relations = client
-            .query("SELECT relation_type, out, in FROM relations ORDER BY relation_type", &[])
+            .query(
+                "SELECT relation_type, out, in FROM relations ORDER BY relation_type",
+                &[],
+            )
             .await
             .unwrap();
         assert_eq!(relations.records.len(), 4);
@@ -3397,16 +2471,8 @@ mod tests {
             .filter_map(|record| record.data.get("out").and_then(|v| v.as_str()))
             .map(|s| s.to_string())
             .collect();
-        assert!(
-            targets
-                .iter()
-                .any(|t| t.contains("projects/TargetNote.md"))
-        );
-        assert!(
-            targets
-                .iter()
-                .any(|t| t.contains("Shared/OtherDoc.md"))
-        );
+        assert!(targets.iter().any(|t| t.contains("projects/TargetNote.md")));
+        assert!(targets.iter().any(|t| t.contains("Shared/OtherDoc.md")));
 
         let relation_types: Vec<String> = relations
             .records
@@ -3417,14 +2483,10 @@ mod tests {
         assert!(relation_types.iter().any(|t| t == "wikilink"));
         assert!(relation_types.iter().any(|t| t == "wikilink_backlink"));
 
-        let linked = get_linked_documents(&client, &doc_id)
-            .await
-            .unwrap();
+        let linked = get_linked_documents(&client, &doc_id).await.unwrap();
         assert_eq!(linked.len(), 2);
 
-        let relation_list = get_wikilink_relations(&client, &doc_id)
-            .await
-            .unwrap();
+        let relation_list = get_wikilink_relations(&client, &doc_id).await.unwrap();
         assert_eq!(relation_list.len(), 2);
 
         let placeholder = client
@@ -3499,11 +2561,7 @@ mod tests {
             .records
             .iter()
             .filter(|record| {
-                record
-                    .data
-                    .get("relation_type")
-                    .and_then(|v| v.as_str())
-                    == Some("embed")
+                record.data.get("relation_type").and_then(|v| v.as_str()) == Some("embed")
             })
             .filter_map(|record| record.data.get("out").and_then(record_ref_to_string))
             .collect();
@@ -3511,9 +2569,7 @@ mod tests {
             .iter()
             .any(|id| id.contains("Assets/Diagram.md")));
 
-        let embed_relations = get_embed_relations(&client, &doc_id)
-            .await
-            .unwrap();
+        let embed_relations = get_embed_relations(&client, &doc_id).await.unwrap();
         assert_eq!(embed_relations.len(), 1);
 
         let entity = super::find_entity_id_by_title(&client, "Diagram")
@@ -3522,9 +2578,7 @@ mod tests {
             .expect("entity for Diagram should exist");
         assert!(entity.id.contains("Assets/Diagram"));
 
-        let embed_pairs = super::fetch_embed_relation_pairs(&client)
-            .await
-            .unwrap();
+        let embed_pairs = super::fetch_embed_relation_pairs(&client).await.unwrap();
         assert_eq!(embed_pairs.len(), 1);
         assert!(
             embed_pairs[0].1.contains("Assets/Diagram.md"),
@@ -3539,44 +2593,37 @@ mod tests {
             entity.id
         );
 
-        let backlink_sources =
-            super::query_embedding_sources_for_entity(&client, &entity)
-                .await
-                .unwrap();
+        let backlink_sources = super::query_embedding_sources_for_entity(&client, &entity)
+            .await
+            .unwrap();
         assert_eq!(backlink_sources.len(), 1);
 
-        let filtered_docs = get_embedded_documents_by_type(
-            &client,
-            &doc_id,
-            &embed_relations[0].embed_type,
-        )
-        .await
-        .unwrap();
+        let filtered_docs =
+            get_embedded_documents_by_type(&client, &doc_id, &embed_relations[0].embed_type)
+                .await
+                .unwrap();
         assert_eq!(filtered_docs.len(), 1);
 
-        let embedded_docs = get_embedded_documents(&client, &doc_id)
-            .await
-            .unwrap();
+        let embedded_docs = get_embedded_documents(&client, &doc_id).await.unwrap();
         assert_eq!(embedded_docs.len(), 1);
 
-        let metadata = get_embed_metadata(&client, &doc_id)
-            .await
-            .unwrap();
+        let metadata = get_embed_metadata(&client, &doc_id).await.unwrap();
         assert_eq!(metadata.len(), 1);
 
-        let embedding_docs = get_embedding_documents(&client, "Diagram")
-            .await
-            .unwrap();
+        let embedding_docs = get_embedding_documents(&client, "Diagram").await.unwrap();
         assert_eq!(embedding_docs.len(), 1);
     }
 }
 
 /// Generate a document ID from path and kiln root
-pub fn generate_document_id(document_path: &std::path::Path, _kiln_root: &std::path::Path) -> String {
-    // Simple implementation - just use the path string
-    // TODO: Implement proper ID generation based on relative path
-    document_path
-        .to_str()
-        .unwrap_or("unknown")
-        .replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
+pub fn generate_document_id(
+    document_path: &std::path::Path,
+    kiln_root: &std::path::Path,
+) -> String {
+    let relative = resolve_relative_path(document_path, kiln_root);
+    let normalized = relative
+        .trim_start_matches(std::path::MAIN_SEPARATOR)
+        .replace('\\', "/")
+        .replace(':', "_");
+    format!("entities:note:{}", normalized)
 }

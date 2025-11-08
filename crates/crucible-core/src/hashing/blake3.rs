@@ -119,11 +119,10 @@ impl ContentHasher for Blake3Hasher {
 ///
 /// This static instance can be used throughout the application for consistent
 /// BLAKE3 hashing operations.
-pub static BLAKE3_CONTENT_HASHER: std::sync::LazyLock<Blake3Hasher> = std::sync::LazyLock::new(|| {
-    Blake3Hasher {
+pub static BLAKE3_CONTENT_HASHER: std::sync::LazyLock<Blake3Hasher> =
+    std::sync::LazyLock::new(|| Blake3Hasher {
         operation_count: std::sync::Arc::new(AtomicUsize::new(0)),
-    }
-});
+    });
 
 #[cfg(test)]
 mod tests {
@@ -132,12 +131,30 @@ mod tests {
 
     // BLAKE3 test vectors - these are known BLAKE3 hashes for test inputs
     const TEST_VECTORS: &[(&[u8], &str)] = &[
-        (b"", "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"),
-        (b"a", "17762fddd969a453925d65717ac3eea21320b66b54342fde15128d6caf21215f"),
-        (b"abc", "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"),
-        (b"message digest", "7bc2a2eeb95ddbf9b7ecf6adcb76b453091c58dc43955e1d9482b1942f08d19b"),
-        (b"abcdefghijklmnopqrstuvwxyz", "2468eec8894acfb4e4df3a51ea916ba115d48268287754290aae8e9e6228e85f"),
-        (b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", "8bee3200baa9f3a1acd279f049f914f110e730555ff15109bd59cdd73895e239"),
+        (
+            b"",
+            "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+        ),
+        (
+            b"a",
+            "17762fddd969a453925d65717ac3eea21320b66b54342fde15128d6caf21215f",
+        ),
+        (
+            b"abc",
+            "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85",
+        ),
+        (
+            b"message digest",
+            "7bc2a2eeb95ddbf9b7ecf6adcb76b453091c58dc43955e1d9482b1942f08d19b",
+        ),
+        (
+            b"abcdefghijklmnopqrstuvwxyz",
+            "2468eec8894acfb4e4df3a51ea916ba115d48268287754290aae8e9e6228e85f",
+        ),
+        (
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+            "8bee3200baa9f3a1acd279f049f914f110e730555ff15109bd59cdd73895e239",
+        ),
     ];
 
     #[test]
@@ -169,7 +186,10 @@ mod tests {
         let result = hasher.hash_block(b"");
 
         // BLAKE3 of empty string - this should be a known value
-        assert_eq!(result, "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262");
+        assert_eq!(
+            result,
+            "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        );
         assert_eq!(result.len(), 64); // 32 bytes * 2 hex chars per byte
         assert_eq!(hasher.operation_count(), 1);
     }
@@ -179,7 +199,10 @@ mod tests {
         let hasher = Blake3Hasher::new();
         let result = hasher.hash_block(b"a");
 
-        assert_eq!(result, "17762fddd969a453925d65717ac3eea21320b66b54342fde15128d6caf21215f");
+        assert_eq!(
+            result,
+            "17762fddd969a453925d65717ac3eea21320b66b54342fde15128d6caf21215f"
+        );
         assert_eq!(result.len(), 64);
         assert_eq!(hasher.operation_count(), 1);
     }
@@ -189,7 +212,10 @@ mod tests {
         let hasher = Blake3Hasher::new();
         let result = hasher.hash_block(b"abc");
 
-        assert_eq!(result, "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85");
+        assert_eq!(
+            result,
+            "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"
+        );
         assert_eq!(result.len(), 64);
         assert_eq!(hasher.operation_count(), 1);
     }
@@ -200,7 +226,10 @@ mod tests {
         let data = b"abcdefghijklmnopqrstuvwxyz";
         let result = hasher.hash_block(data);
 
-        assert_eq!(result, "2468eec8894acfb4e4df3a51ea916ba115d48268287754290aae8e9e6228e85f");
+        assert_eq!(
+            result,
+            "2468eec8894acfb4e4df3a51ea916ba115d48268287754290aae8e9e6228e85f"
+        );
         assert_eq!(result.len(), 64);
         assert_eq!(hasher.operation_count(), 1);
     }
@@ -211,12 +240,14 @@ mod tests {
         let data = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
         let result = hasher.hash_block(data);
 
-        assert_eq!(result, "8bee3200baa9f3a1acd279f049f914f110e730555ff15109bd59cdd73895e239");
+        assert_eq!(
+            result,
+            "8bee3200baa9f3a1acd279f049f914f110e730555ff15109bd59cdd73895e239"
+        );
         assert_eq!(result.len(), 64);
         assert_eq!(hasher.operation_count(), 1);
     }
 
-    
     #[test]
     fn test_hash_block_deterministic_behavior() {
         let hasher = Blake3Hasher::new();
@@ -350,7 +381,8 @@ mod tests {
         for (data, expected_hash) in TEST_VECTORS {
             let computed_hash = hasher.hash_block(data);
             assert_eq!(
-                computed_hash, *expected_hash,
+                computed_hash,
+                *expected_hash,
                 "BLAKE3 test vector failed for input: {:?}",
                 String::from_utf8_lossy(data)
             );
@@ -419,7 +451,9 @@ mod tests {
         assert!(!hasher.is_valid_hash("")); // Empty
         assert!(!hasher.is_valid_hash("invalid")); // Not hex
         assert!(!hasher.is_valid_hash("af1349b9f5f9")); // Wrong length
-        assert!(!hasher.is_valid_hash("gf1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262")); // Invalid hex char
+        assert!(!hasher
+            .is_valid_hash("gf1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"));
+        // Invalid hex char
     }
 
     #[test]
@@ -428,12 +462,12 @@ mod tests {
 
         // Test various block sizes
         let test_data = vec![
-            vec![], // 0 bytes
-            vec![0x42], // 1 byte
+            vec![],                 // 0 bytes
+            vec![0x42],             // 1 byte
             vec![0x41, 0x42, 0x43], // 3 bytes
-            vec![0u8; 64], // 64 bytes
-            vec![0u8; 1024], // 1KB
-            vec![0u8; 65536], // 64KB
+            vec![0u8; 64],          // 64 bytes
+            vec![0u8; 1024],        // 1KB
+            vec![0u8; 65536],       // 64KB
         ];
 
         let mut hashes = Vec::new();
@@ -448,7 +482,10 @@ mod tests {
         for (i, hash1) in hashes.iter().enumerate() {
             for (j, hash2) in hashes.iter().enumerate() {
                 if i != j {
-                    assert_ne!(hash1, hash2, "Hashes for different sizes should be different");
+                    assert_ne!(
+                        hash1, hash2,
+                        "Hashes for different sizes should be different"
+                    );
                 }
             }
         }
@@ -497,21 +534,11 @@ mod tests {
         let hasher = Blake3Hasher::new();
 
         // Create some test blocks
-        let block1 = HashedBlock::from_data(
-            b"Block 1 content".to_vec(),
-            0,
-            0,
-            false,
-            &hasher,
-        ).unwrap();
+        let block1 =
+            HashedBlock::from_data(b"Block 1 content".to_vec(), 0, 0, false, &hasher).unwrap();
 
-        let block2 = HashedBlock::from_data(
-            b"Block 2 content".to_vec(),
-            1,
-            20,
-            false,
-            &hasher,
-        ).unwrap();
+        let block2 =
+            HashedBlock::from_data(b"Block 2 content".to_vec(), 1, 20, false, &hasher).unwrap();
 
         let block3 = HashedBlock::from_data(
             b"Block 3 content".to_vec(),
@@ -519,7 +546,8 @@ mod tests {
             40,
             true, // last block
             &hasher,
-        ).unwrap();
+        )
+        .unwrap();
 
         let blocks = vec![block1.clone(), block2.clone(), block3.clone()];
 
@@ -537,7 +565,6 @@ mod tests {
         assert!(tree.nodes.contains_key(&block3.hash));
     }
 
-    
     #[test]
     fn test_cryptographic_properties() {
         let hasher = Blake3Hasher::new();
@@ -560,7 +587,11 @@ mod tests {
             .sum::<u32>();
 
         // Should have significant differences (not a strict test due to randomness)
-        assert!(diff_bits > 32, "Avalanche effect not observed: only {} bits differ", diff_bits);
+        assert!(
+            diff_bits > 32,
+            "Avalanche effect not observed: only {} bits differ",
+            diff_bits
+        );
     }
 
     #[test]
@@ -575,7 +606,11 @@ mod tests {
         let duration = start.elapsed();
 
         // Should complete in reasonable time (less than 1 second on modern hardware)
-        assert!(duration.as_secs() < 1, "BLAKE3 should hash 1MB quickly, took {:?}", duration);
+        assert!(
+            duration.as_secs() < 1,
+            "BLAKE3 should hash 1MB quickly, took {:?}",
+            duration
+        );
 
         // Hash should be valid
         assert_eq!(hash.len(), 64);

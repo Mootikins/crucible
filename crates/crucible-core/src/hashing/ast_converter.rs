@@ -347,18 +347,20 @@ impl<A: HashingAlgorithm> ASTBlockConverter<A> {
                     id: id.as_deref(),
                 }
             }
-            crucible_parser::types::ASTBlockMetadata::Code { language, line_count } => {
-                SerializableMetadata::Code {
-                    language: language.as_deref(),
-                    line_count: *line_count,
-                }
-            }
-            crucible_parser::types::ASTBlockMetadata::List { list_type, item_count } => {
-                SerializableMetadata::List {
-                    list_type: format!("{:?}", list_type),
-                    item_count: *item_count,
-                }
-            }
+            crucible_parser::types::ASTBlockMetadata::Code {
+                language,
+                line_count,
+            } => SerializableMetadata::Code {
+                language: language.as_deref(),
+                line_count: *line_count,
+            },
+            crucible_parser::types::ASTBlockMetadata::List {
+                list_type,
+                item_count,
+            } => SerializableMetadata::List {
+                list_type: format!("{:?}", list_type),
+                item_count: *item_count,
+            },
             crucible_parser::types::ASTBlockMetadata::Callout {
                 callout_type,
                 title,
@@ -385,10 +387,9 @@ impl<A: HashingAlgorithm> ASTBlockConverter<A> {
         };
 
         // Serialize to JSON with stable ordering
-        serde_json::to_string(&serializable)
-            .map_err(|e| HashError::IoError {
-                error: format!("Failed to serialize block: {}", e)
-            })
+        serde_json::to_string(&serializable).map_err(|e| HashError::IoError {
+            error: format!("Failed to serialize block: {}", e),
+        })
     }
 
     /// Get the algorithm name for diagnostics
@@ -845,12 +846,10 @@ mod tests {
 
     #[test]
     fn test_type_aliases() {
-        let blake3_converter: Blake3ASTBlockConverter =
-            ASTBlockConverter::new(Blake3Algorithm);
+        let blake3_converter: Blake3ASTBlockConverter = ASTBlockConverter::new(Blake3Algorithm);
         assert_eq!(blake3_converter.algorithm_name(), "blake3");
 
-        let sha256_converter: Sha256ASTBlockConverter =
-            ASTBlockConverter::new(Sha256Algorithm);
+        let sha256_converter: Sha256ASTBlockConverter = ASTBlockConverter::new(Sha256Algorithm);
         assert_eq!(sha256_converter.algorithm_name(), "sha256");
     }
 }

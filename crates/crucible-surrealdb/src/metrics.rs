@@ -3,8 +3,8 @@
 //! This module provides centralized metrics collection for monitoring the health
 //! and performance of the queue-based database system.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 use tokio::sync::watch;
@@ -152,7 +152,8 @@ impl SystemMetrics {
     pub fn record_success(&self, processing_time_ms: u64) {
         self.total_processed.fetch_add(1, Ordering::Relaxed);
         self.successful_transactions.fetch_add(1, Ordering::Relaxed);
-        self.total_processing_time_ms.fetch_add(processing_time_ms, Ordering::Relaxed);
+        self.total_processing_time_ms
+            .fetch_add(processing_time_ms, Ordering::Relaxed);
 
         debug!("Recorded successful transaction: {}ms", processing_time_ms);
     }
@@ -161,7 +162,8 @@ impl SystemMetrics {
     pub fn record_failure(&self, processing_time_ms: u64) {
         self.total_processed.fetch_add(1, Ordering::Relaxed);
         self.failed_transactions.fetch_add(1, Ordering::Relaxed);
-        self.total_processing_time_ms.fetch_add(processing_time_ms, Ordering::Relaxed);
+        self.total_processing_time_ms
+            .fetch_add(processing_time_ms, Ordering::Relaxed);
 
         debug!("Recorded failed transaction: {}ms", processing_time_ms);
     }
@@ -297,10 +299,16 @@ impl SystemMetrics {
 
         // Check error rate
         if snapshot.error_rate_percent >= 50.0 {
-            issues.push(format!("High error rate: {:.1}%", snapshot.error_rate_percent));
+            issues.push(format!(
+                "High error rate: {:.1}%",
+                snapshot.error_rate_percent
+            ));
             status = HealthStatus::Critical;
         } else if snapshot.error_rate_percent >= 20.0 {
-            issues.push(format!("Elevated error rate: {:.1}%", snapshot.error_rate_percent));
+            issues.push(format!(
+                "Elevated error rate: {:.1}%",
+                snapshot.error_rate_percent
+            ));
             if status == HealthStatus::Healthy {
                 status = HealthStatus::Degraded;
             }
@@ -308,10 +316,16 @@ impl SystemMetrics {
 
         // Check processing time
         if snapshot.avg_processing_time_ms >= 10000.0 {
-            issues.push(format!("Very slow processing: {:.1}ms average", snapshot.avg_processing_time_ms));
+            issues.push(format!(
+                "Very slow processing: {:.1}ms average",
+                snapshot.avg_processing_time_ms
+            ));
             status = HealthStatus::Critical;
         } else if snapshot.avg_processing_time_ms >= 5000.0 {
-            issues.push(format!("Slow processing: {:.1}ms average", snapshot.avg_processing_time_ms));
+            issues.push(format!(
+                "Slow processing: {:.1}ms average",
+                snapshot.avg_processing_time_ms
+            ));
             if status == HealthStatus::Healthy {
                 status = HealthStatus::Degraded;
             }
@@ -322,7 +336,10 @@ impl SystemMetrics {
             issues.push("Negative processing rate detected".to_string());
             status = HealthStatus::Critical;
         } else if snapshot.total_processed > 100 && snapshot.processing_rate_tps < 0.1 {
-            issues.push(format!("Very low processing rate: {:.2} TPS", snapshot.processing_rate_tps));
+            issues.push(format!(
+                "Very low processing rate: {:.2} TPS",
+                snapshot.processing_rate_tps
+            ));
             if status == HealthStatus::Healthy {
                 status = HealthStatus::Degraded;
             }
@@ -364,20 +381,28 @@ impl SystemMetrics {
     }
 
     /// Generate health recommendations based on current state
-    fn generate_health_recommendations(&self, snapshot: &SystemMetricsSnapshot, status: HealthStatus) -> Vec<String> {
+    fn generate_health_recommendations(
+        &self,
+        snapshot: &SystemMetricsSnapshot,
+        status: HealthStatus,
+    ) -> Vec<String> {
         let mut recommendations = Vec::new();
 
         match status {
             HealthStatus::Critical => {
                 recommendations.push("Immediate investigation required".to_string());
                 if snapshot.error_rate_percent >= 50.0 {
-                    recommendations.push("Check database connectivity and logs for errors".to_string());
+                    recommendations
+                        .push("Check database connectivity and logs for errors".to_string());
                 }
                 if snapshot.avg_processing_time_ms >= 10000.0 {
-                    recommendations.push("Consider scaling database resources or optimizing queries".to_string());
+                    recommendations.push(
+                        "Consider scaling database resources or optimizing queries".to_string(),
+                    );
                 }
                 if snapshot.queue_depth > 1000 {
-                    recommendations.push("Pause new transactions and increase consumer capacity".to_string());
+                    recommendations
+                        .push("Pause new transactions and increase consumer capacity".to_string());
                 }
             }
             HealthStatus::Degraded => {

@@ -32,13 +32,19 @@
 //! ```
 
 use crate::storage::{
-    ContentAddressedStorage, MerkleTree, StorageResult, StorageError,
-    traits::{BlockOperations, TreeOperations, StorageManagement, StorageBackend, StorageStats, QuotaUsage}
+    traits::{
+        BlockOperations, QuotaUsage, StorageBackend, StorageManagement, StorageStats,
+        TreeOperations,
+    },
+    ContentAddressedStorage, MerkleTree, StorageError, StorageResult,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, RwLock, atomic::{AtomicU64, AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc, RwLock,
+};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Notify;
 use uuid::Uuid;
@@ -70,8 +76,8 @@ impl Default for MemoryStorageConfig {
             enable_stats_tracking: true,
             enable_event_notifications: false,
             max_events: 1000,
-            cleanup_threshold: 0.9,  // 90%
-            cleanup_target: 0.7,     // 70%
+            cleanup_threshold: 0.9, // 90%
+            cleanup_target: 0.7,    // 70%
         }
     }
 }
@@ -80,21 +86,37 @@ impl Default for MemoryStorageConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StorageEvent {
     /// Block was stored
-    BlockStored { hash: String, size: u64, timestamp: u64 },
+    BlockStored {
+        hash: String,
+        size: u64,
+        timestamp: u64,
+    },
     /// Block was retrieved
     BlockRetrieved { hash: String, timestamp: u64 },
     /// Block was deleted
     BlockDeleted { hash: String, timestamp: u64 },
     /// Tree was stored
-    TreeStored { root_hash: String, node_count: usize, timestamp: u64 },
+    TreeStored {
+        root_hash: String,
+        node_count: usize,
+        timestamp: u64,
+    },
     /// Tree was retrieved
     TreeRetrieved { root_hash: String, timestamp: u64 },
     /// Tree was deleted
     TreeDeleted { root_hash: String, timestamp: u64 },
     /// Memory cleanup was performed
-    MemoryCleanup { evicted_blocks: usize, freed_bytes: u64, timestamp: u64 },
+    MemoryCleanup {
+        evicted_blocks: usize,
+        freed_bytes: u64,
+        timestamp: u64,
+    },
     /// Memory limit was exceeded
-    MemoryLimitExceeded { usage: u64, limit: u64, timestamp: u64 },
+    MemoryLimitExceeded {
+        usage: u64,
+        limit: u64,
+        timestamp: u64,
+    },
 }
 
 /// Internal storage data for blocks
@@ -352,7 +374,9 @@ impl MemoryStorage {
     /// Import data from another storage instance
     pub async fn import_from(&self, other: &Arc<MemoryStorage>) -> StorageResult<()> {
         if self.is_shutdown() || other.is_shutdown() {
-            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Storage is shutdown".to_string(),
+            ));
         }
 
         // Import blocks
@@ -364,9 +388,13 @@ impl MemoryStorage {
                 if !self_blocks.contains_key(hash) {
                     self_blocks.insert(hash.clone(), block_data.clone());
                     self.stats.block_count.fetch_add(1, Ordering::Relaxed);
-                    self.stats.total_block_size.fetch_add(block_data.size, Ordering::Relaxed);
+                    self.stats
+                        .total_block_size
+                        .fetch_add(block_data.size, Ordering::Relaxed);
                 } else {
-                    self.stats.deduplication_hits.fetch_add(1, Ordering::Relaxed);
+                    self.stats
+                        .deduplication_hits
+                        .fetch_add(1, Ordering::Relaxed);
                 }
             }
         }
@@ -388,19 +416,25 @@ impl MemoryStorage {
     }
 
     /// Export storage data
-    pub async fn export_data(&self) -> StorageResult<(HashMap<String, Vec<u8>>, HashMap<String, MerkleTree>)> {
+    pub async fn export_data(
+        &self,
+    ) -> StorageResult<(HashMap<String, Vec<u8>>, HashMap<String, MerkleTree>)> {
         if self.is_shutdown() {
-            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Storage is shutdown".to_string(),
+            ));
         }
 
         let blocks = self.blocks.read().unwrap();
         let trees = self.trees.read().unwrap();
 
-        let block_data: HashMap<String, Vec<u8>> = blocks.iter()
+        let block_data: HashMap<String, Vec<u8>> = blocks
+            .iter()
             .map(|(hash, data)| (hash.clone(), data.data.clone()))
             .collect();
 
-        let tree_data: HashMap<String, MerkleTree> = trees.iter()
+        let tree_data: HashMap<String, MerkleTree> = trees
+            .iter()
             .map(|(root_hash, data)| (root_hash.clone(), data.tree.clone()))
             .collect();
 
@@ -410,7 +444,9 @@ impl MemoryStorage {
     /// Create a snapshot of the current state
     pub async fn create_snapshot(&self) -> StorageResult<MemoryStorageSnapshot> {
         if self.is_shutdown() {
-            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Storage is shutdown".to_string(),
+            ));
         }
 
         let (block_data, tree_data) = self.export_data().await?;
@@ -428,9 +464,14 @@ impl MemoryStorage {
     }
 
     /// Restore from a snapshot
-    pub async fn restore_from_snapshot(&self, snapshot: MemoryStorageSnapshot) -> StorageResult<()> {
+    pub async fn restore_from_snapshot(
+        &self,
+        snapshot: MemoryStorageSnapshot,
+    ) -> StorageResult<()> {
         if self.is_shutdown() {
-            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Storage is shutdown".to_string(),
+            ));
         }
 
         // Clear existing data
@@ -454,7 +495,9 @@ impl MemoryStorage {
                 let size = block_data.size;
                 blocks.insert(hash, block_data);
                 self.stats.block_count.fetch_add(1, Ordering::Relaxed);
-                self.stats.total_block_size.fetch_add(size, Ordering::Relaxed);
+                self.stats
+                    .total_block_size
+                    .fetch_add(size, Ordering::Relaxed);
             }
         }
 
@@ -475,7 +518,8 @@ impl MemoryStorage {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64,
-        }).await;
+        })
+        .await;
 
         Ok(())
     }
@@ -510,11 +554,12 @@ impl MemoryStorage {
             let blocks = self.blocks.read().unwrap();
             let lru_order = self.lru_order.read().unwrap();
 
-            let mut block_entries: Vec<_> = lru_order.iter()
+            let mut block_entries: Vec<_> = lru_order
+                .iter()
                 .filter_map(|(hash, timestamp)| {
-                    blocks.get(hash).map(|block_data| {
-                        (hash.clone(), *timestamp, block_data.size)
-                    })
+                    blocks
+                        .get(hash)
+                        .map(|block_data| (hash.clone(), *timestamp, block_data.size))
                 })
                 .collect();
 
@@ -541,7 +586,9 @@ impl MemoryStorage {
                 if let Some(block_data) = blocks.remove(&hash) {
                     lru_order.remove(&hash);
                     self.stats.block_count.fetch_sub(1, Ordering::Relaxed);
-                    self.stats.total_block_size.fetch_sub(block_data.size, Ordering::Relaxed);
+                    self.stats
+                        .total_block_size
+                        .fetch_sub(block_data.size, Ordering::Relaxed);
                     self.stats.evicted_blocks.fetch_add(1, Ordering::Relaxed);
                 }
             }
@@ -554,7 +601,8 @@ impl MemoryStorage {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64,
-        }).await;
+        })
+        .await;
 
         Ok(evicted_count)
     }
@@ -590,7 +638,9 @@ impl MemoryStorage {
 impl BlockOperations for MemoryStorage {
     async fn store_block(&self, hash: &str, data: &[u8]) -> StorageResult<()> {
         if self.is_shutdown() {
-            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Storage is shutdown".to_string(),
+            ));
         }
 
         let block_data = BlockData::new(data.to_vec());
@@ -612,7 +662,8 @@ impl BlockOperations for MemoryStorage {
                             .duration_since(UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_millis() as u64,
-                    }).await;
+                    })
+                    .await;
                     return Err(StorageError::QuotaExceeded {
                         used: current_usage + size,
                         limit,
@@ -626,20 +677,27 @@ impl BlockOperations for MemoryStorage {
             let mut blocks = self.blocks.write().unwrap();
             if blocks.contains_key(hash) {
                 // Update existing block
-                self.stats.deduplication_hits.fetch_add(1, Ordering::Relaxed);
+                self.stats
+                    .deduplication_hits
+                    .fetch_add(1, Ordering::Relaxed);
                 blocks.insert(hash.to_string(), block_data);
                 false
             } else {
                 // Add new block
                 blocks.insert(hash.to_string(), block_data);
                 self.stats.block_count.fetch_add(1, Ordering::Relaxed);
-                self.stats.total_block_size.fetch_add(size, Ordering::Relaxed);
+                self.stats
+                    .total_block_size
+                    .fetch_add(size, Ordering::Relaxed);
 
                 // Update largest block size
                 let mut largest = self.stats.largest_block_size.load(Ordering::Relaxed);
                 while size > largest {
                     match self.stats.largest_block_size.compare_exchange_weak(
-                        largest, size, Ordering::Relaxed, Ordering::Relaxed
+                        largest,
+                        size,
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
                     ) {
                         Ok(_) => break,
                         Err(x) => largest = x,
@@ -659,14 +717,17 @@ impl BlockOperations for MemoryStorage {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64,
-        }).await;
+        })
+        .await;
 
         Ok(())
     }
 
     async fn get_block(&self, hash: &str) -> StorageResult<Option<Vec<u8>>> {
         if self.is_shutdown() {
-            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Storage is shutdown".to_string(),
+            ));
         }
 
         let result = {
@@ -689,7 +750,8 @@ impl BlockOperations for MemoryStorage {
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_millis() as u64,
-            }).await;
+            })
+            .await;
         }
 
         Ok(result)
@@ -697,7 +759,9 @@ impl BlockOperations for MemoryStorage {
 
     async fn block_exists(&self, hash: &str) -> StorageResult<bool> {
         if self.is_shutdown() {
-            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Storage is shutdown".to_string(),
+            ));
         }
 
         let blocks = self.blocks.read().unwrap();
@@ -706,14 +770,18 @@ impl BlockOperations for MemoryStorage {
 
     async fn delete_block(&self, hash: &str) -> StorageResult<bool> {
         if self.is_shutdown() {
-            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Storage is shutdown".to_string(),
+            ));
         }
 
         let result = {
             let mut blocks = self.blocks.write().unwrap();
             if let Some(block_data) = blocks.remove(hash) {
                 self.stats.block_count.fetch_sub(1, Ordering::Relaxed);
-                self.stats.total_block_size.fetch_sub(block_data.size, Ordering::Relaxed);
+                self.stats
+                    .total_block_size
+                    .fetch_sub(block_data.size, Ordering::Relaxed);
                 Some(block_data.size)
             } else {
                 None
@@ -729,7 +797,8 @@ impl BlockOperations for MemoryStorage {
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_millis() as u64,
-            }).await;
+            })
+            .await;
 
             Ok(true)
         } else {
@@ -743,7 +812,9 @@ impl BlockOperations for MemoryStorage {
 impl TreeOperations for MemoryStorage {
     async fn store_tree(&self, root_hash: &str, tree: &MerkleTree) -> StorageResult<()> {
         if self.is_shutdown() {
-            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Storage is shutdown".to_string(),
+            ));
         }
 
         let tree_data = TreeData::new(tree.clone());
@@ -768,14 +839,17 @@ impl TreeOperations for MemoryStorage {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64,
-        }).await;
+        })
+        .await;
 
         Ok(())
     }
 
     async fn get_tree(&self, root_hash: &str) -> StorageResult<Option<MerkleTree>> {
         if self.is_shutdown() {
-            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Storage is shutdown".to_string(),
+            ));
         }
 
         let result = {
@@ -796,7 +870,8 @@ impl TreeOperations for MemoryStorage {
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_millis() as u64,
-            }).await;
+            })
+            .await;
         }
 
         Ok(result)
@@ -804,7 +879,9 @@ impl TreeOperations for MemoryStorage {
 
     async fn tree_exists(&self, root_hash: &str) -> StorageResult<bool> {
         if self.is_shutdown() {
-            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Storage is shutdown".to_string(),
+            ));
         }
 
         let trees = self.trees.read().unwrap();
@@ -813,7 +890,9 @@ impl TreeOperations for MemoryStorage {
 
     async fn delete_tree(&self, root_hash: &str) -> StorageResult<bool> {
         if self.is_shutdown() {
-            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Storage is shutdown".to_string(),
+            ));
         }
 
         let result = {
@@ -833,7 +912,8 @@ impl TreeOperations for MemoryStorage {
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_millis() as u64,
-            }).await;
+            })
+            .await;
         }
 
         Ok(result)
@@ -845,7 +925,9 @@ impl TreeOperations for MemoryStorage {
 impl StorageManagement for MemoryStorage {
     async fn get_stats(&self) -> StorageResult<StorageStats> {
         if self.is_shutdown() {
-            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Storage is shutdown".to_string(),
+            ));
         }
 
         let block_count = self.stats.block_count.load(Ordering::Relaxed);
@@ -860,9 +942,10 @@ impl StorageManagement for MemoryStorage {
             0.0
         };
 
-        let quota_usage = self.config.memory_limit.map(|limit| {
-            QuotaUsage::new(total_size, limit)
-        });
+        let quota_usage = self
+            .config
+            .memory_limit
+            .map(|limit| QuotaUsage::new(total_size, limit));
 
         Ok(StorageStats {
             backend: StorageBackend::InMemory,
@@ -879,7 +962,9 @@ impl StorageManagement for MemoryStorage {
 
     async fn maintenance(&self) -> StorageResult<()> {
         if self.is_shutdown() {
-            return Err(StorageError::InvalidOperation("Storage is shutdown".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Storage is shutdown".to_string(),
+            ));
         }
 
         // Trigger cleanup if needed
@@ -1052,17 +1137,20 @@ mod tests {
             format!("root_hash{:032}", block_count)
         };
 
-        nodes.insert(root_hash.clone(), MerkleNode {
-            hash: root_hash.clone(),
-            node_type: NodeType::Internal {
-                left_hash: leaf_hashes.get(0).unwrap_or(&"".to_string()).clone(),
-                right_hash: leaf_hashes.get(1).unwrap_or(&"".to_string()).clone(),
-                left_index: 0,
-                right_index: leaf_hashes.len().saturating_sub(1),
+        nodes.insert(
+            root_hash.clone(),
+            MerkleNode {
+                hash: root_hash.clone(),
+                node_type: NodeType::Internal {
+                    left_hash: leaf_hashes.get(0).unwrap_or(&"".to_string()).clone(),
+                    right_hash: leaf_hashes.get(1).unwrap_or(&"".to_string()).clone(),
+                    left_index: 0,
+                    right_index: leaf_hashes.len().saturating_sub(1),
+                },
+                depth: 1,
+                index: 0,
             },
-            depth: 1,
-            index: 0,
-        });
+        );
 
         let tree = MerkleTree {
             root_hash: root_hash.clone(),
@@ -1123,9 +1211,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_memory_storage_builder_unlimited_memory() {
-        let storage = MemoryStorage::builder()
-            .without_memory_limit()
-            .build();
+        let storage = MemoryStorage::builder().without_memory_limit().build();
 
         assert_eq!(storage.config.memory_limit, None);
     }
@@ -1313,7 +1399,10 @@ mod tests {
         // Second block should exceed limit and fail
         let result = storage.store_block(&hash2, &data2).await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), StorageError::QuotaExceeded { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            StorageError::QuotaExceeded { .. }
+        ));
     }
 
     #[tokio::test]
@@ -1494,11 +1583,17 @@ mod tests {
         // Operations should fail after shutdown
         let result = storage.store_block("new_hash", b"new data").await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), StorageError::InvalidOperation(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            StorageError::InvalidOperation(_)
+        ));
 
         let result = storage.get_block(&hash).await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), StorageError::InvalidOperation(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            StorageError::InvalidOperation(_)
+        ));
     }
 
     #[tokio::test]
@@ -1555,9 +1650,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_quota_usage() {
-        let storage = MemoryStorage::builder()
-            .with_memory_limit(1000)
-            .build();
+        let storage = MemoryStorage::builder().with_memory_limit(1000).build();
 
         // Store some blocks
         for i in 0..3 {
@@ -1657,7 +1750,10 @@ mod tests {
         assert_eq!(config.memory_limit, cloned.memory_limit);
         assert_eq!(config.enable_lru_eviction, cloned.enable_lru_eviction);
         assert_eq!(config.enable_stats_tracking, cloned.enable_stats_tracking);
-        assert_eq!(config.enable_event_notifications, cloned.enable_event_notifications);
+        assert_eq!(
+            config.enable_event_notifications,
+            cloned.enable_event_notifications
+        );
         assert_eq!(config.max_events, cloned.max_events);
         assert_eq!(config.cleanup_threshold, cloned.cleanup_threshold);
         assert_eq!(config.cleanup_target, cloned.cleanup_target);

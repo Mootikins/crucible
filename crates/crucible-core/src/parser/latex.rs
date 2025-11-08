@@ -296,7 +296,10 @@ This is the result.
 
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.latex_expressions.len(), 1);
-        assert_eq!(doc_content.latex_expressions[0].expression.trim(), "\\int_0^1 f(x)dx = F(1) - F(0)");
+        assert_eq!(
+            doc_content.latex_expressions[0].expression.trim(),
+            "\\int_0^1 f(x)dx = F(1) - F(0)"
+        );
         assert_eq!(doc_content.latex_expressions[0].is_block, true);
     }
 
@@ -328,8 +331,14 @@ This is the result.
         assert_eq!(errors.len(), 0);
         assert_eq!(doc_content.latex_expressions.len(), 2);
         // Should extract both inline and block
-        assert!(doc_content.latex_expressions.iter().any(|e| !e.is_block && e.expression == "x+y"));
-        assert!(doc_content.latex_expressions.iter().any(|e| e.is_block && e.expression.trim() == "\\frac{a}{b}"));
+        assert!(doc_content
+            .latex_expressions
+            .iter()
+            .any(|e| !e.is_block && e.expression == "x+y"));
+        assert!(doc_content
+            .latex_expressions
+            .iter()
+            .any(|e| e.is_block && e.expression.trim() == "\\frac{a}{b}"));
     }
 
     #[tokio::test]

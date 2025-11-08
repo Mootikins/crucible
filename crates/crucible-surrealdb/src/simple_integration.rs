@@ -9,9 +9,9 @@ use std::path::Path;
 use std::sync::Arc;
 use tracing::{debug, info};
 
-use crate::transaction_queue::{TransactionQueue, DatabaseTransaction, TransactionTimestamp};
-use crate::surreal_client::SurrealClient;
 use crate::kiln_scanner::parse_file_to_document;
+use crate::surreal_client::SurrealClient;
+use crate::transaction_queue::{DatabaseTransaction, TransactionQueue, TransactionTimestamp};
 
 /// Simple integration: enqueue a single document for processing
 ///
@@ -50,13 +50,21 @@ pub async fn enqueue_document(
             kiln_root: kiln_root.to_path_buf(),
             timestamp: TransactionTimestamp::now(),
         },
-        _ => return Err(anyhow::anyhow!("Unknown transaction type: {}", transaction_type)),
+        _ => {
+            return Err(anyhow::anyhow!(
+                "Unknown transaction type: {}",
+                transaction_type
+            ))
+        }
     };
 
     // Enqueue the transaction
     let _result_receiver = queue.enqueue(transaction).await?;
 
-    info!("Enqueued {} transaction for document: {}", transaction_type, document_id);
+    info!(
+        "Enqueued {} transaction for document: {}",
+        transaction_type, document_id
+    );
     Ok(document_id)
 }
 
@@ -104,10 +112,7 @@ pub async fn enqueue_documents(
 }
 
 /// Fast check if document exists (simplified - doesn't load full document)
-async fn document_exists_fast(
-    _client: &Arc<SurrealClient>,
-    _document_id: &str,
-) -> Result<bool> {
+async fn document_exists_fast(_client: &Arc<SurrealClient>, _document_id: &str) -> Result<bool> {
     // For now, assume document doesn't exist to simplify logic
     // This means all operations will be treated as Creates
     // The intelligent consumer will handle Create vs Update logic automatically

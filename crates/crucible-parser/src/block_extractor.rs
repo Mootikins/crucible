@@ -116,11 +116,9 @@ impl BlockExtractor {
         for position in positions {
             // Fill gaps with paragraphs if needed
             if position.start_offset > last_end && self.config.merge_consecutive_paragraphs {
-                if let Some(paragraph_blocks) = self.extract_gap_paragraphs(
-                    document,
-                    last_end,
-                    position.start_offset,
-                )? {
+                if let Some(paragraph_blocks) =
+                    self.extract_gap_paragraphs(document, last_end, position.start_offset)?
+                {
                     blocks.extend(paragraph_blocks);
                 }
             }
@@ -134,8 +132,12 @@ impl BlockExtractor {
                 ExtractionType::Latex => self.extract_latex_block(document, &position)?,
                 ExtractionType::Blockquote => self.extract_blockquote_block(document, &position)?,
                 ExtractionType::Table => self.extract_table_block(document, &position)?,
-                ExtractionType::HorizontalRule => self.extract_horizontal_rule(document, &position)?,
-                ExtractionType::ThematicBreak => self.extract_thematic_break(document, &position)?,
+                ExtractionType::HorizontalRule => {
+                    self.extract_horizontal_rule(document, &position)?
+                }
+                ExtractionType::ThematicBreak => {
+                    self.extract_thematic_break(document, &position)?
+                }
             };
 
             if let Some(block) = block {
@@ -148,11 +150,9 @@ impl BlockExtractor {
 
         // Handle any remaining content as paragraphs
         if last_end < document.content.plain_text.len() {
-            if let Some(paragraph_blocks) = self.extract_gap_paragraphs(
-                document,
-                last_end,
-                document.content.plain_text.len(),
-            )? {
+            if let Some(paragraph_blocks) =
+                self.extract_gap_paragraphs(document, last_end, document.content.plain_text.len())?
+            {
                 blocks.extend(paragraph_blocks);
             }
         }
@@ -195,7 +195,10 @@ impl BlockExtractor {
         }
         for (index, latex) in document.latex_expressions.iter().enumerate() {
             if !document.content.latex_expressions.contains(latex) {
-                map.add_latex(latex.clone(), index + document.content.latex_expressions.len());
+                map.add_latex(
+                    latex.clone(),
+                    index + document.content.latex_expressions.len(),
+                );
             }
         }
 
@@ -211,7 +214,10 @@ impl BlockExtractor {
             positions.push(ExtractionPosition {
                 block_type: ExtractionType::Heading,
                 start_offset: heading.heading.offset,
-                end_offset: heading.heading.offset + heading.heading.text.len() + heading.heading.level as usize + 1, // +1 for space
+                end_offset: heading.heading.offset
+                    + heading.heading.text.len()
+                    + heading.heading.level as usize
+                    + 1, // +1 for space
                 index: heading.index,
             });
         }
@@ -288,10 +294,7 @@ impl BlockExtractor {
         position: &ExtractionPosition,
     ) -> Result<Option<ASTBlock>, ParseError> {
         let code_block = &document.content.code_blocks[position.index];
-        let metadata = ASTBlockMetadata::code(
-            code_block.language.clone(),
-            code_block.line_count,
-        );
+        let metadata = ASTBlockMetadata::code(code_block.language.clone(), code_block.line_count);
 
         let block = ASTBlock::new(
             ASTBlockType::Code,
@@ -314,7 +317,8 @@ impl BlockExtractor {
         let metadata = ASTBlockMetadata::list(list.list_type, list.item_count);
 
         // Combine all list items into a single content string
-        let content = list.items
+        let content = list
+            .items
             .iter()
             .map(|item| {
                 let prefix = match list.list_type {
@@ -459,7 +463,10 @@ impl BlockExtractor {
         }
 
         // Split into paragraphs on double newlines
-        let paragraphs: Vec<&str> = content.split("\n\n").filter(|p| !p.trim().is_empty()).collect();
+        let paragraphs: Vec<&str> = content
+            .split("\n\n")
+            .filter(|p| !p.trim().is_empty())
+            .collect();
 
         if paragraphs.is_empty() {
             return Ok(None);
@@ -562,7 +569,8 @@ impl ContentMap {
     }
 
     fn add_code_block(&mut self, code_block: CodeBlock, index: usize) {
-        self.code_blocks.push(IndexedCodeBlock { code_block, index });
+        self.code_blocks
+            .push(IndexedCodeBlock { code_block, index });
     }
 
     fn add_list(&mut self, list: ListBlock, index: usize) {
@@ -628,7 +636,10 @@ mod tests {
         content.lists.push(list);
 
         // Add plain text content
-        content = content.with_plain_text("This is a test document.\n\nIt has multiple paragraphs.\n\nAnd various content types.".to_string());
+        content = content.with_plain_text(
+            "This is a test document.\n\nIt has multiple paragraphs.\n\nAnd various content types."
+                .to_string(),
+        );
 
         ParsedDocument::builder(PathBuf::from("test.md"))
             .with_content(content)
@@ -689,7 +700,10 @@ mod tests {
             index: 0,
         };
 
-        let block = extractor.extract_heading_block(&document, &position).unwrap().unwrap();
+        let block = extractor
+            .extract_heading_block(&document, &position)
+            .unwrap()
+            .unwrap();
 
         assert_eq!(block.block_type, ASTBlockType::Heading);
         assert_eq!(block.content, "Test Document");
@@ -715,13 +729,20 @@ mod tests {
             index: 0,
         };
 
-        let block = extractor.extract_code_block(&document, &position).unwrap().unwrap();
+        let block = extractor
+            .extract_code_block(&document, &position)
+            .unwrap()
+            .unwrap();
 
         assert_eq!(block.block_type, ASTBlockType::Code);
         assert!(block.content.contains("fn main"));
         assert_eq!(block.start_offset, 50);
 
-        if let ASTBlockMetadata::Code { language, line_count } = block.metadata {
+        if let ASTBlockMetadata::Code {
+            language,
+            line_count,
+        } = block.metadata
+        {
             assert_eq!(language, Some("rust".to_string()));
             assert_eq!(line_count, 3);
         } else {
@@ -741,13 +762,20 @@ mod tests {
             index: 0,
         };
 
-        let block = extractor.extract_list_block(&document, &position).unwrap().unwrap();
+        let block = extractor
+            .extract_list_block(&document, &position)
+            .unwrap()
+            .unwrap();
 
         assert_eq!(block.block_type, ASTBlockType::List);
         assert!(block.content.contains("First item"));
         assert!(block.content.contains("Second item"));
 
-        if let ASTBlockMetadata::List { list_type, item_count } = block.metadata {
+        if let ASTBlockMetadata::List {
+            list_type,
+            item_count,
+        } = block.metadata
+        {
             assert_eq!(list_type, ListType::Unordered);
             assert_eq!(item_count, 2);
         } else {
@@ -807,7 +835,9 @@ mod tests {
         let extractor = BlockExtractor::new();
         let document = create_test_document();
 
-        let paragraphs = extractor.extract_gap_paragraphs(&document, 1000, 1000).unwrap();
+        let paragraphs = extractor
+            .extract_gap_paragraphs(&document, 1000, 1000)
+            .unwrap();
         assert!(paragraphs.is_none());
     }
 

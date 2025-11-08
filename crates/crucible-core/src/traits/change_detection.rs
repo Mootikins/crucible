@@ -112,7 +112,10 @@ pub trait ContentHasher: Send + Sync {
     /// # Errors
     ///
     /// Returns `HashError` if any file cannot be read or hashing fails
-    async fn hash_files_batch(&self, paths: &[std::path::PathBuf]) -> Result<Vec<FileHash>, HashError>;
+    async fn hash_files_batch(
+        &self,
+        paths: &[std::path::PathBuf],
+    ) -> Result<Vec<FileHash>, HashError>;
 
     /// Hash a content block (e.g., heading, paragraph, code block)
     ///
@@ -167,7 +170,11 @@ pub trait ContentHasher: Send + Sync {
     /// # Errors
     ///
     /// Returns `HashError` if file operations fail
-    async fn hash_file_info(&self, path: &Path, relative_path: String) -> Result<FileHashInfo, HashError>;
+    async fn hash_file_info(
+        &self,
+        path: &Path,
+        relative_path: String,
+    ) -> Result<FileHashInfo, HashError>;
 
     /// Create comprehensive block hash info
     ///
@@ -212,7 +219,11 @@ pub trait ContentHasher: Send + Sync {
     /// # Errors
     ///
     /// Returns `HashError` if file operations fail
-    async fn verify_file_hash(&self, path: &Path, expected_hash: &FileHash) -> Result<bool, HashError>;
+    async fn verify_file_hash(
+        &self,
+        path: &Path,
+        expected_hash: &FileHash,
+    ) -> Result<bool, HashError>;
 
     /// Verify a block's hash matches the expected value
     ///
@@ -230,7 +241,11 @@ pub trait ContentHasher: Send + Sync {
     /// # Errors
     ///
     /// Returns `HashError` if hashing fails
-    async fn verify_block_hash(&self, content: &str, expected_hash: &BlockHash) -> Result<bool, HashError>;
+    async fn verify_block_hash(
+        &self,
+        content: &str,
+        expected_hash: &BlockHash,
+    ) -> Result<bool, HashError>;
 }
 
 /// Information about a stored file hash from the database
@@ -419,7 +434,10 @@ impl HashLookupCache {
     }
 
     /// Get multiple values from cache, returning which ones are cached and which are not
-    pub fn get_cached_keys(&self, keys: &[String]) -> (HashMap<String, Option<StoredHash>>, Vec<String>) {
+    pub fn get_cached_keys(
+        &self,
+        keys: &[String],
+    ) -> (HashMap<String, Option<StoredHash>>, Vec<String>) {
         let mut cached = HashMap::new();
         let mut uncached = Vec::new();
 
@@ -843,22 +861,30 @@ impl ChangeDetectionMetrics {
         tracing::info!("📊 Change Detection Performance:");
         tracing::info!("  📁 Total files scanned: {}", self.total_files);
         tracing::info!("  📝 Files that changed: {}", self.changed_files);
-        tracing::info!("  ⏭️  Files skipped: {} ({:.1}%)",
-              self.skipped_files,
-              if self.total_files > 0 {
-                  (self.skipped_files as f64 / self.total_files as f64) * 100.0
-              } else {
-                  0.0
-              });
-        tracing::info!("  ⏱️  Change detection time: {:?}", self.change_detection_time);
+        tracing::info!(
+            "  ⏭️  Files skipped: {} ({:.1}%)",
+            self.skipped_files,
+            if self.total_files > 0 {
+                (self.skipped_files as f64 / self.total_files as f64) * 100.0
+            } else {
+                0.0
+            }
+        );
+        tracing::info!(
+            "  ⏱️  Change detection time: {:?}",
+            self.change_detection_time
+        );
         tracing::info!("  🗄️  Database round trips: {}", self.database_round_trips);
-        tracing::info!("  🚀 Processing speed: {:.0} files/second", self.files_per_second);
+        tracing::info!(
+            "  🚀 Processing speed: {:.0} files/second",
+            self.files_per_second
+        );
         tracing::info!("  💾 Cache hit rate: {:.1}%", self.cache_hit_rate * 100.0);
 
         if self.skipped_files > 0 {
-            let time_saved = self.change_detection_time.mul_f64(
-                self.skipped_files as f64 / self.total_files.max(1) as f64
-            );
+            let time_saved = self
+                .change_detection_time
+                .mul_f64(self.skipped_files as f64 / self.total_files.max(1) as f64);
             tracing::info!("  ⚡ Estimated time saved: {:?}", time_saved);
         }
     }
@@ -1225,7 +1251,9 @@ mod tests {
             2048,
             chrono::Utc::now(),
         );
-        result.found_files.insert("found.md".to_string(), stored.clone());
+        result
+            .found_files
+            .insert("found.md".to_string(), stored.clone());
         result.missing_files.push("missing.md".to_string());
         result.total_queried = 2;
         result.database_round_trips = 1;
@@ -1340,7 +1368,10 @@ mod tests {
         };
 
         assert_eq!(summary.total_files, 100);
-        assert_eq!(summary.unchanged + summary.changed + summary.new + summary.deleted, 100);
+        assert_eq!(
+            summary.unchanged + summary.changed + summary.new + summary.deleted,
+            100
+        );
         assert!(summary.has_changes);
     }
 
@@ -1363,7 +1394,10 @@ mod tests {
 
     #[async_trait]
     impl HashLookupStorage for MockHashLookupStorage {
-        async fn lookup_file_hash(&self, relative_path: &str) -> Result<Option<StoredHash>, HashError> {
+        async fn lookup_file_hash(
+            &self,
+            relative_path: &str,
+        ) -> Result<Option<StoredHash>, HashError> {
             Ok(self.hashes.get(relative_path).cloned())
         }
 
@@ -1472,7 +1506,10 @@ mod tests {
             "nonexistent.md".to_string(),
             "another_missing.md".to_string(),
         ];
-        let batch_result = storage.lookup_file_hashes_batch(&paths, None).await.unwrap();
+        let batch_result = storage
+            .lookup_file_hashes_batch(&paths, None)
+            .await
+            .unwrap();
         assert_eq!(batch_result.found_files.len(), 1);
         assert_eq!(batch_result.missing_files.len(), 2);
         assert_eq!(batch_result.total_queried, 3);
@@ -1616,7 +1653,10 @@ mod tests {
 
     #[async_trait]
     impl ChangeDetector for MockChangeDetector {
-        async fn detect_changes(&self, current_files: &[FileHashInfo]) -> Result<ChangeSet, HashError> {
+        async fn detect_changes(
+            &self,
+            current_files: &[FileHashInfo],
+        ) -> Result<ChangeSet, HashError> {
             let mut changes = ChangeSet::new();
             let mut current_paths = std::collections::HashSet::new();
 
@@ -1817,11 +1857,14 @@ mod tests {
         // Test detect_changes
         let changes = detector.detect_changes(&current_files).await.unwrap();
         assert_eq!(changes.changed.len(), 1); // existing.md changed
-        assert_eq!(changes.new.len(), 1);     // new.md is new
+        assert_eq!(changes.new.len(), 1); // new.md is new
         assert!(changes.has_changes());
 
         // Test detect_changes_with_metrics
-        let result = detector.detect_changes_with_metrics(&current_files).await.unwrap();
+        let result = detector
+            .detect_changes_with_metrics(&current_files)
+            .await
+            .unwrap();
         assert!(result.has_changes());
         assert_eq!(result.files_to_process(), 2);
         assert_eq!(result.metrics.total_files, 2);
@@ -1863,7 +1906,10 @@ mod tests {
         assert!(!changes.has_changes());
         assert_eq!(changes.total_files(), 0);
 
-        let result = detector.detect_changes_with_metrics(&empty_files).await.unwrap();
+        let result = detector
+            .detect_changes_with_metrics(&empty_files)
+            .await
+            .unwrap();
         assert!(!result.has_changes());
         assert_eq!(result.metrics.total_files, 0);
         assert_eq!(result.metrics.changed_files, 0);

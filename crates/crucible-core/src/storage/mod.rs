@@ -20,45 +20,44 @@
 //! - Pluggable hashing algorithms
 //! - Clean separation of concerns
 
-pub mod traits;
-pub mod merkle;
 pub mod block;
-pub mod error;
 pub mod builder;
-pub mod diff;
 pub mod change_application;
-pub mod memory;
-pub mod deduplicator;
 pub mod deduplication_traits;
+pub mod deduplicator;
+pub mod diff;
+pub mod error;
 pub mod factory;
+pub mod memory;
+pub mod merkle;
+pub mod traits;
 
 // Re-export main types for convenience
-pub use traits::{ContentAddressedStorage, ContentHasher, StorageBackend};
-pub use merkle::{MerkleTree, MerkleNode, TreeChange};
-pub use block::{HashedBlock, BlockProcessor, BlockSize};
-pub use error::{StorageError, StorageResult};
-pub use builder::{ContentAddressedStorageBuilder, StorageBackendType, HasherConfig, ProcessingConfig};
-pub use diff::{
-    EnhancedChangeDetector, EnhancedTreeChange, ChangeMetadata, ChangeSource,
-    DiffConfig, MovedBlockInfo, CacheStats as DiffCacheStats
+pub use block::{BlockProcessor, BlockSize, HashedBlock};
+pub use builder::{
+    ContentAddressedStorageBuilder, HasherConfig, ProcessingConfig, StorageBackendType,
 };
 pub use change_application::{
-    ChangeApplicationSystem, ChangeApplicationResult, ApplicationConfig,
-    AppliedChange, FailedChange, RollbackInfo, ApplicationStats, CacheStats as AppCacheStats
-};
-pub use memory::{
-    MemoryStorage, MemoryStorageConfig, MemoryStorageBuilder, MemoryStorageSnapshot,
-    StorageEvent, MemoryStorageShutdown
-};
-pub use deduplicator::{
-    Deduplicator, DefaultDeduplicator, DeduplicationAnalysis, DuplicateGroup,
-    DeduplicationStats, StorageSavings, BlockUsagePattern, UsageEvent, UsageEventType,
-    DocumentDuplicationPattern, DocumentSimilarity, StorageSavingsByType
+    ApplicationConfig, ApplicationStats, AppliedChange, CacheStats as AppCacheStats,
+    ChangeApplicationResult, ChangeApplicationSystem, FailedChange, RollbackInfo,
 };
 pub use deduplication_traits::{
-    DeduplicationStorage, DeduplicationCapable, BlockInfo, DuplicateBlockInfo,
-    StorageUsageStats
+    BlockInfo, DeduplicationCapable, DeduplicationStorage, DuplicateBlockInfo, StorageUsageStats,
 };
-pub use factory::{
-    StorageFactory, StorageConfig, BackendConfig, HashAlgorithm
+pub use deduplicator::{
+    BlockUsagePattern, DeduplicationAnalysis, DeduplicationStats, Deduplicator,
+    DefaultDeduplicator, DocumentDuplicationPattern, DocumentSimilarity, DuplicateGroup,
+    StorageSavings, StorageSavingsByType, UsageEvent, UsageEventType,
 };
+pub use diff::{
+    CacheStats as DiffCacheStats, ChangeMetadata, ChangeSource, DiffConfig, EnhancedChangeDetector,
+    EnhancedTreeChange, MovedBlockInfo,
+};
+pub use error::{StorageError, StorageResult};
+pub use factory::{BackendConfig, HashAlgorithm, StorageConfig, StorageFactory};
+pub use memory::{
+    MemoryStorage, MemoryStorageBuilder, MemoryStorageConfig, MemoryStorageShutdown,
+    MemoryStorageSnapshot, StorageEvent,
+};
+pub use merkle::{MerkleNode, MerkleTree, TreeChange};
+pub use traits::{ContentAddressedStorage, ContentHasher, StorageBackend};

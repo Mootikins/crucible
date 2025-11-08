@@ -3,19 +3,20 @@
 //! This module provides the single-threaded database consumer that processes
 //! transactions from the queue to eliminate RocksDB lock contention.
 
-use crate::transaction_queue::{
-    DatabaseTransaction, TransactionMetadata,
-    TransactionResult, TransactionReceiver,
-};
+use crate::epr::EprStore;
+use crate::kiln_integration::parse_entity_record_id;
+use crate::metrics::{record_transaction_failure, record_transaction_success};
 use crate::surreal_client::SurrealClient;
-use crate::metrics::{record_transaction_success, record_transaction_failure};
-use anyhow::Result;
+use crate::transaction_queue::{
+    DatabaseTransaction, TransactionMetadata, TransactionReceiver, TransactionResult,
+};
+use anyhow::{anyhow, Result};
+use serde_json::json;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{oneshot, watch};
 use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
-
 
 /// Database transaction consumer
 ///
@@ -162,7 +163,11 @@ impl BatchCollector {
     }
 
     /// Add a transaction to the batch
-    fn add_transaction(&mut self, transaction: DatabaseTransaction, result_sender: oneshot::Sender<TransactionResult>) {
+    fn add_transaction(
+        &mut self,
+        transaction: DatabaseTransaction,
+        result_sender: oneshot::Sender<TransactionResult>,
+    ) {
         self.pending_transactions.push(BatchableTransaction {
             transaction,
             result_sender,
@@ -172,8 +177,8 @@ impl BatchCollector {
 
     /// Check if the batch is ready to process
     fn is_ready(&self, max_batch_size: usize, batch_timeout: Duration) -> bool {
-        self.pending_transactions.len() >= max_batch_size ||
-        self.batch_start_time.elapsed() >= batch_timeout
+        self.pending_transactions.len() >= max_batch_size
+            || self.batch_start_time.elapsed() >= batch_timeout
     }
 
     /// Check if the batch should try to wait for more related transactions
@@ -184,12 +189,24 @@ impl BatchCollector {
 
         // Simple heuristic: wait for transactions from the same directory or with same document prefix
         match (&self.pending_transactions[0].transaction, new_transaction) {
-            (DatabaseTransaction::Create { document: existing_doc, .. }, DatabaseTransaction::Create { document: new_doc, .. }) => {
-                existing_doc.path.parent() == new_doc.path.parent()
-            }
-            (DatabaseTransaction::Update { document: existing_doc, .. }, DatabaseTransaction::Update { document: new_doc, .. }) => {
-                existing_doc.path.parent() == new_doc.path.parent()
-            }
+            (
+                DatabaseTransaction::Create {
+                    document: existing_doc,
+                    ..
+                },
+                DatabaseTransaction::Create {
+                    document: new_doc, ..
+                },
+            ) => existing_doc.path.parent() == new_doc.path.parent(),
+            (
+                DatabaseTransaction::Update {
+                    document: existing_doc,
+                    ..
+                },
+                DatabaseTransaction::Update {
+                    document: new_doc, ..
+                },
+            ) => existing_doc.path.parent() == new_doc.path.parent(),
             _ => false,
         }
     }
@@ -229,10 +246,7 @@ impl Clone for DatabaseTransactionConsumer {
 
 impl DatabaseTransactionConsumer {
     /// Create a new database transaction consumer
-    pub fn new(
-        client: Arc<SurrealClient>,
-        config: ConsumerConfig,
-    ) -> Self {
+    pub fn new(client: Arc<SurrealClient>, config: ConsumerConfig) -> Self {
         let (stats_sender, _) = watch::channel(ConsumerStats::default());
 
         Self {
@@ -285,7 +299,8 @@ impl DatabaseTransactionConsumer {
             }
 
             // Process any pending transactions whose dependencies might now be satisfied
-            self.process_pending_transactions(&mut processing_times).await?;
+            self.process_pending_transactions(&mut processing_times)
+                .await?;
 
             // Handle transaction reception with batching logic
             if self.config.enable_batching {
@@ -298,20 +313,27 @@ impl DatabaseTransactionConsumer {
                         // Check if transaction dependencies are satisfied
                         if self.are_dependencies_satisfied(&transaction) {
                             // Add to batch collector
-                            self.batch_collector.add_transaction(transaction, result_sender);
+                            self.batch_collector
+                                .add_transaction(transaction, result_sender);
 
                             // Try to collect more related transactions quickly
                             let mut collection_attempts = 0;
                             while self.batch_collector.len() < self.config.max_batch_size
                                 && collection_attempts < 5
-                                && !self.batch_collector.is_ready(self.config.max_batch_size, self.config.batch_timeout) {
-
+                                && !self
+                                    .batch_collector
+                                    .is_ready(self.config.max_batch_size, self.config.batch_timeout)
+                            {
                                 match timeout(Duration::from_millis(5), receiver.recv()).await {
                                     Ok(Some((next_tx, next_result_sender))) => {
                                         if self.are_dependencies_satisfied(&next_tx) {
                                             // If the new transaction is related to existing ones, add it to batch
-                                            if self.batch_collector.should_wait_for_related(&next_tx) {
-                                                self.batch_collector.add_transaction(next_tx, next_result_sender);
+                                            if self
+                                                .batch_collector
+                                                .should_wait_for_related(&next_tx)
+                                            {
+                                                self.batch_collector
+                                                    .add_transaction(next_tx, next_result_sender);
                                             } else {
                                                 // Not related, process current batch first
                                                 break;
@@ -331,16 +353,24 @@ impl DatabaseTransactionConsumer {
                             }
 
                             // Process the batch if it's ready
-                            if self.batch_collector.is_ready(self.config.max_batch_size, self.config.batch_timeout) {
+                            if self
+                                .batch_collector
+                                .is_ready(self.config.max_batch_size, self.config.batch_timeout)
+                            {
                                 let batch = self.batch_collector.take_batch();
-                                if let Err(e) = self.process_batch(batch, &mut processing_times).await {
+                                if let Err(e) =
+                                    self.process_batch(batch, &mut processing_times).await
+                                {
                                     error!("Error processing transaction batch: {}", e);
                                 }
                                 processed_any = true;
                             }
                         } else {
                             // Simplified: skip transactions with unsatisfied dependencies
-                            debug!("Transaction {} waiting for dependencies - skipping for now", transaction.transaction_id());
+                            debug!(
+                                "Transaction {} waiting for dependencies - skipping for now",
+                                transaction.transaction_id()
+                            );
                         }
                     }
                     Ok(None) => {
@@ -349,8 +379,11 @@ impl DatabaseTransactionConsumer {
                     }
                     Err(_) => {
                         // No transaction received, check if batch timeout expired
-                        if !self.batch_collector.is_empty() &&
-                           self.batch_collector.is_ready(self.config.max_batch_size, self.config.batch_timeout) {
+                        if !self.batch_collector.is_empty()
+                            && self
+                                .batch_collector
+                                .is_ready(self.config.max_batch_size, self.config.batch_timeout)
+                        {
                             let batch = self.batch_collector.take_batch();
                             if let Err(e) = self.process_batch(batch, &mut processing_times).await {
                                 error!("Error processing expired batch: {}", e);
@@ -371,12 +404,22 @@ impl DatabaseTransactionConsumer {
                         // Check if transaction dependencies are satisfied
                         if self.are_dependencies_satisfied(&transaction) {
                             // Process immediately
-                            if let Err(e) = self.process_transaction(transaction, result_sender, &mut processing_times).await {
+                            if let Err(e) = self
+                                .process_transaction(
+                                    transaction,
+                                    result_sender,
+                                    &mut processing_times,
+                                )
+                                .await
+                            {
                                 error!("Error processing transaction: {}", e);
                             }
                         } else {
                             // Simplified: no pending queue for now - just skip
-                            debug!("Transaction {} waiting for dependencies - skipping for now", transaction.transaction_id());
+                            debug!(
+                                "Transaction {} waiting for dependencies - skipping for now",
+                                transaction.transaction_id()
+                            );
                         }
                     }
                     Ok(None) => {
@@ -391,14 +434,20 @@ impl DatabaseTransactionConsumer {
             }
 
             // Update statistics
-            self.update_stats(&start_time, &mut processing_times, &mut last_throughput_check, &mut transactions_at_last_check);
+            self.update_stats(
+                &start_time,
+                &mut processing_times,
+                &mut last_throughput_check,
+                &mut transactions_at_last_check,
+            );
 
             // Send statistics update
             let _ = self.stats_sender.send(self.stats.clone());
         }
 
         // Process any remaining pending transactions
-        self.process_remaining_transactions(&mut processing_times).await?;
+        self.process_remaining_transactions(&mut processing_times)
+            .await?;
 
         info!("Database transaction consumer stopped");
         self.is_running = false;
@@ -414,7 +463,7 @@ impl DatabaseTransactionConsumer {
                 // Create operations have no dependencies
                 true
             }
-            DatabaseTransaction::Update {  .. } => {
+            DatabaseTransaction::Update { .. } => {
                 // Update operations depend on document existing, but for simplicity we'll allow them
                 // The intelligent consumer will handle create vs update logic
                 true
@@ -427,7 +476,10 @@ impl DatabaseTransactionConsumer {
     }
 
     /// Process any pending transactions (simplified - no pending queue for now)
-    async fn process_pending_transactions(&mut self, _processing_times: &mut Vec<Duration>) -> Result<()> {
+    async fn process_pending_transactions(
+        &mut self,
+        _processing_times: &mut Vec<Duration>,
+    ) -> Result<()> {
         // Simplified architecture - no pending queue for now
         // All transactions are processed immediately or skipped
         Ok(())
@@ -448,7 +500,12 @@ impl DatabaseTransactionConsumer {
         let mut retry_count = 0;
         let mut last_error = None;
         let result = loop {
-            match timeout(self.config.transaction_timeout, self.execute_transaction(&transaction)).await {
+            match timeout(
+                self.config.transaction_timeout,
+                self.execute_transaction(&transaction),
+            )
+            .await
+            {
                 Ok(Ok(())) => {
                     // Success - break retry loop
                     let success_result = TransactionResult::Success {
@@ -456,11 +513,17 @@ impl DatabaseTransactionConsumer {
                         duration: start_time.elapsed(),
                         metadata: self.create_transaction_metadata(&transaction, retry_count),
                     };
-                    self.completed_transactions.insert(transaction.transaction_id().to_string());
+                    self.completed_transactions
+                        .insert(transaction.transaction_id().to_string());
                     break success_result;
                 }
                 Ok(Err(e)) => {
-                    error!("Transaction {} failed (attempt {}): {}", transaction.transaction_id(), retry_count + 1, e);
+                    error!(
+                        "Transaction {} failed (attempt {}): {}",
+                        transaction.transaction_id(),
+                        retry_count + 1,
+                        e
+                    );
                     last_error = Some(e);
 
                     retry_count += 1;
@@ -468,7 +531,9 @@ impl DatabaseTransactionConsumer {
                         // Max retries exceeded - create failure result
                         let failure_result = TransactionResult::Failure {
                             transaction_id: transaction.transaction_id().to_string(),
-                            error: last_error.unwrap_or_else(|| anyhow::anyhow!("Unknown error")).to_string(),
+                            error: last_error
+                                .unwrap_or_else(|| anyhow::anyhow!("Unknown error"))
+                                .to_string(),
                             retry_count,
                             metadata: self.create_transaction_metadata(&transaction, retry_count),
                         };
@@ -477,22 +542,34 @@ impl DatabaseTransactionConsumer {
 
                     // Wait before retry with exponential backoff
                     let retry_delay = self.calculate_retry_delay(retry_count);
-                    debug!("Retrying transaction {} in {:?} (attempt {}/{})",
-                           transaction.transaction_id(), retry_delay, retry_count, self.config.max_retries);
+                    debug!(
+                        "Retrying transaction {} in {:?} (attempt {}/{})",
+                        transaction.transaction_id(),
+                        retry_delay,
+                        retry_count,
+                        self.config.max_retries
+                    );
                     tokio::time::sleep(retry_delay).await;
                     continue;
                 }
                 Err(_) => {
                     // Timeout
-                    error!("Transaction {} timed out (attempt {}) after {:?}",
-                          transaction.transaction_id(), retry_count + 1, self.config.transaction_timeout);
+                    error!(
+                        "Transaction {} timed out (attempt {}) after {:?}",
+                        transaction.transaction_id(),
+                        retry_count + 1,
+                        self.config.transaction_timeout
+                    );
 
                     retry_count += 1;
                     if retry_count >= self.config.max_retries {
                         // Max retries exceeded - create failure result
                         let failure_result = TransactionResult::Failure {
                             transaction_id: transaction.transaction_id().to_string(),
-                            error: format!("Transaction timed out after {:?} ({} attempts)", self.config.transaction_timeout, retry_count),
+                            error: format!(
+                                "Transaction timed out after {:?} ({} attempts)",
+                                self.config.transaction_timeout, retry_count
+                            ),
                             retry_count,
                             metadata: self.create_transaction_metadata(&transaction, retry_count),
                         };
@@ -501,8 +578,13 @@ impl DatabaseTransactionConsumer {
 
                     // Wait before retry with exponential backoff
                     let retry_delay = self.calculate_retry_delay(retry_count);
-                    debug!("Retrying transaction {} in {:?} (attempt {}/{}) due to timeout",
-                           transaction.transaction_id(), retry_delay, retry_count, self.config.max_retries);
+                    debug!(
+                        "Retrying transaction {} in {:?} (attempt {}/{}) due to timeout",
+                        transaction.transaction_id(),
+                        retry_delay,
+                        retry_count,
+                        self.config.max_retries
+                    );
                     tokio::time::sleep(retry_delay).await;
                     continue;
                 }
@@ -540,54 +622,77 @@ impl DatabaseTransactionConsumer {
         // Send result to caller
         let _ = result_sender.send(result);
 
-        debug!("Completed transaction: {} in {:?}", transaction.transaction_id(), processing_time);
+        debug!(
+            "Completed transaction: {} in {:?}",
+            transaction.transaction_id(),
+            processing_time
+        );
         Ok(())
     }
 
     /// Execute a database transaction using intelligent consumer diffing
     async fn execute_transaction(&self, transaction: &DatabaseTransaction) -> Result<()> {
         match transaction {
-            DatabaseTransaction::Create { document, kiln_root, .. } => {
+            DatabaseTransaction::Create {
+                document,
+                kiln_root,
+                ..
+            } => {
                 debug!("Creating document: {}", document.path.display());
 
                 // Store the document and all its relationships in one operation
                 let document_id = crate::kiln_integration::store_parsed_document(
                     &self.client,
                     document,
-                    kiln_root
-                ).await?;
+                    kiln_root,
+                )
+                .await?;
 
                 // Create all related entities (links, embeds, tags) automatically
-                self.create_document_relationships(&document_id, document, kiln_root).await?;
+                self.create_document_relationships(&document_id, document, kiln_root)
+                    .await?;
             }
 
-            DatabaseTransaction::Update { document, kiln_root, .. } => {
+            DatabaseTransaction::Update {
+                document,
+                kiln_root,
+                ..
+            } => {
                 debug!("Updating document: {}", document.path.display());
 
                 // Check if document exists and determine what changed
-                let document_id = crate::kiln_integration::generate_document_id(&document.path, kiln_root);
+                let document_id =
+                    crate::kiln_integration::generate_document_id(&document.path, kiln_root);
                 let existing_doc = self.get_existing_document(&document_id).await?;
 
                 if let Some(existing_document) = existing_doc {
                     // Intelligent diffing - update only what changed
-                    self.update_document_intelligently(&existing_document, document, kiln_root).await?;
+                    self.update_document_intelligently(&existing_document, document, kiln_root)
+                        .await?;
                 } else {
                     // Document doesn't exist, treat as create
                     info!("Document {} not found, treating as create", document_id);
                     let created_id = crate::kiln_integration::store_parsed_document(
                         &self.client,
                         document,
-                        kiln_root
-                    ).await?;
-                    self.create_document_relationships(&created_id, document, kiln_root).await?;
+                        kiln_root,
+                    )
+                    .await?;
+                    self.create_document_relationships(&created_id, document, kiln_root)
+                        .await?;
                 }
             }
 
-            DatabaseTransaction::Delete { document_id, kiln_root, .. } => {
+            DatabaseTransaction::Delete {
+                document_id,
+                kiln_root,
+                ..
+            } => {
                 debug!("Deleting document: {}", document_id);
 
                 // Remove document and all its relationships
-                self.delete_document_completely(document_id, kiln_root).await?;
+                self.delete_document_completely(document_id, kiln_root)
+                    .await?;
             }
         }
 
@@ -650,13 +755,19 @@ impl DatabaseTransactionConsumer {
         }
 
         let total_batch_time = batch_start_time.elapsed();
-        debug!("Completed batch of {} transactions in {:?}", batch_size, total_batch_time);
+        debug!(
+            "Completed batch of {} transactions in {:?}",
+            batch_size, total_batch_time
+        );
 
         Ok(())
     }
 
     /// Execute multiple transactions in a single database transaction with retry logic
-    async fn execute_transaction_batch(&self, batch: &[BatchableTransaction]) -> Vec<TransactionResult> {
+    async fn execute_transaction_batch(
+        &self,
+        batch: &[BatchableTransaction],
+    ) -> Vec<TransactionResult> {
         let mut results = Vec::with_capacity(batch.len());
 
         // For now, process transactions sequentially but within the same database transaction context
@@ -668,29 +779,50 @@ impl DatabaseTransactionConsumer {
 
             // Attempt transaction with retry logic
             loop {
-                let result = match timeout(self.config.transaction_timeout, self.execute_transaction(&batchable_tx.transaction)).await {
+                let result = match timeout(
+                    self.config.transaction_timeout,
+                    self.execute_transaction(&batchable_tx.transaction),
+                )
+                .await
+                {
                     Ok(Ok(())) => {
                         // Success - break retry loop
                         let success_result = TransactionResult::Success {
                             transaction_id: batchable_tx.transaction.transaction_id().to_string(),
                             duration: start_time.elapsed(),
-                            metadata: self.create_transaction_metadata(&batchable_tx.transaction, retry_count),
+                            metadata: self.create_transaction_metadata(
+                                &batchable_tx.transaction,
+                                retry_count,
+                            ),
                         };
                         results.push(success_result);
                         break;
                     }
                     Ok(Err(e)) => {
-                        error!("Transaction {} failed (attempt {}): {}", batchable_tx.transaction.transaction_id(), retry_count + 1, e);
+                        error!(
+                            "Transaction {} failed (attempt {}): {}",
+                            batchable_tx.transaction.transaction_id(),
+                            retry_count + 1,
+                            e
+                        );
                         last_error = Some(e);
 
                         retry_count += 1;
                         if retry_count >= self.config.max_retries {
                             // Max retries exceeded - create failure result
                             let failure_result = TransactionResult::Failure {
-                                transaction_id: batchable_tx.transaction.transaction_id().to_string(),
-                                error: last_error.unwrap_or_else(|| anyhow::anyhow!("Unknown error")).to_string(),
+                                transaction_id: batchable_tx
+                                    .transaction
+                                    .transaction_id()
+                                    .to_string(),
+                                error: last_error
+                                    .unwrap_or_else(|| anyhow::anyhow!("Unknown error"))
+                                    .to_string(),
                                 retry_count,
-                                metadata: self.create_transaction_metadata(&batchable_tx.transaction, retry_count),
+                                metadata: self.create_transaction_metadata(
+                                    &batchable_tx.transaction,
+                                    retry_count,
+                                ),
                             };
                             results.push(failure_result);
                             break;
@@ -698,24 +830,42 @@ impl DatabaseTransactionConsumer {
 
                         // Wait before retry with exponential backoff
                         let retry_delay = self.calculate_retry_delay(retry_count);
-                        debug!("Retrying transaction {} in {:?} (attempt {}/{})",
-                               batchable_tx.transaction.transaction_id(), retry_delay, retry_count, self.config.max_retries);
+                        debug!(
+                            "Retrying transaction {} in {:?} (attempt {}/{})",
+                            batchable_tx.transaction.transaction_id(),
+                            retry_delay,
+                            retry_count,
+                            self.config.max_retries
+                        );
                         tokio::time::sleep(retry_delay).await;
                         continue;
                     }
                     Err(_) => {
                         // Timeout
-                        error!("Transaction {} timed out (attempt {}) after {:?}",
-                              batchable_tx.transaction.transaction_id(), retry_count + 1, self.config.transaction_timeout);
+                        error!(
+                            "Transaction {} timed out (attempt {}) after {:?}",
+                            batchable_tx.transaction.transaction_id(),
+                            retry_count + 1,
+                            self.config.transaction_timeout
+                        );
 
                         retry_count += 1;
                         if retry_count >= self.config.max_retries {
                             // Max retries exceeded - create failure result
                             let failure_result = TransactionResult::Failure {
-                                transaction_id: batchable_tx.transaction.transaction_id().to_string(),
-                                error: format!("Transaction timed out after {:?} ({} attempts)", self.config.transaction_timeout, retry_count),
+                                transaction_id: batchable_tx
+                                    .transaction
+                                    .transaction_id()
+                                    .to_string(),
+                                error: format!(
+                                    "Transaction timed out after {:?} ({} attempts)",
+                                    self.config.transaction_timeout, retry_count
+                                ),
                                 retry_count,
-                                metadata: self.create_transaction_metadata(&batchable_tx.transaction, retry_count),
+                                metadata: self.create_transaction_metadata(
+                                    &batchable_tx.transaction,
+                                    retry_count,
+                                ),
                             };
                             results.push(failure_result);
                             break;
@@ -723,8 +873,13 @@ impl DatabaseTransactionConsumer {
 
                         // Wait before retry with exponential backoff
                         let retry_delay = self.calculate_retry_delay(retry_count);
-                        debug!("Retrying transaction {} in {:?} (attempt {}/{}) due to timeout",
-                               batchable_tx.transaction.transaction_id(), retry_delay, retry_count, self.config.max_retries);
+                        debug!(
+                            "Retrying transaction {} in {:?} (attempt {}/{}) due to timeout",
+                            batchable_tx.transaction.transaction_id(),
+                            retry_delay,
+                            retry_count,
+                            self.config.max_retries
+                        );
                         tokio::time::sleep(retry_delay).await;
                         continue;
                     }
@@ -736,7 +891,11 @@ impl DatabaseTransactionConsumer {
     }
 
     /// Create transaction metadata
-    fn create_transaction_metadata(&self, transaction: &DatabaseTransaction, retry_count: u32) -> TransactionMetadata {
+    fn create_transaction_metadata(
+        &self,
+        transaction: &DatabaseTransaction,
+        retry_count: u32,
+    ) -> TransactionMetadata {
         TransactionMetadata {
             transaction_type: match transaction {
                 DatabaseTransaction::Create { .. } => "Create".to_string(),
@@ -744,7 +903,8 @@ impl DatabaseTransactionConsumer {
                 DatabaseTransaction::Delete { .. } => "Delete".to_string(),
             },
             file_path: match transaction {
-                DatabaseTransaction::Create { document, .. } | DatabaseTransaction::Update { document, .. } => Some(document.path.clone()),
+                DatabaseTransaction::Create { document, .. }
+                | DatabaseTransaction::Update { document, .. } => Some(document.path.clone()),
                 DatabaseTransaction::Delete { .. } => None,
             },
             retry_count,
@@ -795,10 +955,16 @@ impl DatabaseTransactionConsumer {
     }
 
     /// Process remaining pending transactions during shutdown (simplified)
-    async fn process_remaining_transactions(&mut self, processing_times: &mut Vec<Duration>) -> Result<()> {
+    async fn process_remaining_transactions(
+        &mut self,
+        processing_times: &mut Vec<Duration>,
+    ) -> Result<()> {
         // Process any remaining transactions in the batch collector
         if !self.batch_collector.is_empty() {
-            info!("Processing {} remaining transactions in batch collector", self.batch_collector.len());
+            info!(
+                "Processing {} remaining transactions in batch collector",
+                self.batch_collector.len()
+            );
             let batch = self.batch_collector.take_batch();
             if let Err(e) = self.process_batch(batch, processing_times).await {
                 error!("Error processing remaining batch during shutdown: {}", e);
@@ -819,15 +985,28 @@ impl DatabaseTransactionConsumer {
     ) -> Result<()> {
         // Create wikilink edges
         if !document.wikilinks.is_empty() {
-            crate::kiln_integration::create_wikilink_edges(&self.client, document_id, document, kiln_root).await?;
+            crate::kiln_integration::create_wikilink_edges(
+                &self.client,
+                document_id,
+                document,
+                kiln_root,
+            )
+            .await?;
         }
 
         // Create embed relations
-        crate::kiln_integration::create_embed_relationships(&self.client, document_id, document, kiln_root).await?;
+        crate::kiln_integration::create_embed_relationships(
+            &self.client,
+            document_id,
+            document,
+            kiln_root,
+        )
+        .await?;
 
         // Create tag associations
         if !document.tags.is_empty() {
-            crate::kiln_integration::create_tag_associations(&self.client, document_id, document).await?;
+            crate::kiln_integration::create_tag_associations(&self.client, document_id, document)
+                .await?;
         }
 
         // Note: embeds are handled through content processing, not as separate relationships
@@ -837,11 +1016,17 @@ impl DatabaseTransactionConsumer {
     }
 
     /// Helper method to get existing document from database
-    async fn get_existing_document(&self, document_id: &str) -> Result<Option<crucible_core::types::ParsedDocument>> {
+    async fn get_existing_document(
+        &self,
+        document_id: &str,
+    ) -> Result<Option<crucible_core::types::ParsedDocument>> {
         // For now, always return None to simplify the intelligent consumer
         // This means all Update operations will be treated as Create operations
         // which is fine for the simple queue architecture goal of eliminating lock contention
-        debug!("Checking for existing document: {} (simplified check)", document_id);
+        debug!(
+            "Checking for existing document: {} (simplified check)",
+            document_id
+        );
         Ok(None)
     }
 
@@ -857,48 +1042,102 @@ impl DatabaseTransactionConsumer {
         // Simple intelligent update: just store the new document
         // The consumer is "intelligent" because it figures out what to do automatically
         // without the processing layer having to specify granular operations
-        let document_id = crate::kiln_integration::store_parsed_document(&self.client, new, kiln_root).await?;
-        self.create_document_relationships(&document_id, new, kiln_root).await?;
+        let document_id =
+            crate::kiln_integration::store_parsed_document(&self.client, new, kiln_root).await?;
+        self.create_document_relationships(&document_id, new, kiln_root)
+            .await?;
 
         Ok(())
     }
 
     /// Helper method to completely delete a document and all its relationships
-    async fn delete_document_completely(&self, document_id: &str, _kiln_root: &std::path::Path) -> Result<()> {
+    async fn delete_document_completely(
+        &self,
+        document_id: &str,
+        _kiln_root: &std::path::Path,
+    ) -> Result<()> {
         info!("Deleting document: {}", document_id);
 
-        
+        let entity_id = parse_entity_record_id(document_id)?;
+        let store = EprStore::new(self.client.as_ref().clone());
 
-        // Delete the main document record
-        let delete_note_query = format!("DELETE FROM note WHERE id = type::thing('note', '{}')", document_id);
-        if let Err(e) = self.client.query(&delete_note_query, &[]).await {
-            warn!("Error deleting note record {}: {}", document_id, e);
-        }
+        self.client
+            .query(
+                r#"
+                DELETE embeddings WHERE entity_id = type::thing($table, $id);
+                "#,
+                &[json!({
+                    "table": entity_id.table,
+                    "id": entity_id.id,
+                })],
+            )
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to delete embeddings for {}: {}", document_id, e)
+            })?;
 
-        // Delete related embeddings
-        let delete_embedding_query = format!("DELETE FROM embedding WHERE id = type::thing('embedding', '{}')", document_id);
-        if let Err(e) = self.client.query(&delete_embedding_query, &[]).await {
-            warn!("Error deleting embedding record {}: {}", document_id, e);
-        }
+        self.client
+            .query(
+                r#"
+                DELETE blocks WHERE entity_id = type::thing($table, $id);
+                "#,
+                &[json!({
+                    "table": entity_id.table,
+                    "id": entity_id.id,
+                })],
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to delete blocks for {}: {}", document_id, e))?;
 
-        // Delete wikilink relationships (both outgoing and incoming)
-        let wikilink_out_query = format!("DELETE FROM wikilink WHERE from_note = type::thing('note', '{}')", document_id);
-        if let Err(e) = self.client.query(&wikilink_out_query, &[]).await {
-            warn!("Error deleting outgoing wikilinks for {}: {}", document_id, e);
-        }
+        self.client
+            .query(
+                r#"
+                DELETE properties WHERE entity_id = type::thing($table, $id);
+                "#,
+                &[json!({
+                    "table": entity_id.table,
+                    "id": entity_id.id,
+                })],
+            )
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to delete properties for {}: {}", document_id, e)
+            })?;
 
-        let wikilink_in_query = format!("DELETE FROM wikilink WHERE to_note = type::thing('note', '{}')", document_id);
-        if let Err(e) = self.client.query(&wikilink_in_query, &[]).await {
-            warn!("Error deleting incoming wikilinks for {}: {}", document_id, e);
-        }
+        self.client
+            .query(
+                r#"
+                DELETE relations WHERE in = type::thing($table, $id);
+                DELETE relations WHERE out = type::thing($table, $id);
+                "#,
+                &[json!({
+                    "table": entity_id.table,
+                    "id": entity_id.id,
+                })],
+            )
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to delete relations for {}: {}", document_id, e)
+            })?;
 
-        // Delete tag associations
-        let tag_query = format!("DELETE FROM note_tag WHERE note = type::thing('note', '{}')", document_id);
-        if let Err(e) = self.client.query(&tag_query, &[]).await {
-            warn!("Error deleting tag associations for {}: {}", document_id, e);
-        }
+        store.delete_entity_tags(&entity_id).await.map_err(|e| {
+            anyhow::anyhow!("Failed to delete entity tags for {}: {}", document_id, e)
+        })?;
 
-        debug!("Successfully deleted document and all relationships: {}", document_id);
+        self.client
+            .query(
+                r#"
+                DELETE type::thing($table, $id);
+                "#,
+                &[json!({
+                    "table": entity_id.table,
+                    "id": entity_id.id,
+                })],
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to delete entity {}: {}", document_id, e))?;
+
+        debug!("Successfully deleted entity and relations: {}", document_id);
         Ok(())
     }
 }
@@ -906,7 +1145,9 @@ impl DatabaseTransactionConsumer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transaction_queue::{TransactionQueue, TransactionQueueConfig, DatabaseTransaction, TransactionTimestamp};
+    use crate::transaction_queue::{
+        DatabaseTransaction, TransactionQueue, TransactionQueueConfig, TransactionTimestamp,
+    };
     use std::path::PathBuf;
 
     #[tokio::test]
@@ -940,12 +1181,24 @@ mod tests {
         );
 
         // Test exponential backoff
-        assert_eq!(consumer.calculate_retry_delay(1), Duration::from_millis(1000));
-        assert_eq!(consumer.calculate_retry_delay(2), Duration::from_millis(2000));
-        assert_eq!(consumer.calculate_retry_delay(3), Duration::from_millis(4000));
+        assert_eq!(
+            consumer.calculate_retry_delay(1),
+            Duration::from_millis(1000)
+        );
+        assert_eq!(
+            consumer.calculate_retry_delay(2),
+            Duration::from_millis(2000)
+        );
+        assert_eq!(
+            consumer.calculate_retry_delay(3),
+            Duration::from_millis(4000)
+        );
 
         // Test max delay capping
-        assert_eq!(consumer.calculate_retry_delay(10), Duration::from_millis(10000));
+        assert_eq!(
+            consumer.calculate_retry_delay(10),
+            Duration::from_millis(10000)
+        );
     }
 
     #[tokio::test]

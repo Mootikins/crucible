@@ -269,7 +269,10 @@ impl FileInfo {
 
     /// Check if the file is a text file
     pub fn is_text(&self) -> bool {
-        matches!(self.file_type, FileType::Text | FileType::Markdown | FileType::Code)
+        matches!(
+            self.file_type,
+            FileType::Text | FileType::Markdown | FileType::Code
+        )
     }
 
     /// Check if the file is a code file
@@ -310,18 +313,16 @@ impl FileInfo {
     pub fn update_metadata(&mut self) -> Result<(), Error> {
         use std::fs;
 
-        let metadata = fs::metadata(&self.path)
-            .map_err(|e| Error::FileIoError {
-                path: self.path.clone(),
-                error: e.to_string(),
-            })?;
+        let metadata = fs::metadata(&self.path).map_err(|e| Error::FileIoError {
+            path: self.path.clone(),
+            error: e.to_string(),
+        })?;
 
         self.file_size = metadata.len();
-        self.modified_time = metadata.modified()
-            .map_err(|e| Error::FileIoError {
-                path: self.path.clone(),
-                error: e.to_string(),
-            })?;
+        self.modified_time = metadata.modified().map_err(|e| Error::FileIoError {
+            path: self.path.clone(),
+            error: e.to_string(),
+        })?;
 
         self.created_time = metadata.created().ok();
         self.is_accessible = true;
@@ -333,9 +334,7 @@ impl FileInfo {
             if metadata.permissions().readonly() {
                 self.permissions = Some(FilePermissions::ReadOnly);
             } else {
-                self.permissions = Some(FilePermissions::Writable(
-                    metadata.permissions().mode()
-                ));
+                self.permissions = Some(FilePermissions::Writable(metadata.permissions().mode()));
             }
         }
 
@@ -627,20 +626,26 @@ impl FileType {
         match extension.as_deref() {
             Some("md") | Some("markdown") => FileType::Markdown,
             Some("txt") | Some("text") => FileType::Text,
-            Some("rs") | Some("py") | Some("js") | Some("ts") | Some("jsx") | Some("tsx") |
-            Some("go") | Some("java") | Some("c") | Some("cpp") | Some("h") | Some("hpp") |
-            Some("cs") | Some("php") | Some("rb") | Some("swift") | Some("kt") |
-            Some("scala") | Some("clj") | Some("hs") | Some("ml") | Some("sh") => FileType::Code,
-            Some("yaml") | Some("yml") | Some("json") | Some("toml") | Some("ini") |
-            Some("cfg") | Some("conf") | Some("xml") | Some("plist") => FileType::Config,
-            Some("pdf") | Some("doc") | Some("docx") | Some("odt") | Some("rtf") => FileType::Document,
-            Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("svg") | Some("bmp") |
-            Some("webp") | Some("ico") => FileType::Image,
+            Some("rs") | Some("py") | Some("js") | Some("ts") | Some("jsx") | Some("tsx")
+            | Some("go") | Some("java") | Some("c") | Some("cpp") | Some("h") | Some("hpp")
+            | Some("cs") | Some("php") | Some("rb") | Some("swift") | Some("kt")
+            | Some("scala") | Some("clj") | Some("hs") | Some("ml") | Some("sh") => FileType::Code,
+            Some("yaml") | Some("yml") | Some("json") | Some("toml") | Some("ini")
+            | Some("cfg") | Some("conf") | Some("xml") | Some("plist") => FileType::Config,
+            Some("pdf") | Some("doc") | Some("docx") | Some("odt") | Some("rtf") => {
+                FileType::Document
+            }
+            Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("svg") | Some("bmp")
+            | Some("webp") | Some("ico") => FileType::Image,
             Some("mp3") | Some("wav") | Some("ogg") | Some("flac") | Some("aac") => FileType::Audio,
-            Some("mp4") | Some("avi") | Some("mov") | Some("wmv") | Some("flv") | Some("webm") => FileType::Video,
-            Some("zip") | Some("tar") | Some("gz") | Some("bz2") | Some("xz") | Some("7z") |
-            Some("rar") | Some("deb") | Some("rpm") => FileType::Archive,
-            Some("exe") | Some("dll") | Some("so") | Some("dylib") | Some("bin") | Some("app") => FileType::Binary,
+            Some("mp4") | Some("avi") | Some("mov") | Some("wmv") | Some("flv") | Some("webm") => {
+                FileType::Video
+            }
+            Some("zip") | Some("tar") | Some("gz") | Some("bz2") | Some("xz") | Some("7z")
+            | Some("rar") | Some("deb") | Some("rpm") => FileType::Archive,
+            Some("exe") | Some("dll") | Some("so") | Some("dylib") | Some("bin") | Some("app") => {
+                FileType::Binary
+            }
             _ => FileType::Unknown,
         }
     }
@@ -780,15 +785,12 @@ impl Default for ScanConfig {
                 FileType::Code,
                 FileType::Config,
             ],
-            exclude_types: vec![
-                FileType::Binary,
-                FileType::Archive,
-            ],
+            exclude_types: vec![FileType::Binary, FileType::Archive],
             exclude_patterns: vec![
                 "*.tmp".to_string(),
                 "*.cache".to_string(),
                 ".git/**".to_string(),
-                "node_modules/**".to_string(),  // Match any depth in node_modules
+                "node_modules/**".to_string(), // Match any depth in node_modules
                 "target/**".to_string(),
             ],
             follow_symlinks: false,
@@ -1103,15 +1105,36 @@ mod tests {
 
     #[test]
     fn test_file_type_detection() {
-        assert_eq!(FileType::from_path(&PathBuf::from("file.md")), FileType::Markdown);
-        assert_eq!(FileType::from_path(&PathBuf::from("script.rs")), FileType::Code);
-        assert_eq!(FileType::from_path(&PathBuf::from("config.yaml")), FileType::Config);
-        assert_eq!(FileType::from_path(&PathBuf::from("image.png")), FileType::Image);
-        assert_eq!(FileType::from_path(&PathBuf::from("unknown.xyz")), FileType::Unknown);
+        assert_eq!(
+            FileType::from_path(&PathBuf::from("file.md")),
+            FileType::Markdown
+        );
+        assert_eq!(
+            FileType::from_path(&PathBuf::from("script.rs")),
+            FileType::Code
+        );
+        assert_eq!(
+            FileType::from_path(&PathBuf::from("config.yaml")),
+            FileType::Config
+        );
+        assert_eq!(
+            FileType::from_path(&PathBuf::from("image.png")),
+            FileType::Image
+        );
+        assert_eq!(
+            FileType::from_path(&PathBuf::from("unknown.xyz")),
+            FileType::Unknown
+        );
 
         // Test case insensitivity
-        assert_eq!(FileType::from_path(&PathBuf::from("FILE.MD")), FileType::Markdown);
-        assert_eq!(FileType::from_path(&PathBuf::from("SCRIPT.RS")), FileType::Code);
+        assert_eq!(
+            FileType::from_path(&PathBuf::from("FILE.MD")),
+            FileType::Markdown
+        );
+        assert_eq!(
+            FileType::from_path(&PathBuf::from("SCRIPT.RS")),
+            FileType::Code
+        );
     }
 
     #[test]
@@ -1325,8 +1348,14 @@ mod tests {
     #[test]
     fn test_file_permissions_display() {
         assert_eq!(FilePermissions::ReadOnly.to_string(), "read-only");
-        assert_eq!(FilePermissions::Writable(0o644).to_string(), "writable(0o644)");
-        assert_eq!(FilePermissions::Executable(0o755).to_string(), "executable(0o755)");
+        assert_eq!(
+            FilePermissions::Writable(0o644).to_string(),
+            "writable(0o644)"
+        );
+        assert_eq!(
+            FilePermissions::Executable(0o755).to_string(),
+            "executable(0o755)"
+        );
     }
 
     #[test]

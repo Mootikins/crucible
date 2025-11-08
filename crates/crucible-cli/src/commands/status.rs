@@ -1,16 +1,18 @@
 use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH, Instant};
-use std::sync::Arc;
 use serde_json;
-use tabled::{Table, Tabled, settings::Style};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use tabled::{settings::Style, Table, Tabled};
 
 use crate::config::CliConfig;
 use crate::output;
-use crucible_core::storage::{ContentAddressedStorage, StorageResult};
-use crucible_core::storage::builder::{ContentAddressedStorageBuilder, StorageBackendType, HasherConfig};
 use crucible_core::hashing::blake3::Blake3Hasher;
-use crucible_core::parser::{StorageAwareParser, PulldownParser};
+use crucible_core::parser::{PulldownParser, StorageAwareParser};
+use crucible_core::storage::builder::{
+    ContentAddressedStorageBuilder, HasherConfig, StorageBackendType,
+};
+use crucible_core::storage::{ContentAddressedStorage, StorageResult};
 
 /// Output formats for status command
 #[derive(Debug, Clone)]
@@ -89,9 +91,7 @@ pub async fn execute(
 
     // Create parser with storage integration
     let block_parser = PulldownParser::new();
-    let parser = StorageAwareParser::new(
-        Box::new(block_parser),
-    );
+    let parser = StorageAwareParser::new(Box::new(block_parser));
 
     // Gather status information
     let status_info = if let Some(path) = path {
@@ -129,10 +129,7 @@ fn create_storage_backend(_config: &CliConfig) -> StorageResult<Arc<dyn ContentA
 }
 
 /// Get status for a specific path
-async fn get_path_status(
-    _parser: &StorageAwareParser,
-    path: &Path,
-) -> Result<StatusInfo> {
+async fn get_path_status(_parser: &StorageAwareParser, path: &Path) -> Result<StatusInfo> {
     // For now, return basic path information
     // TODO: Implement proper status checking when StorageAwareParser API is finalized
 
@@ -169,7 +166,8 @@ async fn get_path_status(
 
 /// Get global storage status
 async fn get_global_status(storage: &Arc<dyn ContentAddressedStorage>) -> Result<StatusInfo> {
-    let storage_stats = storage.get_stats()
+    let storage_stats = storage
+        .get_stats()
         .await
         .context("Failed to get storage statistics")?;
 
@@ -190,11 +188,7 @@ async fn get_global_status(storage: &Arc<dyn ContentAddressedStorage>) -> Result
 }
 
 /// Output in table format
-fn output_table_format(
-    status_info: &StatusInfo,
-    detailed: bool,
-    recent: bool,
-) -> Result<()> {
+fn output_table_format(status_info: &StatusInfo, detailed: bool, recent: bool) -> Result<()> {
     output::header("Storage Status");
 
     // Storage Overview
@@ -226,21 +220,25 @@ fn output_table_format(
         },
     ];
 
-    let overview_table = Table::new(&overview_rows)
-        .with(Style::modern())
-        .to_string();
+    let overview_table = Table::new(&overview_rows).with(Style::modern()).to_string();
 
     println!("{}", overview_table);
 
     if detailed {
         output::header("Detailed Information");
-        println!("Backend Specific: {}", serde_json::to_string_pretty(&status_info.backend_specific)?);
+        println!(
+            "Backend Specific: {}",
+            serde_json::to_string_pretty(&status_info.backend_specific)?
+        );
 
         // Memory usage (for in-memory backend)
         if status_info.storage_backend == "InMemory" {
             println!("\nMemory Usage:");
-            println!("  Blocks: ~{}", format_bytes(status_info.total_blocks * 1024)); // Estimate
-            println!("  Trees: ~{}", format_bytes(status_info.total_trees * 512));   // Estimate
+            println!(
+                "  Blocks: ~{}",
+                format_bytes(status_info.total_blocks * 1024)
+            ); // Estimate
+            println!("  Trees: ~{}", format_bytes(status_info.total_trees * 512)); // Estimate
             println!("  Total: {}", format_bytes(status_info.storage_size_bytes));
         }
     }
@@ -250,11 +248,13 @@ fn output_table_format(
         if status_info.recent_changes.is_empty() {
             println!("No recent activity recorded");
         } else {
-            let activity_rows: Vec<ActivityRow> = status_info.recent_changes
+            let activity_rows: Vec<ActivityRow> = status_info
+                .recent_changes
                 .iter()
                 .take(10) // Limit to 10 recent activities
                 .map(|activity| {
-                    let timestamp = activity.timestamp
+                    let timestamp = activity
+                        .timestamp
                         .duration_since(UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_secs();
@@ -267,9 +267,7 @@ fn output_table_format(
                 })
                 .collect();
 
-            let activity_table = Table::new(&activity_rows)
-                .with(Style::modern())
-                .to_string();
+            let activity_table = Table::new(&activity_rows).with(Style::modern()).to_string();
 
             println!("{}", activity_table);
         }
@@ -279,12 +277,9 @@ fn output_table_format(
 }
 
 /// Output in JSON format
-fn output_json_format(
-    status_info: &StatusInfo,
-    detailed: bool,
-    recent: bool,
-) -> Result<()> {
-    let last_activity_timestamp = status_info.last_activity
+fn output_json_format(status_info: &StatusInfo, detailed: bool, recent: bool) -> Result<()> {
+    let last_activity_timestamp = status_info
+        .last_activity
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
@@ -306,10 +301,12 @@ fn output_json_format(
     }
 
     if recent {
-        output["recent_changes"] = serde_json::json!(status_info.recent_changes
+        output["recent_changes"] = serde_json::json!(status_info
+            .recent_changes
             .iter()
             .map(|activity| {
-                let timestamp = activity.timestamp
+                let timestamp = activity
+                    .timestamp
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs();
@@ -321,8 +318,7 @@ fn output_json_format(
                     "size_delta": activity.size_delta,
                 })
             })
-            .collect::<Vec<_>>()
-        );
+            .collect::<Vec<_>>());
     }
 
     println!("{}", serde_json::to_string_pretty(&output)?);
@@ -330,21 +326,26 @@ fn output_json_format(
 }
 
 /// Output in plain text format
-fn output_plain_format(
-    status_info: &StatusInfo,
-    detailed: bool,
-    recent: bool,
-) {
+fn output_plain_format(status_info: &StatusInfo, detailed: bool, recent: bool) {
     output::header("Storage Status");
     println!("Backend: {}", status_info.storage_backend);
     println!("Total Blocks: {}", status_info.total_blocks);
     println!("Total Trees: {}", status_info.total_trees);
-    println!("Storage Size: {}", format_bytes(status_info.storage_size_bytes));
-    println!("Deduplication Ratio: {:.2}x", status_info.deduplication_ratio);
+    println!(
+        "Storage Size: {}",
+        format_bytes(status_info.storage_size_bytes)
+    );
+    println!(
+        "Deduplication Ratio: {:.2}x",
+        status_info.deduplication_ratio
+    );
 
     if detailed {
         println!("\nBackend Specific:");
-        println!("{}", serde_json::to_string_pretty(&status_info.backend_specific).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&status_info.backend_specific).unwrap_or_default()
+        );
     }
 
     if recent {
@@ -353,12 +354,14 @@ fn output_plain_format(
             println!("No recent activity recorded");
         } else {
             for activity in status_info.recent_changes.iter().take(5) {
-                let timestamp = activity.timestamp
+                let timestamp = activity
+                    .timestamp
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs();
 
-                println!("  [{}] {}: {}",
+                println!(
+                    "  [{}] {}: {}",
                     format_timestamp(timestamp),
                     activity.activity_type,
                     activity.description
@@ -391,8 +394,7 @@ fn format_timestamp(timestamp: u64) -> String {
     if timestamp == 0 {
         "-".to_string()
     } else {
-        let datetime = chrono::DateTime::from_timestamp(timestamp as i64, 0)
-            .unwrap_or_default();
+        let datetime = chrono::DateTime::from_timestamp(timestamp as i64, 0).unwrap_or_default();
         datetime.format("%Y-%m-%d %H:%M:%S").to_string()
     }
 }

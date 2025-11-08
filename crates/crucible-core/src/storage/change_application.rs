@@ -20,13 +20,13 @@
 //! - Comprehensive error handling and recovery
 
 use crate::storage::{
-    MerkleTree, MerkleNode, EnhancedTreeChange, HashedBlock,
-    StorageResult, StorageError, ContentHasher
+    ContentHasher, EnhancedTreeChange, HashedBlock, MerkleNode, MerkleTree, StorageError,
+    StorageResult,
 };
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use parking_lot::RwLock;
 
 /// Result of applying changes to a Merkle tree
 #[derive(Debug, Clone)]
@@ -193,13 +193,19 @@ impl Default for ApplicationConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChangeTransformation {
     /// Change was optimized or combined with other changes
-    Optimized { original_type: String, new_type: String },
+    Optimized {
+        original_type: String,
+        new_type: String,
+    },
     /// Change was split into multiple smaller changes
     Split { sub_changes: Vec<String> },
     /// Change was merged with other changes
     Merged { merged_with: Vec<String> },
     /// Change was reordered for better performance
-    Reordered { original_index: usize, new_index: usize },
+    Reordered {
+        original_index: usize,
+        new_index: usize,
+    },
 }
 
 /// Change application system with rollback capability
@@ -380,7 +386,10 @@ impl ChangeApplicationSystem {
         let applied_count = applied_changes.len();
 
         // If there are failed changes and strict validation is enabled with stop_on_first_error, return an error
-        if self.config.enable_strict_validation && self.config.stop_on_first_error && !failed_changes.is_empty() {
+        if self.config.enable_strict_validation
+            && self.config.stop_on_first_error
+            && !failed_changes.is_empty()
+        {
             return Err(StorageError::InvalidOperation(format!(
                 "Validation failed for {} out of {} changes",
                 failed_changes.len(),
@@ -432,11 +441,7 @@ impl ChangeApplicationSystem {
     }
 
     /// Validate a single change before application
-    fn validate_change(
-        &self,
-        change: &EnhancedTreeChange,
-        tree: &MerkleTree,
-    ) -> StorageResult<()> {
+    fn validate_change(&self, change: &EnhancedTreeChange, tree: &MerkleTree) -> StorageResult<()> {
         match change {
             EnhancedTreeChange::AddedBlock { index, hash, .. } => {
                 // Be very strict about where blocks can be added
@@ -448,10 +453,17 @@ impl ChangeApplicationSystem {
                     )));
                 }
                 if hash.is_empty() {
-                    return Err(StorageError::InvalidHash("Empty hash for added block".to_string()));
+                    return Err(StorageError::InvalidHash(
+                        "Empty hash for added block".to_string(),
+                    ));
                 }
             }
-            EnhancedTreeChange::ModifiedBlock { index, old_hash, new_hash, .. } => {
+            EnhancedTreeChange::ModifiedBlock {
+                index,
+                old_hash,
+                new_hash,
+                ..
+            } => {
                 if *index >= tree.block_count {
                     return Err(StorageError::InvalidIndex(format!(
                         "Modified block index {} exceeds tree size {}",
@@ -459,7 +471,9 @@ impl ChangeApplicationSystem {
                     )));
                 }
                 if old_hash.is_empty() || new_hash.is_empty() {
-                    return Err(StorageError::InvalidHash("Empty hash for modified block".to_string()));
+                    return Err(StorageError::InvalidHash(
+                        "Empty hash for modified block".to_string(),
+                    ));
                 }
             }
             EnhancedTreeChange::DeletedBlock { index, hash, .. } => {
@@ -470,10 +484,16 @@ impl ChangeApplicationSystem {
                     )));
                 }
                 if hash.is_empty() {
-                    return Err(StorageError::InvalidHash("Empty hash for deleted block".to_string()));
+                    return Err(StorageError::InvalidHash(
+                        "Empty hash for deleted block".to_string(),
+                    ));
                 }
             }
-            EnhancedTreeChange::MovedBlock { old_index, new_index, .. } => {
+            EnhancedTreeChange::MovedBlock {
+                old_index,
+                new_index,
+                ..
+            } => {
                 let max_index = tree.block_count.max(*old_index).max(*new_index);
                 if max_index >= tree.block_count * 2 {
                     return Err(StorageError::InvalidIndex(format!(
@@ -502,15 +522,18 @@ impl ChangeApplicationSystem {
             EnhancedTreeChange::AddedBlock { index, hash, .. } => {
                 self.apply_added_block(tree, *index, hash, hasher)
             }
-            EnhancedTreeChange::ModifiedBlock { index, new_hash, .. } => {
-                self.apply_modified_block(tree, *index, new_hash, hasher)
-            }
+            EnhancedTreeChange::ModifiedBlock {
+                index, new_hash, ..
+            } => self.apply_modified_block(tree, *index, new_hash, hasher),
             EnhancedTreeChange::DeletedBlock { index, .. } => {
                 self.apply_deleted_block(tree, *index, hasher)
             }
-            EnhancedTreeChange::MovedBlock { old_index, new_index, hash, .. } => {
-                self.apply_moved_block(tree, *old_index, *new_index, hash, hasher)
-            }
+            EnhancedTreeChange::MovedBlock {
+                old_index,
+                new_index,
+                hash,
+                ..
+            } => self.apply_moved_block(tree, *old_index, *new_index, hash, hasher),
             EnhancedTreeChange::StructureChanged { .. } => {
                 // For structure changes, we need to rebuild the tree
                 // This is a simplified implementation
@@ -518,9 +541,10 @@ impl ChangeApplicationSystem {
             }
             _ => {
                 // Placeholder for other change types
-                Err(StorageError::UnsupportedOperation(
-                    format!("Change type not yet implemented: {:?}", change)
-                ))
+                Err(StorageError::UnsupportedOperation(format!(
+                    "Change type not yet implemented: {:?}",
+                    change
+                )))
             }
         }
     }
@@ -591,7 +615,8 @@ impl ChangeApplicationSystem {
         if index >= tree.leaf_hashes.len() {
             return Err(StorageError::InvalidIndex(format!(
                 "Cannot modify block at index {} in tree with {} blocks",
-                index, tree.leaf_hashes.len()
+                index,
+                tree.leaf_hashes.len()
             )));
         }
 
@@ -650,7 +675,8 @@ impl ChangeApplicationSystem {
         if index >= tree.leaf_hashes.len() {
             return Err(StorageError::InvalidIndex(format!(
                 "Cannot delete block at index {} in tree with {} blocks",
-                index, tree.leaf_hashes.len()
+                index,
+                tree.leaf_hashes.len()
             )));
         }
 
@@ -721,14 +747,16 @@ impl ChangeApplicationSystem {
         if old_index >= tree.leaf_hashes.len() {
             return Err(StorageError::InvalidIndex(format!(
                 "Cannot move block from index {} in tree with {} blocks",
-                old_index, tree.leaf_hashes.len()
+                old_index,
+                tree.leaf_hashes.len()
             )));
         }
 
         if new_index >= tree.leaf_hashes.len() {
             return Err(StorageError::InvalidIndex(format!(
                 "Cannot move block to index {} in tree with {} blocks",
-                new_index, tree.leaf_hashes.len()
+                new_index,
+                tree.leaf_hashes.len()
             )));
         }
 
@@ -772,7 +800,10 @@ impl ChangeApplicationSystem {
                     metadata: Default::default(),
                 },
                 expected_state: new_tree.root_hash.clone(),
-                description: format!("Rollback move of block from index {} to {}", old_index, new_index),
+                description: format!(
+                    "Rollback move of block from index {} to {}",
+                    old_index, new_index
+                ),
             })
         } else {
             None
@@ -792,7 +823,8 @@ impl ChangeApplicationSystem {
     {
         // For structure changes, we typically need to rebuild the tree
         // This is a simplified implementation
-        let hashed_blocks: Vec<_> = tree.leaf_hashes
+        let hashed_blocks: Vec<_> = tree
+            .leaf_hashes
             .iter()
             .enumerate()
             .map(|(i, h)| {
@@ -829,7 +861,10 @@ impl ChangeApplicationSystem {
     }
 
     /// Optimize a list of changes before application
-    fn optimize_changes(&self, changes: &[EnhancedTreeChange]) -> StorageResult<Vec<EnhancedTreeChange>> {
+    fn optimize_changes(
+        &self,
+        changes: &[EnhancedTreeChange],
+    ) -> StorageResult<Vec<EnhancedTreeChange>> {
         // This is a simplified optimization implementation
         // A full implementation would:
         // 1. Combine consecutive operations on the same block
@@ -850,7 +885,8 @@ impl ChangeApplicationSystem {
                 _ => continue, // Structure changes and others are handled separately
             };
 
-            block_operations.entry(index)
+            block_operations
+                .entry(index)
                 .or_insert_with(VecDeque::new)
                 .push_back(change.clone());
         }
@@ -866,16 +902,23 @@ impl ChangeApplicationSystem {
                 let next = &ops[i + 1];
 
                 match (current, next) {
-                    (EnhancedTreeChange::AddedBlock { hash: h1, .. },
-                     EnhancedTreeChange::DeletedBlock { hash: h2, .. }) if h1 == h2 => {
+                    (
+                        EnhancedTreeChange::AddedBlock { hash: h1, .. },
+                        EnhancedTreeChange::DeletedBlock { hash: h2, .. },
+                    ) if h1 == h2 => {
                         ops.remove(i);
                         ops.remove(i); // Remove the next element which is now at position i
                     }
-                    (EnhancedTreeChange::DeletedBlock { .. },
-                     EnhancedTreeChange::AddedBlock { .. }) => {
+                    (
+                        EnhancedTreeChange::DeletedBlock { .. },
+                        EnhancedTreeChange::AddedBlock { .. },
+                    ) => {
                         // Convert to a modify operation
-                        if let (EnhancedTreeChange::DeletedBlock { index: del_idx, .. },
-                                EnhancedTreeChange::AddedBlock { hash, .. }) = (&ops[i], &ops[i + 1]) {
+                        if let (
+                            EnhancedTreeChange::DeletedBlock { index: del_idx, .. },
+                            EnhancedTreeChange::AddedBlock { hash, .. },
+                        ) = (&ops[i], &ops[i + 1])
+                        {
                             let modified = EnhancedTreeChange::ModifiedBlock {
                                 index: *del_idx,
                                 old_hash: "".to_string(), // Would need the old hash
@@ -898,10 +941,10 @@ impl ChangeApplicationSystem {
         // Add non-optimizable changes
         for change in changes {
             match change {
-                EnhancedTreeChange::ReorderedBlocks { .. } |
-                EnhancedTreeChange::StructureChanged { .. } |
-                EnhancedTreeChange::SplitBlock { .. } |
-                EnhancedTreeChange::MergedBlocks { .. } => {
+                EnhancedTreeChange::ReorderedBlocks { .. }
+                | EnhancedTreeChange::StructureChanged { .. }
+                | EnhancedTreeChange::SplitBlock { .. }
+                | EnhancedTreeChange::MergedBlocks { .. } => {
                     optimized.push(change.clone());
                 }
                 _ => {} // Already processed
@@ -952,7 +995,7 @@ impl Default for ChangeApplicationSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::diff::{EnhancedTreeChange, ChangeMetadata};
+    use crate::storage::diff::{ChangeMetadata, EnhancedTreeChange};
     use crate::storage::traits::ContentHasher;
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
@@ -1007,7 +1050,8 @@ mod tests {
                     i * 10,
                     i == block_data.len() - 1,
                     hasher,
-                ).unwrap()
+                )
+                .unwrap()
             })
             .collect();
 
@@ -1032,7 +1076,10 @@ mod tests {
         };
 
         let system = ChangeApplicationSystem::with_config(config.clone());
-        assert_eq!(system.config.enable_strict_validation, config.enable_strict_validation);
+        assert_eq!(
+            system.config.enable_strict_validation,
+            config.enable_strict_validation
+        );
         assert_eq!(system.config.max_batch_size, config.max_batch_size);
         assert_eq!(system.config.enable_rollback, config.enable_rollback);
     }
@@ -1180,7 +1227,9 @@ mod tests {
         assert_eq!(result.updated_tree.leaf_hashes.len(), 3);
 
         // Rollback the change
-        let rolled_back_tree = system.rollback_changes(&result.rollback_info, &hasher).unwrap();
+        let rolled_back_tree = system
+            .rollback_changes(&result.rollback_info, &hasher)
+            .unwrap();
 
         // Verify rollback worked
         assert_eq!(rolled_back_tree.root_hash, original_root);
@@ -1260,13 +1309,13 @@ mod tests {
         let tree = create_test_tree_for_changes(&["block1"], &hasher);
 
         // Create more changes than the batch size limit
-        let changes: Vec<_> = (0..5).map(|i| {
-            EnhancedTreeChange::AddedBlock {
+        let changes: Vec<_> = (0..5)
+            .map(|i| EnhancedTreeChange::AddedBlock {
                 index: i + 1,
                 hash: format!("block_hash_{}", i),
                 metadata: ChangeMetadata::default(),
-            }
-        }).collect();
+            })
+            .collect();
 
         let result = system.apply_changes(&tree, &changes, &hasher);
         assert!(result.is_err());
@@ -1320,7 +1369,10 @@ mod tests {
         let applied_change = &result.applied_changes[0];
 
         assert_eq!(applied_change.original_change, change);
-        assert_ne!(applied_change.previous_root_hash, applied_change.new_root_hash);
+        assert_ne!(
+            applied_change.previous_root_hash,
+            applied_change.new_root_hash
+        );
         assert!(applied_change.applied_at > 0);
         assert!(applied_change.transformation.is_none()); // No transformation in this case
     }

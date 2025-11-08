@@ -59,10 +59,7 @@ pub enum Error {
 
     /// Validation error for missing or invalid fields.
     #[error("Validation error for field '{field}': {message}")]
-    ValidationError {
-        field: String,
-        message: String,
-    },
+    ValidationError { field: String, message: String },
 
     /// File I/O error with path context.
     #[error("File I/O error at path '{path}': {error}")]

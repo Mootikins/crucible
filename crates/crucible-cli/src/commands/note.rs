@@ -33,7 +33,9 @@ impl LocalToolInvoker {
 
     fn with_kiln_path(kiln_path: std::path::PathBuf) -> Self {
         Self {
-            registry: Arc::new(std::sync::Mutex::new(crate::common::ToolRegistry::with_kiln_path(kiln_path))),
+            registry: Arc::new(std::sync::Mutex::new(
+                crate::common::ToolRegistry::with_kiln_path(kiln_path),
+            )),
         }
     }
 }
@@ -53,12 +55,14 @@ impl ToolInvoker for LocalToolInvoker {
         session_id: Option<&str>,
     ) -> Result<crucible_tools::ToolResult> {
         let registry = self.registry.lock().unwrap();
-        registry.execute_tool(
-            name,
-            payload,
-            user_id.map(|s| s.to_string()),
-            session_id.map(|s| s.to_string()),
-        ).await
+        registry
+            .execute_tool(
+                name,
+                payload,
+                user_id.map(|s| s.to_string()),
+                session_id.map(|s| s.to_string()),
+            )
+            .await
     }
 }
 

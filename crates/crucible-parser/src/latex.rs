@@ -4,9 +4,9 @@
 //! - Inline math: `$\frac{3}{2}$`
 //! - Block math: `$$\int_0^1 f(x)dx$$`
 
+use super::error::{ParseError, ParseErrorType};
 use super::extensions::SyntaxExtension;
 use super::types::DocumentContent;
-use super::error::{ParseError, ParseErrorType};
 use async_trait::async_trait;
 use regex::Regex;
 use std::sync::Arc;
@@ -42,14 +42,11 @@ impl SyntaxExtension for LatexExtension {
     }
 
     fn can_handle(&self, content: &str) -> bool {
-        content.contains('$') && (content.contains("$$") || content.chars().filter(|&c| c == '$').count() >= 2)
+        content.contains('$')
+            && (content.contains("$$") || content.chars().filter(|&c| c == '$').count() >= 2)
     }
 
-    async fn parse(
-        &self,
-        content: &str,
-        doc_content: &mut DocumentContent,
-    ) -> Vec<ParseError> {
+    async fn parse(&self, content: &str, doc_content: &mut DocumentContent) -> Vec<ParseError> {
         let mut errors = Vec::new();
 
         // Extract block math expressions first ($$...$$)
@@ -103,12 +100,14 @@ impl LatexExtension {
             }
 
             // Add the LaTeX expression to document content
-            doc_content.latex_expressions.push(super::types::LatexExpression::new(
-                latex_content.to_string(),
-                true, // is_block
-                full_match.start(),
-                full_match.len(),
-            ));
+            doc_content
+                .latex_expressions
+                .push(super::types::LatexExpression::new(
+                    latex_content.to_string(),
+                    true, // is_block
+                    full_match.start(),
+                    full_match.len(),
+                ));
         }
 
         Ok(())
@@ -158,12 +157,14 @@ impl LatexExtension {
 
             // Skip escaped dollar signs (replaces negative lookbehind/lookahead)
             // We need to check the original content for escaped $
-            let original_content_start = original_content.char_indices()
+            let original_content_start = original_content
+                .char_indices()
                 .nth(match_start)
                 .map(|(idx, _)| idx)
                 .unwrap_or(0);
 
-            let original_content_end = original_content.char_indices()
+            let original_content_end = original_content
+                .char_indices()
                 .nth(match_end)
                 .map(|(idx, _)| idx)
                 .unwrap_or(original_content.len());
@@ -181,12 +182,14 @@ impl LatexExtension {
             }
 
             // Add the LaTeX expression to document content
-            doc_content.latex_expressions.push(super::types::LatexExpression::new(
-                latex_content.to_string(),
-                false, // is_inline
-                full_match.start(),
-                full_match.len(),
-            ));
+            doc_content
+                .latex_expressions
+                .push(super::types::LatexExpression::new(
+                    latex_content.to_string(),
+                    false, // is_inline
+                    full_match.start(),
+                    full_match.len(),
+                ));
         }
 
         Ok(())
@@ -220,7 +223,11 @@ impl LatexExtension {
             return Err(ParseError::warning(
                 format!(
                     "Unbalanced braces in LaTeX expression: {} extra {}",
-                    if brace_count > 0 { "opening" } else { "closing" },
+                    if brace_count > 0 {
+                        "opening"
+                    } else {
+                        "closing"
+                    },
                     brace_count.abs()
                 ),
                 ParseErrorType::InvalidLatex,

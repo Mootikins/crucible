@@ -89,10 +89,7 @@ pub struct Repl {
 
 impl Repl {
     /// Create a new REPL instance
-    pub async fn new(
-        core: Arc<CrucibleCore>,
-        cli_config: &CliConfig,
-    ) -> Result<Self> {
+    pub async fn new(core: Arc<CrucibleCore>, cli_config: &CliConfig) -> Result<Self> {
         info!("Initializing REPL with Core");
 
         // Create simple REPL config (just UI settings, no DB path)
@@ -773,8 +770,8 @@ impl Repl {
         std::fs::create_dir_all(&config_dir)?;
 
         // Use the examples/test-kiln directory as the test kiln
-        let test_kiln_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../examples/test-kiln");
+        let test_kiln_path =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/test-kiln");
 
         // Create storage with in-memory database
         let storage_config = SurrealDbConfig {
@@ -784,11 +781,13 @@ impl Repl {
             max_connections: Some(10),
             timeout_seconds: Some(30),
         };
-        let storage = SurrealClient::new(storage_config).await
+        let storage = SurrealClient::new(storage_config)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to create test storage: {}", e))?;
 
         // Initialize kiln schema
-        crucible_surrealdb::kiln_integration::initialize_kiln_schema(&storage).await
+        crucible_surrealdb::kiln_integration::initialize_kiln_schema(&storage)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to initialize kiln schema: {}", e))?;
 
         // Populate database with test-kiln data
@@ -799,7 +798,7 @@ impl Repl {
             CrucibleCore::builder()
                 .with_storage(storage)
                 .build()
-                .map_err(|e| anyhow::anyhow!(e))?
+                .map_err(|e| anyhow::anyhow!(e))?,
         );
 
         // Create minimal REPL state
@@ -842,9 +841,12 @@ impl Repl {
     }
 
     /// Populate test database with data from test-kiln directory
-    async fn populate_test_data(storage: &SurrealClient, kiln_path: &std::path::Path) -> Result<()> {
-        use crucible_surrealdb::kiln_integration::store_parsed_document;
+    async fn populate_test_data(
+        storage: &SurrealClient,
+        kiln_path: &std::path::Path,
+    ) -> Result<()> {
         use crucible_core::ParsedDocument;
+        use crucible_surrealdb::kiln_integration::store_parsed_document;
 
         // Scan for markdown files in test-kiln
         let mut files = Vec::new();
@@ -876,15 +878,14 @@ impl Repl {
             doc.file_size = content.len() as u64;
 
             // Store document in database
-            store_parsed_document(storage, &doc, kiln_path).await
+            store_parsed_document(storage, &doc, kiln_path)
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to store document {:?}: {}", file_path, e))?;
         }
 
         Ok(())
     }
-
 }
-
 
 /// REPL configuration
 #[derive(Debug, Clone)]
@@ -903,9 +904,7 @@ impl ReplConfig {
     ///
     /// This creates a minimal config with just UI settings (history, format, etc.).
     /// Database path is no longer needed here - Core owns the database.
-    pub(crate) fn from_cli_config(
-        cli_config: &crate::config::CliConfig,
-    ) -> Result<Self> {
+    pub(crate) fn from_cli_config(cli_config: &crate::config::CliConfig) -> Result<Self> {
         let kiln_path = cli_config.kiln.path.clone();
         let config_dir = dirs::home_dir()
             .ok_or_else(|| anyhow::anyhow!("Failed to get home directory"))?

@@ -71,9 +71,9 @@ impl DatabaseTransaction {
     /// Get the transaction priority (lower number = higher priority)
     pub fn priority(&self) -> u8 {
         match self {
-            DatabaseTransaction::Create { .. } => 1,  // High priority - new documents
-            DatabaseTransaction::Update { .. } => 2,  // Medium priority - changes to existing
-            DatabaseTransaction::Delete { .. } => 3,  // Lower priority - cleanup
+            DatabaseTransaction::Create { .. } => 1, // High priority - new documents
+            DatabaseTransaction::Update { .. } => 2, // Medium priority - changes to existing
+            DatabaseTransaction::Delete { .. } => 3, // Lower priority - cleanup
         }
     }
 
@@ -92,8 +92,10 @@ impl DatabaseTransaction {
         match (self, other) {
             // Update/Delete operations on the same document should be ordered
             (
-                DatabaseTransaction::Update { document: _, .. } | DatabaseTransaction::Delete { document_id: _, .. },
-                DatabaseTransaction::Create { document: _, .. } | DatabaseTransaction::Update { document: _, .. },
+                DatabaseTransaction::Update { document: _, .. }
+                | DatabaseTransaction::Delete { document_id: _, .. },
+                DatabaseTransaction::Create { document: _, .. }
+                | DatabaseTransaction::Update { document: _, .. },
             ) => {
                 let self_id = match self {
                     DatabaseTransaction::Update { document, .. } => document.path.clone(),
@@ -237,8 +239,10 @@ struct QueueMetrics {
 }
 
 /// Channel types used for transaction communication
-pub type TransactionSender = mpsc::Sender<(DatabaseTransaction, oneshot::Sender<TransactionResult>)>;
-pub type TransactionReceiver = mpsc::Receiver<(DatabaseTransaction, oneshot::Sender<TransactionResult>)>;
+pub type TransactionSender =
+    mpsc::Sender<(DatabaseTransaction, oneshot::Sender<TransactionResult>)>;
+pub type TransactionReceiver =
+    mpsc::Receiver<(DatabaseTransaction, oneshot::Sender<TransactionResult>)>;
 pub type ResultSender = oneshot::Sender<TransactionResult>;
 pub type ResultReceiver = oneshot::Receiver<TransactionResult>;
 pub type StatsWatcher = watch::Receiver<QueueStats>;
@@ -350,12 +354,16 @@ impl TransactionQueue {
     /// Get the receiver for transactions (can only be called once)
     pub fn receiver(&self) -> TransactionReceiver {
         let mut receiver_guard = self.receiver.lock().unwrap();
-        receiver_guard.take()
+        receiver_guard
+            .take()
             .expect("TransactionQueue receiver can only be taken once")
     }
 
     /// Enqueue a transaction, waiting if the queue is full.
-    pub async fn enqueue(&self, transaction: DatabaseTransaction) -> Result<ResultReceiver, QueueError> {
+    pub async fn enqueue(
+        &self,
+        transaction: DatabaseTransaction,
+    ) -> Result<ResultReceiver, QueueError> {
         let (result_sender, result_receiver) = oneshot::channel();
 
         // Track enqueue metrics
@@ -364,7 +372,9 @@ impl TransactionQueue {
             metrics.total_enqueued += 1;
         }
 
-        self.sender.send((transaction, result_sender)).await
+        self.sender
+            .send((transaction, result_sender))
+            .await
             .map_err(|_| QueueError::QueueClosed)?;
 
         Ok(result_receiver)

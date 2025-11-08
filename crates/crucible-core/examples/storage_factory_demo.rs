@@ -4,9 +4,9 @@
 //! storage backends using configuration-driven selection.
 
 use crucible_core::storage::{
-    factory::{StorageFactory, StorageConfig, BackendConfig, HashAlgorithm},
-    ContentAddressedStorage,
+    factory::{BackendConfig, HashAlgorithm, StorageConfig, StorageFactory},
     traits::StorageManagement,
+    ContentAddressedStorage,
 };
 use std::sync::Arc;
 
@@ -148,9 +148,15 @@ async fn demo_storage_operations(
     println!("     Statistics:");
     println!("       - Block count: {}", stats.block_count);
     println!("       - Total size: {} bytes", stats.block_size_bytes);
-    println!("       - Avg block size: {:.2} bytes", stats.average_block_size);
+    println!(
+        "       - Avg block size: {:.2} bytes",
+        stats.average_block_size
+    );
     if stats.deduplication_savings > 0 {
-        println!("       - Dedup savings: {} bytes", stats.deduplication_savings);
+        println!(
+            "       - Dedup savings: {} bytes",
+            stats.deduplication_savings
+        );
     }
 
     // Perform maintenance
@@ -159,4 +165,3 @@ async fn demo_storage_operations(
 
     Ok(())
 }
-

@@ -1451,7 +1451,9 @@ timeout_secs = 60
         let mut config = CliConfig::default();
         config.embedding = Some(EmbeddingConfigSection {
             provider: Some("fastembed".to_string()),
-            model: Some(ModelConfigOrString::String("nomic-embed-text-v1.5".to_string())),
+            model: Some(ModelConfigOrString::String(
+                "nomic-embed-text-v1.5".to_string(),
+            )),
             api: None,
             fastembed: FastEmbedOptions {
                 cache_dir: Some(PathBuf::from("/tmp/cache")),
@@ -1499,7 +1501,9 @@ timeout_secs = 60
         let mut config = CliConfig::default();
         config.embedding = Some(EmbeddingConfigSection {
             provider: Some("openai".to_string()),
-            model: Some(ModelConfigOrString::String("text-embedding-3-small".to_string())),
+            model: Some(ModelConfigOrString::String(
+                "text-embedding-3-small".to_string(),
+            )),
             api: None,
             fastembed: Default::default(),
             ollama: Default::default(),

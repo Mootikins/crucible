@@ -166,8 +166,7 @@ impl ObsidianSyncHandler {
                     .await?;
             }
             crate::events::FileEventKind::Deleted => {
-                self.handle_file_deletion(&event.path, &kiln_config)
-                    .await?;
+                self.handle_file_deletion(&event.path, &kiln_config).await?;
             }
             crate::events::FileEventKind::Moved { from, to } => {
                 self.handle_file_move(from, to, &kiln_config).await?;

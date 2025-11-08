@@ -1,9 +1,9 @@
 //! Traits for crucible-parser implementation
 
-use async_trait::async_trait;
-use std::path::Path;
 use crate::error::ParserResult;
 use crate::types::ParsedDocument;
+use async_trait::async_trait;
+use std::path::Path;
 
 /// Core trait for parsing markdown documents
 ///
@@ -16,7 +16,11 @@ pub trait MarkdownParserImplementation: Send + Sync {
     async fn parse_file(&self, path: &Path) -> ParserResult<ParsedDocument>;
 
     /// Parse markdown content from a string
-    async fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedDocument>;
+    async fn parse_content(
+        &self,
+        content: &str,
+        source_path: &Path,
+    ) -> ParserResult<ParsedDocument>;
 
     /// Get parser capabilities
     fn capabilities(&self) -> ParserCapabilities;

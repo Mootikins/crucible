@@ -13,22 +13,19 @@
 //! - **Performance Optimization**: Parallel processing and caching
 //! - **Transaction Support**: Atomic operations across parser and storage
 
-use crate::parser::storage_bridge::{
-    StorageAwareMarkdownParser, StorageAwareParseResult, StorageAwareParserConfig
-};
-use crate::parser::error::ParserResult;
-use crate::storage::{
-    ContentAddressedStorage, MerkleTree,
-    StorageResult, EnhancedTreeChange
-};
 use crate::hashing::blake3::Blake3Hasher;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::collections::{HashMap, HashSet};
-use std::time::SystemTime;
+use crate::parser::error::ParserResult;
+use crate::parser::storage_bridge::{
+    StorageAwareMarkdownParser, StorageAwareParseResult, StorageAwareParserConfig,
+};
+use crate::storage::{ContentAddressedStorage, EnhancedTreeChange, MerkleTree, StorageResult};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::SystemTime;
 use tokio::sync::{RwLock, Semaphore};
 
 /// Configuration for the parser-storage coordinator
@@ -226,7 +223,8 @@ pub trait ParserStorageCoordinator: Send + Sync {
     ///
     /// # Returns
     /// Result of the operation
-    async fn process_operation(&self, operation: ParsingOperation) -> ParserResult<OperationResult>;
+    async fn process_operation(&self, operation: ParsingOperation)
+        -> ParserResult<OperationResult>;
 
     /// Process multiple operations in a batch
     ///
@@ -273,7 +271,10 @@ pub trait ParserStorageCoordinator: Send + Sync {
     ///
     /// # Returns
     /// Current operation status
-    async fn get_operation_status(&self, operation_id: &str) -> ParserResult<Option<OperationResult>>;
+    async fn get_operation_status(
+        &self,
+        operation_id: &str,
+    ) -> ParserResult<Option<OperationResult>>;
 
     /// Cancel an ongoing operation
     ///
@@ -379,9 +380,7 @@ impl DefaultParserStorageCoordinator {
     ///
     /// # Returns
     /// New coordinator instance or error
-    pub async fn with_default_components(
-        config: CoordinatorConfig,
-    ) -> ParserResult<Self> {
+    pub async fn with_default_components(config: CoordinatorConfig) -> ParserResult<Self> {
         // Create default parser
         let base_parser = Box::new(crate::parser::bridge::ParserAdapter::new());
         let parser = Arc::new(
@@ -389,7 +388,7 @@ impl DefaultParserStorageCoordinator {
                 base_parser,
                 StorageAwareParserConfig::default(),
                 Arc::new(Blake3Hasher::new()),
-            )
+            ),
         );
 
         // Create default storage (mock for now)
@@ -420,7 +419,8 @@ impl DefaultParserStorageCoordinator {
 
         // Update average operation time
         let total_time = stats.average_operation_time_ms * (stats.total_operations - 1) as f64;
-        stats.average_operation_time_ms = (total_time + duration_ms as f64) / stats.total_operations as f64;
+        stats.average_operation_time_ms =
+            (total_time + duration_ms as f64) / stats.total_operations as f64;
         stats.last_operation_time = Some(Utc::now());
     }
 
@@ -446,7 +446,10 @@ impl DefaultParserStorageCoordinator {
 
 #[async_trait]
 impl ParserStorageCoordinator for DefaultParserStorageCoordinator {
-    async fn process_operation(&self, operation: ParsingOperation) -> ParserResult<OperationResult> {
+    async fn process_operation(
+        &self,
+        operation: ParsingOperation,
+    ) -> ParserResult<OperationResult> {
         let start_time = SystemTime::now();
         let operation_id = operation.id.clone();
 
@@ -455,10 +458,11 @@ impl ParserStorageCoordinator for DefaultParserStorageCoordinator {
             Ok(permit) => permit,
             Err(_) => {
                 // Wait for available slot
-                self.operation_semaphore.acquire().await
-                    .map_err(|_| crate::parser::error::ParserError::ParseFailed(
-                        "Failed to acquire operation permit".to_string()
-                    ))?
+                self.operation_semaphore.acquire().await.map_err(|_| {
+                    crate::parser::error::ParserError::ParseFailed(
+                        "Failed to acquire operation permit".to_string(),
+                    )
+                })?
             }
         };
 
@@ -474,10 +478,13 @@ impl ParserStorageCoordinator for DefaultParserStorageCoordinator {
 
         let result = match operation.operation_type {
             OperationType::FromFile => {
-                let parse_result = self.parser.parse_file_with_storage(
-                    &operation.source_path,
-                    Some(Arc::clone(&self.storage))
-                ).await;
+                let parse_result = self
+                    .parser
+                    .parse_file_with_storage(
+                        &operation.source_path,
+                        Some(Arc::clone(&self.storage)),
+                    )
+                    .await;
 
                 match parse_result {
                     Ok(result) => OperationResult {
@@ -497,19 +504,22 @@ impl ParserStorageCoordinator for DefaultParserStorageCoordinator {
                         changes: Vec::new(),
                     },
                 }
-            },
+            }
             OperationType::FromContent => {
                 let content = operation.content.ok_or_else(|| {
                     crate::parser::error::ParserError::ParseFailed(
-                        "Content not provided for FromContent operation".to_string()
+                        "Content not provided for FromContent operation".to_string(),
                     )
                 })?;
 
-                let parse_result = self.parser.parse_content_with_storage(
-                    &content,
-                    &operation.source_path,
-                    Some(Arc::clone(&self.storage))
-                ).await;
+                let parse_result = self
+                    .parser
+                    .parse_content_with_storage(
+                        &content,
+                        &operation.source_path,
+                        Some(Arc::clone(&self.storage)),
+                    )
+                    .await;
 
                 match parse_result {
                     Ok(result) => OperationResult {
@@ -529,7 +539,7 @@ impl ParserStorageCoordinator for DefaultParserStorageCoordinator {
                         changes: Vec::new(),
                     },
                 }
-            },
+            }
             OperationType::CompareWithPrevious | OperationType::ReparseWithChanges => {
                 // These would require previous results from cache
                 OperationResult {
@@ -540,7 +550,7 @@ impl ParserStorageCoordinator for DefaultParserStorageCoordinator {
                     error: Some("Operation type not yet implemented".to_string()),
                     changes: Vec::new(),
                 }
-            },
+            }
         };
 
         // Calculate duration
@@ -563,7 +573,8 @@ impl ParserStorageCoordinator for DefaultParserStorageCoordinator {
         }
 
         // Cache the result
-        self.cache_operation_result(&operation_id, final_result.clone()).await;
+        self.cache_operation_result(&operation_id, final_result.clone())
+            .await;
 
         // Update statistics
         self.update_statistics(duration, final_result.success).await;
@@ -581,14 +592,16 @@ impl ParserStorageCoordinator for DefaultParserStorageCoordinator {
 
         if operations.is_empty() {
             return Err(crate::parser::error::ParserError::ParseFailed(
-                "Empty operation batch".to_string()
+                "Empty operation batch".to_string(),
             ));
         }
 
         if operations.len() > self.config.max_batch_size {
-            return Err(crate::parser::error::ParserError::ParseFailed(
-                format!("Batch size {} exceeds maximum {}", operations.len(), self.config.max_batch_size)
-            ));
+            return Err(crate::parser::error::ParserError::ParseFailed(format!(
+                "Batch size {} exceeds maximum {}",
+                operations.len(),
+                self.config.max_batch_size
+            )));
         }
 
         // Begin transaction if enabled
@@ -674,7 +687,10 @@ impl ParserStorageCoordinator for DefaultParserStorageCoordinator {
         Ok(true)
     }
 
-    async fn get_operation_status(&self, operation_id: &str) -> ParserResult<Option<OperationResult>> {
+    async fn get_operation_status(
+        &self,
+        operation_id: &str,
+    ) -> ParserResult<Option<OperationResult>> {
         let cache = self.operation_cache.read().await;
         Ok(cache.get(operation_id).cloned())
     }
@@ -992,7 +1008,10 @@ mod tests {
         let result = coordinator.process_batch(vec![], false).await;
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Empty operation batch"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Empty operation batch"));
     }
 
     #[tokio::test]
@@ -1103,6 +1122,9 @@ mod tests {
 
         assert_eq!(stats.total_documents, deserialized.total_documents);
         assert_eq!(stats.total_content_size, deserialized.total_content_size);
-        assert_eq!(stats.average_deduplication_ratio, deserialized.average_deduplication_ratio);
+        assert_eq!(
+            stats.average_deduplication_ratio,
+            deserialized.average_deduplication_ratio
+        );
     }
 }
