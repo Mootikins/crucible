@@ -38,6 +38,7 @@ pub mod kiln_scanner;
 pub mod kiln_store;
 pub mod query;
 pub mod schema_types;
+pub mod epr;
 pub mod surreal_client;
 pub mod transaction_queue;
 pub mod transaction_consumer;
