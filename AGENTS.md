@@ -30,63 +30,86 @@ This file provides essential information for AI agents to understand and contrib
 ## 🏗️ Architecture
 
 ### Core Components
-- **Rust Core** (`crates/crucible-core/`): Business logic, CRDT operations, document management
-- **Tauri Backend** (`crates/crucible-tauri/`): Desktop app commands, IPC, system integration
-- **Svelte Frontend** (`packages/web/`): UI components, user interactions, real-time updates
-
-> **Note:** The legacy `crucible-services` crate has been removed. Service integrations now live directly inside the remaining crates (primarily the CLI and SurrealDB layers).
-
-## 🔄 Single-Binary Architecture (2025-11)
-
-### Integrated File Processing
-- **No External Daemon**: All file processing happens in-process within the CLI binary
-- **Automatic Processing**: Files are processed automatically on startup, ensuring data is always up-to-date
-- **User Control**: Use `--no-process` to skip processing for quick commands, `--process-timeout` for custom duration
-- **Graceful Degradation**: CLI continues to function even if file processing fails
-- **Incremental Updates**: Only changed files are reprocessed for fast subsequent startups
-
-### CLI File Processing Flow
-1. CLI starts → Scan kiln directory for changes
-2. Process new/modified files with incremental change detection
-3. Update embeddings and database state
-4. Execute user commands with up-to-date data
-5. Handle errors gracefully and continue operation
+- **Rust Core** (`crates/crucible-core/`): Business logic, parsing, storage traits
+- **CLI** (`crates/crucible-cli/`): Command-line interface (current primary interface)
+- **SurrealDB Layer** (`crates/crucible-surrealdb/`): Database integration with EPR schema
+- **Desktop App** (`crates/crucible-tauri/`): Tauri-based desktop application (future)
 
 ### Key Technologies
 - **Rust**: Core performance-critical components
-- **Tauri**: Desktop application framework
-- **Svelte 5**: Modern reactive frontend
-- **Yjs**: CRDT for real-time collaboration
 - **SurrealDB**: Embedded database with RocksDB backend
-- **Rune**: Plugin scripting language
+- **Tauri**: Desktop application framework (future)
+- **Rune**: Plugin scripting language (future)
 
-## 📁 Project Structure
+## 📁 Project Structure & File Organization
 
+### Directory Layout
 ```
 crucible/
-├── crates/
-│   ├── crucible-core/           # Core Rust business logic
-│   └── crucible-tauri/          # Tauri desktop backend
-├── packages/
-│   └── web/                     # Svelte frontend application
-├── docs/                        # Human documentation
-│   └── ARCHITECTURE.md          # System architecture details
-└── CLAUDE.md                    # This file - AI agent instructions
+├── crates/                      # Rust workspace crates
+│   ├── crucible-core/           # Core business logic
+│   ├── crucible-cli/            # CLI application
+│   ├── crucible-surrealdb/      # Database layer
+│   ├── crucible-tauri/          # Desktop app (future)
+│   └── ...                      # Other crates
+├── openspec/                    # Change proposals & specs (see AGENTS.md there)
+│   ├── AGENTS.md                # OpenSpec workflow guide
+│   ├── changes/                 # Proposed changes
+│   └── specs/                   # Current specifications
+├── docs/                        # EMPTY - reserved for future user docs
+├── examples/                    # Example code and demos
+├── packages/                    # Other packages (web UI for desktop, MCP, etc.)
+├── scripts/                     # Build and utility scripts
+├── tests/                       # Integration tests
+├── AGENTS.md                    # This file - AI agent guide
+├── README.md                    # Project overview
+└── Cargo.toml                   # Rust workspace definition
 ```
+
+### 📋 Where to Put Things
+
+**Keep the repo root clean!** Only essential files belong here.
+
+**✅ Allowed in root:**
+- `README.md` - project information
+- `AGENTS.md` - this file (CLAUDE.md symlinks to it)
+- `Cargo.toml`, `package.json` - build configuration
+- `LICENSE`, `.gitignore` - project metadata
+
+**❌ Do NOT create in root:**
+- Documentation (use `docs/` when needed, currently empty)
+- Exploration notes (delete when done)
+- Temporary markdown files (clean up after use)
+- Agent conversation logs (don't commit)
+
+**Where things belong:**
+- **Change proposals**: `openspec/changes/` - see `openspec/AGENTS.md` for full workflow
+- **Specifications**: `openspec/specs/` - current system capabilities
+- **Future user docs**: `docs/` (reserved, currently empty)
+- **Examples**: `examples/`
+- **Scripts**: `scripts/`
+- **Tests**: `tests/` or `crates/*/tests/`
+
+### 🔄 Using OpenSpec
+
+For architectural changes, new features, or breaking changes, use the OpenSpec workflow:
+
+**See `openspec/AGENTS.md` for complete details.** Quick reference:
+- Create proposal in `openspec/changes/[change-id]/`
+- Write `proposal.md`, `tasks.md`, and spec deltas
+- Validate with `openspec validate [change-id] --strict`
+- Get approval before implementing
+
+### 🗂️ Docs Folder
+
+The `docs/` folder is **empty and reserved for future use**. Don't create documentation there without discussion. Use OpenSpec for technical specs and change proposals.
 
 ## 🔧 Development Guidelines
 
 ### Code Style
 - **Rust**: Use `snake_case` for functions/variables, `PascalCase` for types
-- **TypeScript/Svelte**: Use `camelCase` for variables, `PascalCase` for components
-- **Error Handling**: Use `Result<T, E>` in Rust, proper error boundaries in Svelte
-- **Documentation**: Add comments for complex logic, maintain clear commit messages
-
-### File Organization
-- Keep related functionality in appropriate crates/packages
-- Use clear, descriptive file and function names
-- Follow established patterns in existing code
-- Maintain separation between core logic, UI, and external integrations
+- **Error Handling**: Use `Result<T, E>` with proper error context
+- **Documentation**: Add comments for complex logic, clear commit messages
 
 ### Testing
 - Write unit tests for core functionality
@@ -94,103 +117,22 @@ crucible/
 - Test error conditions and edge cases
 - Use descriptive test names that explain the scenario
 
-## 🚀 Common Tasks
-
-### Adding New Features
-1. Identify the appropriate location (core, backend, frontend)
-2. Follow existing patterns and conventions
-3. Add comprehensive tests
-4. Update relevant documentation
-5. Consider performance implications
-
-### Fixing Bugs
-1. Reproduce the issue with minimal test case
-2. Identify root cause through debugging
-3. Implement fix with proper error handling
-4. Add tests to prevent regression
-5. Verify fix doesn't break existing functionality
-
-### Code Review
-1. Check for consistency with project patterns
-2. Verify error handling is comprehensive
-3. Ensure tests provide adequate coverage
-4. Confirm documentation is updated if needed
-5. Consider performance and security implications
-
-## 🔍 Code Analysis Patterns
-
-### Search Commands
-- Use `grep -r "pattern" --include="*.rs"` for Rust code
-- Use `grep -r "pattern" --include="*.ts" --include="*.svelte"` for frontend code
-- Search in both `crates/` and `packages/` directories
-
-### Understanding Code Flow
-1. Start from entry points (main.rs, App.svelte)
-2. Follow function calls and data flow
-3. Look for error handling patterns
-4. Check tests for expected behavior examples
-
-## ⚡ Performance Considerations
-
-### Rust Code
-- Use efficient data structures (HashMap, Vec)
-- Minimize allocations in hot paths
-- Leverage Rust's zero-cost abstractions
-- Consider async/await for I/O operations
-
-### Frontend Code
-- Use Svelte's reactivity efficiently
-- Implement virtual scrolling for large lists
-- Optimize bundle size through tree-shaking
-- Cache expensive computations
-
-## 🔐 Security Guidelines
-
-- Validate all user inputs
-- Use parameterized queries for database operations
-- Sanitize data before rendering
-- Follow principle of least privilege for plugin system
-- Keep dependencies updated and review security advisories
-
-## 📋 Quality Checklist
-
+### Quality Checklist
 Before submitting changes:
 - [ ] Code follows project style guidelines
 - [ ] Tests pass and provide good coverage
 - [ ] Error handling is comprehensive
-- [ ] Documentation is updated if needed
-- [ ] Performance impact is considered
-- [ ] Security implications are reviewed
-- [ ] No console.log or debug code left in
-- [ ] Commit messages are clear and descriptive
-
-## 🤖 Agent-Specific Instructions
-
-### For Claude Code
-- Use the Task tool for complex multi-step operations
-- Leverage TodoWrite for tracking progress
-- Use appropriate tools (Read, Edit, Bash, Grep) based on operation type
-- Follow conventional commit format when creating commits
-
-### For Codex/GitHub Copilot
-- Focus on specific code generation tasks
-- Follow existing patterns and conventions
-- Generate code that is idiomatic for the target language
-- Include appropriate error handling and documentation
-
-### General Guidelines
-- Always consider the broader context of changes
-- Maintain consistency with existing codebase
-- Ask for clarification if requirements are ambiguous
-- Prioritize correctness over cleverness
+- [ ] OpenSpec updated if needed (see `openspec/AGENTS.md`)
+- [ ] Performance and security implications considered
+- [ ] No debug code left in
+- [ ] Conventional commit messages
 
 ## 🔗 Key Resources
 
-- **[Architecture Documentation](./docs/ARCHITECTURE.md)**: Detailed system architecture
-- **[Crucible README](./README.md)**: Project overview and getting started
+- **[STATUS.md](./STATUS.md)**: Current refactor status and next steps
+- **[README.md](./README.md)**: Project overview
+- **[OpenSpec AGENTS.md](./openspec/AGENTS.md)**: Change proposal workflow
 - **[Rust Documentation](https://doc.rust-lang.org/)**: Rust language reference
-- **[Svelte Documentation](https://svelte.dev/docs)**: Svelte framework reference
-- **[Tauri Documentation](https://tauri.app/)**: Tauri framework reference
 
 ---
 
