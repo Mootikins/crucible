@@ -1,4 +1,4 @@
-# Crucible Refactor Status – 2025-02-14
+# Crucible Refactor Status – 2025-11-08
 
 ## Current State
 - Surreal hash storage now reads/writes exclusively through the EPR `entities` table. All lookups, batch queries, content-hash searches, timestamp scans, and CRUD helpers normalize vault paths into `entities:note:*` IDs and operate on entity metadata instead of the legacy `notes` rows.
