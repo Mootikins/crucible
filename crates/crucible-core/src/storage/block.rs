@@ -3,7 +3,7 @@
 //! This module provides functionality for processing content into blocks,
 //! managing block sizes, and creating hashed block representations.
 
-use crate::storage::{StorageResult, StorageError};
+use crate::storage::{StorageError, StorageResult};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
@@ -32,9 +32,9 @@ impl BlockSize {
     /// Get the actual block size in bytes
     pub fn size_bytes(&self) -> usize {
         match self {
-            Self::Small => 1024,      // 1KB
-            Self::Medium => 4096,     // 4KB
-            Self::Large => 8192,      // 8KB
+            Self::Small => 1024,  // 1KB
+            Self::Medium => 4096, // 4KB
+            Self::Large => 8192,  // 8KB
             Self::Adaptive { max, .. } => *max,
             Self::Custom(size) => *size,
         }
@@ -100,13 +100,7 @@ impl HashedBlock {
     /// * `index` - Block index within content
     /// * `offset` - Offset in original content
     /// * `is_last` - Whether this is the final block
-    pub fn new(
-        hash: String,
-        data: Vec<u8>,
-        index: usize,
-        offset: usize,
-        is_last: bool,
-    ) -> Self {
+    pub fn new(hash: String, data: Vec<u8>, index: usize, offset: usize, is_last: bool) -> Self {
         let length = data.len();
         Self {
             hash,
@@ -137,7 +131,9 @@ impl HashedBlock {
         H: crate::storage::ContentHasher + ?Sized,
     {
         if data.is_empty() {
-            return Err(StorageError::BlockSize("Empty block data not allowed".to_string()));
+            return Err(StorageError::BlockSize(
+                "Empty block data not allowed".to_string(),
+            ));
         }
 
         let hash = hasher.hash_block(&data);
@@ -203,16 +199,14 @@ impl BlockProcessor {
     ///
     /// # Returns
     /// Vector of hashed blocks or error if processing fails
-    pub fn process_content<H>(
-        &self,
-        content: &[u8],
-        hasher: &H,
-    ) -> StorageResult<Vec<HashedBlock>>
+    pub fn process_content<H>(&self, content: &[u8], hasher: &H) -> StorageResult<Vec<HashedBlock>>
     where
         H: crate::storage::ContentHasher + ?Sized,
     {
         if content.is_empty() {
-            return Err(StorageError::BlockSize("Empty content cannot be processed".to_string()));
+            return Err(StorageError::BlockSize(
+                "Empty content cannot be processed".to_string(),
+            ));
         }
 
         let content_len = content.len();
@@ -259,7 +253,9 @@ impl BlockProcessor {
         H: crate::storage::ContentHasher + ?Sized,
     {
         if content.is_empty() {
-            return Err(StorageError::BlockSize("Empty content cannot be processed".to_string()));
+            return Err(StorageError::BlockSize(
+                "Empty content cannot be processed".to_string(),
+            ));
         }
 
         let content_bytes = content.as_bytes();
@@ -268,13 +264,7 @@ impl BlockProcessor {
 
         // For small content, just process as a single block
         if content_len <= block_size {
-            let block = HashedBlock::from_data(
-                content_bytes.to_vec(),
-                0,
-                0,
-                true,
-                hasher,
-            )?;
+            let block = HashedBlock::from_data(content_bytes.to_vec(), 0, 0, true, hasher)?;
             return Ok(vec![block]);
         }
 
@@ -291,7 +281,8 @@ impl BlockProcessor {
                 content_len
             } else {
                 // Look for a line break within 10% of target size
-                let search_start = offset + (target_size * 9 / 10).max(target_size.saturating_sub(100));
+                let search_start =
+                    offset + (target_size * 9 / 10).max(target_size.saturating_sub(100));
                 let search_end = offset + target_size;
 
                 content_bytes[search_start..search_end]
@@ -363,12 +354,22 @@ mod tests {
         assert_eq!(BlockSize::Medium.size_bytes(), 4096);
         assert_eq!(BlockSize::Large.size_bytes(), 8192);
         assert_eq!(BlockSize::Custom(2048).size_bytes(), 2048);
-        assert_eq!(BlockSize::Adaptive { min: 512, max: 2048 }.size_bytes(), 2048);
+        assert_eq!(
+            BlockSize::Adaptive {
+                min: 512,
+                max: 2048
+            }
+            .size_bytes(),
+            2048
+        );
     }
 
     #[test]
     fn test_adaptive_block_size() {
-        let adaptive = BlockSize::Adaptive { min: 1024, max: 4096 };
+        let adaptive = BlockSize::Adaptive {
+            min: 1024,
+            max: 4096,
+        };
 
         // Very small content
         assert_eq!(adaptive.calculate_optimal(256), 512);

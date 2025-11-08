@@ -14,13 +14,13 @@
 //! - Provide end-to-end pipeline: ParsedDocument → embed → store → search
 
 use anyhow::{anyhow, Result};
-use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::embedding_pool::{EmbeddingSignature, EmbeddingThreadPool};
+use crate::kiln_integration;
 use crate::kiln_scanner::KilnScanResult;
 use crate::SurrealClient;
 use crucible_core::types::ParsedDocument;
@@ -163,8 +163,7 @@ impl KilnPipelineConnector {
 
         // Get existing chunk hashes for incremental processing
         use crate::kiln_integration::get_document_chunk_hashes;
-        let note_id = format!("notes:{}", document_id);
-        let existing_chunk_hashes = get_document_chunk_hashes(client, &note_id)
+        let existing_chunk_hashes = get_document_chunk_hashes(client, &document_id)
             .await
             .unwrap_or_default();
 
@@ -227,7 +226,7 @@ impl KilnPipelineConnector {
         // Delete changed/removed chunks
         if !chunks_to_delete.is_empty() {
             use crate::kiln_integration::delete_document_chunks;
-            delete_document_chunks(client, &note_id, &chunks_to_delete)
+            delete_document_chunks(client, &document_id, &chunks_to_delete)
                 .await
                 .unwrap_or(0);
         }
@@ -496,100 +495,7 @@ impl Clone for KilnPipelineConnector {
 /// # Returns
 /// A sanitized document ID based on the relative path from kiln_root
 pub fn generate_document_id_from_path(path: &Path, kiln_root: &Path) -> String {
-    // Strip kiln root prefix to create relative path
-    let relative_path = path.strip_prefix(kiln_root).unwrap_or(path);
-
-    // Convert to string and normalize
-    let path_str = relative_path.to_string_lossy();
-
-    // Remove leading slashes and normalize path separators
-    let normalized = path_str
-        .trim_start_matches('/')
-        .trim_start_matches('\\')
-        .replace('\\', "/");
-
-    // If empty, use a hash
-    if normalized.is_empty() {
-        let mut hasher = Sha256::new();
-        hasher.update(path_str.as_bytes());
-        return format!("doc_{:x}", hasher.finalize());
-    }
-
-    // Sanitize: replace problematic characters with underscores
-    // Convert Unicode characters to ASCII-safe equivalents first
-    let ascii_safe = normalized
-        .chars()
-        .map(|c| {
-            match c {
-                // Special Unicode characters to ASCII equivalents
-                'ä' | 'Ä' => 'a',
-                'ö' | 'Ö' => 'o',
-                'ü' | 'Ü' => 'u',
-                'ß' => 's',
-                'é' | 'è' | 'ê' | 'ë' | 'É' | 'È' | 'Ê' | 'Ë' => 'e',
-                'á' | 'à' | 'â' | 'ã' | 'å' | 'Á' | 'À' | 'Â' | 'Ã' | 'Å' => 'a',
-                'í' | 'ì' | 'î' | 'ï' | 'Í' | 'Ì' | 'Î' | 'Ï' => 'i',
-                'ó' | 'ò' | 'ô' | 'õ' | 'ø' | 'Ó' | 'Ò' | 'Ô' | 'Õ' | 'Ø' => 'o',
-                'ú' | 'ù' | 'û' | 'Ú' | 'Ù' | 'Û' => 'u',
-                'ñ' | 'Ñ' => 'n',
-                'ç' | 'Ç' => 'c',
-                // For other non-ASCII characters, convert to underscore
-                c if !c.is_ascii() => '_',
-                c => c,
-            }
-        })
-        .collect::<String>();
-
-    let sanitized = ascii_safe
-        .chars()
-        .map(|c| match c {
-            ' ' | '\t' | '\n' | '\r' => '_',
-            '(' | ')' | '[' | ']' | '{' | '}' => '_',
-            '\'' | '"' | '`' => '_',
-            ':' | ';' | ',' | '.' => '_',
-            '!' | '?' | '*' | '#' | '@' | '$' | '%' | '^' | '&' => '_',
-            '+' | '=' | '|' | '<' | '>' => '_',
-            // Keep alphanumerics and underscores; convert hyphens to underscores for SurrealDB compatibility
-            '-' => '_',
-            c if c.is_alphanumeric() || c == '_' => c,
-            // Convert other characters to underscore
-            _ => '_',
-        })
-        .collect::<String>();
-
-    // Collapse multiple underscores
-    let collapsed = sanitized
-        .chars()
-        .fold((String::new(), false), |(mut acc, prev_underscore), c| {
-            if c == '_' {
-                if !prev_underscore {
-                    acc.push('_');
-                }
-                (acc, true)
-            } else {
-                acc.push(c);
-                (acc, false)
-            }
-        })
-        .0;
-
-    // Remove leading/trailing underscores and limit length
-    let trimmed = collapsed.trim_matches('_');
-
-    if trimmed.is_empty() {
-        // Fallback to hash if sanitization resulted in empty string
-        let mut hasher = Sha256::new();
-        hasher.update(path_str.as_bytes());
-        format!("doc_{:x}", hasher.finalize())
-    } else if trimmed.len() > 200 {
-        // Truncate if too long and add hash suffix for uniqueness
-        let mut hasher = Sha256::new();
-        hasher.update(path_str.as_bytes());
-        let hash = format!("{:x}", hasher.finalize());
-        format!("{}_{}", &trimmed[..200 - 8], &hash[..8])
-    } else {
-        trimmed.to_string()
-    }
+    kiln_integration::generate_document_id(path, kiln_root)
 }
 
 /// Generate document ID with caching for consistency
@@ -738,47 +644,43 @@ async fn store_embedding_in_database_with_vector(
     signature: &EmbeddingSignature,
     embedding_vector: Vec<f32>,
 ) -> Result<()> {
-    use crate::kiln_integration::store_embedding;
+    use crate::kiln_integration::{normalize_document_id, store_embedding_with_chunk_id};
 
-    // Create the note_id from document_id
-    // document_id is the relative path like "Projects_file_md"
-    // note_id should be "notes:Projects_file_md"
-    let note_id = format!("notes:{}", document_id);
-
-    // Extract chunk position from chunk_id
-    // chunk_id might be like "Projects_file_md_chunk_0" or just "Projects_file_md"
+    let normalized_id = normalize_document_id(document_id);
     let chunk_position = chunk_id
         .rsplit_once("_chunk_")
         .and_then(|(_, pos)| pos.parse::<usize>().ok())
         .unwrap_or(0);
-
-    let dimensions = embedding_vector.len();
     let chunk_size = chunk_content.chars().count();
 
-    // Store using the graph-based store_embedding function with REAL embedding vector
-    // Include dimensions for compatibility checking (provider doesn't matter)
-    store_embedding(
+    let stored_chunk_id = store_embedding_with_chunk_id(
         client,
-        &note_id,
-        embedding_vector,
+        &normalized_id,
+        embedding_vector.clone(),
         &signature.model,
         chunk_size,
         chunk_position,
+        Some(chunk_id),
         Some(signature.dimensions),
-        Some(chunk_content), // Pass chunk content for hash computation
     )
     .await?;
 
     debug!(
         "Stored REAL embedding for chunk {} (document: {}, dims: {})",
-        chunk_id, document_id, dimensions
+        stored_chunk_id,
+        normalized_id,
+        embedding_vector.len()
     );
 
     let provider = signature.provider_name.replace('\'', "''");
     let provider_type = signature.provider_type_slug().replace('\'', "''");
+    let record_body = stored_chunk_id
+        .strip_prefix("embeddings:")
+        .unwrap_or(&stored_chunk_id)
+        .replace('\'', "''");
     let update_sql = format!(
-        "UPDATE {} SET provider = '{}', provider_type = '{}', vector_dimensions = {}",
-        chunk_id, provider, provider_type, dimensions
+        "UPDATE embeddings:⟨{}⟩ SET provider = '{}', provider_type = '{}', vector_dimensions = {}",
+        record_body, provider, provider_type, signature.dimensions
     );
 
     client

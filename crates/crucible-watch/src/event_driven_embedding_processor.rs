@@ -17,8 +17,8 @@ use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, error, info, warn};
 
 // Import embedding pool types
-use crucible_surrealdb::embedding_pool::EmbeddingThreadPool;
 use crucible_surrealdb::consistency;
+use crucible_surrealdb::embedding_pool::EmbeddingThreadPool;
 
 /// Event-driven embedding processor that connects file system events to embedding generation
 pub struct EventDrivenEmbeddingProcessor {
@@ -61,7 +61,10 @@ struct EventProcessorState {
 
     /// Index of pending operations by file path for fast lookup
     /// Used by queue-aware database reads to check consistency
-    pending_operations_by_file: std::collections::HashMap<std::path::PathBuf, Vec<crucible_surrealdb::consistency::PendingOperation>>,
+    pending_operations_by_file: std::collections::HashMap<
+        std::path::PathBuf,
+        Vec<crucible_surrealdb::consistency::PendingOperation>,
+    >,
 
     /// Metrics
     metrics: EventProcessorMetrics,
@@ -677,7 +680,11 @@ impl EventDrivenEmbeddingProcessor {
         let mut all_ops = Vec::new();
         let mut seen_ids = std::collections::HashSet::new();
 
-        for op in queued_ops.into_iter().chain(processing_ops).chain(indexed_ops) {
+        for op in queued_ops
+            .into_iter()
+            .chain(processing_ops)
+            .chain(indexed_ops)
+        {
             if !seen_ids.contains(&op.event_id) {
                 seen_ids.insert(op.event_id);
                 all_ops.push(op);
@@ -685,22 +692,25 @@ impl EventDrivenEmbeddingProcessor {
         }
 
         // Determine processing status
-        let has_processing = state_guard
-            .current_batch
-            .iter()
-            .any(|event| event.file_path == file_path && state_guard.processing_events.contains_key(&event.id));
+        let has_processing = state_guard.current_batch.iter().any(|event| {
+            event.file_path == file_path && state_guard.processing_events.contains_key(&event.id)
+        });
 
         if all_ops.is_empty() {
             consistency::PendingOperationsResult::none()
         } else if has_processing {
             // Some are processing, some might be queued
-            let processing = all_ops.iter().filter(|op| {
-                state_guard.processing_events.contains_key(&op.event_id)
-            }).cloned().collect();
+            let processing = all_ops
+                .iter()
+                .filter(|op| state_guard.processing_events.contains_key(&op.event_id))
+                .cloned()
+                .collect();
 
-            let queued: Vec<consistency::PendingOperation> = all_ops.iter().filter(|op| {
-                !state_guard.processing_events.contains_key(&op.event_id)
-            }).cloned().collect();
+            let queued: Vec<consistency::PendingOperation> = all_ops
+                .iter()
+                .filter(|op| !state_guard.processing_events.contains_key(&op.event_id))
+                .cloned()
+                .collect();
 
             if queued.is_empty() {
                 consistency::PendingOperationsResult::processing(processing)
@@ -726,7 +736,8 @@ impl EventDrivenEmbeddingProcessor {
         };
 
         // Estimate completion time based on current batch state
-        let estimated_completion = std::time::Instant::now() + std::time::Duration::from_millis(1000);
+        let estimated_completion =
+            std::time::Instant::now() + std::time::Duration::from_millis(1000);
 
         consistency::PendingOperation {
             file_path: event.file_path.clone(),
@@ -763,16 +774,21 @@ impl EventDrivenEmbeddingProcessor {
             state_guard.processing_events.remove(event_id);
 
             // Remove from the pending operations index
-            state_guard.pending_operations_by_file.retain(|_, pending_ops| {
-                pending_ops.retain(|op| op.event_id != *event_id);
-                !pending_ops.is_empty() // Remove empty entries
-            });
+            state_guard
+                .pending_operations_by_file
+                .retain(|_, pending_ops| {
+                    pending_ops.retain(|op| op.event_id != *event_id);
+                    !pending_ops.is_empty() // Remove empty entries
+                });
         }
     }
 
     /// Force flush all pending operations for specific files
     /// Used when strong consistency is required
-    pub async fn flush_for_files(&self, file_paths: &[std::path::PathBuf]) -> Result<crucible_surrealdb::consistency::FlushResult> {
+    pub async fn flush_for_files(
+        &self,
+        file_paths: &[std::path::PathBuf],
+    ) -> Result<crucible_surrealdb::consistency::FlushResult> {
         let start_time = std::time::Instant::now();
         let mut total_flushed = 0;
 
@@ -790,7 +806,9 @@ impl EventDrivenEmbeddingProcessor {
 
         // Update the pending operations index to remove flushed events
         for event in &target_events {
-            state_guard.pending_operations_by_file.remove(&event.file_path);
+            state_guard
+                .pending_operations_by_file
+                .remove(&event.file_path);
         }
 
         // If batch is now empty, reset batch state
@@ -809,7 +827,9 @@ impl EventDrivenEmbeddingProcessor {
             {
                 let mut state_guard = self.state.write().await;
                 for event in &target_events {
-                    state_guard.processing_events.insert(event.id, std::time::Instant::now());
+                    state_guard
+                        .processing_events
+                        .insert(event.id, std::time::Instant::now());
                 }
             }
 

@@ -29,14 +29,13 @@
 //! ```
 
 use crate::content_addressed_storage::ContentAddressedStorageSurrealDB;
-use crucible_core::storage::{
-    DeduplicationStorage, StorageResult, BlockInfo,
-    DuplicateBlockInfo, StorageUsageStats
-};
-use crucible_core::storage::deduplication_traits::DeduplicationStats;
 use async_trait::async_trait;
-use std::collections::HashMap;
 use chrono::Utc;
+use crucible_core::storage::deduplication_traits::DeduplicationStats;
+use crucible_core::storage::{
+    BlockInfo, DeduplicationStorage, DuplicateBlockInfo, StorageResult, StorageUsageStats,
+};
+use std::collections::HashMap;
 
 /// Generic deduplication detector that works with any storage backend
 ///
@@ -188,8 +187,13 @@ impl<S: DeduplicationStorage> DeduplicationStorage for DeduplicationDetector<S> 
         }
     }
 
-    async fn get_block_deduplication_stats(&self, block_hashes: &[String]) -> StorageResult<HashMap<String, usize>> {
-        self.storage.get_block_deduplication_stats(block_hashes).await
+    async fn get_block_deduplication_stats(
+        &self,
+        block_hashes: &[String],
+    ) -> StorageResult<HashMap<String, usize>> {
+        self.storage
+            .get_block_deduplication_stats(block_hashes)
+            .await
     }
 
     async fn get_all_block_deduplication_stats(&self) -> StorageResult<HashMap<String, usize>> {
@@ -258,7 +262,10 @@ impl<S: DeduplicationStorage> DeduplicationStorage for DeduplicationDetector<S> 
         })
     }
 
-    async fn find_duplicate_blocks(&self, min_occurrences: usize) -> StorageResult<Vec<DuplicateBlockInfo>> {
+    async fn find_duplicate_blocks(
+        &self,
+        min_occurrences: usize,
+    ) -> StorageResult<Vec<DuplicateBlockInfo>> {
         // Get all duplicate blocks
         let all_stats = self.storage.get_all_block_deduplication_stats().await?;
 
@@ -276,13 +283,13 @@ impl<S: DeduplicationStorage> DeduplicationStorage for DeduplicationDetector<S> 
                     (
                         info.block_type,
                         self.generate_content_preview(&info.block_content, 100),
-                        self.estimate_block_size(&info.block_content)
+                        self.estimate_block_size(&info.block_content),
                     )
                 } else {
                     (
                         "unknown".to_string(),
                         "".to_string(),
-                        self.average_block_size
+                        self.average_block_size,
                     )
                 };
 
@@ -327,27 +334,36 @@ impl<S: DeduplicationStorage> DeduplicationStorage for DeduplicationDetector<S> 
         })
     }
 
-    async fn find_documents_with_blocks(&self, block_hashes: &[String]) -> StorageResult<HashMap<String, Vec<String>>> {
+    async fn find_documents_with_blocks(
+        &self,
+        block_hashes: &[String],
+    ) -> StorageResult<HashMap<String, Vec<String>>> {
         self.storage.find_documents_with_blocks(block_hashes).await
     }
 
-    async fn get_blocks_by_hashes(&self, block_hashes: &[String]) -> StorageResult<HashMap<String, BlockInfo>> {
+    async fn get_blocks_by_hashes(
+        &self,
+        block_hashes: &[String],
+    ) -> StorageResult<HashMap<String, BlockInfo>> {
         let records = self.storage.get_blocks_by_hashes(block_hashes).await?;
 
         let mut hash_to_block = HashMap::new();
         for (hash, record) in records {
-            hash_to_block.insert(hash, BlockInfo {
-                block_hash: record.block_hash,
-                document_id: record.document_id,
-                block_index: record.block_index,
-                block_type: record.block_type,
-                block_content: record.block_content,
-                start_offset: record.start_offset,
-                end_offset: record.end_offset,
-                block_metadata: record.block_metadata,
-                created_at: record.created_at,
-                updated_at: record.updated_at,
-            });
+            hash_to_block.insert(
+                hash,
+                BlockInfo {
+                    block_hash: record.block_hash,
+                    document_id: record.document_id,
+                    block_index: record.block_index,
+                    block_type: record.block_type,
+                    block_content: record.block_content,
+                    start_offset: record.start_offset,
+                    end_offset: record.end_offset,
+                    block_metadata: record.block_metadata,
+                    created_at: record.created_at,
+                    updated_at: record.updated_at,
+                },
+            );
         }
 
         Ok(hash_to_block)

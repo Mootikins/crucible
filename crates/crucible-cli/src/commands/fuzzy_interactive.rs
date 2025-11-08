@@ -17,7 +17,11 @@ use nucleo_matcher::{
     pattern::{CaseMatching, Normalization, Pattern},
     Config, Matcher, Utf32Str,
 };
-use nucleo_picker::{Picker, PickerOptions, event::{Event, StdinReader, keybind_default}, render::StrRenderer};
+use nucleo_picker::{
+    event::{keybind_default, Event, StdinReader},
+    render::StrRenderer,
+    Picker, PickerOptions,
+};
 use std::io::{IsTerminal, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -70,11 +74,7 @@ impl Default for SearchMode {
 ///
 /// This is the main entry point for the interactive picker.
 /// Currently a basic implementation that will evolve through TDD cycles.
-pub async fn execute(
-    config: CliConfig,
-    initial_query: String,
-    _limit: u32,
-) -> Result<()> {
+pub async fn execute(config: CliConfig, initial_query: String, _limit: u32) -> Result<()> {
     let kiln_path = &config.kiln.path;
 
     // Validate kiln path exists
@@ -110,8 +110,7 @@ pub async fn execute(
 
     // Create picker with options
     // Use reversed layout (prompt at top) for more natural reading order
-    let options = PickerOptions::default()
-        .reversed(true);
+    let options = PickerOptions::default().reversed(true);
     let mut picker: Picker<String, _> = options.picker(StrRenderer);
 
     // Get injector observer to watch for restart events
@@ -187,14 +186,13 @@ pub async fn execute(
 
             // Ensure clean terminal state before launching editor
             // Flush any pending stderr output from logging/tracing
-            std::io::stderr().flush()
+            std::io::stderr()
+                .flush()
                 .with_context(|| "Failed to flush stderr")?;
 
             // Clear terminal to remove any residual output from background logging
-            execute!(
-                std::io::stderr(),
-                terminal::Clear(terminal::ClearType::All)
-            ).with_context(|| "Failed to clear terminal")?;
+            execute!(std::io::stderr(), terminal::Clear(terminal::ClearType::All))
+                .with_context(|| "Failed to clear terminal")?;
 
             // Launch editor
             let status = std::process::Command::new(&editor)
@@ -331,7 +329,11 @@ pub fn search_files_by_content(kiln_path: &Path, query: &str) -> Result<Vec<Cont
 /// # Returns
 ///
 /// A list of file paths that match based on the mode
-pub fn filter_files_by_mode(kiln_path: &Path, query: &str, mode: SearchMode) -> Result<Vec<String>> {
+pub fn filter_files_by_mode(
+    kiln_path: &Path,
+    query: &str,
+    mode: SearchMode,
+) -> Result<Vec<String>> {
     match mode {
         SearchMode::Both => {
             // Combine filename and content results, deduplicate
@@ -349,15 +351,11 @@ pub fn filter_files_by_mode(kiln_path: &Path, query: &str, mode: SearchMode) -> 
 
             Ok(all_paths.into_iter().collect())
         }
-        SearchMode::FilenameOnly => {
-            filter_files_by_query(kiln_path, query)
-        }
-        SearchMode::ContentOnly => {
-            Ok(search_files_by_content(kiln_path, query)?
-                .into_iter()
-                .map(|r| r.path)
-                .collect())
-        }
+        SearchMode::FilenameOnly => filter_files_by_query(kiln_path, query),
+        SearchMode::ContentOnly => Ok(search_files_by_content(kiln_path, query)?
+            .into_iter()
+            .map(|r| r.path)
+            .collect()),
     }
 }
 

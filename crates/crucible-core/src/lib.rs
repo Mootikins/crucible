@@ -29,25 +29,33 @@ pub use crucible_core::CrucibleCore;
 
 // Re-export processing handoff types
 pub use processing::{
-    ProcessedDocument, DocumentProcessingJob, ProcessingContext, ProcessingSource,
-    ProcessingPriority, ProcessingMetadata, JobConfiguration, JobStats,
-    DocumentProcessingResult,
+    DocumentProcessingJob, DocumentProcessingResult, JobConfiguration, JobStats, ProcessedDocument,
+    ProcessingContext, ProcessingMetadata, ProcessingPriority, ProcessingSource,
 };
 
 // Re-export core traits (abstractions for Dependency Inversion)
-pub use traits::{AgentProvider, ChangeDetector, ContentHasher, HashLookupStorage, MarkdownParser, Storage, ToolExecutor};
+pub use traits::{
+    AgentProvider, ChangeDetector, ContentHasher, HashLookupStorage, MarkdownParser, Storage,
+    ToolExecutor,
+};
 
 // Re-export key types used across module boundaries
 pub use types::{
+    // Hashing types
+    BlockHash,
+    BlockHashInfo,
+    // Change detection types
+    ChangeSet,
+    ChangeSummary,
     // Storage trait types (from traits/storage.rs)
     // Note: Parser types (ParsedDocument, Wikilink, Tag, etc.) are exported from parser:: module below
     ExecutionContext,
+    FileHash,
+    FileHashInfo,
+    HashAlgorithm,
+    HashError,
     ToolDefinition,
     ToolExample,
-    // Hashing types
-    BlockHash, BlockHashInfo, FileHash, FileHashInfo, HashAlgorithm, HashError,
-    // Change detection types
-    ChangeSet, ChangeSummary,
 };
 
 pub use database::{

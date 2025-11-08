@@ -31,10 +31,7 @@ pub trait BatchAwareRead {
     ) -> Result<Option<FileDocumentState>>;
 
     /// Get pending operations for a file
-    async fn get_pending_operations(
-        &self,
-        file_path: &Path,
-    ) -> PendingOperationsResult;
+    async fn get_pending_operations(&self, file_path: &Path) -> PendingOperationsResult;
 
     /// Force flush operations for specific files
     async fn flush_files(&self, file_paths: &[&Path]) -> Result<FlushResult>;
@@ -78,10 +75,7 @@ pub struct BatchAwareSurrealClient {
 #[async_trait::async_trait]
 pub trait EventProcessor: Send + Sync {
     /// Get pending operations for a file
-    async fn get_pending_operations_for_file(
-        &self,
-        file_path: &Path,
-    ) -> PendingOperationsResult;
+    async fn get_pending_operations_for_file(&self, file_path: &Path) -> PendingOperationsResult;
 
     /// Force flush operations for specific files
     async fn flush_for_files(&self, file_paths: &[&Path]) -> Result<FlushResult>;
@@ -144,11 +138,7 @@ impl BatchAwareSurrealClient {
     }
 
     /// Wait for pending operations to complete (with timeout)
-    async fn wait_for_pending_completion(
-        &self,
-        file_path: &Path,
-        timeout: Duration,
-    ) -> Result<()> {
+    async fn wait_for_pending_completion(&self, file_path: &Path, timeout: Duration) -> Result<()> {
         let start = std::time::Instant::now();
 
         while start.elapsed() < timeout {
@@ -180,13 +170,19 @@ impl BatchAwareRead for BatchAwareSurrealClient {
         match consistency {
             ConsistencyLevel::Eventual => {
                 // Standard database query
-                self.client.query(sql, params).await.map_err(|e| anyhow::anyhow!("{}", e))
+                self.client
+                    .query(sql, params)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{}", e))
             }
             ConsistencyLevel::ReadAfterWrite => {
                 // For general queries, we can't easily check pending operations
                 // So we just do the query for now
                 // In a full implementation, this would analyze the SQL to determine affected tables
-                self.client.query(sql, params).await.map_err(|e| anyhow::anyhow!("{}", e))
+                self.client
+                    .query(sql, params)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{}", e))
             }
             ConsistencyLevel::Strong => {
                 // Force flush of all pending operations before query
@@ -197,7 +193,10 @@ impl BatchAwareRead for BatchAwareSurrealClient {
                     // In a full implementation, we'd extract files and flush them
                 }
 
-                self.client.query(sql, params).await.map_err(|e| anyhow::anyhow!("{}", e))
+                self.client
+                    .query(sql, params)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{}", e))
             }
         }
     }
@@ -218,7 +217,8 @@ impl BatchAwareRead for BatchAwareSurrealClient {
 
                 if pending_ops.has_pending() {
                     // Wait for pending operations or timeout
-                    self.wait_for_pending_completion(file_path, Duration::from_secs(2)).await?;
+                    self.wait_for_pending_completion(file_path, Duration::from_secs(2))
+                        .await?;
                 }
 
                 // Query from database
@@ -236,10 +236,7 @@ impl BatchAwareRead for BatchAwareSurrealClient {
         }
     }
 
-    async fn get_pending_operations(
-        &self,
-        file_path: &Path,
-    ) -> PendingOperationsResult {
+    async fn get_pending_operations(&self, file_path: &Path) -> PendingOperationsResult {
         if let Some(processor) = &self.event_processor {
             processor.get_pending_operations_for_file(file_path).await
         } else {
@@ -276,12 +273,13 @@ impl BatchAwareRead for BatchAwareSurrealClient {
 
 impl BatchAwareSurrealClient {
     /// Query file state directly from database
-    async fn query_file_from_database(&self, file_path: &Path) -> Result<Option<FileDocumentState>> {
+    async fn query_file_from_database(
+        &self,
+        file_path: &Path,
+    ) -> Result<Option<FileDocumentState>> {
         // Query for document by path
         let sql = "SELECT * FROM notes WHERE path = $path";
-        let params = vec![
-            serde_json::json!({"path": file_path.to_string_lossy()})
-        ];
+        let params = vec![serde_json::json!({"path": file_path.to_string_lossy()})];
 
         match self.client.query(sql, &params).await {
             Ok(query_result) => {
@@ -289,7 +287,11 @@ impl BatchAwareSurrealClient {
                     let record = &query_result.records[0];
                     Ok(Some(FileDocumentState {
                         path: file_path.to_string_lossy().to_string(),
-                        file_hash: record.data.get("file_hash").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        file_hash: record
+                            .data
+                            .get("file_hash")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
                         metadata: record.data.get("metadata").cloned(),
                         exists: true,
                         pending_operations: PendingOperationsResult::none(),

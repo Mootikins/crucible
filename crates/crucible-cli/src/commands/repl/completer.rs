@@ -3,8 +3,8 @@
 use reedline::{Completer, Span, Suggestion};
 use std::sync::Arc;
 
-use crucible_core::CrucibleCore;
 use super::tools::UnifiedToolRegistry;
+use crucible_core::CrucibleCore;
 
 /// REPL autocompleter
 pub struct ReplCompleter {
@@ -329,7 +329,7 @@ mod tests {
                 CrucibleCore::builder()
                     .with_storage(storage)
                     .build()
-                    .unwrap()
+                    .unwrap(),
             );
 
             let temp_dir = TempDir::new().unwrap();
@@ -428,7 +428,7 @@ mod tests {
                 CrucibleCore::builder()
                     .with_storage(storage)
                     .build()
-                    .unwrap()
+                    .unwrap(),
             );
 
             let tools = Arc::new(

@@ -84,14 +84,20 @@ impl ToolRegistry {
 
                 // Discover and register available tools
                 let tool_names = crucible_tools::list_registered_tools().await;
-                info!("✓ Discovered {} tools from crucible-tools", tool_names.len());
+                info!(
+                    "✓ Discovered {} tools from crucible-tools",
+                    tool_names.len()
+                );
 
                 for tool_name in &tool_names {
-                    self.tools.insert(tool_name.clone(), ToolDefinition {
-                        name: tool_name.clone(),
-                        description: format!("Tool: {}", tool_name),
-                        category: self.categorize_tool(tool_name),
-                    });
+                    self.tools.insert(
+                        tool_name.clone(),
+                        ToolDefinition {
+                            name: tool_name.clone(),
+                            description: format!("Tool: {}", tool_name),
+                            category: self.categorize_tool(tool_name),
+                        },
+                    );
                 }
 
                 if !tool_names.is_empty() {
@@ -119,7 +125,10 @@ impl ToolRegistry {
     ) -> Result<crucible_tools::ToolResult> {
         // Check if tool is registered
         if !self.tools.contains_key(tool_name) {
-            return Err(anyhow::anyhow!("Tool '{}' not found in registry", tool_name));
+            return Err(anyhow::anyhow!(
+                "Tool '{}' not found in registry",
+                tool_name
+            ));
         }
 
         debug!(
@@ -128,17 +137,13 @@ impl ToolRegistry {
         );
 
         // Execute the tool directly through crucible-tools
-        let result = crucible_tools::execute_tool(
-            tool_name.to_string(),
-            parameters,
-            user_id,
-            session_id,
-        )
-        .await
-        .map_err(|e| {
-            error!("Tool execution failed for '{}': {}", tool_name, e);
-            anyhow::anyhow!("Tool execution failed: {}", e)
-        })?;
+        let result =
+            crucible_tools::execute_tool(tool_name.to_string(), parameters, user_id, session_id)
+                .await
+                .map_err(|e| {
+                    error!("Tool execution failed for '{}': {}", tool_name, e);
+                    anyhow::anyhow!("Tool execution failed: {}", e)
+                })?;
 
         Ok(result)
     }
@@ -176,7 +181,10 @@ impl ToolRegistry {
         let mut stats = HashMap::new();
         stats.insert("total_tools".to_string(), self.tools.len().to_string());
         stats.insert("initialized".to_string(), self.initialized.to_string());
-        stats.insert("has_kiln_path".to_string(), self.kiln_path.is_some().to_string());
+        stats.insert(
+            "has_kiln_path".to_string(),
+            self.kiln_path.is_some().to_string(),
+        );
 
         if let Some(ref path) = self.kiln_path {
             stats.insert("kiln_path".to_string(), path.display().to_string());

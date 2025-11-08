@@ -3,9 +3,9 @@
 //! This module provides consistency guarantees when reading metadata
 //! from the database while batch operations may be pending.
 
+use anyhow::Result;
 use std::path::PathBuf;
 use std::time::Instant;
-use anyhow::Result;
 
 /// Consistency levels for database reads
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

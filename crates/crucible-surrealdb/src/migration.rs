@@ -3,9 +3,9 @@
 //! This module provides utilities to migrate existing databases to newer schema versions.
 //! It handles adding new fields, indexes, and updating data structures.
 
-use anyhow::Result;
-use tracing::{info, warn, debug};
 use crate::SurrealClient;
+use anyhow::Result;
+use tracing::{debug, info, warn};
 
 /// Run all pending migrations to bring the database to the latest schema version
 ///
@@ -25,18 +25,19 @@ pub async fn run_migrations(client: &SurrealClient) -> Result<()> {
     info!("Current database schema version: {}", current_version);
 
     // Define migration steps in order
-    let migrations = vec![
-        Migration {
-            version: 1,
-            description: "Add file_hash column to notes table",
-            sql: include_str!("migrations/v1_add_file_hash.surql"),
-        },
-    ];
+    let migrations = vec![Migration {
+        version: 1,
+        description: "Add file_hash column to notes table",
+        sql: include_str!("migrations/v1_add_file_hash.surql"),
+    }];
 
     // Run migrations that haven't been applied yet
     for migration in migrations {
         if migration.version > current_version {
-            info!("Running migration v{}: {}", migration.version, migration.description);
+            info!(
+                "Running migration v{}: {}",
+                migration.version, migration.description
+            );
             run_migration(client, &migration).await?;
             info!("Successfully completed migration v{}", migration.version);
         }
@@ -76,10 +77,16 @@ async fn run_migration(client: &SurrealClient, migration: &Migration) -> Result<
 
         match client.query(statement, &[]).await {
             Ok(_) => {
-                debug!("Executed migration statement: {}", &statement[..statement.len().min(80)]);
+                debug!(
+                    "Executed migration statement: {}",
+                    &statement[..statement.len().min(80)]
+                );
             }
             Err(e) => {
-                warn!("Migration statement failed (this may be expected): {} - {}", statement, e);
+                warn!(
+                    "Migration statement failed (this may be expected): {} - {}",
+                    statement, e
+                );
                 // Continue with other statements - some may fail if they already exist
             }
         }
@@ -118,15 +125,15 @@ pub async fn populate_missing_file_hashes(client: &SurrealClient) -> Result<()> 
 
     // Find all notes that don't have a file_hash
     let result = client
-        .query("SELECT id, content FROM notes WHERE file_hash IS NONE LIMIT 1000", &[])
+        .query(
+            "SELECT id, content FROM notes WHERE file_hash IS NONE LIMIT 1000",
+            &[],
+        )
         .await?;
 
     let mut updated_count = 0;
     for record in result.records {
-        if let (Some(id), Some(content)) = (
-            record.data.get("id"),
-            record.data.get("content"),
-        ) {
+        if let (Some(id), Some(content)) = (record.data.get("id"), record.data.get("content")) {
             if let (Some(id_str), Some(content_str)) = (id.as_str(), content.as_str()) {
                 // Calculate BLAKE3 hash of the content
                 let hash = calculate_blake3_hash(content_str);

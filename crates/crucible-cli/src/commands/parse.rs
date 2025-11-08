@@ -1,15 +1,19 @@
 use anyhow::Result;
-use std::path::{Path, PathBuf};
-use std::time::Instant;
-use std::sync::Arc;
 use serde_json;
-use tabled::{Table, Tabled, settings::Style};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Instant;
+use tabled::{settings::Style, Table, Tabled};
 
 use crate::config::CliConfig;
 use crate::output;
-use crucible_core::storage::builder::{ContentAddressedStorageBuilder, StorageBackendType, HasherConfig};
-use crucible_core::storage::{ContentAddressedStorage, MerkleTree, HashedBlock, StorageResult, ContentHasher};
-use crucible_core::parser::{StorageAwareParser, PulldownParser};
+use crucible_core::parser::{PulldownParser, StorageAwareParser};
+use crucible_core::storage::builder::{
+    ContentAddressedStorageBuilder, HasherConfig, StorageBackendType,
+};
+use crucible_core::storage::{
+    ContentAddressedStorage, ContentHasher, HashedBlock, MerkleTree, StorageResult,
+};
 
 /// Output formats for parse command
 #[derive(Debug, Clone)]
@@ -93,9 +97,7 @@ pub async fn execute(
 
     // Create parser
     let block_parser = PulldownParser::new();
-    let parser = StorageAwareParser::new(
-        Box::new(block_parser),
-    );
+    let parser = StorageAwareParser::new(Box::new(block_parser));
 
     // Process the path
     let results = if path.is_file() {
@@ -103,7 +105,10 @@ pub async fn execute(
     } else if path.is_dir() {
         parse_directory(&parser, &path, max_depth, continue_on_error).await?
     } else {
-        return Err(anyhow::anyhow!("Path is neither file nor directory: {}", path.display()));
+        return Err(anyhow::anyhow!(
+            "Path is neither file nor directory: {}",
+            path.display()
+        ));
     };
 
     // Generate output
@@ -134,7 +139,9 @@ pub async fn execute(
 fn create_storage_backend(_config: &CliConfig) -> StorageResult<Arc<dyn ContentAddressedStorage>> {
     let backend = ContentAddressedStorageBuilder::new()
         .with_backend(StorageBackendType::InMemory)
-        .with_hasher(HasherConfig::Blake3(crucible_core::hashing::blake3::Blake3Hasher::new()))
+        .with_hasher(HasherConfig::Blake3(
+            crucible_core::hashing::blake3::Blake3Hasher::new(),
+        ))
         .with_block_size(crucible_core::storage::BlockSize::Medium)
         .build()?;
 
@@ -142,10 +149,7 @@ fn create_storage_backend(_config: &CliConfig) -> StorageResult<Arc<dyn ContentA
 }
 
 /// Parse a single file
-async fn parse_file(
-    parser: &StorageAwareParser,
-    path: &Path,
-) -> ParseResult {
+async fn parse_file(parser: &StorageAwareParser, path: &Path) -> ParseResult {
     let parse_start = Instant::now();
 
     // Simple implementation - read file and create basic structure
@@ -176,7 +180,7 @@ async fn parse_file(
                 parse_time: parse_start.elapsed(),
                 error: None,
             }
-        },
+        }
         Err(e) => ParseResult {
             path: path.to_string_lossy().to_string(),
             tree: None,
@@ -273,7 +277,12 @@ fn output_plain_format(results: &[ParseResult], show_tree: bool, show_blocks: bo
         if show_blocks {
             println!("Blocks: {}", result.blocks.len());
             for (i, block) in result.blocks.iter().enumerate() {
-                println!("  {}: {} ({})", i, block.hash, format_bytes(block.data.len() as u64));
+                println!(
+                    "  {}: {} ({})",
+                    i,
+                    block.hash,
+                    format_bytes(block.data.len() as u64)
+                );
             }
         }
 
@@ -285,11 +294,7 @@ fn output_plain_format(results: &[ParseResult], show_tree: bool, show_blocks: bo
 }
 
 /// Output in JSON format
-fn output_json_format(
-    results: &[ParseResult],
-    show_tree: bool,
-    show_blocks: bool,
-) -> Result<()> {
+fn output_json_format(results: &[ParseResult], show_tree: bool, show_blocks: bool) -> Result<()> {
     let output = serde_json::json!({
         "metadata": {
             "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -338,13 +343,20 @@ fn output_detailed_format(
     show_blocks: bool,
 ) -> Result<()> {
     // Summary table
-    let summary_rows: Vec<TreeRow> = results.iter()
+    let summary_rows: Vec<TreeRow> = results
+        .iter()
         .filter(|r| r.error.is_none())
         .map(|result| {
             let (root_hash, size) = if let Some(tree) = &result.tree {
-                (tree.root_hash.clone(), format_bytes(result.blocks.iter().map(|b| b.data.len() as u64).sum()))
+                (
+                    tree.root_hash.clone(),
+                    format_bytes(result.blocks.iter().map(|b| b.data.len() as u64).sum()),
+                )
             } else {
-                ("N/A".to_string(), format_bytes(result.blocks.iter().map(|b| b.data.len() as u64).sum()))
+                (
+                    "N/A".to_string(),
+                    format_bytes(result.blocks.iter().map(|b| b.data.len() as u64).sum()),
+                )
             };
 
             TreeRow {
@@ -358,9 +370,7 @@ fn output_detailed_format(
 
     if !summary_rows.is_empty() {
         output::header("Parse Summary");
-        let table = Table::new(&summary_rows)
-            .with(Style::modern())
-            .to_string();
+        let table = Table::new(&summary_rows).with(Style::modern()).to_string();
         println!("{}", table);
         println!();
     }
@@ -397,19 +407,22 @@ fn output_detailed_format(
             if !result.blocks.is_empty() {
                 println!("\n📄 {} ({} blocks)", result.path, result.blocks.len());
 
-                let block_rows: Vec<BlockRow> = result.blocks.iter().enumerate().map(|(i, block)| {
-                    BlockRow {
-                        index: i,
-                        block_type: "Content".to_string(), // TODO: Determine actual block type
-                        hash: block.hash[..12].to_string(),
-                        size: format_bytes(block.data.len() as u64),
-                        preview: get_block_preview(&block.data),
-                    }
-                }).collect();
+                let block_rows: Vec<BlockRow> = result
+                    .blocks
+                    .iter()
+                    .enumerate()
+                    .map(|(i, block)| {
+                        BlockRow {
+                            index: i,
+                            block_type: "Content".to_string(), // TODO: Determine actual block type
+                            hash: block.hash[..12].to_string(),
+                            size: format_bytes(block.data.len() as u64),
+                            preview: get_block_preview(&block.data),
+                        }
+                    })
+                    .collect();
 
-                let table = Table::new(&block_rows)
-                    .with(Style::modern())
-                    .to_string();
+                let table = Table::new(&block_rows).with(Style::modern()).to_string();
                 println!("{}", table);
             }
         }
@@ -420,7 +433,11 @@ fn output_detailed_format(
     if !errors.is_empty() {
         output::header("Errors");
         for result in errors {
-            output::error(&format!("{}: {}", result.path, result.error.as_ref().unwrap()));
+            output::error(&format!(
+                "{}: {}",
+                result.path,
+                result.error.as_ref().unwrap()
+            ));
         }
     }
 

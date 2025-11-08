@@ -33,20 +33,20 @@ use std::time::{Duration, Instant, SystemTime};
 use async_trait::async_trait;
 use chrono;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn, trace};
+use tracing::{debug, info, trace, warn};
 
 use crate::error::Error;
 use crate::types::FileInfo;
 
 // Import the traits and types from crucible-core
 use crucible_core::traits::change_detection::{
-    ChangeDetector as ChangeDetectorTrait, ChangeDetectionMetrics, ChangeDetectionResult,
-    ChangeSet, ChangeStatistics, HashLookupResult, BatchLookupConfig,
+    BatchLookupConfig, ChangeDetectionMetrics, ChangeDetectionResult,
+    ChangeDetector as ChangeDetectorTrait, ChangeSet, ChangeStatistics, HashLookupResult,
 };
 use crucible_core::traits::change_detection::{
-    HashLookupStorage, StoredHash, BatchLookupConfig as StorageBatchConfig,
+    BatchLookupConfig as StorageBatchConfig, HashLookupStorage, StoredHash,
 };
-use crucible_core::types::hashing::{FileHashInfo, HashError, HashAlgorithm};
+use crucible_core::types::hashing::{FileHashInfo, HashAlgorithm, HashError};
 
 /// Configuration for change detection operations
 ///
@@ -232,7 +232,10 @@ impl ChangeDetector {
     /// # Returns
     ///
     /// HashLookupResult with found and missing files
-    async fn batch_lookup_with_cache(&self, relative_paths: &[String]) -> Result<HashLookupResult, HashError> {
+    async fn batch_lookup_with_cache(
+        &self,
+        relative_paths: &[String],
+    ) -> Result<HashLookupResult, HashError> {
         let start_time = Instant::now();
         let mut result = HashLookupResult::new();
         result.total_queried = relative_paths.len();
@@ -280,14 +283,17 @@ impl ChangeDetector {
                 enable_session_cache: false, // We're handling caching ourselves
             };
 
-            let uncached_result = self.storage.lookup_file_hashes_batch(
-                &uncached_paths,
-                Some(StorageBatchConfig {
-                    max_batch_size: batch_config.max_batch_size,
-                    use_parameterized_queries: batch_config.use_parameterized_queries,
-                    enable_session_cache: batch_config.enable_session_cache,
-                })
-            ).await?;
+            let uncached_result = self
+                .storage
+                .lookup_file_hashes_batch(
+                    &uncached_paths,
+                    Some(StorageBatchConfig {
+                        max_batch_size: batch_config.max_batch_size,
+                        use_parameterized_queries: batch_config.use_parameterized_queries,
+                        enable_session_cache: batch_config.enable_session_cache,
+                    }),
+                )
+                .await?;
 
             // Update cache with new results
             for (path, stored_hash) in &uncached_result.found_files {
@@ -309,10 +315,10 @@ impl ChangeDetector {
                 enable_session_cache: false,
             };
 
-            result = self.storage.lookup_file_hashes_batch(
-                relative_paths,
-                Some(batch_config)
-            ).await?;
+            result = self
+                .storage
+                .lookup_file_hashes_batch(relative_paths, Some(batch_config))
+                .await?;
         }
 
         // Update performance statistics
@@ -320,7 +326,8 @@ impl ChangeDetector {
         if lookup_duration > self.config.db_operation_timeout {
             warn!(
                 "Batch lookup took {:?} for {} files (consider reducing batch size)",
-                lookup_duration, relative_paths.len()
+                lookup_duration,
+                relative_paths.len()
             );
         }
 
@@ -423,7 +430,10 @@ impl ChangeDetectorTrait for ChangeDetector {
     /// Returns HashError if change detection fails
     async fn detect_changes(&self, current_files: &[FileHashInfo]) -> Result<ChangeSet, HashError> {
         let start_time = Instant::now();
-        info!("Starting change detection for {} files", current_files.len());
+        info!(
+            "Starting change detection for {} files",
+            current_files.len()
+        );
 
         let mut changes = ChangeSet::new();
         let mut current_paths = HashMap::new();
@@ -478,7 +488,8 @@ impl ChangeDetectorTrait for ChangeDetector {
             changes.files_to_process(),
             lookup_result.database_round_trips,
             operation_duration,
-        ).await;
+        )
+        .await;
 
         info!(
             "Change detection completed in {:?}: {} unchanged, {} changed, {} new, {} deleted",
@@ -584,12 +595,18 @@ impl ChangeDetectorTrait for ChangeDetector {
                     // File exists in storage - we'd need to compare with current state
                     // For this simplified implementation, we'll assume files exist and are unchanged
                     // In a real implementation, you'd read the current file and compute its hash
-                    debug!("File {} found in storage, assuming unchanged for path-only check", path);
+                    debug!(
+                        "File {} found in storage, assuming unchanged for path-only check",
+                        path
+                    );
                 }
                 None => {
                     // File not found in storage - could be deleted or new
                     // Without current file state, we can't determine which
-                    debug!("File {} not found in storage, status unknown for path-only check", path);
+                    debug!(
+                        "File {} not found in storage, status unknown for path-only check",
+                        path
+                    );
                 }
             }
         }
@@ -687,9 +704,15 @@ impl ChangeDetectorTrait for ChangeDetector {
         since: chrono::DateTime<chrono::Utc>,
         limit: Option<usize>,
     ) -> Result<Vec<FileHashInfo>, HashError> {
-        info!("Finding files changed since {:?} (limit: {:?})", since, limit);
+        info!(
+            "Finding files changed since {:?} (limit: {:?})",
+            since, limit
+        );
 
-        let stored_files = self.storage.lookup_changed_files_since(since, limit).await?;
+        let stored_files = self
+            .storage
+            .lookup_changed_files_since(since, limit)
+            .await?;
 
         let mut result = Vec::new();
         for stored_file in stored_files {
@@ -745,7 +768,8 @@ impl ChangeDetectorTrait for ChangeDetector {
         let operation_duration = start_time.elapsed();
         debug!(
             "Batch change check completed in {:?}: {} files processed",
-            operation_duration, paths.len()
+            operation_duration,
+            paths.len()
         );
 
         Ok(results)
@@ -773,7 +797,10 @@ impl ChangeDetectorTrait for ChangeDetector {
         current_paths: &[String],
     ) -> Result<Vec<String>, HashError> {
         let start_time = Instant::now();
-        info!("Detecting deleted files from {} current paths", current_paths.len());
+        info!(
+            "Detecting deleted files from {} current paths",
+            current_paths.len()
+        );
 
         // Get all stored files
         let all_stored = self.storage.get_all_hashes().await?;
@@ -789,7 +816,8 @@ impl ChangeDetectorTrait for ChangeDetector {
         let operation_duration = start_time.elapsed();
         info!(
             "Deleted file detection completed in {:?}: {} files deleted",
-            operation_duration, deleted_files.len()
+            operation_duration,
+            deleted_files.len()
         );
 
         Ok(deleted_files)
@@ -817,7 +845,8 @@ impl ChangeDetectorTrait for ChangeDetector {
         let total_tracked_files = all_stored.len();
         let average_changes_per_day = if state.operations_count > 0 {
             // Calculate average changes per operation, then estimate daily rate
-            let avg_changes_per_op = state.total_changes_detected as f64 / state.operations_count as f64;
+            let avg_changes_per_op =
+                state.total_changes_detected as f64 / state.operations_count as f64;
             // Rough estimate: assume operations are distributed throughout the day
             avg_changes_per_op * 24.0 // This is a rough approximation
         } else {
@@ -1018,14 +1047,19 @@ mod tests {
         }
 
         fn get_operations_count(&self) -> u64 {
-            self.operations_count.load(std::sync::atomic::Ordering::Relaxed)
+            self.operations_count
+                .load(std::sync::atomic::Ordering::Relaxed)
         }
     }
 
     #[async_trait]
     impl HashLookupStorage for MockHashLookupStorage {
-        async fn lookup_file_hash(&self, relative_path: &str) -> Result<Option<StoredHash>, HashError> {
-            self.operations_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        async fn lookup_file_hash(
+            &self,
+            relative_path: &str,
+        ) -> Result<Option<StoredHash>, HashError> {
+            self.operations_count
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             Ok(self.hashes.get(relative_path).cloned())
         }
 
@@ -1034,7 +1068,8 @@ mod tests {
             relative_paths: &[String],
             _config: Option<StorageBatchConfig>,
         ) -> Result<HashLookupResult, HashError> {
-            self.operations_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.operations_count
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
             let mut result = HashLookupResult::new();
             result.total_queried = relative_paths.len();
@@ -1110,10 +1145,7 @@ mod tests {
         }
     }
 
-    fn create_test_file_hash_info(
-        relative_path: &str,
-        hash_bytes: [u8; 32],
-    ) -> FileHashInfo {
+    fn create_test_file_hash_info(relative_path: &str, hash_bytes: [u8; 32]) -> FileHashInfo {
         FileHashInfo::new(
             FileHash::new(hash_bytes),
             1024,
@@ -1123,10 +1155,7 @@ mod tests {
         )
     }
 
-    fn create_test_stored_hash(
-        relative_path: &str,
-        hash_bytes: [u8; 32],
-    ) -> StoredHash {
+    fn create_test_stored_hash(relative_path: &str, hash_bytes: [u8; 32]) -> StoredHash {
         StoredHash::new(
             format!("notes:{}", relative_path),
             relative_path.to_string(),
@@ -1186,8 +1215,14 @@ mod tests {
         let mut storage = MockHashLookupStorage::new();
 
         // Add existing files to storage
-        storage.add_hash("existing.md".to_string(), create_test_stored_hash("existing.md", [1u8; 32]));
-        storage.add_hash("code.rs".to_string(), create_test_stored_hash("code.rs", [2u8; 32]));
+        storage.add_hash(
+            "existing.md".to_string(),
+            create_test_stored_hash("existing.md", [1u8; 32]),
+        );
+        storage.add_hash(
+            "code.rs".to_string(),
+            create_test_stored_hash("code.rs", [2u8; 32]),
+        );
 
         let storage = Arc::new(storage);
         let detector = ChangeDetector::with_defaults(storage).unwrap();
@@ -1212,26 +1247,35 @@ mod tests {
         let mut storage = MockHashLookupStorage::new();
 
         // Add existing files to storage
-        storage.add_hash("unchanged.md".to_string(), create_test_stored_hash("unchanged.md", [1u8; 32]));
-        storage.add_hash("changed.rs".to_string(), create_test_stored_hash("changed.rs", [2u8; 32]));
-        storage.add_hash("deleted.txt".to_string(), create_test_stored_hash("deleted.txt", [3u8; 32]));
+        storage.add_hash(
+            "unchanged.md".to_string(),
+            create_test_stored_hash("unchanged.md", [1u8; 32]),
+        );
+        storage.add_hash(
+            "changed.rs".to_string(),
+            create_test_stored_hash("changed.rs", [2u8; 32]),
+        );
+        storage.add_hash(
+            "deleted.txt".to_string(),
+            create_test_stored_hash("deleted.txt", [3u8; 32]),
+        );
 
         let storage = Arc::new(storage);
         let detector = ChangeDetector::with_defaults(storage).unwrap();
 
         let current_files = vec![
             create_test_file_hash_info("unchanged.md", [1u8; 32]), // Same hash
-            create_test_file_hash_info("changed.rs", [99u8; 32]),   // Different hash
-            create_test_file_hash_info("new.md", [4u8; 32]),        // New file
+            create_test_file_hash_info("changed.rs", [99u8; 32]),  // Different hash
+            create_test_file_hash_info("new.md", [4u8; 32]),       // New file
         ];
 
         let changes = detector.detect_changes(&current_files).await.unwrap();
 
         assert!(changes.has_changes());
-        assert_eq!(changes.new.len(), 1);        // new.md
-        assert_eq!(changes.changed.len(), 1);     // changed.rs
-        assert_eq!(changes.unchanged.len(), 1);   // unchanged.md
-        assert_eq!(changes.deleted.len(), 1);     // deleted.txt (in storage but not current)
+        assert_eq!(changes.new.len(), 1); // new.md
+        assert_eq!(changes.changed.len(), 1); // changed.rs
+        assert_eq!(changes.unchanged.len(), 1); // unchanged.md
+        assert_eq!(changes.deleted.len(), 1); // deleted.txt (in storage but not current)
         assert_eq!(changes.files_to_process(), 2); // new + changed
     }
 
@@ -1240,16 +1284,17 @@ mod tests {
         let storage = Arc::new(MockHashLookupStorage::new());
         let detector = ChangeDetector::with_defaults(storage).unwrap();
 
-        let current_files = vec![
-            create_test_file_hash_info("test.md", [1u8; 32]),
-        ];
+        let current_files = vec![create_test_file_hash_info("test.md", [1u8; 32])];
 
-        let result = detector.detect_changes_with_metrics(&current_files).await.unwrap();
+        let result = detector
+            .detect_changes_with_metrics(&current_files)
+            .await
+            .unwrap();
 
         assert!(result.has_changes());
         assert_eq!(result.files_to_process(), 1);
         assert_eq!(result.metrics.total_files, 1);
-        assert_eq!(result.metrics.changed_files, 0);  // New file, not changed
+        assert_eq!(result.metrics.changed_files, 0); // New file, not changed
         assert_eq!(result.metrics.skipped_files, 0); // No unchanged files
         assert!(result.metrics.change_detection_time.as_millis() > 0);
         assert!(result.metrics.files_per_second > 0.0);
@@ -1258,7 +1303,10 @@ mod tests {
     #[tokio::test]
     async fn test_check_file_changed() {
         let mut storage = MockHashLookupStorage::new();
-        storage.add_hash("existing.md".to_string(), create_test_stored_hash("existing.md", [1u8; 32]));
+        storage.add_hash(
+            "existing.md".to_string(),
+            create_test_stored_hash("existing.md", [1u8; 32]),
+        );
 
         let storage = Arc::new(storage);
         let detector = ChangeDetector::with_defaults(storage).unwrap();
@@ -1275,8 +1323,14 @@ mod tests {
     #[tokio::test]
     async fn test_batch_check_files_changed() {
         let mut storage = MockHashLookupStorage::new();
-        storage.add_hash("file1.md".to_string(), create_test_stored_hash("file1.md", [1u8; 32]));
-        storage.add_hash("file2.md".to_string(), create_test_stored_hash("file2.md", [2u8; 32]));
+        storage.add_hash(
+            "file1.md".to_string(),
+            create_test_stored_hash("file1.md", [1u8; 32]),
+        );
+        storage.add_hash(
+            "file2.md".to_string(),
+            create_test_stored_hash("file2.md", [2u8; 32]),
+        );
 
         let storage = Arc::new(storage);
         let detector = ChangeDetector::with_defaults(storage).unwrap();
@@ -1290,17 +1344,26 @@ mod tests {
         let results = detector.batch_check_files_changed(&paths).await.unwrap();
 
         assert_eq!(results.len(), 3);
-        assert_eq!(results.get("file1.md"), Some(&true));  // Found in storage
-        assert_eq!(results.get("file2.md"), Some(&true));  // Found in storage
+        assert_eq!(results.get("file1.md"), Some(&true)); // Found in storage
+        assert_eq!(results.get("file2.md"), Some(&true)); // Found in storage
         assert_eq!(results.get("file3.md"), Some(&false)); // Not in storage
     }
 
     #[tokio::test]
     async fn test_detect_deleted_files() {
         let mut storage = MockHashLookupStorage::new();
-        storage.add_hash("file1.md".to_string(), create_test_stored_hash("file1.md", [1u8; 32]));
-        storage.add_hash("file2.md".to_string(), create_test_stored_hash("file2.md", [2u8; 32]));
-        storage.add_hash("deleted.md".to_string(), create_test_stored_hash("deleted.md", [3u8; 32]));
+        storage.add_hash(
+            "file1.md".to_string(),
+            create_test_stored_hash("file1.md", [1u8; 32]),
+        );
+        storage.add_hash(
+            "file2.md".to_string(),
+            create_test_stored_hash("file2.md", [2u8; 32]),
+        );
+        storage.add_hash(
+            "deleted.md".to_string(),
+            create_test_stored_hash("deleted.md", [3u8; 32]),
+        );
 
         let storage = Arc::new(storage);
         let detector = ChangeDetector::with_defaults(storage).unwrap();
@@ -1387,7 +1450,10 @@ mod tests {
     #[tokio::test]
     async fn test_get_change_statistics() {
         let mut storage = MockHashLookupStorage::new();
-        storage.add_hash("test.md".to_string(), create_test_stored_hash("test.md", [1u8; 32]));
+        storage.add_hash(
+            "test.md".to_string(),
+            create_test_stored_hash("test.md", [1u8; 32]),
+        );
 
         let storage = Arc::new(storage);
         let detector = ChangeDetector::with_defaults(storage).unwrap();

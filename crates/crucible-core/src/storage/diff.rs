@@ -15,12 +15,12 @@
 //! 3. **Structural Analysis**: Tree structure and ordering changes
 //! 4. **Performance Optimization**: Caching and parallel processing
 
-use crate::storage::{MerkleTree, MerkleNode, TreeChange, StorageResult, ContentHasher};
+use crate::storage::{ContentHasher, MerkleNode, MerkleTree, StorageResult, TreeChange};
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::Arc;
-use parking_lot::RwLock;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(feature = "parallel-processing")]
 use rayon::prelude::*;
@@ -324,7 +324,8 @@ impl EnhancedChangeDetector {
 
         // Detect content splits and merges if enabled
         if self.config.enable_content_analysis {
-            let content_changes = self.detect_content_changes(old_tree, new_tree, hasher, source)?;
+            let content_changes =
+                self.detect_content_changes(old_tree, new_tree, hasher, source)?;
             changes.extend(content_changes);
         }
 
@@ -352,16 +353,19 @@ impl EnhancedChangeDetector {
             .collect();
 
         // Parallel comparison of blocks
-        let block_pairs: Vec<_> = old_blocks.par_iter()
+        let block_pairs: Vec<_> = old_blocks
+            .par_iter()
             .enumerate()
             .flat_map(|(old_idx, old_block)| {
-                new_blocks.par_iter()
+                new_blocks
+                    .par_iter()
                     .enumerate()
                     .map(move |(new_idx, new_block)| (old_idx, old_block, new_idx, new_block))
             })
             .collect();
 
-        let changes: Vec<_> = block_pairs.par_iter()
+        let changes: Vec<_> = block_pairs
+            .par_iter()
             .filter_map(|(old_idx, old_block, new_idx, new_block)| {
                 self.compare_blocks_parallel(*old_idx, old_block, *new_idx, new_block, &source)
             })
@@ -498,7 +502,8 @@ impl EnhancedChangeDetector {
         let mut processed_hashes = HashSet::new();
 
         // Build hash to index mappings for both trees
-        let old_hash_to_indices: HashMap<String, Vec<usize>> = old_tree.leaf_hashes
+        let old_hash_to_indices: HashMap<String, Vec<usize>> = old_tree
+            .leaf_hashes
             .iter()
             .enumerate()
             .fold(HashMap::new(), |mut map, (idx, hash)| {
@@ -506,7 +511,8 @@ impl EnhancedChangeDetector {
                 map
             });
 
-        let new_hash_to_indices: HashMap<String, Vec<usize>> = new_tree.leaf_hashes
+        let new_hash_to_indices: HashMap<String, Vec<usize>> = new_tree
+            .leaf_hashes
             .iter()
             .enumerate()
             .fold(HashMap::new(), |mut map, (idx, hash)| {
@@ -542,7 +548,8 @@ impl EnhancedChangeDetector {
                                 processed_hashes.insert(old_node.hash.clone());
                                 processed_hashes.insert(new_node.hash.clone());
                             }
-                        } else if let Some(new_positions) = new_hash_to_indices.get(&old_node.hash) {
+                        } else if let Some(new_positions) = new_hash_to_indices.get(&old_node.hash)
+                        {
                             // Block was moved
                             if let Some(&new_pos) = new_positions.first() {
                                 moved_blocks.push(MovedBlockInfo {
@@ -552,7 +559,8 @@ impl EnhancedChangeDetector {
                                 });
                                 processed_hashes.insert(old_node.hash.clone());
                             }
-                        } else if let Some(old_positions) = old_hash_to_indices.get(&new_node.hash) {
+                        } else if let Some(old_positions) = old_hash_to_indices.get(&new_node.hash)
+                        {
                             // Block was moved to this position
                             if let Some(&old_pos) = old_positions.first() {
                                 moved_blocks.push(MovedBlockInfo {
@@ -583,7 +591,10 @@ impl EnhancedChangeDetector {
                                         category: Some("modification".to_string()),
                                         context: {
                                             let mut ctx = HashMap::new();
-                                            ctx.insert("similarity".to_string(), format!("{:.3}", similarity));
+                                            ctx.insert(
+                                                "similarity".to_string(),
+                                                format!("{:.3}", similarity),
+                                            );
                                             ctx
                                         },
                                         ..Default::default()
@@ -874,15 +885,20 @@ impl From<EnhancedTreeChange> for TreeChange {
             EnhancedTreeChange::AddedBlock { index, hash, .. } => {
                 TreeChange::AddedBlock { index, hash }
             }
-            EnhancedTreeChange::ModifiedBlock { index, old_hash, new_hash, .. } => {
-                TreeChange::ModifiedBlock { index, old_hash, new_hash }
-            }
+            EnhancedTreeChange::ModifiedBlock {
+                index,
+                old_hash,
+                new_hash,
+                ..
+            } => TreeChange::ModifiedBlock {
+                index,
+                old_hash,
+                new_hash,
+            },
             EnhancedTreeChange::DeletedBlock { index, hash, .. } => {
                 TreeChange::DeletedBlock { index, hash }
             }
-            EnhancedTreeChange::StructureChanged { .. } => {
-                TreeChange::StructureChanged
-            }
+            EnhancedTreeChange::StructureChanged { .. } => TreeChange::StructureChanged,
             _ => {
                 // For new change types, map to structure change for compatibility
                 TreeChange::StructureChanged
@@ -948,7 +964,8 @@ mod tests {
                     i * 10,
                     i == block_data.len() - 1,
                     hasher,
-                ).unwrap()
+                )
+                .unwrap()
             })
             .collect();
 
@@ -976,8 +993,14 @@ mod tests {
         };
 
         let detector = EnhancedChangeDetector::with_config(config.clone());
-        assert_eq!(detector.config.enable_similarity_detection, config.enable_similarity_detection);
-        assert_eq!(detector.config.similarity_threshold, config.similarity_threshold);
+        assert_eq!(
+            detector.config.enable_similarity_detection,
+            config.enable_similarity_detection
+        );
+        assert_eq!(
+            detector.config.similarity_threshold,
+            config.similarity_threshold
+        );
     }
 
     #[test]
@@ -1010,7 +1033,9 @@ mod tests {
         let tree1 = create_test_merkle_tree(&["block1", "block2", "block3"], &hasher);
         let tree2 = create_test_merkle_tree(&["block1", "block2", "block3"], &hasher);
 
-        let changes = detector.compare_trees(&tree1, &tree2, &hasher, ChangeSource::UserEdit).unwrap();
+        let changes = detector
+            .compare_trees(&tree1, &tree2, &hasher, ChangeSource::UserEdit)
+            .unwrap();
         assert!(changes.is_empty());
     }
 
@@ -1022,10 +1047,14 @@ mod tests {
         let tree1 = create_test_merkle_tree(&["block1", "block2"], &hasher);
         let tree2 = create_test_merkle_tree(&["block1", "block2", "block3"], &hasher);
 
-        let changes = detector.compare_trees(&tree1, &tree2, &hasher, ChangeSource::Import).unwrap();
+        let changes = detector
+            .compare_trees(&tree1, &tree2, &hasher, ChangeSource::Import)
+            .unwrap();
 
         assert!(!changes.is_empty());
-        assert!(changes.iter().any(|c| matches!(c, EnhancedTreeChange::AddedBlock { .. })));
+        assert!(changes
+            .iter()
+            .any(|c| matches!(c, EnhancedTreeChange::AddedBlock { .. })));
     }
 
     #[test]
@@ -1036,10 +1065,14 @@ mod tests {
         let tree1 = create_test_merkle_tree(&["block1", "block2", "block3"], &hasher);
         let tree2 = create_test_merkle_tree(&["block1", "block2"], &hasher);
 
-        let changes = detector.compare_trees(&tree1, &tree2, &hasher, ChangeSource::Sync).unwrap();
+        let changes = detector
+            .compare_trees(&tree1, &tree2, &hasher, ChangeSource::Sync)
+            .unwrap();
 
         assert!(!changes.is_empty());
-        assert!(changes.iter().any(|c| matches!(c, EnhancedTreeChange::DeletedBlock { .. })));
+        assert!(changes
+            .iter()
+            .any(|c| matches!(c, EnhancedTreeChange::DeletedBlock { .. })));
     }
 
     #[test]
@@ -1055,10 +1088,14 @@ mod tests {
         let tree1 = create_test_merkle_tree(&["block1", "block2", "block3"], &hasher);
         let tree2 = create_test_merkle_tree(&["block1", "modified_block2", "block3"], &hasher);
 
-        let changes = detector.compare_trees(&tree1, &tree2, &hasher, ChangeSource::UserEdit).unwrap();
+        let changes = detector
+            .compare_trees(&tree1, &tree2, &hasher, ChangeSource::UserEdit)
+            .unwrap();
 
         assert!(!changes.is_empty());
-        assert!(changes.iter().any(|c| matches!(c, EnhancedTreeChange::ModifiedBlock { .. })));
+        assert!(changes
+            .iter()
+            .any(|c| matches!(c, EnhancedTreeChange::ModifiedBlock { .. })));
     }
 
     #[test]
@@ -1070,12 +1107,21 @@ mod tests {
         let tree1 = create_test_merkle_tree(&["block1", "block2", "block3"], &hasher1);
         let tree2 = create_test_merkle_tree(&["block1", "block2", "block3"], &hasher2);
 
-        let changes = detector.compare_trees(&tree1, &tree2, &hasher1, ChangeSource::Migration).unwrap();
+        let changes = detector
+            .compare_trees(&tree1, &tree2, &hasher1, ChangeSource::Migration)
+            .unwrap();
 
         assert!(!changes.is_empty());
         // Check for either structure change or content differences (since different hashers will produce different hashes)
-        let has_structure_change = changes.iter().any(|c| matches!(c, EnhancedTreeChange::StructureChanged { .. }));
-        let has_content_changes = changes.iter().any(|c| matches!(c, EnhancedTreeChange::DeletedBlock { .. } | EnhancedTreeChange::AddedBlock { .. }));
+        let has_structure_change = changes
+            .iter()
+            .any(|c| matches!(c, EnhancedTreeChange::StructureChanged { .. }));
+        let has_content_changes = changes.iter().any(|c| {
+            matches!(
+                c,
+                EnhancedTreeChange::DeletedBlock { .. } | EnhancedTreeChange::AddedBlock { .. }
+            )
+        });
         assert!(has_structure_change || has_content_changes);
     }
 
@@ -1085,11 +1131,15 @@ mod tests {
         let detector = EnhancedChangeDetector::new();
 
         // Test identical hashes
-        let similarity = detector.calculate_content_similarity("abc123", "abc123", &hasher).unwrap();
+        let similarity = detector
+            .calculate_content_similarity("abc123", "abc123", &hasher)
+            .unwrap();
         assert_eq!(similarity, 1.0);
 
         // Test different hashes
-        let similarity = detector.calculate_content_similarity("abc123", "def456", &hasher).unwrap();
+        let similarity = detector
+            .calculate_content_similarity("abc123", "def456", &hasher)
+            .unwrap();
         assert!(similarity >= 0.0 && similarity <= 1.0);
     }
 
@@ -1117,7 +1167,9 @@ mod tests {
         };
 
         let basic_change = TreeChange::from(enhanced_change);
-        assert!(matches!(basic_change, TreeChange::AddedBlock { index: 5, hash } if hash == "test_hash"));
+        assert!(
+            matches!(basic_change, TreeChange::AddedBlock { index: 5, hash } if hash == "test_hash")
+        );
     }
 
     #[test]

@@ -5,9 +5,9 @@
 
 use anyhow::Result;
 use crucible_surrealdb::{
-    SurrealClient, create_kiln_scanner_with_embeddings, KilnScannerConfig,
-    lookup_file_hash, lookup_file_hashes_batch, BatchLookupConfig, HashLookupCache,
-    EmbeddingConfig, EmbeddingThreadPool
+    create_kiln_scanner_with_embeddings, lookup_file_hash, lookup_file_hashes_batch,
+    BatchLookupConfig, EmbeddingConfig, EmbeddingThreadPool, HashLookupCache, KilnScannerConfig,
+    SurrealClient,
 };
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -44,11 +44,7 @@ async fn main() -> Result<()> {
     let embedding_config = EmbeddingConfig::default();
     let embedding_pool = EmbeddingThreadPool::new(embedding_config).await?;
 
-    let mut scanner = create_kiln_scanner_with_embeddings(
-        config,
-        &client,
-        &embedding_pool,
-    ).await?;
+    let mut scanner = create_kiln_scanner_with_embeddings(config, &client, &embedding_pool).await?;
     println!("🔬 Created scanner with hash lookup");
 
     // === Demo 1: Basic Hash Lookup ===
@@ -88,12 +84,17 @@ async fn main() -> Result<()> {
     println!("   Total queried: {}", batch_result.total_queried);
     println!("   Files found: {}", batch_result.found_files.len());
     println!("   Files missing: {}", batch_result.missing_files.len());
-    println!("   Database round trips: {}", batch_result.database_round_trips);
+    println!(
+        "   Database round trips: {}",
+        batch_result.database_round_trips
+    );
 
     // === Demo 3: Scan with Hash Lookup ===
     println!("\n=== Demo 3: Scan with Hash Lookup ===");
 
-    let scan_result = scanner.scan_kiln_directory_with_hash_lookup(&kiln_path).await?;
+    let scan_result = scanner
+        .scan_kiln_directory_with_hash_lookup(&kiln_path)
+        .await?;
     println!("📈 Scan results:");
     println!("   Total files: {}", scan_result.total_files_found);
     println!("   Markdown files: {}", scan_result.markdown_files_found);
@@ -103,7 +104,10 @@ async fn main() -> Result<()> {
         println!("🔍 Hash lookup results:");
         println!("   Files found in DB: {}", hash_lookup.found_files.len());
         println!("   New files: {}", hash_lookup.missing_files.len());
-        println!("   Database round trips: {}", hash_lookup.database_round_trips);
+        println!(
+            "   Database round trips: {}",
+            hash_lookup.database_round_trips
+        );
     }
 
     // === Demo 4: Change Detection ===
@@ -119,7 +123,10 @@ async fn main() -> Result<()> {
 
     // Get files that need processing
     let files_needing_processing = scanner.get_files_needing_processing(&scan_result);
-    println!("📋 Files needing processing: {}", files_needing_processing.len());
+    println!(
+        "📋 Files needing processing: {}",
+        files_needing_processing.len()
+    );
     for file in &files_needing_processing {
         println!("   - {}", file.relative_path);
     }
@@ -136,7 +143,9 @@ async fn main() -> Result<()> {
 
     // Perform a second scan to see cache benefits
     println!("🔄 Performing second scan to test cache...");
-    let scan_result2 = scanner.scan_kiln_directory_with_hash_lookup(&kiln_path).await?;
+    let scan_result2 = scanner
+        .scan_kiln_directory_with_hash_lookup(&kiln_path)
+        .await?;
 
     let cache_stats2 = scanner.get_hash_cache_stats();
     println!("💾 Updated cache statistics:");
@@ -149,11 +158,17 @@ async fn main() -> Result<()> {
     println!("\n=== Demo 6: File Change Simulation ===");
 
     // Modify a file
-    fs::write(kiln_path.join("test1.md"), "# Modified Test Document\n\nThis content has been changed.").await?;
+    fs::write(
+        kiln_path.join("test1.md"),
+        "# Modified Test Document\n\nThis content has been changed.",
+    )
+    .await?;
     println!("✏️  Modified test1.md");
 
     // Scan again to detect changes
-    let scan_result3 = scanner.scan_kiln_directory_with_hash_lookup(&kiln_path).await?;
+    let scan_result3 = scanner
+        .scan_kiln_directory_with_hash_lookup(&kiln_path)
+        .await?;
 
     if let Some(summary) = scanner.get_change_detection_summary(&scan_result3) {
         println!("🔄 Updated change detection:");
@@ -170,8 +185,9 @@ async fn main() -> Result<()> {
     let needs_update = crucible_surrealdb::check_file_needs_update(
         &client,
         "test1.md",
-        "new_hash_value_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-    ).await?;
+        "new_hash_value_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+    )
+    .await?;
     println!("🔍 test1.md needs update with fake hash: {}", needs_update);
 
     println!("\n✅ Hash lookup demo completed successfully!");
@@ -181,7 +197,9 @@ async fn main() -> Result<()> {
 /// Setup test files in the temporary directory
 async fn setup_test_files(kiln_path: &PathBuf) -> Result<()> {
     // Create test markdown files
-    fs::write(kiln_path.join("test1.md"), r#"# Test Document 1
+    fs::write(
+        kiln_path.join("test1.md"),
+        r#"# Test Document 1
 
 This is the first test document.
 
@@ -192,9 +210,13 @@ Some content here.
 ## Section 2
 
 More content here.
-"#).await?;
+"#,
+    )
+    .await?;
 
-    fs::write(kiln_path.join("test2.md"), r#"# Test Document 2
+    fs::write(
+        kiln_path.join("test2.md"),
+        r#"# Test Document 2
 
 This is the second test document with different content.
 
@@ -207,9 +229,13 @@ This is the second test document with different content.
 ## Conclusion
 
 This document demonstrates file hashing.
-"#).await?;
+"#,
+    )
+    .await?;
 
-    fs::write(kiln_path.join("test3.md"), r#"# Test Document 3
+    fs::write(
+        kiln_path.join("test3.md"),
+        r#"# Test Document 3
 
 This document contains code examples:
 
@@ -222,18 +248,28 @@ fn hello_world() {
 ## Usage
 
 Use the function above to greet the world.
-"#).await?;
+"#,
+    )
+    .await?;
 
     // Create a subdirectory with more files
     fs::create_dir_all(kiln_path.join("subdir")).await?;
 
-    fs::write(kiln_path.join("subdir/nested.md"), r#"# Nested Document
+    fs::write(
+        kiln_path.join("subdir/nested.md"),
+        r#"# Nested Document
 
 This document is in a subdirectory.
-"#).await?;
+"#,
+    )
+    .await?;
 
     // Create a non-markdown file (should be ignored by hash lookup for markdown)
-    fs::write(kiln_path.join("readme.txt"), "This is a text file, not markdown.").await?;
+    fs::write(
+        kiln_path.join("readme.txt"),
+        "This is a text file, not markdown.",
+    )
+    .await?;
 
     Ok(())
 }

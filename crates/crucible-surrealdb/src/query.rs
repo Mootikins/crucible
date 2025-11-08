@@ -588,7 +588,10 @@ mod tests {
         // Note: We can't use execute_query to get the full records because relation tables
         // have 'in' and 'out' fields that are Thing types, which don't serialize to JSON.
         // Instead, use a count query which works fine.
-        let mut count_response = db.query("SELECT count() FROM wikilink GROUP ALL").await.unwrap();
+        let mut count_response = db
+            .query("SELECT count() FROM wikilink GROUP ALL")
+            .await
+            .unwrap();
 
         #[derive(Debug, Deserialize)]
         struct CountResult {
@@ -681,13 +684,19 @@ mod tests {
         let db = setup_test_db().await.unwrap();
 
         // Create notes and links
-        execute_query(&db, "CREATE notes:note1 SET path = 'note1.md', content = 'Note 1'")
-            .await
-            .unwrap();
+        execute_query(
+            &db,
+            "CREATE notes:note1 SET path = 'note1.md', content = 'Note 1'",
+        )
+        .await
+        .unwrap();
 
-        execute_query(&db, "CREATE notes:note2 SET path = 'note2.md', content = 'Note 2'")
-            .await
-            .unwrap();
+        execute_query(
+            &db,
+            "CREATE notes:note2 SET path = 'note2.md', content = 'Note 2'",
+        )
+        .await
+        .unwrap();
 
         execute_query(
             &db,
@@ -760,12 +769,9 @@ mod tests {
         .unwrap();
 
         // Tag note1 with parent tag (using RELATE syntax for relation tables)
-        execute_query(
-            &db,
-            "RELATE notes:note1->tagged_with->tags:project",
-        )
-        .await
-        .unwrap();
+        execute_query(&db, "RELATE notes:note1->tagged_with->tags:project")
+            .await
+            .unwrap();
 
         // Tag note2 with child tag (using RELATE syntax for relation tables)
         execute_query(
@@ -778,7 +784,11 @@ mod tests {
         // Query to find all notes with parent tag (exact match)
         let query_exact = "SELECT in.path FROM tagged_with WHERE out.name = 'project'";
         let results_exact = execute_query(&db, query_exact).await.unwrap();
-        assert_eq!(results_exact.len(), 1, "Should find 1 note with exact parent tag");
+        assert_eq!(
+            results_exact.len(),
+            1,
+            "Should find 1 note with exact parent tag"
+        );
 
         // Query to find all notes with tags starting with 'project' (hierarchical)
         let query_hierarchical = r#"
@@ -806,17 +816,26 @@ mod tests {
         }
 
         // Create notes with multiple tags
-        execute_query(&db, "CREATE notes:note1 SET path = 'note1.md', content = 'Note 1'")
-            .await
-            .unwrap();
+        execute_query(
+            &db,
+            "CREATE notes:note1 SET path = 'note1.md', content = 'Note 1'",
+        )
+        .await
+        .unwrap();
 
-        execute_query(&db, "CREATE notes:note2 SET path = 'note2.md', content = 'Note 2'")
-            .await
-            .unwrap();
+        execute_query(
+            &db,
+            "CREATE notes:note2 SET path = 'note2.md', content = 'Note 2'",
+        )
+        .await
+        .unwrap();
 
-        execute_query(&db, "CREATE notes:note3 SET path = 'note3.md', content = 'Note 3'")
-            .await
-            .unwrap();
+        execute_query(
+            &db,
+            "CREATE notes:note3 SET path = 'note3.md', content = 'Note 3'",
+        )
+        .await
+        .unwrap();
 
         // Note1: rust + programming (using RELATE syntax for relation tables)
         execute_query(&db, "RELATE notes:note1->tagged_with->tags:rust")
@@ -848,12 +867,20 @@ mod tests {
         // find the intersection in Rust code.
 
         // Get all notes tagged with 'rust'
-        let rust_tags = execute_query(&db, "SELECT in.path FROM tagged_with WHERE out.name = 'rust'")
-            .await.unwrap();
+        let rust_tags = execute_query(
+            &db,
+            "SELECT in.path FROM tagged_with WHERE out.name = 'rust'",
+        )
+        .await
+        .unwrap();
 
         // Get all notes tagged with 'programming'
-        let programming_tags = execute_query(&db, "SELECT in.path FROM tagged_with WHERE out.name = 'programming'")
-            .await.unwrap();
+        let programming_tags = execute_query(
+            &db,
+            "SELECT in.path FROM tagged_with WHERE out.name = 'programming'",
+        )
+        .await
+        .unwrap();
 
         // Extract paths from results (structure is {"in": {"path": "note1.md"}})
         let rust_notes: Vec<String> = rust_tags

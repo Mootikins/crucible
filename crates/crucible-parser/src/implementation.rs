@@ -5,12 +5,12 @@ use std::path::Path;
 use tokio::fs;
 use tokio::io::AsyncReadExt;
 
+use crate::block_extractor::{BlockExtractor, ExtractionConfig};
+use crate::block_hasher::SimpleBlockHasher;
 use crate::error::{ParserError, ParserResult};
 use crate::extensions::ExtensionRegistry;
 use crate::traits::{MarkdownParserImplementation, ParserCapabilities};
 use crate::types::{DocumentContent, ParsedDocument};
-use crate::block_extractor::{BlockExtractor, ExtractionConfig};
-use crate::block_hasher::SimpleBlockHasher;
 
 /// Default implementation of the MarkdownParserImplementation trait
 ///
@@ -176,7 +176,8 @@ impl CrucibleParser {
         let extractor = BlockExtractor::with_config(self.block_config.extraction_config.clone());
 
         // Extract AST blocks from the document
-        let blocks = extractor.extract_blocks(document)
+        let blocks = extractor
+            .extract_blocks(document)
             .map_err(|e| ParserError::parse_failed(format!("Block extraction failed: {:?}", e)))?;
 
         // If no blocks were extracted, clear hash data and return
@@ -186,12 +187,15 @@ impl CrucibleParser {
         }
 
         // Compute block hashes using SimpleBlockHasher
-        let block_hashes = self.compute_block_hashes(&blocks).await
+        let block_hashes = self
+            .compute_block_hashes(&blocks)
+            .await
             .map_err(|e| ParserError::parse_failed(format!("Block hashing failed: {}", e)))?;
 
         // Build Merkle tree and compute root hash
-        let merkle_root = self.compute_merkle_root(&blocks).await
-            .map_err(|e| ParserError::parse_failed(format!("Merkle tree construction failed: {}", e)))?;
+        let merkle_root = self.compute_merkle_root(&blocks).await.map_err(|e| {
+            ParserError::parse_failed(format!("Merkle tree construction failed: {}", e))
+        })?;
 
         // Update document with hash data
         document.block_hashes = block_hashes;
@@ -209,7 +213,10 @@ impl CrucibleParser {
     /// # Returns
     ///
     /// Vector of block hashes or error if hashing failed
-    async fn compute_block_hashes(&self, blocks: &[crate::types::ASTBlock]) -> Result<Vec<crate::types::BlockHash>, Box<dyn std::error::Error + Send + Sync>> {
+    async fn compute_block_hashes(
+        &self,
+        blocks: &[crate::types::ASTBlock],
+    ) -> Result<Vec<crate::types::BlockHash>, Box<dyn std::error::Error + Send + Sync>> {
         let hasher = SimpleBlockHasher::new();
         let hashes = hasher.hash_blocks_batch(blocks).await?;
         Ok(hashes)
@@ -224,20 +231,30 @@ impl CrucibleParser {
     /// # Returns
     ///
     /// Merkle root hash or error if computation failed
-    async fn compute_merkle_root(&self, blocks: &[crate::types::ASTBlock]) -> Result<crate::types::BlockHash, Box<dyn std::error::Error + Send + Sync>> {
+    async fn compute_merkle_root(
+        &self,
+        blocks: &[crate::types::ASTBlock],
+    ) -> Result<crate::types::BlockHash, Box<dyn std::error::Error + Send + Sync>> {
         let hasher = SimpleBlockHasher::new();
         let merkle_root = hasher.build_merkle_root(blocks).await?;
         Ok(merkle_root)
     }
 
     /// Parse frontmatter from content
-    fn parse_frontmatter<'a>(&self, content: &'a str) -> (Option<String>, &'a str, crate::types::FrontmatterFormat) {
+    fn parse_frontmatter<'a>(
+        &self,
+        content: &'a str,
+    ) -> (Option<String>, &'a str, crate::types::FrontmatterFormat) {
         // Check for YAML frontmatter
         if content.starts_with("---\n") {
             if let Some(end) = content.find("\n---\n") {
                 let frontmatter = &content[4..end];
                 let content = &content[end + 5..];
-                return (Some(frontmatter.to_string()), content, crate::types::FrontmatterFormat::Yaml);
+                return (
+                    Some(frontmatter.to_string()),
+                    content,
+                    crate::types::FrontmatterFormat::Yaml,
+                );
             }
         }
 
@@ -246,7 +263,11 @@ impl CrucibleParser {
             if let Some(end) = content.find("\n+++\n") {
                 let frontmatter = &content[4..end];
                 let content = &content[end + 5..];
-                return (Some(frontmatter.to_string()), content, crate::types::FrontmatterFormat::Toml);
+                return (
+                    Some(frontmatter.to_string()),
+                    content,
+                    crate::types::FrontmatterFormat::Toml,
+                );
             }
         }
 
@@ -257,7 +278,10 @@ impl CrucibleParser {
     fn validate_file_size(&self, size: usize) -> ParserResult<()> {
         if let Some(max_size) = self.max_file_size {
             if size > max_size {
-                return Err(ParserError::FileTooLarge { size, max: max_size });
+                return Err(ParserError::FileTooLarge {
+                    size,
+                    max: max_size,
+                });
             }
         }
         Ok(())
@@ -289,7 +313,11 @@ impl MarkdownParserImplementation for CrucibleParser {
         self.parse_content(&content, path).await
     }
 
-    async fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedDocument> {
+    async fn parse_content(
+        &self,
+        content: &str,
+        source_path: &Path,
+    ) -> ParserResult<ParsedDocument> {
         // Parse frontmatter
         let (frontmatter_raw, content, frontmatter_format) = self.parse_frontmatter(content);
 
@@ -376,7 +404,7 @@ impl MarkdownParserImplementation for CrucibleParser {
 mod tests {
     use super::*;
     use std::path::PathBuf;
-    
+
     #[tokio::test]
     async fn test_parse_basic_content() {
         let content = "# Test Note\n\nThis is a test.";
@@ -625,9 +653,8 @@ let x = 42;
         // Test that existing code still works without modifications
         let parser = CrucibleParser::new();
         let parser_with_extensions = CrucibleParser::with_default_extensions();
-        let parser_with_custom = CrucibleParser::with_extensions(
-            crate::ExtensionRegistryBuilder::new().build()
-        );
+        let parser_with_custom =
+            CrucibleParser::with_extensions(crate::ExtensionRegistryBuilder::new().build());
 
         // All should have block processing disabled by default
         assert!(!parser.is_block_processing_enabled());
@@ -706,7 +733,10 @@ Content 2."#;
             content.push_str("This is a paragraph with some content.\n\n");
 
             if i % 3 == 0 {
-                content.push_str(&format!("```rust\nfn test_{}() {{\n    println!(\"test\");\n}}\n```\n\n", i));
+                content.push_str(&format!(
+                    "```rust\nfn test_{}() {{\n    println!(\"test\");\n}}\n```\n\n",
+                    i
+                ));
             }
 
             if i % 2 == 0 {
@@ -733,8 +763,16 @@ Content 2."#;
         assert!(doc.block_hash_count() > 10);
 
         // Performance check: should complete within reasonable time
-        assert!(duration.as_secs() < 5, "Block processing took too long: {:?}", duration);
+        assert!(
+            duration.as_secs() < 5,
+            "Block processing took too long: {:?}",
+            duration
+        );
 
-        println!("Processed {} blocks in {:?}", doc.block_hash_count(), duration);
+        println!(
+            "Processed {} blocks in {:?}",
+            doc.block_hash_count(),
+            duration
+        );
     }
 }

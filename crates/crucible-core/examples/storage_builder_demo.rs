@@ -3,9 +3,9 @@
 //! This example demonstrates how to use the ContentAddressedStorageBuilder
 //! to create configured storage instances following dependency inversion principles.
 
-use crucible_core::storage::{ContentAddressedStorageBuilder, StorageBackendType, HasherConfig};
-use crucible_core::storage::BlockSize;
 use crucible_core::hashing::blake3::Blake3Hasher;
+use crucible_core::storage::BlockSize;
+use crucible_core::storage::{ContentAddressedStorageBuilder, HasherConfig, StorageBackendType};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -56,13 +56,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             database: "production".to_string(),
         })
         .with_hasher(HasherConfig::Blake3(Blake3Hasher::new()))
-        .with_block_size(BlockSize::Adaptive { min: 1024, max: 16384 })
+        .with_block_size(BlockSize::Adaptive {
+            min: 1024,
+            max: 16384,
+        })
         .with_compression(true)
         .with_deduplication(true);
 
     match surrealdb_storage.build() {
         Ok(_) => println!("✅ Successfully configured SurrealDB storage"),
-        Err(e) => println!("ℹ️  Expected - SurrealDB backend not yet implemented: {}", e),
+        Err(e) => println!(
+            "ℹ️  Expected - SurrealDB backend not yet implemented: {}",
+            e
+        ),
     }
 
     println!();

@@ -11,8 +11,8 @@
 //! - **Thread-Safe**: Safe to use across multiple threads
 //! - **Standards Compliant**: Produces standard SHA256 hex digests
 
-use sha2::{Digest, Sha256};
 use crate::storage::ContentHasher;
+use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// SHA256-based content hasher for content-addressed storage
@@ -118,11 +118,10 @@ impl ContentHasher for SHA256Hasher {
 ///
 /// This static instance can be used throughout the application for consistent
 /// SHA256 hashing operations.
-pub static SHA256_CONTENT_HASHER: std::sync::LazyLock<SHA256Hasher> = std::sync::LazyLock::new(|| {
-    SHA256Hasher {
+pub static SHA256_CONTENT_HASHER: std::sync::LazyLock<SHA256Hasher> =
+    std::sync::LazyLock::new(|| SHA256Hasher {
         operation_count: std::sync::Arc::new(AtomicUsize::new(0)),
-    }
-});
+    });
 
 #[cfg(test)]
 mod tests {
@@ -131,13 +130,34 @@ mod tests {
 
     // Test vectors from RFC 6231 for SHA256
     const TEST_VECTORS: &[(&[u8], &str)] = &[
-        (b"", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
-        (b"a", "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb"),
-        (b"abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
-        (b"message digest", "f7846f55cf23e14eebeab5b4e1550cad5b509e3348fbc4efa3a1413d393cb650"),
-        (b"abcdefghijklmnopqrstuvwxyz", "71c480df93d6ae2f1efad1447c66c9525e316218cf51fc8d9ed832f2daf18b73"),
-        (b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", "db4bfcbd4da0cd85a60c3c37d3fbd8805c77f15fc6b1fdfe614ee0a7c8fdb4c0"),
-        (b"12345678901234567890123456789012345678901234567890123456789012345678901234567890", "f371bc4a311f2b009eef952dd83ca80e2b60026c8e935592d0f9c308453c813e"),
+        (
+            b"",
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        ),
+        (
+            b"a",
+            "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+        ),
+        (
+            b"abc",
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        ),
+        (
+            b"message digest",
+            "f7846f55cf23e14eebeab5b4e1550cad5b509e3348fbc4efa3a1413d393cb650",
+        ),
+        (
+            b"abcdefghijklmnopqrstuvwxyz",
+            "71c480df93d6ae2f1efad1447c66c9525e316218cf51fc8d9ed832f2daf18b73",
+        ),
+        (
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+            "db4bfcbd4da0cd85a60c3c37d3fbd8805c77f15fc6b1fdfe614ee0a7c8fdb4c0",
+        ),
+        (
+            b"12345678901234567890123456789012345678901234567890123456789012345678901234567890",
+            "f371bc4a311f2b009eef952dd83ca80e2b60026c8e935592d0f9c308453c813e",
+        ),
     ];
 
     #[test]
@@ -169,7 +189,10 @@ mod tests {
         let result = hasher.hash_block(b"");
 
         // SHA256 of empty string from RFC test vectors
-        assert_eq!(result, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        assert_eq!(
+            result,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
         assert_eq!(result.len(), 64); // 32 bytes * 2 hex chars per byte
         assert_eq!(hasher.operation_count(), 1);
     }
@@ -179,7 +202,10 @@ mod tests {
         let hasher = SHA256Hasher::new();
         let result = hasher.hash_block(b"a");
 
-        assert_eq!(result, "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb");
+        assert_eq!(
+            result,
+            "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb"
+        );
         assert_eq!(result.len(), 64);
         assert_eq!(hasher.operation_count(), 1);
     }
@@ -189,7 +215,10 @@ mod tests {
         let hasher = SHA256Hasher::new();
         let result = hasher.hash_block(b"abc");
 
-        assert_eq!(result, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        assert_eq!(
+            result,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
         assert_eq!(result.len(), 64);
         assert_eq!(hasher.operation_count(), 1);
     }
@@ -200,7 +229,10 @@ mod tests {
         let data = b"abcdefghijklmnopqrstuvwxyz";
         let result = hasher.hash_block(data);
 
-        assert_eq!(result, "71c480df93d6ae2f1efad1447c66c9525e316218cf51fc8d9ed832f2daf18b73");
+        assert_eq!(
+            result,
+            "71c480df93d6ae2f1efad1447c66c9525e316218cf51fc8d9ed832f2daf18b73"
+        );
         assert_eq!(result.len(), 64);
         assert_eq!(hasher.operation_count(), 1);
     }
@@ -211,7 +243,10 @@ mod tests {
         let data = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
         let result = hasher.hash_block(data);
 
-        assert_eq!(result, "db4bfcbd4da0cd85a60c3c37d3fbd8805c77f15fc6b1fdfe614ee0a7c8fdb4c0");
+        assert_eq!(
+            result,
+            "db4bfcbd4da0cd85a60c3c37d3fbd8805c77f15fc6b1fdfe614ee0a7c8fdb4c0"
+        );
         assert_eq!(result.len(), 64);
         assert_eq!(hasher.operation_count(), 1);
     }
@@ -219,10 +254,14 @@ mod tests {
     #[test]
     fn test_hash_block_large_data() {
         let hasher = SHA256Hasher::new();
-        let data = b"12345678901234567890123456789012345678901234567890123456789012345678901234567890";
+        let data =
+            b"12345678901234567890123456789012345678901234567890123456789012345678901234567890";
         let result = hasher.hash_block(data);
 
-        assert_eq!(result, "f371bc4a311f2b009eef952dd83ca80e2b60026c8e935592d0f9c308453c813e");
+        assert_eq!(
+            result,
+            "f371bc4a311f2b009eef952dd83ca80e2b60026c8e935592d0f9c308453c813e"
+        );
         assert_eq!(result.len(), 64);
         assert_eq!(hasher.operation_count(), 1);
     }
@@ -350,7 +389,8 @@ mod tests {
         for (data, expected_hash) in TEST_VECTORS {
             let computed_hash = hasher.hash_block(data);
             assert_eq!(
-                computed_hash, *expected_hash,
+                computed_hash,
+                *expected_hash,
                 "SHA256 test vector failed for input: {:?}",
                 String::from_utf8_lossy(data)
             );
@@ -419,7 +459,9 @@ mod tests {
         assert!(!hasher.is_valid_hash("")); // Empty
         assert!(!hasher.is_valid_hash("invalid")); // Not hex
         assert!(!hasher.is_valid_hash("e3b0c44")); // Wrong length
-        assert!(!hasher.is_valid_hash("g3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")); // Invalid hex char
+        assert!(!hasher
+            .is_valid_hash("g3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
+        // Invalid hex char
     }
 
     #[test]
@@ -428,12 +470,12 @@ mod tests {
 
         // Test various block sizes
         let test_data = vec![
-            vec![], // 0 bytes
-            vec![0x42], // 1 byte
+            vec![],                 // 0 bytes
+            vec![0x42],             // 1 byte
             vec![0x41, 0x42, 0x43], // 3 bytes
-            vec![0u8; 64], // 64 bytes
-            vec![0u8; 1024], // 1KB
-            vec![0u8; 65536], // 64KB
+            vec![0u8; 64],          // 64 bytes
+            vec![0u8; 1024],        // 1KB
+            vec![0u8; 65536],       // 64KB
         ];
 
         let mut hashes = Vec::new();
@@ -448,7 +490,10 @@ mod tests {
         for (i, hash1) in hashes.iter().enumerate() {
             for (j, hash2) in hashes.iter().enumerate() {
                 if i != j {
-                    assert_ne!(hash1, hash2, "Hashes for different sizes should be different");
+                    assert_ne!(
+                        hash1, hash2,
+                        "Hashes for different sizes should be different"
+                    );
                 }
             }
         }
@@ -497,21 +542,11 @@ mod tests {
         let hasher = SHA256Hasher::new();
 
         // Create some test blocks
-        let block1 = HashedBlock::from_data(
-            b"Block 1 content".to_vec(),
-            0,
-            0,
-            false,
-            &hasher,
-        ).unwrap();
+        let block1 =
+            HashedBlock::from_data(b"Block 1 content".to_vec(), 0, 0, false, &hasher).unwrap();
 
-        let block2 = HashedBlock::from_data(
-            b"Block 2 content".to_vec(),
-            1,
-            20,
-            false,
-            &hasher,
-        ).unwrap();
+        let block2 =
+            HashedBlock::from_data(b"Block 2 content".to_vec(), 1, 20, false, &hasher).unwrap();
 
         let block3 = HashedBlock::from_data(
             b"Block 3 content".to_vec(),
@@ -519,7 +554,8 @@ mod tests {
             40,
             true, // last block
             &hasher,
-        ).unwrap();
+        )
+        .unwrap();
 
         let blocks = vec![block1.clone(), block2.clone(), block3.clone()];
 

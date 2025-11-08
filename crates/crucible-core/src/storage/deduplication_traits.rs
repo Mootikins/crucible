@@ -6,9 +6,9 @@
 
 use crate::storage::StorageResult;
 use async_trait::async_trait;
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Trait for storage backends that support deduplication queries
 #[async_trait]
@@ -23,7 +23,10 @@ pub trait DeduplicationStorage: Send + Sync {
     async fn get_block_by_hash(&self, block_hash: &str) -> StorageResult<Option<BlockInfo>>;
 
     /// Get deduplication statistics for specific block hashes
-    async fn get_block_deduplication_stats(&self, block_hashes: &[String]) -> StorageResult<HashMap<String, usize>>;
+    async fn get_block_deduplication_stats(
+        &self,
+        block_hashes: &[String],
+    ) -> StorageResult<HashMap<String, usize>>;
 
     /// Get deduplication statistics for all blocks (hash -> count mapping)
     /// This is a low-level method that returns raw counts for all unique blocks
@@ -33,16 +36,25 @@ pub trait DeduplicationStorage: Send + Sync {
     async fn get_all_deduplication_stats(&self) -> StorageResult<DeduplicationStats>;
 
     /// Find duplicate blocks above a minimum occurrence threshold
-    async fn find_duplicate_blocks(&self, min_occurrences: usize) -> StorageResult<Vec<DuplicateBlockInfo>>;
+    async fn find_duplicate_blocks(
+        &self,
+        min_occurrences: usize,
+    ) -> StorageResult<Vec<DuplicateBlockInfo>>;
 
     /// Get storage usage statistics
     async fn get_storage_usage_stats(&self) -> StorageResult<StorageUsageStats>;
 
     /// Batch query for multiple block hashes
-    async fn find_documents_with_blocks(&self, block_hashes: &[String]) -> StorageResult<HashMap<String, Vec<String>>>;
+    async fn find_documents_with_blocks(
+        &self,
+        block_hashes: &[String],
+    ) -> StorageResult<HashMap<String, Vec<String>>>;
 
     /// Get blocks by hashes (batch query)
-    async fn get_blocks_by_hashes(&self, block_hashes: &[String]) -> StorageResult<HashMap<String, BlockInfo>>;
+    async fn get_blocks_by_hashes(
+        &self,
+        block_hashes: &[String],
+    ) -> StorageResult<HashMap<String, BlockInfo>>;
 }
 
 /// Information about a block

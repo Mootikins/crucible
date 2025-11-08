@@ -576,14 +576,12 @@ mod tests {
 // STORAGE TRAIT IMPLEMENTATION (Dependency Inversion)
 // ==============================================================================
 
-use crucible_core::traits::Storage;
-use crucible_core::traits::storage::{
-    StorageError, StorageResult,
-    QueryResult as StorageQueryResult,
-    Record as StorageRecord,
-    RecordId as StorageRecordId
-};
 use async_trait::async_trait;
+use crucible_core::traits::storage::{
+    QueryResult as StorageQueryResult, Record as StorageRecord, RecordId as StorageRecordId,
+    StorageError, StorageResult,
+};
+use crucible_core::traits::Storage;
 
 #[async_trait]
 impl Storage for SurrealClient {
@@ -614,7 +612,8 @@ impl Storage for SurrealClient {
             })?;
 
         // Convert from SurrealDB types to Storage trait types
-        let storage_records: Vec<StorageRecord> = result.records
+        let storage_records: Vec<StorageRecord> = result
+            .records
             .into_iter()
             .map(|r| StorageRecord {
                 id: r.id.map(|rid| StorageRecordId(rid.0)),
@@ -631,14 +630,25 @@ impl Storage for SurrealClient {
     }
 
     /// Get database statistics
-    async fn get_stats(&self) -> StorageResult<std::collections::HashMap<String, serde_json::Value>> {
+    async fn get_stats(
+        &self,
+    ) -> StorageResult<std::collections::HashMap<String, serde_json::Value>> {
         use std::collections::HashMap;
 
         let mut stats = HashMap::new();
         stats.insert("database_type".to_string(), serde_json::json!("SurrealDB"));
-        stats.insert("namespace".to_string(), serde_json::json!(self.inner.config.namespace));
-        stats.insert("database".to_string(), serde_json::json!(self.inner.config.database));
-        stats.insert("path".to_string(), serde_json::json!(self.inner.config.path));
+        stats.insert(
+            "namespace".to_string(),
+            serde_json::json!(self.inner.config.namespace),
+        );
+        stats.insert(
+            "database".to_string(),
+            serde_json::json!(self.inner.config.database),
+        );
+        stats.insert(
+            "path".to_string(),
+            serde_json::json!(self.inner.config.path),
+        );
 
         // Try to get table count
         match SurrealClient::list_tables(self).await {
@@ -656,36 +666,32 @@ impl Storage for SurrealClient {
 
     /// List all tables in the database
     async fn list_tables(&self) -> StorageResult<Vec<String>> {
-        SurrealClient::list_tables(self)
-            .await
-            .map_err(|e| match e {
-                DbError::Connection(msg) => StorageError::Connection(msg),
-                DbError::Query(msg) => StorageError::Query(msg),
-                DbError::Schema(msg) => StorageError::Schema(msg),
-                DbError::Transaction(msg) => StorageError::Transaction(msg),
-                DbError::InvalidOperation(msg) => StorageError::InvalidOperation(msg),
-                DbError::NotFound(msg) => StorageError::NotFound(msg),
-                DbError::PermissionDenied(msg) => StorageError::PermissionDenied(msg),
-                DbError::Timeout(msg) => StorageError::Timeout(msg),
-                DbError::Internal(msg) => StorageError::Internal(msg),
-            })
+        SurrealClient::list_tables(self).await.map_err(|e| match e {
+            DbError::Connection(msg) => StorageError::Connection(msg),
+            DbError::Query(msg) => StorageError::Query(msg),
+            DbError::Schema(msg) => StorageError::Schema(msg),
+            DbError::Transaction(msg) => StorageError::Transaction(msg),
+            DbError::InvalidOperation(msg) => StorageError::InvalidOperation(msg),
+            DbError::NotFound(msg) => StorageError::NotFound(msg),
+            DbError::PermissionDenied(msg) => StorageError::PermissionDenied(msg),
+            DbError::Timeout(msg) => StorageError::Timeout(msg),
+            DbError::Internal(msg) => StorageError::Internal(msg),
+        })
     }
 
     /// Initialize database schema
     async fn initialize_schema(&self) -> StorageResult<()> {
-        SurrealClient::initialize(self)
-            .await
-            .map_err(|e| match e {
-                DbError::Connection(msg) => StorageError::Connection(msg),
-                DbError::Query(msg) => StorageError::Query(msg),
-                DbError::Schema(msg) => StorageError::Schema(msg),
-                DbError::Transaction(msg) => StorageError::Transaction(msg),
-                DbError::InvalidOperation(msg) => StorageError::InvalidOperation(msg),
-                DbError::NotFound(msg) => StorageError::NotFound(msg),
-                DbError::PermissionDenied(msg) => StorageError::PermissionDenied(msg),
-                DbError::Timeout(msg) => StorageError::Timeout(msg),
-                DbError::Internal(msg) => StorageError::Internal(msg),
-            })
+        SurrealClient::initialize(self).await.map_err(|e| match e {
+            DbError::Connection(msg) => StorageError::Connection(msg),
+            DbError::Query(msg) => StorageError::Query(msg),
+            DbError::Schema(msg) => StorageError::Schema(msg),
+            DbError::Transaction(msg) => StorageError::Transaction(msg),
+            DbError::InvalidOperation(msg) => StorageError::InvalidOperation(msg),
+            DbError::NotFound(msg) => StorageError::NotFound(msg),
+            DbError::PermissionDenied(msg) => StorageError::PermissionDenied(msg),
+            DbError::Timeout(msg) => StorageError::Timeout(msg),
+            DbError::Internal(msg) => StorageError::Internal(msg),
+        })
     }
 }
 

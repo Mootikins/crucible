@@ -8,12 +8,12 @@
 //! cargo run --example test_mocks_demo
 //! ```
 
-use crucible_core::test_support::mocks::{
-    MockHashingAlgorithm, MockStorage, MockContentHasher, MockHashLookupStorage, MockChangeDetector,
-};
 use crucible_core::hashing::algorithm::HashingAlgorithm;
 use crucible_core::storage::traits::{BlockOperations, StorageManagement};
-use crucible_core::traits::change_detection::{ContentHasher, HashLookupStorage, ChangeDetector};
+use crucible_core::test_support::mocks::{
+    MockChangeDetector, MockContentHasher, MockHashLookupStorage, MockHashingAlgorithm, MockStorage,
+};
+use crucible_core::traits::change_detection::{ChangeDetector, ContentHasher, HashLookupStorage};
 use crucible_core::types::hashing::{FileHash, FileHashInfo, HashAlgorithm};
 use std::path::Path;
 use std::time::SystemTime;
@@ -96,7 +96,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Hash unconfigured path (uses fallback)
     let fallback_hash = content_hasher.hash_file(Path::new("other.md")).await?;
-    println!("   ✓ Fallback hash for unconfigured path: {}", fallback_hash.to_hex());
+    println!(
+        "   ✓ Fallback hash for unconfigured path: {}",
+        fallback_hash.to_hex()
+    );
 
     // Check operation counts
     let (file_count, block_count) = content_hasher.operation_counts();
@@ -150,7 +153,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   - Total queried:  {}", batch_result.total_queried);
     println!("   - Found:          {}", batch_result.found_files.len());
     println!("   - Missing:        {}", batch_result.missing_files.len());
-    println!("   - DB roundtrips:  {}\n", batch_result.database_round_trips);
+    println!(
+        "   - DB roundtrips:  {}\n",
+        batch_result.database_round_trips
+    );
 
     // Check operation counts
     let (lookups, batch_lookups, stores) = hash_storage.operation_counts();
@@ -209,9 +215,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   - Total files:      {}", result.metrics.total_files);
     println!("   - Changed files:    {}", result.metrics.changed_files);
     println!("   - Skipped files:    {}", result.metrics.skipped_files);
-    println!("   - Detection time:   {:?}", result.metrics.change_detection_time);
-    println!("   - Files/second:     {:.0}", result.metrics.files_per_second);
-    println!("   - Cache hit rate:   {:.1}%\n", result.metrics.cache_hit_rate * 100.0);
+    println!(
+        "   - Detection time:   {:?}",
+        result.metrics.change_detection_time
+    );
+    println!(
+        "   - Files/second:     {:.0}",
+        result.metrics.files_per_second
+    );
+    println!(
+        "   - Cache hit rate:   {:.1}%\n",
+        result.metrics.cache_hit_rate * 100.0
+    );
 
     // ========================================================================
     // Summary

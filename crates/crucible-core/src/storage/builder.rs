@@ -28,11 +28,13 @@
 //!     .build()?;
 //! ```
 
-use crate::storage::{ContentAddressedStorage, ContentHasher, StorageResult, StorageError, BlockSize};
-use crate::storage::diff::DiffConfig;
-use crate::storage::change_application::ApplicationConfig;
-use crate::storage::memory::MemoryStorage;
 use crate::hashing::blake3::Blake3Hasher;
+use crate::storage::change_application::ApplicationConfig;
+use crate::storage::diff::DiffConfig;
+use crate::storage::memory::MemoryStorage;
+use crate::storage::{
+    BlockSize, ContentAddressedStorage, ContentHasher, StorageError, StorageResult,
+};
 use std::sync::Arc;
 
 /// Configuration options for storage backends
@@ -59,12 +61,26 @@ impl std::fmt::Debug for StorageBackendType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InMemory => write!(f, "InMemory"),
-            Self::FileBased { directory, create_if_missing } => {
-                write!(f, "FileBased {{ directory: {}, create_if_missing: {} }}", directory, create_if_missing)
+            Self::FileBased {
+                directory,
+                create_if_missing,
+            } => {
+                write!(
+                    f,
+                    "FileBased {{ directory: {}, create_if_missing: {} }}",
+                    directory, create_if_missing
+                )
             }
-            Self::SurrealDB { connection_string, namespace, database } => {
-                write!(f, "SurrealDB {{ connection_string: {}, namespace: {}, database: {} }}",
-                       connection_string, namespace, database)
+            Self::SurrealDB {
+                connection_string,
+                namespace,
+                database,
+            } => {
+                write!(
+                    f,
+                    "SurrealDB {{ connection_string: {}, namespace: {}, database: {} }}",
+                    connection_string, namespace, database
+                )
             }
             Self::Custom(_) => write!(f, "Custom(<dyn ContentAddressedStorage>)"),
         }
@@ -296,7 +312,9 @@ impl ContentAddressedStorageBuilder {
     /// # Returns
     /// The builder for method chaining
     pub fn with_similarity_detection(mut self, threshold: f32) -> Self {
-        let config = self.processing_config.change_detection
+        let config = self
+            .processing_config
+            .change_detection
             .unwrap_or_default()
             .with_similarity_threshold(threshold);
         self.processing_config.change_detection = Some(config);
@@ -311,7 +329,9 @@ impl ContentAddressedStorageBuilder {
     /// # Returns
     /// The builder for method chaining
     pub fn with_parallel_processing(mut self, threshold: usize) -> Self {
-        let config = self.processing_config.change_detection
+        let config = self
+            .processing_config
+            .change_detection
             .unwrap_or_default()
             .with_parallel_processing(threshold);
         self.processing_config.change_detection = Some(config);
@@ -326,7 +346,9 @@ impl ContentAddressedStorageBuilder {
     /// # Returns
     /// The builder for method chaining
     pub fn with_rollback_support(mut self, enable: bool) -> Self {
-        let config = self.processing_config.change_application
+        let config = self
+            .processing_config
+            .change_application
             .unwrap_or_default()
             .with_rollback_support(enable);
         self.processing_config.change_application = Some(config);
@@ -341,7 +363,9 @@ impl ContentAddressedStorageBuilder {
     /// # Returns
     /// The builder for method chaining
     pub fn with_strict_validation(mut self, enable: bool) -> Self {
-        let config = self.processing_config.change_application
+        let config = self
+            .processing_config
+            .change_application
             .unwrap_or_default()
             .with_strict_validation(enable);
         self.processing_config.change_application = Some(config);
@@ -410,11 +434,12 @@ impl ContentAddressedStorageBuilder {
                 StorageBackendType::SurrealDB {
                     connection_string,
                     namespace,
-                    database
+                    database,
                 } => {
                     if connection_string.is_empty() || namespace.is_empty() || database.is_empty() {
                         return Err(StorageError::Configuration(
-                            "SurrealDB storage requires connection_string, namespace, and database".to_string(),
+                            "SurrealDB storage requires connection_string, namespace, and database"
+                                .to_string(),
                         ));
                     }
                 }
@@ -455,7 +480,10 @@ impl ContentAddressedStorageBuilder {
                 // Use MemoryStorage for in-memory backend
                 MemoryStorage::new() as Arc<dyn ContentAddressedStorage>
             }
-            StorageBackendType::FileBased { directory, create_if_missing: _ } => {
+            StorageBackendType::FileBased {
+                directory,
+                create_if_missing: _,
+            } => {
                 return Err(StorageError::Configuration(format!(
                     "FileBased backend not yet implemented (directory: {})",
                     directory
@@ -464,7 +492,7 @@ impl ContentAddressedStorageBuilder {
             StorageBackendType::SurrealDB {
                 connection_string,
                 namespace,
-                database
+                database,
             } => {
                 return Err(StorageError::Configuration(format!(
                     "SurrealDB backend requires async builder. Create ContentAddressedStorageSurrealDB manually and use StorageBackendType::Custom() ({}:{}/{})",
@@ -492,8 +520,6 @@ impl Default for ContentAddressedStorageBuilder {
         Self::new()
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -574,11 +600,18 @@ mod tests {
 
     #[async_trait::async_trait]
     impl crate::storage::traits::TreeOperations for MockStorageBackend {
-        async fn store_tree(&self, _root_hash: &str, _tree: &crate::storage::MerkleTree) -> StorageResult<()> {
+        async fn store_tree(
+            &self,
+            _root_hash: &str,
+            _tree: &crate::storage::MerkleTree,
+        ) -> StorageResult<()> {
             Ok(())
         }
 
-        async fn get_tree(&self, _root_hash: &str) -> StorageResult<Option<crate::storage::MerkleTree>> {
+        async fn get_tree(
+            &self,
+            _root_hash: &str,
+        ) -> StorageResult<Option<crate::storage::MerkleTree>> {
             Ok(None)
         }
 
@@ -641,8 +674,7 @@ mod tests {
     #[test]
     fn test_builder_with_backend() {
         let backend = StorageBackendType::InMemory;
-        let builder = ContentAddressedStorageBuilder::new()
-            .with_backend(backend);
+        let builder = ContentAddressedStorageBuilder::new().with_backend(backend);
 
         assert!(builder.backend_config.is_some());
         matches!(builder.backend_config, Some(StorageBackendType::InMemory));
@@ -651,8 +683,7 @@ mod tests {
     #[test]
     fn test_builder_with_hasher() {
         let hasher = HasherConfig::Blake3(Blake3Hasher::new());
-        let builder = ContentAddressedStorageBuilder::new()
-            .with_hasher(hasher);
+        let builder = ContentAddressedStorageBuilder::new().with_hasher(hasher);
 
         // Check that hasher was set
         assert!(builder.hasher_config.is_some());
@@ -660,48 +691,42 @@ mod tests {
 
     #[test]
     fn test_builder_with_block_size() {
-        let builder = ContentAddressedStorageBuilder::new()
-            .with_block_size(BlockSize::Large);
+        let builder = ContentAddressedStorageBuilder::new().with_block_size(BlockSize::Large);
 
         assert_eq!(builder.processing_config.block_size, BlockSize::Large);
     }
 
     #[test]
     fn test_builder_with_deduplication() {
-        let builder = ContentAddressedStorageBuilder::new()
-            .with_deduplication(false);
+        let builder = ContentAddressedStorageBuilder::new().with_deduplication(false);
 
         assert!(!builder.processing_config.enable_deduplication);
     }
 
     #[test]
     fn test_builder_with_compression() {
-        let builder = ContentAddressedStorageBuilder::new()
-            .with_compression(true);
+        let builder = ContentAddressedStorageBuilder::new().with_compression(true);
 
         assert!(builder.processing_config.enable_compression);
     }
 
     #[test]
     fn test_builder_with_cache_size() {
-        let builder = ContentAddressedStorageBuilder::new()
-            .with_cache_size(Some(500));
+        let builder = ContentAddressedStorageBuilder::new().with_cache_size(Some(500));
 
         assert_eq!(builder.processing_config.cache_size, Some(500));
     }
 
     #[test]
     fn test_builder_with_maintenance() {
-        let builder = ContentAddressedStorageBuilder::new()
-            .with_maintenance(false);
+        let builder = ContentAddressedStorageBuilder::new().with_maintenance(false);
 
         assert!(!builder.processing_config.enable_maintenance);
     }
 
     #[test]
     fn test_builder_without_validation() {
-        let builder = ContentAddressedStorageBuilder::new()
-            .without_validation();
+        let builder = ContentAddressedStorageBuilder::new().without_validation();
 
         assert!(!builder.validate_config);
     }
@@ -735,19 +760,23 @@ mod tests {
 
         let result = builder.validate();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), StorageError::Configuration(msg)
-            if msg.contains("backend must be configured")));
+        assert!(
+            matches!(result.unwrap_err(), StorageError::Configuration(msg)
+            if msg.contains("backend must be configured"))
+        );
     }
 
     #[test]
     fn test_validation_missing_hasher() {
-        let builder = ContentAddressedStorageBuilder::new()
-            .with_backend(StorageBackendType::InMemory);
+        let builder =
+            ContentAddressedStorageBuilder::new().with_backend(StorageBackendType::InMemory);
 
         let result = builder.validate();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), StorageError::Configuration(msg)
-            if msg.contains("Hasher must be configured")));
+        assert!(
+            matches!(result.unwrap_err(), StorageError::Configuration(msg)
+            if msg.contains("Hasher must be configured"))
+        );
     }
 
     #[test]
@@ -761,8 +790,10 @@ mod tests {
 
         let result = builder.validate();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), StorageError::Configuration(msg)
-            if msg.contains("valid directory")));
+        assert!(
+            matches!(result.unwrap_err(), StorageError::Configuration(msg)
+            if msg.contains("valid directory"))
+        );
     }
 
     #[test]
@@ -777,8 +808,10 @@ mod tests {
 
         let result = builder.validate();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), StorageError::Configuration(msg)
-            if msg.contains("connection_string, namespace, and database")));
+        assert!(
+            matches!(result.unwrap_err(), StorageError::Configuration(msg)
+            if msg.contains("connection_string, namespace, and database"))
+        );
     }
 
     #[test]
@@ -790,8 +823,10 @@ mod tests {
 
         let result = builder.validate();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), StorageError::Configuration(msg)
-            if msg.contains("Cache size must be greater than 0")));
+        assert!(
+            matches!(result.unwrap_err(), StorageError::Configuration(msg)
+            if msg.contains("Cache size must be greater than 0"))
+        );
     }
 
     #[test]
@@ -807,8 +842,7 @@ mod tests {
 
     #[test]
     fn test_validation_skipped_when_disabled() {
-        let builder = ContentAddressedStorageBuilder::new()
-            .without_validation();
+        let builder = ContentAddressedStorageBuilder::new().without_validation();
 
         // Should succeed even without configuration
         let result = builder.validate();
@@ -888,7 +922,10 @@ mod tests {
         assert!(result.is_err());
         if let Err(error) = result {
             let error_msg = error.to_string();
-            assert!(error_msg.contains("Hasher configuration not set") || error_msg.contains("must be configured"));
+            assert!(
+                error_msg.contains("Hasher configuration not set")
+                    || error_msg.contains("must be configured")
+            );
         }
     }
 
@@ -967,11 +1004,13 @@ mod tests {
     fn test_error_messages_are_descriptive() {
         // Test that error messages provide useful information
         let tests = vec![
-            (ContentAddressedStorageBuilder::new(), "backend must be configured"),
             (
-                ContentAddressedStorageBuilder::new()
-                    .with_backend(StorageBackendType::InMemory),
-                "Hasher must be configured"
+                ContentAddressedStorageBuilder::new(),
+                "backend must be configured",
+            ),
+            (
+                ContentAddressedStorageBuilder::new().with_backend(StorageBackendType::InMemory),
+                "Hasher must be configured",
             ),
             (
                 ContentAddressedStorageBuilder::new()
@@ -980,7 +1019,7 @@ mod tests {
                         create_if_missing: true,
                     })
                     .with_hasher(HasherConfig::Blake3(Blake3Hasher::new())),
-                "valid directory"
+                "valid directory",
             ),
             (
                 ContentAddressedStorageBuilder::new()
@@ -990,14 +1029,14 @@ mod tests {
                         database: "test".to_string(),
                     })
                     .with_hasher(HasherConfig::Blake3(Blake3Hasher::new())),
-                "connection_string, namespace, and database"
+                "connection_string, namespace, and database",
             ),
             (
                 ContentAddressedStorageBuilder::new()
                     .with_backend(StorageBackendType::InMemory)
                     .with_hasher(HasherConfig::Blake3(Blake3Hasher::new()))
                     .with_cache_size(Some(0)),
-                "Cache size must be greater than 0"
+                "Cache size must be greater than 0",
             ),
         ];
 
@@ -1005,8 +1044,12 @@ mod tests {
             let result = builder.validate();
             assert!(result.is_err());
             let error_msg = result.unwrap_err().to_string();
-            assert!(error_msg.contains(expected_message),
-                "Expected error message containing '{}', got: {}", expected_message, error_msg);
+            assert!(
+                error_msg.contains(expected_message),
+                "Expected error message containing '{}', got: {}",
+                expected_message,
+                error_msg
+            );
         }
     }
 }

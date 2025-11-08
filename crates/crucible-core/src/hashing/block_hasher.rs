@@ -55,11 +55,11 @@ use std::collections::HashMap;
 
 use crate::hashing::algorithm::HashingAlgorithm;
 use crate::hashing::ast_converter::ASTBlockConverter;
+use crate::storage::{ContentHasher as StorageContentHasher, HashedBlock, MerkleTree};
 use crate::traits::change_detection::ContentHasher;
 use crate::types::hashing::{
     BlockHash, BlockHashInfo, FileHash, FileHashInfo, HashAlgorithm, HashError,
 };
-use crate::storage::{HashedBlock, MerkleTree, ContentHasher as StorageContentHasher};
 
 // Import AST block types from the parser crate
 use crucible_parser::types::{ASTBlock, ASTBlockMetadata};
@@ -167,15 +167,14 @@ impl<A: HashingAlgorithm> BlockHasher<A> {
         let serializable = SerializableBlock::from_ast_block(block);
 
         // Serialize to JSON with stable ordering
-        let serialized = serde_json::to_string(&serializable)
-            .map_err(|e| HashError::IoError {
-                error: format!("Failed to serialize block: {}", e)
-            })?;
+        let serialized = serde_json::to_string(&serializable).map_err(|e| HashError::IoError {
+            error: format!("Failed to serialize block: {}", e),
+        })?;
 
         // Check size limits to prevent memory issues
         if serialized.len() > MAX_SERIALIZATION_SIZE {
             return Err(HashError::IoError {
-                error: format!("Block serialization too large: {} bytes", serialized.len())
+                error: format!("Block serialization too large: {} bytes", serialized.len()),
             });
         }
 
@@ -209,7 +208,9 @@ impl<A: HashingAlgorithm> BlockHasher<A> {
         let hash_bytes = self.hash_serialized_content(&serialized).await?;
 
         if hash_bytes.len() != 32 {
-            return Err(HashError::InvalidLength { len: hash_bytes.len() });
+            return Err(HashError::InvalidLength {
+                len: hash_bytes.len(),
+            });
         }
 
         let mut array = [0u8; 32];
@@ -233,11 +234,17 @@ impl<A: HashingAlgorithm> BlockHasher<A> {
     /// # Errors
     ///
     /// Returns `HashError` if any block hashing fails
-    pub async fn hash_ast_blocks_batch(&self, blocks: &[ASTBlock]) -> Result<Vec<BlockHash>, HashError> {
+    pub async fn hash_ast_blocks_batch(
+        &self,
+        blocks: &[ASTBlock],
+    ) -> Result<Vec<BlockHash>, HashError> {
         let mut results = Vec::with_capacity(blocks.len());
 
         // Process blocks concurrently for better performance
-        let futures: Vec<_> = blocks.iter().map(|block| self.hash_ast_block(block)).collect();
+        let futures: Vec<_> = blocks
+            .iter()
+            .map(|block| self.hash_ast_block(block))
+            .collect();
         let hash_results = futures::future::join_all(futures).await;
 
         for result in hash_results {
@@ -292,7 +299,11 @@ impl<A: HashingAlgorithm> BlockHasher<A> {
     /// # Errors
     ///
     /// Returns `HashError` if hashing fails
-    pub async fn verify_ast_block_hash(&self, block: &ASTBlock, expected_hash: &BlockHash) -> Result<bool, HashError> {
+    pub async fn verify_ast_block_hash(
+        &self,
+        block: &ASTBlock,
+        expected_hash: &BlockHash,
+    ) -> Result<bool, HashError> {
         match self.hash_ast_block(block).await {
             Ok(actual_hash) => Ok(actual_hash == *expected_hash),
             Err(_) => Ok(false),
@@ -321,7 +332,10 @@ impl<A: HashingAlgorithm> BlockHasher<A> {
 
             // Track block types
             let type_name = block.type_name();
-            *stats.block_type_counts.entry(type_name.to_string()).or_insert(0) += 1;
+            *stats
+                .block_type_counts
+                .entry(type_name.to_string())
+                .or_insert(0) += 1;
 
             // Track empty blocks
             if block.is_empty() {
@@ -358,7 +372,10 @@ impl<A: HashingAlgorithm> BlockHasher<A> {
     /// This method now uses `ASTBlockConverter` internally, following SRP.
     /// The converter handles all conversion logic, while BlockHasher focuses
     /// on hashing operations.
-    pub async fn ast_blocks_to_hashed_blocks(&self, blocks: &[ASTBlock]) -> Result<Vec<HashedBlock>, HashError> {
+    pub async fn ast_blocks_to_hashed_blocks(
+        &self,
+        blocks: &[ASTBlock],
+    ) -> Result<Vec<HashedBlock>, HashError> {
         // Delegate to the converter for AST block conversion
         self.converter.convert_batch(blocks).await
     }
@@ -415,10 +432,13 @@ impl<A: HashingAlgorithm> BlockHasher<A> {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn build_merkle_tree_from_blocks(&self, blocks: &[ASTBlock]) -> Result<MerkleTree, HashError> {
+    pub async fn build_merkle_tree_from_blocks(
+        &self,
+        blocks: &[ASTBlock],
+    ) -> Result<MerkleTree, HashError> {
         if blocks.is_empty() {
             return Err(HashError::IoError {
-                error: "Cannot build Merkle tree from empty block list".to_string()
+                error: "Cannot build Merkle tree from empty block list".to_string(),
             });
         }
 
@@ -426,9 +446,9 @@ impl<A: HashingAlgorithm> BlockHasher<A> {
         let hashed_blocks = self.ast_blocks_to_hashed_blocks(blocks).await?;
 
         // Build Merkle tree using this BlockHasher as the ContentHasher
-        let tree = MerkleTree::from_blocks(&hashed_blocks, self)
-            .map_err(|e| HashError::IoError {
-                error: format!("Failed to build Merkle tree: {}", e)
+        let tree =
+            MerkleTree::from_blocks(&hashed_blocks, self).map_err(|e| HashError::IoError {
+                error: format!("Failed to build Merkle tree: {}", e),
             })?;
 
         Ok(tree)
@@ -450,10 +470,13 @@ impl<A: HashingAlgorithm> BlockHasher<A> {
     /// # Errors
     ///
     /// Returns `HashError` if tree construction fails
-    pub async fn build_merkle_tree_from_hashes(&self, block_hashes: &[(usize, BlockHash)]) -> Result<MerkleTree, HashError> {
+    pub async fn build_merkle_tree_from_hashes(
+        &self,
+        block_hashes: &[(usize, BlockHash)],
+    ) -> Result<MerkleTree, HashError> {
         if block_hashes.is_empty() {
             return Err(HashError::IoError {
-                error: "Cannot build Merkle tree from empty hash list".to_string()
+                error: "Cannot build Merkle tree from empty hash list".to_string(),
             });
         }
 
@@ -475,9 +498,9 @@ impl<A: HashingAlgorithm> BlockHasher<A> {
         let hashed_blocks = hashed_blocks.map_err(|e: HashError| e)?;
 
         // Build Merkle tree
-        let tree = MerkleTree::from_blocks(&hashed_blocks, self)
-            .map_err(|e| HashError::IoError {
-                error: format!("Failed to build Merkle tree from hashes: {}", e)
+        let tree =
+            MerkleTree::from_blocks(&hashed_blocks, self).map_err(|e| HashError::IoError {
+                error: format!("Failed to build Merkle tree from hashes: {}", e),
             })?;
 
         Ok(tree)
@@ -496,7 +519,11 @@ impl<A: HashingAlgorithm> BlockHasher<A> {
     /// # Returns
     ///
     /// List of detected changes
-    pub fn compare_merkle_trees(&self, old_tree: &MerkleTree, new_tree: &MerkleTree) -> Vec<crate::storage::TreeChange> {
+    pub fn compare_merkle_trees(
+        &self,
+        old_tree: &MerkleTree,
+        new_tree: &MerkleTree,
+    ) -> Vec<crate::storage::TreeChange> {
         old_tree.compare_with(new_tree)
     }
 
@@ -513,11 +540,15 @@ impl<A: HashingAlgorithm> BlockHasher<A> {
     /// # Returns
     ///
     /// `true` if the tree is valid, `false` otherwise
-    pub async fn verify_merkle_tree(&self, tree: &MerkleTree, blocks: &[ASTBlock]) -> Result<bool, HashError> {
+    pub async fn verify_merkle_tree(
+        &self,
+        tree: &MerkleTree,
+        blocks: &[ASTBlock],
+    ) -> Result<bool, HashError> {
         // Verify tree integrity
         if let Err(e) = tree.verify_integrity(self) {
             return Err(HashError::IoError {
-                error: format!("Tree integrity verification failed: {}", e)
+                error: format!("Tree integrity verification failed: {}", e),
             });
         }
 
@@ -576,14 +607,17 @@ impl<A: HashingAlgorithm> ContentHasher for BlockHasher<A> {
     async fn hash_file(&self, _path: &std::path::Path) -> Result<FileHash, HashError> {
         // BlockHasher doesn't support file hashing directly
         Err(HashError::IoError {
-            error: "BlockHasher doesn't support file hashing".to_string()
+            error: "BlockHasher doesn't support file hashing".to_string(),
         })
     }
 
-    async fn hash_files_batch(&self, _paths: &[std::path::PathBuf]) -> Result<Vec<FileHash>, HashError> {
+    async fn hash_files_batch(
+        &self,
+        _paths: &[std::path::PathBuf],
+    ) -> Result<Vec<FileHash>, HashError> {
         // BlockHasher doesn't support file hashing directly
         Err(HashError::IoError {
-            error: "BlockHasher doesn't support file hashing".to_string()
+            error: "BlockHasher doesn't support file hashing".to_string(),
         })
     }
 
@@ -592,7 +626,9 @@ impl<A: HashingAlgorithm> ContentHasher for BlockHasher<A> {
         let hash_bytes = self.hash_serialized_content(content).await?;
 
         if hash_bytes.len() != 32 {
-            return Err(HashError::InvalidLength { len: hash_bytes.len() });
+            return Err(HashError::InvalidLength {
+                len: hash_bytes.len(),
+            });
         }
 
         let mut array = [0u8; 32];
@@ -604,10 +640,13 @@ impl<A: HashingAlgorithm> ContentHasher for BlockHasher<A> {
         let mut results = Vec::with_capacity(contents.len());
 
         // Process blocks concurrently
-        let futures: Vec<_> = contents.iter().map(|content| {
-            use crate::traits::change_detection::ContentHasher as CDContentHasher;
-            CDContentHasher::hash_block(self, content)
-        }).collect();
+        let futures: Vec<_> = contents
+            .iter()
+            .map(|content| {
+                use crate::traits::change_detection::ContentHasher as CDContentHasher;
+                CDContentHasher::hash_block(self, content)
+            })
+            .collect();
         let hash_results = futures::future::join_all(futures).await;
 
         for result in hash_results {
@@ -617,10 +656,14 @@ impl<A: HashingAlgorithm> ContentHasher for BlockHasher<A> {
         Ok(results)
     }
 
-    async fn hash_file_info(&self, _path: &std::path::Path, _relative_path: String) -> Result<FileHashInfo, HashError> {
+    async fn hash_file_info(
+        &self,
+        _path: &std::path::Path,
+        _relative_path: String,
+    ) -> Result<FileHashInfo, HashError> {
         // BlockHasher doesn't support file hashing directly
         Err(HashError::IoError {
-            error: "BlockHasher doesn't support file hashing".to_string()
+            error: "BlockHasher doesn't support file hashing".to_string(),
         })
     }
 
@@ -643,14 +686,22 @@ impl<A: HashingAlgorithm> ContentHasher for BlockHasher<A> {
         ))
     }
 
-    async fn verify_file_hash(&self, _path: &std::path::Path, _expected_hash: &FileHash) -> Result<bool, HashError> {
+    async fn verify_file_hash(
+        &self,
+        _path: &std::path::Path,
+        _expected_hash: &FileHash,
+    ) -> Result<bool, HashError> {
         // BlockHasher doesn't support file hashing directly
         Err(HashError::IoError {
-            error: "BlockHasher doesn't support file hashing".to_string()
+            error: "BlockHasher doesn't support file hashing".to_string(),
         })
     }
 
-    async fn verify_block_hash(&self, content: &str, expected_hash: &BlockHash) -> Result<bool, HashError> {
+    async fn verify_block_hash(
+        &self,
+        content: &str,
+        expected_hash: &BlockHash,
+    ) -> Result<bool, HashError> {
         use crate::traits::change_detection::ContentHasher as CDContentHasher;
         match CDContentHasher::hash_block(self, content).await {
             Ok(actual_hash) => Ok(actual_hash == *expected_hash),
@@ -695,10 +746,7 @@ impl SerializableBlock {
 #[serde(tag = "type")]
 enum SerializableMetadata {
     /// Heading metadata
-    Heading {
-        level: u8,
-        id: Option<String>,
-    },
+    Heading { level: u8, id: Option<String> },
     /// Code block metadata
     Code {
         language: Option<String>,
@@ -716,9 +764,7 @@ enum SerializableMetadata {
         is_standard_type: bool,
     },
     /// LaTeX metadata
-    Latex {
-        is_block: bool,
-    },
+    Latex { is_block: bool },
     /// Generic metadata
     Generic,
 }
@@ -731,11 +777,17 @@ impl SerializableMetadata {
                 level: *level,
                 id: id.clone(),
             },
-            ASTBlockMetadata::Code { language, line_count } => Self::Code {
+            ASTBlockMetadata::Code {
+                language,
+                line_count,
+            } => Self::Code {
                 language: language.clone(),
                 line_count: *line_count,
             },
-            ASTBlockMetadata::List { list_type, item_count } => Self::List {
+            ASTBlockMetadata::List {
+                list_type,
+                item_count,
+            } => Self::List {
                 list_type: format!("{:?}", list_type),
                 item_count: *item_count,
             },
@@ -840,7 +892,8 @@ impl BlockHashStats {
 
     /// Get a summary string of the statistics
     pub fn summary(&self) -> String {
-        let most_common = self.most_common_type()
+        let most_common = self
+            .most_common_type()
             .map(|(t, c)| format!("{} ({} blocks)", t, c))
             .unwrap_or_else(|| "none".to_string());
 
@@ -974,7 +1027,7 @@ pub const SHA256_BLOCK_HASHER: fn() -> Sha256BlockHasher = new_sha256_block_hash
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_parser::types::{ListType};
+    use crucible_parser::types::ListType;
 
     #[tokio::test]
     async fn test_block_hasher_creation() {
@@ -1060,7 +1113,10 @@ mod tests {
 
         // Test verification with wrong hash
         let wrong_hash = BlockHash::new([0u8; 32]);
-        let is_invalid = hasher.verify_ast_block_hash(&block, &wrong_hash).await.unwrap();
+        let is_invalid = hasher
+            .verify_ast_block_hash(&block, &wrong_hash)
+            .await
+            .unwrap();
         assert!(!is_invalid);
     }
 
@@ -1085,11 +1141,8 @@ mod tests {
     async fn test_callout_block_hashing() {
         use crate::hashing::algorithm::Blake3Algorithm;
         let hasher = BlockHasher::new(Blake3Algorithm);
-        let metadata = ASTBlockMetadata::callout(
-            "note".to_string(),
-            Some("Important Note".to_string()),
-            true,
-        );
+        let metadata =
+            ASTBlockMetadata::callout("note".to_string(), Some("Important Note".to_string()), true);
         let block = ASTBlock::new(
             ASTBlockType::Callout,
             "This is an important callout message".to_string(),
@@ -1192,7 +1245,10 @@ mod tests {
         assert!(is_valid);
 
         // Test content hash info
-        let info = hasher.hash_block_info(content, "test".to_string(), 0, content.len()).await.unwrap();
+        let info = hasher
+            .hash_block_info(content, "test".to_string(), 0, content.len())
+            .await
+            .unwrap();
         assert_eq!(info.block_type, "test");
         assert_eq!(info.start_offset, 0);
         assert_eq!(info.end_offset, content.len());
@@ -1204,13 +1260,8 @@ mod tests {
         use crate::hashing::algorithm::Blake3Algorithm;
         let hasher = BlockHasher::new(Blake3Algorithm);
         let metadata = ASTBlockMetadata::generic();
-        let empty_block = ASTBlock::new(
-            ASTBlockType::Paragraph,
-            "".to_string(),
-            100,
-            100,
-            metadata,
-        );
+        let empty_block =
+            ASTBlock::new(ASTBlockType::Paragraph, "".to_string(), 100, 100, metadata);
 
         let hash = hasher.hash_ast_block(&empty_block).await.unwrap();
 
@@ -1224,13 +1275,7 @@ mod tests {
     #[test]
     fn test_serialization_format() {
         let metadata = ASTBlockMetadata::heading(1, Some("test".to_string()));
-        let block = ASTBlock::new(
-            ASTBlockType::Heading,
-            "Test".to_string(),
-            0,
-            4,
-            metadata,
-        );
+        let block = ASTBlock::new(ASTBlockType::Heading, "Test".to_string(), 0, 4, metadata);
 
         use crate::hashing::algorithm::Blake3Algorithm;
         let hasher = BlockHasher::new(Blake3Algorithm);
@@ -1291,7 +1336,9 @@ mod tests {
 
         // Test file verification (not supported)
         let hash = FileHash::new([1u8; 32]);
-        let result = hasher.verify_file_hash(std::path::Path::new("test.txt"), &hash).await;
+        let result = hasher
+            .verify_file_hash(std::path::Path::new("test.txt"), &hash)
+            .await;
         assert!(result.is_err());
     }
 
@@ -1357,7 +1404,10 @@ mod tests {
             metadata,
         );
 
-        let tree = hasher.build_merkle_tree_from_blocks(&[block.clone()]).await.unwrap();
+        let tree = hasher
+            .build_merkle_tree_from_blocks(&[block.clone()])
+            .await
+            .unwrap();
 
         assert_eq!(tree.block_count, 1);
         assert_eq!(tree.depth, 0);
@@ -1499,11 +1549,17 @@ mod tests {
         let mut modified_blocks = blocks.clone();
         modified_blocks[1].content = "Modified content".to_string();
 
-        let is_invalid = hasher.verify_merkle_tree(&tree, &modified_blocks).await.unwrap();
+        let is_invalid = hasher
+            .verify_merkle_tree(&tree, &modified_blocks)
+            .await
+            .unwrap();
         assert!(!is_invalid);
 
         // Verify with wrong number of blocks
-        let is_invalid = hasher.verify_merkle_tree(&tree, &blocks[0..1]).await.unwrap();
+        let is_invalid = hasher
+            .verify_merkle_tree(&tree, &blocks[0..1])
+            .await
+            .unwrap();
         assert!(!is_invalid);
     }
 
@@ -1546,8 +1602,14 @@ mod tests {
             ),
         ];
 
-        let tree1 = hasher.build_merkle_tree_from_blocks(&blocks1).await.unwrap();
-        let tree2 = hasher.build_merkle_tree_from_blocks(&blocks2).await.unwrap();
+        let tree1 = hasher
+            .build_merkle_tree_from_blocks(&blocks1)
+            .await
+            .unwrap();
+        let tree2 = hasher
+            .build_merkle_tree_from_blocks(&blocks2)
+            .await
+            .unwrap();
 
         // Trees should be different
         assert_ne!(tree1.root_hash, tree2.root_hash);
@@ -1596,7 +1658,9 @@ mod tests {
         assert_eq!(hashed_blocks[1].data, blocks[1].content.as_bytes());
 
         // Verify hashes are correct
-        for (i, (hashed_block, original_block)) in hashed_blocks.iter().zip(blocks.iter()).enumerate() {
+        for (i, (hashed_block, original_block)) in
+            hashed_blocks.iter().zip(blocks.iter()).enumerate()
+        {
             let expected_hash = hasher.hash_ast_block(original_block).await.unwrap();
             assert_eq!(hashed_block.hash, expected_hash.to_hex());
         }
@@ -1608,10 +1672,34 @@ mod tests {
         let hasher = BlockHasher::new(Blake3Algorithm);
 
         let blocks = vec![
-            ASTBlock::new(ASTBlockType::Heading, "H1".to_string(), 0, 2, ASTBlockMetadata::heading(1, None)),
-            ASTBlock::new(ASTBlockType::Paragraph, "P1".to_string(), 5, 7, ASTBlockMetadata::generic()),
-            ASTBlock::new(ASTBlockType::Code, "code".to_string(), 10, 14, ASTBlockMetadata::code(None, 1)),
-            ASTBlock::new(ASTBlockType::Heading, "H2".to_string(), 18, 20, ASTBlockMetadata::heading(1, None)),
+            ASTBlock::new(
+                ASTBlockType::Heading,
+                "H1".to_string(),
+                0,
+                2,
+                ASTBlockMetadata::heading(1, None),
+            ),
+            ASTBlock::new(
+                ASTBlockType::Paragraph,
+                "P1".to_string(),
+                5,
+                7,
+                ASTBlockMetadata::generic(),
+            ),
+            ASTBlock::new(
+                ASTBlockType::Code,
+                "code".to_string(),
+                10,
+                14,
+                ASTBlockMetadata::code(None, 1),
+            ),
+            ASTBlock::new(
+                ASTBlockType::Heading,
+                "H2".to_string(),
+                18,
+                20,
+                ASTBlockMetadata::heading(1, None),
+            ),
         ];
 
         let tree = hasher.build_merkle_tree_from_blocks(&blocks).await.unwrap();
@@ -1718,7 +1806,10 @@ mod tests {
 
         // Verify all different block types are handled correctly
         for (i, block) in blocks.iter().enumerate() {
-            let is_valid = hasher.verify_merkle_tree(&tree, &blocks[i..i+1]).await.unwrap();
+            let is_valid = hasher
+                .verify_merkle_tree(&tree, &blocks[i..i + 1])
+                .await
+                .unwrap();
             // Note: This would need a more sophisticated verification for individual blocks
             // since verify_merkle_tree expects the complete block set
         }
@@ -1758,8 +1849,14 @@ mod tests {
             ),
         ];
 
-        let blake3_tree = blake3_hasher.build_merkle_tree_from_blocks(&blocks).await.unwrap();
-        let sha256_tree = sha256_hasher.build_merkle_tree_from_blocks(&blocks).await.unwrap();
+        let blake3_tree = blake3_hasher
+            .build_merkle_tree_from_blocks(&blocks)
+            .await
+            .unwrap();
+        let sha256_tree = sha256_hasher
+            .build_merkle_tree_from_blocks(&blocks)
+            .await
+            .unwrap();
 
         // Different algorithms should produce different root hashes
         assert_ne!(blake3_tree.root_hash, sha256_tree.root_hash);
@@ -1784,14 +1881,7 @@ mod tests {
 
     #[test]
     fn test_merkle_tree_stats_struct() {
-        let stats = MerkleTreeStats::new(
-            "abc123".to_string(),
-            4,
-            3,
-            7,
-            4,
-            HashAlgorithm::Blake3,
-        );
+        let stats = MerkleTreeStats::new("abc123".to_string(), 4, 3, 7, 4, HashAlgorithm::Blake3);
 
         assert_eq!(stats.root_hash, "abc123");
         assert_eq!(stats.block_count, 4);
@@ -1842,26 +1932,13 @@ mod tests {
     #[test]
     fn test_merkle_tree_stats_edge_cases() {
         // Single block tree
-        let single_stats = MerkleTreeStats::new(
-            "single".to_string(),
-            1,
-            0,
-            1,
-            1,
-            HashAlgorithm::Blake3,
-        );
+        let single_stats =
+            MerkleTreeStats::new("single".to_string(), 1, 0, 1, 1, HashAlgorithm::Blake3);
         assert!(single_stats.is_balanced());
         assert_eq!(single_stats.efficiency_ratio(), 1.0);
 
         // Empty tree edge case (shouldn't happen in practice but test anyway)
-        let empty_stats = MerkleTreeStats::new(
-            "".to_string(),
-            0,
-            0,
-            0,
-            0,
-            HashAlgorithm::Sha256,
-        );
+        let empty_stats = MerkleTreeStats::new("".to_string(), 0, 0, 0, 0, HashAlgorithm::Sha256);
         assert_eq!(empty_stats.efficiency_ratio(), 0.0);
         assert!(empty_stats.is_balanced()); // Empty tree is considered balanced
     }

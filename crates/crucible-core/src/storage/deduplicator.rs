@@ -6,15 +6,16 @@
 
 use crate::storage::{ContentAddressedStorage, StorageResult};
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 /// Trait for deduplication operations
 #[async_trait]
 pub trait Deduplicator: Send + Sync {
     /// Analyze blocks for duplicates and deduplication opportunities
-    async fn analyze_blocks(&self, block_hashes: &[String]) -> StorageResult<DeduplicationAnalysis>;
+    async fn analyze_blocks(&self, block_hashes: &[String])
+        -> StorageResult<DeduplicationAnalysis>;
 
     /// Get comprehensive deduplication statistics
     async fn get_deduplication_stats(&self) -> StorageResult<DeduplicationStats>;
@@ -26,7 +27,10 @@ pub trait Deduplicator: Send + Sync {
     async fn calculate_storage_savings(&self) -> StorageResult<StorageSavings>;
 
     /// Get block usage patterns
-    async fn get_block_usage_patterns(&self, block_hashes: &[String]) -> StorageResult<Vec<BlockUsagePattern>>;
+    async fn get_block_usage_patterns(
+        &self,
+        block_hashes: &[String],
+    ) -> StorageResult<Vec<BlockUsagePattern>>;
 }
 
 /// Analysis result for a set of blocks
@@ -229,7 +233,10 @@ impl<S> Deduplicator for DefaultDeduplicator<S>
 where
     S: ContentAddressedStorage + Send + Sync,
 {
-    async fn analyze_blocks(&self, block_hashes: &[String]) -> StorageResult<DeduplicationAnalysis> {
+    async fn analyze_blocks(
+        &self,
+        block_hashes: &[String],
+    ) -> StorageResult<DeduplicationAnalysis> {
         if block_hashes.is_empty() {
             return Ok(DeduplicationAnalysis {
                 total_blocks: 0,
@@ -302,18 +309,21 @@ where
         })
     }
 
-    async fn get_block_usage_patterns(&self, block_hashes: &[String]) -> StorageResult<Vec<BlockUsagePattern>> {
+    async fn get_block_usage_patterns(
+        &self,
+        block_hashes: &[String],
+    ) -> StorageResult<Vec<BlockUsagePattern>> {
         let mut patterns = Vec::new();
 
         for block_hash in block_hashes {
             // For now, create basic patterns without storage-specific queries
             patterns.push(BlockUsagePattern {
                 block_hash: block_hash.clone(),
-                usage_frequency: 1, // Assume single usage
-                documents: Vec::new(), // Would need storage query
-                usage_timeline: Vec::new(), // Would need timestamp info
+                usage_frequency: 1,                // Assume single usage
+                documents: Vec::new(),             // Would need storage query
+                usage_timeline: Vec::new(),        // Would need timestamp info
                 block_type: "unknown".to_string(), // Would need block content
-                content_preview: "".to_string(), // Would need block content
+                content_preview: "".to_string(),   // Would need block content
             });
         }
 

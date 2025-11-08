@@ -13,9 +13,9 @@
 //! - Processing layer: Coordinate processing without transaction structure knowledge
 //! - Database layer: Build and execute transaction sequences with dependency resolution
 
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::SystemTime;
-use serde::{Deserialize, Serialize};
 
 // Re-export ParsedDocument from parser for convenience
 pub use crate::parser::types::ParsedDocument;
@@ -273,8 +273,12 @@ impl DocumentProcessingResult {
     /// Get the processing time
     pub fn processing_time(&self) -> std::time::Duration {
         match self {
-            DocumentProcessingResult::Success { processing_time, .. } |
-            DocumentProcessingResult::Failure { processing_time, .. } => *processing_time,
+            DocumentProcessingResult::Success {
+                processing_time, ..
+            }
+            | DocumentProcessingResult::Failure {
+                processing_time, ..
+            } => *processing_time,
             DocumentProcessingResult::Skipped { .. } => std::time::Duration::from_millis(0),
         }
     }
@@ -338,11 +342,7 @@ impl ProcessedDocument {
 
 impl DocumentProcessingJob {
     /// Create a new processing job
-    pub fn new(
-        job_id: String,
-        source: ProcessingSource,
-        config: JobConfiguration,
-    ) -> Self {
+    pub fn new(job_id: String, source: ProcessingSource, config: JobConfiguration) -> Self {
         Self {
             job_id,
             created_at: SystemTime::now(),
@@ -400,7 +400,7 @@ impl DocumentProcessingJob {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::types::{ParsedDocument, DocumentContent, FootnoteMap};
+    use crate::parser::types::{DocumentContent, FootnoteMap, ParsedDocument};
 
     fn create_test_document(path: &str) -> ParsedDocument {
         ParsedDocument {
@@ -474,7 +474,10 @@ mod tests {
 
         assert!(success.is_success());
         assert_eq!(success.path(), Some(&PathBuf::from("test.md")));
-        assert_eq!(success.processing_time(), std::time::Duration::from_millis(100));
+        assert_eq!(
+            success.processing_time(),
+            std::time::Duration::from_millis(100)
+        );
     }
 
     #[test]

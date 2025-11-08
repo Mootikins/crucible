@@ -23,13 +23,16 @@ pub mod types;
 pub use block_extractor::{BlockExtractor, ExtractionConfig};
 pub use block_hasher::SimpleBlockHasher;
 pub use error::{ParseError, ParseErrorType, ParserError, ParserResult};
-pub use extensions::{ExtensionRegistry, ExtensionRegistryBuilder, ExtensionRegistryStats, SyntaxExtension};
+pub use extensions::{
+    ExtensionRegistry, ExtensionRegistryBuilder, ExtensionRegistryStats, SyntaxExtension,
+};
 pub use implementation::{BlockProcessingConfig, CrucibleParser};
 pub use traits::{MarkdownParserImplementation, ParserCapabilities};
 pub use types::{
-    ASTBlock, ASTBlockMetadata, ASTBlockType, BlockHash, Callout, CodeBlock, DocumentContent, FootnoteDefinition,
-    FootnoteMap, FootnoteReference, Frontmatter, FrontmatterFormat, Heading, LatexExpression,
-    ListBlock, ListItem, ListType, ParsedDocument, ParsedDocumentBuilder, Tag, TaskStatus, Wikilink,
+    ASTBlock, ASTBlockMetadata, ASTBlockType, BlockHash, Callout, CodeBlock, DocumentContent,
+    FootnoteDefinition, FootnoteMap, FootnoteReference, Frontmatter, FrontmatterFormat, Heading,
+    LatexExpression, ListBlock, ListItem, ListType, ParsedDocument, ParsedDocumentBuilder, Tag,
+    TaskStatus, Wikilink,
 };
 
 // Convenience factory functions
