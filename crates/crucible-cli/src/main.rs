@@ -168,11 +168,16 @@ async fn main() -> Result<()> {
     // when needed, and the Arc-wrapped SurrealClient ensures cheap cloning.
 
     // Process any pending files on startup using integrated blocking processing
-    // Skip for interactive fuzzy picker or when explicitly disabled
+    // Skip for interactive fuzzy picker, REPL mode, or when explicitly disabled
     match &cli.command {
         Some(Commands::Fuzzy { .. }) => {
             // Skip processing - fuzzy is interactive and users want immediate results
             debug!("Skipping file processing for fuzzy search command");
+        }
+        None => {
+            // Skip processing for REPL mode to avoid database lock conflicts
+            // REPL will create its own storage client
+            debug!("Skipping file processing for REPL mode");
         }
         _ => {
             if cli.no_process {
