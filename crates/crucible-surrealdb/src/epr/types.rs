@@ -103,6 +103,34 @@ fn default_version() -> i32 {
     1
 }
 
+impl Entity {
+    pub fn new(id: RecordId<EntityRecord>, entity_type: EntityType) -> Self {
+        Self {
+            id: Some(id),
+            entity_type,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            deleted_at: None,
+            version: default_version(),
+            content_hash: None,
+            created_by: None,
+            vault_id: None,
+            data: None,
+            search_text: None,
+        }
+    }
+
+    pub fn with_content_hash(mut self, hash: impl Into<String>) -> Self {
+        self.content_hash = Some(hash.into());
+        self
+    }
+
+    pub fn with_search_text(mut self, text: impl Into<String>) -> Self {
+        self.search_text = Some(text.into());
+        self
+    }
+}
+
 /// Namespaces allow multiple systems to define property keys without collisions.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PropertyNamespace(pub String);
@@ -324,6 +352,81 @@ pub struct EmbeddingVector {
     pub content_used: String,
     #[serde(default = "Utc::now")]
     pub created_at: DateTime<Utc>,
+}
+
+impl Property {
+    pub fn new(
+        id: RecordId<PropertyRecord>,
+        entity_id: RecordId<EntityRecord>,
+        namespace: impl Into<String>,
+        key: impl Into<String>,
+        value: PropertyValue,
+    ) -> Self {
+        Self {
+            id: Some(id),
+            entity_id,
+            namespace: PropertyNamespace(namespace.into()),
+            key: key.into(),
+            value,
+            source: default_source(),
+            confidence: default_confidence(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+}
+
+impl BlockNode {
+    pub fn new(
+        id: RecordId<BlockRecord>,
+        entity_id: RecordId<EntityRecord>,
+        block_index: i32,
+        block_type: impl Into<String>,
+        content: impl Into<String>,
+        content_hash: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: Some(id),
+            entity_id,
+            block_index,
+            block_type: block_type.into(),
+            content: content.into(),
+            content_hash: content_hash.into(),
+            start_offset: None,
+            end_offset: None,
+            start_line: None,
+            end_line: None,
+            parent_block_id: None,
+            depth: None,
+            metadata: Value::default(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+}
+
+impl EmbeddingVector {
+    pub fn new(
+        id: RecordId<EmbeddingRecord>,
+        entity_id: RecordId<EntityRecord>,
+        embedding: Vec<f32>,
+        dimensions: i32,
+        model: impl Into<String>,
+        model_version: impl Into<String>,
+        content_used: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: Some(id),
+            entity_id,
+            block_id: None,
+            embedding,
+            dimensions,
+            model: model.into(),
+            model_version: model_version.into(),
+            content_used: content_used.into(),
+            created_at: Utc::now(),
+        }
+    }
 }
 
 /// Hierarchical tag definition.
