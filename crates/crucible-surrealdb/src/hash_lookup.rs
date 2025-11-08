@@ -182,27 +182,19 @@ async fn lookup_file_hashes_batch_internal(
         });
     }
 
-    // Build the IN clause with parameterized queries for security
-    let params: Vec<serde_json::Value> = relative_paths
-        .iter()
-        .map(|path| serde_json::json!(path))
-        .collect();
+    // Build query with array parameter for SurrealDB
+    // SurrealDB expects named parameters as objects, not positional parameters
+    let sql = "SELECT id, path, file_hash, file_size, modified_at FROM notes WHERE path IN $paths";
 
-    // Create parameter placeholders for SurrealDB
-    let param_placeholders: Vec<String> = (0..params.len())
-        .map(|i| format!("${}", i))
-        .collect();
-
-    let in_clause = param_placeholders.join(", ");
-    let sql = format!(
-        "SELECT id, path, file_hash, file_size, modified_at FROM notes WHERE path IN ({})",
-        in_clause
-    );
+    // Create parameter object with the paths array
+    let params = vec![serde_json::json!({
+        "paths": relative_paths
+    })];
 
     debug!("Executing batch query for {} files", relative_paths.len());
 
     let result = client
-        .query(&sql, &params)
+        .query(sql, &params)
         .await
         .map_err(|e| anyhow!("Batch hash lookup failed: {}", e))?;
 
@@ -249,24 +241,17 @@ pub async fn lookup_files_by_content_hashes(
 
     debug!("Looking up files by {} content hashes", content_hashes.len());
 
-    let params: Vec<serde_json::Value> = content_hashes
-        .iter()
-        .map(|hash| serde_json::json!(hash))
-        .collect();
+    // Build query with array parameter for SurrealDB
+    // SurrealDB expects named parameters as objects, not positional parameters
+    let sql = "SELECT id, path, file_hash, file_size, modified_at FROM notes WHERE file_hash IN $hashes";
 
-    // Create parameter placeholders for SurrealDB
-    let param_placeholders: Vec<String> = (0..params.len())
-        .map(|i| format!("${}", i))
-        .collect();
-
-    let in_clause = param_placeholders.join(", ");
-    let sql = format!(
-        "SELECT id, path, file_hash, file_size, modified_at FROM notes WHERE file_hash IN ({})",
-        in_clause
-    );
+    // Create parameter object with the hashes array
+    let params = vec![serde_json::json!({
+        "hashes": content_hashes
+    })];
 
     let result = client
-        .query(&sql, &params)
+        .query(sql, &params)
         .await
         .map_err(|e| anyhow!("Content hash lookup failed: {}", e))?;
 
