@@ -13,7 +13,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create converter with BLAKE3 algorithm
     let converter = ASTBlockConverter::new(Blake3Algorithm);
-    println!("Created converter with algorithm: {}\n", converter.algorithm_name());
+    println!(
+        "Created converter with algorithm: {}\n",
+        converter.algorithm_name()
+    );
 
     // Create some example AST blocks
     let blocks = vec![
@@ -56,7 +59,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (i, (ast_block, hashed_block)) in blocks.iter().zip(hashed_blocks.iter()).enumerate() {
         println!("Block {}:", i + 1);
         println!("  Type: {}", ast_block.type_name());
-        println!("  Hash: {}", &hashed_block.hash[0..16.min(hashed_block.hash.len())]); // Show first 16 chars
+        println!(
+            "  Hash: {}",
+            &hashed_block.hash[0..16.min(hashed_block.hash.len())]
+        ); // Show first 16 chars
         println!("  Index: {}", hashed_block.index);
         println!("  Offset: {}", hashed_block.offset);
         println!("  Content length: {} bytes", hashed_block.data.len());

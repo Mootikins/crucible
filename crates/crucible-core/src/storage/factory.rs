@@ -42,11 +42,11 @@
 //! - **Testable**: Easy to mock and test with in-memory backend
 //! - **Production-ready**: Comprehensive error handling and validation
 
-use crate::storage::{
-    ContentAddressedStorage, ContentHasher, StorageError, StorageResult,
-    memory::{MemoryStorage, MemoryStorageConfig},
-};
 use crate::hashing::blake3::Blake3Hasher;
+use crate::storage::{
+    memory::{MemoryStorage, MemoryStorageConfig},
+    ContentAddressedStorage, ContentHasher, StorageError, StorageResult,
+};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -140,35 +140,46 @@ fn default_max_connections() -> usize {
 impl std::fmt::Debug for BackendConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InMemory { memory_limit, enable_lru_eviction, enable_stats_tracking } => {
-                f.debug_struct("InMemory")
-                    .field("memory_limit", memory_limit)
-                    .field("enable_lru_eviction", enable_lru_eviction)
-                    .field("enable_stats_tracking", enable_stats_tracking)
-                    .finish()
-            }
-            Self::FileBased { directory, create_if_missing, enable_compression, size_limit } => {
-                f.debug_struct("FileBased")
-                    .field("directory", directory)
-                    .field("create_if_missing", create_if_missing)
-                    .field("enable_compression", enable_compression)
-                    .field("size_limit", size_limit)
-                    .finish()
-            }
-            Self::SurrealDB { connection_string, namespace, database, connection_timeout_secs, max_connections } => {
-                f.debug_struct("SurrealDB")
-                    .field("connection_string", connection_string)
-                    .field("namespace", namespace)
-                    .field("database", database)
-                    .field("connection_timeout_secs", connection_timeout_secs)
-                    .field("max_connections", max_connections)
-                    .finish()
-            }
-            Self::Custom(_) => {
-                f.debug_struct("Custom")
-                    .field("backend", &"<Arc<dyn ContentAddressedStorage>>")
-                    .finish()
-            }
+            Self::InMemory {
+                memory_limit,
+                enable_lru_eviction,
+                enable_stats_tracking,
+            } => f
+                .debug_struct("InMemory")
+                .field("memory_limit", memory_limit)
+                .field("enable_lru_eviction", enable_lru_eviction)
+                .field("enable_stats_tracking", enable_stats_tracking)
+                .finish(),
+            Self::FileBased {
+                directory,
+                create_if_missing,
+                enable_compression,
+                size_limit,
+            } => f
+                .debug_struct("FileBased")
+                .field("directory", directory)
+                .field("create_if_missing", create_if_missing)
+                .field("enable_compression", enable_compression)
+                .field("size_limit", size_limit)
+                .finish(),
+            Self::SurrealDB {
+                connection_string,
+                namespace,
+                database,
+                connection_timeout_secs,
+                max_connections,
+            } => f
+                .debug_struct("SurrealDB")
+                .field("connection_string", connection_string)
+                .field("namespace", namespace)
+                .field("database", database)
+                .field("connection_timeout_secs", connection_timeout_secs)
+                .field("max_connections", max_connections)
+                .finish(),
+            Self::Custom(_) => f
+                .debug_struct("Custom")
+                .field("backend", &"<Arc<dyn ContentAddressedStorage>>")
+                .finish(),
         }
     }
 }
@@ -176,18 +187,48 @@ impl std::fmt::Debug for BackendConfig {
 impl PartialEq for BackendConfig {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::InMemory { memory_limit: ml1, enable_lru_eviction: lru1, enable_stats_tracking: st1 },
-             Self::InMemory { memory_limit: ml2, enable_lru_eviction: lru2, enable_stats_tracking: st2 }) => {
-                ml1 == ml2 && lru1 == lru2 && st1 == st2
-            }
-            (Self::FileBased { directory: d1, create_if_missing: c1, enable_compression: ec1, size_limit: sl1 },
-             Self::FileBased { directory: d2, create_if_missing: c2, enable_compression: ec2, size_limit: sl2 }) => {
-                d1 == d2 && c1 == c2 && ec1 == ec2 && sl1 == sl2
-            }
-            (Self::SurrealDB { connection_string: cs1, namespace: ns1, database: db1, connection_timeout_secs: ct1, max_connections: mc1 },
-             Self::SurrealDB { connection_string: cs2, namespace: ns2, database: db2, connection_timeout_secs: ct2, max_connections: mc2 }) => {
-                cs1 == cs2 && ns1 == ns2 && db1 == db2 && ct1 == ct2 && mc1 == mc2
-            }
+            (
+                Self::InMemory {
+                    memory_limit: ml1,
+                    enable_lru_eviction: lru1,
+                    enable_stats_tracking: st1,
+                },
+                Self::InMemory {
+                    memory_limit: ml2,
+                    enable_lru_eviction: lru2,
+                    enable_stats_tracking: st2,
+                },
+            ) => ml1 == ml2 && lru1 == lru2 && st1 == st2,
+            (
+                Self::FileBased {
+                    directory: d1,
+                    create_if_missing: c1,
+                    enable_compression: ec1,
+                    size_limit: sl1,
+                },
+                Self::FileBased {
+                    directory: d2,
+                    create_if_missing: c2,
+                    enable_compression: ec2,
+                    size_limit: sl2,
+                },
+            ) => d1 == d2 && c1 == c2 && ec1 == ec2 && sl1 == sl2,
+            (
+                Self::SurrealDB {
+                    connection_string: cs1,
+                    namespace: ns1,
+                    database: db1,
+                    connection_timeout_secs: ct1,
+                    max_connections: mc1,
+                },
+                Self::SurrealDB {
+                    connection_string: cs2,
+                    namespace: ns2,
+                    database: db2,
+                    connection_timeout_secs: ct2,
+                    max_connections: mc2,
+                },
+            ) => cs1 == cs2 && ns1 == ns2 && db1 == db2 && ct1 == ct2 && mc1 == mc2,
             (Self::Custom(_), Self::Custom(_)) => {
                 // Custom backends are never considered equal
                 false
@@ -363,7 +404,11 @@ impl StorageConfig {
                     }
                 }
             }
-            BackendConfig::FileBased { directory, size_limit, .. } => {
+            BackendConfig::FileBased {
+                directory,
+                size_limit,
+                ..
+            } => {
                 if directory.as_os_str().is_empty() {
                     return Err(StorageError::Configuration(
                         "File-based storage requires a valid directory path".to_string(),
@@ -481,10 +526,7 @@ impl StorageFactory {
         // Create backend based on configuration
         let backend = Self::create_backend(&config, hasher).await?;
 
-        info!(
-            "Successfully created storage backend: {:?}",
-            config.backend
-        );
+        info!("Successfully created storage backend: {:?}", config.backend);
 
         Ok(backend)
     }
@@ -644,8 +686,8 @@ impl StorageFactory {
     /// # Returns
     /// A storage backend instance or error if environment is invalid
     pub async fn create_from_env() -> StorageResult<Arc<dyn ContentAddressedStorage>> {
-        let backend_type = std::env::var("STORAGE_BACKEND")
-            .unwrap_or_else(|_| "in_memory".to_string());
+        let backend_type =
+            std::env::var("STORAGE_BACKEND").unwrap_or_else(|_| "in_memory".to_string());
 
         let config = match backend_type.as_str() {
             "in_memory" => {
@@ -655,10 +697,12 @@ impl StorageFactory {
                 StorageConfig::in_memory(memory_limit)
             }
             "file_based" => {
-                let directory = std::env::var("STORAGE_DIRECTORY")
-                    .map_err(|_| StorageError::Configuration(
-                        "STORAGE_DIRECTORY environment variable required for file-based backend".to_string()
-                    ))?;
+                let directory = std::env::var("STORAGE_DIRECTORY").map_err(|_| {
+                    StorageError::Configuration(
+                        "STORAGE_DIRECTORY environment variable required for file-based backend"
+                            .to_string(),
+                    )
+                })?;
                 StorageConfig::file_based(directory)
             }
             "surrealdb" => {
@@ -666,14 +710,18 @@ impl StorageFactory {
                     .map_err(|_| StorageError::Configuration(
                         "STORAGE_CONNECTION_STRING environment variable required for SurrealDB backend".to_string()
                     ))?;
-                let namespace = std::env::var("STORAGE_NAMESPACE")
-                    .map_err(|_| StorageError::Configuration(
-                        "STORAGE_NAMESPACE environment variable required for SurrealDB backend".to_string()
-                    ))?;
-                let database = std::env::var("STORAGE_DATABASE")
-                    .map_err(|_| StorageError::Configuration(
-                        "STORAGE_DATABASE environment variable required for SurrealDB backend".to_string()
-                    ))?;
+                let namespace = std::env::var("STORAGE_NAMESPACE").map_err(|_| {
+                    StorageError::Configuration(
+                        "STORAGE_NAMESPACE environment variable required for SurrealDB backend"
+                            .to_string(),
+                    )
+                })?;
+                let database = std::env::var("STORAGE_DATABASE").map_err(|_| {
+                    StorageError::Configuration(
+                        "STORAGE_DATABASE environment variable required for SurrealDB backend"
+                            .to_string(),
+                    )
+                })?;
                 StorageConfig::surrealdb(connection_string, namespace, database)
             }
             _ => {
@@ -925,7 +973,8 @@ mod tests {
     #[tokio::test]
     async fn test_factory_create_custom_backend() {
         let memory_storage = MemoryStorage::new();
-        let config = StorageConfig::custom(Arc::new(memory_storage) as Arc<dyn ContentAddressedStorage>);
+        let config =
+            StorageConfig::custom(Arc::new(memory_storage) as Arc<dyn ContentAddressedStorage>);
         let result = StorageFactory::create(config).await;
 
         assert!(result.is_ok());
@@ -1059,11 +1108,17 @@ mod tests {
         // Don't set STORAGE_DIRECTORY
 
         let result = StorageFactory::create_from_env().await;
-        assert!(result.is_err(), "Expected error when STORAGE_DIRECTORY is missing");
+        assert!(
+            result.is_err(),
+            "Expected error when STORAGE_DIRECTORY is missing"
+        );
         match result {
             Err(StorageError::Configuration(msg)) => {
-                assert!(msg.contains("STORAGE_DIRECTORY"),
-                    "Expected error message to contain 'STORAGE_DIRECTORY', got: {}", msg);
+                assert!(
+                    msg.contains("STORAGE_DIRECTORY"),
+                    "Expected error message to contain 'STORAGE_DIRECTORY', got: {}",
+                    msg
+                );
             }
             _ => panic!("Expected Configuration error"),
         }

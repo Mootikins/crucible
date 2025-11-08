@@ -19,7 +19,11 @@ pub async fn apply_epr_schema(client: &SurrealClient) -> Result<()> {
 
         // Run each statement individually so failures are easier to diagnose.
         let _ = client.query(trimmed, &[]).await.map_err(|e| {
-            anyhow::anyhow!("Failed to execute EPR schema statement '{}': {}", trimmed, e)
+            anyhow::anyhow!(
+                "Failed to execute EPR schema statement '{}': {}",
+                trimmed,
+                e
+            )
         })?;
     }
 

@@ -19,10 +19,9 @@ pub mod types;
 pub use adapter::SurrealDBAdapter;
 pub use bridge::{create_parser, create_parser_with_config, ParserAdapter, ParserConfig};
 pub use coordinator::{
-    ParserStorageCoordinator, DefaultParserStorageCoordinator, ParsingOperation,
-    OperationResult, BatchOperationResult, OperationType, OperationPriority,
-    OperationMetadata, TransactionContext, CoordinatorConfig, CoordinatorStatistics,
-    BatchStatistics, factory as coordinator_factory,
+    factory as coordinator_factory, BatchOperationResult, BatchStatistics, CoordinatorConfig,
+    CoordinatorStatistics, DefaultParserStorageCoordinator, OperationMetadata, OperationPriority,
+    OperationResult, OperationType, ParserStorageCoordinator, ParsingOperation, TransactionContext,
 };
 pub use error::{ErrorSeverity, ParseError, ParseErrorType, ParserError, ParserResult};
 pub use extensions::{
@@ -32,9 +31,8 @@ pub use latex::{create_latex_extension, LatexExtension};
 pub use pulldown::PulldownParser;
 pub use query_blocks::{create_query_block_extension, QueryBlockExtension};
 pub use storage_bridge::{
-    StorageAwareMarkdownParser, StorageAwareParser, StorageAwareParseResult,
-    StorageAwareParserConfig, ParseStatistics, StorageOperationResult,
-    factory as parser_factory,
+    factory as parser_factory, ParseStatistics, StorageAwareMarkdownParser,
+    StorageAwareParseResult, StorageAwareParser, StorageAwareParserConfig, StorageOperationResult,
 };
 pub use traits::{MarkdownParser, ParserCapabilities};
 pub use types::{

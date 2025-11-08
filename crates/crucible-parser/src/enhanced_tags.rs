@@ -4,9 +4,9 @@
 //! - #hashtag syntax for inline tagging
 //! - Task list parsing with - [ ] and - [x] checkbox syntax
 
-use super::extensions::SyntaxExtension;
-use super::types::{DocumentContent, Tag, ListBlock, ListItem, ListType, TaskStatus};
 use super::error::{ParseError, ParseErrorType};
+use super::extensions::SyntaxExtension;
+use super::types::{DocumentContent, ListBlock, ListItem, ListType, Tag, TaskStatus};
 use async_trait::async_trait;
 
 use regex::Regex;
@@ -27,7 +27,6 @@ impl Default for EnhancedTagsExtension {
         Self::new()
     }
 }
-
 
 #[async_trait]
 impl SyntaxExtension for EnhancedTagsExtension {
@@ -60,11 +59,7 @@ impl SyntaxExtension for EnhancedTagsExtension {
         has_hashtags || has_task_lists
     }
 
-    async fn parse(
-        &self,
-        content: &str,
-        doc_content: &mut DocumentContent,
-    ) -> Vec<ParseError> {
+    async fn parse(&self, content: &str, doc_content: &mut DocumentContent) -> Vec<ParseError> {
         let mut errors = Vec::new();
 
         // Extract #hashtags
@@ -116,7 +111,14 @@ impl EnhancedTagsExtension {
                 }
 
                 // Skip if inside a code block (simplified check)
-                if line.chars().take(cap.get(0).unwrap().start()).filter(|&c| c == '`').count() % 2 == 1 {
+                if line
+                    .chars()
+                    .take(cap.get(0).unwrap().start())
+                    .filter(|&c| c == '`')
+                    .count()
+                    % 2
+                    == 1
+                {
                     continue;
                 }
 
@@ -151,27 +153,29 @@ impl EnhancedTagsExtension {
         // - Unordered: -, *, + followed by optional spacing and [ ] or [x]
         // - Ordered: 1., 2., a., b., etc. followed by [ ] or [x]
         // - Supports nesting via leading whitespace
-        let task_list_re = Regex::new(r"(?m)^\s*([-*+]|\d+\.|[a-zA-Z]\.)\s+\[([ xX\-~])\]\s+(.*)$").map_err(|e| {
-            ParseError::error(
-                format!("Failed to compile enhanced task list regex: {}", e),
-                ParseErrorType::SyntaxError,
-                0,
-                0,
-                0,
-            )
-        })?;
+        let task_list_re = Regex::new(r"(?m)^\s*([-*+]|\d+\.|[a-zA-Z]\.)\s+\[([ xX\-~])\]\s+(.*)$")
+            .map_err(|e| {
+                ParseError::error(
+                    format!("Failed to compile enhanced task list regex: {}", e),
+                    ParseErrorType::SyntaxError,
+                    0,
+                    0,
+                    0,
+                )
+            })?;
 
         // Pattern to detect regular (non-task) list items for context switching
         // Note: Rust's regex crate doesn't support lookahead, so we'll filter manually
-        let regular_list_re = Regex::new(r"(?m)^\s*([-*+]|\d+\.|[a-zA-Z]\.)\s+[^-\*+\s].*$").map_err(|e| {
-            ParseError::error(
-                format!("Failed to compile regular list regex: {}", e),
-                ParseErrorType::SyntaxError,
-                0,
-                0,
-                0,
-            )
-        })?;
+        let regular_list_re = Regex::new(r"(?m)^\s*([-*+]|\d+\.|[a-zA-Z]\.)\s+[^-\*+\s].*$")
+            .map_err(|e| {
+                ParseError::error(
+                    format!("Failed to compile regular list regex: {}", e),
+                    ParseErrorType::SyntaxError,
+                    0,
+                    0,
+                    0,
+                )
+            })?;
 
         let mut current_list: Option<(Vec<ListItem>, usize, ListType)> = None;
         let mut line_offset = 0;
@@ -214,7 +218,9 @@ impl EnhancedTagsExtension {
                 match &mut current_list {
                     Some((items, _, current_list_type)) => {
                         // If list type changed significantly, start a new list
-                        if std::mem::discriminant(current_list_type) != std::mem::discriminant(&list_type) {
+                        if std::mem::discriminant(current_list_type)
+                            != std::mem::discriminant(&list_type)
+                        {
                             // Close current list and start new one
                             if !items.is_empty() {
                                 let item_count = items.len();
@@ -293,13 +299,20 @@ impl EnhancedTagsExtension {
     fn determine_list_type(marker: &str) -> ListType {
         match marker {
             _ if marker.chars().next().unwrap_or(' ').is_ascii_digit() => ListType::Ordered,
-            _ if marker.chars().next().unwrap_or(' ').is_ascii_alphabetic() && marker.ends_with('.') => ListType::Ordered,
+            _ if marker.chars().next().unwrap_or(' ').is_ascii_alphabetic()
+                && marker.ends_with('.') =>
+            {
+                ListType::Ordered
+            }
             _ => ListType::Unordered,
         }
     }
 
     /// Parse task status from checkbox content with enhanced support
-    fn parse_task_status(checkbox_content: &str, _line_number: usize) -> Result<Option<TaskStatus>, ParseError> {
+    fn parse_task_status(
+        checkbox_content: &str,
+        _line_number: usize,
+    ) -> Result<Option<TaskStatus>, ParseError> {
         // Handle whitespace-only content (space, full-width space)
         // Empty string should return None, but whitespace should return Pending
         if !checkbox_content.is_empty() && checkbox_content.trim().is_empty() {
@@ -326,8 +339,8 @@ pub fn create_enhanced_tags_extension() -> Arc<dyn SyntaxExtension> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::types::{DocumentContent, ListType, TaskStatus};
     use super::*;
-    use super::super::types::{DocumentContent, TaskStatus, ListType};
 
     #[test]
     fn test_hashtag_extraction() {
@@ -485,7 +498,11 @@ b. [x] Another letter
 
         // Check that ordered lists are detected correctly
         for list in &doc_content.lists {
-            if list.items.iter().any(|item| item.content.contains("Numeric") || item.content.contains("Letter")) {
+            if list
+                .items
+                .iter()
+                .any(|item| item.content.contains("Numeric") || item.content.contains("Letter"))
+            {
                 assert_eq!(list.list_type, ListType::Ordered);
             } else {
                 assert_eq!(list.list_type, ListType::Unordered);
@@ -519,15 +536,22 @@ Regular paragraph text.
         // Regular list items (without checkboxes) should NOT be captured
         for list in &doc_content.lists {
             for item in &list.items {
-                assert!(item.task_status.is_some(), "All captured items should have task status");
+                assert!(
+                    item.task_status.is_some(),
+                    "All captured items should have task status"
+                );
                 // Verify that "Regular list item (not a task)" was NOT captured
-                assert!(!item.content.contains("Regular list item"),
-                    "Regular list items without checkboxes should not be captured");
+                assert!(
+                    !item.content.contains("Regular list item"),
+                    "Regular list items without checkboxes should not be captured"
+                );
             }
         }
 
         // Verify we captured the correct task items
-        let all_items: Vec<&str> = doc_content.lists.iter()
+        let all_items: Vec<&str> = doc_content
+            .lists
+            .iter()
             .flat_map(|list| list.items.iter())
             .map(|item| item.content.as_str())
             .collect();
@@ -536,7 +560,9 @@ Regular paragraph text.
         assert!(all_items.contains(&"Different marker, new list"));
         assert!(all_items.contains(&"Back to dash, new list again"));
         assert!(all_items.contains(&"New task list after paragraph"));
-        assert!(!all_items.iter().any(|&item| item.contains("Regular list item")));
+        assert!(!all_items
+            .iter()
+            .any(|&item| item.contains("Regular list item")));
     }
 
     #[tokio::test]
@@ -640,24 +666,69 @@ Regular paragraph text.
 
     #[test]
     fn test_determine_list_type() {
-        assert_eq!(EnhancedTagsExtension::determine_list_type("-"), ListType::Unordered);
-        assert_eq!(EnhancedTagsExtension::determine_list_type("*"), ListType::Unordered);
-        assert_eq!(EnhancedTagsExtension::determine_list_type("+"), ListType::Unordered);
-        assert_eq!(EnhancedTagsExtension::determine_list_type("1."), ListType::Ordered);
-        assert_eq!(EnhancedTagsExtension::determine_list_type("123."), ListType::Ordered);
-        assert_eq!(EnhancedTagsExtension::determine_list_type("a."), ListType::Ordered);
-        assert_eq!(EnhancedTagsExtension::determine_list_type("Z."), ListType::Ordered);
+        assert_eq!(
+            EnhancedTagsExtension::determine_list_type("-"),
+            ListType::Unordered
+        );
+        assert_eq!(
+            EnhancedTagsExtension::determine_list_type("*"),
+            ListType::Unordered
+        );
+        assert_eq!(
+            EnhancedTagsExtension::determine_list_type("+"),
+            ListType::Unordered
+        );
+        assert_eq!(
+            EnhancedTagsExtension::determine_list_type("1."),
+            ListType::Ordered
+        );
+        assert_eq!(
+            EnhancedTagsExtension::determine_list_type("123."),
+            ListType::Ordered
+        );
+        assert_eq!(
+            EnhancedTagsExtension::determine_list_type("a."),
+            ListType::Ordered
+        );
+        assert_eq!(
+            EnhancedTagsExtension::determine_list_type("Z."),
+            ListType::Ordered
+        );
     }
 
     #[test]
     fn test_parse_task_status() {
-        assert_eq!(EnhancedTagsExtension::parse_task_status(" ", 1).unwrap(), Some(TaskStatus::Pending));
-        assert_eq!(EnhancedTagsExtension::parse_task_status("　", 1).unwrap(), Some(TaskStatus::Pending)); // Full-width space
-        assert_eq!(EnhancedTagsExtension::parse_task_status("x", 1).unwrap(), Some(TaskStatus::Completed));
-        assert_eq!(EnhancedTagsExtension::parse_task_status("X", 1).unwrap(), Some(TaskStatus::Completed));
-        assert_eq!(EnhancedTagsExtension::parse_task_status("-", 1).unwrap(), Some(TaskStatus::Pending));
-        assert_eq!(EnhancedTagsExtension::parse_task_status("~", 1).unwrap(), Some(TaskStatus::Pending));
-        assert_eq!(EnhancedTagsExtension::parse_task_status("abc", 1).unwrap(), None);
-        assert_eq!(EnhancedTagsExtension::parse_task_status("", 1).unwrap(), None);
+        assert_eq!(
+            EnhancedTagsExtension::parse_task_status(" ", 1).unwrap(),
+            Some(TaskStatus::Pending)
+        );
+        assert_eq!(
+            EnhancedTagsExtension::parse_task_status("　", 1).unwrap(),
+            Some(TaskStatus::Pending)
+        ); // Full-width space
+        assert_eq!(
+            EnhancedTagsExtension::parse_task_status("x", 1).unwrap(),
+            Some(TaskStatus::Completed)
+        );
+        assert_eq!(
+            EnhancedTagsExtension::parse_task_status("X", 1).unwrap(),
+            Some(TaskStatus::Completed)
+        );
+        assert_eq!(
+            EnhancedTagsExtension::parse_task_status("-", 1).unwrap(),
+            Some(TaskStatus::Pending)
+        );
+        assert_eq!(
+            EnhancedTagsExtension::parse_task_status("~", 1).unwrap(),
+            Some(TaskStatus::Pending)
+        );
+        assert_eq!(
+            EnhancedTagsExtension::parse_task_status("abc", 1).unwrap(),
+            None
+        );
+        assert_eq!(
+            EnhancedTagsExtension::parse_task_status("", 1).unwrap(),
+            None
+        );
     }
 }

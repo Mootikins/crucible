@@ -4,12 +4,12 @@
 //! `schema_epr.surql` and provides higher-level storage helpers used by the
 //! ingestion pipeline.
 
-pub mod types;
+pub mod ingest;
 pub mod schema;
 pub mod store;
-pub mod ingest;
+pub mod types;
 
-pub use types::*;
+pub use ingest::DocumentIngestor;
 pub use schema::apply_epr_schema;
 pub use store::EprStore;
-pub use ingest::DocumentIngestor;
+pub use types::*;

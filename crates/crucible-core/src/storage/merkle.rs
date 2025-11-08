@@ -736,7 +736,7 @@ mod tests {
         fn clone(&self) -> Self {
             Self {
                 counter: std::sync::atomic::AtomicUsize::new(
-                    self.counter.load(std::sync::atomic::Ordering::SeqCst)
+                    self.counter.load(std::sync::atomic::Ordering::SeqCst),
                 ),
             }
         }

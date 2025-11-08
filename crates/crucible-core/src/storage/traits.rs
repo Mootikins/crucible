@@ -3,8 +3,8 @@
 //! This module defines the fundamental traits that enable content-addressed storage
 //! with pluggable backends and hash algorithms.
 
+use crate::storage::{MerkleTree, StorageResult};
 use async_trait::async_trait;
-use crate::storage::{StorageResult, MerkleTree};
 use serde::{Deserialize, Serialize};
 
 /// Block storage operations for content-addressed storage
@@ -197,10 +197,7 @@ where
 }
 
 // Blanket implementation for the composite trait
-impl<T> ContentAddressedStorage for std::sync::Arc<T>
-where
-    T: ContentAddressedStorage + ?Sized,
-{}
+impl<T> ContentAddressedStorage for std::sync::Arc<T> where T: ContentAddressedStorage + ?Sized {}
 
 /// Trait for pluggable content hashing algorithms
 ///

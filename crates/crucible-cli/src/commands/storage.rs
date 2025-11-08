@@ -1,16 +1,18 @@
 use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
-use std::time::Instant;
-use std::sync::Arc;
 use serde_json;
-use tabled::{Table, Tabled, settings::Style};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Instant;
+use tabled::{settings::Style, Table, Tabled};
 
+use crate::cli::StorageCommands;
 use crate::config::CliConfig;
 use crate::output;
-use crate::cli::StorageCommands;
-use crucible_core::storage::builder::{ContentAddressedStorageBuilder, StorageBackendType, HasherConfig};
-use crucible_core::storage::{ContentAddressedStorage, StorageResult, traits::StorageStats};
 use crucible_core::hashing::blake3::Blake3Hasher;
+use crucible_core::storage::builder::{
+    ContentAddressedStorageBuilder, HasherConfig, StorageBackendType,
+};
+use crucible_core::storage::{traits::StorageStats, ContentAddressedStorage, StorageResult};
 
 /// Output formats for storage commands
 #[derive(Debug, Clone)]
@@ -53,26 +55,38 @@ struct VerificationResult {
 }
 
 /// Execute storage commands
-pub async fn execute(
-    config: CliConfig,
-    command: StorageCommands,
-) -> Result<()> {
+pub async fn execute(config: CliConfig, command: StorageCommands) -> Result<()> {
     match command {
-        StorageCommands::Stats { format, by_backend, deduplication } => {
-            execute_stats(config, format, by_backend, deduplication).await
-        }
-        StorageCommands::Verify { path, repair, format } => {
-            execute_verify(config, path, repair, format).await
-        }
-        StorageCommands::Cleanup { gc, rebuild_indexes, optimize, force, dry_run } => {
-            execute_cleanup(config, gc, rebuild_indexes, optimize, force, dry_run).await
-        }
-        StorageCommands::Backup { dest, include_content, compress, verify, format } => {
-            execute_backup(config, dest, include_content, compress, verify, format).await
-        }
-        StorageCommands::Restore { source, merge, skip_verify, format } => {
-            execute_restore(config, source, merge, skip_verify, format).await
-        }
+        StorageCommands::Stats {
+            format,
+            by_backend,
+            deduplication,
+        } => execute_stats(config, format, by_backend, deduplication).await,
+        StorageCommands::Verify {
+            path,
+            repair,
+            format,
+        } => execute_verify(config, path, repair, format).await,
+        StorageCommands::Cleanup {
+            gc,
+            rebuild_indexes,
+            optimize,
+            force,
+            dry_run,
+        } => execute_cleanup(config, gc, rebuild_indexes, optimize, force, dry_run).await,
+        StorageCommands::Backup {
+            dest,
+            include_content,
+            compress,
+            verify,
+            format,
+        } => execute_backup(config, dest, include_content, compress, verify, format).await,
+        StorageCommands::Restore {
+            source,
+            merge,
+            skip_verify,
+            format,
+        } => execute_restore(config, source, merge, skip_verify, format).await,
     }
 }
 
@@ -92,7 +106,8 @@ async fn execute_stats(
     let storage = create_storage_backend(&config)?;
 
     // Get storage statistics
-    let stats = storage.get_stats()
+    let stats = storage
+        .get_stats()
         .await
         .context("Failed to get storage statistics")?;
 
@@ -153,7 +168,10 @@ async fn execute_verify(
     }
 
     let duration = start_time.elapsed();
-    let total_issues: u64 = results.iter().map(|r| r.corrupted_blocks + r.missing_blocks).sum();
+    let total_issues: u64 = results
+        .iter()
+        .map(|r| r.corrupted_blocks + r.missing_blocks)
+        .sum();
     output::success(&format!(
         "Verification completed in {:.2}s - {} issues found",
         duration.as_secs_f32(),
@@ -259,8 +277,7 @@ async fn execute_backup(
 
     // Ensure backup directory exists
     if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)
-            .context("Failed to create backup directory")?;
+        std::fs::create_dir_all(parent).context("Failed to create backup directory")?;
     }
 
     // Get backup data
@@ -290,8 +307,7 @@ async fn execute_backup(
 
     // Write backup file
     let backup_json = serde_json::to_string_pretty(&backup_data)?;
-    std::fs::write(&dest, backup_json)
-        .context("Failed to write backup file")?;
+    std::fs::write(&dest, backup_json).context("Failed to write backup file")?;
 
     if verify {
         output::info("Verifying backup integrity...");
@@ -323,13 +339,16 @@ async fn execute_restore(
     output::info(&format!("Starting restore from: {}", source.display()));
 
     if !source.exists() {
-        return Err(anyhow::anyhow!("Backup file does not exist: {}", source.display()));
+        return Err(anyhow::anyhow!(
+            "Backup file does not exist: {}",
+            source.display()
+        ));
     }
 
     // Read backup file
     let backup_content = std::fs::read_to_string(&source)?;
-    let backup_data: serde_json::Value = serde_json::from_str(&backup_content)
-        .context("Invalid backup file format")?;
+    let backup_data: serde_json::Value =
+        serde_json::from_str(&backup_content).context("Invalid backup file format")?;
 
     if !skip_verify {
         output::info("Verifying backup integrity...");
@@ -408,11 +427,7 @@ async fn repair_storage_issues(
 }
 
 /// Output stats in table format
-fn output_stats_table(
-    stats: &StorageStats,
-    by_backend: bool,
-    deduplication: bool,
-) -> Result<()> {
+fn output_stats_table(stats: &StorageStats, by_backend: bool, deduplication: bool) -> Result<()> {
     let rows = vec![
         StorageStatsRow {
             metric: "Total Blocks".to_string(),
@@ -436,9 +451,7 @@ fn output_stats_table(
         },
     ];
 
-    let table = Table::new(&rows)
-        .with(Style::modern())
-        .to_string();
+    let table = Table::new(&rows).with(Style::modern()).to_string();
 
     output::header("Storage Statistics");
     println!("{}", table);
@@ -447,11 +460,7 @@ fn output_stats_table(
 }
 
 /// Output stats in JSON format
-fn output_stats_json(
-    stats: &StorageStats,
-    by_backend: bool,
-    deduplication: bool,
-) -> Result<()> {
+fn output_stats_json(stats: &StorageStats, by_backend: bool, deduplication: bool) -> Result<()> {
     let output = serde_json::json!({
         "timestamp": chrono::Utc::now().to_rfc3339(),
         "statistics": {
@@ -474,18 +483,20 @@ fn output_stats_json(
 }
 
 /// Output stats in plain format
-fn output_stats_plain(
-    stats: &StorageStats,
-    _by_backend: bool,
-    _deduplication: bool,
-) {
+fn output_stats_plain(stats: &StorageStats, _by_backend: bool, _deduplication: bool) {
     output::header("Storage Statistics");
     println!("Total Blocks: {}", stats.block_count);
     println!("Total Trees: {}", stats.tree_count);
     println!("Storage Size: {}", format_bytes(stats.block_size_bytes));
-    println!("Deduplication Savings: {}", format_bytes(stats.deduplication_savings));
+    println!(
+        "Deduplication Savings: {}",
+        format_bytes(stats.deduplication_savings)
+    );
     println!("Average Block Size: {:.0} bytes", stats.average_block_size);
-    println!("Largest Block Size: {}", format_bytes(stats.largest_block_size));
+    println!(
+        "Largest Block Size: {}",
+        format_bytes(stats.largest_block_size)
+    );
 }
 
 /// Output verification results in table format
@@ -498,7 +509,11 @@ fn output_verify_table(results: &[VerificationResult]) -> Result<()> {
     output::header("Verification Results");
 
     for result in results {
-        let status = if result.is_valid { "✓ Valid" } else { "✗ Issues Found" };
+        let status = if result.is_valid {
+            "✓ Valid"
+        } else {
+            "✗ Issues Found"
+        };
         println!("{}: {}", result.path, status);
 
         if !result.is_valid {
@@ -541,7 +556,11 @@ fn output_verify_plain(results: &[VerificationResult]) {
     output::header("Verification Results");
 
     for result in results {
-        let status = if result.is_valid { "✓ Valid" } else { "✗ Issues Found" };
+        let status = if result.is_valid {
+            "✓ Valid"
+        } else {
+            "✗ Issues Found"
+        };
         println!("{}: {}", result.path, status);
 
         if !result.is_valid {

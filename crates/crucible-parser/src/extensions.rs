@@ -43,11 +43,7 @@ pub trait SyntaxExtension: Send + Sync {
     ///
     /// # Returns
     /// A list of parse errors encountered (non-fatal)
-    async fn parse(
-        &self,
-        content: &str,
-        doc_content: &mut DocumentContent,
-    ) -> Vec<ParseError>;
+    async fn parse(&self, content: &str, doc_content: &mut DocumentContent) -> Vec<ParseError>;
 
     /// Get the priority of this extension (higher = applied first)
     fn priority(&self) -> u8 {
@@ -110,7 +106,10 @@ impl std::fmt::Debug for ExtensionRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ExtensionRegistry")
             .field("extension_count", &self.extensions.len())
-            .field("extension_names", &self.extensions.iter().map(|e| e.name()).collect::<Vec<_>>())
+            .field(
+                "extension_names",
+                &self.extensions.iter().map(|e| e.name()).collect::<Vec<_>>(),
+            )
             .finish()
     }
 }
@@ -370,10 +369,14 @@ mod tests {
         registry.register(ext).unwrap();
 
         let mut doc_content = DocumentContent::new();
-        let errors = registry.apply_extensions("test content", &mut doc_content).await;
+        let errors = registry
+            .apply_extensions("test content", &mut doc_content)
+            .await;
         assert_eq!(errors.len(), 0);
 
-        let errors = registry.apply_extensions("test error content", &mut doc_content).await;
+        let errors = registry
+            .apply_extensions("test error content", &mut doc_content)
+            .await;
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].error_type, ParseErrorType::SyntaxError);
     }

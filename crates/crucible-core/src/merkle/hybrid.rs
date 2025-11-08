@@ -1,7 +1,7 @@
 use blake3::Hasher;
 use serde::{Deserialize, Serialize};
 
-use crate::parser::types::{Heading, ParsedDocument, Paragraph};
+use crate::parser::types::{Heading, Paragraph, ParsedDocument};
 use crate::types::BlockHash;
 
 /// Hybrid Merkle tree that groups document content into semantic sections and
@@ -37,8 +37,15 @@ pub struct BinaryMerkleTree {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum MerkleNode {
-    Leaf { hash: BlockHash, block_index: usize },
-    Internal { hash: BlockHash, left: usize, right: usize },
+    Leaf {
+        hash: BlockHash,
+        block_index: usize,
+    },
+    Internal {
+        hash: BlockHash,
+        left: usize,
+        right: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -74,12 +81,7 @@ impl HybridMerkleTree {
     pub fn diff(&self, other: &HybridMerkleTree) -> HybridDiff {
         let mut changed_sections = Vec::new();
 
-        for (idx, (left, right)) in self
-            .sections
-            .iter()
-            .zip(other.sections.iter())
-            .enumerate()
-        {
+        for (idx, (left, right)) in self.sections.iter().zip(other.sections.iter()).enumerate() {
             if left.binary_tree.root_hash != right.binary_tree.root_hash {
                 changed_sections.push(SectionChange {
                     section_index: idx,

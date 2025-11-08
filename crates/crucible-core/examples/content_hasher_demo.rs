@@ -11,13 +11,15 @@
 //! ```
 
 use crucible_core::{
+    hashing::{
+        algorithm::{Blake3Algorithm, Sha256Algorithm},
+        FileHasher,
+    },
     traits::change_detection::{
-        ContentHasher, ChangeDetector, HashLookupStorage,
-        BatchLookupConfig, HashLookupResult, StoredHash, ChangeDetectionResult,
-        ChangeDetectionMetrics, ChangeStatistics
+        BatchLookupConfig, ChangeDetectionMetrics, ChangeDetectionResult, ChangeDetector,
+        ChangeStatistics, ContentHasher, HashLookupResult, HashLookupStorage, StoredHash,
     },
     types::hashing::{FileHash, FileHashInfo, HashAlgorithm, HashError},
-    hashing::{FileHasher, algorithm::{Blake3Algorithm, Sha256Algorithm}},
     ChangeSet,
 };
 
@@ -154,7 +156,8 @@ impl SimpleChangeDetector {
 #[async_trait]
 impl ChangeDetector for SimpleChangeDetector {
     async fn detect_changes(&self, current_files: &[FileHashInfo]) -> Result<ChangeSet, HashError> {
-        let paths: Vec<String> = current_files.iter()
+        let paths: Vec<String> = current_files
+            .iter()
             .map(|f| f.relative_path.clone())
             .collect();
 
@@ -178,9 +181,8 @@ impl ChangeDetector for SimpleChangeDetector {
 
         // Find deleted files (in storage but not in current scan)
         let stored_paths: std::collections::HashSet<_> = lookup_result.found_files.keys().collect();
-        let current_paths: std::collections::HashSet<_> = current_files.iter()
-            .map(|f| &f.relative_path)
-            .collect();
+        let current_paths: std::collections::HashSet<_> =
+            current_files.iter().map(|f| &f.relative_path).collect();
 
         for path in stored_paths.difference(&current_paths) {
             changes.add_deleted((*path).clone());
@@ -216,7 +218,10 @@ impl ChangeDetector for SimpleChangeDetector {
     }
 
     async fn check_file_changed(&self, path: &str) -> Result<Option<FileHashInfo>, HashError> {
-        let lookup_result = self.storage.lookup_file_hashes_batch(&[path.to_string()], None).await?;
+        let lookup_result = self
+            .storage
+            .lookup_file_hashes_batch(&[path.to_string()], None)
+            .await?;
         if let Some(stored) = lookup_result.found_files.get(path) {
             // In a real implementation, we would hash the current file and compare
             // For this demo, we'll return None to indicate no current file state
@@ -243,7 +248,10 @@ impl ChangeDetector for SimpleChangeDetector {
         let mut results = HashMap::new();
         for path in paths {
             // For mock, assume files in storage haven't changed
-            let lookup_result = self.storage.lookup_file_hashes_batch(&[path.clone()], None).await?;
+            let lookup_result = self
+                .storage
+                .lookup_file_hashes_batch(&[path.clone()], None)
+                .await?;
             let has_stored = lookup_result.found_files.contains_key(path);
             results.insert(path.clone(), has_stored);
         }
@@ -323,12 +331,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n2️⃣  File Hash Info with Metadata");
     println!("---------------------------------");
 
-    let info1 = hasher.hash_file_info(&file1_path, "document.md".to_string()).await?;
-    let info2 = hasher.hash_file_info(&file2_path, "readme.txt".to_string()).await?;
+    let info1 = hasher
+        .hash_file_info(&file1_path, "document.md".to_string())
+        .await?;
+    let info2 = hasher
+        .hash_file_info(&file2_path, "readme.txt".to_string())
+        .await?;
 
     println!("File info:");
-    println!("  - document.md: {} bytes, modified {:?}", info1.size, info1.modified);
-    println!("  - readme.txt: {} bytes, modified {:?}", info2.size, info2.modified);
+    println!(
+        "  - document.md: {} bytes, modified {:?}",
+        info1.size, info1.modified
+    );
+    println!(
+        "  - readme.txt: {} bytes, modified {:?}",
+        info2.size, info2.modified
+    );
 
     // 3. Batch Operations
     println!("\n3️⃣  Batch Hashing Operations");
@@ -357,12 +375,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  - Paragraph: {}", paragraph_hash);
 
     // Create block info
-    let block_info = hasher.hash_block_info(
-        heading_content,
-        "heading".to_string(),
-        0,
-        heading_content.len(),
-    ).await?;
+    let block_info = hasher
+        .hash_block_info(
+            heading_content,
+            "heading".to_string(),
+            0,
+            heading_content.len(),
+        )
+        .await?;
 
     println!("Block info:");
     println!("  - Type: {}", block_info.block_type);
@@ -386,7 +406,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create storage and change detector
     let storage = std::sync::Arc::new(MockHashStorage::new());
-    let change_detector = SimpleChangeDetector::new(storage.clone() as std::sync::Arc<dyn HashLookupStorage>);
+    let change_detector =
+        SimpleChangeDetector::new(storage.clone() as std::sync::Arc<dyn HashLookupStorage>);
 
     // Store initial hashes
     let initial_files = vec![info1.clone(), info2.clone()];
@@ -407,8 +428,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  - Has changes: {}", summary.has_changes);
 
     // Modify a file and detect changes
-    fs::write(&file1_path, "# Modified Title\n\nThis content has been changed.").await?;
-    let modified_info = hasher.hash_file_info(&file1_path, "document.md".to_string()).await?;
+    fs::write(
+        &file1_path,
+        "# Modified Title\n\nThis content has been changed.",
+    )
+    .await?;
+    let modified_info = hasher
+        .hash_file_info(&file1_path, "document.md".to_string())
+        .await?;
 
     let current_files = vec![modified_info.clone(), info2.clone()];
     let changes = change_detector.detect_changes(&current_files).await?;
@@ -425,7 +452,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Add a new file
     let file3_path = temp_path.join("new.md");
     fs::write(&file3_path, "# New Document\n\nThis is a new file.").await?;
-    let new_info = hasher.hash_file_info(&file3_path, "new.md".to_string()).await?;
+    let new_info = hasher
+        .hash_file_info(&file3_path, "new.md".to_string())
+        .await?;
 
     let current_files = vec![modified_info.clone(), info2.clone(), new_info.clone()];
     let changes = change_detector.detect_changes(&current_files).await?;

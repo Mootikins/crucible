@@ -1,13 +1,13 @@
 use anyhow::Result;
 use clap::Parser;
 use std::sync::Arc;
-use tracing::{debug, info, warn, error, Level};
+use tracing::{debug, error, info, warn, Level};
 
 use crucible_cli::{
     cli::{Cli, Commands},
     commands, config,
 };
-use crucible_core::{CrucibleCore, types::hashing::HashAlgorithm};
+use crucible_core::{types::hashing::HashAlgorithm, CrucibleCore};
 use crucible_surrealdb::{SurrealClient, SurrealDbConfig};
 
 /// Process files using the integrated ChangeDetectionService
@@ -63,11 +63,16 @@ async fn process_files_with_change_detection(config: &crate::config::CliConfig) 
         client.clone(),
         HashAlgorithm::Blake3,
         service_config,
-    ).await {
+    )
+    .await
+    {
         Ok(service) => service,
         Err(e) => {
             error!("Failed to create ChangeDetectionService: {}", e);
-            return Err(anyhow::anyhow!("ChangeDetectionService initialization failed: {}", e));
+            return Err(anyhow::anyhow!(
+                "ChangeDetectionService initialization failed: {}",
+                e
+            ));
         }
     };
 
@@ -88,8 +93,7 @@ async fn process_files_with_change_detection(config: &crate::config::CliConfig) 
     } else {
         info!(
             "🔄 Change detection completed: {} files scanned, {} changes detected",
-            result.metrics.files_scanned,
-            result.metrics.changes_detected
+            result.metrics.files_scanned, result.metrics.changes_detected
         );
 
         if let Some(processing_result) = result.processing_result {
@@ -114,9 +118,7 @@ async fn process_files_with_change_detection(config: &crate::config::CliConfig) 
     // Display performance metrics
     info!(
         "📊 Performance: Scan {:?}, Detection {:?}, Total {:?}",
-        result.metrics.scan_time,
-        result.metrics.change_detection_time,
-        total_time
+        result.metrics.scan_time, result.metrics.change_detection_time, total_time
     );
 
     if result.metrics.database_round_trips > 0 {
@@ -129,10 +131,14 @@ async fn process_files_with_change_detection(config: &crate::config::CliConfig) 
 
     // Get and display detailed statistics in debug mode
     if tracing::enabled!(Level::DEBUG) {
-        let scanner_stats = change_detection_service.get_file_scanner_statistics().await?;
+        let scanner_stats = change_detection_service
+            .get_file_scanner_statistics()
+            .await?;
         debug!("File scanner statistics: {}", scanner_stats.summary());
 
-        let detector_stats = change_detection_service.get_change_detector_statistics().await?;
+        let detector_stats = change_detection_service
+            .get_change_detector_statistics()
+            .await?;
         debug!("Change detector statistics: {}", detector_stats);
     }
 
@@ -185,7 +191,10 @@ async fn main() -> Result<()> {
                 info!("ℹ️  CLI commands may operate on stale data");
             } else {
                 // Process files before command execution to ensure up-to-date data
-                debug!("Starting file processing with timeout: {} seconds", cli.process_timeout);
+                debug!(
+                    "Starting file processing with timeout: {} seconds",
+                    cli.process_timeout
+                );
                 // Set timeout for file processing
                 let timeout_duration = if cli.process_timeout == 0 {
                     None // No timeout
@@ -195,8 +204,9 @@ async fn main() -> Result<()> {
 
                 let result = tokio::time::timeout(
                     timeout_duration.unwrap_or(std::time::Duration::from_secs(u64::MAX)),
-                    process_files_with_change_detection(&config)
-                ).await;
+                    process_files_with_change_detection(&config),
+                )
+                .await;
 
                 match result {
                     Ok(process_result) => {
@@ -212,7 +222,10 @@ async fn main() -> Result<()> {
                         }
                     }
                     Err(timeout_err) => {
-                        warn!("⏱️  File processing timed out after {} seconds", cli.process_timeout);
+                        warn!(
+                            "⏱️  File processing timed out after {} seconds",
+                            cli.process_timeout
+                        );
                         info!("⚠️  CLI commands may operate on partially updated data");
                         // Continue execution even if processing times out (graceful degradation)
                     }
@@ -232,18 +245,13 @@ async fn main() -> Result<()> {
 
         Some(Commands::Fuzzy {
             query,
-            content: _,  // keep for future use
-            tags: _,     // keep for future use
-            paths: _,    // keep for future use
+            content: _, // keep for future use
+            tags: _,    // keep for future use
+            paths: _,   // keep for future use
             limit,
         }) => {
             // Always use interactive mode
-            commands::fuzzy_interactive::execute(
-                config,
-                query.unwrap_or_default(),
-                limit,
-            )
-            .await?
+            commands::fuzzy_interactive::execute(config, query.unwrap_or_default(), limit).await?
         }
 
         Some(Commands::Semantic {
@@ -270,7 +278,18 @@ async fn main() -> Result<()> {
             show_similarity,
             show_unchanged,
             max_depth,
-        }) => commands::diff::execute(config, path1, path2, format, show_similarity, show_unchanged, max_depth).await?,
+        }) => {
+            commands::diff::execute(
+                config,
+                path1,
+                path2,
+                format,
+                show_similarity,
+                show_unchanged,
+                max_depth,
+            )
+            .await?
+        }
 
         Some(Commands::Status {
             path,
@@ -288,7 +307,18 @@ async fn main() -> Result<()> {
             show_blocks,
             max_depth,
             continue_on_error,
-        }) => commands::parse::execute(config, path, format, show_tree, show_blocks, max_depth, continue_on_error).await?,
+        }) => {
+            commands::parse::execute(
+                config,
+                path,
+                format,
+                show_tree,
+                show_blocks,
+                max_depth,
+                continue_on_error,
+            )
+            .await?
+        }
 
         // Commands::EnhancedChat { // Temporarily disabled
         //     agent,
@@ -329,7 +359,7 @@ async fn main() -> Result<()> {
                 CrucibleCore::builder()
                     .with_storage(storage)
                     .build()
-                    .map_err(|e| anyhow::anyhow!("Failed to build CrucibleCore: {}", e))?
+                    .map_err(|e| anyhow::anyhow!("Failed to build CrucibleCore: {}", e))?,
             );
 
             commands::repl::execute(core, config, cli.non_interactive).await?

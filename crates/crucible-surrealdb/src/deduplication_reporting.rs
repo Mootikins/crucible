@@ -5,11 +5,11 @@
 
 use crate::deduplication_detector::{DeduplicationDetector, SurrealDeduplicationDetector};
 use crate::SurrealDbConfig;
-use crucible_core::storage::{DeduplicationStorage, StorageResult, StorageError};
+use chrono::{DateTime, Utc};
+use comfy_table::{Attribute, Cell, Color, Row, Table};
+use crucible_core::storage::{DeduplicationStorage, StorageError, StorageResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
-use comfy_table::{Table, Row, Cell, Attribute, Color};
 
 /// Comprehensive deduplication report
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -261,7 +261,10 @@ impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
     /// # Returns
     ///
     /// A complete deduplication report with statistics, analysis, and recommendations
-    pub async fn generate_report(&self, options: ReportOptions) -> StorageResult<DeduplicationReport> {
+    pub async fn generate_report(
+        &self,
+        options: ReportOptions,
+    ) -> StorageResult<DeduplicationReport> {
         // Get comprehensive deduplication statistics
         let stats = self.detector.get_all_deduplication_stats().await?;
         let storage_usage = self.detector.get_storage_usage_stats().await?;
@@ -294,9 +297,15 @@ impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
         let key_finding = if stats.deduplication_ratio > 0.5 {
             format!("High deduplication ratio ({:.1}%) indicates significant content reuse across documents", deduplication_ratio_percent)
         } else if stats.deduplication_ratio > 0.2 {
-            format!("Moderate deduplication ratio ({:.1}%) shows some content reuse patterns", deduplication_ratio_percent)
+            format!(
+                "Moderate deduplication ratio ({:.1}%) shows some content reuse patterns",
+                deduplication_ratio_percent
+            )
         } else {
-            format!("Low deduplication ratio ({:.1}%) suggests mostly unique content across documents", deduplication_ratio_percent)
+            format!(
+                "Low deduplication ratio ({:.1}%) suggests mostly unique content across documents",
+                deduplication_ratio_percent
+            )
         };
 
         // Generate recommendations
@@ -402,7 +411,11 @@ impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
     }
 
     /// Export report to specified format
-    pub fn export_report(&self, report: &DeduplicationReport, format: &ExportFormat) -> StorageResult<String> {
+    pub fn export_report(
+        &self,
+        report: &DeduplicationReport,
+        format: &ExportFormat,
+    ) -> StorageResult<String> {
         match format {
             ExportFormat::Text => Ok(self.format_as_text(report)),
             ExportFormat::Json => serde_json::to_string_pretty(report)
@@ -418,7 +431,10 @@ impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
 
         // Header
         output.push_str(&format!("{}\n", &report.metadata.title));
-        output.push_str(&format!("Generated: {}\n\n", report.metadata.generated_at.format("%Y-%m-%d %H:%M:%S UTC")));
+        output.push_str(&format!(
+            "Generated: {}\n\n",
+            report.metadata.generated_at.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
 
         // Executive Summary Table
         let mut summary_table = Table::new();
@@ -426,36 +442,47 @@ impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
 
         summary_table.add_row(Row::from(vec![
             Cell::new("Total Blocks").add_attribute(Attribute::Bold),
-            Cell::new(&report.summary.total_blocks.to_string())
+            Cell::new(&report.summary.total_blocks.to_string()),
         ]));
 
         summary_table.add_row(Row::from(vec![
             Cell::new("Unique Blocks").add_attribute(Attribute::Bold),
-            Cell::new(&report.summary.unique_blocks.to_string())
+            Cell::new(&report.summary.unique_blocks.to_string()),
         ]));
 
         summary_table.add_row(Row::from(vec![
             Cell::new("Duplicate Blocks").add_attribute(Attribute::Bold),
-            Cell::new(&report.summary.duplicate_blocks.to_string())
+            Cell::new(&report.summary.duplicate_blocks.to_string()),
         ]));
 
         summary_table.add_row(Row::from(vec![
             Cell::new("Deduplication Ratio").add_attribute(Attribute::Bold),
-            Cell::new(&format!("{:.1}%", report.summary.deduplication_ratio_percent))
-                .add_attribute(Attribute::Bold)
-                .fg(if report.summary.deduplication_ratio_percent > 30.0 { Color::Green } else { Color::Yellow })
+            Cell::new(&format!(
+                "{:.1}%",
+                report.summary.deduplication_ratio_percent
+            ))
+            .add_attribute(Attribute::Bold)
+            .fg(if report.summary.deduplication_ratio_percent > 30.0 {
+                Color::Green
+            } else {
+                Color::Yellow
+            }),
         ]));
 
         summary_table.add_row(Row::from(vec![
             Cell::new("Storage Saved").add_attribute(Attribute::Bold),
-            Cell::new(&format!("{:.2} MB", report.summary.storage_saved_mb))
+            Cell::new(&format!("{:.2} MB", report.summary.storage_saved_mb)),
         ]));
 
         summary_table.add_row(Row::from(vec![
             Cell::new("Efficiency Score").add_attribute(Attribute::Bold),
             Cell::new(&format!("{}/100", report.summary.storage_efficiency_score))
                 .add_attribute(Attribute::Bold)
-                .fg(if report.summary.storage_efficiency_score > 70 { Color::Green } else { Color::Yellow })
+                .fg(if report.summary.storage_efficiency_score > 70 {
+                    Color::Green
+                } else {
+                    Color::Yellow
+                }),
         ]));
 
         output.push_str("Executive Summary:\n");
@@ -463,7 +490,10 @@ impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
         output.push('\n');
 
         // Key Finding
-        output.push_str(&format!("\nKey Finding:\n{}\n\n", report.summary.key_finding));
+        output.push_str(&format!(
+            "\nKey Finding:\n{}\n\n",
+            report.summary.key_finding
+        ));
 
         // Top Duplicates (if any)
         if !report.top_duplicates.is_empty() {
@@ -476,7 +506,7 @@ impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
                     Cell::new(&duplicate.block_type),
                     Cell::new(&format!("{} bytes", duplicate.estimated_block_size)),
                     Cell::new(&format!("{} bytes", duplicate.storage_saved)),
-                    Cell::new(&duplicate.content_preview)
+                    Cell::new(&duplicate.content_preview),
                 ]));
             }
 
@@ -496,12 +526,7 @@ impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
                 };
 
                 let priority_text = format!("{:?}", rec.priority);
-                output.push_str(&format!(
-                    "{}. {} ({})\n",
-                    i + 1,
-                    rec.title,
-                    priority_text
-                ));
+                output.push_str(&format!("{}. {} ({})\n", i + 1, rec.title, priority_text));
                 output.push_str(&format!("   {}\n", rec.description));
                 output.push_str(&format!("   Impact: {}\n", rec.estimated_impact));
                 output.push_str(&format!("   Effort: {:?}\n\n", rec.implementation_effort));
@@ -517,23 +542,50 @@ impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
 
         // Title and metadata
         output.push_str(&format!("# {}\n\n", report.metadata.title));
-        output.push_str(&format!("**Generated:** {}  \n", report.metadata.generated_at.format("%Y-%m-%d %H:%M:%S UTC")));
+        output.push_str(&format!(
+            "**Generated:** {}  \n",
+            report.metadata.generated_at.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
         output.push_str(&format!("**Version:** {}  \n", report.metadata.version));
-        output.push_str(&format!("**Data Source:** {}\n\n", report.metadata.data_source));
+        output.push_str(&format!(
+            "**Data Source:** {}\n\n",
+            report.metadata.data_source
+        ));
 
         // Executive Summary
         output.push_str("## Executive Summary\n\n");
         output.push_str("| Metric | Value |\n");
         output.push_str("|--------|-------|\n");
-        output.push_str(&format!("| Total Blocks | {} |\n", report.summary.total_blocks));
-        output.push_str(&format!("| Unique Blocks | {} |\n", report.summary.unique_blocks));
-        output.push_str(&format!("| Duplicate Blocks | {} |\n", report.summary.duplicate_blocks));
-        output.push_str(&format!("| Deduplication Ratio | {:.1}% |\n", report.summary.deduplication_ratio_percent));
-        output.push_str(&format!("| Storage Saved | {:.2} MB |\n", report.summary.storage_saved_mb));
-        output.push_str(&format!("| Efficiency Score | {}/100 |\n\n", report.summary.storage_efficiency_score));
+        output.push_str(&format!(
+            "| Total Blocks | {} |\n",
+            report.summary.total_blocks
+        ));
+        output.push_str(&format!(
+            "| Unique Blocks | {} |\n",
+            report.summary.unique_blocks
+        ));
+        output.push_str(&format!(
+            "| Duplicate Blocks | {} |\n",
+            report.summary.duplicate_blocks
+        ));
+        output.push_str(&format!(
+            "| Deduplication Ratio | {:.1}% |\n",
+            report.summary.deduplication_ratio_percent
+        ));
+        output.push_str(&format!(
+            "| Storage Saved | {:.2} MB |\n",
+            report.summary.storage_saved_mb
+        ));
+        output.push_str(&format!(
+            "| Efficiency Score | {}/100 |\n\n",
+            report.summary.storage_efficiency_score
+        ));
 
         // Key Finding
-        output.push_str(&format!("### Key Finding\n\n{}\n\n", report.summary.key_finding));
+        output.push_str(&format!(
+            "### Key Finding\n\n{}\n\n",
+            report.summary.key_finding
+        ));
 
         // Top Duplicates
         if !report.top_duplicates.is_empty() {
@@ -562,8 +614,14 @@ impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
                 output.push_str(&format!("### {}. {}\n\n", i + 1, rec.title));
                 output.push_str(&format!("**Priority:** {:?}\n\n", rec.priority));
                 output.push_str(&format!("**Description:** {}\n\n", rec.description));
-                output.push_str(&format!("**Estimated Impact:** {}\n\n", rec.estimated_impact));
-                output.push_str(&format!("**Implementation Effort:** {:?}\n\n", rec.implementation_effort));
+                output.push_str(&format!(
+                    "**Estimated Impact:** {}\n\n",
+                    rec.estimated_impact
+                ));
+                output.push_str(&format!(
+                    "**Implementation Effort:** {:?}\n\n",
+                    rec.implementation_effort
+                ));
             }
         }
 
@@ -576,12 +634,30 @@ impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
 
         // Summary section
         output.push_str("Section,Metric,Value\n");
-        output.push_str(&format!("Summary,Total Blocks,{}\n", report.summary.total_blocks));
-        output.push_str(&format!("Summary,Unique Blocks,{}\n", report.summary.unique_blocks));
-        output.push_str(&format!("Summary,Duplicate Blocks,{}\n", report.summary.duplicate_blocks));
-        output.push_str(&format!("Summary,Deduplication Ratio,{:.1}%\n", report.summary.deduplication_ratio_percent));
-        output.push_str(&format!("Summary,Storage Saved MB,{:.2}\n", report.summary.storage_saved_mb));
-        output.push_str(&format!("Summary,Efficiency Score,{}\n", report.summary.storage_efficiency_score));
+        output.push_str(&format!(
+            "Summary,Total Blocks,{}\n",
+            report.summary.total_blocks
+        ));
+        output.push_str(&format!(
+            "Summary,Unique Blocks,{}\n",
+            report.summary.unique_blocks
+        ));
+        output.push_str(&format!(
+            "Summary,Duplicate Blocks,{}\n",
+            report.summary.duplicate_blocks
+        ));
+        output.push_str(&format!(
+            "Summary,Deduplication Ratio,{:.1}%\n",
+            report.summary.deduplication_ratio_percent
+        ));
+        output.push_str(&format!(
+            "Summary,Storage Saved MB,{:.2}\n",
+            report.summary.storage_saved_mb
+        ));
+        output.push_str(&format!(
+            "Summary,Efficiency Score,{}\n",
+            report.summary.storage_efficiency_score
+        ));
 
         // Top duplicates
         output.push_str("\nBlockHash,Occurrences,Type,SizeBytes,StorageSaved,Preview\n");
@@ -593,7 +669,10 @@ impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
                 duplicate.block_type,
                 duplicate.estimated_block_size,
                 duplicate.storage_saved,
-                duplicate.content_preview.replace(',', ";").replace('\n', " ")
+                duplicate
+                    .content_preview
+                    .replace(',', ";")
+                    .replace('\n', " ")
             ));
         }
 
@@ -604,7 +683,9 @@ impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
 // ==================== SURREALDB-SPECIFIC IMPLEMENTATION ====================
 
 /// SurrealDB-specific implementation for convenience constructors
-impl DeduplicationReportGenerator<crate::content_addressed_storage::ContentAddressedStorageSurrealDB> {
+impl
+    DeduplicationReportGenerator<crate::content_addressed_storage::ContentAddressedStorageSurrealDB>
+{
     /// Create a new report generator with SurrealDB backend
     ///
     /// This is a convenience constructor for the common SurrealDB use case.
@@ -617,7 +698,8 @@ impl DeduplicationReportGenerator<crate::content_addressed_storage::ContentAddre
     ///
     /// A report generator ready to use with SurrealDB storage
     pub async fn new(config: SurrealDbConfig) -> StorageResult<Self> {
-        let storage = crate::content_addressed_storage::ContentAddressedStorageSurrealDB::new(config).await?;
+        let storage =
+            crate::content_addressed_storage::ContentAddressedStorageSurrealDB::new(config).await?;
         let detector = DeduplicationDetector::new(storage);
         Ok(Self { detector })
     }
@@ -640,9 +722,10 @@ mod tests {
     #[tokio::test]
     async fn test_format_as_text() {
         let config = SurrealDbConfig::memory();
-        let storage = crate::content_addressed_storage::ContentAddressedStorageSurrealDB::new(config)
-            .await
-            .expect("Failed to create storage");
+        let storage =
+            crate::content_addressed_storage::ContentAddressedStorageSurrealDB::new(config)
+                .await
+                .expect("Failed to create storage");
         let detector = DeduplicationDetector::new(storage);
         let generator = DeduplicationReportGenerator { detector };
 
@@ -686,15 +769,13 @@ mod tests {
                 storage_efficiency: 0.8,
                 potential_savings_mb: 0.0,
             },
-            recommendations: vec![
-                Recommendation {
-                    title: "Test Recommendation".to_string(),
-                    description: "Test description".to_string(),
-                    priority: RecommendationPriority::Medium,
-                    estimated_impact: "Medium".to_string(),
-                    implementation_effort: ImplementationEffort::Low,
-                }
-            ],
+            recommendations: vec![Recommendation {
+                title: "Test Recommendation".to_string(),
+                description: "Test description".to_string(),
+                priority: RecommendationPriority::Medium,
+                estimated_impact: "Medium".to_string(),
+                implementation_effort: ImplementationEffort::Low,
+            }],
         };
 
         let text_output = generator.format_as_text(&report);

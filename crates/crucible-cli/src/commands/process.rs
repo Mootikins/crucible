@@ -55,7 +55,10 @@ async fn execute_start_command(config: CliConfig, wait: bool, background: bool) 
 
     if background {
         println!("🔄 Starting processor in integrated mode...");
-        match processor_manager.process_kiln_integrated(&config.kiln.path, &client).await {
+        match processor_manager
+            .process_kiln_integrated(&config.kiln.path, &client)
+            .await
+        {
             Ok(result) => {
                 println!("✅ {}", result.status_message());
                 println!("📊 {}", result.processing_info());
@@ -67,7 +70,10 @@ async fn execute_start_command(config: CliConfig, wait: bool, background: bool) 
         }
     } else {
         println!("🔄 Starting processor in one-shot mode...");
-        match processor_manager.process_kiln_integrated(&config.kiln.path, &client).await {
+        match processor_manager
+            .process_kiln_integrated(&config.kiln.path, &client)
+            .await
+        {
             Ok(result) => {
                 println!("✅ {}", result.status_message());
                 println!("📊 {}", result.processing_info());

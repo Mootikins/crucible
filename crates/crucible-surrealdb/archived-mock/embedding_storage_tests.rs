@@ -7,7 +7,7 @@
 use crucible_surrealdb::{embedding_config::EmbeddingModel, kiln_integration, SurrealClient};
 use kiln_integration::{
     clear_document_embeddings, get_document_embeddings, initialize_kiln_schema,
-    store_document_embedding, update_document_processed_timestamp,
+    store_document_embedding,
 };
 
 // Import consolidated test utilities
@@ -335,30 +335,6 @@ async fn test_clear_document_embeddings() {
     );
 }
 
-/// Test: Update document processed timestamp
-#[tokio::test]
-async fn test_update_document_processed_timestamp() {
-    // Setup
-    let client = SurrealClient::new_memory().await.unwrap();
-    initialize_kiln_schema(&client).await.unwrap();
-
-    // First, we need to store a document in the notes table
-    let test_doc = create_test_parsed_document();
-    let kiln_root = test_kiln_root();
-    let doc_id = kiln_integration::store_parsed_document(&client, &test_doc, &kiln_root)
-        .await
-        .unwrap();
-
-    // Update processed timestamp
-    update_document_processed_timestamp(&client, &doc_id)
-        .await
-        .unwrap();
-
-    // Verify the timestamp was updated (this would require additional query implementation)
-    // For now, just ensure the operation doesn't fail
-    assert!(true, "Timestamp update should not fail");
-}
-
 /// Test: Document update workflow (clear old embeddings, store new ones)
 #[tokio::test]
 async fn test_document_update_workflow() {
@@ -664,9 +640,7 @@ async fn test_database_statistics() {
     initialize_kiln_schema(&client).await.unwrap();
 
     // Get initial statistics
-    let initial_stats = kiln_integration::get_database_stats(&client)
-        .await
-        .unwrap();
+    let initial_stats = kiln_integration::get_database_stats(&client).await.unwrap();
     assert_eq!(
         initial_stats.total_documents, 0,
         "Should start with 0 documents"
@@ -705,9 +679,7 @@ async fn test_database_statistics() {
     }
 
     // Check updated statistics
-    let final_stats = kiln_integration::get_database_stats(&client)
-        .await
-        .unwrap();
+    let final_stats = kiln_integration::get_database_stats(&client).await.unwrap();
     assert_eq!(
         final_stats.total_documents, doc_count,
         "Should count all documents"
@@ -765,9 +737,7 @@ async fn test_embedding_storage_initialization() {
     );
 
     // Database should be ready for embedding operations
-    let stats = kiln_integration::get_database_stats(&client)
-        .await
-        .unwrap();
+    let stats = kiln_integration::get_database_stats(&client).await.unwrap();
     assert_eq!(stats.total_documents, 0, "Should start with empty database");
     assert_eq!(stats.total_embeddings, 0, "Should start with no embeddings");
 }

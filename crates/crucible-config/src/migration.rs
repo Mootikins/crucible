@@ -430,8 +430,7 @@ impl ConfigMigrator {
 
         // Migrate embedding provider
         if let Some(legacy_provider) = legacy.embedding_provider {
-            config.embedding =
-                self.migrate_legacy_embedding_provider(legacy_provider, result);
+            config.embedding = self.migrate_legacy_embedding_provider(legacy_provider, result);
         }
 
         // Migrate database

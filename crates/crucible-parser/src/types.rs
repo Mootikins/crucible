@@ -180,7 +180,16 @@ impl ParsedDocument {
     }
 
     /// Legacy compatibility constructor for existing tests
-    pub fn legacy(path: PathBuf, frontmatter: Option<Frontmatter>, wikilinks: Vec<Wikilink>, tags: Vec<Tag>, content: DocumentContent, parsed_at: DateTime<Utc>, content_hash: String, file_size: u64) -> Self {
+    pub fn legacy(
+        path: PathBuf,
+        frontmatter: Option<Frontmatter>,
+        wikilinks: Vec<Wikilink>,
+        tags: Vec<Tag>,
+        content: DocumentContent,
+        parsed_at: DateTime<Utc>,
+        content_hash: String,
+        file_size: u64,
+    ) -> Self {
         Self {
             path,
             frontmatter,
@@ -195,7 +204,7 @@ impl ParsedDocument {
             file_size,
             parse_errors: Vec::new(),
             block_hashes: Vec::new(), // Phase 2: empty by default for backward compatibility
-            merkle_root: None, // Phase 2: None by default for backward compatibility
+            merkle_root: None,        // Phase 2: None by default for backward compatibility
         }
     }
 
@@ -1022,17 +1031,27 @@ impl ASTBlockMetadata {
 
     /// Create code block metadata
     pub fn code(language: Option<String>, line_count: usize) -> Self {
-        Self::Code { language, line_count }
+        Self::Code {
+            language,
+            line_count,
+        }
     }
 
     /// Create list metadata
     pub fn list(list_type: ListType, item_count: usize) -> Self {
-        Self::List { list_type, item_count }
+        Self::List {
+            list_type,
+            item_count,
+        }
     }
 
     /// Create callout metadata
     pub fn callout(callout_type: String, title: Option<String>, is_standard_type: bool) -> Self {
-        Self::Callout { callout_type, title, is_standard_type }
+        Self::Callout {
+            callout_type,
+            title,
+            is_standard_type,
+        }
     }
 
     /// Create LaTeX metadata
@@ -1069,7 +1088,23 @@ impl Callout {
     /// Create a new callout
     pub fn new(callout_type: impl Into<String>, content: String, offset: usize) -> Self {
         let callout_type = callout_type.into();
-        let is_standard_type = matches!(callout_type.as_str(), "note" | "tip" | "warning" | "danger" | "info" | "abstract" | "summary" | "tldr" | "todo" | "question" | "success" | "failure" | "example" | "quote");
+        let is_standard_type = matches!(
+            callout_type.as_str(),
+            "note"
+                | "tip"
+                | "warning"
+                | "danger"
+                | "info"
+                | "abstract"
+                | "summary"
+                | "tldr"
+                | "todo"
+                | "question"
+                | "success"
+                | "failure"
+                | "example"
+                | "quote"
+        );
 
         Self {
             callout_type,
@@ -1081,7 +1116,12 @@ impl Callout {
     }
 
     /// Create a callout with title
-    pub fn with_title(callout_type: impl Into<String>, title: impl Into<String>, content: String, offset: usize) -> Self {
+    pub fn with_title(
+        callout_type: impl Into<String>,
+        title: impl Into<String>,
+        content: String,
+        offset: usize,
+    ) -> Self {
         let mut callout = Self::new(callout_type, content, offset);
         callout.title = Some(title.into());
         callout
@@ -1497,11 +1537,8 @@ mod tests {
 
     #[test]
     fn test_ast_block_callout_creation() {
-        let metadata = ASTBlockMetadata::callout(
-            "note".to_string(),
-            Some("Important Note".to_string()),
-            true,
-        );
+        let metadata =
+            ASTBlockMetadata::callout("note".to_string(), Some("Important Note".to_string()), true);
         let block = ASTBlock::new(
             ASTBlockType::Callout,
             "This is an important note".to_string(),
@@ -1581,13 +1618,7 @@ mod tests {
         );
         assert_eq!(heading.type_name(), "heading");
 
-        let code = ASTBlock::new(
-            ASTBlockType::Code,
-            "Test".to_string(),
-            0,
-            4,
-            metadata,
-        );
+        let code = ASTBlock::new(ASTBlockType::Code, "Test".to_string(), 0, 4, metadata);
         assert_eq!(code.type_name(), "code");
     }
 
@@ -1603,7 +1634,11 @@ mod tests {
         }
 
         let code_meta = ASTBlockMetadata::code(Some("rust".to_string()), 10);
-        if let ASTBlockMetadata::Code { language, line_count } = code_meta {
+        if let ASTBlockMetadata::Code {
+            language,
+            line_count,
+        } = code_meta
+        {
             assert_eq!(language, Some("rust".to_string()));
             assert_eq!(line_count, 10);
         } else {
@@ -1611,18 +1646,19 @@ mod tests {
         }
 
         let list_meta = ASTBlockMetadata::list(ListType::Ordered, 5);
-        if let ASTBlockMetadata::List { list_type, item_count } = list_meta {
+        if let ASTBlockMetadata::List {
+            list_type,
+            item_count,
+        } = list_meta
+        {
             assert_eq!(list_type, ListType::Ordered);
             assert_eq!(item_count, 5);
         } else {
             panic!("Expected list metadata");
         }
 
-        let callout_meta = ASTBlockMetadata::callout(
-            "warning".to_string(),
-            Some("Watch out".to_string()),
-            true,
-        );
+        let callout_meta =
+            ASTBlockMetadata::callout("warning".to_string(), Some("Watch out".to_string()), true);
         if let ASTBlockMetadata::Callout {
             callout_type,
             title,
@@ -1653,24 +1689,21 @@ mod tests {
 
         // Create some test block hashes
         let hash1 = BlockHash::new([
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-            0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
-            0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-            0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+            0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
+            0x1d, 0x1e, 0x1f, 0x20,
         ]);
 
         let hash2 = BlockHash::new([
-            0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28,
-            0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30,
-            0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38,
-            0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40,
+            0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e,
+            0x2f, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c,
+            0x3d, 0x3e, 0x3f, 0x40,
         ]);
 
         let merkle_root = BlockHash::new([
-            0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
-            0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50,
-            0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58,
-            0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f, 0x60,
+            0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e,
+            0x4f, 0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c,
+            0x5d, 0x5e, 0x5f, 0x60,
         ]);
 
         // Test adding block hashes
@@ -1697,17 +1730,15 @@ mod tests {
     #[test]
     fn test_parsed_document_builder_with_hashes() {
         let hash1 = BlockHash::new([
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-            0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
-            0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-            0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+            0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
+            0x1d, 0x1e, 0x1f, 0x20,
         ]);
 
         let merkle_root = BlockHash::new([
-            0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
-            0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50,
-            0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58,
-            0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f, 0x60,
+            0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e,
+            0x4f, 0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c,
+            0x5d, 0x5e, 0x5f, 0x60,
         ]);
 
         let doc = ParsedDocument::builder(PathBuf::from("test.md"))
@@ -1760,17 +1791,15 @@ mod tests {
     #[test]
     fn test_parsed_document_serialization_with_hashes() {
         let hash1 = BlockHash::new([
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-            0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
-            0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-            0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+            0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
+            0x1d, 0x1e, 0x1f, 0x20,
         ]);
 
         let merkle_root = BlockHash::new([
-            0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
-            0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50,
-            0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58,
-            0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f, 0x60,
+            0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e,
+            0x4f, 0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c,
+            0x5d, 0x5e, 0x5f, 0x60,
         ]);
 
         let original_doc = ParsedDocument::builder(PathBuf::from("test.md"))
@@ -1780,7 +1809,8 @@ mod tests {
 
         // Test JSON serialization
         let json = serde_json::to_string(&original_doc).expect("Failed to serialize");
-        let deserialized_doc: ParsedDocument = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized_doc: ParsedDocument =
+            serde_json::from_str(&json).expect("Failed to deserialize");
 
         // Verify the fields are preserved
         assert!(deserialized_doc.has_block_hashes());

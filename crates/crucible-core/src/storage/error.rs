@@ -134,7 +134,8 @@ mod tests {
 
         assert!(!StorageError::BlockNotFound {
             hash: "abc123".to_string()
-        }.is_retryable());
+        }
+        .is_retryable());
     }
 
     #[test]

@@ -123,10 +123,7 @@ impl EventUtils {
             // Creation/modification of important file types
             crate::events::FileEventKind::Created | crate::events::FileEventKind::Modified => {
                 if let Some(ext) = event.extension() {
-                    matches!(
-                        ext.as_str(),
-                        "md" | "txt" | "json" | "yaml" | "toml"
-                    )
+                    matches!(ext.as_str(), "md" | "txt" | "json" | "yaml" | "toml")
                 } else {
                     false
                 }

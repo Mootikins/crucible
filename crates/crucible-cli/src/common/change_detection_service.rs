@@ -4,25 +4,23 @@
 //! with SurrealHashLookup from crucible-surrealdb, following proper dependency injection
 //! and SOLID principles. It serves as a bridge between file scanning and change detection.
 
+use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
-use anyhow::{Result, anyhow};
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 
 use crucible_core::{
     traits::change_detection::{
-        ChangeDetector as ChangeDetectorTrait, ChangeSet, HashLookupStorage,
-        ChangeDetectionResult, ChangeDetectionMetrics, StoredHash,
+        ChangeDetectionMetrics, ChangeDetectionResult, ChangeDetector as ChangeDetectorTrait,
+        ChangeSet, HashLookupStorage, StoredHash,
     },
     types::hashing::{HashAlgorithm, HashError},
     FileHash, FileHashInfo,
 };
-use std::collections::HashMap;
+use crucible_surrealdb::{hash_lookup::SurrealHashLookupStorage, SurrealClient};
 use crucible_watch::ChangeDetectorConfig;
-use crucible_surrealdb::{
-    SurrealClient, hash_lookup::SurrealHashLookupStorage,
-};
+use std::collections::HashMap;
 
 use super::FileScanningService;
 
@@ -50,7 +48,10 @@ impl OwnedSurrealHashLookupStorage {
 // that we actually need for change detection, rather than the full trait.
 impl OwnedSurrealHashLookupStorage {
     /// Lookup file hash by relative path
-    pub async fn lookup_file_hash(&self, relative_path: &str) -> Result<Option<StoredHash>, HashError> {
+    pub async fn lookup_file_hash(
+        &self,
+        relative_path: &str,
+    ) -> Result<Option<StoredHash>, HashError> {
         let storage = SurrealHashLookupStorage::new(self.client());
         storage.lookup_file_hash(relative_path).await
     }
@@ -86,7 +87,10 @@ impl SimpleChangeDetector {
     }
 
     /// Detect changes by comparing current files with stored hashes
-    pub async fn detect_changes(&self, current_files: &[FileHashInfo]) -> Result<ChangeDetectionResult, HashError> {
+    pub async fn detect_changes(
+        &self,
+        current_files: &[FileHashInfo],
+    ) -> Result<ChangeDetectionResult, HashError> {
         let start_time = std::time::Instant::now();
         let mut changes = ChangeSet::new();
 
@@ -119,13 +123,11 @@ impl SimpleChangeDetector {
             .map(|f| f.relative_path.clone())
             .collect();
 
-
         for stored_path in stored_hashes.keys() {
             if !current_paths.contains(stored_path) {
                 changes.add_deleted(stored_path.clone());
             }
         }
-
 
         let total_duration = start_time.elapsed();
         let metrics = ChangeDetectionMetrics {
@@ -134,7 +136,7 @@ impl SimpleChangeDetector {
             skipped_files: changes.unchanged.len(),
             change_detection_time: total_duration,
             database_round_trips: 1, // Simplified
-            cache_hit_rate: 0.0,      // Simplified
+            cache_hit_rate: 0.0,     // Simplified
             files_per_second: current_files.len() as f64 / total_duration.as_secs_f64().max(0.001),
         };
 
@@ -268,7 +270,7 @@ impl ChangeDetectionService {
         // Create the file scanning service
         let file_scanner = Arc::new(
             FileScanningService::new(root_path, algorithm)
-                .map_err(|e| anyhow!("Failed to create FileScanningService: {}", e))?
+                .map_err(|e| anyhow!("Failed to create FileScanningService: {}", e))?,
         );
 
         // For now, we'll create a simpler change detection approach
@@ -276,9 +278,7 @@ impl ChangeDetectionService {
         let hash_storage = OwnedSurrealHashLookupStorage::new(client.clone());
 
         // Create a simple change detector using our own implementation
-        let change_detector = Arc::new(
-            SimpleChangeDetector::new(hash_storage)
-        );
+        let change_detector = Arc::new(SimpleChangeDetector::new(hash_storage));
 
         info!(
             "ChangeDetectionService created successfully for: {:?}",
@@ -314,7 +314,13 @@ impl ChangeDetectionService {
         client: Arc<SurrealClient>,
         algorithm: HashAlgorithm,
     ) -> Result<Self> {
-        Self::new(root_path, client, algorithm, ChangeDetectionServiceConfig::default()).await
+        Self::new(
+            root_path,
+            client,
+            algorithm,
+            ChangeDetectionServiceConfig::default(),
+        )
+        .await
     }
 
     /// Perform a full change detection cycle
@@ -338,7 +344,10 @@ impl ChangeDetectionService {
 
         // Step 1: Scan files
         let scan_start = Instant::now();
-        let scan_result = self.file_scanner.scan_directory().await
+        let scan_result = self
+            .file_scanner
+            .scan_directory()
+            .await
             .map_err(|e| anyhow!("File scanning failed: {}", e))?;
         let scan_time = scan_start.elapsed();
 
@@ -348,7 +357,10 @@ impl ChangeDetectionService {
             info!("No files found during scan - will check for deletions");
         }
 
-        info!("Scanned {} files in {:?}", scan_result.successful_files, scan_time);
+        info!(
+            "Scanned {} files in {:?}",
+            scan_result.successful_files, scan_time
+        );
 
         // Step 2: Convert FileInfo to FileHashInfo for change detection
         let file_hash_infos: Vec<FileHashInfo> = scan_result
@@ -359,7 +371,8 @@ impl ChangeDetectionService {
 
         // Step 3: Detect changes
         let change_detection_start = Instant::now();
-        let change_result = self.change_detector
+        let change_result = self
+            .change_detector
             .detect_changes(&file_hash_infos)
             .await
             .map_err(|e| anyhow!("Change detection failed: {}", e))?;
@@ -372,23 +385,26 @@ impl ChangeDetectionService {
         );
 
         // Step 4: Optionally process changes
-        let processing_result = if self.config.auto_process_changes && change_result.changes.has_changes() {
-            let processing_start = Instant::now();
-            match self.process_changes(&change_result).await {
-                Ok(result) => {
-                    let processing_time = processing_start.elapsed();
-                    info!("Processed changes in {:?}: {} successful, {} failed",
-                        processing_time, result.processed_count, result.failed_count);
-                    Some(result)
+        let processing_result =
+            if self.config.auto_process_changes && change_result.changes.has_changes() {
+                let processing_start = Instant::now();
+                match self.process_changes(&change_result).await {
+                    Ok(result) => {
+                        let processing_time = processing_start.elapsed();
+                        info!(
+                            "Processed changes in {:?}: {} successful, {} failed",
+                            processing_time, result.processed_count, result.failed_count
+                        );
+                        Some(result)
+                    }
+                    Err(e) => {
+                        warn!("Failed to process changes: {}", e);
+                        None
+                    }
                 }
-                Err(e) => {
-                    warn!("Failed to process changes: {}", e);
-                    None
-                }
-            }
-        } else {
-            None
-        };
+            } else {
+                None
+            };
 
         let total_time = start_time.elapsed();
 
@@ -428,7 +444,10 @@ impl ChangeDetectionService {
         info!("Detecting changes for {} specific files", files.len());
 
         // Scan specific files
-        let scan_result = self.file_scanner.scan_files(files.to_vec()).await
+        let scan_result = self
+            .file_scanner
+            .scan_files(files.to_vec())
+            .await
             .map_err(|e| anyhow!("File scanning failed: {}", e))?;
 
         if scan_result.successful_files == 0 {
@@ -443,7 +462,8 @@ impl ChangeDetectionService {
             .map(|file_info| file_info.to_file_hash_info())
             .collect();
 
-        let change_result = self.change_detector
+        let change_result = self
+            .change_detector
             .detect_changes(&file_hash_infos)
             .await
             .map_err(|e| anyhow!("Change detection failed: {}", e))?;
@@ -496,7 +516,10 @@ impl ChangeDetectionService {
     /// # Errors
     ///
     /// Returns Error if processing fails
-    async fn process_changes(&self, change_result: &ChangeDetectionResult) -> Result<ChangeProcessingResult> {
+    async fn process_changes(
+        &self,
+        change_result: &ChangeDetectionResult,
+    ) -> Result<ChangeProcessingResult> {
         let start_time = Instant::now();
 
         // Get files that need processing (new + changed)
@@ -527,7 +550,10 @@ impl ChangeDetectionService {
                     relative_path: file_info.relative_path.clone(),
                     file_size: file_info.size,
                     modified_time: file_info.modified,
-                    content_hash: file_info.content_hash.as_bytes().try_into()
+                    content_hash: file_info
+                        .content_hash
+                        .as_bytes()
+                        .try_into()
                         .expect("FileHash should be 32 bytes"),
                     is_markdown: file_info.relative_path.ends_with(".md"),
                     is_accessible: true, // Assume accessible since we just scanned it
@@ -552,7 +578,9 @@ impl ChangeDetectionService {
                 &scan_config,
                 None, // No embedding pool for basic processing
                 &self.root_path,
-            ).await {
+            )
+            .await
+            {
                 Ok(result) => {
                     processed_count += result.processed_count;
                     failed_count += result.failed_count;
@@ -561,10 +589,11 @@ impl ChangeDetectionService {
                     // so we'll track failures at the batch level
                     if result.failed_count > 0 {
                         failed_files.extend(
-                            chunk.iter()
+                            chunk
+                                .iter()
                                 .map(|f| f.relative_path.clone())
-                                .skip(result.processed_count)  // Skip successful files
-                                .take(result.failed_count)
+                                .skip(result.processed_count) // Skip successful files
+                                .take(result.failed_count),
                         );
                     }
 
@@ -623,7 +652,10 @@ impl std::fmt::Debug for ChangeDetectionService {
             .field("root_path", &self.root_path)
             .field("algorithm", &self.algorithm())
             .field("auto_process_changes", &self.config.auto_process_changes)
-            .field("max_processing_batch_size", &self.config.max_processing_batch_size)
+            .field(
+                "max_processing_batch_size",
+                &self.config.max_processing_batch_size,
+            )
             .finish()
     }
 }
@@ -675,9 +707,9 @@ pub fn detection_only_config() -> ChangeDetectionServiceConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
     use std::io::Write;
+    use tempfile::TempDir;
 
     async fn create_test_service() -> Result<(ChangeDetectionService, TempDir)> {
         let temp_dir = TempDir::new()?;
@@ -690,11 +722,9 @@ mod tests {
         };
 
         let client = Arc::new(SurrealClient::new(db_config).await?);
-        let service = ChangeDetectionService::with_defaults(
-            temp_dir.path(),
-            client,
-            HashAlgorithm::Blake3,
-        ).await?;
+        let service =
+            ChangeDetectionService::with_defaults(temp_dir.path(), client, HashAlgorithm::Blake3)
+                .await?;
 
         Ok((service, temp_dir))
     }
@@ -747,12 +777,9 @@ mod tests {
 
         let client = Arc::new(SurrealClient::new(db_config).await?);
         let config = detection_only_config();
-        let service = ChangeDetectionService::new(
-            temp_dir.path(),
-            client,
-            HashAlgorithm::Blake3,
-            config,
-        ).await?;
+        let service =
+            ChangeDetectionService::new(temp_dir.path(), client, HashAlgorithm::Blake3, config)
+                .await?;
 
         // Create a test file
         let test_file = temp_dir.path().join("test.md");

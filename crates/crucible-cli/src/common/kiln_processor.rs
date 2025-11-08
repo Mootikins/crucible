@@ -108,10 +108,7 @@ impl KilnProcessor {
 
         // Process files using the integrated pipeline
         let result = crucible_surrealdb::kiln_processor::process_kiln_files(
-            &files,
-            client,
-            &config,
-            None, // No embedding pool for basic processing
+            &files, client, &config, None, // No embedding pool for basic processing
             kiln_path,
         )
         .await;
@@ -132,7 +129,11 @@ impl KilnProcessor {
 
                 let processing_result = ProcessingResult {
                     success: process_result.failed_count == 0,
-                    exit_code: if process_result.failed_count == 0 { Some(0) } else { Some(1) },
+                    exit_code: if process_result.failed_count == 0 {
+                        Some(0)
+                    } else {
+                        Some(1)
+                    },
                     processing_time: elapsed,
                     wait_time: elapsed,
                     kiln_path: Some(kiln_path.to_string_lossy().to_string()),
@@ -240,11 +241,8 @@ impl ProcessingResult {
 /// 5. Using BatchAwareSurrealClient for consistency
 ///
 /// This replaces the legacy daemon-based file watching with in-process processing.
-pub async fn process_files_on_startup(
-    config: &crate::config::CliConfig,
-) -> Result<()> {
+pub async fn process_files_on_startup(config: &crate::config::CliConfig) -> Result<()> {
     use std::time::Instant;
-    
 
     // Check if file processing is enabled (default: true)
     if !config.file_watching.enabled {
@@ -289,16 +287,20 @@ pub async fn process_files_on_startup(
         HashAlgorithm::Blake3,
         ChangeDetectionServiceConfig {
             change_detector: crucible_watch::ChangeDetectorConfig::default(),
-            auto_process_changes: true,  // Process changes automatically
-            continue_on_processing_error: true,  // Continue on errors
+            auto_process_changes: true, // Process changes automatically
+            continue_on_processing_error: true, // Continue on errors
             max_processing_batch_size: 10,
         },
     )
-    .await {
+    .await
+    {
         Ok(service) => service,
         Err(e) => {
             error!("Failed to create change detection service: {}", e);
-            return Err(anyhow::anyhow!("Change detection initialization failed: {}", e));
+            return Err(anyhow::anyhow!(
+                "Change detection initialization failed: {}",
+                e
+            ));
         }
     };
 
@@ -320,26 +322,26 @@ pub async fn process_files_on_startup(
     }
 
     // Extract processing results
-    let (processed_count, failed_count) = if let Some(processing_result) = &result.processing_result {
-        (processing_result.processed_count, processing_result.failed_count)
+    let (processed_count, failed_count) = if let Some(processing_result) = &result.processing_result
+    {
+        (
+            processing_result.processed_count,
+            processing_result.failed_count,
+        )
     } else {
         (0, 0)
     };
 
     info!(
         "🔄 Processed {} file(s) with {} failures...",
-        processed_count,
-        failed_count
+        processed_count, failed_count
     );
 
     let total_time = start_time.elapsed();
 
     info!(
         "🎯 File processing completed: {} changes detected, {} processed, {} failed in {:?}",
-        result.metrics.changes_detected,
-        processed_count,
-        failed_count,
-        total_time
+        result.metrics.changes_detected, processed_count, failed_count, total_time
     );
 
     if failed_count > 0 {
@@ -479,7 +481,9 @@ mod tests {
         let result = processor
             .process_kiln_integrated(
                 std::path::Path::new("/nonexistent"),
-                &crucible_surrealdb::SurrealClient::new_memory().await.unwrap(),
+                &crucible_surrealdb::SurrealClient::new_memory()
+                    .await
+                    .unwrap(),
             )
             .await;
         assert!(result.is_err());

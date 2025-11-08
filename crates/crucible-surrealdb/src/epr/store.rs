@@ -419,10 +419,7 @@ impl EprStore {
     }
 
     /// Remove all tag associations for an entity.
-    pub async fn delete_entity_tags(
-        &self,
-        entity_id: &RecordId<EntityRecord>,
-    ) -> Result<()> {
+    pub async fn delete_entity_tags(&self, entity_id: &RecordId<EntityRecord>) -> Result<()> {
         self.client
             .query(
                 r#"
@@ -634,10 +631,7 @@ mod tests {
         store.upsert_property(&property).await.unwrap();
 
         let result = client
-            .query(
-                "SELECT * FROM properties WHERE key = 'title'",
-                &[],
-            )
+            .query("SELECT * FROM properties WHERE key = 'title'", &[])
             .await
             .unwrap();
 
@@ -666,13 +660,13 @@ mod tests {
             "hash0",
         );
 
-        store
-            .replace_blocks(&entity_id(), &[block])
-            .await
-            .unwrap();
+        store.replace_blocks(&entity_id(), &[block]).await.unwrap();
 
         let result = client
-            .query("SELECT * FROM blocks WHERE entity_id = type::thing('entities', 'note:test')", &[])
+            .query(
+                "SELECT * FROM blocks WHERE entity_id = type::thing('entities', 'note:test')",
+                &[],
+            )
             .await
             .unwrap();
 

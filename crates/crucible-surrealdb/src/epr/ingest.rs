@@ -1,12 +1,11 @@
 use anyhow::Result;
 use blake3::Hasher;
 use crucible_core::parser::types::ParsedDocument;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use super::store::EprStore;
 use super::types::{
-    BlockNode, Entity, EntityRecord, EntityType, Property, PropertyRecord, PropertyValue,
-    RecordId,
+    BlockNode, Entity, EntityRecord, EntityType, Property, PropertyRecord, PropertyValue, RecordId,
 };
 
 /// High-level helper for writing parsed documents into the EPR schema.
@@ -26,9 +25,10 @@ impl<'a> DocumentIngestor<'a> {
     ) -> Result<RecordId<EntityRecord>> {
         let entity_id = note_entity_id(relative_path);
 
-        let entity = Entity::new(entity_id.clone(), EntityType::Note)
+        let mut entity = Entity::new(entity_id.clone(), EntityType::Note)
             .with_content_hash(doc.content_hash.clone())
             .with_search_text(doc.content.plain_text.clone());
+        entity.data = Some(entity_payload(doc, relative_path));
 
         self.store.upsert_entity(&entity).await?;
 
@@ -48,9 +48,11 @@ mod tests {
     use super::*;
     use crate::epr::apply_epr_schema;
     use crate::SurrealClient;
-    use crucible_core::parser::types::{DocumentContent, Frontmatter, FrontmatterFormat, Heading, Paragraph, Tag};
-    use std::path::PathBuf;
+    use crucible_core::parser::types::{
+        DocumentContent, Frontmatter, FrontmatterFormat, Heading, Paragraph, Tag,
+    };
     use serde_json::json;
+    use std::path::PathBuf;
 
     fn sample_document() -> ParsedDocument {
         let mut doc = ParsedDocument::default();
@@ -172,6 +174,64 @@ fn core_properties(
     props
 }
 
+fn entity_payload(doc: &ParsedDocument, relative_path: &str) -> Value {
+    let tags = doc
+        .all_tags()
+        .into_iter()
+        .map(Value::String)
+        .collect::<Vec<_>>();
+
+    let frontmatter_value = doc.frontmatter.as_ref().map(|fm| {
+        let map = fm
+            .properties()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect::<Map<_, _>>();
+        Value::Object(map)
+    });
+
+    let mut payload = Map::new();
+    payload.insert(
+        "path".to_string(),
+        Value::String(doc.path.to_string_lossy().into_owned()),
+    );
+    payload.insert(
+        "relative_path".to_string(),
+        Value::String(relative_path.to_string()),
+    );
+    payload.insert("title".to_string(), Value::String(doc.title()));
+    payload.insert(
+        "content".to_string(),
+        Value::String(doc.content.plain_text.clone()),
+    );
+    payload.insert("tags".to_string(), Value::Array(tags));
+    if let Some(frontmatter) = frontmatter_value {
+        payload.insert("frontmatter".to_string(), frontmatter);
+    }
+    payload.insert(
+        "parsed_at".to_string(),
+        Value::String(doc.parsed_at.to_rfc3339()),
+    );
+    payload.insert(
+        "file_size".to_string(),
+        Value::Number(serde_json::Number::from(doc.file_size)),
+    );
+    payload.insert(
+        "content_hash".to_string(),
+        Value::String(doc.content_hash.clone()),
+    );
+    payload.insert(
+        "wikilink_count".to_string(),
+        Value::Number(serde_json::Number::from(doc.wikilinks.len() as u64)),
+    );
+    payload.insert(
+        "created_via".to_string(),
+        Value::String("parser".to_string()),
+    );
+
+    Value::Object(payload)
+}
+
 fn property_id(
     entity_id: &RecordId<EntityRecord>,
     namespace: &str,
@@ -183,10 +243,7 @@ fn property_id(
     )
 }
 
-fn build_blocks(
-    entity_id: &RecordId<EntityRecord>,
-    doc: &ParsedDocument,
-) -> Vec<BlockNode> {
+fn build_blocks(entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec<BlockNode> {
     let mut blocks = Vec::new();
     let mut index = 0;
 

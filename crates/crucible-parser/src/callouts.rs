@@ -4,9 +4,9 @@
 //! - `> [!note] Note content`
 //! - `> [!warning] Warning with title\nContent continues here`
 
-use super::extensions::SyntaxExtension;
-use super::types::{DocumentContent, Callout};
 use super::error::{ParseError, ParseErrorType};
+use super::extensions::SyntaxExtension;
+use super::types::{Callout, DocumentContent};
 use async_trait::async_trait;
 
 use regex::Regex;
@@ -28,7 +28,6 @@ impl Default for CalloutExtension {
     }
 }
 
-
 #[async_trait]
 impl SyntaxExtension for CalloutExtension {
     fn name(&self) -> &'static str {
@@ -47,11 +46,7 @@ impl SyntaxExtension for CalloutExtension {
         content.contains("[!") && content.contains("]")
     }
 
-    async fn parse(
-        &self,
-        content: &str,
-        doc_content: &mut DocumentContent,
-    ) -> Vec<ParseError> {
+    async fn parse(&self, content: &str, doc_content: &mut DocumentContent) -> Vec<ParseError> {
         let mut errors = Vec::new();
 
         // Pattern to match callout blocks starting with > [!type] possibly with title
@@ -87,22 +82,14 @@ impl SyntaxExtension for CalloutExtension {
             }
 
             // Extract nested content (continuation lines starting with >)
-            let full_content = self.extract_nested_content(content, full_match.start(), full_match.len());
+            let full_content =
+                self.extract_nested_content(content, full_match.start(), full_match.len());
 
             // Create the callout
             let callout = if let Some(title) = title {
-                Callout::with_title(
-                    callout_type,
-                    title,
-                    full_content,
-                    full_match.start(),
-                )
+                Callout::with_title(callout_type, title, full_content, full_match.start())
             } else {
-                Callout::new(
-                    callout_type,
-                    full_content,
-                    full_match.start(),
-                )
+                Callout::new(callout_type, full_content, full_match.start())
             };
 
             // Add the callout to document content
@@ -124,7 +111,12 @@ impl CalloutExtension {
     }
 
     /// Extract nested content for callout blocks (continuation lines)
-    fn extract_nested_content(&self, content: &str, start_pos: usize, initial_len: usize) -> String {
+    fn extract_nested_content(
+        &self,
+        content: &str,
+        start_pos: usize,
+        initial_len: usize,
+    ) -> String {
         let mut full_content = String::new();
         let _in_callout = true;
 
@@ -141,7 +133,10 @@ impl CalloutExtension {
         // Look for continuation lines
         let lines: Vec<&str> = content.lines().collect();
         let start_line = content[..start_pos].matches('\n').count();
-        let end_line = start_line + content[start_pos..start_pos + initial_len].matches('\n').count();
+        let end_line = start_line
+            + content[start_pos..start_pos + initial_len]
+                .matches('\n')
+                .count();
 
         for (i, line) in lines.iter().enumerate() {
             if i > end_line && line.starts_with('>') {
@@ -168,9 +163,27 @@ impl CalloutExtension {
     fn is_valid_callout_type(&self, callout_type: &str) -> bool {
         matches!(
             callout_type,
-            "note" | "tip" | "warning" | "danger" | "info" | "abstract" | "summary" | "tldr" |
-            "todo" | "question" | "success" | "failure" | "example" | "quote" | "cite" |
-            "help" | "important" | "check" | "bug" | "caution" | "attention"
+            "note"
+                | "tip"
+                | "warning"
+                | "danger"
+                | "info"
+                | "abstract"
+                | "summary"
+                | "tldr"
+                | "todo"
+                | "question"
+                | "success"
+                | "failure"
+                | "example"
+                | "quote"
+                | "cite"
+                | "help"
+                | "important"
+                | "check"
+                | "bug"
+                | "caution"
+                | "attention"
         )
     }
 }

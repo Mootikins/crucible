@@ -6,11 +6,9 @@
 
 use crate::{SurrealClient, SurrealDbConfig};
 use async_trait::async_trait;
-use crucible_core::storage::{
-    ContentAddressedStorage, MerkleTree, StorageError, StorageResult,
-};
-use crucible_core::storage::traits::{BlockOperations, TreeOperations, StorageStats};
-use crucible_parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
+use crucible_core::storage::traits::{BlockOperations, StorageStats, TreeOperations};
+use crucible_core::storage::{ContentAddressedStorage, MerkleTree, StorageError, StorageResult};
+use crucible_parser::types::{ASTBlock, ASTBlockMetadata, ASTBlockType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -179,16 +177,20 @@ impl ContentAddressedStorageSurrealDB {
             if let Err(e) = self.client.query(query, &[]).await {
                 let error_str = e.to_string();
                 // Ignore errors about tables/indexes already existing or not existing
-                if error_str.contains("already exists") ||
-                   error_str.contains("not found") ||
-                   error_str.contains("does not exist") {
+                if error_str.contains("already exists")
+                    || error_str.contains("not found")
+                    || error_str.contains("does not exist")
+                {
                     continue; // These are expected in concurrent scenarios
                 }
                 // For other errors, try to continue since schema might already be partially created
                 if !error_str.contains("Failed to create") {
                     continue;
                 }
-                return Err(StorageError::backend(format!("Schema initialization failed: {}", e)));
+                return Err(StorageError::backend(format!(
+                    "Schema initialization failed: {}",
+                    e
+                )));
             }
         }
 
@@ -202,7 +204,9 @@ impl ContentAddressedStorageSurrealDB {
 
     /// Store a content block record
     async fn store_block_record(&self, record: &ContentBlockRecord) -> StorageResult<()> {
-        let metadata_json = record.metadata.as_ref()
+        let metadata_json = record
+            .metadata
+            .as_ref()
             .and_then(|m| serde_json::to_value(m).ok());
 
         let query = if let Some(metadata) = metadata_json {
@@ -246,10 +250,13 @@ impl ContentAddressedStorageSurrealDB {
     /// Store a Merkle tree record
     async fn store_tree_record(&self, record: &MerkleTreeRecord) -> StorageResult<()> {
         // Serialize the entire MerkleTree as a JSON string to preserve all fields
-        let tree_data_json = serde_json::to_string(&record.tree_data)
-            .map_err(|e| StorageError::serialization(format!("Failed to serialize MerkleTree: {}", e)))?;
+        let tree_data_json = serde_json::to_string(&record.tree_data).map_err(|e| {
+            StorageError::serialization(format!("Failed to serialize MerkleTree: {}", e))
+        })?;
 
-        let metadata_json = record.metadata.as_ref()
+        let metadata_json = record
+            .metadata
+            .as_ref()
             .and_then(|m| serde_json::to_value(m).ok());
 
         let query = if let Some(metadata) = metadata_json {
@@ -308,11 +315,15 @@ impl ContentAddressedStorageSurrealDB {
 
             // Store document block directly (inline store_document_block logic)
             if document_id.is_empty() {
-                return Err(StorageError::InvalidOperation("Empty document_id provided".to_string()));
+                return Err(StorageError::InvalidOperation(
+                    "Empty document_id provided".to_string(),
+                ));
             }
 
             if block.block_hash.is_empty() {
-                return Err(StorageError::InvalidHash("Empty block_hash provided".to_string()));
+                return Err(StorageError::InvalidHash(
+                    "Empty block_hash provided".to_string(),
+                ));
             }
 
             let now = chrono::Utc::now();
@@ -343,10 +354,9 @@ impl ContentAddressedStorageSurrealDB {
                 now.to_rfc3339()
             );
 
-            self.client
-                .query(&query, &[])
-                .await
-                .map_err(|e| StorageError::backend(format!("Failed to store document block: {}", e)))?;
+            self.client.query(&query, &[]).await.map_err(|e| {
+                StorageError::backend(format!("Failed to store document block: {}", e))
+            })?;
         }
 
         Ok(())
@@ -375,34 +385,60 @@ impl ContentAddressedStorageSurrealDB {
         // Store block-specific metadata based on type
         match &block.metadata {
             ASTBlockMetadata::Heading { level, id } => {
-                metadata.insert("level".to_string(), serde_json::Value::Number(
-                    serde_json::Number::from(*level as i64)
-                ));
+                metadata.insert(
+                    "level".to_string(),
+                    serde_json::Value::Number(serde_json::Number::from(*level as i64)),
+                );
                 if let Some(id) = id {
                     metadata.insert("id".to_string(), serde_json::Value::String(id.to_string()));
                 }
             }
-            ASTBlockMetadata::Code { language, line_count } => {
+            ASTBlockMetadata::Code {
+                language,
+                line_count,
+            } => {
                 if let Some(lang) = language {
-                    metadata.insert("language".to_string(), serde_json::Value::String(lang.to_string()));
+                    metadata.insert(
+                        "language".to_string(),
+                        serde_json::Value::String(lang.to_string()),
+                    );
                 }
-                metadata.insert("line_count".to_string(), serde_json::Value::Number(
-                    serde_json::Number::from(*line_count as i64)
-                ));
+                metadata.insert(
+                    "line_count".to_string(),
+                    serde_json::Value::Number(serde_json::Number::from(*line_count as i64)),
+                );
             }
-            ASTBlockMetadata::List { list_type, item_count } => {
-                metadata.insert("list_type".to_string(), serde_json::Value::String(
-                    format!("{:?}", list_type)
-                ));
-                metadata.insert("item_count".to_string(), serde_json::Value::Number(
-                    serde_json::Number::from(*item_count as i64)
-                ));
+            ASTBlockMetadata::List {
+                list_type,
+                item_count,
+            } => {
+                metadata.insert(
+                    "list_type".to_string(),
+                    serde_json::Value::String(format!("{:?}", list_type)),
+                );
+                metadata.insert(
+                    "item_count".to_string(),
+                    serde_json::Value::Number(serde_json::Number::from(*item_count as i64)),
+                );
             }
-            ASTBlockMetadata::Callout { callout_type, title, is_standard_type } => {
-                metadata.insert("callout_type".to_string(), serde_json::Value::String(callout_type.clone()));
-                metadata.insert("is_standard_type".to_string(), serde_json::Value::Bool(*is_standard_type));
+            ASTBlockMetadata::Callout {
+                callout_type,
+                title,
+                is_standard_type,
+            } => {
+                metadata.insert(
+                    "callout_type".to_string(),
+                    serde_json::Value::String(callout_type.clone()),
+                );
+                metadata.insert(
+                    "is_standard_type".to_string(),
+                    serde_json::Value::Bool(*is_standard_type),
+                );
                 if let Some(title) = title {
-                    metadata.insert("title".to_string(), serde_json::Value::String(title.to_string()));
+                    metadata.insert(
+                        "title".to_string(),
+                        serde_json::Value::String(title.to_string()),
+                    );
                 }
             }
             ASTBlockMetadata::Latex { is_block } => {
@@ -427,7 +463,9 @@ impl crucible_core::storage::traits::BlockOperations for ContentAddressedStorage
         }
 
         if data.is_empty() {
-            return Err(StorageError::InvalidOperation("Empty data provided".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Empty data provided".to_string(),
+            ));
         }
 
         let record = ContentBlockRecord {
@@ -447,7 +485,8 @@ impl crucible_core::storage::traits::BlockOperations for ContentAddressedStorage
         }
 
         let query = format!("SELECT data FROM content_blocks:`{}`", hash);
-        let result = self.client
+        let result = self
+            .client
             .query(&query, &[])
             .await
             .map_err(|e| StorageError::backend(format!("Failed to retrieve block: {}", e)))?;
@@ -458,8 +497,9 @@ impl crucible_core::storage::traits::BlockOperations for ContentAddressedStorage
 
         let record = &result.records[0];
         if let Some(data) = record.data.get("data") {
-            let data_vec: Vec<u8> = serde_json::from_value(data.clone())
-                .map_err(|e| StorageError::deserialization(format!("Failed to deserialize block data: {}", e)))?;
+            let data_vec: Vec<u8> = serde_json::from_value(data.clone()).map_err(|e| {
+                StorageError::deserialization(format!("Failed to deserialize block data: {}", e))
+            })?;
             Ok(Some(data_vec))
         } else {
             Ok(None)
@@ -472,10 +512,9 @@ impl crucible_core::storage::traits::BlockOperations for ContentAddressedStorage
         }
 
         let query = format!("SELECT count() FROM content_blocks WHERE hash = '{}'", hash);
-        let result = self.client
-            .query(&query, &[])
-            .await
-            .map_err(|e| StorageError::backend(format!("Failed to check block existence: {}", e)))?;
+        let result = self.client.query(&query, &[]).await.map_err(|e| {
+            StorageError::backend(format!("Failed to check block existence: {}", e))
+        })?;
 
         // Check if we got any results
         Ok(!result.records.is_empty())
@@ -494,7 +533,8 @@ impl crucible_core::storage::traits::BlockOperations for ContentAddressedStorage
 
         // Delete the block
         let query = format!("DELETE FROM content_blocks:`{}`", hash);
-        let result = self.client
+        let result = self
+            .client
             .query(&query, &[])
             .await
             .map_err(|e| StorageError::backend(format!("Failed to delete block: {}", e)))?;
@@ -511,7 +551,9 @@ impl crucible_core::storage::traits::BlockOperations for ContentAddressedStorage
 impl crucible_core::storage::traits::TreeOperations for ContentAddressedStorageSurrealDB {
     async fn store_tree(&self, root_hash: &str, tree: &MerkleTree) -> StorageResult<()> {
         if root_hash.is_empty() {
-            return Err(StorageError::InvalidHash("Empty root hash provided".to_string()));
+            return Err(StorageError::InvalidHash(
+                "Empty root hash provided".to_string(),
+            ));
         }
 
         let now = chrono::Utc::now();
@@ -530,14 +572,16 @@ impl crucible_core::storage::traits::TreeOperations for ContentAddressedStorageS
 
     async fn get_tree(&self, root_hash: &str) -> StorageResult<Option<MerkleTree>> {
         if root_hash.is_empty() {
-            return Err(StorageError::InvalidHash("Empty root hash provided".to_string()));
+            return Err(StorageError::InvalidHash(
+                "Empty root hash provided".to_string(),
+            ));
         }
 
         let query = format!("SELECT tree_data FROM merkle_trees:`{}`", root_hash);
-        let result = self.client
-            .query(&query, &[])
-            .await
-            .map_err(|e| StorageError::backend(format!("Failed to retrieve Merkle tree: {}", e)))?;
+        let result =
+            self.client.query(&query, &[]).await.map_err(|e| {
+                StorageError::backend(format!("Failed to retrieve Merkle tree: {}", e))
+            })?;
 
         if result.records.is_empty() {
             return Ok(None);
@@ -546,12 +590,14 @@ impl crucible_core::storage::traits::TreeOperations for ContentAddressedStorageS
         let record = &result.records[0];
         if let Some(tree_data) = record.data.get("tree_data") {
             // tree_data is now stored as a JSON string, so extract the string first
-            let tree_json_str = tree_data.as_str()
-                .ok_or_else(|| StorageError::deserialization("tree_data is not a string".to_string()))?;
+            let tree_json_str = tree_data.as_str().ok_or_else(|| {
+                StorageError::deserialization("tree_data is not a string".to_string())
+            })?;
 
             // Then deserialize the string as MerkleTree
-            let tree: MerkleTree = serde_json::from_str(tree_json_str)
-                .map_err(|e| StorageError::deserialization(format!("Failed to deserialize Merkle tree: {}", e)))?;
+            let tree: MerkleTree = serde_json::from_str(tree_json_str).map_err(|e| {
+                StorageError::deserialization(format!("Failed to deserialize Merkle tree: {}", e))
+            })?;
             Ok(Some(tree))
         } else {
             Ok(None)
@@ -560,14 +606,19 @@ impl crucible_core::storage::traits::TreeOperations for ContentAddressedStorageS
 
     async fn tree_exists(&self, root_hash: &str) -> StorageResult<bool> {
         if root_hash.is_empty() {
-            return Err(StorageError::InvalidHash("Empty root hash provided".to_string()));
+            return Err(StorageError::InvalidHash(
+                "Empty root hash provided".to_string(),
+            ));
         }
 
-        let query = format!("SELECT count() FROM merkle_trees WHERE root_hash = '{}'", root_hash);
-        let result = self.client
-            .query(&query, &[])
-            .await
-            .map_err(|e| StorageError::backend(format!("Failed to check tree existence: {}", e)))?;
+        let query = format!(
+            "SELECT count() FROM merkle_trees WHERE root_hash = '{}'",
+            root_hash
+        );
+        let result =
+            self.client.query(&query, &[]).await.map_err(|e| {
+                StorageError::backend(format!("Failed to check tree existence: {}", e))
+            })?;
 
         // Check if we got any results
         Ok(!result.records.is_empty())
@@ -575,7 +626,9 @@ impl crucible_core::storage::traits::TreeOperations for ContentAddressedStorageS
 
     async fn delete_tree(&self, root_hash: &str) -> StorageResult<bool> {
         if root_hash.is_empty() {
-            return Err(StorageError::InvalidHash("Empty root hash provided".to_string()));
+            return Err(StorageError::InvalidHash(
+                "Empty root hash provided".to_string(),
+            ));
         }
 
         // Check if tree exists before deletion
@@ -586,10 +639,10 @@ impl crucible_core::storage::traits::TreeOperations for ContentAddressedStorageS
 
         // Delete the tree
         let query = format!("DELETE FROM merkle_trees:`{}`", root_hash);
-        let result = self.client
-            .query(&query, &[])
-            .await
-            .map_err(|e| StorageError::backend(format!("Failed to delete Merkle tree: {}", e)))?;
+        let result =
+            self.client.query(&query, &[]).await.map_err(|e| {
+                StorageError::backend(format!("Failed to delete Merkle tree: {}", e))
+            })?;
 
         // Verify deletion was successful by checking if it still exists
         let exists_after = TreeOperations::tree_exists(self, root_hash).await?;
@@ -604,7 +657,8 @@ impl crucible_core::storage::traits::StorageManagement for ContentAddressedStora
     async fn get_stats(&self) -> StorageResult<StorageStats> {
         // Get block statistics - use proper SurrealDB count query syntax
         let block_count_query = "SELECT * FROM content_blocks";
-        let block_result = self.client
+        let block_result = self
+            .client
             .query(block_count_query, &[])
             .await
             .map_err(|e| StorageError::backend(format!("Failed to get block count: {}", e)))?;
@@ -616,7 +670,8 @@ impl crucible_core::storage::traits::StorageManagement for ContentAddressedStora
 
         // Get tree statistics - use proper SurrealDB count query syntax
         let tree_count_query = "SELECT * FROM merkle_trees";
-        let tree_result = self.client
+        let tree_result = self
+            .client
             .query(tree_count_query, &[])
             .await
             .map_err(|e| StorageError::backend(format!("Failed to get tree count: {}", e)))?;
@@ -651,15 +706,23 @@ impl crucible_core::storage::traits::StorageManagement for ContentAddressedStora
 
         // Clean up orphaned records (if any) - use proper SurrealDB time syntax
         self.client
-            .query("DELETE FROM content_blocks WHERE created_at < (time::now() - 30d)", &[])
+            .query(
+                "DELETE FROM content_blocks WHERE created_at < (time::now() - 30d)",
+                &[],
+            )
             .await
             .map_err(|e| StorageError::backend(format!("Failed to perform cleanup: {}", e)))?;
 
         // Clean up orphaned document_blocks (if any)
         self.client
-            .query("DELETE FROM document_blocks WHERE created_at < (time::now() - 30d)", &[])
+            .query(
+                "DELETE FROM document_blocks WHERE created_at < (time::now() - 30d)",
+                &[],
+            )
             .await
-            .map_err(|e| StorageError::backend(format!("Failed to perform document_blocks cleanup: {}", e)))?;
+            .map_err(|e| {
+                StorageError::backend(format!("Failed to perform document_blocks cleanup: {}", e))
+            })?;
 
         // Optimize indexes - use proper SurrealDB syntax
         // Note: ANALYZE INDEX might not be the correct syntax, let's use simpler maintenance
@@ -696,11 +759,15 @@ impl ContentAddressedStorageSurrealDB {
         block_metadata: Option<HashMap<String, serde_json::Value>>,
     ) -> StorageResult<()> {
         if document_id.is_empty() {
-            return Err(StorageError::InvalidOperation("Empty document_id provided".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Empty document_id provided".to_string(),
+            ));
         }
 
         if block_hash.is_empty() {
-            return Err(StorageError::InvalidHash("Empty block_hash provided".to_string()));
+            return Err(StorageError::InvalidHash(
+                "Empty block_hash provided".to_string(),
+            ));
         }
 
         let now = chrono::Utc::now();
@@ -740,23 +807,29 @@ impl ContentAddressedStorageSurrealDB {
             start_offset,
             end_offset,
             block_content.replace("'", "''"),
-            serde_json::to_string(&record.block_metadata).unwrap_or_default().replace("'", "''"),
+            serde_json::to_string(&record.block_metadata)
+                .unwrap_or_default()
+                .replace("'", "''"),
             now.to_rfc3339(),
             now.to_rfc3339()
         );
 
-        self.client
-            .query(&query, &[])
-            .await
-            .map_err(|e| StorageError::backend(format!("Failed to store document block mapping: {}", e)))?;
+        self.client.query(&query, &[]).await.map_err(|e| {
+            StorageError::backend(format!("Failed to store document block mapping: {}", e))
+        })?;
 
         Ok(())
     }
 
     /// Get all blocks for a document
-    pub async fn get_document_blocks(&self, document_id: &str) -> StorageResult<Vec<DocumentBlockRecord>> {
+    pub async fn get_document_blocks(
+        &self,
+        document_id: &str,
+    ) -> StorageResult<Vec<DocumentBlockRecord>> {
         if document_id.is_empty() {
-            return Err(StorageError::InvalidOperation("Empty document_id provided".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Empty document_id provided".to_string(),
+            ));
         }
 
         let query = format!(
@@ -764,47 +837,70 @@ impl ContentAddressedStorageSurrealDB {
             document_id.replace("'", "''")
         );
 
-        let result = self.client
-            .query(&query, &[])
-            .await
-            .map_err(|e| StorageError::backend(format!("Failed to retrieve document blocks: {}", e)))?;
+        let result = self.client.query(&query, &[]).await.map_err(|e| {
+            StorageError::backend(format!("Failed to retrieve document blocks: {}", e))
+        })?;
 
         let mut blocks = Vec::new();
         for record in result.records {
             // Convert Record to DocumentBlockRecord manually
             let block_record = DocumentBlockRecord {
-                document_id: record.data.get("document_id")
+                document_id: record
+                    .data
+                    .get("document_id")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("").to_string(),
-                block_index: record.data.get("block_index")
+                    .unwrap_or("")
+                    .to_string(),
+                block_index: record
+                    .data
+                    .get("block_index")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0) as usize,
-                block_hash: record.data.get("block_hash")
+                block_hash: record
+                    .data
+                    .get("block_hash")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("").to_string(),
-                block_type: record.data.get("block_type")
+                    .unwrap_or("")
+                    .to_string(),
+                block_type: record
+                    .data
+                    .get("block_type")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("").to_string(),
-                start_offset: record.data.get("start_offset")
+                    .unwrap_or("")
+                    .to_string(),
+                start_offset: record
+                    .data
+                    .get("start_offset")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0) as usize,
-                end_offset: record.data.get("end_offset")
+                end_offset: record
+                    .data
+                    .get("end_offset")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0) as usize,
-                block_content: record.data.get("block_content")
+                block_content: record
+                    .data
+                    .get("block_content")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("").to_string(),
-                block_metadata: record.data.get("block_metadata")
+                    .unwrap_or("")
+                    .to_string(),
+                block_metadata: record
+                    .data
+                    .get("block_metadata")
                     .and_then(|v| v.as_object())
                     .cloned()
                     .map(|map| map.into_iter().collect())
                     .unwrap_or_default(),
-                created_at: record.data.get("created_at")
+                created_at: record
+                    .data
+                    .get("created_at")
                     .and_then(|v| v.as_str())
                     .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                     .map(|dt| dt.with_timezone(&chrono::Utc))
                     .unwrap_or_else(|| chrono::Utc::now()),
-                updated_at: record.data.get("updated_at")
+                updated_at: record
+                    .data
+                    .get("updated_at")
                     .and_then(|v| v.as_str())
                     .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                     .map(|dt| dt.with_timezone(&chrono::Utc))
@@ -819,7 +915,9 @@ impl ContentAddressedStorageSurrealDB {
     /// Find documents containing a specific block hash
     pub async fn find_documents_with_block(&self, block_hash: &str) -> StorageResult<Vec<String>> {
         if block_hash.is_empty() {
-            return Err(StorageError::InvalidHash("Empty block_hash provided".to_string()));
+            return Err(StorageError::InvalidHash(
+                "Empty block_hash provided".to_string(),
+            ));
         }
 
         let query = format!(
@@ -827,10 +925,9 @@ impl ContentAddressedStorageSurrealDB {
             block_hash.replace("'", "''")
         );
 
-        let result = self.client
-            .query(&query, &[])
-            .await
-            .map_err(|e| StorageError::backend(format!("Failed to find documents with block: {}", e)))?;
+        let result = self.client.query(&query, &[]).await.map_err(|e| {
+            StorageError::backend(format!("Failed to find documents with block: {}", e))
+        })?;
 
         let mut document_ids = Vec::new();
         for record in result.records {
@@ -845,9 +942,14 @@ impl ContentAddressedStorageSurrealDB {
     }
 
     /// Get block content by hash
-    pub async fn get_block_by_hash(&self, block_hash: &str) -> StorageResult<Option<DocumentBlockRecord>> {
+    pub async fn get_block_by_hash(
+        &self,
+        block_hash: &str,
+    ) -> StorageResult<Option<DocumentBlockRecord>> {
         if block_hash.is_empty() {
-            return Err(StorageError::InvalidHash("Empty block_hash provided".to_string()));
+            return Err(StorageError::InvalidHash(
+                "Empty block_hash provided".to_string(),
+            ));
         }
 
         let query = format!(
@@ -855,46 +957,70 @@ impl ContentAddressedStorageSurrealDB {
             block_hash.replace("'", "''")
         );
 
-        let result = self.client
-            .query(&query, &[])
-            .await
-            .map_err(|e| StorageError::backend(format!("Failed to get block by hash: {}", e)))?;
+        let result =
+            self.client.query(&query, &[]).await.map_err(|e| {
+                StorageError::backend(format!("Failed to get block by hash: {}", e))
+            })?;
 
         if let Some(record) = result.records.first() {
             // Convert Record to DocumentBlockRecord manually
             let block_record = DocumentBlockRecord {
-                document_id: record.data.get("document_id")
+                document_id: record
+                    .data
+                    .get("document_id")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("").to_string(),
-                block_index: record.data.get("block_index")
+                    .unwrap_or("")
+                    .to_string(),
+                block_index: record
+                    .data
+                    .get("block_index")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0) as usize,
-                block_hash: record.data.get("block_hash")
+                block_hash: record
+                    .data
+                    .get("block_hash")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("").to_string(),
-                block_type: record.data.get("block_type")
+                    .unwrap_or("")
+                    .to_string(),
+                block_type: record
+                    .data
+                    .get("block_type")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("").to_string(),
-                start_offset: record.data.get("start_offset")
+                    .unwrap_or("")
+                    .to_string(),
+                start_offset: record
+                    .data
+                    .get("start_offset")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0) as usize,
-                end_offset: record.data.get("end_offset")
+                end_offset: record
+                    .data
+                    .get("end_offset")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0) as usize,
-                block_content: record.data.get("block_content")
+                block_content: record
+                    .data
+                    .get("block_content")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("").to_string(),
-                block_metadata: record.data.get("block_metadata")
+                    .unwrap_or("")
+                    .to_string(),
+                block_metadata: record
+                    .data
+                    .get("block_metadata")
                     .and_then(|v| v.as_object())
                     .cloned()
                     .map(|map| map.into_iter().collect())
                     .unwrap_or_default(),
-                created_at: record.data.get("created_at")
+                created_at: record
+                    .data
+                    .get("created_at")
                     .and_then(|v| v.as_str())
                     .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                     .map(|dt| dt.with_timezone(&chrono::Utc))
                     .unwrap_or_else(|| chrono::Utc::now()),
-                updated_at: record.data.get("updated_at")
+                updated_at: record
+                    .data
+                    .get("updated_at")
                     .and_then(|v| v.as_str())
                     .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                     .map(|dt| dt.with_timezone(&chrono::Utc))
@@ -907,13 +1033,17 @@ impl ContentAddressedStorageSurrealDB {
     }
 
     /// Find documents containing multiple block hashes (batch query)
-    pub async fn find_documents_with_blocks(&self, block_hashes: &[String]) -> StorageResult<std::collections::HashMap<String, Vec<String>>> {
+    pub async fn find_documents_with_blocks(
+        &self,
+        block_hashes: &[String],
+    ) -> StorageResult<std::collections::HashMap<String, Vec<String>>> {
         if block_hashes.is_empty() {
             return Ok(std::collections::HashMap::new());
         }
 
         // Create IN clause with properly escaped hashes
-        let escaped_hashes: Vec<String> = block_hashes.iter()
+        let escaped_hashes: Vec<String> = block_hashes
+            .iter()
             .map(|hash| format!("'{}'", hash.replace("'", "''")))
             .collect();
 
@@ -922,22 +1052,23 @@ impl ContentAddressedStorageSurrealDB {
             escaped_hashes.join(",")
         );
 
-        let result = self.client
-            .query(&query, &[])
-            .await
-            .map_err(|e| StorageError::backend(format!("Failed to find documents with blocks: {}", e)))?;
+        let result = self.client.query(&query, &[]).await.map_err(|e| {
+            StorageError::backend(format!("Failed to find documents with blocks: {}", e))
+        })?;
 
-        let mut hash_to_documents: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        let mut hash_to_documents: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
 
         for record in result.records {
             if let (Some(block_hash), Some(document_id)) = (
                 record.data.get("block_hash").and_then(|v| v.as_str()),
-                record.data.get("document_id").and_then(|v| v.as_str())
+                record.data.get("document_id").and_then(|v| v.as_str()),
             ) {
                 let hash_str = block_hash.to_string();
                 let doc_id_str = document_id.to_string();
 
-                hash_to_documents.entry(hash_str)
+                hash_to_documents
+                    .entry(hash_str)
                     .or_insert_with(Vec::new)
                     .push(doc_id_str);
             }
@@ -947,13 +1078,17 @@ impl ContentAddressedStorageSurrealDB {
     }
 
     /// Get multiple blocks by their hashes (batch query)
-    pub async fn get_blocks_by_hashes(&self, block_hashes: &[String]) -> StorageResult<std::collections::HashMap<String, DocumentBlockRecord>> {
+    pub async fn get_blocks_by_hashes(
+        &self,
+        block_hashes: &[String],
+    ) -> StorageResult<std::collections::HashMap<String, DocumentBlockRecord>> {
         if block_hashes.is_empty() {
             return Ok(std::collections::HashMap::new());
         }
 
         // Create IN clause with properly escaped hashes
-        let escaped_hashes: Vec<String> = block_hashes.iter()
+        let escaped_hashes: Vec<String> = block_hashes
+            .iter()
             .map(|hash| format!("'{}'", hash.replace("'", "''")))
             .collect();
 
@@ -962,46 +1097,68 @@ impl ContentAddressedStorageSurrealDB {
             escaped_hashes.join(",")
         );
 
-        let result = self.client
-            .query(&query, &[])
-            .await
-            .map_err(|e| StorageError::backend(format!("Failed to get blocks by hashes: {}", e)))?;
+        let result =
+            self.client.query(&query, &[]).await.map_err(|e| {
+                StorageError::backend(format!("Failed to get blocks by hashes: {}", e))
+            })?;
 
-        let mut hash_to_block: std::collections::HashMap<String, DocumentBlockRecord> = std::collections::HashMap::new();
+        let mut hash_to_block: std::collections::HashMap<String, DocumentBlockRecord> =
+            std::collections::HashMap::new();
 
         for record in result.records {
             if let Some(block_hash) = record.data.get("block_hash").and_then(|v| v.as_str()) {
                 let block_record = DocumentBlockRecord {
-                    document_id: record.data.get("document_id")
+                    document_id: record
+                        .data
+                        .get("document_id")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("").to_string(),
-                    block_index: record.data.get("block_index")
+                        .unwrap_or("")
+                        .to_string(),
+                    block_index: record
+                        .data
+                        .get("block_index")
                         .and_then(|v| v.as_u64())
                         .unwrap_or(0) as usize,
                     block_hash: block_hash.to_string(),
-                    block_type: record.data.get("block_type")
+                    block_type: record
+                        .data
+                        .get("block_type")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("").to_string(),
-                    start_offset: record.data.get("start_offset")
+                        .unwrap_or("")
+                        .to_string(),
+                    start_offset: record
+                        .data
+                        .get("start_offset")
                         .and_then(|v| v.as_u64())
                         .unwrap_or(0) as usize,
-                    end_offset: record.data.get("end_offset")
+                    end_offset: record
+                        .data
+                        .get("end_offset")
                         .and_then(|v| v.as_u64())
                         .unwrap_or(0) as usize,
-                    block_content: record.data.get("block_content")
+                    block_content: record
+                        .data
+                        .get("block_content")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("").to_string(),
-                    block_metadata: record.data.get("block_metadata")
+                        .unwrap_or("")
+                        .to_string(),
+                    block_metadata: record
+                        .data
+                        .get("block_metadata")
                         .and_then(|v| v.as_object())
                         .cloned()
                         .map(|map| map.into_iter().collect())
                         .unwrap_or_default(),
-                    created_at: record.data.get("created_at")
+                    created_at: record
+                        .data
+                        .get("created_at")
                         .and_then(|v| v.as_str())
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                         .map(|dt| dt.with_timezone(&chrono::Utc))
                         .unwrap_or_else(|| chrono::Utc::now()),
-                    updated_at: record.data.get("updated_at")
+                    updated_at: record
+                        .data
+                        .get("updated_at")
                         .and_then(|v| v.as_str())
                         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                         .map(|dt| dt.with_timezone(&chrono::Utc))
@@ -1016,13 +1173,17 @@ impl ContentAddressedStorageSurrealDB {
     }
 
     /// Get deduplication statistics for specific block hashes
-    pub async fn get_block_deduplication_stats(&self, block_hashes: &[String]) -> StorageResult<std::collections::HashMap<String, usize>> {
+    pub async fn get_block_deduplication_stats(
+        &self,
+        block_hashes: &[String],
+    ) -> StorageResult<std::collections::HashMap<String, usize>> {
         if block_hashes.is_empty() {
             return Ok(std::collections::HashMap::new());
         }
 
         // Create IN clause with properly escaped hashes
-        let escaped_hashes: Vec<String> = block_hashes.iter()
+        let escaped_hashes: Vec<String> = block_hashes
+            .iter()
             .map(|hash| format!("'{}'", hash.replace("'", "''")))
             .collect();
 
@@ -1031,17 +1192,17 @@ impl ContentAddressedStorageSurrealDB {
             escaped_hashes.join(",")
         );
 
-        let result = self.client
-            .query(&query, &[])
-            .await
-            .map_err(|e| StorageError::backend(format!("Failed to get block deduplication stats: {}", e)))?;
+        let result = self.client.query(&query, &[]).await.map_err(|e| {
+            StorageError::backend(format!("Failed to get block deduplication stats: {}", e))
+        })?;
 
-        let mut hash_to_count: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut hash_to_count: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
 
         for record in result.records {
             if let (Some(block_hash), Some(count)) = (
                 record.data.get("block_hash").and_then(|v| v.as_str()),
-                record.data.get("occurrence_count").and_then(|v| v.as_u64())
+                record.data.get("occurrence_count").and_then(|v| v.as_u64()),
             ) {
                 hash_to_count.insert(block_hash.to_string(), count as usize);
             }
@@ -1053,7 +1214,9 @@ impl ContentAddressedStorageSurrealDB {
     /// Delete all blocks for a document
     pub async fn delete_document_blocks(&self, document_id: &str) -> StorageResult<usize> {
         if document_id.is_empty() {
-            return Err(StorageError::InvalidOperation("Empty document_id provided".to_string()));
+            return Err(StorageError::InvalidOperation(
+                "Empty document_id provided".to_string(),
+            ));
         }
 
         let query = format!(
@@ -1061,10 +1224,9 @@ impl ContentAddressedStorageSurrealDB {
             document_id.replace("'", "''")
         );
 
-        let result = self.client
-            .query(&query, &[])
-            .await
-            .map_err(|e| StorageError::backend(format!("Failed to delete document blocks: {}", e)))?;
+        let result = self.client.query(&query, &[]).await.map_err(|e| {
+            StorageError::backend(format!("Failed to delete document blocks: {}", e))
+        })?;
 
         // Count how many were deleted (approximate)
         Ok(result.records.len())
@@ -1079,17 +1241,19 @@ impl ContentAddressedStorageSurrealDB {
             HAVING duplicate_count > 1
         ";
 
-        let result = self.client
-            .query(query, &[])
-            .await
-            .map_err(|e| StorageError::backend(format!("Failed to get deduplication stats: {}", e)))?;
+        let result = self.client.query(query, &[]).await.map_err(|e| {
+            StorageError::backend(format!("Failed to get deduplication stats: {}", e))
+        })?;
 
         let mut stats = HashMap::new();
         for record in result.records {
-            if let (Some(block_hash), Some(count)) = (record.data.get("block_hash"), record.data.get("duplicate_count")) {
+            if let (Some(block_hash), Some(count)) = (
+                record.data.get("block_hash"),
+                record.data.get("duplicate_count"),
+            ) {
                 if let (Ok(hash_str), Ok(count_val)) = (
                     serde_json::from_value::<String>(block_hash.clone()),
-                    serde_json::from_value::<usize>(count.clone())
+                    serde_json::from_value::<usize>(count.clone()),
                 ) {
                     stats.insert(hash_str, count_val);
                 }
@@ -1104,14 +1268,21 @@ impl ContentAddressedStorageSurrealDB {
 
 #[async_trait]
 impl crucible_core::storage::DeduplicationStorage for ContentAddressedStorageSurrealDB {
-    async fn find_documents_with_block(&self, block_hash: &str) -> crucible_core::storage::StorageResult<Vec<String>> {
+    async fn find_documents_with_block(
+        &self,
+        block_hash: &str,
+    ) -> crucible_core::storage::StorageResult<Vec<String>> {
         self.find_documents_with_block(block_hash).await
     }
 
-    async fn get_document_blocks(&self, document_id: &str) -> crucible_core::storage::StorageResult<Vec<crucible_core::storage::BlockInfo>> {
+    async fn get_document_blocks(
+        &self,
+        document_id: &str,
+    ) -> crucible_core::storage::StorageResult<Vec<crucible_core::storage::BlockInfo>> {
         let records = self.get_document_blocks(document_id).await?;
-        let blocks = records.into_iter().map(|record| {
-            crucible_core::storage::BlockInfo {
+        let blocks = records
+            .into_iter()
+            .map(|record| crucible_core::storage::BlockInfo {
                 block_hash: record.block_hash,
                 document_id: record.document_id,
                 block_index: record.block_index,
@@ -1122,12 +1293,15 @@ impl crucible_core::storage::DeduplicationStorage for ContentAddressedStorageSur
                 block_metadata: record.block_metadata,
                 created_at: record.created_at,
                 updated_at: record.updated_at,
-            }
-        }).collect();
+            })
+            .collect();
         Ok(blocks)
     }
 
-    async fn get_block_by_hash(&self, block_hash: &str) -> crucible_core::storage::StorageResult<Option<crucible_core::storage::BlockInfo>> {
+    async fn get_block_by_hash(
+        &self,
+        block_hash: &str,
+    ) -> crucible_core::storage::StorageResult<Option<crucible_core::storage::BlockInfo>> {
         if let Some(record) = self.get_block_by_hash(block_hash).await? {
             Ok(Some(crucible_core::storage::BlockInfo {
                 block_hash: record.block_hash,
@@ -1146,15 +1320,24 @@ impl crucible_core::storage::DeduplicationStorage for ContentAddressedStorageSur
         }
     }
 
-    async fn get_block_deduplication_stats(&self, block_hashes: &[String]) -> crucible_core::storage::StorageResult<std::collections::HashMap<String, usize>> {
+    async fn get_block_deduplication_stats(
+        &self,
+        block_hashes: &[String],
+    ) -> crucible_core::storage::StorageResult<std::collections::HashMap<String, usize>> {
         ContentAddressedStorageSurrealDB::get_block_deduplication_stats(self, block_hashes).await
     }
 
-    async fn get_all_block_deduplication_stats(&self) -> crucible_core::storage::StorageResult<std::collections::HashMap<String, usize>> {
+    async fn get_all_block_deduplication_stats(
+        &self,
+    ) -> crucible_core::storage::StorageResult<std::collections::HashMap<String, usize>> {
         ContentAddressedStorageSurrealDB::get_all_block_deduplication_stats(self).await
     }
 
-    async fn get_all_deduplication_stats(&self) -> crucible_core::storage::StorageResult<crucible_core::storage::deduplication_traits::DeduplicationStats> {
+    async fn get_all_deduplication_stats(
+        &self,
+    ) -> crucible_core::storage::StorageResult<
+        crucible_core::storage::deduplication_traits::DeduplicationStats,
+    > {
         // This method is intentionally not delegated to ContentAddressedStorageSurrealDB
         // because the storage doesn't implement the full DeduplicationStats computation.
         // The DeduplicationDetector wrapper provides this functionality.
@@ -1163,16 +1346,23 @@ impl crucible_core::storage::DeduplicationStorage for ContentAddressedStorageSur
         ))
     }
 
-    async fn find_duplicate_blocks(&self, _min_occurrences: usize) -> crucible_core::storage::StorageResult<Vec<crucible_core::storage::DuplicateBlockInfo>> {
+    async fn find_duplicate_blocks(
+        &self,
+        _min_occurrences: usize,
+    ) -> crucible_core::storage::StorageResult<Vec<crucible_core::storage::DuplicateBlockInfo>>
+    {
         // This method is intentionally not delegated to ContentAddressedStorageSurrealDB
         // because the storage doesn't implement the full duplicate block analysis.
         // The DeduplicationDetector wrapper provides this functionality.
         Err(crucible_core::storage::StorageError::Io(
-            "find_duplicate_blocks not implemented on storage - use DeduplicationDetector wrapper".to_string()
+            "find_duplicate_blocks not implemented on storage - use DeduplicationDetector wrapper"
+                .to_string(),
         ))
     }
 
-    async fn get_storage_usage_stats(&self) -> crucible_core::storage::StorageResult<crucible_core::storage::StorageUsageStats> {
+    async fn get_storage_usage_stats(
+        &self,
+    ) -> crucible_core::storage::StorageResult<crucible_core::storage::StorageUsageStats> {
         // This method is intentionally not delegated to ContentAddressedStorageSurrealDB
         // because the storage doesn't implement the full storage usage statistics.
         // The DeduplicationDetector wrapper provides this functionality.
@@ -1181,26 +1371,41 @@ impl crucible_core::storage::DeduplicationStorage for ContentAddressedStorageSur
         ))
     }
 
-    async fn find_documents_with_blocks(&self, block_hashes: &[String]) -> crucible_core::storage::StorageResult<std::collections::HashMap<String, Vec<String>>> {
+    async fn find_documents_with_blocks(
+        &self,
+        block_hashes: &[String],
+    ) -> crucible_core::storage::StorageResult<std::collections::HashMap<String, Vec<String>>> {
         ContentAddressedStorageSurrealDB::find_documents_with_blocks(self, block_hashes).await
     }
 
-    async fn get_blocks_by_hashes(&self, block_hashes: &[String]) -> crucible_core::storage::StorageResult<std::collections::HashMap<String, crucible_core::storage::BlockInfo>> {
-        let records = ContentAddressedStorageSurrealDB::get_blocks_by_hashes(self, block_hashes).await?;
-        let hash_to_block = records.into_iter().map(|(hash, record)| {
-            (hash, crucible_core::storage::BlockInfo {
-                block_hash: record.block_hash,
-                document_id: record.document_id,
-                block_index: record.block_index,
-                block_type: record.block_type,
-                block_content: record.block_content,
-                start_offset: record.start_offset,
-                end_offset: record.end_offset,
-                block_metadata: record.block_metadata,
-                created_at: record.created_at,
-                updated_at: record.updated_at,
+    async fn get_blocks_by_hashes(
+        &self,
+        block_hashes: &[String],
+    ) -> crucible_core::storage::StorageResult<
+        std::collections::HashMap<String, crucible_core::storage::BlockInfo>,
+    > {
+        let records =
+            ContentAddressedStorageSurrealDB::get_blocks_by_hashes(self, block_hashes).await?;
+        let hash_to_block = records
+            .into_iter()
+            .map(|(hash, record)| {
+                (
+                    hash,
+                    crucible_core::storage::BlockInfo {
+                        block_hash: record.block_hash,
+                        document_id: record.document_id,
+                        block_index: record.block_index,
+                        block_type: record.block_type,
+                        block_content: record.block_content,
+                        start_offset: record.start_offset,
+                        end_offset: record.end_offset,
+                        block_metadata: record.block_metadata,
+                        created_at: record.created_at,
+                        updated_at: record.updated_at,
+                    },
+                )
             })
-        }).collect();
+            .collect();
         Ok(hash_to_block)
     }
 }
@@ -1209,12 +1414,14 @@ impl crucible_core::storage::DeduplicationStorage for ContentAddressedStorageSur
 mod tests {
     use super::*;
     use crucible_core::hashing::blake3::Blake3Hasher;
-    use crucible_core::storage::{HashedBlock, ContentHasher};
-    use crucible_core::storage::traits::{BlockOperations, TreeOperations, StorageManagement};
+    use crucible_core::storage::traits::{BlockOperations, StorageManagement, TreeOperations};
+    use crucible_core::storage::{ContentHasher, HashedBlock};
 
     /// Test helper to create a test storage instance
     async fn create_test_storage() -> ContentAddressedStorageSurrealDB {
-        ContentAddressedStorageSurrealDB::new_memory().await.unwrap()
+        ContentAddressedStorageSurrealDB::new_memory()
+            .await
+            .unwrap()
     }
 
     /// Test helper to create an empty Merkle tree for testing
@@ -1400,7 +1607,10 @@ mod tests {
         assert_eq!(stats.block_count, 2);
         assert_eq!(stats.tree_count, 1);
         assert!(stats.block_size_bytes > 0);
-        assert!(matches!(stats.backend, crucible_core::storage::traits::StorageBackend::SurrealDB));
+        assert!(matches!(
+            stats.backend,
+            crucible_core::storage::traits::StorageBackend::SurrealDB
+        ));
     }
 
     #[tokio::test]
@@ -1421,7 +1631,10 @@ mod tests {
         assert!(storage.get_block("").await.is_err());
         assert!(storage.block_exists("").await.is_err());
         assert!(storage.delete_block("").await.is_err());
-        assert!(storage.store_tree("", &create_empty_merkle_tree()).await.is_err());
+        assert!(storage
+            .store_tree("", &create_empty_merkle_tree())
+            .await
+            .is_err());
         assert!(storage.get_tree("").await.is_err());
         assert!(storage.tree_exists("").await.is_err());
         assert!(storage.delete_tree("").await.is_err());
@@ -1461,7 +1674,10 @@ mod tests {
             let handle = tokio::spawn(async move {
                 let data = format!("Concurrent block {}", i);
                 let hash = format!("concurrent_hash_{}", i);
-                storage_clone.store_block(&hash, data.as_bytes()).await.unwrap();
+                storage_clone
+                    .store_block(&hash, data.as_bytes())
+                    .await
+                    .unwrap();
             });
             handles.push(handle);
         }
