@@ -963,11 +963,11 @@ impl KilnScanner {
 
         // Create relationships
         if self.config.process_wikilinks {
-            create_wikilink_edges(client, &doc_id, &document).await?;
+            create_wikilink_edges(client, &doc_id, &document, kiln_root).await?;
         }
 
         if self.config.process_embeds {
-            create_embed_relationships(client, &doc_id, &document).await?;
+            create_embed_relationships(client, &doc_id, &document, kiln_root).await?;
         }
 
         create_tag_associations(client, &doc_id, &document).await?;
