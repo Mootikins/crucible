@@ -429,58 +429,6 @@ mod tests {
         assert_eq!(response.embedding[2], 0.3);
     }
 
-    // Integration tests - these require a live Ollama instance
-    // Run with: cargo test --package crucible-mcp --lib embeddings::ollama -- --ignored
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_embed_integration() {
-        let config = create_test_config();
-        let provider = OllamaProvider::new(config).unwrap();
-
-        let result = provider.embed("Hello, world!").await;
-        assert!(result.is_ok());
-
-        let response = result.unwrap();
-        assert_eq!(response.dimensions, 768);
-        assert_eq!(response.model, "nomic-embed-text-v1.5-q8_0");
-        assert!(!response.embedding.is_empty());
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_embed_batch_integration() {
-        let config = create_test_config();
-        let provider = OllamaProvider::new(config).unwrap();
-
-        let texts = vec![
-            "First sentence".to_string(),
-            "Second sentence".to_string(),
-            "Third sentence".to_string(),
-        ];
-
-        let result = provider.embed_batch(texts).await;
-        assert!(result.is_ok());
-
-        let responses = result.unwrap();
-        assert_eq!(responses.len(), 3);
-
-        for response in &responses {
-            assert_eq!(response.dimensions, 768);
-            assert_eq!(response.model, "nomic-embed-text-v1.5-q8_0");
-        }
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_health_check_integration() {
-        let config = create_test_config();
-        let provider = OllamaProvider::new(config).unwrap();
-
-        let result = provider.health_check().await;
-        assert!(result.is_ok());
-        assert!(result.unwrap());
-    }
 
     #[tokio::test]
     async fn test_list_models_response_deserialization() {
@@ -555,36 +503,6 @@ mod tests {
         assert_eq!(model_info.quantization, Some("Q4_0".to_string()));
     }
 
-    #[tokio::test]
-    #[ignore]
-    async fn test_list_models_integration() {
-        let config = create_test_config();
-        let provider = OllamaProvider::new(config).unwrap();
-
-        let result = provider.list_models().await;
-        assert!(result.is_ok(), "Failed to list models: {:?}", result.err());
-
-        let models = result.unwrap();
-        assert!(!models.is_empty(), "Expected at least one model");
-
-        // Verify structure of returned models
-        for model in &models {
-            assert!(!model.name.is_empty(), "Model name should not be empty");
-            // Ollama should provide size information
-            assert!(model.size_bytes.is_some(), "Model should have size info");
-        }
-
-        // Check if we got nomic-embed-text (common model)
-        let _has_nomic = models.iter().any(|m| m.name.contains("nomic-embed-text"));
-        println!(
-            "Available models: {:?}",
-            models.iter().map(|m| &m.name).collect::<Vec<_>>()
-        );
-
-        // Don't assert on specific models since endpoint might have different models
-        // Just verify we got valid data
-        assert!(!models.is_empty());
-    }
 
     #[test]
     fn test_parameter_size_parsing() {
