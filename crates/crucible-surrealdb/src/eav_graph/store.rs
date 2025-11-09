@@ -926,8 +926,10 @@ impl CoreRelationStorage for EAVGraphStore {
         let params = json!({
             "table": id.table,
             "id": id.id,
-            "from_id": thing_value(&surreal_relation.from_id),
-            "to_id": thing_value(&surreal_relation.to_id),
+            "from_table": surreal_relation.from_id.table,
+            "from_id_value": surreal_relation.from_id.id,
+            "to_table": surreal_relation.to_id.table,
+            "to_id_value": surreal_relation.to_id.id,
             "relation_type": surreal_relation.relation_type,
             "weight": surreal_relation.weight,
             "directed": surreal_relation.directed,
@@ -942,8 +944,8 @@ impl CoreRelationStorage for EAVGraphStore {
             .query(
                 r#"
                 CREATE type::thing($table, $id) SET
-                    from_id = $from_id,
-                    to_id = $to_id,
+                    from_id = type::thing($from_table, $from_id_value),
+                    to_id = type::thing($to_table, $to_id_value),
                     relation_type = $relation_type,
                     weight = $weight,
                     directed = $directed,
@@ -1313,11 +1315,12 @@ impl CoreTagStorage for EAVGraphStore {
 
     async fn get_entity_tags(&self, entity_id: &str) -> StorageResult<Vec<crucible_core::storage::Tag>> {
         let params = json!({"entity_id": entity_id});
+        // First get tag IDs from entity_tags table
         let result = self
             .client
             .query(
                 r#"
-                SELECT tag_id.* FROM entity_tags
+                SELECT tag_id FROM entity_tags
                 WHERE entity_id = type::thing('entities', $entity_id)
                 "#,
                 &[params],
@@ -1325,19 +1328,26 @@ impl CoreTagStorage for EAVGraphStore {
             .await
             .map_err(|e| StorageError::Backend(e.to_string()))?;
 
-        let tags: Vec<SurrealTag> = result
+        // Extract tag IDs
+        let tag_ids: Vec<String> = result
             .records
             .iter()
-            .map(|record| {
-                serde_json::from_value(
-                    serde_json::to_value(&record.data)
-                        .map_err(|e| StorageError::Backend(e.to_string()))?,
-                )
-                .map_err(|e| StorageError::Backend(e.to_string()))
+            .filter_map(|record| {
+                record.data.get("tag_id").and_then(|v| {
+                    v.get("id").and_then(|id| id.as_str()).map(|s| s.to_string())
+                })
             })
-            .collect::<StorageResult<Vec<_>>>()?;
+            .collect();
 
-        Ok(tags.into_iter().map(surreal_tag_to_core).collect())
+        // Fetch full tag records
+        let mut tags = Vec::new();
+        for tag_id in tag_ids {
+            if let Some(tag) = self.get_tag(&tag_id).await? {
+                tags.push(tag);
+            }
+        }
+
+        Ok(tags)
     }
 
     async fn get_entities_by_tag(&self, tag_id: &str) -> StorageResult<Vec<String>> {
