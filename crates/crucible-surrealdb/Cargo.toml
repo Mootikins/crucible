@@ -38,6 +38,7 @@ futures = "0.3"
 walkdir = "2.4"
 sha2 = "0.10"
 blake3 = "1.0"
+hex = "0.4"
 
 [features]
 default = []

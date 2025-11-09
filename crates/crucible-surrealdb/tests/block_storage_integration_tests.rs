@@ -1,0 +1,316 @@
+//! Integration tests for BlockStorage trait implementation
+//!
+//! These tests verify that blocks can be stored, retrieved, and queried
+//! with proper hierarchy preservation.
+
+use chrono::Utc;
+use crucible_core::storage::eav_graph_traits::{Block, BlockStorage};
+use crucible_surrealdb::eav_graph::store::EAVGraphStore;
+
+/// Helper to create a test store
+async fn create_test_store() -> EAVGraphStore {
+    EAVGraphStore::new_in_memory().await.unwrap()
+}
+
+/// Helper to create a test entity
+async fn create_test_entity(store: &EAVGraphStore, name: &str) -> String {
+    use crucible_core::storage::eav_graph_traits::{Entity, EntityStorage, EntityType};
+
+    let entity = Entity::new(String::new(), EntityType::Note)
+        .with_search_text(name);
+
+    store.store_entity(entity).await.unwrap()
+}
+
+#[tokio::test]
+async fn test_store_single_block() {
+    let store = create_test_store().await;
+    let entity_id = create_test_entity(&store, "test-note").await;
+
+    let block = Block {
+        id: String::new(), // Will be generated
+        entity_id: entity_id.clone(),
+        parent_block_id: None,
+        content: "# Test Heading".to_string(),
+        block_type: "heading".to_string(),
+        position: 0,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        content_hash: Some("test-hash".to_string()),
+    };
+
+    let block_id = store.store_block(block.clone()).await.unwrap();
+
+    assert!(!block_id.is_empty());
+
+    // Retrieve and verify
+    let retrieved = store.get_block(&block_id).await.unwrap();
+    assert!(retrieved.is_some());
+
+    let retrieved_block = retrieved.unwrap();
+    assert_eq!(retrieved_block.entity_id, entity_id);
+    assert_eq!(retrieved_block.content, "# Test Heading");
+    assert_eq!(retrieved_block.block_type, "heading");
+    assert_eq!(retrieved_block.position, 0);
+}
+
+#[tokio::test]
+async fn test_store_blocks_with_hierarchy() {
+    let store = create_test_store().await;
+    let entity_id = create_test_entity(&store, "hierarchical-note").await;
+
+    // Create heading (parent)
+    let heading = Block {
+        id: String::new(),
+        entity_id: entity_id.clone(),
+        parent_block_id: None,
+        content: "# Introduction".to_string(),
+        block_type: "heading".to_string(),
+        position: 0,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        content_hash: Some("heading-hash".to_string()),
+    };
+
+    let heading_id = store.store_block(heading).await.unwrap();
+
+    // Create paragraph under heading (child)
+    let paragraph = Block {
+        id: String::new(),
+        entity_id: entity_id.clone(),
+        parent_block_id: Some(heading_id.clone()),
+        content: "This is introductory text.".to_string(),
+        block_type: "paragraph".to_string(),
+        position: 1,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        content_hash: Some("para-hash".to_string()),
+    };
+
+    let para_id = store.store_block(paragraph).await.unwrap();
+
+    // Verify hierarchy is preserved
+    let retrieved_para = store.get_block(&para_id).await.unwrap().unwrap();
+    assert_eq!(retrieved_para.parent_block_id, Some(heading_id.clone()));
+
+    // Get child blocks
+    let children = store.get_child_blocks(&heading_id).await.unwrap();
+    assert_eq!(children.len(), 1);
+    assert_eq!(children[0].id, para_id);
+}
+
+#[tokio::test]
+async fn test_get_blocks_by_entity() {
+    let store = create_test_store().await;
+    let entity_id = create_test_entity(&store, "multi-block-note").await;
+
+    // Create multiple blocks
+    let blocks = vec![
+        Block {
+            id: String::new(),
+            entity_id: entity_id.clone(),
+            parent_block_id: None,
+            content: "# Title".to_string(),
+            block_type: "heading".to_string(),
+            position: 0,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            content_hash: Some("h1".to_string()),
+        },
+        Block {
+            id: String::new(),
+            entity_id: entity_id.clone(),
+            parent_block_id: None,
+            content: "Some text".to_string(),
+            block_type: "paragraph".to_string(),
+            position: 1,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            content_hash: Some("p1".to_string()),
+        },
+        Block {
+            id: String::new(),
+            entity_id: entity_id.clone(),
+            parent_block_id: None,
+            content: "```rust\ncode\n```".to_string(),
+            block_type: "code".to_string(),
+            position: 2,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            content_hash: Some("c1".to_string()),
+        },
+    ];
+
+    // Store all blocks
+    for block in blocks {
+        store.store_block(block).await.unwrap();
+    }
+
+    // Retrieve all blocks for entity
+    let retrieved = store.get_blocks(&entity_id).await.unwrap();
+    assert_eq!(retrieved.len(), 3);
+
+    // Verify order by position
+    assert_eq!(retrieved[0].position, 0);
+    assert_eq!(retrieved[1].position, 1);
+    assert_eq!(retrieved[2].position, 2);
+}
+
+#[tokio::test]
+async fn test_delete_blocks_by_entity() {
+    let store = create_test_store().await;
+    let entity_id = create_test_entity(&store, "delete-test").await;
+
+    // Create blocks
+    let block = Block {
+        id: String::new(),
+        entity_id: entity_id.clone(),
+        parent_block_id: None,
+        content: "Test".to_string(),
+        block_type: "paragraph".to_string(),
+        position: 0,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        content_hash: Some("test".to_string()),
+    };
+
+    store.store_block(block).await.unwrap();
+
+    // Verify exists
+    let blocks_before = store.get_blocks(&entity_id).await.unwrap();
+    assert_eq!(blocks_before.len(), 1);
+
+    // Delete all blocks
+    store.delete_blocks(&entity_id).await.unwrap();
+
+    // Verify deleted
+    let blocks_after = store.get_blocks(&entity_id).await.unwrap();
+    assert_eq!(blocks_after.len(), 0);
+}
+
+#[tokio::test]
+async fn test_update_block() {
+    let store = create_test_store().await;
+    let entity_id = create_test_entity(&store, "update-test").await;
+
+    let block = Block {
+        id: String::new(),
+        entity_id: entity_id.clone(),
+        parent_block_id: None,
+        content: "Original content".to_string(),
+        block_type: "paragraph".to_string(),
+        position: 0,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        content_hash: Some("original".to_string()),
+    };
+
+    let block_id = store.store_block(block).await.unwrap();
+
+    // Update the block
+    let mut updated_block = store.get_block(&block_id).await.unwrap().unwrap();
+    updated_block.content = "Updated content".to_string();
+    updated_block.content_hash = Some("updated".to_string());
+
+    store.update_block(&block_id, updated_block).await.unwrap();
+
+    // Verify update
+    let retrieved = store.get_block(&block_id).await.unwrap().unwrap();
+    assert_eq!(retrieved.content, "Updated content");
+    assert_eq!(retrieved.content_hash, Some("updated".to_string()));
+}
+
+#[tokio::test]
+async fn test_delete_single_block() {
+    let store = create_test_store().await;
+    let entity_id = create_test_entity(&store, "delete-single-test").await;
+
+    let block = Block {
+        id: String::new(),
+        entity_id: entity_id.clone(),
+        parent_block_id: None,
+        content: "To be deleted".to_string(),
+        block_type: "paragraph".to_string(),
+        position: 0,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        content_hash: Some("delete-me".to_string()),
+    };
+
+    let block_id = store.store_block(block).await.unwrap();
+
+    // Verify exists
+    assert!(store.get_block(&block_id).await.unwrap().is_some());
+
+    // Delete
+    store.delete_block(&block_id, false).await.unwrap();
+
+    // Verify deleted
+    assert!(store.get_block(&block_id).await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn test_get_blocks_preserves_hierarchy_order() {
+    let store = create_test_store().await;
+    let entity_id = create_test_entity(&store, "hierarchy-order-test").await;
+
+    // Create a document structure:
+    // # Heading (pos 0)
+    //   Paragraph 1 (pos 1, child of heading)
+    //   Paragraph 2 (pos 2, child of heading)
+
+    let heading = Block {
+        id: String::new(),
+        entity_id: entity_id.clone(),
+        parent_block_id: None,
+        content: "# Main Heading".to_string(),
+        block_type: "heading".to_string(),
+        position: 0,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        content_hash: Some("h".to_string()),
+    };
+
+    let heading_id = store.store_block(heading).await.unwrap();
+
+    let para1 = Block {
+        id: String::new(),
+        entity_id: entity_id.clone(),
+        parent_block_id: Some(heading_id.clone()),
+        content: "First paragraph".to_string(),
+        block_type: "paragraph".to_string(),
+        position: 1,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        content_hash: Some("p1".to_string()),
+    };
+
+    store.store_block(para1).await.unwrap();
+
+    let para2 = Block {
+        id: String::new(),
+        entity_id: entity_id.clone(),
+        parent_block_id: Some(heading_id.clone()),
+        content: "Second paragraph".to_string(),
+        block_type: "paragraph".to_string(),
+        position: 2,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        content_hash: Some("p2".to_string()),
+    };
+
+    store.store_block(para2).await.unwrap();
+
+    // Get all blocks and verify order
+    let blocks = store.get_blocks(&entity_id).await.unwrap();
+    assert_eq!(blocks.len(), 3);
+    assert_eq!(blocks[0].position, 0);
+    assert_eq!(blocks[1].position, 1);
+    assert_eq!(blocks[2].position, 2);
+
+    // Get children and verify they're in order
+    let children = store.get_child_blocks(&heading_id).await.unwrap();
+    assert_eq!(children.len(), 2);
+    assert_eq!(children[0].position, 1);
+    assert_eq!(children[1].position, 2);
+}

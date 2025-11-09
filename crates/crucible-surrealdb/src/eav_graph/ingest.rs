@@ -247,27 +247,106 @@ fn build_blocks(entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec
     let mut blocks = Vec::new();
     let mut index = 0;
 
+    // Headings with metadata (level + text)
     for heading in &doc.content.headings {
-        blocks.push(make_block(
+        let metadata = serde_json::json!({
+            "level": heading.level,
+            "text": heading.text.clone()
+        });
+        blocks.push(make_block_with_metadata(
             entity_id,
             &format!("h{}", index),
             index,
             "heading",
             &heading.text,
+            metadata,
         ));
         index += 1;
     }
 
+    // Paragraphs (non-empty only)
     for paragraph in &doc.content.paragraphs {
         if paragraph.content.trim().is_empty() {
             continue;
         }
-        blocks.push(make_block(
+        blocks.push(make_block_with_metadata(
             entity_id,
             &format!("p{}", index),
             index,
             "paragraph",
             &paragraph.content,
+            serde_json::json!({}),
+        ));
+        index += 1;
+    }
+
+    // Code blocks with language + line count metadata
+    for code_block in &doc.content.code_blocks {
+        let metadata = serde_json::json!({
+            "language": code_block.language.clone().unwrap_or_default(),
+            "line_count": code_block.content.lines().count()
+        });
+        blocks.push(make_block_with_metadata(
+            entity_id,
+            &format!("code{}", index),
+            index,
+            "code",
+            &code_block.content,
+            metadata,
+        ));
+        index += 1;
+    }
+
+    // Lists with type + item count metadata
+    for list in &doc.content.lists {
+        let metadata = serde_json::json!({
+            "type": match list.list_type {
+                crucible_core::parser::types::ListType::Ordered => "ordered",
+                crucible_core::parser::types::ListType::Unordered => "unordered",
+            },
+            "item_count": list.items.len()
+        });
+
+        // Serialize list as text (simple approach for now)
+        let list_text = list.items.iter()
+            .map(|item| {
+                if let Some(task_status) = &item.task_status {
+                    let check = match task_status {
+                        crucible_core::parser::types::TaskStatus::Pending => " ",
+                        crucible_core::parser::types::TaskStatus::Completed => "x",
+                    };
+                    format!("- [{}] {}", check, item.content)
+                } else {
+                    format!("- {}", item.content)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        blocks.push(make_block_with_metadata(
+            entity_id,
+            &format!("list{}", index),
+            index,
+            "list",
+            &list_text,
+            metadata,
+        ));
+        index += 1;
+    }
+
+    // Callouts with type + title metadata
+    for callout in &doc.callouts {
+        let metadata = serde_json::json!({
+            "callout_type": callout.callout_type.clone(),
+            "title": callout.title.clone().unwrap_or_default()
+        });
+        blocks.push(make_block_with_metadata(
+            entity_id,
+            &format!("callout{}", index),
+            index,
+            "callout",
+            &callout.content,
+            metadata,
         ));
         index += 1;
     }
@@ -275,23 +354,26 @@ fn build_blocks(entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec
     blocks
 }
 
-fn make_block(
+fn make_block_with_metadata(
     entity_id: &RecordId<EntityRecord>,
     suffix: &str,
     block_index: i32,
     block_type: &str,
     content: &str,
+    metadata: Value,
 ) -> BlockNode {
     let mut hasher = Hasher::new();
     hasher.update(content.as_bytes());
     let hash = hasher.finalize().to_hex().to_string();
 
-    BlockNode::new(
+    let mut block = BlockNode::new(
         RecordId::new("blocks", format!("{}:{}", entity_id.id, suffix)),
         entity_id.clone(),
         block_index,
         block_type,
         content,
         hash,
-    )
+    );
+    block.metadata = metadata;
+    block
 }

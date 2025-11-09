@@ -5,7 +5,7 @@ use crate::{QueryResult, SurrealClient};
 
 use super::types::{
     BlockNode, EmbeddingVector, Entity, EntityRecord, EntityTag,
-    Property, PropertyRecord, RecordId, Relation, RelationRecord, Tag, TagRecord,
+    Property, PropertyRecord, RecordId, Relation as SurrealRelation, RelationRecord, Tag, TagRecord,
 };
 use surrealdb::sql::Thing;
 
@@ -57,7 +57,7 @@ impl EAVGraphStore {
             .ok_or_else(|| anyhow!("entity id must be provided"))?;
 
         let content = json!({
-            "entity_type": entity.entity_type.as_str(),
+            "type": entity.entity_type.as_str(),
             "deleted_at": entity.deleted_at,
             "version": entity.version,
             "content_hash": entity.content_hash,
@@ -531,7 +531,7 @@ impl EAVGraphStore {
     }
 
     /// Upsert a relation record.
-    pub async fn upsert_relation(&self, relation: &Relation) -> Result<RecordId<RelationRecord>> {
+    pub async fn upsert_relation(&self, relation: &SurrealRelation) -> Result<RecordId<RelationRecord>> {
         let id = relation
             .id
             .as_ref()
@@ -905,6 +905,235 @@ impl CorePropertyStorage for EAVGraphStore {
     }
 }
 
+// ============================================================================
+// RelationStorage Implementation
+// ============================================================================
+
+use crucible_core::storage::RelationStorage as CoreRelationStorage;
+use super::adapter::{core_relation_to_surreal, surreal_relation_to_core};
+
+#[async_trait]
+impl CoreRelationStorage for EAVGraphStore {
+    async fn store_relation(&self, relation: crucible_core::storage::Relation) -> StorageResult<String> {
+        let surreal_relation = core_relation_to_surreal(relation);
+
+        // Generate ID if not provided
+        let id = surreal_relation.id.clone().unwrap_or_else(|| {
+            RecordId::new("relations", format!("rel:{}", uuid::Uuid::new_v4()))
+        });
+
+        let params = json!({
+            "table": id.table,
+            "id": id.id,
+            "from_id": thing_value(&surreal_relation.from_id),
+            "to_id": thing_value(&surreal_relation.to_id),
+            "relation_type": surreal_relation.relation_type,
+            "weight": surreal_relation.weight,
+            "directed": surreal_relation.directed,
+            "confidence": surreal_relation.confidence,
+            "source": surreal_relation.source,
+            "position": surreal_relation.position,
+            "metadata": surreal_relation.metadata,
+            "created_at": surreal_relation.created_at.to_rfc3339(),
+        });
+
+        self.client
+            .query(
+                r#"
+                CREATE type::thing($table, $id) SET
+                    from_id = $from_id,
+                    to_id = $to_id,
+                    relation_type = $relation_type,
+                    weight = $weight,
+                    directed = $directed,
+                    confidence = $confidence,
+                    source = $source,
+                    position = $position,
+                    metadata = $metadata,
+                    created_at = <datetime> $created_at
+                "#,
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        Ok(id.id)
+    }
+
+    async fn batch_store_relations(&self, relations: &[crucible_core::storage::Relation]) -> StorageResult<()> {
+        for relation in relations {
+            self.store_relation(relation.clone()).await?;
+        }
+        Ok(())
+    }
+
+    async fn get_relation(&self, id: &str) -> StorageResult<Option<crucible_core::storage::Relation>> {
+        let params = json!({"id": id});
+
+        let result = self
+            .client
+            .query(
+                "SELECT * FROM relations WHERE id = type::thing('relations', $id)",
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        if result.records.is_empty() {
+            return Ok(None);
+        }
+
+        let surreal_relation: SurrealRelation = serde_json::from_value(
+            serde_json::to_value(&result.records[0].data)
+                .map_err(|e| StorageError::Backend(e.to_string()))?,
+        )
+        .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        Ok(Some(surreal_relation_to_core(surreal_relation)))
+    }
+
+    async fn get_relations(
+        &self,
+        entity_id: &str,
+        relation_type: Option<&str>,
+    ) -> StorageResult<Vec<crucible_core::storage::Relation>> {
+        let query = if let Some(rel_type) = relation_type {
+            "SELECT * FROM relations WHERE from_id = type::thing('entities', $entity_id) AND relation_type = $relation_type"
+        } else {
+            "SELECT * FROM relations WHERE from_id = type::thing('entities', $entity_id)"
+        };
+
+        let params = json!({
+            "entity_id": entity_id,
+            "relation_type": relation_type.unwrap_or(""),
+        });
+
+        let result = self
+            .client
+            .query(query, &[params])
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        result
+            .records
+            .iter()
+            .map(|record| {
+                let surreal_relation: SurrealRelation = serde_json::from_value(
+                    serde_json::to_value(&record.data)
+                        .map_err(|e| StorageError::Backend(e.to_string()))?,
+                )
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
+                Ok(surreal_relation_to_core(surreal_relation))
+            })
+            .collect()
+    }
+
+    async fn get_backlinks(
+        &self,
+        entity_id: &str,
+        relation_type: Option<&str>,
+    ) -> StorageResult<Vec<crucible_core::storage::Relation>> {
+        let query = if let Some(rel_type) = relation_type {
+            "SELECT * FROM relations WHERE to_id = type::thing('entities', $entity_id) AND relation_type = $relation_type"
+        } else {
+            "SELECT * FROM relations WHERE to_id = type::thing('entities', $entity_id)"
+        };
+
+        let params = json!({
+            "entity_id": entity_id,
+            "relation_type": relation_type.unwrap_or(""),
+        });
+
+        let result = self
+            .client
+            .query(query, &[params])
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        result
+            .records
+            .iter()
+            .map(|record| {
+                let surreal_relation: SurrealRelation = serde_json::from_value(
+                    serde_json::to_value(&record.data)
+                        .map_err(|e| StorageError::Backend(e.to_string()))?,
+                )
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
+                Ok(surreal_relation_to_core(surreal_relation))
+            })
+            .collect()
+    }
+
+    async fn delete_relations(&self, entity_id: &str) -> StorageResult<usize> {
+        let params = json!({"entity_id": entity_id});
+
+        let result = self
+            .client
+            .query(
+                "DELETE FROM relations WHERE from_id = type::thing('entities', $entity_id)",
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        Ok(result.records.len())
+    }
+
+    async fn delete_relation(&self, id: &str) -> StorageResult<()> {
+        let params = json!({"id": id});
+
+        self.client
+            .query(
+                "DELETE FROM relations WHERE id = type::thing('relations', $id)",
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn find_block_by_hash(
+        &self,
+        entity_id: &str,
+        hash: &[u8; 32],
+    ) -> StorageResult<Option<String>> {
+        let hash_hex = hex::encode(hash);
+        let params = json!({
+            "entity_id": entity_id,
+            "hash_hex": hash_hex,
+        });
+
+        let result = self
+            .client
+            .query(
+                r#"
+                SELECT * FROM relations
+                WHERE to_id = type::thing('entities', $entity_id)
+                AND metadata.block_hash = $hash_hex
+                LIMIT 1
+                "#,
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        if result.records.is_empty() {
+            return Ok(None);
+        }
+
+        let surreal_relation: SurrealRelation = serde_json::from_value(
+            serde_json::to_value(&result.records[0].data)
+                .map_err(|e| StorageError::Backend(e.to_string()))?,
+        )
+        .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        // Construct block ID from entity + offset
+        let block_offset = surreal_relation.metadata["block_offset"].as_u64().unwrap_or(0) as u32;
+        Ok(Some(format!("{}#block_{}", entity_id, block_offset)))
+    }
+}
+
 fn thing_value<T>(id: &RecordId<T>) -> serde_json::Value {
     let thing = Thing::from((id.table.as_str(), id.id.as_str()));
     serde_json::to_value(thing).unwrap_or_else(|e| {
@@ -968,13 +1197,12 @@ mod tests {
         assert_eq!(result.records.len(), 1);
         let record = &result.records[0];
 
-        // Verify the value is stored as JSON with the PropertyValue structure
+        // Verify the value is stored as JSON with the PropertyValue structure (tagged enum)
         let value = record.data.get("value").unwrap();
         assert!(value.is_object());
-        assert_eq!(
-            value.get("text").unwrap().as_str(),
-            Some("Sample")
-        );
+        // PropertyValue uses tagged enum serialization: {"type": "text", "value": "Sample"}
+        assert_eq!(value.get("type").unwrap().as_str(), Some("text"));
+        assert_eq!(value.get("value").unwrap().as_str(), Some("Sample"));
     }
 
     #[tokio::test]

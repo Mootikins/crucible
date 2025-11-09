@@ -75,7 +75,7 @@ pub fn core_property_to_surreal(
     SurrealProperty {
         id: property_id,
         entity_id,
-        namespace: SurrealPropertyNamespace(core_prop.namespace.0.to_string()),
+        namespace: SurrealPropertyNamespace(core_prop.namespace.0.into()),
         key: core_prop.key,
         value: core_prop.value,
         source: "parser".to_string(),
@@ -117,8 +117,7 @@ pub fn surreal_property_to_core(surreal_prop: SurrealProperty) -> core::Property
 pub fn core_properties_to_surreal(core_props: Vec<core::Property>) -> Vec<SurrealProperty> {
     core_props
         .into_iter()
-        .enumerate()
-        .map(|(idx, prop)| {
+        .map(|prop| {
             // Generate a property ID: entities:note:test:frontmatter:title
             let prop_id = RecordId::new(
                 "properties",
@@ -292,5 +291,194 @@ mod tests {
         // Check second property
         assert_eq!(result_props[1].key, "count");
         assert_eq!(result_props[1].value, core::PropertyValue::Number(42.0));
+    }
+}
+
+// ============================================================================
+// Relation Conversion
+// ============================================================================
+
+use super::types::{Relation as SurrealRelation, RelationRecord};
+
+/// Convert core Relation to SurrealDB Relation
+///
+/// Maps the database-agnostic core Relation type to the SurrealDB-specific
+/// type with RecordId fields. Block link fields (offset, hash, occurrence)
+/// are stored in metadata.
+pub fn core_relation_to_surreal(relation: core::Relation) -> SurrealRelation {
+    // Store block link fields in metadata
+    let mut metadata = relation.metadata.clone();
+    if let Some(offset) = relation.block_offset {
+        metadata["block_offset"] = serde_json::json!(offset);
+    }
+    if let Some(hash) = relation.block_hash {
+        // Store hash as hex string in metadata
+        metadata["block_hash"] = serde_json::json!(hex::encode(hash));
+    }
+    if let Some(occurrence) = relation.heading_occurrence {
+        metadata["heading_occurrence"] = serde_json::json!(occurrence);
+    }
+    if let Some(context) = relation.context {
+        metadata["context"] = serde_json::json!(context);
+    }
+
+    SurrealRelation {
+        id: if !relation.id.is_empty() {
+            Some(RecordId::new("relations", relation.id))
+        } else {
+            None
+        },
+        from_id: string_to_entity_id(&relation.from_entity_id),
+        to_id: relation
+            .to_entity_id
+            .as_ref()
+            .map(|id| string_to_entity_id(id))
+            .unwrap_or_else(|| RecordId::new("entities", "unresolved")),
+        relation_type: relation.relation_type,
+        weight: 1.0,
+        directed: true,
+        confidence: 1.0,
+        source: "parser".to_string(),
+        position: None,
+        metadata,
+        created_at: relation.created_at,
+    }
+}
+
+/// Convert SurrealDB Relation to core Relation
+///
+/// Maps the SurrealDB-specific Relation type back to the database-agnostic
+/// core type. Extracts block link fields from metadata.
+pub fn surreal_relation_to_core(surreal: SurrealRelation) -> core::Relation {
+    // Extract block link fields from metadata
+    let block_offset = surreal.metadata["block_offset"].as_u64().map(|v| v as u32);
+    let block_hash = surreal.metadata["block_hash"]
+        .as_str()
+        .and_then(|hex_str| {
+            hex::decode(hex_str)
+                .ok()
+                .and_then(|bytes| {
+                    if bytes.len() == 32 {
+                        let mut hash = [0u8; 32];
+                        hash.copy_from_slice(&bytes);
+                        Some(hash)
+                    } else {
+                        None
+                    }
+                })
+        });
+    let heading_occurrence = surreal.metadata["heading_occurrence"]
+        .as_u64()
+        .map(|v| v as u32);
+    let context = surreal.metadata["context"]
+        .as_str()
+        .map(|s| s.to_string());
+
+    core::Relation {
+        id: surreal
+            .id
+            .map(|id| id.id)
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        from_entity_id: entity_id_to_string(&surreal.from_id),
+        to_entity_id: if surreal.to_id.id == "unresolved" {
+            None
+        } else {
+            Some(entity_id_to_string(&surreal.to_id))
+        },
+        relation_type: surreal.relation_type,
+        metadata: surreal.metadata,
+        context,
+        block_offset,
+        block_hash,
+        heading_occurrence,
+        created_at: surreal.created_at,
+    }
+}
+
+#[cfg(test)]
+mod relation_conversion_tests {
+    use super::*;
+
+    #[test]
+    fn test_core_relation_to_surreal_basic() {
+        let relation = core::Relation::wikilink("note:source", "note:target");
+
+        let surreal = core_relation_to_surreal(relation);
+
+        assert_eq!(surreal.from_id.id, "note:source");
+        assert_eq!(surreal.to_id.id, "note:target");
+        assert_eq!(surreal.relation_type, "wikilink");
+    }
+
+    #[test]
+    fn test_core_relation_to_surreal_with_block_link() {
+        let hash = [42u8; 32];
+        let relation = core::Relation::wikilink("note:source", "note:target")
+            .with_block_link(5, hash, Some(2))
+            .with_context("Block 5 context");
+
+        let surreal = core_relation_to_surreal(relation);
+
+        assert_eq!(surreal.metadata["block_offset"], 5);
+        assert_eq!(
+            surreal.metadata["block_hash"].as_str().unwrap(),
+            hex::encode(hash)
+        );
+        assert_eq!(surreal.metadata["heading_occurrence"], 2);
+        assert_eq!(surreal.metadata["context"], "Block 5 context");
+    }
+
+    #[test]
+    fn test_surreal_relation_to_core() {
+        let surreal = SurrealRelation {
+            id: Some(RecordId::new("relations", "rel:123")),
+            from_id: RecordId::new("entities", "note:source"),
+            to_id: RecordId::new("entities", "note:target"),
+            relation_type: "embed".to_string(),
+            weight: 1.0,
+            directed: true,
+            confidence: 1.0,
+            source: "parser".to_string(),
+            position: None,
+            metadata: serde_json::Value::Null,
+            created_at: chrono::Utc::now(),
+        };
+
+        let core_rel = surreal_relation_to_core(surreal);
+
+        assert_eq!(core_rel.from_entity_id, "entities:note:source");
+        assert_eq!(core_rel.to_entity_id, Some("entities:note:target".to_string()));
+        assert_eq!(core_rel.relation_type, "embed");
+    }
+
+    #[test]
+    fn test_round_trip_relation_with_block_link() {
+        let hash = [99u8; 32];
+        let original = core::Relation::wikilink("note:a", "note:b")
+            .with_block_link(3, hash, Some(1))
+            .with_context("Context text");
+
+        let surreal = core_relation_to_surreal(original.clone());
+        let result = surreal_relation_to_core(surreal);
+
+        // IDs will have "entities:" prefix after round-trip
+        assert_eq!(result.from_entity_id, "entities:note:a");
+        assert_eq!(result.to_entity_id, Some("entities:note:b".to_string()));
+        assert_eq!(result.relation_type, original.relation_type);
+        assert_eq!(result.block_offset, Some(3));
+        assert_eq!(result.block_hash, Some(hash));
+        assert_eq!(result.heading_occurrence, Some(1));
+        assert_eq!(result.context, Some("Context text".to_string()));
+    }
+
+    #[test]
+    fn test_unresolved_target() {
+        let relation = core::Relation::new("note:source", None, "wikilink");
+
+        let surreal = core_relation_to_surreal(relation);
+        assert_eq!(surreal.to_id.id, "unresolved");
+
+        let core_rel = surreal_relation_to_core(surreal);
+        assert_eq!(core_rel.to_entity_id, None);
     }
 }
