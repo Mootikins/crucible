@@ -944,8 +944,8 @@ impl CoreRelationStorage for EAVGraphStore {
             .query(
                 r#"
                 CREATE type::thing($table, $id) SET
-                    from_id = type::thing($from_table, $from_id_value),
-                    to_id = type::thing($to_table, $to_id_value),
+                    in = type::thing($from_table, $from_id_value),
+                    out = type::thing($to_table, $to_id_value),
                     relation_type = $relation_type,
                     weight = $weight,
                     directed = $directed,
@@ -1000,10 +1000,11 @@ impl CoreRelationStorage for EAVGraphStore {
         entity_id: &str,
         relation_type: Option<&str>,
     ) -> StorageResult<Vec<crucible_core::storage::Relation>> {
+        // Use 'in' field (graph edge source) instead of 'from_id'
         let query = if let Some(rel_type) = relation_type {
-            "SELECT * FROM relations WHERE from_id = type::thing('entities', $entity_id) AND relation_type = $relation_type"
+            "SELECT * FROM relations WHERE in = type::thing('entities', $entity_id) AND relation_type = $relation_type"
         } else {
-            "SELECT * FROM relations WHERE from_id = type::thing('entities', $entity_id)"
+            "SELECT * FROM relations WHERE in = type::thing('entities', $entity_id)"
         };
 
         let params = json!({
@@ -1036,10 +1037,11 @@ impl CoreRelationStorage for EAVGraphStore {
         entity_id: &str,
         relation_type: Option<&str>,
     ) -> StorageResult<Vec<crucible_core::storage::Relation>> {
+        // Use 'out' field (graph edge target) instead of 'to_id'
         let query = if let Some(rel_type) = relation_type {
-            "SELECT * FROM relations WHERE to_id = type::thing('entities', $entity_id) AND relation_type = $relation_type"
+            "SELECT * FROM relations WHERE out = type::thing('entities', $entity_id) AND relation_type = $relation_type"
         } else {
-            "SELECT * FROM relations WHERE to_id = type::thing('entities', $entity_id)"
+            "SELECT * FROM relations WHERE out = type::thing('entities', $entity_id)"
         };
 
         let params = json!({
@@ -1070,10 +1072,11 @@ impl CoreRelationStorage for EAVGraphStore {
     async fn delete_relations(&self, entity_id: &str) -> StorageResult<usize> {
         let params = json!({"entity_id": entity_id});
 
+        // Use 'in' field for source entity
         let result = self
             .client
             .query(
-                "DELETE FROM relations WHERE from_id = type::thing('entities', $entity_id)",
+                "DELETE FROM relations WHERE in = type::thing('entities', $entity_id)",
                 &[params],
             )
             .await
@@ -1315,12 +1318,14 @@ impl CoreTagStorage for EAVGraphStore {
 
     async fn get_entity_tags(&self, entity_id: &str) -> StorageResult<Vec<crucible_core::storage::Tag>> {
         let params = json!({"entity_id": entity_id});
-        // First get tag IDs from entity_tags table
+
+        // Use graph traversal to fetch tags in a single query
+        // ->tag_id fetches the related tag record directly
         let result = self
             .client
             .query(
                 r#"
-                SELECT tag_id FROM entity_tags
+                SELECT ->tag_id.* as tags FROM entity_tags
                 WHERE entity_id = type::thing('entities', $entity_id)
                 "#,
                 &[params],
@@ -1328,26 +1333,31 @@ impl CoreTagStorage for EAVGraphStore {
             .await
             .map_err(|e| StorageError::Backend(e.to_string()))?;
 
-        // Extract tag IDs
-        let tag_ids: Vec<String> = result
-            .records
-            .iter()
-            .filter_map(|record| {
-                record.data.get("tag_id").and_then(|v| {
-                    v.get("id").and_then(|id| id.as_str()).map(|s| s.to_string())
-                })
-            })
-            .collect();
+        if result.records.is_empty() {
+            return Ok(Vec::new());
+        }
 
-        // Fetch full tag records
-        let mut tags = Vec::new();
-        for tag_id in tag_ids {
-            if let Some(tag) = self.get_tag(&tag_id).await? {
-                tags.push(tag);
+        // Extract tags from the nested structure
+        let mut all_tags = Vec::new();
+        for record in &result.records {
+            if let Some(tags_value) = record.data.get("tags") {
+                // tags_value could be an array of tag objects
+                if let Some(tags_array) = tags_value.as_array() {
+                    for tag_value in tags_array {
+                        let surreal_tag: SurrealTag = serde_json::from_value(tag_value.clone())
+                            .map_err(|e| StorageError::Backend(format!("Failed to parse tag: {}", e)))?;
+                        all_tags.push(surreal_tag_to_core(surreal_tag));
+                    }
+                } else {
+                    // Single tag object
+                    let surreal_tag: SurrealTag = serde_json::from_value(tags_value.clone())
+                        .map_err(|e| StorageError::Backend(format!("Failed to parse tag: {}", e)))?;
+                    all_tags.push(surreal_tag_to_core(surreal_tag));
+                }
             }
         }
 
-        Ok(tags)
+        Ok(all_tags)
     }
 
     async fn get_entities_by_tag(&self, tag_id: &str) -> StorageResult<Vec<String>> {
