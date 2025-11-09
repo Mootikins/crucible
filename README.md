@@ -37,7 +37,7 @@ Crucible is a high-performance knowledge management system built around a simple
 
 ```bash
 # Clone the repository
-git clone https://github.com/matthewkrohn/crucible.git
+git clone https://github.com/mootikins/crucible.git
 cd crucible
 
 # Build the system
@@ -53,7 +53,7 @@ cru --help
 ## 🔁 Architecture Evolution (In Progress)
 
 **Current State (2025-11)**
-- EPR (Entity-Property-Relation) schema provides unified document storage
+- EAV+Graph (Entity-Attribute-Value + Property Graph) schema provides unified document storage
 - Hash-based change detection using hybrid Merkle trees
 - File processing integrated into startup with incremental updates
 - CLI provides chat interface for ACP-based agent interactions
@@ -65,8 +65,8 @@ cru --help
 4. **Multi-Interface**: Chat CLI today, desktop/web UIs sharing the same core tomorrow
 
 **Migration Progress**
-- ✅ EPR schema and hash lookup migrated to entity-based storage
-- ✅ Change detection using EPR metadata instead of legacy `notes` table
+- ✅ EAV+Graph schema and hash lookup migrated to entity-based storage
+- ✅ Change detection using EAV+Graph metadata instead of legacy `notes` table
 - 🔄 Hybrid Merkle integration for section-level change tracking
 - 🔄 Database capability traits for ACP service layer
 - 📋 Legacy cleanup and CLI chat interface implementation
@@ -183,7 +183,7 @@ cru note create path.md      # Note management
 **Goal**: Build Agent Context Protocol integration with a chat-oriented CLI interface, establishing the foundation for agent-driven knowledge exploration.
 
 **Completed**:
-- ✅ EPR schema migration (Entity-Property-Relation model)
+- ✅ EAV+Graph schema migration (Entity-Attribute-Value + Property Graph model)
 - ✅ Hash-based change detection using hybrid Merkle trees
 - ✅ Incremental file processing on startup
 - ✅ Wikilink parsing and graph structure
@@ -191,13 +191,13 @@ cru note create path.md      # Note management
 
 **In Progress** (per STATUS.md):
 1. **Hybrid Merkle Integration**: Persist section/block hashes for fine-grained change detection
-2. **Legacy Cleanup**: Remove `notes:` table dependencies and normalize to EPR entities
-3. **Database Capability Traits**: Introduce trait layers (`EntityStore`, `RelationStore`) for ACP services
+2. **Legacy Cleanup**: Remove `notes:` table dependencies and normalize to EAV+Graph entities
+3. **Database Capability Traits**: Introduce trait layers (`EntityStorage`, `PropertyStorage`, `RelationStorage`) for ACP services
 4. **Chunk Hash Coverage**: Integration tests for incremental embedding updates
 5. **ACP + Chat CLI**: Port Zed's ACP implementation and replace CLI with chat interface
 
 **Guiding Principles** (from STATUS.md):
-- **Start-from-scratch mindset**: Use EPR schema everywhere, defer CRDT until ACP + chat MVP is solid
+- **Start-from-scratch mindset**: Use EAV+Graph schema everywhere, defer CRDT until ACP + chat MVP is solid
 - **SOLID + DI-first**: Traits over concrete implementations for testability and flexibility
 - **Concise MVP**: Build only surfaces needed for ACP + chat; delete scope creep
 - **Surreal-first ACP**: ACP precedes the CLI chat shell
