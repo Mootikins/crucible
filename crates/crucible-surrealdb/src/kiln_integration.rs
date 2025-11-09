@@ -679,7 +679,8 @@ async fn find_entity_id_by_title(
         FROM properties
         WHERE namespace = "core"
           AND key = "title"
-          AND value_text = $title
+          AND value.type = "text"
+          AND value.value = $title
         LIMIT 1
     "#;
 
@@ -2398,7 +2399,7 @@ mod tests {
 
     #[tokio::test]
     async fn tag_associations_create_hierarchy() {
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
 
         let kiln_root = PathBuf::from("/vault");
@@ -2431,7 +2432,7 @@ mod tests {
     }
     #[tokio::test]
     async fn wikilink_edges_create_relations_and_placeholders() {
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let kiln_root = PathBuf::from("/vault");
 
@@ -2501,7 +2502,7 @@ mod tests {
 
     #[tokio::test]
     async fn embed_relationships_create_relations_and_backlinks() {
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let kiln_root = PathBuf::from("/vault");
 

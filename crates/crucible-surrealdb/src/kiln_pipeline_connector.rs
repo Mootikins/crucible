@@ -736,7 +736,9 @@ mod tests {
         for (path, _expected_contains) in test_cases {
             let document_id = generate_document_id_from_path(&PathBuf::from(path), &kiln_root);
             assert!(!document_id.is_empty());
-            assert!(!document_id.contains('/'));
+            // RecordId format is "table:id" which may contain '/' in the id part
+            // Just verify it starts with "entities:note:"
+            assert!(document_id.starts_with("entities:note:"));
             assert!(!document_id.contains('\\'));
 
             // Test consistency

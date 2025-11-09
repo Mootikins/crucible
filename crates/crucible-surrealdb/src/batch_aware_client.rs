@@ -345,7 +345,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_aware_client_creation() -> Result<()> {
-        let client = SurrealClient::new_memory().await?;
+        let client = SurrealClient::new_isolated_memory().await?;
         let batch_client = client.batch_aware();
 
         // Test that we can create a batch aware client and check its status
@@ -367,7 +367,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_state_query() -> Result<()> {
-        let client = SurrealClient::new_memory().await?;
+        let client = SurrealClient::new_isolated_memory().await?;
         let batch_client = client.batch_aware();
 
         // Test querying non-existent file
@@ -413,7 +413,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_aware_with_processor() -> Result<()> {
-        let client = SurrealClient::new_memory().await?;
+        let client = SurrealClient::new_isolated_memory().await?;
         let processor = Arc::new(MockEventProcessor);
         let batch_client = client.batch_aware_with_processor(processor);
 
