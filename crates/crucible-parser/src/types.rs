@@ -942,6 +942,31 @@ pub struct ASTBlock {
     /// For callouts: callout type
     /// For lists: ordered/unordered flag
     pub metadata: ASTBlockMetadata,
+
+    /// Parent block ID for hierarchy tracking
+    ///
+    /// For blocks under a heading: ID of the parent heading
+    /// For headings: ID of the parent heading (if nested)
+    /// For top-level blocks: None
+    ///
+    /// This enables:
+    /// - Merkle tree construction (rehash only changed subtree)
+    /// - Document structure queries ("all blocks under X")
+    /// - Context breadcrumbs for AI/search
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_block_id: Option<String>,
+
+    /// Depth in the heading hierarchy
+    ///
+    /// - 0: Top-level blocks (no parent heading)
+    /// - 1: Under H1
+    /// - 2: Under H2 (under H1)
+    /// - etc.
+    ///
+    /// Calculated based on heading nesting level, not just heading level.
+    /// Example: H3 under H1 (skipped H2) has depth=1, not depth=3.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub depth: Option<u32>,
 }
 
 impl ASTBlock {
@@ -961,6 +986,8 @@ impl ASTBlock {
             end_offset,
             block_hash,
             metadata,
+            parent_block_id: None,
+            depth: None,
         }
     }
 
@@ -980,6 +1007,8 @@ impl ASTBlock {
             end_offset,
             block_hash,
             metadata,
+            parent_block_id: None,
+            depth: None,
         }
     }
 
@@ -1040,6 +1069,41 @@ impl ASTBlock {
     pub fn is_callout_type(&self, callout_type: &str) -> bool {
         matches!(self.block_type, ASTBlockType::Callout)
             && matches!(&self.metadata, ASTBlockMetadata::Callout { callout_type: ct, .. } if ct == callout_type)
+    }
+
+    /// Builder method: Set the parent block ID for hierarchy tracking
+    #[must_use = "builder methods consume self and return a new value"]
+    pub fn with_parent(mut self, parent_block_id: impl Into<String>) -> Self {
+        self.parent_block_id = Some(parent_block_id.into());
+        self
+    }
+
+    /// Builder method: Set the depth in the heading hierarchy
+    #[must_use = "builder methods consume self and return a new value"]
+    pub fn with_depth(mut self, depth: u32) -> Self {
+        self.depth = Some(depth);
+        self
+    }
+
+    /// Builder method: Set both parent and depth for hierarchy
+    #[must_use = "builder methods consume self and return a new value"]
+    pub fn with_hierarchy(mut self, parent_block_id: impl Into<String>, depth: u32) -> Self {
+        self.parent_block_id = Some(parent_block_id.into());
+        self.depth = Some(depth);
+        self
+    }
+
+    /// Get the heading level if this is a heading block
+    pub fn heading_level(&self) -> Option<u8> {
+        match &self.metadata {
+            ASTBlockMetadata::Heading { level, .. } => Some(*level),
+            _ => None,
+        }
+    }
+
+    /// Check if this block is a heading
+    pub fn is_heading(&self) -> bool {
+        matches!(self.block_type, ASTBlockType::Heading)
     }
 }
 

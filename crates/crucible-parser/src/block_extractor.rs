@@ -10,6 +10,64 @@ use crate::types::{
     ListBlock, ListType, ParsedDocument,
 };
 
+/// Tracks heading hierarchy for assigning parent-child relationships
+///
+/// The HeadingStack maintains a stack of headings by level. When a new heading
+/// is encountered, the stack is popped until we find a heading at a higher level
+/// (lower number), which becomes the parent.
+///
+/// Example:
+/// - H1: Stack becomes [(1, "h1-id")]
+/// - H2: Stack becomes [(1, "h1-id"), (2, "h2-id")]
+/// - H1: Stack becomes [(1, "new-h1-id")]  // Popped H2 and first H1
+#[derive(Debug, Clone)]
+struct HeadingStack {
+    /// Stack of (level, block_index) pairs
+    /// Level is 1-6 for H1-H6
+    /// Block index is the position in the blocks vector
+    stack: Vec<(u8, usize)>,
+}
+
+impl HeadingStack {
+    fn new() -> Self {
+        Self { stack: Vec::new() }
+    }
+
+    /// Push a new heading onto the stack
+    ///
+    /// This pops all headings at the same level or lower (higher numbers) before pushing.
+    /// The remaining top heading becomes the parent of the new heading.
+    fn push(&mut self, level: u8, block_index: usize) {
+        // Pop headings at same or deeper level
+        while let Some((top_level, _)) = self.stack.last() {
+            if *top_level >= level {
+                self.stack.pop();
+            } else {
+                break;
+            }
+        }
+        self.stack.push((level, block_index));
+    }
+
+    /// Get the current parent heading (if any)
+    ///
+    /// Returns None if there's no parent (top-level block)
+    /// Returns Some(block_index) if there's a parent heading
+    fn current_parent(&self) -> Option<usize> {
+        self.stack.last().map(|(_, idx)| *idx)
+    }
+
+    /// Get the current depth (number of headings in the stack)
+    ///
+    /// - 0: No headings (top-level blocks)
+    /// - 1: Under one heading (H1)
+    /// - 2: Under two headings (H1 → H2)
+    /// - etc.
+    fn current_depth(&self) -> u32 {
+        self.stack.len() as u32
+    }
+}
+
 /// Extracts AST blocks from a ParsedDocument
 ///
 /// The BlockExtractor is responsible for converting the flat content structure
@@ -106,6 +164,7 @@ impl BlockExtractor {
     pub fn extract_blocks(&self, document: &ParsedDocument) -> Result<Vec<ASTBlock>, ParseError> {
         let mut blocks = Vec::new();
         let mut last_end = 0;
+        let mut heading_stack = HeadingStack::new();
 
         // Create a map of all content positions for efficient lookup
         let content_map = self.build_content_map(document);
@@ -119,7 +178,13 @@ impl BlockExtractor {
                 if let Some(paragraph_blocks) =
                     self.extract_gap_paragraphs(document, last_end, position.start_offset)?
                 {
-                    blocks.extend(paragraph_blocks);
+                    // Assign hierarchy to paragraph blocks based on current heading stack
+                    for mut para_block in paragraph_blocks {
+                        para_block = self.assign_hierarchy(para_block, &heading_stack, blocks.len());
+                        if self.config.preserve_empty_blocks || !para_block.is_empty() {
+                            blocks.push(para_block);
+                        }
+                    }
                 }
             }
 
@@ -140,8 +205,18 @@ impl BlockExtractor {
                 }
             };
 
-            if let Some(block) = block {
+            if let Some(mut block) = block {
                 if self.config.preserve_empty_blocks || !block.is_empty() {
+                    let block_index = blocks.len();
+
+                    // Assign hierarchy before adding to blocks
+                    block = self.assign_hierarchy(block, &heading_stack, block_index);
+
+                    // If this is a heading, update the heading stack AFTER assigning its own hierarchy
+                    if let Some(level) = block.heading_level() {
+                        heading_stack.push(level, block_index);
+                    }
+
                     blocks.push(block);
                     last_end = position.end_offset;
                 }
@@ -153,11 +228,51 @@ impl BlockExtractor {
             if let Some(paragraph_blocks) =
                 self.extract_gap_paragraphs(document, last_end, document.content.plain_text.len())?
             {
-                blocks.extend(paragraph_blocks);
+                for mut para_block in paragraph_blocks {
+                    para_block = self.assign_hierarchy(para_block, &heading_stack, blocks.len());
+                    if self.config.preserve_empty_blocks || !para_block.is_empty() {
+                        blocks.push(para_block);
+                    }
+                }
             }
         }
 
         Ok(blocks)
+    }
+
+    /// Assign parent_block_id and depth to a block based on the current heading stack
+    ///
+    /// # Arguments
+    ///
+    /// * `block` - The block to assign hierarchy to
+    /// * `heading_stack` - The current heading stack
+    /// * `block_index` - The index this block will have in the blocks vector
+    ///
+    /// # Returns
+    ///
+    /// The block with parent_block_id and depth assigned
+    fn assign_hierarchy(
+        &self,
+        mut block: ASTBlock,
+        heading_stack: &HeadingStack,
+        _block_index: usize,
+    ) -> ASTBlock {
+        // Get current depth from the stack
+        let depth = heading_stack.current_depth();
+
+        // Get parent block index from the stack (if any)
+        if let Some(parent_idx) = heading_stack.current_parent() {
+            // Generate a block ID for the parent
+            // Format: block_{index}
+            block.parent_block_id = Some(format!("block_{}", parent_idx));
+            block.depth = Some(depth);
+        } else {
+            // Top-level block (no parent heading)
+            block.parent_block_id = None;
+            block.depth = Some(0);
+        }
+
+        block
     }
 
     /// Build a map of all content positions for efficient processing
