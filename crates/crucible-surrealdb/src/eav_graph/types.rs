@@ -147,110 +147,8 @@ impl fmt::Display for PropertyNamespace {
     }
 }
 
-/// Enumerates the scalar column that a property primarily uses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PropertyValueType {
-    Text,
-    Number,
-    Boolean,
-    Date,
-    Json,
-}
-
-impl PropertyValueType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            PropertyValueType::Text => "text",
-            PropertyValueType::Number => "number",
-            PropertyValueType::Boolean => "boolean",
-            PropertyValueType::Date => "date",
-            PropertyValueType::Json => "json",
-        }
-    }
-}
-
-impl fmt::Display for PropertyValueType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-/// A normalized representation of a property value, including typed columns.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct PropertyValue {
-    pub value: Value,
-    pub value_type: PropertyValueType,
-    pub value_text: Option<String>,
-    pub value_number: Option<f64>,
-    pub value_bool: Option<bool>,
-    pub value_date: Option<DateTime<Utc>>,
-}
-
-impl PropertyValue {
-    pub fn text(value: impl Into<String>) -> Self {
-        let text = value.into();
-        Self {
-            value: Value::String(text.clone()),
-            value_type: PropertyValueType::Text,
-            value_text: Some(text),
-            value_number: None,
-            value_bool: None,
-            value_date: None,
-        }
-    }
-
-    pub fn number(value: f64) -> Self {
-        Self {
-            value: Value::Number(
-                serde_json::Number::from_f64(value).expect("finite floating point value"),
-            ),
-            value_type: PropertyValueType::Number,
-            value_text: None,
-            value_number: Some(value),
-            value_bool: None,
-            value_date: None,
-        }
-    }
-
-    pub fn boolean(value: bool) -> Self {
-        Self {
-            value: Value::Bool(value),
-            value_type: PropertyValueType::Boolean,
-            value_text: None,
-            value_number: None,
-            value_bool: Some(value),
-            value_date: None,
-        }
-    }
-
-    pub fn date(value: DateTime<Utc>) -> Self {
-        Self {
-            value: Value::String(value.to_rfc3339()),
-            value_type: PropertyValueType::Date,
-            value_text: None,
-            value_number: None,
-            value_bool: None,
-            value_date: Some(value),
-        }
-    }
-
-    pub fn json(value: Value) -> Self {
-        Self {
-            value,
-            value_type: PropertyValueType::Json,
-            value_text: None,
-            value_number: None,
-            value_bool: None,
-            value_date: None,
-        }
-    }
-
-    /// Returns the canonical string that should be stored in the `value` column.
-    pub fn as_json_string(&self) -> String {
-        self.value.to_string()
-    }
-}
+// Re-export shared PropertyValue from core
+pub use crucible_core::storage::PropertyValue;
 
 /// A single namespace/key/value record.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -457,23 +355,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn property_value_text_sets_typed_columns() {
-        let pv = PropertyValue::text("hello");
-        assert_eq!(pv.value_type, PropertyValueType::Text);
-        assert_eq!(pv.value_text.as_deref(), Some("hello"));
-        assert!(pv.value_number.is_none());
-        assert!(pv.value_bool.is_none());
-        assert!(pv.value_date.is_none());
-        assert_eq!(pv.as_json_string(), "\"hello\"");
-    }
-
-    #[test]
-    fn property_value_number_sets_numeric_column() {
-        let pv = PropertyValue::number(42.5);
-        assert_eq!(pv.value_type, PropertyValueType::Number);
-        assert_eq!(pv.value_number, Some(42.5));
-        assert!(pv.value_text.is_none());
-        assert_eq!(pv.as_json_string(), "42.5");
+    fn property_value_variants_compile() {
+        // Test that we can use the shared PropertyValue enum
+        let _text = PropertyValue::Text("hello".to_string());
+        let _number = PropertyValue::Number(42.5);
+        let _bool = PropertyValue::Bool(true);
+        let _date = PropertyValue::Date(chrono::NaiveDate::from_ymd_opt(2024, 11, 8).unwrap());
+        let _json = PropertyValue::Json(serde_json::json!({"key": "value"}));
     }
 
     #[test]
