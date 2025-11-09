@@ -1919,6 +1919,7 @@ dependencies = [
  "crucible-llm",
  "crucible-parser",
  "futures",
+ "hex",
  "ndarray 0.16.1",
  "num_cpus",
  "serde",
