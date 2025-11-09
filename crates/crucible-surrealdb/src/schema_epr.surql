@@ -1,10 +1,17 @@
 -- ============================================================================
 -- Crucible Knowledge Kiln - Entity/Property/Relation Schema
 -- ============================================================================
--- Version: 0.1.0 (experimental)
+-- Version: 0.2.0 (experimental)
 -- Created: 2025-11-08
+-- Updated: 2025-11-08
 -- Purpose: Flexible, plugin-ready storage model for all entities, metadata,
 --          relations, blocks, embeddings, and tags.
+--
+-- Changelog v0.2.0:
+-- - Renamed entity_type → type (default: "note")
+-- - Added properties.value_json for complex metadata
+-- - Added relations.context for breadcrumbs/hash references
+-- - Added entity_tags.created_at for provenance tracking
 -- ============================================================================
 
 -- ============================================================================
@@ -18,8 +25,9 @@ DEFINE FIELD id ON TABLE entities
     TYPE string
     ASSERT $value != NONE;
 
-DEFINE FIELD entity_type ON TABLE entities
+DEFINE FIELD type ON TABLE entities
     TYPE string
+    DEFAULT "note"
     ASSERT $value IN ["note", "block", "tag", "section", "media", "person"];
 
 DEFINE FIELD created_at ON TABLE entities
@@ -54,7 +62,7 @@ DEFINE FIELD search_text ON TABLE entities
     FLEXIBLE;
 
 DEFINE INDEX unique_entity_id ON TABLE entities COLUMNS id UNIQUE;
-DEFINE INDEX entity_type_idx ON TABLE entities COLUMNS entity_type;
+DEFINE INDEX entity_type_idx ON TABLE entities COLUMNS type;
 DEFINE INDEX content_hash_idx ON TABLE entities COLUMNS content_hash;
 
 -- ============================================================================
@@ -94,6 +102,9 @@ DEFINE FIELD value_bool ON TABLE properties
 
 DEFINE FIELD value_date ON TABLE properties
     TYPE option<datetime>;
+
+DEFINE FIELD value_json ON TABLE properties
+    TYPE option<object>;
 
 DEFINE FIELD source ON TABLE properties
     TYPE string
@@ -152,6 +163,9 @@ DEFINE FIELD position ON TABLE relations
 DEFINE FIELD metadata ON TABLE relations
     TYPE object
     DEFAULT {};
+
+DEFINE FIELD context ON TABLE relations
+    TYPE option<string>;
 
 DEFINE FIELD created_at ON TABLE relations
     TYPE datetime
@@ -321,6 +335,10 @@ DEFINE FIELD source ON TABLE entity_tags
 DEFINE FIELD confidence ON TABLE entity_tags
     TYPE float
     DEFAULT 1.0;
+
+DEFINE FIELD created_at ON TABLE entity_tags
+    TYPE datetime
+    DEFAULT time::now();
 
 DEFINE INDEX entity_tag_unique ON TABLE entity_tags
     COLUMNS entity_id, tag_id UNIQUE;
