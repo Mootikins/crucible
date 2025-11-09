@@ -48,7 +48,7 @@ examples/test-kiln/
 ├── Ideas & Brainstorming.md               # Innovation and concept development
 ├── API Documentation.md                   # Technical specifications
 ├── Book Review.md                         # Detailed literary analysis
-└── Kiln Network Analysis.md              # Link and relationship mapping
+└── Comprehensive Feature Test.md         # Advanced markdown feature validation
 ```
 
 ## Content Categories
@@ -106,6 +106,12 @@ examples/test-kiln/
 - **Purpose:** Technical API specifications and integration examples
 - **Content Types:** Endpoint documentation, code examples, integration guides
 - **Testing Focus:** Technical search, code navigation, specification queries
+
+### 10. Comprehensive Feature Testing
+**File:** `Comprehensive Feature Test.md`
+- **Purpose:** Advanced markdown feature integration testing
+- **Content Types:** Mathematical expressions, callouts, hashtags, tasks, footnotes
+- **Testing Focus:** LaTeX rendering, Obsidian callouts, enhanced markdown features
 
 ## Link Types Demonstrated
 
