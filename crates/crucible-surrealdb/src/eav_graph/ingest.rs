@@ -163,7 +163,7 @@ mod tests {
         let wikilink_rel = relations
             .iter()
             .find(|r| r.relation_type == "wikilink")
-            .expect("Should have wikilink relation");
+            .unwrap();
         // Adapter adds "entities:" prefix to entity IDs
         assert_eq!(
             wikilink_rel.to_entity_id,
@@ -185,7 +185,7 @@ mod tests {
         let embed_rel = relations
             .iter()
             .find(|r| r.relation_type == "embed")
-            .expect("Should have embed relation");
+            .unwrap();
         assert_eq!(
             embed_rel.to_entity_id,
             Some("entities:note:embedded-note".to_string())
