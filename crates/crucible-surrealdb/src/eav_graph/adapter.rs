@@ -298,7 +298,10 @@ mod tests {
 // Relation Conversion
 // ============================================================================
 
-use super::types::{Relation as SurrealRelation, RelationRecord};
+use super::types::{
+    EntityTag as SurrealEntityTag, EntityTagRecord, Relation as SurrealRelation,
+    Tag as SurrealTag, TagRecord,
+};
 
 /// Convert core Relation to SurrealDB Relation
 ///
@@ -480,5 +483,224 @@ mod relation_conversion_tests {
 
         let core_rel = surreal_relation_to_core(surreal);
         assert_eq!(core_rel.to_entity_id, None);
+    }
+}
+
+// ============================================================================
+// Tag Conversion
+// ============================================================================
+
+/// Convert core Tag to SurrealDB Tag
+///
+/// Maps the database-agnostic core Tag type to the SurrealDB-specific
+/// type with RecordId fields and additional metadata (path, depth).
+pub fn core_tag_to_surreal(
+    tag: core::Tag,
+    tag_id: Option<RecordId<TagRecord>>,
+) -> SurrealTag {
+    // Parse the tag name to build hierarchical path
+    let parts: Vec<&str> = tag.name.split('/').collect();
+    let depth = parts.len() as i32;
+    let path = tag.name.clone();
+
+    SurrealTag {
+        id: tag_id,
+        name: tag.name,
+        parent_id: tag.parent_tag_id.as_ref().map(|id| {
+            // Extract just the ID part if it has "tags:" prefix
+            let id_part = if id.starts_with("tags:") {
+                id.strip_prefix("tags:").unwrap_or(id)
+            } else {
+                id
+            };
+            RecordId::new("tags", id_part)
+        }),
+        path,
+        depth,
+        description: None,
+        color: None,
+        icon: None,
+    }
+}
+
+/// Convert SurrealDB Tag to core Tag
+///
+/// Maps the SurrealDB-specific Tag type back to the database-agnostic
+/// core type. Additional metadata fields (description, color, icon) are lost.
+pub fn surreal_tag_to_core(surreal: SurrealTag) -> core::Tag {
+    core::Tag {
+        id: surreal
+            .id
+            .map(|id| id.id)
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        name: surreal.name,
+        parent_tag_id: surreal.parent_id.map(|id| format!("{}:{}", id.table, id.id)),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    }
+}
+
+/// Convert core EntityTag to SurrealDB EntityTag
+pub fn core_entity_tag_to_surreal(
+    entity_tag: core::EntityTag,
+    entity_tag_id: Option<RecordId<EntityTagRecord>>,
+) -> SurrealEntityTag {
+    SurrealEntityTag {
+        id: entity_tag_id,
+        entity_id: string_to_entity_id(&entity_tag.entity_id),
+        tag_id: {
+            let id_part = if entity_tag.tag_id.starts_with("tags:") {
+                entity_tag.tag_id.strip_prefix("tags:").unwrap_or(&entity_tag.tag_id)
+            } else {
+                &entity_tag.tag_id
+            };
+            RecordId::new("tags", id_part)
+        },
+        source: "parser".to_string(),
+        confidence: 1.0,
+    }
+}
+
+/// Convert SurrealDB EntityTag to core EntityTag
+pub fn surreal_entity_tag_to_core(surreal: SurrealEntityTag) -> core::EntityTag {
+    core::EntityTag {
+        entity_id: entity_id_to_string(&surreal.entity_id),
+        tag_id: format!("{}:{}", surreal.tag_id.table, surreal.tag_id.id),
+        created_at: chrono::Utc::now(),
+    }
+}
+
+#[cfg(test)]
+mod tag_conversion_tests {
+    use super::*;
+
+    #[test]
+    fn test_core_tag_to_surreal_simple() {
+        let now = chrono::Utc::now();
+        let tag = core::Tag {
+            id: "tag1".to_string(),
+            name: "project".to_string(),
+            parent_tag_id: None,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let surreal = core_tag_to_surreal(tag.clone(), None);
+
+        assert_eq!(surreal.name, "project");
+        assert_eq!(surreal.path, "project");
+        assert_eq!(surreal.depth, 1);
+        assert!(surreal.parent_id.is_none());
+    }
+
+    #[test]
+    fn test_core_tag_to_surreal_hierarchical() {
+        let now = chrono::Utc::now();
+        let tag = core::Tag {
+            id: "tag2".to_string(),
+            name: "project/ai/nlp".to_string(),
+            parent_tag_id: Some("tag1".to_string()),
+            created_at: now,
+            updated_at: now,
+        };
+
+        let surreal = core_tag_to_surreal(tag.clone(), None);
+
+        assert_eq!(surreal.name, "project/ai/nlp");
+        assert_eq!(surreal.path, "project/ai/nlp");
+        assert_eq!(surreal.depth, 3);
+        assert_eq!(surreal.parent_id.unwrap().id, "tag1");
+    }
+
+    #[test]
+    fn test_surreal_tag_to_core() {
+        let surreal = SurrealTag {
+            id: Some(RecordId::new("tags", "tag1")),
+            name: "research".to_string(),
+            parent_id: None,
+            path: "research".to_string(),
+            depth: 1,
+            description: Some("Research notes".to_string()),
+            color: Some("#ff0000".to_string()),
+            icon: Some("📚".to_string()),
+        };
+
+        let core_tag = surreal_tag_to_core(surreal);
+
+        assert_eq!(core_tag.name, "research");
+        assert!(core_tag.parent_tag_id.is_none());
+    }
+
+    #[test]
+    fn test_round_trip_tag() {
+        let now = chrono::Utc::now();
+        let original = core::Tag {
+            id: "tag1".to_string(),
+            name: "work/meetings".to_string(),
+            parent_tag_id: Some("parent1".to_string()),
+            created_at: now,
+            updated_at: now,
+        };
+
+        let surreal = core_tag_to_surreal(original.clone(), Some(RecordId::new("tags", "tag1")));
+        let result = surreal_tag_to_core(surreal);
+
+        assert_eq!(result.name, original.name);
+        assert_eq!(result.parent_tag_id, Some("tags:parent1".to_string()));
+    }
+
+    #[test]
+    fn test_core_entity_tag_to_surreal() {
+        let now = chrono::Utc::now();
+        let entity_tag = core::EntityTag {
+            entity_id: "note:test".to_string(),
+            tag_id: "tag1".to_string(),
+            created_at: now,
+        };
+
+        let surreal = core_entity_tag_to_surreal(entity_tag, None);
+
+        assert_eq!(surreal.entity_id.table, "entities");
+        assert_eq!(surreal.entity_id.id, "note:test");
+        assert_eq!(surreal.tag_id.table, "tags");
+        assert_eq!(surreal.tag_id.id, "tag1");
+        assert_eq!(surreal.source, "parser");
+        assert_eq!(surreal.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_surreal_entity_tag_to_core() {
+        let surreal = SurrealEntityTag {
+            id: Some(RecordId::new("entity_tags", "et1")),
+            entity_id: RecordId::new("entities", "note:test"),
+            tag_id: RecordId::new("tags", "tag1"),
+            source: "parser".to_string(),
+            confidence: 1.0,
+        };
+
+        let core_entity_tag = surreal_entity_tag_to_core(surreal);
+
+        assert_eq!(core_entity_tag.entity_id, "entities:note:test");
+        assert_eq!(core_entity_tag.tag_id, "tags:tag1");
+    }
+
+    #[test]
+    fn test_round_trip_entity_tag() {
+        let now = chrono::Utc::now();
+        let original = core::EntityTag {
+            entity_id: "note:test".to_string(),
+            tag_id: "tag1".to_string(),
+            created_at: now,
+        };
+
+        let surreal = core_entity_tag_to_surreal(
+            original.clone(),
+            Some(RecordId::new("entity_tags", "et1")),
+        );
+        let result = surreal_entity_tag_to_core(surreal);
+
+        // IDs will have table prefix after round-trip
+        assert_eq!(result.entity_id, "entities:note:test");
+        assert_eq!(result.tag_id, "tags:tag1");
     }
 }
