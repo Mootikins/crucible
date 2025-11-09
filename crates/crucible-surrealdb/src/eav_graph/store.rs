@@ -588,6 +588,204 @@ impl EAVGraphStore {
     }
 }
 
+// ============================================================================
+// PropertyStorage Trait Implementation
+// ============================================================================
+
+use async_trait::async_trait;
+use crucible_core::storage::{
+    PropertyStorage as CorePropertyStorage, StorageError, StorageResult,
+};
+
+use super::adapter::{
+    core_properties_to_surreal, entity_id_to_string, string_to_entity_id,
+    surreal_properties_to_core,
+};
+
+#[async_trait]
+impl CorePropertyStorage for EAVGraphStore {
+    async fn batch_upsert_properties(
+        &self,
+        properties: Vec<crucible_core::storage::Property>,
+    ) -> StorageResult<usize> {
+        let count = properties.len();
+
+        // Convert core properties to SurrealDB properties
+        let surreal_props = core_properties_to_surreal(properties);
+
+        // Upsert each property
+        for prop in surreal_props {
+            self.upsert_property(&prop)
+                .await
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
+        }
+
+        Ok(count)
+    }
+
+    async fn get_properties(
+        &self,
+        entity_id: &str,
+    ) -> StorageResult<Vec<crucible_core::storage::Property>> {
+        let record_id = string_to_entity_id(entity_id);
+
+        let query = r#"
+            SELECT * FROM properties
+            WHERE entity_id = type::thing($entity_table, $entity_id)
+        "#;
+
+        let params = json!({
+            "entity_table": record_id.table,
+            "entity_id": record_id.id,
+        });
+
+        let result = self
+            .client
+            .query(query, &[params])
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        // Convert Vec<Record> to Vec<Property>
+        let surreal_props: Vec<Property> = result
+            .records
+            .iter()
+            .map(|record| serde_json::from_value(serde_json::to_value(&record.data).unwrap()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| StorageError::Backend(format!("Deserialization error: {}", e)))?;
+
+        Ok(surreal_properties_to_core(surreal_props))
+    }
+
+    async fn get_properties_by_namespace(
+        &self,
+        entity_id: &str,
+        namespace: &crucible_core::storage::PropertyNamespace,
+    ) -> StorageResult<Vec<crucible_core::storage::Property>> {
+        let record_id = string_to_entity_id(entity_id);
+
+        let query = r#"
+            SELECT * FROM properties
+            WHERE entity_id = type::thing($entity_table, $entity_id)
+            AND namespace = $namespace
+        "#;
+
+        let params = json!({
+            "entity_table": record_id.table,
+            "entity_id": record_id.id,
+            "namespace": &namespace.0,
+        });
+
+        let result = self
+            .client
+            .query(query, &[params])
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        let surreal_props: Vec<Property> = result
+            .records
+            .iter()
+            .map(|record| serde_json::from_value(serde_json::to_value(&record.data).unwrap()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| StorageError::Backend(format!("Deserialization error: {}", e)))?;
+
+        Ok(surreal_properties_to_core(surreal_props))
+    }
+
+    async fn get_property(
+        &self,
+        entity_id: &str,
+        namespace: &crucible_core::storage::PropertyNamespace,
+        key: &str,
+    ) -> StorageResult<Option<crucible_core::storage::Property>> {
+        let record_id = string_to_entity_id(entity_id);
+
+        let query = r#"
+            SELECT * FROM properties
+            WHERE entity_id = type::thing($entity_table, $entity_id)
+            AND namespace = $namespace
+            AND key = $key
+            LIMIT 1
+        "#;
+
+        let params = json!({
+            "entity_table": record_id.table,
+            "entity_id": record_id.id,
+            "namespace": &namespace.0,
+            "key": key,
+        });
+
+        let result = self
+            .client
+            .query(query, &[params])
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        let surreal_props: Vec<Property> = result
+            .records
+            .iter()
+            .map(|record| serde_json::from_value(serde_json::to_value(&record.data).unwrap()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| StorageError::Backend(format!("Deserialization error: {}", e)))?;
+
+        Ok(surreal_props
+            .into_iter()
+            .next()
+            .map(super::adapter::surreal_property_to_core))
+    }
+
+    async fn delete_properties(&self, entity_id: &str) -> StorageResult<usize> {
+        let record_id = string_to_entity_id(entity_id);
+
+        let query = r#"
+            DELETE FROM properties
+            WHERE entity_id = type::thing($entity_table, $entity_id)
+        "#;
+
+        let params = json!({
+            "entity_table": record_id.table,
+            "entity_id": record_id.id,
+        });
+
+        let result = self
+            .client
+            .query(query, &[params])
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        // SurrealDB DELETE returns the deleted records
+        Ok(result.records.len())
+    }
+
+    async fn delete_properties_by_namespace(
+        &self,
+        entity_id: &str,
+        namespace: &crucible_core::storage::PropertyNamespace,
+    ) -> StorageResult<usize> {
+        let record_id = string_to_entity_id(entity_id);
+
+        let query = r#"
+            DELETE FROM properties
+            WHERE entity_id = type::thing($entity_table, $entity_id)
+            AND namespace = $namespace
+        "#;
+
+        let params = json!({
+            "entity_table": record_id.table,
+            "entity_id": record_id.id,
+            "namespace": &namespace.0,
+        });
+
+        let result = self
+            .client
+            .query(query, &[params])
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        // SurrealDB DELETE returns the deleted records
+        Ok(result.records.len())
+    }
+}
+
 fn thing_value<T>(id: &RecordId<T>) -> serde_json::Value {
     let thing = Thing::from((id.table.as_str(), id.id.as_str()));
     serde_json::to_value(thing).expect("Thing serialization")
