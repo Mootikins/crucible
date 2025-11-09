@@ -75,7 +75,7 @@ pub fn core_property_to_surreal(
     SurrealProperty {
         id: property_id,
         entity_id,
-        namespace: SurrealPropertyNamespace(core_prop.namespace.0),
+        namespace: SurrealPropertyNamespace(core_prop.namespace.0.to_string()),
         key: core_prop.key,
         value: core_prop.value,
         source: "parser".to_string(),
@@ -97,7 +97,7 @@ pub fn core_property_to_surreal(
 pub fn surreal_property_to_core(surreal_prop: SurrealProperty) -> core::Property {
     core::Property {
         entity_id: entity_id_to_string(&surreal_prop.entity_id),
-        namespace: core::PropertyNamespace(surreal_prop.namespace.0),
+        namespace: core::PropertyNamespace(surreal_prop.namespace.0.into()),
         key: surreal_prop.key,
         value: surreal_prop.value,
         created_at: surreal_prop.created_at,
@@ -122,7 +122,7 @@ pub fn core_properties_to_surreal(core_props: Vec<core::Property>) -> Vec<Surrea
             // Generate a property ID: entities:note:test:frontmatter:title
             let prop_id = RecordId::new(
                 "properties",
-                format!("{}:{}:{}", prop.entity_id, prop.namespace.0, prop.key),
+                format!("{}:{}:{}", prop.entity_id, prop.namespace.0.as_ref(), prop.key),
             );
             core_property_to_surreal(prop, Some(prop_id))
         })
@@ -199,7 +199,7 @@ mod tests {
 
         assert_eq!(surreal_prop.entity_id.table, "entities");
         assert_eq!(surreal_prop.entity_id.id, "note:test");
-        assert_eq!(surreal_prop.namespace.0, "frontmatter");
+        assert_eq!(surreal_prop.namespace.0.as_str(), "frontmatter");
         assert_eq!(surreal_prop.key, "title");
         assert_eq!(
             surreal_prop.value,
@@ -225,7 +225,7 @@ mod tests {
         let core_prop = surreal_property_to_core(surreal_prop);
 
         assert_eq!(core_prop.entity_id, "entities:note:test");
-        assert_eq!(core_prop.namespace.0, "frontmatter");
+        assert_eq!(core_prop.namespace.0.as_ref(), "frontmatter");
         assert_eq!(core_prop.key, "author");
         assert_eq!(
             core_prop.value,
@@ -249,7 +249,7 @@ mod tests {
         let result = surreal_property_to_core(surreal);
 
         assert_eq!(result.entity_id, "entities:note:test");
-        assert_eq!(result.namespace.0, original.namespace.0);
+        assert_eq!(result.namespace.0.as_ref(), original.namespace.0.as_ref());
         assert_eq!(result.key, original.key);
         assert_eq!(result.value, original.value);
     }

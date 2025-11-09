@@ -118,7 +118,7 @@ impl EAVGraphStore {
             "id": id.id,
             "entity_table": entity_id.table,
             "entity_id": entity_id.id,
-            "namespace": property.namespace.0,
+            "namespace": &property.namespace.0,
             "key": property.key,
             "value": value_json,
             "source": property.source,
@@ -637,17 +637,82 @@ impl CorePropertyStorage for EAVGraphStore {
         &self,
         properties: Vec<crucible_core::storage::Property>,
     ) -> StorageResult<usize> {
+        if properties.is_empty() {
+            return Ok(0);
+        }
+
         let count = properties.len();
 
         // Convert core properties to SurrealDB properties
         let surreal_props = core_properties_to_surreal(properties);
 
-        // Upsert each property
-        for prop in surreal_props {
-            self.upsert_property(&prop)
-                .await
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
-        }
+        // Build array of property objects for batch insert
+        let props_array: Vec<serde_json::Value> = surreal_props
+            .iter()
+            .map(|prop| {
+                let prop_id = prop
+                    .id
+                    .as_ref()
+                    .expect("Property must have ID from conversion");
+
+                // Serialize PropertyValue as JSON
+                let value_json = serde_json::to_value(&prop.value)
+                    .expect("PropertyValue should always serialize");
+
+                json!({
+                    "prop_table": prop_id.table,
+                    "prop_id": prop_id.id,
+                    "entity_table": prop.entity_id.table,
+                    "entity_id": prop.entity_id.id,
+                    "namespace": prop.namespace.0,
+                    "key": prop.key,
+                    "value": value_json,
+                    "source": prop.source,
+                    "confidence": prop.confidence,
+                })
+            })
+            .collect();
+
+        // Single batch upsert query using FOR loop
+        self.client
+            .query(
+                r#"
+                FOR $prop IN $properties {
+                    LET $existing = (SELECT * FROM properties WHERE
+                        entity_id = type::thing($prop.entity_table, $prop.entity_id)
+                        AND namespace = $prop.namespace
+                        AND key = $prop.key
+                        LIMIT 1);
+
+                    IF array::len($existing) > 0 THEN
+                        UPDATE $existing[0].id
+                        SET
+                            value = $prop.value,
+                            source = $prop.source,
+                            confidence = $prop.confidence,
+                            updated_at = time::now()
+                        RETURN NONE
+                    ELSE
+                        CREATE type::thing($prop.prop_table, $prop.prop_id)
+                        SET
+                            entity_id = type::thing($prop.entity_table, $prop.entity_id),
+                            namespace = $prop.namespace,
+                            key = $prop.key,
+                            value = $prop.value,
+                            source = $prop.source,
+                            confidence = $prop.confidence,
+                            created_at = time::now(),
+                            updated_at = time::now()
+                        RETURN NONE
+                    END;
+                };
+                "#,
+                &[json!({
+                    "properties": props_array
+                })],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
 
         Ok(count)
     }
@@ -715,7 +780,7 @@ impl CorePropertyStorage for EAVGraphStore {
                 &[json!({
                     "table": "entities",
                     "id": record_id.id,
-                    "namespace": namespace.0
+                    "namespace": namespace.0.as_ref()
                 })],
             )
             .await
@@ -755,7 +820,7 @@ impl CorePropertyStorage for EAVGraphStore {
                 &[json!({
                     "table": "entities",
                     "id": record_id.id,
-                    "namespace": namespace.0,
+                    "namespace": namespace.0.as_ref(),
                     "key": key
                 })],
             )
@@ -829,7 +894,7 @@ impl CorePropertyStorage for EAVGraphStore {
                 &[json!({
                     "table": "entities",
                     "id": record_id.id,
-                    "namespace": namespace.0
+                    "namespace": namespace.0.as_ref()
                 })],
             )
             .await
