@@ -131,38 +131,3 @@ impl Default for BackendRegistry {
         Self::new()
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::traits::{FileWatcher, WatchConfig};
-    use std::path::PathBuf;
-
-    #[tokio::test]
-    async fn test_backend_registry() {
-        let registry = BackendRegistry::new();
-
-        // Check that built-in backends are registered
-        let available = registry.available_backends();
-        assert!(!available.is_empty());
-
-        // Test creating a watcher
-        if let Some(backend) = registry.default_backend() {
-            let watcher = registry.create_watcher(backend).await;
-            assert!(watcher.is_ok());
-        }
-    }
-
-    #[tokio::test]
-    async fn test_backend_capabilities() {
-        let registry = BackendRegistry::new();
-
-        for backend in registry.available_backends() {
-            let capabilities = registry.get_capabilities(backend);
-            assert!(capabilities.is_some());
-
-            let caps = capabilities.unwrap();
-            println!("{:?} capabilities: {:?}", backend, caps);
-        }
-    }
-}

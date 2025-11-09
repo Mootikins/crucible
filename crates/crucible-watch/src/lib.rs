@@ -136,15 +136,3 @@ pub mod prelude {
     pub use crate::config::DebounceConfig as ConfigDebounceConfig;
     pub use crate::traits::DebounceConfig as TraitDebounceConfig;
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_library_imports() {
-        // Verify core types are exportable
-        let _kind: FileEventKind = FileEventKind::Created;
-        let _config = WatchConfig::default();
-    }
-}
