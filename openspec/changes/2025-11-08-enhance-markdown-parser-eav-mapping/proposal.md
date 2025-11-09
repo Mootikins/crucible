@@ -240,29 +240,42 @@ See `tasks.md` for detailed task breakdown.
 
 **QA Checkpoint Passed**: Code review completed, all antipatterns addressed, all tests passing
 
-### Phase 2: Block Parsing with Heading Hierarchy (In Progress)
+### Phase 2: Block Parsing with Heading Hierarchy ✅ COMPLETE (2025-11-09)
 
-**Status**: Task 2.1 COMPLETE - Hierarchy Logic Implemented ✅ | Blocker: Parser Heading Extraction ⚠️
+**Status**: Fully implemented with comprehensive test coverage
 
 **What was completed:**
+
+#### Task 2.1: Heading Hierarchy Tracking (ASTBlock)
 1. ✅ Added `parent_block_id` and `depth` fields to ASTBlock
 2. ✅ Implemented HeadingStack for hierarchy tracking
 3. ✅ Enhanced BlockExtractor with hierarchy assignment logic
 4. ✅ Comprehensive test suite (6 scenarios)
 5. ✅ Builder methods and helpers for ASTBlock
 
-**Commits:**
-- `db17faa` - Heading hierarchy tracking implementation
+**Commit:** `db17faa` - Heading hierarchy tracking implementation
 
-**Blocker Identified:**
-- Parser's `parse_content()` not populating `document.content.headings`
-- Headings being treated as paragraphs
-- Needs investigation/fix in parser implementation
-- Hierarchy logic itself is sound and ready
+#### Task 2.2: BlockStorage Trait Implementation
+1. ✅ Defined database-agnostic `BlockStorage` trait (`crucible-core/src/storage/eav_graph_traits.rs`)
+2. ✅ Implemented trait in SurrealDB layer (`crucible-surrealdb/src/eav_graph/store.rs`)
+3. ✅ Created type adapters for Block ↔ BlockNode conversion
+4. ✅ Enhanced block building with ALL 5 types (headings, paragraphs, code, lists, callouts)
+5. ✅ 10 integration tests validating storage, retrieval, hierarchy, and updates
+6. ✅ BLAKE3 content hashing for all blocks
+7. ✅ Metadata support for each block type (language, level, type, item_count, callout_type, title)
 
-**Next Steps:**
-- Debug parser heading extraction OR use manual test fixtures
-- Complete Task 2.2: Implement BlockStorage trait
-- Continue with integration and testing
+**Files Created/Modified:**
+- `crucible-core/src/storage/eav_graph_traits.rs` - Block, BlockStorage trait
+- `crucible-surrealdb/src/eav_graph/store.rs` - BlockStorage implementation
+- `crucible-surrealdb/src/eav_graph/adapter.rs` - Type conversion layer
+- `crucible-surrealdb/src/eav_graph/ingest.rs` - Enhanced block building (lines 246-379)
+- `crucible-surrealdb/tests/block_storage_integration_tests.rs` - 10 comprehensive tests
+
+**Test Coverage:** 10/10 integration tests passing
+
+**QA Checkpoints Passed:**
+- ✅ QA Checkpoint 2.1: Block types create correct entities with metadata
+- ✅ QA Checkpoint 2.2: BlockStorage trait fully implemented
+- ✅ QA Checkpoint 3 (Code Review): Implementation is simple and SOLID-compliant
 
 **See**: `tasks.md` for detailed implementation plan
