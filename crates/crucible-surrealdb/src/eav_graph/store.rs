@@ -4,8 +4,8 @@ use serde_json::{json, Value};
 use crate::SurrealClient;
 
 use super::types::{
-    BlockNode, EmbeddingVector, Entity, EntityRecord, EntityTag, EntityTagRecord, EntityType,
-    Property, PropertyRecord, PropertyValue, RecordId, Relation, RelationRecord, Tag, TagRecord,
+    BlockNode, EmbeddingVector, Entity, EntityRecord, EntityTag,
+    Property, PropertyRecord, RecordId, Relation, RelationRecord, Tag, TagRecord,
 };
 use surrealdb::sql::Thing;
 
@@ -80,11 +80,9 @@ impl EAVGraphStore {
             .ok_or_else(|| anyhow!("property id must be provided"))?;
 
         let entity_id = &property.entity_id;
-        let value = &property.value;
 
-        // Extract denormalized columns from enum
-        let (value_json, value_type, value_text, value_number, value_bool, value_date) =
-            property_value_to_columns(value);
+        // Serialize PropertyValue as JSON object
+        let value_json = serde_json::to_value(&property.value)?;
 
         let params = json!({
             "table": id.table,
@@ -94,11 +92,6 @@ impl EAVGraphStore {
             "namespace": property.namespace.0,
             "key": property.key,
             "value": value_json,
-            "value_type": value_type,
-            "value_text": value_text,
-            "value_number": value_number,
-            "value_bool": value_bool,
-            "value_date": value_date,
             "source": property.source,
             "confidence": property.confidence,
         });
@@ -113,11 +106,6 @@ impl EAVGraphStore {
                     namespace = $namespace,
                     key = $key,
                     value = $value,
-                    value_type = $value_type,
-                    value_text = $value_text,
-                    value_number = $value_number,
-                    value_bool = $value_bool,
-                    value_date = $value_date,
                     source = $source,
                     confidence = $confidence
                 RETURN AFTER;
@@ -136,11 +124,6 @@ impl EAVGraphStore {
                         namespace = $namespace,
                         key = $key,
                         value = $value,
-                        value_type = $value_type,
-                        value_text = $value_text,
-                        value_number = $value_number,
-                        value_bool = $value_bool,
-                        value_date = $value_date,
                         source = $source,
                         confidence = $confidence
                     RETURN AFTER;
@@ -598,7 +581,7 @@ use crucible_core::storage::{
 };
 
 use super::adapter::{
-    core_properties_to_surreal, entity_id_to_string, string_to_entity_id,
+    core_properties_to_surreal, string_to_entity_id,
     surreal_properties_to_core,
 };
 
@@ -629,23 +612,18 @@ impl CorePropertyStorage for EAVGraphStore {
     ) -> StorageResult<Vec<crucible_core::storage::Property>> {
         let record_id = string_to_entity_id(entity_id);
 
-        let query = r#"
-            SELECT * FROM properties
-            WHERE entity_id = type::thing($entity_table, $entity_id)
-        "#;
-
-        let params = json!({
-            "entity_table": record_id.table,
-            "entity_id": record_id.id,
-        });
+        let query = format!(
+            r#"SELECT * FROM properties WHERE entity_id = type::thing('entities', '{}')"#,
+            record_id.id
+        );
 
         let result = self
             .client
-            .query(query, &[params])
+            .query(&query, &[])
             .await
             .map_err(|e| StorageError::Backend(e.to_string()))?;
 
-        // Convert Vec<Record> to Vec<Property>
+        // Deserialize from unwrapped JSON (SurrealClient handles unwrapping)
         let surreal_props: Vec<Property> = result
             .records
             .iter()
@@ -663,21 +641,14 @@ impl CorePropertyStorage for EAVGraphStore {
     ) -> StorageResult<Vec<crucible_core::storage::Property>> {
         let record_id = string_to_entity_id(entity_id);
 
-        let query = r#"
-            SELECT * FROM properties
-            WHERE entity_id = type::thing($entity_table, $entity_id)
-            AND namespace = $namespace
-        "#;
-
-        let params = json!({
-            "entity_table": record_id.table,
-            "entity_id": record_id.id,
-            "namespace": &namespace.0,
-        });
+        let query = format!(
+            r#"SELECT * FROM properties WHERE entity_id = type::thing('entities', '{}') AND namespace = '{}'"#,
+            record_id.id, namespace.0
+        );
 
         let result = self
             .client
-            .query(query, &[params])
+            .query(&query, &[])
             .await
             .map_err(|e| StorageError::Backend(e.to_string()))?;
 
@@ -699,24 +670,14 @@ impl CorePropertyStorage for EAVGraphStore {
     ) -> StorageResult<Option<crucible_core::storage::Property>> {
         let record_id = string_to_entity_id(entity_id);
 
-        let query = r#"
-            SELECT * FROM properties
-            WHERE entity_id = type::thing($entity_table, $entity_id)
-            AND namespace = $namespace
-            AND key = $key
-            LIMIT 1
-        "#;
-
-        let params = json!({
-            "entity_table": record_id.table,
-            "entity_id": record_id.id,
-            "namespace": &namespace.0,
-            "key": key,
-        });
+        let query = format!(
+            r#"SELECT * FROM properties WHERE entity_id = type::thing('entities', '{}') AND namespace = '{}' AND key = '{}' LIMIT 1"#,
+            record_id.id, namespace.0, key
+        );
 
         let result = self
             .client
-            .query(query, &[params])
+            .query(&query, &[])
             .await
             .map_err(|e| StorageError::Backend(e.to_string()))?;
 
@@ -736,19 +697,14 @@ impl CorePropertyStorage for EAVGraphStore {
     async fn delete_properties(&self, entity_id: &str) -> StorageResult<usize> {
         let record_id = string_to_entity_id(entity_id);
 
-        let query = r#"
-            DELETE FROM properties
-            WHERE entity_id = type::thing($entity_table, $entity_id)
-        "#;
-
-        let params = json!({
-            "entity_table": record_id.table,
-            "entity_id": record_id.id,
-        });
+        let query = format!(
+            r#"DELETE FROM properties WHERE entity_id = type::thing('entities', '{}') RETURN BEFORE"#,
+            record_id.id
+        );
 
         let result = self
             .client
-            .query(query, &[params])
+            .query(&query, &[])
             .await
             .map_err(|e| StorageError::Backend(e.to_string()))?;
 
@@ -763,21 +719,14 @@ impl CorePropertyStorage for EAVGraphStore {
     ) -> StorageResult<usize> {
         let record_id = string_to_entity_id(entity_id);
 
-        let query = r#"
-            DELETE FROM properties
-            WHERE entity_id = type::thing($entity_table, $entity_id)
-            AND namespace = $namespace
-        "#;
-
-        let params = json!({
-            "entity_table": record_id.table,
-            "entity_id": record_id.id,
-            "namespace": &namespace.0,
-        });
+        let query = format!(
+            r#"DELETE FROM properties WHERE entity_id = type::thing('entities', '{}') AND namespace = '{}' RETURN BEFORE"#,
+            record_id.id, namespace.0
+        );
 
         let result = self
             .client
-            .query(query, &[params])
+            .query(&query, &[])
             .await
             .map_err(|e| StorageError::Backend(e.to_string()))?;
 
@@ -791,74 +740,13 @@ fn thing_value<T>(id: &RecordId<T>) -> serde_json::Value {
     serde_json::to_value(thing).expect("Thing serialization")
 }
 
-/// Convert PropertyValue enum to denormalized column values for database storage
-///
-/// Returns: (value_json, value_type, value_text, value_number, value_bool, value_date)
-fn property_value_to_columns(
-    value: &PropertyValue,
-) -> (Value, &'static str, Option<String>, Option<f64>, Option<bool>, Option<String>) {
-    use chrono::{DateTime, Utc};
-
-    match value {
-        PropertyValue::Text(s) => (
-            Value::String(s.clone()),
-            "text",
-            Some(s.clone()),
-            None,
-            None,
-            None,
-        ),
-        PropertyValue::Number(n) => (
-            serde_json::Number::from_f64(*n)
-                .map(Value::Number)
-                .unwrap_or(Value::Null),
-            "number",
-            None,
-            Some(*n),
-            None,
-            None,
-        ),
-        PropertyValue::Bool(b) => (
-            Value::Bool(*b),
-            "boolean",
-            None,
-            None,
-            Some(*b),
-            None,
-        ),
-        PropertyValue::Date(d) => {
-            // Convert NaiveDate to DateTime<Utc> for storage
-            let datetime = d
-                .and_hms_opt(0, 0, 0)
-                .map(|dt| DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc));
-            let date_str = datetime.as_ref().map(|dt| dt.to_rfc3339());
-
-            (
-                Value::String(d.to_string()),
-                "date",
-                None,
-                None,
-                None,
-                date_str,
-            )
-        }
-        PropertyValue::Json(v) => (
-            v.clone(),
-            "json",
-            None,
-            None,
-            None,
-            None,
-        ),
-    }
-}
-
 // -- Tests -----------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::eav_graph::apply_eav_graph_schema;
+    use crate::eav_graph::types::{EntityType, PropertyValue};
     use crate::SurrealClient;
 
     fn entity_id() -> RecordId<EntityRecord> {
@@ -901,8 +789,12 @@ mod tests {
 
         assert_eq!(result.records.len(), 1);
         let record = &result.records[0];
+
+        // Verify the value is stored as JSON with the PropertyValue structure
+        let value = record.data.get("value").unwrap();
+        assert!(value.is_object());
         assert_eq!(
-            record.data.get("value_text").unwrap().as_str(),
+            value.get("text").unwrap().as_str(),
             Some("Sample")
         );
     }
