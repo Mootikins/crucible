@@ -9,62 +9,135 @@ use crate::types::{
     ASTBlock, ASTBlockMetadata, ASTBlockType, Callout, CodeBlock, Heading, LatexExpression,
     ListBlock, ListType, ParsedDocument,
 };
+use std::collections::HashMap;
 
-/// Tracks heading hierarchy for assigning parent-child relationships
+/// Tracks heading hierarchy using a tree structure
 ///
-/// The HeadingStack maintains a stack of headings by level. When a new heading
-/// is encountered, the stack is popped until we find a heading at a higher level
-/// (lower number), which becomes the parent.
+/// The HeadingTree maintains a tree of headings where each heading knows its parent
+/// and children. This allows for proper depth calculation regardless of heading level.
+///
+/// Key insight: Depth is determined by position in the tree, NOT by heading level (H1-H6).
+/// Multiple H1s can exist at different depths if they appear in different contexts.
 ///
 /// Example:
-/// - H1: Stack becomes [(1, "h1-id")]
-/// - H2: Stack becomes [(1, "h1-id"), (2, "h2-id")]
-/// - H1: Stack becomes [(1, "new-h1-id")]  // Popped H2 and first H1
+/// - H1: Tree root, depth=0
+/// - H2: Child of H1, depth=1
+/// - H1: New root, depth=0 (not a sibling of first H1)
 #[derive(Debug, Clone)]
-struct HeadingStack {
-    /// Stack of (level, block_index) pairs
-    /// Level is 1-6 for H1-H6
-    /// Block index is the position in the blocks vector
-    stack: Vec<(u8, usize)>,
+struct HeadingTree {
+    /// All heading nodes indexed by their block_index
+    nodes: HashMap<usize, HeadingNode>,
+    /// Current path from root to current heading: [(level, block_index), ...]
+    /// This represents the "active" branch of the tree
+    current_path: Vec<(u8, usize)>,
 }
 
-impl HeadingStack {
+#[derive(Debug, Clone)]
+struct HeadingNode {
+    #[allow(dead_code)]
+    level: u8,
+    #[allow(dead_code)]
+    block_index: usize,
+    #[allow(dead_code)]
+    parent_index: Option<usize>,
+    children: Vec<usize>,
+}
+
+impl HeadingTree {
     fn new() -> Self {
-        Self { stack: Vec::new() }
+        Self {
+            nodes: HashMap::new(),
+            current_path: Vec::new(),
+        }
     }
 
-    /// Push a new heading onto the stack
+    /// Add a new heading to the tree and return its parent index and depth
     ///
-    /// This pops all headings at the same level or lower (higher numbers) before pushing.
-    /// The remaining top heading becomes the parent of the new heading.
-    fn push(&mut self, level: u8, block_index: usize) {
-        // Pop headings at same or deeper level
-        while let Some((top_level, _)) = self.stack.last() {
-            if *top_level >= level {
-                self.stack.pop();
-            } else {
-                break;
+    /// This method:
+    /// 1. Finds the appropriate parent based on heading level
+    /// 2. Calculates the depth based on tree position
+    /// 3. Updates the tree structure
+    /// 4. Returns (parent_index, depth) for immediate use
+    fn add_heading(&mut self, level: u8, block_index: usize) -> (Option<usize>, u32) {
+        let parent_idx = self.find_parent_for_level(level);
+        let depth = self.calculate_depth_for_level(level);
+
+        // Create the node
+        let node = HeadingNode {
+            level,
+            block_index,
+            parent_index: parent_idx,
+            children: Vec::new(),
+        };
+
+        // Add to parent's children if there is a parent
+        if let Some(parent) = parent_idx {
+            if let Some(parent_node) = self.nodes.get_mut(&parent) {
+                parent_node.children.push(block_index);
             }
         }
-        self.stack.push((level, block_index));
+
+        // Store the node
+        self.nodes.insert(block_index, node);
+
+        // Update current path
+        self.update_path(level, block_index);
+
+        (parent_idx, depth)
+    }
+
+    /// Find the appropriate parent for a heading at the given level
+    ///
+    /// Rules:
+    /// - Walk backward through current_path
+    /// - Find the first heading with level < new_level
+    /// - That heading becomes the parent
+    /// - If no such heading exists, this is a root (no parent)
+    fn find_parent_for_level(&self, level: u8) -> Option<usize> {
+        for (path_level, path_idx) in self.current_path.iter().rev() {
+            if *path_level < level {
+                return Some(*path_idx);
+            }
+        }
+        None
+    }
+
+    /// Calculate the depth for a heading at the given level
+    ///
+    /// Depth is the number of headings in the path that will be ancestors
+    /// of this new heading (i.e., headings with level < new_level)
+    fn calculate_depth_for_level(&self, level: u8) -> u32 {
+        self.current_path
+            .iter()
+            .filter(|(path_level, _)| *path_level < level)
+            .count() as u32
+    }
+
+    /// Update the current path after adding a new heading
+    ///
+    /// This removes any headings at the same or deeper level,
+    /// then adds the new heading to the path
+    fn update_path(&mut self, level: u8, block_index: usize) {
+        // Remove headings at same or deeper level (higher or equal level numbers)
+        self.current_path.retain(|(path_level, _)| *path_level < level);
+        // Add new heading to path
+        self.current_path.push((level, block_index));
     }
 
     /// Get the current parent heading (if any)
     ///
-    /// Returns None if there's no parent (top-level block)
-    /// Returns Some(block_index) if there's a parent heading
+    /// Returns the last heading in the current path, which is the
+    /// parent context for any non-heading blocks
     fn current_parent(&self) -> Option<usize> {
-        self.stack.last().map(|(_, idx)| *idx)
+        self.current_path.last().map(|(_, idx)| *idx)
     }
 
-    /// Get the current depth (number of headings in the stack)
+    /// Get the current depth for non-heading blocks
     ///
-    /// - 0: No headings (top-level blocks)
-    /// - 1: Under one heading (H1)
-    /// - 2: Under two headings (H1 → H2)
-    /// - etc.
+    /// This is the full length of the current path, since non-heading
+    /// blocks are children of the most recent heading
     fn current_depth(&self) -> u32 {
-        self.stack.len() as u32
+        self.current_path.len() as u32
     }
 }
 
@@ -164,7 +237,7 @@ impl BlockExtractor {
     pub fn extract_blocks(&self, document: &ParsedDocument) -> Result<Vec<ASTBlock>, ParseError> {
         let mut blocks = Vec::new();
         let mut last_end = 0;
-        let mut heading_stack = HeadingStack::new();
+        let mut heading_tree = HeadingTree::new();
 
         // Create a map of all content positions for efficient lookup
         let content_map = self.build_content_map(document);
@@ -178,9 +251,9 @@ impl BlockExtractor {
                 if let Some(paragraph_blocks) =
                     self.extract_gap_paragraphs(document, last_end, position.start_offset)?
                 {
-                    // Assign hierarchy to paragraph blocks based on current heading stack
+                    // Assign hierarchy to paragraph blocks based on current heading tree
                     for mut para_block in paragraph_blocks {
-                        para_block = self.assign_hierarchy(para_block, &heading_stack, blocks.len());
+                        para_block = self.assign_hierarchy(para_block, &heading_tree, blocks.len());
                         if self.config.preserve_empty_blocks || !para_block.is_empty() {
                             blocks.push(para_block);
                         }
@@ -209,12 +282,18 @@ impl BlockExtractor {
                 if self.config.preserve_empty_blocks || !block.is_empty() {
                     let block_index = blocks.len();
 
-                    // Assign hierarchy before adding to blocks
-                    block = self.assign_hierarchy(block, &heading_stack, block_index);
-
-                    // If this is a heading, update the heading stack AFTER assigning its own hierarchy
+                    // For headings, calculate hierarchy BEFORE updating tree
                     if let Some(level) = block.heading_level() {
-                        heading_stack.push(level, block_index);
+                        let (parent_idx, depth) = heading_tree.add_heading(level, block_index);
+                        if let Some(parent) = parent_idx {
+                            block.parent_block_id = Some(format!("block_{}", parent));
+                        } else {
+                            block.parent_block_id = None;
+                        }
+                        block.depth = Some(depth);
+                    } else {
+                        // For non-headings, use current tree state
+                        block = self.assign_hierarchy(block, &heading_tree, block_index);
                     }
 
                     blocks.push(block);
@@ -229,7 +308,7 @@ impl BlockExtractor {
                 self.extract_gap_paragraphs(document, last_end, document.content.plain_text.len())?
             {
                 for mut para_block in paragraph_blocks {
-                    para_block = self.assign_hierarchy(para_block, &heading_stack, blocks.len());
+                    para_block = self.assign_hierarchy(para_block, &heading_tree, blocks.len());
                     if self.config.preserve_empty_blocks || !para_block.is_empty() {
                         blocks.push(para_block);
                     }
@@ -240,12 +319,12 @@ impl BlockExtractor {
         Ok(blocks)
     }
 
-    /// Assign parent_block_id and depth to a block based on the current heading stack
+    /// Assign parent_block_id and depth to a block based on the current heading tree
     ///
     /// # Arguments
     ///
     /// * `block` - The block to assign hierarchy to
-    /// * `heading_stack` - The current heading stack
+    /// * `heading_tree` - The current heading tree
     /// * `block_index` - The index this block will have in the blocks vector
     ///
     /// # Returns
@@ -254,14 +333,14 @@ impl BlockExtractor {
     fn assign_hierarchy(
         &self,
         mut block: ASTBlock,
-        heading_stack: &HeadingStack,
+        heading_tree: &HeadingTree,
         _block_index: usize,
     ) -> ASTBlock {
-        // Get current depth from the stack
-        let depth = heading_stack.current_depth();
+        // Get current depth from the tree
+        let depth = heading_tree.current_depth();
 
-        // Get parent block index from the stack (if any)
-        if let Some(parent_idx) = heading_stack.current_parent() {
+        // Get parent block index from the tree (if any)
+        if let Some(parent_idx) = heading_tree.current_parent() {
             // Generate a block ID for the parent
             // Format: block_{index}
             block.parent_block_id = Some(format!("block_{}", parent_idx));
