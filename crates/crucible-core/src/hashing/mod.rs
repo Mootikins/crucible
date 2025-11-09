@@ -18,6 +18,7 @@ pub mod algorithm;
 pub mod ast_converter;
 pub mod blake3;
 pub mod block_hasher;
+pub mod block_link;
 pub mod file_hasher;
 pub mod normalization;
 pub mod sha256;
@@ -33,6 +34,7 @@ pub use block_hasher::{
     new_blake3_block_hasher, new_sha256_block_hasher, Blake3BlockHasher, BlockHashStats,
     BlockHasher, Sha256BlockHasher, BLAKE3_BLOCK_HASHER, SHA256_BLOCK_HASHER,
 };
+pub use block_link::{compute_block_hash, hash_to_hex, hex_to_hash};
 pub use file_hasher::{
     Blake3FileHasher, FileHasher, Sha256FileHasher, BLAKE3_HASHER, SHA256_HASHER,
 };
