@@ -424,35 +424,6 @@ pub trait PropertyStorage: Send + Sync {
 }
 
 // ============================================================================
-// Relation Types
-// ============================================================================
-
-/// Relation types in the knowledge graph
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RelationType {
-    /// Wikilink reference (e.g., [[target]])
-    Wikilink,
-    /// Embed reference (e.g., ![[target]])
-    Embed,
-    /// Block reference (e.g., [[note#^block-id]])
-    BlockReference,
-    /// Tag reference (implicit relation through tags)
-    Tag,
-    /// Custom relation type
-    Custom,
-}
-
-/// A relation between two entities
-#[derive(Debug, Clone, PartialEq)]
-pub struct Relation {
-    pub source_entity_id: String,
-    pub target_entity_id: String,
-    pub relation_type: RelationType,
-    pub created_at: DateTime<Utc>,
-    pub metadata: Option<Value>,
-}
-
-// ============================================================================
 // Block Types
 // ============================================================================
 
@@ -490,60 +461,6 @@ pub struct EntityTag {
     pub entity_id: String,
     pub tag_id: String,
     pub created_at: DateTime<Utc>,
-}
-
-// ============================================================================
-// RelationStorage Trait
-// ============================================================================
-
-/// Storage for entity relations (wikilinks, embeds, block references)
-///
-/// This trait manages the graph connections between entities. Relations capture
-/// the links between notes, embedded content, and block references that form
-/// the knowledge graph structure.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use crucible_core::storage::{RelationStorage, Relation, RelationType};
-///
-/// async fn create_wikilink<S: RelationStorage>(
-///     storage: &S,
-///     from: &str,
-///     to: &str,
-/// ) -> StorageResult<()> {
-///     let relation = Relation {
-///         source_entity_id: from.to_string(),
-///         target_entity_id: to.to_string(),
-///         relation_type: RelationType::Wikilink,
-///         created_at: Utc::now(),
-///         metadata: None,
-///     };
-///
-///     storage.store_relation(relation).await?;
-///     Ok(())
-/// }
-/// ```
-#[async_trait]
-pub trait RelationStorage: Send + Sync {
-    /// Store a new relation
-    async fn store_relation(&self, relation: Relation) -> StorageResult<()>;
-
-    /// Get all outgoing relations from an entity
-    async fn get_outgoing_relations(&self, entity_id: &str) -> StorageResult<Vec<Relation>>;
-
-    /// Get all incoming relations to an entity
-    async fn get_incoming_relations(&self, entity_id: &str) -> StorageResult<Vec<Relation>>;
-
-    /// Get relations filtered by type
-    async fn get_relations_by_type(
-        &self,
-        entity_id: &str,
-        relation_type: RelationType,
-    ) -> StorageResult<Vec<Relation>>;
-
-    /// Delete all relations for an entity
-    async fn delete_relations(&self, entity_id: &str) -> StorageResult<usize>;
 }
 
 // ============================================================================
@@ -670,6 +587,269 @@ pub trait TagStorage: Send + Sync {
 
     /// Delete a tag and optionally its associations
     async fn delete_tag(&self, id: &str, delete_associations: bool) -> StorageResult<usize>;
+}
+
+// ============================================================================
+// RelationStorage Trait
+// ============================================================================
+
+/// A relation between two entities (wikilink, embed, inline link, etc.)
+///
+/// Relations represent connections in the knowledge graph including:
+/// - Wikilinks: `[[Note]]`, `[[Note|Alias]]`, `[[Note#Heading]]`
+/// - Block links: `[[Note#Heading^5#hash]]` with content-addressed validation
+/// - Embeds: `![[Note]]` (reversed semantics - content inclusion)
+/// - Inline links: `[text](url)`
+///
+/// # Block Link Fields
+///
+/// Block links use three fields for precise targeting:
+/// - `block_offset`: Position of block under heading (1-indexed, None for non-block links)
+/// - `block_hash`: BLAKE3 hash of normalized block content (whitespace trimmed, markdown preserved)
+/// - `heading_occurrence`: Which occurrence of duplicate heading (1-indexed, None if unique)
+///
+/// # Hash Storage
+///
+/// Hashes are stored as raw bytes `[u8; 32]` in-memory but converted to hex strings
+/// for database storage. The adapter layer handles transparent conversion.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// // Wikilink: [[Related Note]]
+/// let wikilink = Relation {
+///     from_entity_id: "note:source".into(),
+///     to_entity_id: Some("note:related".into()),
+///     relation_type: "wikilink".into(),
+///     metadata: json!({ "link_text": "Related Note" }),
+///     ..Default::default()
+/// };
+///
+/// // Block link: [[Note#Heading^5#abc123]]
+/// let block_link = Relation {
+///     from_entity_id: "note:source".into(),
+///     to_entity_id: Some("note:target".into()),
+///     relation_type: "wikilink".into(),
+///     metadata: json!({ "heading": "Heading", "link_text": "Note" }),
+///     block_offset: Some(5),
+///     block_hash: Some([0xab, 0xc1, 0x23, ...]), // BLAKE3 hash
+///     ..Default::default()
+/// };
+///
+/// // Embed: ![[Summary#Overview^2#def456]]
+/// let embed = Relation {
+///     from_entity_id: "note:source".into(),
+///     to_entity_id: Some("note:summary".into()),
+///     relation_type: "embed".into(), // Reversed semantics
+///     metadata: json!({ "heading": "Overview", "embedded_content": "Summary" }),
+///     block_offset: Some(2),
+///     block_hash: Some([0xde, 0xf4, 0x56, ...]),
+///     ..Default::default()
+/// };
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct Relation {
+    /// Unique identifier (auto-generated on store)
+    pub id: String,
+
+    /// Source entity ID (where the link appears)
+    pub from_entity_id: String,
+
+    /// Target entity ID (None if unresolved/ambiguous)
+    pub to_entity_id: Option<String>,
+
+    /// Relation type: "wikilink", "embed", "link", "footnote"
+    pub relation_type: String,
+
+    /// Type-specific metadata (alias, heading, URL, etc.)
+    pub metadata: Value,
+
+    /// Surrounding text context (for breadcrumbs/backlinks)
+    pub context: Option<String>,
+
+    /// Block offset for block links (1-indexed, None for regular links)
+    pub block_offset: Option<u32>,
+
+    /// BLAKE3 hash of block content (32 bytes, None for non-block links)
+    pub block_hash: Option<[u8; 32]>,
+
+    /// Which occurrence of duplicate heading (1-indexed, None if unique)
+    pub heading_occurrence: Option<u32>,
+
+    /// When the relation was created
+    pub created_at: DateTime<Utc>,
+}
+
+impl Default for Relation {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            from_entity_id: String::new(),
+            to_entity_id: None,
+            relation_type: String::new(),
+            metadata: Value::Null,
+            context: None,
+            block_offset: None,
+            block_hash: None,
+            heading_occurrence: None,
+            created_at: Utc::now(),
+        }
+    }
+}
+
+impl Relation {
+    /// Create a new relation
+    pub fn new(from: impl Into<String>, to: Option<String>, relation_type: impl Into<String>) -> Self {
+        Self {
+            from_entity_id: from.into(),
+            to_entity_id: to,
+            relation_type: relation_type.into(),
+            created_at: Utc::now(),
+            ..Default::default()
+        }
+    }
+
+    /// Create a wikilink relation
+    pub fn wikilink(from: impl Into<String>, to: impl Into<String>) -> Self {
+        Self::new(from, Some(to.into()), "wikilink")
+    }
+
+    /// Create an embed relation (reversed semantics - content inclusion)
+    pub fn embed(from: impl Into<String>, to: impl Into<String>) -> Self {
+        Self::new(from, Some(to.into()), "embed")
+    }
+
+    /// Create an inline link relation (external URL)
+    pub fn link(from: impl Into<String>, url: impl Into<String>) -> Self {
+        Self::new(from, Some(url.into()), "link")
+    }
+
+    /// Add block link fields (offset, hash, heading occurrence)
+    pub fn with_block_link(mut self, offset: u32, hash: [u8; 32], heading_occurrence: Option<u32>) -> Self {
+        self.block_offset = Some(offset);
+        self.block_hash = Some(hash);
+        self.heading_occurrence = heading_occurrence;
+        self
+    }
+
+    /// Add metadata
+    pub fn with_metadata(mut self, metadata: Value) -> Self {
+        self.metadata = metadata;
+        self
+    }
+
+    /// Add context (surrounding text)
+    pub fn with_context(mut self, context: impl Into<String>) -> Self {
+        self.context = Some(context.into());
+        self
+    }
+}
+
+/// Storage for relations between entities (wikilinks, embeds, inline links)
+///
+/// This trait manages the graph structure of the knowledge base, storing
+/// connections between notes, blocks, and external resources.
+///
+/// # Relation Types
+///
+/// - **wikilink**: `[[Note]]` - reference to another note
+/// - **embed**: `![[Note]]` - content inclusion (reversed semantics)
+/// - **link**: `[text](url)` - external or internal URL
+/// - **footnote**: `[^1]` - footnote reference
+///
+/// # Block Links
+///
+/// Block links (`[[Note#Heading^5#hash]]`) enable content-addressed linking
+/// to specific blocks. The hash provides validation and supports CAS lookup
+/// if the block moves.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use crucible_core::storage::{RelationStorage, Relation};
+///
+/// async fn link_notes<S: RelationStorage>(
+///     storage: &S,
+///     from: &str,
+///     to: &str,
+/// ) -> StorageResult<()> {
+///     let relation = Relation::wikilink(from, to);
+///     storage.store_relation(relation).await?;
+///     Ok(())
+/// }
+/// ```
+#[async_trait]
+pub trait RelationStorage: Send + Sync {
+    /// Store a new relation
+    ///
+    /// # Arguments
+    ///
+    /// * `relation` - The relation to store
+    ///
+    /// # Returns
+    ///
+    /// The generated relation ID
+    async fn store_relation(&self, relation: Relation) -> StorageResult<String>;
+
+    /// Store multiple relations in a batch (optimized)
+    ///
+    /// # Arguments
+    ///
+    /// * `relations` - Vector of relations to store
+    ///
+    /// # Performance
+    ///
+    /// Uses a single database transaction for all relations
+    async fn batch_store_relations(&self, relations: &[Relation]) -> StorageResult<()>;
+
+    /// Get a relation by ID
+    async fn get_relation(&self, id: &str) -> StorageResult<Option<Relation>>;
+
+    /// Get all relations for an entity
+    ///
+    /// # Arguments
+    ///
+    /// * `entity_id` - The source entity ID
+    /// * `relation_type` - Optional filter by relation type
+    async fn get_relations(
+        &self,
+        entity_id: &str,
+        relation_type: Option<&str>,
+    ) -> StorageResult<Vec<Relation>>;
+
+    /// Get backlinks (incoming relations) to an entity
+    ///
+    /// # Arguments
+    ///
+    /// * `entity_id` - The target entity ID
+    /// * `relation_type` - Optional filter by relation type
+    async fn get_backlinks(
+        &self,
+        entity_id: &str,
+        relation_type: Option<&str>,
+    ) -> StorageResult<Vec<Relation>>;
+
+    /// Delete all relations for an entity
+    async fn delete_relations(&self, entity_id: &str) -> StorageResult<usize>;
+
+    /// Delete a specific relation
+    async fn delete_relation(&self, id: &str) -> StorageResult<()>;
+
+    /// Find a block by content hash (for block link CAS lookup)
+    ///
+    /// # Arguments
+    ///
+    /// * `entity_id` - The entity to search within
+    /// * `hash` - BLAKE3 hash of the block content
+    ///
+    /// # Returns
+    ///
+    /// Block ID if found, None otherwise
+    async fn find_block_by_hash(
+        &self,
+        entity_id: &str,
+        hash: &[u8; 32],
+    ) -> StorageResult<Option<String>>;
 }
 
 // ============================================================================
@@ -1236,5 +1416,357 @@ mod tests {
         // Verify all properties were stored
         let retrieved = storage.get_properties("note:perf_test").await.unwrap();
         assert_eq!(retrieved.len(), 100);
+    }
+
+    // ========================================================================
+    // RelationStorage Tests
+    // ========================================================================
+
+    /// Mock implementation of RelationStorage for testing
+    struct MockRelationStorage {
+        relations: Arc<Mutex<HashMap<String, Relation>>>,
+    }
+
+    impl MockRelationStorage {
+        fn new() -> Self {
+            Self {
+                relations: Arc::new(Mutex::new(HashMap::new())),
+            }
+        }
+
+        fn generate_id() -> String {
+            format!("rel:{}", uuid::Uuid::new_v4())
+        }
+    }
+
+    #[async_trait]
+    impl RelationStorage for MockRelationStorage {
+        async fn store_relation(&self, mut relation: Relation) -> StorageResult<String> {
+            let mut store = self.relations.lock().unwrap();
+
+            // Generate ID if not provided
+            if relation.id.is_empty() {
+                relation.id = Self::generate_id();
+            }
+
+            let id = relation.id.clone();
+            store.insert(id.clone(), relation);
+            Ok(id)
+        }
+
+        async fn batch_store_relations(&self, relations: &[Relation]) -> StorageResult<()> {
+            let mut store = self.relations.lock().unwrap();
+
+            for rel in relations {
+                let mut relation = rel.clone();
+                if relation.id.is_empty() {
+                    relation.id = Self::generate_id();
+                }
+                store.insert(relation.id.clone(), relation);
+            }
+
+            Ok(())
+        }
+
+        async fn get_relation(&self, id: &str) -> StorageResult<Option<Relation>> {
+            let store = self.relations.lock().unwrap();
+            Ok(store.get(id).cloned())
+        }
+
+        async fn get_relations(
+            &self,
+            entity_id: &str,
+            relation_type: Option<&str>,
+        ) -> StorageResult<Vec<Relation>> {
+            let store = self.relations.lock().unwrap();
+
+            Ok(store
+                .values()
+                .filter(|r| {
+                    r.from_entity_id == entity_id
+                        && relation_type.map_or(true, |rt| r.relation_type == rt)
+                })
+                .cloned()
+                .collect())
+        }
+
+        async fn get_backlinks(
+            &self,
+            entity_id: &str,
+            relation_type: Option<&str>,
+        ) -> StorageResult<Vec<Relation>> {
+            let store = self.relations.lock().unwrap();
+
+            Ok(store
+                .values()
+                .filter(|r| {
+                    r.to_entity_id.as_ref() == Some(&entity_id.to_string())
+                        && relation_type.map_or(true, |rt| r.relation_type == rt)
+                })
+                .cloned()
+                .collect())
+        }
+
+        async fn delete_relations(&self, entity_id: &str) -> StorageResult<usize> {
+            let mut store = self.relations.lock().unwrap();
+            let before_count = store.len();
+
+            store.retain(|_, r| r.from_entity_id != entity_id);
+
+            let after_count = store.len();
+            Ok(before_count - after_count)
+        }
+
+        async fn delete_relation(&self, id: &str) -> StorageResult<()> {
+            let mut store = self.relations.lock().unwrap();
+            store.remove(id);
+            Ok(())
+        }
+
+        async fn find_block_by_hash(
+            &self,
+            entity_id: &str,
+            hash: &[u8; 32],
+        ) -> StorageResult<Option<String>> {
+            let store = self.relations.lock().unwrap();
+
+            // Find any relation pointing to this entity with a matching block hash
+            Ok(store
+                .values()
+                .find(|r| {
+                    r.to_entity_id.as_ref() == Some(&entity_id.to_string())
+                        && r.block_hash.as_ref() == Some(hash)
+                })
+                .and_then(|r| {
+                    // Return a block ID constructed from entity + offset
+                    r.block_offset.map(|offset| format!("{}#block_{}", entity_id, offset))
+                }))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_relation_storage_basic_operations() {
+        let storage = MockRelationStorage::new();
+        let now = Utc::now();
+
+        // Test store_relation with builder pattern
+        let relation = Relation::wikilink("note:source", "note:target")
+            .with_context("See [[Target Note]] for details");
+
+        let id = storage.store_relation(relation).await.unwrap();
+        assert!(!id.is_empty());
+
+        // Test get_relation
+        let retrieved = storage.get_relation(&id).await.unwrap().unwrap();
+        assert_eq!(retrieved.from_entity_id, "note:source");
+        assert_eq!(retrieved.to_entity_id, Some("note:target".to_string()));
+        assert_eq!(retrieved.relation_type, "wikilink");
+        assert_eq!(retrieved.context, Some("See [[Target Note]] for details".to_string()));
+
+        // Test get_relations
+        let relations = storage
+            .get_relations("note:source", Some("wikilink"))
+            .await
+            .unwrap();
+        assert_eq!(relations.len(), 1);
+        assert_eq!(relations[0].id, id);
+
+        // Test delete_relation
+        storage.delete_relation(&id).await.unwrap();
+        let deleted = storage.get_relation(&id).await.unwrap();
+        assert!(deleted.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_relation_storage_block_links() {
+        let storage = MockRelationStorage::new();
+
+        // Create a block link with hash and offset
+        let block_hash = [42u8; 32];
+        let relation = Relation::wikilink("note:source", "note:target")
+            .with_block_link(5, block_hash, None)
+            .with_context("Block 5 under heading");
+
+        let id = storage.store_relation(relation).await.unwrap();
+
+        // Verify block link fields
+        let retrieved = storage.get_relation(&id).await.unwrap().unwrap();
+        assert_eq!(retrieved.block_offset, Some(5));
+        assert_eq!(retrieved.block_hash, Some(block_hash));
+        assert_eq!(retrieved.heading_occurrence, None);
+
+        // Test find_block_by_hash
+        let block_id = storage
+            .find_block_by_hash("note:target", &block_hash)
+            .await
+            .unwrap();
+        assert_eq!(block_id, Some("note:target#block_5".to_string()));
+
+        // Test with non-existent hash
+        let missing_hash = [99u8; 32];
+        let missing_block = storage
+            .find_block_by_hash("note:target", &missing_hash)
+            .await
+            .unwrap();
+        assert_eq!(missing_block, None);
+    }
+
+    #[tokio::test]
+    async fn test_relation_storage_batch_operations() {
+        let storage = MockRelationStorage::new();
+
+        // Create multiple relations
+        let relations = vec![
+            Relation::wikilink("note:source", "note:target1"),
+            Relation::wikilink("note:source", "note:target2"),
+            Relation::embed("note:source", "note:embedded"),
+            Relation::link("note:source", "https://example.com"),
+        ];
+
+        storage.batch_store_relations(&relations).await.unwrap();
+
+        // Test retrieval with type filtering
+        let wikilinks = storage
+            .get_relations("note:source", Some("wikilink"))
+            .await
+            .unwrap();
+        assert_eq!(wikilinks.len(), 2);
+
+        let embeds = storage
+            .get_relations("note:source", Some("embed"))
+            .await
+            .unwrap();
+        assert_eq!(embeds.len(), 1);
+
+        let links = storage
+            .get_relations("note:source", Some("link"))
+            .await
+            .unwrap();
+        assert_eq!(links.len(), 1);
+
+        // Test get all relations (no type filter)
+        let all_relations = storage.get_relations("note:source", None).await.unwrap();
+        assert_eq!(all_relations.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_relation_storage_backlinks() {
+        let storage = MockRelationStorage::new();
+
+        // Create relations from multiple sources to same target
+        let relations = vec![
+            Relation::wikilink("note:source1", "note:target"),
+            Relation::wikilink("note:source2", "note:target"),
+            Relation::embed("note:source3", "note:target"),
+        ];
+
+        storage.batch_store_relations(&relations).await.unwrap();
+
+        // Test get_backlinks with type filter
+        let wikilink_backlinks = storage
+            .get_backlinks("note:target", Some("wikilink"))
+            .await
+            .unwrap();
+        assert_eq!(wikilink_backlinks.len(), 2);
+
+        // Test get all backlinks (no type filter)
+        let all_backlinks = storage.get_backlinks("note:target", None).await.unwrap();
+        assert_eq!(all_backlinks.len(), 3);
+
+        // Verify backlink sources
+        let sources: Vec<_> = all_backlinks
+            .iter()
+            .map(|r| r.from_entity_id.as_str())
+            .collect();
+        assert!(sources.contains(&"note:source1"));
+        assert!(sources.contains(&"note:source2"));
+        assert!(sources.contains(&"note:source3"));
+    }
+
+    #[tokio::test]
+    async fn test_relation_storage_deletion() {
+        let storage = MockRelationStorage::new();
+
+        // Create relations from multiple entities
+        let relations = vec![
+            Relation::wikilink("note:to_delete", "note:target1"),
+            Relation::wikilink("note:to_delete", "note:target2"),
+            Relation::wikilink("note:to_keep", "note:target3"),
+        ];
+
+        storage.batch_store_relations(&relations).await.unwrap();
+
+        // Test delete_relations for specific entity
+        let deleted_count = storage.delete_relations("note:to_delete").await.unwrap();
+        assert_eq!(deleted_count, 2);
+
+        // Verify relations are deleted
+        let remaining = storage.get_relations("note:to_delete", None).await.unwrap();
+        assert_eq!(remaining.len(), 0);
+
+        // Verify other relations remain
+        let kept = storage.get_relations("note:to_keep", None).await.unwrap();
+        assert_eq!(kept.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_relation_builder_patterns() {
+        // Test all builder methods
+        let wikilink = Relation::wikilink("note:a", "note:b");
+        assert_eq!(wikilink.relation_type, "wikilink");
+        assert_eq!(wikilink.to_entity_id, Some("note:b".to_string()));
+
+        let embed = Relation::embed("note:a", "note:b");
+        assert_eq!(embed.relation_type, "embed");
+
+        let link = Relation::link("note:a", "https://example.com");
+        assert_eq!(link.relation_type, "link");
+        assert_eq!(link.to_entity_id, Some("https://example.com".to_string()));
+
+        // Test chaining with metadata and context
+        let block_hash = [1u8; 32];
+        let complex = Relation::new("note:source", Some("note:target".to_string()), "custom")
+            .with_block_link(3, block_hash, Some(2))
+            .with_metadata(serde_json::json!({"key": "value"}))
+            .with_context("Some context text");
+
+        assert_eq!(complex.relation_type, "custom");
+        assert_eq!(complex.block_offset, Some(3));
+        assert_eq!(complex.block_hash, Some(block_hash));
+        assert_eq!(complex.heading_occurrence, Some(2));
+        assert_eq!(complex.metadata, serde_json::json!({"key": "value"}));
+        assert_eq!(complex.context, Some("Some context text".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_relation_with_heading_occurrence() {
+        let storage = MockRelationStorage::new();
+
+        // Test handling duplicate headings
+        let hash = [7u8; 32];
+        let relation = Relation::wikilink("note:source", "note:target")
+            .with_block_link(2, hash, Some(3)) // 3rd occurrence of heading, 2nd block under it
+            .with_context("Third 'Overview' heading, second block");
+
+        let id = storage.store_relation(relation).await.unwrap();
+
+        let retrieved = storage.get_relation(&id).await.unwrap().unwrap();
+        assert_eq!(retrieved.heading_occurrence, Some(3));
+        assert_eq!(retrieved.block_offset, Some(2));
+    }
+
+    #[tokio::test]
+    async fn test_relation_with_unresolved_target() {
+        let storage = MockRelationStorage::new();
+
+        // Test relation with None target (unresolved/ambiguous)
+        let relation = Relation::new("note:source", None, "wikilink")
+            .with_context("[[Ambiguous Note]] - multiple matches");
+
+        let id = storage.store_relation(relation).await.unwrap();
+
+        let retrieved = storage.get_relation(&id).await.unwrap().unwrap();
+        assert_eq!(retrieved.to_entity_id, None);
+        assert!(retrieved.context.as_ref().unwrap().contains("Ambiguous"));
     }
 }
