@@ -36,7 +36,7 @@
 //! }
 //! ```
 
-use crate::storage::{StorageError, StorageResult};
+use crate::storage::StorageResult;
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::Value;

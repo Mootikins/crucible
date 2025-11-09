@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use serde_json::{json, Value};
 
-use crate::SurrealClient;
+use crate::{QueryResult, SurrealClient};
 
 use super::types::{
     BlockNode, EmbeddingVector, Entity, EntityRecord, EntityTag,
@@ -18,6 +18,35 @@ pub struct EAVGraphStore {
 impl EAVGraphStore {
     pub fn new(client: SurrealClient) -> Self {
         Self { client }
+    }
+
+    /// Helper method to deserialize query results into Property structs
+    ///
+    /// Handles the conversion from SurrealDB's internal representation to our
+    /// Property type with proper error handling and context.
+    fn deserialize_properties(&self, result: QueryResult) -> StorageResult<Vec<Property>> {
+        result
+            .records
+            .iter()
+            .enumerate()
+            .map(|(idx, record)| {
+                serde_json::to_value(&record.data)
+                    .map_err(|e| {
+                        StorageError::Backend(format!(
+                            "Failed to serialize property at index {}: {}",
+                            idx, e
+                        ))
+                    })
+                    .and_then(|v| {
+                        serde_json::from_value(v).map_err(|e| {
+                            StorageError::Backend(format!(
+                                "Failed to deserialize property at index {}: {}",
+                                idx, e
+                            ))
+                        })
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()
     }
 
     /// Upsert an entity record.
@@ -587,6 +616,23 @@ use super::adapter::{
 
 #[async_trait]
 impl CorePropertyStorage for EAVGraphStore {
+    /// Batch upsert properties to SurrealDB using parameterized queries
+    ///
+    /// Stores multiple properties for an entity, upserting on conflict by
+    /// (entity_id, namespace, key). Uses parameterized queries to prevent SQL injection.
+    ///
+    /// # Arguments
+    ///
+    /// * `properties` - Vector of core properties to store
+    ///
+    /// # Returns
+    ///
+    /// Number of properties successfully stored
+    ///
+    /// # Errors
+    ///
+    /// Returns `StorageError::Backend` if database operation fails or
+    /// if property serialization/deserialization fails
     async fn batch_upsert_properties(
         &self,
         properties: Vec<crucible_core::storage::Property>,
@@ -606,34 +652,55 @@ impl CorePropertyStorage for EAVGraphStore {
         Ok(count)
     }
 
+    /// Retrieve all properties for an entity
+    ///
+    /// # Arguments
+    ///
+    /// * `entity_id` - Entity identifier (e.g., "note:123")
+    ///
+    /// # Returns
+    ///
+    /// Vector of all properties associated with the entity
+    ///
+    /// # Errors
+    ///
+    /// Returns `StorageError::Backend` if query fails
     async fn get_properties(
         &self,
         entity_id: &str,
     ) -> StorageResult<Vec<crucible_core::storage::Property>> {
         let record_id = string_to_entity_id(entity_id);
 
-        let query = format!(
-            r#"SELECT * FROM properties WHERE entity_id = type::thing('entities', '{}')"#,
-            record_id.id
-        );
-
         let result = self
             .client
-            .query(&query, &[])
+            .query(
+                r#"SELECT * FROM properties WHERE entity_id = type::thing($table, $id)"#,
+                &[json!({
+                    "table": "entities",
+                    "id": record_id.id
+                })],
+            )
             .await
             .map_err(|e| StorageError::Backend(e.to_string()))?;
 
-        // Deserialize from unwrapped JSON (SurrealClient handles unwrapping)
-        let surreal_props: Vec<Property> = result
-            .records
-            .iter()
-            .map(|record| serde_json::from_value(serde_json::to_value(&record.data).unwrap()))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| StorageError::Backend(format!("Deserialization error: {}", e)))?;
-
+        let surreal_props = self.deserialize_properties(result)?;
         Ok(surreal_properties_to_core(surreal_props))
     }
 
+    /// Retrieve properties for an entity filtered by namespace
+    ///
+    /// # Arguments
+    ///
+    /// * `entity_id` - Entity identifier (e.g., "note:123")
+    /// * `namespace` - Property namespace to filter by (e.g., "frontmatter", "core")
+    ///
+    /// # Returns
+    ///
+    /// Vector of properties in the specified namespace
+    ///
+    /// # Errors
+    ///
+    /// Returns `StorageError::Backend` if query fails
     async fn get_properties_by_namespace(
         &self,
         entity_id: &str,
@@ -641,27 +708,38 @@ impl CorePropertyStorage for EAVGraphStore {
     ) -> StorageResult<Vec<crucible_core::storage::Property>> {
         let record_id = string_to_entity_id(entity_id);
 
-        let query = format!(
-            r#"SELECT * FROM properties WHERE entity_id = type::thing('entities', '{}') AND namespace = '{}'"#,
-            record_id.id, namespace.0
-        );
-
         let result = self
             .client
-            .query(&query, &[])
+            .query(
+                r#"SELECT * FROM properties WHERE entity_id = type::thing($table, $id) AND namespace = $namespace"#,
+                &[json!({
+                    "table": "entities",
+                    "id": record_id.id,
+                    "namespace": namespace.0
+                })],
+            )
             .await
             .map_err(|e| StorageError::Backend(e.to_string()))?;
 
-        let surreal_props: Vec<Property> = result
-            .records
-            .iter()
-            .map(|record| serde_json::from_value(serde_json::to_value(&record.data).unwrap()))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| StorageError::Backend(format!("Deserialization error: {}", e)))?;
-
+        let surreal_props = self.deserialize_properties(result)?;
         Ok(surreal_properties_to_core(surreal_props))
     }
 
+    /// Retrieve a single property by entity, namespace, and key
+    ///
+    /// # Arguments
+    ///
+    /// * `entity_id` - Entity identifier (e.g., "note:123")
+    /// * `namespace` - Property namespace (e.g., "frontmatter")
+    /// * `key` - Property key (e.g., "title")
+    ///
+    /// # Returns
+    ///
+    /// `Some(Property)` if found, `None` otherwise
+    ///
+    /// # Errors
+    ///
+    /// Returns `StorageError::Backend` if query fails
     async fn get_property(
         &self,
         entity_id: &str,
@@ -670,41 +748,52 @@ impl CorePropertyStorage for EAVGraphStore {
     ) -> StorageResult<Option<crucible_core::storage::Property>> {
         let record_id = string_to_entity_id(entity_id);
 
-        let query = format!(
-            r#"SELECT * FROM properties WHERE entity_id = type::thing('entities', '{}') AND namespace = '{}' AND key = '{}' LIMIT 1"#,
-            record_id.id, namespace.0, key
-        );
-
         let result = self
             .client
-            .query(&query, &[])
+            .query(
+                r#"SELECT * FROM properties WHERE entity_id = type::thing($table, $id) AND namespace = $namespace AND key = $key LIMIT 1"#,
+                &[json!({
+                    "table": "entities",
+                    "id": record_id.id,
+                    "namespace": namespace.0,
+                    "key": key
+                })],
+            )
             .await
             .map_err(|e| StorageError::Backend(e.to_string()))?;
 
-        let surreal_props: Vec<Property> = result
-            .records
-            .iter()
-            .map(|record| serde_json::from_value(serde_json::to_value(&record.data).unwrap()))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| StorageError::Backend(format!("Deserialization error: {}", e)))?;
-
+        let surreal_props = self.deserialize_properties(result)?;
         Ok(surreal_props
             .into_iter()
             .next()
             .map(super::adapter::surreal_property_to_core))
     }
 
+    /// Delete all properties for an entity
+    ///
+    /// # Arguments
+    ///
+    /// * `entity_id` - Entity identifier (e.g., "note:123")
+    ///
+    /// # Returns
+    ///
+    /// Number of properties deleted
+    ///
+    /// # Errors
+    ///
+    /// Returns `StorageError::Backend` if delete operation fails
     async fn delete_properties(&self, entity_id: &str) -> StorageResult<usize> {
         let record_id = string_to_entity_id(entity_id);
 
-        let query = format!(
-            r#"DELETE FROM properties WHERE entity_id = type::thing('entities', '{}') RETURN BEFORE"#,
-            record_id.id
-        );
-
         let result = self
             .client
-            .query(&query, &[])
+            .query(
+                r#"DELETE FROM properties WHERE entity_id = type::thing($table, $id) RETURN BEFORE"#,
+                &[json!({
+                    "table": "entities",
+                    "id": record_id.id
+                })],
+            )
             .await
             .map_err(|e| StorageError::Backend(e.to_string()))?;
 
@@ -712,6 +801,20 @@ impl CorePropertyStorage for EAVGraphStore {
         Ok(result.records.len())
     }
 
+    /// Delete all properties for an entity in a specific namespace
+    ///
+    /// # Arguments
+    ///
+    /// * `entity_id` - Entity identifier (e.g., "note:123")
+    /// * `namespace` - Namespace to delete properties from (e.g., "frontmatter")
+    ///
+    /// # Returns
+    ///
+    /// Number of properties deleted
+    ///
+    /// # Errors
+    ///
+    /// Returns `StorageError::Backend` if delete operation fails
     async fn delete_properties_by_namespace(
         &self,
         entity_id: &str,
@@ -719,14 +822,16 @@ impl CorePropertyStorage for EAVGraphStore {
     ) -> StorageResult<usize> {
         let record_id = string_to_entity_id(entity_id);
 
-        let query = format!(
-            r#"DELETE FROM properties WHERE entity_id = type::thing('entities', '{}') AND namespace = '{}' RETURN BEFORE"#,
-            record_id.id, namespace.0
-        );
-
         let result = self
             .client
-            .query(&query, &[])
+            .query(
+                r#"DELETE FROM properties WHERE entity_id = type::thing($table, $id) AND namespace = $namespace RETURN BEFORE"#,
+                &[json!({
+                    "table": "entities",
+                    "id": record_id.id,
+                    "namespace": namespace.0
+                })],
+            )
             .await
             .map_err(|e| StorageError::Backend(e.to_string()))?;
 
@@ -737,7 +842,15 @@ impl CorePropertyStorage for EAVGraphStore {
 
 fn thing_value<T>(id: &RecordId<T>) -> serde_json::Value {
     let thing = Thing::from((id.table.as_str(), id.id.as_str()));
-    serde_json::to_value(thing).expect("Thing serialization")
+    serde_json::to_value(thing).unwrap_or_else(|e| {
+        tracing::error!(
+            error = %e,
+            table = %id.table,
+            id = %id.id,
+            "Thing serialization failed, using fallback"
+        );
+        json!({"tb": id.table, "id": id.id})
+    })
 }
 
 // -- Tests -----------------------------------------------------------------
