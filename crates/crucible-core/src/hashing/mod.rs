@@ -12,12 +12,14 @@
 //! - [`ast_converter`]: AST block to HashedBlock conversion (SRP-compliant)
 //! - [`blake3`]: BLAKE3 algorithm implementation
 //! - [`sha256`]: SHA256 algorithm implementation
+//! - [`normalization`]: Block text normalization for content-addressed links
 
 pub mod algorithm;
 pub mod ast_converter;
 pub mod blake3;
 pub mod block_hasher;
 pub mod file_hasher;
+pub mod normalization;
 pub mod sha256;
 
 // Re-export main types for convenience
@@ -34,6 +36,7 @@ pub use block_hasher::{
 pub use file_hasher::{
     Blake3FileHasher, FileHasher, Sha256FileHasher, BLAKE3_HASHER, SHA256_HASHER,
 };
+pub use normalization::normalize_block_text;
 pub use sha256::{SHA256Hasher, SHA256_CONTENT_HASHER};
 
 // Re-export Merkle tree types from storage module
