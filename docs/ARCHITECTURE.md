@@ -202,42 +202,85 @@ Embedded image             → relations:embedded (block → asset entity)
 
 ---
 
-### 2. Storage Layer (EPR Schema)
+### 2. Storage Layer (Entity-Attribute-Value + Graph Schema)
 
 **Responsibility**: Persist parsed graph, metadata, and embeddings. **Does NOT store raw Markdown content.**
 
-**EPR Model**:
+**Schema Pattern**: Hybrid **EAV (Entity-Attribute-Value)** + **Property Graph**
 - **Entities**: Documents, blocks, tags, assets (nodes in the knowledge graph)
-- **Properties**: Metadata attached to entities (frontmatter, timestamps, file paths)
-- **Relations**: Edges between entities (wikilinks, tags, footnotes, embeddings)
+- **Properties/Attributes**: Metadata attached to entities via namespace/key/value triples
+  - **Portable metadata** (`namespace: "frontmatter"`): Synced to/from YAML frontmatter in file
+  - **Derived metadata** (`namespace: "system"` or `"computed"`): Generated, can be rebuilt
+- **Relations**: Typed, directed edges between entities (wikilinks, tags, footnotes, embeddings)
 
-**Schema Design** (inspired by [Oxen AI's EPR model](https://github.com/Oxen-AI/Oxen)):
+**Why EAV + Graph?**
+- **EAV**: Flexible schema for heterogeneous metadata (every note has different frontmatter)
+- **Property Graph**: Native graph traversal for wikilinks, backlinks, tag hierarchies
+- **Best of Both**: Flexibility of NoSQL + power of graph queries
+
+**Schema Design** (inspired by [Oxen AI](https://github.com/Oxen-AI/Oxen)):
 ```surql
 -- Entities (nodes)
 DEFINE TABLE entities SCHEMAFUL;
-DEFINE FIELD type ON entities TYPE string ASSERT $value IN ['note', 'block', 'tag', 'asset'];
-DEFINE FIELD id ON entities TYPE record;
+DEFINE FIELD type ON entities TYPE string ASSERT $value IN ['note', 'block', 'tag', 'section', 'media', 'person'];
+DEFINE FIELD id ON entities TYPE string;
 DEFINE FIELD created_at ON entities TYPE datetime;
+DEFINE FIELD data ON entities TYPE option<object>;  -- Entity-specific data
 
--- Properties (metadata)
+-- Properties (metadata with namespace for extensibility)
 DEFINE TABLE properties SCHEMAFUL;
-DEFINE FIELD entity ON properties TYPE record<entities>;
+DEFINE FIELD entity_id ON properties TYPE record<entities>;
+DEFINE FIELD namespace ON properties TYPE string DEFAULT "core";  -- "frontmatter", "system", "computed"
 DEFINE FIELD key ON properties TYPE string;
-DEFINE FIELD value ON properties TYPE string | number | datetime | bool;
+DEFINE FIELD value_type ON properties TYPE string ASSERT $value IN ['text', 'number', 'boolean', 'date', 'json'];
+DEFINE FIELD value_text ON properties TYPE option<string>;
+DEFINE FIELD value_number ON properties TYPE option<float>;
+DEFINE FIELD value_bool ON properties TYPE option<bool>;
+DEFINE FIELD value_date ON properties TYPE option<datetime>;
+DEFINE FIELD value_json ON properties TYPE option<object>;  -- Complex nested metadata
+DEFINE FIELD source ON properties TYPE string DEFAULT "parser";
+DEFINE FIELD confidence ON properties TYPE float DEFAULT 1.0;
 
 -- Relations (edges)
-DEFINE TABLE relations SCHEMAFUL;
-DEFINE FIELD type ON relations TYPE string ASSERT $value IN ['wikilink', 'tagged', 'embedded', 'footnote', 'parent_child'];
-DEFINE FIELD from ON relations TYPE record<entities>;
-DEFINE FIELD to ON relations TYPE record<entities>;
-DEFINE FIELD metadata ON relations TYPE object;
+DEFINE TABLE relations SCHEMAFUL TYPE RELATION FROM entities TO entities;
+DEFINE FIELD relation_type ON relations TYPE string;
+DEFINE FIELD weight ON relations TYPE float DEFAULT 1.0;
+DEFINE FIELD directed ON relations TYPE bool DEFAULT true;
+DEFINE FIELD confidence ON relations TYPE float DEFAULT 1.0;
+DEFINE FIELD source ON relations TYPE string DEFAULT "parser";
+DEFINE FIELD position ON relations TYPE option<int>;
+DEFINE FIELD context ON relations TYPE option<string>;  -- Breadcrumbs or hash references
+DEFINE FIELD metadata ON relations TYPE object DEFAULT {};
+
+-- Blocks (AST nodes)
+DEFINE TABLE blocks SCHEMAFUL;
+DEFINE FIELD entity_id ON blocks TYPE record<entities>;
+DEFINE FIELD block_type ON blocks TYPE string;
+DEFINE FIELD content ON blocks TYPE string;
+DEFINE FIELD content_hash ON blocks TYPE string;
+DEFINE FIELD parent_block_id ON blocks TYPE option<record<blocks>>;
 
 -- Embeddings (vector search)
 DEFINE TABLE embeddings SCHEMAFUL;
-DEFINE FIELD block ON embeddings TYPE record<entities>;
-DEFINE FIELD vector ON embeddings TYPE array<float>;
+DEFINE FIELD entity_id ON embeddings TYPE record<entities>;
+DEFINE FIELD block_id ON embeddings TYPE option<record<blocks>>;
+DEFINE FIELD embedding ON embeddings TYPE array<float>;
 DEFINE FIELD model ON embeddings TYPE string;
-DEFINE FIELD created_at ON embeddings TYPE datetime;
+DEFINE FIELD dimensions ON embeddings TYPE int;
+
+-- Tags (hierarchical)
+DEFINE TABLE tags SCHEMAFUL;
+DEFINE FIELD name ON tags TYPE string;
+DEFINE FIELD parent_id ON tags TYPE option<record<tags>>;
+DEFINE FIELD path ON tags TYPE string;  -- Materialized path: "/project/crucible"
+DEFINE FIELD depth ON tags TYPE int DEFAULT 0;
+
+-- Entity-Tag Relations
+DEFINE TABLE entity_tags SCHEMAFUL;
+DEFINE FIELD entity_id ON entity_tags TYPE record<entities>;
+DEFINE FIELD tag_id ON entity_tags TYPE record<tags>;
+DEFINE FIELD source ON entity_tags TYPE string DEFAULT "parser";
+DEFINE FIELD created_at ON entity_tags TYPE datetime DEFAULT time::now();
 ```
 
 **Storage Traits** (for backend flexibility):
@@ -276,6 +319,45 @@ pub trait GraphStore: EntityStore + RelationStore {
 **Key Principle**: Database is the **cache layer** for metadata/graph/embeddings. Raw Markdown lives on filesystem for portability.
 
 **Source of Truth**: Filesystem markdown files. Database can be rebuilt from files at any time.
+
+**Frontmatter Handling**:
+
+Frontmatter properties are **bidirectionally synced** between file and database:
+
+```yaml
+---
+tags: [project, ai]
+type: template
+status: draft
+date_created: 2025-11-08
+date_modified: 2025-11-08
+author: username
+---
+```
+
+**Storage Strategy**:
+- All frontmatter stored in `properties` table with `namespace: "frontmatter"`
+- Parser extracts frontmatter → creates property records
+- Property updates can trigger frontmatter rewrites (bidirectional sync)
+- Always include `date_created` and `date_modified` in frontmatter for portability
+
+**Namespace Philosophy**:
+- `namespace: "frontmatter"` - Portable, user-editable, persisted in file
+  - Examples: tags, type, status, date_created, date_modified, author
+  - Survives database rebuild
+  - Can be manually edited by users
+- `namespace: "system"` - System-generated, ephemeral
+  - Examples: file_size, word_count, link_count, last_embedded_at
+  - Can be recomputed from file
+- `namespace: "computed"` - Derived from analysis
+  - Examples: readability_score, sentiment, topic_cluster
+  - Can be expensive to compute, cached in DB
+
+**Entity `type` vs Frontmatter `type`**:
+- **Entity `type` field**: Database classification ("note", "block", "tag", etc.)
+- **Frontmatter `type` property**: User-defined note classification (stored in `properties` table)
+  - Examples: "template", "article", "person", "daily-note", "meeting"
+  - Enables custom workflows and filtering
 
 ---
 
