@@ -26,6 +26,7 @@ pub mod change_application;
 pub mod deduplication_traits;
 pub mod deduplicator;
 pub mod diff;
+pub mod eav_graph_traits;
 pub mod error;
 pub mod factory;
 pub mod memory;
@@ -43,6 +44,10 @@ pub use change_application::{
 };
 pub use deduplication_traits::{
     BlockInfo, DeduplicationCapable, DeduplicationStorage, DuplicateBlockInfo, StorageUsageStats,
+};
+pub use eav_graph_traits::{
+    Block, BlockStorage, Entity, EntityStorage, EntityTag, EntityType, Property, PropertyNamespace,
+    PropertyStorage, PropertyValue, Relation, RelationStorage, RelationType, Tag, TagStorage,
 };
 pub use deduplicator::{
     BlockUsagePattern, DeduplicationAnalysis, DeduplicationStats, Deduplicator,
