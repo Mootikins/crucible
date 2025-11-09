@@ -3,7 +3,7 @@
 //! This module provides the single-threaded database consumer that processes
 //! transactions from the queue to eliminate RocksDB lock contention.
 
-use crate::epr::EprStore;
+use crate::eav_graph::EAVGraphStore;
 use crate::kiln_integration::parse_entity_record_id;
 use crate::metrics::{record_transaction_failure, record_transaction_success};
 use crate::surreal_client::SurrealClient;
@@ -1059,7 +1059,7 @@ impl DatabaseTransactionConsumer {
         info!("Deleting document: {}", document_id);
 
         let entity_id = parse_entity_record_id(document_id)?;
-        let store = EprStore::new(self.client.as_ref().clone());
+        let store = EAVGraphStore::new(self.client.as_ref().clone());
 
         self.client
             .query(

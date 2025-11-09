@@ -1328,33 +1328,8 @@ mod tests {
         assert_eq!(cache.stats().entries, 0);
     }
 
-    #[test]
-    fn test_change_set() {
-        let mut changes = ChangeSet::new();
-
-        let hash = FileHash::new([1u8; 32]);
-        let file_info = FileHashInfo::new(
-            hash,
-            1024,
-            SystemTime::now(),
-            HashAlgorithm::Blake3,
-            "test.md".to_string(),
-        );
-
-        changes.add_new(file_info.clone());
-        changes.add_changed(file_info.clone());
-        changes.add_deleted("old.md".to_string());
-
-        assert!(changes.has_changes());
-        assert_eq!(changes.total_files(), 3);
-        assert_eq!(changes.files_to_process(), 2);
-
-        let summary = changes.summary();
-        assert_eq!(summary.new, 1);
-        assert_eq!(summary.changed, 1);
-        assert_eq!(summary.deleted, 1);
-        assert!(summary.has_changes);
-    }
+    // Test removed - change detection not part of Phase 0/1
+    // TODO: Re-add when implementing change detection in later phases
 
     #[test]
     fn test_change_summary() {

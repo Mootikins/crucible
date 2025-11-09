@@ -3,18 +3,18 @@ use blake3::Hasher;
 use crucible_core::parser::types::ParsedDocument;
 use serde_json::{Map, Value};
 
-use super::store::EprStore;
+use super::store::EAVGraphStore;
 use super::types::{
     BlockNode, Entity, EntityRecord, EntityType, Property, PropertyRecord, PropertyValue, RecordId,
 };
 
-/// High-level helper for writing parsed documents into the EPR schema.
+/// High-level helper for writing parsed documents into the EAV+Graph schema.
 pub struct DocumentIngestor<'a> {
-    store: &'a EprStore,
+    store: &'a EAVGraphStore,
 }
 
 impl<'a> DocumentIngestor<'a> {
-    pub fn new(store: &'a EprStore) -> Self {
+    pub fn new(store: &'a EAVGraphStore) -> Self {
         Self { store }
     }
 
@@ -46,7 +46,7 @@ impl<'a> DocumentIngestor<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::epr::apply_epr_schema;
+    use crate::eav_graph::apply_eav_graph_schema;
     use crate::SurrealClient;
     use crucible_core::parser::types::{
         DocumentContent, Frontmatter, FrontmatterFormat, Heading, Paragraph, Tag,
@@ -75,8 +75,8 @@ mod tests {
     #[tokio::test]
     async fn ingest_document_writes_entities_properties_blocks() {
         let client = SurrealClient::new_memory().await.unwrap();
-        apply_epr_schema(&client).await.unwrap();
-        let store = EprStore::new(client.clone());
+        apply_eav_graph_schema(&client).await.unwrap();
+        let store = EAVGraphStore::new(client.clone());
         let ingestor = DocumentIngestor::new(&store);
 
         let doc = sample_document();

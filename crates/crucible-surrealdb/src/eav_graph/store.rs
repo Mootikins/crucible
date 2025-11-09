@@ -9,13 +9,13 @@ use super::types::{
 };
 use surrealdb::sql::Thing;
 
-/// High-level helper for writing entities, properties, and blocks into the EPR schema.
+/// High-level helper for writing entities, properties, and blocks into the EAV+Graph schema.
 #[derive(Clone)]
-pub struct EprStore {
+pub struct EAVGraphStore {
     client: SurrealClient,
 }
 
-impl EprStore {
+impl EAVGraphStore {
     pub fn new(client: SurrealClient) -> Self {
         Self { client }
     }
@@ -594,7 +594,7 @@ fn thing_value<T>(id: &RecordId<T>) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::epr::apply_epr_schema;
+    use crate::eav_graph::apply_eav_graph_schema;
     use crate::SurrealClient;
 
     fn entity_id() -> RecordId<EntityRecord> {
@@ -614,8 +614,8 @@ mod tests {
     #[tokio::test]
     async fn upsert_entity_and_property_flow() {
         let client = SurrealClient::new_memory().await.unwrap();
-        apply_epr_schema(&client).await.unwrap();
-        let store = EprStore::new(client.clone());
+        apply_eav_graph_schema(&client).await.unwrap();
+        let store = EAVGraphStore::new(client.clone());
 
         let entity = sample_entity();
         store.upsert_entity(&entity).await.unwrap();
@@ -646,8 +646,8 @@ mod tests {
     #[tokio::test]
     async fn replace_blocks_writes_rows() {
         let client = SurrealClient::new_memory().await.unwrap();
-        apply_epr_schema(&client).await.unwrap();
-        let store = EprStore::new(client.clone());
+        apply_eav_graph_schema(&client).await.unwrap();
+        let store = EAVGraphStore::new(client.clone());
 
         store.upsert_entity(&sample_entity()).await.unwrap();
 
@@ -676,8 +676,8 @@ mod tests {
     #[tokio::test]
     async fn upsert_embedding_stores_vector() {
         let client = SurrealClient::new_memory().await.unwrap();
-        apply_epr_schema(&client).await.unwrap();
-        let store = EprStore::new(client.clone());
+        apply_eav_graph_schema(&client).await.unwrap();
+        let store = EAVGraphStore::new(client.clone());
 
         store.upsert_entity(&sample_entity()).await.unwrap();
 
