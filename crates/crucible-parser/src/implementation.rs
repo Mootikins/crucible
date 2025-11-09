@@ -103,6 +103,7 @@ impl CrucibleParser {
     /// Create a parser with default extensions (LaTeX, callouts, enhanced tags, and footnotes)
     pub fn with_default_extensions() -> Self {
         let builder = crate::ExtensionRegistryBuilder::new()
+            .with_extension(crate::create_basic_markdown_extension()) // Core markdown parsing (headings, lists, etc.)
             .with_extension(crate::create_latex_extension())
             .with_extension(crate::create_callout_extension())
             .with_extension(crate::create_enhanced_tags_extension())

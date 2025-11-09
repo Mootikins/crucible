@@ -123,6 +123,34 @@ impl SurrealClient {
         Self::new(config).await
     }
 
+    /// Create an isolated in-memory SurrealDB client for testing
+    ///
+    /// Each call creates a unique namespace and database using thread ID and timestamp,
+    /// ensuring complete test isolation when running tests in parallel. This is the
+    /// recommended method for all tests to avoid race conditions and shared state issues.
+    ///
+    /// The unique identifiers make it easy to debug individual test runs and work
+    /// correctly with benchmarks that may run the same test multiple times.
+    #[cfg(test)]
+    pub async fn new_isolated_memory() -> DbResult<Self> {
+        use std::time::SystemTime;
+
+        let timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let thread_id = std::thread::current().id();
+
+        let config = SurrealDbConfig {
+            namespace: format!("test_{:?}", thread_id),
+            database: format!("db_{}", timestamp),
+            path: ":memory:".to_string(),
+            max_connections: Some(10),
+            timeout_seconds: Some(30),
+        };
+        Self::new(config).await
+    }
+
     /// Create a file-based SurrealDB client using RocksDB
     ///
     /// Data will be persisted to the specified path. The path should
@@ -508,7 +536,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_simple_query() {
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
 
         // Create a record
         client
@@ -530,7 +558,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_with_id() {
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
 
         // Create a record using insert
         let mut data = HashMap::new();
@@ -556,7 +584,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_graph_traversal() {
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
 
         // Create note and embedding
         client

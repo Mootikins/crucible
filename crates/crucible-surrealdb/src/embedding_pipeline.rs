@@ -674,7 +674,7 @@ mod tests {
         let pipeline = EmbeddingPipeline::new(thread_pool.clone());
 
         // Test with mock client (will fail but structure should work)
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
         let document_ids = vec!["doc1".to_string(), "doc2".to_string()];
 
         let result = pipeline
@@ -698,7 +698,7 @@ mod tests {
         let pipeline = EmbeddingPipeline::new(thread_pool.clone());
 
         // Test with mock client
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
 
         let result = pipeline
             .process_document_incremental(&client, "nonexistent_doc")
@@ -717,7 +717,7 @@ mod tests {
         let pipeline = EmbeddingPipeline::new(thread_pool.clone());
 
         // Test with mock client
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
 
         let result = pipeline
             .process_document_with_retry(&client, "nonexistent_doc")
@@ -739,7 +739,7 @@ mod tests {
         let pipeline = EmbeddingPipeline::new(thread_pool.clone());
 
         // Test with mock client
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
         let document_ids = vec!["doc1".to_string(), "doc2".to_string(), "doc3".to_string()];
 
         let result = pipeline
