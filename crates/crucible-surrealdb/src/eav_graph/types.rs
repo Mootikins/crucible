@@ -52,6 +52,22 @@ impl<T> From<RecordId<T>> for String {
     }
 }
 
+impl<T> TryFrom<String> for RecordId<T> {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        Self::from_string(&s)
+    }
+}
+
+impl<T> TryFrom<&str> for RecordId<T> {
+    type Error = String;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        Self::from_string(s)
+    }
+}
+
 impl<T> Serialize for RecordId<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -66,6 +82,13 @@ impl<T> Serialize for RecordId<T> {
     }
 }
 
+/// Deserialize RecordId from multiple formats:
+/// - String format: "table:id"
+/// - Object format: {"table": "entities", "id": "note:123"}
+/// - SurrealDB Thing format: {"tb": "entities", "id": {...}}
+///
+/// This flexibility allows seamless integration with SurrealDB's internal
+/// representation while maintaining clean string-based IDs in application code.
 impl<'de, T> Deserialize<'de> for RecordId<T> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

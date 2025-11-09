@@ -10,7 +10,7 @@ use crate::surreal_client::SurrealClient;
 use crate::transaction_queue::{
     DatabaseTransaction, TransactionMetadata, TransactionReceiver, TransactionResult,
 };
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use serde_json::json;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
