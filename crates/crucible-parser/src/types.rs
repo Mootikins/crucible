@@ -868,6 +868,32 @@ pub enum ASTBlockType {
     ThematicBreak,
 }
 
+impl ASTBlockType {
+    /// Get the string representation of this block type
+    ///
+    /// Returns a zero-cost &'static str
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ASTBlockType::Heading => "heading",
+            ASTBlockType::Paragraph => "paragraph",
+            ASTBlockType::Code => "code",
+            ASTBlockType::List => "list",
+            ASTBlockType::Callout => "callout",
+            ASTBlockType::Latex => "latex",
+            ASTBlockType::Blockquote => "blockquote",
+            ASTBlockType::Table => "table",
+            ASTBlockType::HorizontalRule => "horizontal_rule",
+            ASTBlockType::ThematicBreak => "thematic_break",
+        }
+    }
+}
+
+impl std::fmt::Display for ASTBlockType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// AST Block representing a semantic unit in a markdown document
 ///
 /// AST blocks are natural semantic boundaries that correspond to complete
