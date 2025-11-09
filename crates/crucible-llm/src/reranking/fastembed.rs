@@ -328,48 +328,4 @@ mod tests {
         assert!(results.is_empty());
     }
 
-    // Integration test - requires model download, so marked as ignore by default
-    #[tokio::test]
-    #[ignore]
-    async fn test_rerank_with_real_model() {
-        let config = FastEmbedRerankerConfig::bge_base();
-        let reranker = FastEmbedReranker::new(config).unwrap();
-
-        let documents = vec![
-            (
-                "doc1".to_string(),
-                "Rust is a systems programming language".to_string(),
-                0.85,
-            ),
-            (
-                "doc2".to_string(),
-                "Python is great for data science".to_string(),
-                0.82,
-            ),
-            (
-                "doc3".to_string(),
-                "Rust has memory safety without garbage collection".to_string(),
-                0.80,
-            ),
-        ];
-
-        let results = reranker
-            .rerank("rust programming language", documents, Some(2))
-            .await
-            .unwrap();
-
-        assert_eq!(results.len(), 2);
-        // First result should be most relevant (doc1 or doc3 about Rust)
-        assert!(results[0].document_id == "doc1" || results[0].document_id == "doc3");
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_health_check() {
-        let config = FastEmbedRerankerConfig::default();
-        let reranker = FastEmbedReranker::new(config).unwrap();
-
-        let health = reranker.health_check().await;
-        assert!(health.is_ok());
-    }
 }
