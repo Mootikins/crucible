@@ -4,8 +4,9 @@ use serde_json::{json, Value};
 use crate::{QueryResult, SurrealClient};
 
 use super::types::{
-    BlockNode, EmbeddingVector, Entity, EntityRecord, EntityTag,
-    Property, PropertyRecord, RecordId, Relation as SurrealRelation, RelationRecord, Tag, TagRecord,
+    BlockNode, EmbeddingVector, Entity, EntityRecord, EntityTag as SurrealEntityTag,
+    Property, PropertyRecord, RecordId, Relation as SurrealRelation, RelationRecord,
+    Tag as SurrealTag, TagRecord,
 };
 use surrealdb::sql::Thing;
 
@@ -362,7 +363,7 @@ impl EAVGraphStore {
     }
 
     /// Upsert (or create) a tag entry.
-    pub async fn upsert_tag(&self, tag: &Tag) -> Result<RecordId<TagRecord>> {
+    pub async fn upsert_tag(&self, tag: &SurrealTag) -> Result<RecordId<TagRecord>> {
         let id = tag
             .id
             .as_ref()
@@ -453,7 +454,7 @@ impl EAVGraphStore {
     }
 
     /// Upsert the mapping between an entity and a tag.
-    pub async fn upsert_entity_tag(&self, mapping: &EntityTag) -> Result<()> {
+    pub async fn upsert_entity_tag(&self, mapping: &SurrealEntityTag) -> Result<()> {
         let id = mapping
             .id
             .as_ref()
@@ -1145,6 +1146,245 @@ fn thing_value<T>(id: &RecordId<T>) -> serde_json::Value {
         );
         json!({"tb": id.table, "id": id.id})
     })
+}
+
+// ============================================================================
+// TagStorage Implementation
+// ============================================================================
+
+use crucible_core::storage::TagStorage as CoreTagStorage;
+use super::adapter::{
+    core_entity_tag_to_surreal, core_tag_to_surreal, surreal_tag_to_core,
+};
+
+#[async_trait]
+impl CoreTagStorage for EAVGraphStore {
+    async fn store_tag(&self, tag: crucible_core::storage::Tag) -> StorageResult<String> {
+        // Generate RecordId for the tag
+        let tag_id = RecordId::new("tags", tag.id.clone());
+        let surreal_tag = core_tag_to_surreal(tag, Some(tag_id.clone()));
+
+        let params = json!({
+            "table": tag_id.table,
+            "id": tag_id.id,
+            "name": surreal_tag.name,
+            "parent_id": surreal_tag.parent_id.as_ref().map(|id| thing_value(id)),
+            "path": surreal_tag.path,
+            "depth": surreal_tag.depth,
+            "description": surreal_tag.description,
+            "color": surreal_tag.color,
+            "icon": surreal_tag.icon,
+        });
+
+        self.client
+            .query(
+                r#"
+                CREATE type::thing($table, $id) SET
+                    name = $name,
+                    parent_id = $parent_id,
+                    path = $path,
+                    depth = $depth,
+                    description = $description,
+                    color = $color,
+                    icon = $icon
+                "#,
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        Ok(tag_id.id)
+    }
+
+    async fn get_tag(&self, id: &str) -> StorageResult<Option<crucible_core::storage::Tag>> {
+        let params = json!({"id": id});
+        let result = self
+            .client
+            .query(
+                "SELECT * FROM tags WHERE id = type::thing('tags', $id)",
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        if result.records.is_empty() {
+            return Ok(None);
+        }
+
+        let surreal_tag: SurrealTag = serde_json::from_value(
+            serde_json::to_value(&result.records[0].data)
+                .map_err(|e| StorageError::Backend(e.to_string()))?,
+        )
+        .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        Ok(Some(surreal_tag_to_core(surreal_tag)))
+    }
+
+    async fn get_child_tags(&self, parent_tag_id: &str) -> StorageResult<Vec<crucible_core::storage::Tag>> {
+        let params = json!({"parent_id": parent_tag_id});
+        let result = self
+            .client
+            .query(
+                "SELECT * FROM tags WHERE parent_id = type::thing('tags', $parent_id)",
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        let tags: Vec<SurrealTag> = result
+            .records
+            .iter()
+            .map(|record| {
+                serde_json::from_value(
+                    serde_json::to_value(&record.data)
+                        .map_err(|e| StorageError::Backend(e.to_string()))?,
+                )
+                .map_err(|e| StorageError::Backend(e.to_string()))
+            })
+            .collect::<StorageResult<Vec<_>>>()?;
+
+        Ok(tags.into_iter().map(surreal_tag_to_core).collect())
+    }
+
+    async fn associate_tag(&self, entity_tag: crucible_core::storage::EntityTag) -> StorageResult<()> {
+        // Generate RecordId for the entity_tag
+        let entity_tag_id = RecordId::new(
+            "entity_tags",
+            format!("{}:{}", entity_tag.entity_id, entity_tag.tag_id),
+        );
+        let surreal_entity_tag = core_entity_tag_to_surreal(entity_tag, Some(entity_tag_id.clone()));
+
+        let params = json!({
+            "table": entity_tag_id.table,
+            "id": entity_tag_id.id,
+            "entity_id": thing_value(&surreal_entity_tag.entity_id),
+            "tag_id": thing_value(&surreal_entity_tag.tag_id),
+            "source": surreal_entity_tag.source,
+            "confidence": surreal_entity_tag.confidence,
+        });
+
+        self.client
+            .query(
+                r#"
+                CREATE type::thing($table, $id) SET
+                    entity_id = $entity_id,
+                    tag_id = $tag_id,
+                    source = $source,
+                    confidence = $confidence
+                "#,
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn get_entity_tags(&self, entity_id: &str) -> StorageResult<Vec<crucible_core::storage::Tag>> {
+        let params = json!({"entity_id": entity_id});
+        let result = self
+            .client
+            .query(
+                r#"
+                SELECT tag_id.* FROM entity_tags
+                WHERE entity_id = type::thing('entities', $entity_id)
+                "#,
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        let tags: Vec<SurrealTag> = result
+            .records
+            .iter()
+            .map(|record| {
+                serde_json::from_value(
+                    serde_json::to_value(&record.data)
+                        .map_err(|e| StorageError::Backend(e.to_string()))?,
+                )
+                .map_err(|e| StorageError::Backend(e.to_string()))
+            })
+            .collect::<StorageResult<Vec<_>>>()?;
+
+        Ok(tags.into_iter().map(surreal_tag_to_core).collect())
+    }
+
+    async fn get_entities_by_tag(&self, tag_id: &str) -> StorageResult<Vec<String>> {
+        let params = json!({"tag_id": tag_id});
+        let result = self
+            .client
+            .query(
+                r#"
+                SELECT entity_id FROM entity_tags
+                WHERE tag_id = type::thing('tags', $tag_id)
+                "#,
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        let entity_ids: Vec<String> = result
+            .records
+            .iter()
+            .filter_map(|record| {
+                record
+                    .data
+                    .get("entity_id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            })
+            .collect();
+
+        Ok(entity_ids)
+    }
+
+    async fn dissociate_tag(&self, entity_id: &str, tag_id: &str) -> StorageResult<()> {
+        let params = json!({
+            "entity_id": entity_id,
+            "tag_id": tag_id,
+        });
+
+        self.client
+            .query(
+                r#"
+                DELETE FROM entity_tags
+                WHERE entity_id = type::thing('entities', $entity_id)
+                AND tag_id = type::thing('tags', $tag_id)
+                "#,
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn delete_tag(&self, id: &str, delete_associations: bool) -> StorageResult<usize> {
+        let params = json!({"id": id});
+
+        if delete_associations {
+            // First delete all entity_tag associations
+            self.client
+                .query(
+                    "DELETE FROM entity_tags WHERE tag_id = type::thing('tags', $id)",
+                    &[params.clone()],
+                )
+                .await
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
+        }
+
+        // Then delete the tag itself
+        let result = self
+            .client
+            .query(
+                "DELETE FROM tags WHERE id = type::thing('tags', $id)",
+                &[params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        Ok(result.records.len())
+    }
 }
 
 // -- Tests -----------------------------------------------------------------
