@@ -122,7 +122,7 @@ fn core_properties(
         entity_id.clone(),
         "core",
         "path",
-        PropertyValue::text(doc.path.to_string_lossy()),
+        PropertyValue::Text(doc.path.to_string_lossy().to_string()),
     ));
 
     props.push(Property::new(
@@ -130,7 +130,7 @@ fn core_properties(
         entity_id.clone(),
         "core",
         "relative_path",
-        PropertyValue::text(relative_path),
+        PropertyValue::Text(relative_path.to_string()),
     ));
 
     props.push(Property::new(
@@ -138,7 +138,7 @@ fn core_properties(
         entity_id.clone(),
         "core",
         "title",
-        PropertyValue::text(doc.title()),
+        PropertyValue::Text(doc.title()),
     ));
 
     props.push(Property::new(
@@ -146,7 +146,7 @@ fn core_properties(
         entity_id.clone(),
         "core",
         "tags",
-        PropertyValue::json(Value::Array(
+        PropertyValue::Json(Value::Array(
             doc.all_tags()
                 .into_iter()
                 .map(Value::String)
@@ -167,7 +167,7 @@ fn core_properties(
             entity_id.clone(),
             "core",
             "frontmatter",
-            PropertyValue::json(fm_value),
+            PropertyValue::Json(fm_value),
         ));
     }
 

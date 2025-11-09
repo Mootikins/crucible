@@ -143,7 +143,8 @@ pub struct Property {
 }
 
 /// Strongly-typed property values
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PropertyValue {
     Text(String),
     Number(f64),

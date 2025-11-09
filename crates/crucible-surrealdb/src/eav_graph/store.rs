@@ -82,6 +82,10 @@ impl EAVGraphStore {
         let entity_id = &property.entity_id;
         let value = &property.value;
 
+        // Extract denormalized columns from enum
+        let (value_json, value_type, value_text, value_number, value_bool, value_date) =
+            property_value_to_columns(value);
+
         let params = json!({
             "table": id.table,
             "id": id.id,
@@ -89,12 +93,12 @@ impl EAVGraphStore {
             "entity_id": entity_id.id,
             "namespace": property.namespace.0,
             "key": property.key,
-            "value": value.as_json_string(),
-            "value_type": value.value_type.as_str(),
-            "value_text": value.value_text,
-            "value_number": value.value_number,
-            "value_bool": value.value_bool,
-            "value_date": value.value_date.clone(),
+            "value": value_json,
+            "value_type": value_type,
+            "value_text": value_text,
+            "value_number": value_number,
+            "value_bool": value_bool,
+            "value_date": value_date,
             "source": property.source,
             "confidence": property.confidence,
         });
@@ -589,6 +593,68 @@ fn thing_value<T>(id: &RecordId<T>) -> serde_json::Value {
     serde_json::to_value(thing).expect("Thing serialization")
 }
 
+/// Convert PropertyValue enum to denormalized column values for database storage
+///
+/// Returns: (value_json, value_type, value_text, value_number, value_bool, value_date)
+fn property_value_to_columns(
+    value: &PropertyValue,
+) -> (Value, &'static str, Option<String>, Option<f64>, Option<bool>, Option<String>) {
+    use chrono::{DateTime, Utc};
+
+    match value {
+        PropertyValue::Text(s) => (
+            Value::String(s.clone()),
+            "text",
+            Some(s.clone()),
+            None,
+            None,
+            None,
+        ),
+        PropertyValue::Number(n) => (
+            serde_json::Number::from_f64(*n)
+                .map(Value::Number)
+                .unwrap_or(Value::Null),
+            "number",
+            None,
+            Some(*n),
+            None,
+            None,
+        ),
+        PropertyValue::Bool(b) => (
+            Value::Bool(*b),
+            "boolean",
+            None,
+            None,
+            Some(*b),
+            None,
+        ),
+        PropertyValue::Date(d) => {
+            // Convert NaiveDate to DateTime<Utc> for storage
+            let datetime = d
+                .and_hms_opt(0, 0, 0)
+                .map(|dt| DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc));
+            let date_str = datetime.as_ref().map(|dt| dt.to_rfc3339());
+
+            (
+                Value::String(d.to_string()),
+                "date",
+                None,
+                None,
+                None,
+                date_str,
+            )
+        }
+        PropertyValue::Json(v) => (
+            v.clone(),
+            "json",
+            None,
+            None,
+            None,
+            None,
+        ),
+    }
+}
+
 // -- Tests -----------------------------------------------------------------
 
 #[cfg(test)]
@@ -625,7 +691,7 @@ mod tests {
             entity_id(),
             "core",
             "title",
-            PropertyValue::text("Sample"),
+            PropertyValue::Text("Sample".to_string()),
         );
 
         store.upsert_property(&property).await.unwrap();
