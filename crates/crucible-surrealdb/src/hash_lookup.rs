@@ -862,61 +862,57 @@ impl<'a> HashLookupStorage for SurrealHashLookupStorage<'a> {
                 "algorithm": file_info.algorithm.to_string()
             });
 
-            let update_sql = "
-                UPDATE type::thing('entities', $id)
-                SET
-                    entity_type = entity_type ?? 'note',
-                    content_hash = $content_hash,
-                    data.relative_path = $relative_path,
-                    data.path = $relative_path,
-                    data.file_size = $file_size,
-                    data.source_modified_at = $source_modified_at,
-                    data.hash_algorithm = $algorithm,
-                    data.content_hash = $content_hash,
-                    updated_at = time::now()
-                RETURN NONE;
-            ";
-
-            let result = match self.client.query(update_sql, &[params.clone()]).await {
-                Ok(r) => r,
-                Err(e) => {
-                    warn!(
-                        "Failed to update hash metadata for {}: {}",
-                        file_info.relative_path, e
-                    );
-                    return Err(HashError::IoError {
-                        error: e.to_string(),
-                    });
-                }
+            // Check if record exists first
+            let check_sql = "SELECT id FROM type::thing('entities', $id)";
+            let exists = match self.client.query(check_sql, &[params.clone()]).await {
+                Ok(result) => !result.records.is_empty(),
+                Err(_) => false,
             };
 
-            if result.records.is_empty() {
-                let create_sql = "
-                    CREATE type::thing('entities', $id)
-                    CONTENT {
-                        entity_type: 'note',
-                        content_hash: $content_hash,
-                        data: {
-                            relative_path: $relative_path,
-                            path: $relative_path,
-                            file_size: $file_size,
-                            source_modified_at: $source_modified_at,
-                            hash_algorithm: $algorithm,
-                            content_hash: $content_hash
-                        }
-                    }
+            let sql = if exists {
+                // Update existing record
+                "
+                    UPDATE type::thing('entities', $id)
+                    SET
+                        content_hash = $content_hash,
+                        data.relative_path = $relative_path,
+                        data.path = $relative_path,
+                        data.file_size = $file_size,
+                        data.source_modified_at = $source_modified_at,
+                        data.hash_algorithm = $algorithm,
+                        data.content_hash = $content_hash,
+                        updated_at = time::now()
                     RETURN NONE;
-                ";
+                "
+            } else {
+                // Create new record with all required fields
+                "
+                    CREATE type::thing('entities', $id)
+                    SET
+                        type = 'note',
+                        entity_type = 'note',
+                        content_hash = $content_hash,
+                        data.relative_path = $relative_path,
+                        data.path = $relative_path,
+                        data.file_size = $file_size,
+                        data.source_modified_at = $source_modified_at,
+                        data.hash_algorithm = $algorithm,
+                        data.content_hash = $content_hash,
+                        updated_at = time::now()
+                    RETURN NONE;
+                "
+            };
 
-                if let Err(e) = self.client.query(create_sql, &[params]).await {
-                    warn!(
-                        "Failed to create hash metadata for {}: {}",
-                        file_info.relative_path, e
-                    );
-                    return Err(HashError::IoError {
-                        error: e.to_string(),
-                    });
-                }
+            if let Err(e) = self.client.query(sql, &[params]).await {
+                warn!(
+                    "Failed to {} hash metadata for {}: {}",
+                    if exists { "update" } else { "create" },
+                    file_info.relative_path,
+                    e
+                );
+                return Err(HashError::IoError {
+                    error: e.to_string(),
+                });
             }
         }
 
@@ -1046,7 +1042,7 @@ mod tests {
     use std::path::PathBuf;
 
     async fn setup_client() -> SurrealClient {
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
         initialize_kiln_schema(&client).await.unwrap();
         client
     }

@@ -1729,7 +1729,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_file_list_change_detection() {
-        let client = crate::SurrealClient::new_memory().await.unwrap();
+        let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
         let kiln_root = PathBuf::from("/test");
         let files: Vec<&KilnFileInfo> = vec![];
 
@@ -1745,7 +1745,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_needs_processing_with_invalid_data() {
-        let client = crate::SurrealClient::new_memory().await.unwrap();
+        let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
 
         let file_info = KilnFileInfo {
             path: PathBuf::from("/test.md"),
@@ -1763,7 +1763,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_change_detection_with_new_files() {
-        let client = crate::SurrealClient::new_memory().await.unwrap();
+        let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
         let kiln_root = PathBuf::from("/test");
 
         let file_info = KilnFileInfo {

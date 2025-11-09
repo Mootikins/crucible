@@ -126,7 +126,7 @@ impl<S: DeduplicationStorage> DeduplicationDetector<S> {
         if content.is_empty() {
             self.average_block_size
         } else {
-            content.len().max(self.average_block_size)
+            content.len()
         }
     }
 
@@ -135,7 +135,9 @@ impl<S: DeduplicationStorage> DeduplicationDetector<S> {
         if content.len() <= max_length {
             content.to_string()
         } else {
-            format!("{}...", &content[..max_length])
+            // Ensure we don't exceed max_length including the "..."
+            let truncate_at = max_length.saturating_sub(3);
+            format!("{}...", &content[..truncate_at])
         }
     }
 }

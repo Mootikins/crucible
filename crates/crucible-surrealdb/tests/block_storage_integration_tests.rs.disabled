@@ -5,11 +5,14 @@
 
 use chrono::Utc;
 use crucible_core::storage::eav_graph_traits::{Block, BlockStorage};
-use crucible_surrealdb::eav_graph::store::EAVGraphStore;
+use crucible_surrealdb::eav_graph::{store::EAVGraphStore, apply_eav_graph_schema};
+use crucible_surrealdb::SurrealClient;
 
 /// Helper to create a test store
 async fn create_test_store() -> EAVGraphStore {
-    EAVGraphStore::new_in_memory().await.unwrap()
+    let client = SurrealClient::new_isolated_memory().await.unwrap();
+    apply_eav_graph_schema(&client).await.unwrap();
+    EAVGraphStore::new(client)
 }
 
 /// Helper to create a test entity

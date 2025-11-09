@@ -7,6 +7,7 @@
 //! - Dependency inversion support for testing
 //! - High-performance parsing with sub-100ms target
 
+pub mod basic_markdown;
 pub mod block_extractor;
 pub mod block_hasher;
 pub mod callouts;
@@ -36,6 +37,7 @@ pub use types::{
 };
 
 // Convenience factory functions
+pub use basic_markdown::create_basic_markdown_extension;
 pub use callouts::create_callout_extension;
 pub use enhanced_tags::create_enhanced_tags_extension;
 pub use footnotes::create_footnote_extension;

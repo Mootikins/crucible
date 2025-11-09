@@ -340,7 +340,7 @@ impl EAVGraphStore {
                 r#"
                 CREATE type::thing($table, $id)
                 CONTENT {
-                    entity_type: "note",
+                    type: "note",
                     created_at: time::now(),
                     updated_at: time::now(),
                     version: 1,
@@ -1063,12 +1063,15 @@ impl CoreRelationStorage for EAVGraphStore {
         entity_id: &str,
         relation_type: Option<&str>,
     ) -> StorageResult<Vec<crucible_core::storage::Relation>> {
+        // Strip the 'entities:' prefix if present to get just the ID part
+        let clean_entity_id = entity_id.strip_prefix("entities:").unwrap_or(entity_id);
+
         // Use 'in' field (graph edge source) to find relations originating FROM this entity
         let (query, params) = if let Some(rel_type) = relation_type {
             (
                 "SELECT * FROM relations WHERE in = type::thing('entities', $entity_id) AND relation_type = $relation_type",
                 json!({
-                    "entity_id": entity_id,
+                    "entity_id": clean_entity_id,
                     "relation_type": rel_type,
                 })
             )
@@ -1076,7 +1079,7 @@ impl CoreRelationStorage for EAVGraphStore {
             (
                 "SELECT * FROM relations WHERE in = type::thing('entities', $entity_id)",
                 json!({
-                    "entity_id": entity_id,
+                    "entity_id": clean_entity_id,
                 })
             )
         };
@@ -1106,12 +1109,15 @@ impl CoreRelationStorage for EAVGraphStore {
         entity_id: &str,
         relation_type: Option<&str>,
     ) -> StorageResult<Vec<crucible_core::storage::Relation>> {
+        // Strip the 'entities:' prefix if present to get just the ID part
+        let clean_entity_id = entity_id.strip_prefix("entities:").unwrap_or(entity_id);
+
         // Use 'out' field (graph edge target) to find relations pointing TO this entity
         let (query, params) = if let Some(rel_type) = relation_type {
             (
                 "SELECT * FROM relations WHERE out = type::thing('entities', $entity_id) AND relation_type = $relation_type",
                 json!({
-                    "entity_id": entity_id,
+                    "entity_id": clean_entity_id,
                     "relation_type": rel_type,
                 })
             )
@@ -1119,7 +1125,7 @@ impl CoreRelationStorage for EAVGraphStore {
             (
                 "SELECT * FROM relations WHERE out = type::thing('entities', $entity_id)",
                 json!({
-                    "entity_id": entity_id,
+                    "entity_id": clean_entity_id,
                 })
             )
         };
@@ -1244,63 +1250,72 @@ impl CoreTagStorage for EAVGraphStore {
         let tag_id = RecordId::new("tags", tag.id.clone());
         let surreal_tag = core_tag_to_surreal(tag, Some(tag_id.clone()));
 
-        // Build params based on whether parent_id exists
-        let (query, params) = if let Some(parent_id) = &surreal_tag.parent_id {
-            let params = json!({
-                "table": tag_id.table,
-                "id": tag_id.id,
-                "name": surreal_tag.name,
-                "parent_table": parent_id.table,
-                "parent_id_value": parent_id.id,
-                "path": surreal_tag.path,
-                "depth": surreal_tag.depth,
-                "description": surreal_tag.description,
-                "color": surreal_tag.color,
-                "icon": surreal_tag.icon,
-            });
+        let (parent_table, parent_id, has_parent) = if let Some(parent) = &surreal_tag.parent_id {
             (
-                r#"
-                CREATE type::thing($table, $id) SET
-                    name = $name,
-                    parent_id = type::thing($parent_table, $parent_id_value),
-                    path = $path,
-                    depth = $depth,
-                    description = $description,
-                    color = $color,
-                    icon = $icon
-                "#,
-                params,
+                serde_json::Value::String(parent.table.clone()),
+                serde_json::Value::String(parent.id.clone()),
+                serde_json::Value::Bool(true),
             )
         } else {
-            let params = json!({
-                "table": tag_id.table,
-                "id": tag_id.id,
-                "name": surreal_tag.name,
-                "path": surreal_tag.path,
-                "depth": surreal_tag.depth,
-                "description": surreal_tag.description,
-                "color": surreal_tag.color,
-                "icon": surreal_tag.icon,
-            });
-            (
+            (serde_json::Value::Null, serde_json::Value::Null, serde_json::Value::Bool(false))
+        };
+
+        let params = json!({
+            "table": tag_id.table,
+            "id": tag_id.id,
+            "name": surreal_tag.name,
+            "parent_table": parent_table,
+            "parent_id": parent_id,
+            "has_parent": has_parent,
+            "path": surreal_tag.path,
+            "depth": surreal_tag.depth,
+            "description": surreal_tag.description,
+            "color": surreal_tag.color,
+            "icon": surreal_tag.icon,
+        });
+
+        // Try UPDATE first
+        let result = self
+            .client
+            .query(
                 r#"
-                CREATE type::thing($table, $id) SET
+                UPDATE type::thing($table, $id)
+                SET
                     name = $name,
-                    parent_id = NONE,
+                    parent_id = if $has_parent THEN type::thing($parent_table, $parent_id) ELSE NONE END,
                     path = $path,
                     depth = $depth,
                     description = $description,
                     color = $color,
                     icon = $icon
+                RETURN NONE;
                 "#,
-                params,
+                &[params.clone()],
             )
-        };
-
-        self.client
-            .query(query, &[params])
             .await
             .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        // If UPDATE didn't affect anything, CREATE it
+        if result.records.is_empty() {
+            self.client
+                .query(
+                    r#"
+                    CREATE type::thing($table, $id)
+                    SET
+                        name = $name,
+                        parent_id = if $has_parent THEN type::thing($parent_table, $parent_id) ELSE NONE END,
+                        path = $path,
+                        depth = $depth,
+                        description = $description,
+                        color = $color,
+                        icon = $icon
+                    RETURN NONE;
+                    "#,
+                    &[params],
+                )
+                .await
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
+        }
 
         Ok(tag_id.id)
     }
@@ -1392,9 +1407,12 @@ impl CoreTagStorage for EAVGraphStore {
     }
 
     async fn get_entity_tags(&self, entity_id: &str) -> StorageResult<Vec<crucible_core::storage::Tag>> {
-        let params = json!({"entity_id": entity_id});
+        // Strip the 'entities:' prefix if present to get just the ID part
+        let clean_entity_id = entity_id.strip_prefix("entities:").unwrap_or(entity_id);
 
-        // First, get all tag IDs associated with this entity
+        let params = json!({"entity_id": clean_entity_id});
+
+        // Query using type::thing() to properly match the record<entities> type
         let result = self
             .client
             .query(
@@ -1411,19 +1429,33 @@ impl CoreTagStorage for EAVGraphStore {
             return Ok(Vec::new());
         }
 
-        // Extract tag IDs from the result
         let mut tag_ids = Vec::new();
         for record in &result.records {
             if let Some(tag_id_value) = record.data.get("tag_id") {
-                // tag_id is a RecordId, extract the full ID string
-                if let Some(tag_id_obj) = tag_id_value.as_object() {
+                // tag_id can be stored as a string (e.g., "tags:project:ai:nlp")
+                // or as an object/Thing. Handle both cases.
+                if let Some(tag_id_str) = tag_id_value.as_str() {
+                    tag_ids.push(tag_id_str.to_string());
+                } else if let Some(tag_id_obj) = tag_id_value.as_object() {
+                    // Handle {"table": "tags", "id": "project:ai:nlp"} format
                     if let (Some(table), Some(id)) = (tag_id_obj.get("table"), tag_id_obj.get("id")) {
                         let table_str = table.as_str().unwrap_or("tags");
                         let id_str = id.as_str().unwrap_or("");
                         tag_ids.push(format!("{}:{}", table_str, id_str));
                     }
-                } else if let Some(tag_id_str) = tag_id_value.as_str() {
-                    tag_ids.push(tag_id_str.to_string());
+                    // Handle {"tb": "tags", "id": "project:ai:nlp"} format
+                    else if let (Some(table), Some(id)) = (tag_id_obj.get("tb"), tag_id_obj.get("id")) {
+                        let table_str = table.as_str().unwrap_or("tags");
+                        // Handle nested ID formats like {"String": "project:ai:nlp"}
+                        let id_str = if let Some(id_str) = id.as_str() {
+                            id_str
+                        } else if let Some(id_obj) = id.as_object() {
+                            id_obj.get("String").and_then(|v| v.as_str()).unwrap_or("")
+                        } else {
+                            ""
+                        };
+                        tag_ids.push(format!("{}:{}", table_str, id_str));
+                    }
                 }
             }
         }
@@ -1432,27 +1464,25 @@ impl CoreTagStorage for EAVGraphStore {
             return Ok(Vec::new());
         }
 
-        // Now fetch all tags in a single batch query
-        let tags_params = json!({"tag_ids": tag_ids});
-        let tags_result = self
-            .client
-            .query(
-                r#"
-                SELECT * FROM tags WHERE id IN $tag_ids
-                "#,
-                &[tags_params],
-            )
-            .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+        // Now fetch all tags individually (SurrealDB doesn't support IN queries with type::thing)
+        // Tag IDs are in format "tags:project:ai:nlp", need to query using just "project:ai:nlp"
+        let tag_query_ids: Vec<String> = tag_ids
+            .iter()
+            .map(|id| {
+                if id.starts_with("tags:") {
+                    id.strip_prefix("tags:").unwrap_or(id).to_string()
+                } else {
+                    id.clone()
+                }
+            })
+            .collect();
 
-        // Parse tags from result
+        // Fetch each tag individually
         let mut all_tags = Vec::new();
-        for record in &tags_result.records {
-            let tag_value = serde_json::to_value(&record.data)
-                .map_err(|e| StorageError::Backend(format!("Failed to serialize tag data: {}", e)))?;
-            let surreal_tag: SurrealTag = serde_json::from_value(tag_value)
-                .map_err(|e| StorageError::Backend(format!("Failed to parse tag: {}", e)))?;
-            all_tags.push(surreal_tag_to_core(surreal_tag));
+        for tag_id in tag_query_ids {
+            if let Some(tag) = self.get_tag(&tag_id).await? {
+                all_tags.push(tag);
+            }
         }
 
         Ok(all_tags)
@@ -1561,7 +1591,7 @@ mod tests {
 
     #[tokio::test]
     async fn upsert_entity_and_property_flow() {
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
 
@@ -1596,7 +1626,7 @@ mod tests {
 
     #[tokio::test]
     async fn replace_blocks_writes_rows() {
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
 
@@ -1626,7 +1656,7 @@ mod tests {
 
     #[tokio::test]
     async fn upsert_embedding_stores_vector() {
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
 

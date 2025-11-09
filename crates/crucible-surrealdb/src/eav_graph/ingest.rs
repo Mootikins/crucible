@@ -1,7 +1,7 @@
 use anyhow::Result;
 use blake3::Hasher;
 use crucible_core::parser::types::ParsedDocument;
-use crucible_core::storage::{Relation as CoreRelation, RelationStorage, Tag as CoreTag, TagStorage, EntityTag};
+use crucible_core::storage::{Relation as CoreRelation, RelationStorage, Tag as CoreTag, TagStorage};
 use serde_json::{Map, Value};
 
 use super::store::EAVGraphStore;
@@ -46,22 +46,10 @@ impl<'a> DocumentIngestor<'a> {
             self.store.store_relation(relation).await?;
         }
 
-        // Extract and store tag associations
-        let tags_to_store = extract_tags(doc);
-        for tag in &tags_to_store {
-            self.store.store_tag(tag.clone()).await?;
-        }
-
-        // Associate tags with this entity
-        let entity_id_str = format!("{}:{}", entity_id.table, entity_id.id);
-        for tag in &tags_to_store {
-            let entity_tag = EntityTag {
-                entity_id: entity_id_str.clone(),
-                tag_id: tag.id.clone(),
-                created_at: chrono::Utc::now(),
-            };
-            self.store.associate_tag(entity_tag).await?;
-        }
+        // Note: Tag storage and associations are now handled separately by
+        // create_tag_associations in kiln_integration to ensure consistent
+        // tag ID schemes and proper hierarchy management.
+        // The extract_tags function is kept for potential future use.
 
         Ok(entity_id)
     }
@@ -98,7 +86,7 @@ mod tests {
 
     #[tokio::test]
     async fn ingest_document_writes_entities_properties_blocks() {
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
         let ingestor = DocumentIngestor::new(&store);
@@ -130,7 +118,7 @@ mod tests {
         use crucible_core::parser::types::Wikilink;
         use crucible_core::storage::RelationStorage;
 
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
         let ingestor = DocumentIngestor::new(&store);
@@ -203,7 +191,7 @@ mod tests {
     async fn ingest_document_extracts_hierarchical_tags() {
         use crucible_core::storage::TagStorage;
 
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
         let ingestor = DocumentIngestor::new(&store);
@@ -212,6 +200,13 @@ mod tests {
         doc.tags.clear();
         doc.tags.push(Tag::new("project/ai/nlp", 0));
         doc.tags.push(Tag::new("status/active", 0));
+
+        // Extract and manually store tags since tag creation has been moved out of ingestion
+        // (see lines 49-52 comment - tags are now created by create_tag_associations in kiln_integration)
+        let tags = extract_tags(&doc);
+        for tag in tags {
+            store.store_tag(tag).await.unwrap();
+        }
 
         let entity_id = ingestor.ingest(&doc, "notes/test-tags.md").await.unwrap();
 
@@ -241,24 +236,8 @@ mod tests {
         let active_tag = active_tag.unwrap();
         assert_eq!(active_tag.parent_tag_id, Some("tags:status".to_string()));
 
-        // Check entity-tag associations
-        // Use just the ID part for querying
-        let entity_tags = store
-            .get_entity_tags(&entity_id.id)
-            .await;
-
-        // If we get an error, at least the tag storage worked
-        // The association feature may need debugging separately
-        match entity_tags {
-            Ok(tags) => {
-                assert!(tags.len() >= 2, "Should have at least 2 tag associations (leaf tags): got {}", tags.len());
-            }
-            Err(e) => {
-                // For now, just warn that tag associations didn't work
-                // The tag creation itself was tested above
-                eprintln!("Warning: Tag association query failed: {}", e);
-            }
-        }
+        // Note: Entity-tag associations are also handled separately by kiln_integration,
+        // so we don't check them in this unit test for DocumentIngestor.
     }
 
     #[tokio::test]
@@ -266,7 +245,7 @@ mod tests {
         use crucible_core::parser::types::Wikilink;
         use crucible_core::storage::RelationStorage;
 
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
         let ingestor = DocumentIngestor::new(&store);
@@ -312,7 +291,7 @@ mod tests {
         use crucible_core::parser::types::Wikilink;
         use crucible_core::storage::RelationStorage;
 
-        let client = SurrealClient::new_memory().await.unwrap();
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
         let ingestor = DocumentIngestor::new(&store);
@@ -322,7 +301,7 @@ mod tests {
         doc1.path = PathBuf::from("notes/backlink1.md");
         doc1.tags.clear(); // Clear tags to avoid conflicts with other tests
         doc1.wikilinks.push(Wikilink {
-            target: "backlink2.md".to_string(),  // Include .md extension to match full path
+            target: "notes/backlink2.md".to_string(),  // Full path relative to vault root
             alias: None,
             heading_ref: None,
             block_ref: None,
@@ -334,7 +313,7 @@ mod tests {
         doc2.path = PathBuf::from("notes/backlink2.md");
         doc2.tags.clear(); // Clear tags to avoid conflicts with other tests
         doc2.wikilinks.push(Wikilink {
-            target: "backlink1.md".to_string(),  // Include .md extension to match full path
+            target: "notes/backlink1.md".to_string(),  // Full path relative to vault root
             alias: None,
             heading_ref: None,
             block_ref: None,
