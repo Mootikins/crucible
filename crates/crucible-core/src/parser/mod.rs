@@ -10,6 +10,7 @@ pub mod eav_document;
 pub mod error;
 pub mod examples;
 pub mod extensions;
+pub mod frontmatter_mapper;
 pub mod latex;
 pub mod pulldown;
 pub mod query_blocks;
@@ -20,6 +21,7 @@ pub mod types;
 pub use adapter::SurrealDBAdapter;
 pub use bridge::{create_parser, create_parser_with_config, ParserAdapter, ParserConfig};
 pub use eav_document::{EAVDocument, EAVDocumentBuilder, ValidationError};
+pub use frontmatter_mapper::FrontmatterPropertyMapper;
 pub use coordinator::{
     factory as coordinator_factory, BatchOperationResult, BatchStatistics, CoordinatorConfig,
     CoordinatorStatistics, DefaultParserStorageCoordinator, OperationMetadata, OperationPriority,
