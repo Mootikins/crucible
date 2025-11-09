@@ -295,7 +295,9 @@ fn default_confidence() -> f32 {
 pub struct Relation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<RecordId<RelationRecord>>,
+    #[serde(rename = "in")]
     pub from_id: RecordId<EntityRecord>,
+    #[serde(rename = "out")]
     pub to_id: RecordId<EntityRecord>,
     pub relation_type: String,
     #[serde(default = "default_weight")]
