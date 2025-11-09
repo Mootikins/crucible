@@ -46,8 +46,7 @@
 //! ```
 
 use crate::storage::{
-    Block, Entity, EntityTag, EntityType, Property, PropertyNamespace, PropertyValue, Relation,
-    RelationType, StorageError, Tag,
+    Block, Entity, EntityTag, EntityType, Property, PropertyNamespace, Relation, StorageError, Tag,
 };
 use chrono::Utc;
 use std::collections::HashMap;

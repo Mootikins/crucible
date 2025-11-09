@@ -3,7 +3,7 @@
 //! This module provides comprehensive reporting functionality for block deduplication
 //! analysis, including formatted reports, visualizations, and export capabilities.
 
-use crate::deduplication_detector::{DeduplicationDetector, SurrealDeduplicationDetector};
+use crate::deduplication_detector::DeduplicationDetector;
 use crate::SurrealDbConfig;
 use chrono::{DateTime, Utc};
 use comfy_table::{Attribute, Cell, Color, Row, Table};
