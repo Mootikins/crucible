@@ -8,7 +8,8 @@
 --          relations, blocks, embeddings, and tags.
 --
 -- Changelog v0.2.0:
--- - Renamed entity_type → type (default: "note")
+-- - Renamed entity_type → type (no default, always explicit)
+-- - Removed "section" type (headings are blocks with block_type: "heading")
 -- - Added properties.value_json for complex metadata
 -- - Added relations.context for breadcrumbs/hash references
 -- - Added entity_tags.created_at for provenance tracking
@@ -27,8 +28,7 @@ DEFINE FIELD id ON TABLE entities
 
 DEFINE FIELD type ON TABLE entities
     TYPE string
-    DEFAULT "note"
-    ASSERT $value IN ["note", "block", "tag", "section", "media", "person"];
+    ASSERT $value IN ["note", "block", "tag", "media", "person"];
 
 DEFINE FIELD created_at ON TABLE entities
     TYPE datetime
