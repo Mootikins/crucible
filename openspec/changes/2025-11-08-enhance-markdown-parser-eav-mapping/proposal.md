@@ -240,8 +240,29 @@ See `tasks.md` for detailed task breakdown.
 
 **QA Checkpoint Passed**: Code review completed, all antipatterns addressed, all tests passing
 
-### Phase 2: Block Parsing with Heading Hierarchy (Next)
+### Phase 2: Block Parsing with Heading Hierarchy (In Progress)
 
-**Status**: Not started
+**Status**: Task 2.1 COMPLETE - Hierarchy Logic Implemented ✅ | Blocker: Parser Heading Extraction ⚠️
+
+**What was completed:**
+1. ✅ Added `parent_block_id` and `depth` fields to ASTBlock
+2. ✅ Implemented HeadingStack for hierarchy tracking
+3. ✅ Enhanced BlockExtractor with hierarchy assignment logic
+4. ✅ Comprehensive test suite (6 scenarios)
+5. ✅ Builder methods and helpers for ASTBlock
+
+**Commits:**
+- `db17faa` - Heading hierarchy tracking implementation
+
+**Blocker Identified:**
+- Parser's `parse_content()` not populating `document.content.headings`
+- Headings being treated as paragraphs
+- Needs investigation/fix in parser implementation
+- Hierarchy logic itself is sound and ready
+
+**Next Steps:**
+- Debug parser heading extraction OR use manual test fixtures
+- Complete Task 2.2: Implement BlockStorage trait
+- Continue with integration and testing
 
 **See**: `tasks.md` for detailed implementation plan
