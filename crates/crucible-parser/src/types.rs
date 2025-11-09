@@ -1,6 +1,6 @@
 //! Core data types for parsed markdown documents
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -356,6 +356,47 @@ impl Frontmatter {
     /// Get a number property
     pub fn get_number(&self, key: &str) -> Option<f64> {
         self.properties().get(key)?.as_f64()
+    }
+
+    /// Get a date property
+    ///
+    /// Supports multiple date formats:
+    /// - ISO 8601: "2024-11-08"
+    /// - RFC 3339: "2024-11-08T10:30:00Z"
+    /// - Integer (YYYYMMDD): 20241108
+    pub fn get_date(&self, key: &str) -> Option<NaiveDate> {
+        let value = self.properties().get(key)?;
+
+        // Try as string first (most common format)
+        if let Some(date_str) = value.as_str() {
+            // Try ISO 8601 format (YYYY-MM-DD)
+            if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                return Some(date);
+            }
+            // Try RFC 3339 format (with time)
+            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(date_str) {
+                return Some(dt.date_naive());
+            }
+        }
+
+        // Try as integer (YYYYMMDD format)
+        if let Some(num) = value.as_i64() {
+            let year = (num / 10000) as i32;
+            let month = ((num % 10000) / 100) as u32;
+            let day = (num % 100) as u32;
+            return NaiveDate::from_ymd_opt(year, month, day);
+        }
+
+        None
+    }
+
+    /// Get an object (nested hash map) property
+    ///
+    /// Returns the object as a serde_json::Map for further processing.
+    /// Note: Flat frontmatter structure is preferred (following Obsidian conventions),
+    /// but objects are supported for compatibility with existing content.
+    pub fn get_object(&self, key: &str) -> Option<serde_json::Map<String, serde_json::Value>> {
+        self.properties().get(key)?.as_object().cloned()
     }
 
     /// Check if a property exists
