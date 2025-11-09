@@ -85,26 +85,8 @@ DEFINE FIELD key ON TABLE properties
     ASSERT $value != NONE;
 
 DEFINE FIELD value ON TABLE properties
-    TYPE string;
-
-DEFINE FIELD value_type ON TABLE properties
-    TYPE string
-    ASSERT $value IN ["text", "number", "boolean", "date", "json"];
-
-DEFINE FIELD value_text ON TABLE properties
-    TYPE option<string>;
-
-DEFINE FIELD value_number ON TABLE properties
-    TYPE option<float>;
-
-DEFINE FIELD value_bool ON TABLE properties
-    TYPE option<bool>;
-
-DEFINE FIELD value_date ON TABLE properties
-    TYPE option<datetime>;
-
-DEFINE FIELD value_json ON TABLE properties
-    TYPE option<object>;
+    TYPE object
+    ASSERT $value != NONE;
 
 DEFINE FIELD source ON TABLE properties
     TYPE string
