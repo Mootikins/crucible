@@ -20,11 +20,10 @@ pub enum TagRecord {}
 pub enum EntityTagRecord {}
 
 /// SurrealDB record identifier with an attached marker type.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RecordId<T> {
     pub table: String,
     pub id: String,
-    #[serde(skip)]
     _marker: std::marker::PhantomData<T>,
 }
 
@@ -35,6 +34,95 @@ impl<T> RecordId<T> {
             id: id.into(),
             _marker: std::marker::PhantomData,
         }
+    }
+
+    /// Parse from "table:id" string format
+    pub fn from_string(s: &str) -> Result<Self, String> {
+        if let Some((table, id)) = s.split_once(':') {
+            Ok(Self::new(table, id))
+        } else {
+            Err(format!("Invalid RecordId format: {}", s))
+        }
+    }
+}
+
+impl<T> From<RecordId<T>> for String {
+    fn from(record_id: RecordId<T>) -> String {
+        format!("{}:{}", record_id.table, record_id.id)
+    }
+}
+
+impl<T> Serialize for RecordId<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Serialize as an object with table and id fields
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("RecordId", 2)?;
+        state.serialize_field("table", &self.table)?;
+        state.serialize_field("id", &self.id)?;
+        state.end()
+    }
+}
+
+impl<'de, T> Deserialize<'de> for RecordId<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::{self, Visitor};
+
+        struct RecordIdVisitor<T>(std::marker::PhantomData<T>);
+
+        impl<'de, T> Visitor<'de> for RecordIdVisitor<T> {
+            type Value = RecordId<T>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a RecordId string or object")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                RecordId::from_string(value).map_err(E::custom)
+            }
+
+            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+            where
+                M: de::MapAccess<'de>,
+            {
+                let mut table: Option<String> = None;
+                let mut id: Option<String> = None;
+
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "table" | "tb" => {
+                            table = Some(map.next_value()?);
+                        }
+                        "id" => {
+                            // The id field might be a String or might be nested
+                            let value: serde_json::Value = map.next_value()?;
+                            id = Some(match value {
+                                serde_json::Value::String(s) => s,
+                                _ => value.to_string(),
+                            });
+                        }
+                        _ => {
+                            let _: serde_json::Value = map.next_value()?;
+                        }
+                    }
+                }
+
+                match (table, id) {
+                    (Some(t), Some(i)) => Ok(RecordId::new(t, i)),
+                    _ => Err(de::Error::custom("missing table or id field")),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(RecordIdVisitor(std::marker::PhantomData))
     }
 }
 

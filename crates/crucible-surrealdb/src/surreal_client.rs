@@ -381,10 +381,23 @@ impl SurrealClient {
                         );
                     }
                     return arr;
+                } else if let Some(inner_obj) = obj.remove("Object") {
+                    // Handle Object variant - recursively unwrap the inner object
+                    return self.unwrap_surreal_value(inner_obj);
+                } else if let Some(Value::String(dt_str)) = obj.remove("Datetime") {
+                    // Handle Datetime variant - return as RFC3339 string
+                    return Value::String(dt_str);
+                } else if let Some(Value::Bool(b)) = obj.remove("Bool") {
+                    // Handle Bool variant
+                    return Value::Bool(b);
                 }
 
-                // If it's not a known wrapper, return as-is
-                Value::Object(obj)
+                // If it's not a known wrapper, recursively unwrap nested values
+                let unwrapped_obj: serde_json::Map<String, Value> = obj
+                    .into_iter()
+                    .map(|(k, v)| (k, self.unwrap_surreal_value(v)))
+                    .collect();
+                Value::Object(unwrapped_obj)
             }
             other => other,
         }
