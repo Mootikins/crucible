@@ -5,9 +5,9 @@
 //! Includes comprehensive vector embedding support for semantic search and processing.
 
 use crate::embedding_config::*;
-use crate::epr::{
-    apply_epr_schema, DocumentIngestor, EntityRecord as EprEntityRecord, EntityTag,
-    EntityTagRecord, EprStore, RecordId as EprRecordId, Relation, RelationRecord, Tag as EprTag,
+use crate::eav_graph::{
+    apply_eav_graph_schema, DocumentIngestor, EntityRecord as EAVGraphEntityRecord, EntityTag,
+    EntityTagRecord, EAVGraphStore, RecordId as EAVGraphRecordId, Relation, RelationRecord, Tag as EAVGraphTag,
     TagRecord,
 };
 use crate::types::{DatabaseStats, Record};
@@ -22,8 +22,8 @@ use tracing::{debug, error, info, warn};
 
 /// Initialize the kiln schema in the database
 pub async fn initialize_kiln_schema(client: &SurrealClient) -> Result<()> {
-    apply_epr_schema(client).await?;
-    info!("Kiln schema initialized using EPR definitions");
+    apply_eav_graph_schema(client).await?;
+    info!("Kiln schema initialized using EAV+Graph definitions");
     Ok(())
 }
 
@@ -41,7 +41,7 @@ pub async fn store_parsed_document(
     doc: &ParsedDocument,
     kiln_root: &std::path::Path,
 ) -> Result<String> {
-    let store = EprStore::new(client.clone());
+    let store = EAVGraphStore::new(client.clone());
     let ingestor = DocumentIngestor::new(&store);
     let relative_path = resolve_relative_path(&doc.path, kiln_root);
     let entity_id = ingestor.ingest(doc, &relative_path).await?;
@@ -288,7 +288,7 @@ pub async fn create_wikilink_edges(
     }
 
     let entity_id = parse_entity_record_id(doc_id)?;
-    let store = EprStore::new(client.clone());
+    let store = EAVGraphStore::new(client.clone());
     store.delete_relations_from(&entity_id, "wikilink").await?;
 
     let mut created = 0usize;
@@ -306,7 +306,7 @@ pub async fn create_wikilink_edges(
             continue;
         };
 
-        let target_id = EprRecordId::new("entities", format!("note:{}", relative_path));
+        let target_id = EAVGraphRecordId::new("entities", format!("note:{}", relative_path));
         store
             .ensure_note_entity(&target_id, wikilink.display())
             .await?;
@@ -375,7 +375,7 @@ pub async fn create_tag_associations(
     }
 
     let entity_id = parse_entity_record_id(doc_id)?;
-    let store = EprStore::new(client.clone());
+    let store = EAVGraphStore::new(client.clone());
 
     store.delete_entity_tags(&entity_id).await?;
 
@@ -403,33 +403,33 @@ pub async fn create_tag_associations(
     Ok(())
 }
 
-pub(crate) fn parse_entity_record_id(doc_id: &str) -> Result<EprRecordId<EprEntityRecord>> {
+pub(crate) fn parse_entity_record_id(doc_id: &str) -> Result<EAVGraphRecordId<EAVGraphEntityRecord>> {
     let normalized = normalize_document_id(doc_id);
     let (_, id) = normalized
         .split_once(':')
         .ok_or_else(|| anyhow!("invalid document id '{}'", doc_id))?;
-    Ok(EprRecordId::new("entities", id))
+    Ok(EAVGraphRecordId::new("entities", id))
 }
 
 fn entity_tag_record_id(
-    entity_id: &EprRecordId<EprEntityRecord>,
-    tag_id: &EprRecordId<TagRecord>,
-) -> EprRecordId<EntityTagRecord> {
+    entity_id: &EAVGraphRecordId<EAVGraphEntityRecord>,
+    tag_id: &EAVGraphRecordId<TagRecord>,
+) -> EAVGraphRecordId<EntityTagRecord> {
     let entity_part = entity_id.id.replace(':', "_");
     let tag_part = tag_id.id.replace(':', "_");
-    EprRecordId::new("entity_tags", format!("{}:{}", entity_part, tag_part))
+    EAVGraphRecordId::new("entity_tags", format!("{}:{}", entity_part, tag_part))
 }
 
 fn relation_record_id(
-    from_id: &EprRecordId<EprEntityRecord>,
-    to_id: &EprRecordId<EprEntityRecord>,
+    from_id: &EAVGraphRecordId<EAVGraphEntityRecord>,
+    to_id: &EAVGraphRecordId<EAVGraphEntityRecord>,
     relation_type: &str,
     position: usize,
-) -> EprRecordId<RelationRecord> {
+) -> EAVGraphRecordId<RelationRecord> {
     let from_part = from_id.id.replace(':', "_");
     let to_part = to_id.id.replace(':', "_");
     let rel_part = relation_type.replace(':', "_");
-    EprRecordId::new(
+    EAVGraphRecordId::new(
         "relations",
         format!("rel:{}:{}:{}:{}", from_part, rel_part, to_part, position),
     )
@@ -461,16 +461,16 @@ fn tag_segments(tag_path: &str) -> Vec<String> {
 }
 
 async fn ensure_tag_hierarchy(
-    store: &EprStore,
+    store: &EAVGraphStore,
     tag_path: &str,
-) -> Result<Option<EprRecordId<TagRecord>>> {
+) -> Result<Option<EAVGraphRecordId<TagRecord>>> {
     let segments = tag_segments(tag_path);
     if segments.is_empty() {
         return Ok(None);
     }
 
     let mut current_path = String::new();
-    let mut parent: Option<EprRecordId<TagRecord>> = None;
+    let mut parent: Option<EAVGraphRecordId<TagRecord>> = None;
 
     for (depth, segment) in segments.iter().enumerate() {
         if !current_path.is_empty() {
@@ -478,12 +478,12 @@ async fn ensure_tag_hierarchy(
         }
         current_path.push_str(segment);
 
-        let tag_id = EprRecordId::new(
+        let tag_id = EAVGraphRecordId::new(
             "tags",
             format!("tag:{}", normalize_tag_identifier(&current_path)),
         );
 
-        let record = EprTag {
+        let record = EAVGraphTag {
             id: Some(tag_id.clone()),
             name: current_path.clone(),
             parent_id: parent.clone(),
@@ -560,9 +560,9 @@ fn clean_relative_path(path: &Path) -> Option<PathBuf> {
 }
 
 async fn create_backlink_relation(
-    store: &EprStore,
-    from_id: &EprRecordId<EprEntityRecord>,
-    to_id: &EprRecordId<EprEntityRecord>,
+    store: &EAVGraphStore,
+    from_id: &EAVGraphRecordId<EAVGraphEntityRecord>,
+    to_id: &EAVGraphRecordId<EAVGraphEntityRecord>,
     edge_type: &str,
     position: usize,
     metadata: serde_json::Value,
@@ -673,7 +673,7 @@ async fn query_relation_documents(
 async fn find_entity_id_by_title(
     client: &SurrealClient,
     title: &str,
-) -> Result<Option<EprRecordId<EprEntityRecord>>> {
+) -> Result<Option<EAVGraphRecordId<EAVGraphEntityRecord>>> {
     let sql = r#"
         SELECT entity_id
         FROM properties
@@ -687,7 +687,7 @@ async fn find_entity_id_by_title(
     if let Some(record) = result.records.first() {
         if let Some(entity_str) = record.data.get("entity_id").and_then(record_ref_to_string) {
             if let Some((table, id)) = entity_str.split_once(':') {
-                return Ok(Some(EprRecordId::new(table, id)));
+                return Ok(Some(EAVGraphRecordId::new(table, id)));
             }
         }
     }
@@ -696,7 +696,7 @@ async fn find_entity_id_by_title(
 
 async fn query_embedding_sources_for_entity(
     client: &SurrealClient,
-    entity_id: &EprRecordId<EprEntityRecord>,
+    entity_id: &EAVGraphRecordId<EAVGraphEntityRecord>,
 ) -> Result<Vec<ParsedDocument>> {
     let pairs = fetch_embed_relation_pairs(client).await?;
     let target_key = entity_id.id.clone();
@@ -962,7 +962,7 @@ pub async fn create_embed_relationships(
     }
 
     let entity_id = parse_entity_record_id(doc_id)?;
-    let store = EprStore::new(client.clone());
+    let store = EAVGraphStore::new(client.clone());
     store.delete_relations_from(&entity_id, "embed").await?;
 
     for (index, wikilink) in embeds {
@@ -975,7 +975,7 @@ pub async fn create_embed_relationships(
             continue;
         };
 
-        let target_id = EprRecordId::new("entities", format!("note:{}", relative_path));
+        let target_id = EAVGraphRecordId::new("entities", format!("note:{}", relative_path));
         store
             .ensure_note_entity(&target_id, wikilink.display())
             .await?;
@@ -2243,7 +2243,7 @@ fn generate_mock_semantic_results(query: &str, _limit: usize) -> Vec<(String, f6
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::epr::apply_epr_schema;
+    use crate::eav_graph::apply_eav_graph_schema;
     use crate::SurrealClient;
     use crucible_core::parser::types::Wikilink;
     use std::path::PathBuf;
@@ -2399,7 +2399,7 @@ mod tests {
     #[tokio::test]
     async fn tag_associations_create_hierarchy() {
         let client = SurrealClient::new_memory().await.unwrap();
-        apply_epr_schema(&client).await.unwrap();
+        apply_eav_graph_schema(&client).await.unwrap();
 
         let kiln_root = PathBuf::from("/vault");
         let mut doc = ParsedDocument::new(kiln_root.join("projects/sample.md"));
@@ -2432,7 +2432,7 @@ mod tests {
     #[tokio::test]
     async fn wikilink_edges_create_relations_and_placeholders() {
         let client = SurrealClient::new_memory().await.unwrap();
-        apply_epr_schema(&client).await.unwrap();
+        apply_eav_graph_schema(&client).await.unwrap();
         let kiln_root = PathBuf::from("/vault");
 
         let mut doc = ParsedDocument::new(kiln_root.join("projects/source.md"));
@@ -2502,7 +2502,7 @@ mod tests {
     #[tokio::test]
     async fn embed_relationships_create_relations_and_backlinks() {
         let client = SurrealClient::new_memory().await.unwrap();
-        apply_epr_schema(&client).await.unwrap();
+        apply_eav_graph_schema(&client).await.unwrap();
         let kiln_root = PathBuf::from("/vault");
 
         let mut doc = ParsedDocument::new(kiln_root.join("media/source.md"));

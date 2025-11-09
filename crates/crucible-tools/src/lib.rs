@@ -171,6 +171,6 @@ pub struct LibraryInfo {
     pub features: Vec<String>,
 }
 
-// Include comprehensive tests
-#[cfg(test)]
-pub mod tests;
+// Tests included inline in modules
+// #[cfg(test)]
+// pub mod tests;
