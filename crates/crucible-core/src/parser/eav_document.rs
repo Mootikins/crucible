@@ -131,7 +131,7 @@ impl EAVDocument {
                     return Err(ValidationError::PropertyEntityMismatch {
                         property_entity: prop.entity_id.clone(),
                         document_entity: self.entity.id.clone(),
-                        namespace: namespace.0.clone(),
+                        namespace: namespace.0.to_string(),
                         key: prop.key.clone(),
                     });
                 }
@@ -417,6 +417,7 @@ impl From<ValidationError> for StorageError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::{PropertyValue, RelationType};
 
     #[test]
     fn test_eav_document_builder_basic() {

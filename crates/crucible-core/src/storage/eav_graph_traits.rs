@@ -40,6 +40,7 @@ use crate::storage::StorageResult;
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::Value;
+use std::borrow::Cow;
 
 // ============================================================================
 // Core Entity Types
@@ -111,23 +112,36 @@ impl Entity {
 }
 
 /// Property namespace for organization
+///
+/// Uses `Cow<'static, str>` to avoid allocations for common namespaces like
+/// "core" and "frontmatter", while supporting dynamic plugin namespaces.
+///
+/// # Performance
+///
+/// For 10,000 notes with frontmatter, this saves 10,000 string allocations
+/// by using static string slices instead of heap-allocated strings.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct PropertyNamespace(pub String);
+pub struct PropertyNamespace(pub Cow<'static, str>);
 
 impl PropertyNamespace {
-    /// Core system namespace
+    /// Core system namespace (zero-allocation)
     pub fn core() -> Self {
-        Self("core".to_string())
+        Self(Cow::Borrowed("core"))
     }
 
-    /// Frontmatter namespace (for YAML/TOML properties)
+    /// Frontmatter namespace (zero-allocation) for YAML/TOML properties
     pub fn frontmatter() -> Self {
-        Self("frontmatter".to_string())
+        Self(Cow::Borrowed("frontmatter"))
     }
 
-    /// Plugin namespace
+    /// Plugin namespace (allocates only for the formatted string)
     pub fn plugin(name: impl Into<String>) -> Self {
-        Self(format!("plugin:{}", name.into()))
+        Self(Cow::Owned(format!("plugin:{}", name.into())))
+    }
+
+    /// Access the namespace string as a reference
+    pub fn as_str(&self) -> &str {
+        self.0.as_ref()
     }
 }
 
@@ -142,8 +156,25 @@ pub struct Property {
     pub updated_at: DateTime<Utc>,
 }
 
-/// Strongly-typed property values
+/// Strongly-typed property values with tagged serialization
+///
+/// This enum uses tagged serialization to produce self-describing JSON that is
+/// easier to extend and debug. Each variant serializes as:
+/// ```json
+/// {"type": "text", "value": "hello"}
+/// {"type": "number", "value": 42.5}
+/// {"type": "bool", "value": true}
+/// {"type": "date", "value": "2024-11-08"}
+/// {"type": "json", "value": {...}}
+/// ```
+///
+/// This format makes it explicit what type each property is, which helps with:
+/// - Type validation and debugging
+/// - Schema evolution and migration
+/// - Cross-language interoperability
+/// - Self-documenting APIs
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", content = "value")]
 #[serde(rename_all = "snake_case")]
 pub enum PropertyValue {
     Text(String),
@@ -648,6 +679,7 @@ pub trait TagStorage: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::StorageError;
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
@@ -764,13 +796,16 @@ mod tests {
     #[tokio::test]
     async fn test_property_namespace_creation() {
         let core_ns = PropertyNamespace::core();
-        assert_eq!(core_ns.0, "core");
+        assert_eq!(core_ns.0.as_ref(), "core");
+        assert_eq!(core_ns.as_str(), "core");
 
         let frontmatter_ns = PropertyNamespace::frontmatter();
-        assert_eq!(frontmatter_ns.0, "frontmatter");
+        assert_eq!(frontmatter_ns.0.as_ref(), "frontmatter");
+        assert_eq!(frontmatter_ns.as_str(), "frontmatter");
 
         let plugin_ns = PropertyNamespace::plugin("my_plugin");
-        assert_eq!(plugin_ns.0, "plugin:my_plugin");
+        assert_eq!(plugin_ns.0.as_ref(), "plugin:my_plugin");
+        assert_eq!(plugin_ns.as_str(), "plugin:my_plugin");
     }
 
     #[tokio::test]
@@ -806,7 +841,7 @@ mod tests {
         }
 
         fn make_key(entity_id: &str, namespace: &PropertyNamespace, key: &str) -> (String, String, String) {
-            (entity_id.to_string(), namespace.0.clone(), key.to_string())
+            (entity_id.to_string(), namespace.0.to_string(), key.to_string())
         }
     }
 
@@ -840,9 +875,10 @@ mod tests {
             namespace: &PropertyNamespace,
         ) -> StorageResult<Vec<Property>> {
             let store = self.properties.lock().unwrap();
+            let namespace_str = namespace.0.as_ref();
             let results: Vec<Property> = store
                 .iter()
-                .filter(|((eid, ns, _), _)| eid == entity_id && ns == &namespace.0)
+                .filter(|((eid, ns, _), _)| eid == entity_id && ns == namespace_str)
                 .map(|(_, prop)| prop.clone())
                 .collect();
             Ok(results)
@@ -881,9 +917,10 @@ mod tests {
             namespace: &PropertyNamespace,
         ) -> StorageResult<usize> {
             let mut store = self.properties.lock().unwrap();
+            let namespace_str = namespace.0.as_ref();
             let to_remove: Vec<(String, String, String)> = store
                 .keys()
-                .filter(|(eid, ns, _)| eid == entity_id && ns == &namespace.0)
+                .filter(|(eid, ns, _)| eid == entity_id && ns == namespace_str)
                 .cloned()
                 .collect();
 
@@ -1103,6 +1140,71 @@ mod tests {
         assert_eq!(num_val, PropertyValue::Number(42.5));
         assert_eq!(bool_val, PropertyValue::Bool(true));
         assert_ne!(text_val, PropertyValue::Text("world".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_property_value_tagged_serialization() {
+        // Test that PropertyValue serializes with tagged format
+
+        // Text variant
+        let text_val = PropertyValue::Text("hello".to_string());
+        let text_json = serde_json::to_value(&text_val).unwrap();
+        assert_eq!(text_json["type"], "text");
+        assert_eq!(text_json["value"], "hello");
+
+        // Number variant
+        let num_val = PropertyValue::Number(42.5);
+        let num_json = serde_json::to_value(&num_val).unwrap();
+        assert_eq!(num_json["type"], "number");
+        assert_eq!(num_json["value"], 42.5);
+
+        // Bool variant
+        let bool_val = PropertyValue::Bool(true);
+        let bool_json = serde_json::to_value(&bool_val).unwrap();
+        assert_eq!(bool_json["type"], "bool");
+        assert_eq!(bool_json["value"], true);
+
+        // Date variant
+        let date_val = PropertyValue::Date(NaiveDate::from_ymd_opt(2024, 11, 8).unwrap());
+        let date_json = serde_json::to_value(&date_val).unwrap();
+        assert_eq!(date_json["type"], "date");
+        assert_eq!(date_json["value"], "2024-11-08");
+
+        // Json variant
+        let json_val = PropertyValue::Json(serde_json::json!({"key": "value"}));
+        let json_json = serde_json::to_value(&json_val).unwrap();
+        assert_eq!(json_json["type"], "json");
+        assert_eq!(json_json["value"]["key"], "value");
+    }
+
+    #[tokio::test]
+    async fn test_property_value_tagged_deserialization() {
+        // Test that PropertyValue deserializes from tagged format
+
+        // Text variant
+        let text_json = serde_json::json!({"type": "text", "value": "hello"});
+        let text_val: PropertyValue = serde_json::from_value(text_json).unwrap();
+        assert_eq!(text_val, PropertyValue::Text("hello".to_string()));
+
+        // Number variant
+        let num_json = serde_json::json!({"type": "number", "value": 42.5});
+        let num_val: PropertyValue = serde_json::from_value(num_json).unwrap();
+        assert_eq!(num_val, PropertyValue::Number(42.5));
+
+        // Bool variant
+        let bool_json = serde_json::json!({"type": "bool", "value": true});
+        let bool_val: PropertyValue = serde_json::from_value(bool_json).unwrap();
+        assert_eq!(bool_val, PropertyValue::Bool(true));
+
+        // Date variant
+        let date_json = serde_json::json!({"type": "date", "value": "2024-11-08"});
+        let date_val: PropertyValue = serde_json::from_value(date_json).unwrap();
+        assert_eq!(date_val, PropertyValue::Date(NaiveDate::from_ymd_opt(2024, 11, 8).unwrap()));
+
+        // Json variant
+        let json_json = serde_json::json!({"type": "json", "value": {"key": "value"}});
+        let json_val: PropertyValue = serde_json::from_value(json_json).unwrap();
+        assert_eq!(json_val, PropertyValue::Json(serde_json::json!({"key": "value"})));
     }
 
     #[tokio::test]
