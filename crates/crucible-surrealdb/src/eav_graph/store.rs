@@ -1164,32 +1164,61 @@ impl CoreTagStorage for EAVGraphStore {
         let tag_id = RecordId::new("tags", tag.id.clone());
         let surreal_tag = core_tag_to_surreal(tag, Some(tag_id.clone()));
 
-        let params = json!({
-            "table": tag_id.table,
-            "id": tag_id.id,
-            "name": surreal_tag.name,
-            "parent_id": surreal_tag.parent_id.as_ref().map(|id| thing_value(id)),
-            "path": surreal_tag.path,
-            "depth": surreal_tag.depth,
-            "description": surreal_tag.description,
-            "color": surreal_tag.color,
-            "icon": surreal_tag.icon,
-        });
-
-        self.client
-            .query(
+        // Build params based on whether parent_id exists
+        let (query, params) = if let Some(parent_id) = &surreal_tag.parent_id {
+            let params = json!({
+                "table": tag_id.table,
+                "id": tag_id.id,
+                "name": surreal_tag.name,
+                "parent_table": parent_id.table,
+                "parent_id_value": parent_id.id,
+                "path": surreal_tag.path,
+                "depth": surreal_tag.depth,
+                "description": surreal_tag.description,
+                "color": surreal_tag.color,
+                "icon": surreal_tag.icon,
+            });
+            (
                 r#"
                 CREATE type::thing($table, $id) SET
                     name = $name,
-                    parent_id = $parent_id,
+                    parent_id = type::thing($parent_table, $parent_id_value),
                     path = $path,
                     depth = $depth,
                     description = $description,
                     color = $color,
                     icon = $icon
                 "#,
-                &[params],
+                params,
             )
+        } else {
+            let params = json!({
+                "table": tag_id.table,
+                "id": tag_id.id,
+                "name": surreal_tag.name,
+                "path": surreal_tag.path,
+                "depth": surreal_tag.depth,
+                "description": surreal_tag.description,
+                "color": surreal_tag.color,
+                "icon": surreal_tag.icon,
+            });
+            (
+                r#"
+                CREATE type::thing($table, $id) SET
+                    name = $name,
+                    parent_id = NONE,
+                    path = $path,
+                    depth = $depth,
+                    description = $description,
+                    color = $color,
+                    icon = $icon
+                "#,
+                params,
+            )
+        };
+
+        self.client
+            .query(query, &[params])
             .await
             .map_err(|e| StorageError::Backend(e.to_string()))?;
 
@@ -1257,8 +1286,10 @@ impl CoreTagStorage for EAVGraphStore {
         let params = json!({
             "table": entity_tag_id.table,
             "id": entity_tag_id.id,
-            "entity_id": thing_value(&surreal_entity_tag.entity_id),
-            "tag_id": thing_value(&surreal_entity_tag.tag_id),
+            "entity_table": surreal_entity_tag.entity_id.table,
+            "entity_id_value": surreal_entity_tag.entity_id.id,
+            "tag_table": surreal_entity_tag.tag_id.table,
+            "tag_id_value": surreal_entity_tag.tag_id.id,
             "source": surreal_entity_tag.source,
             "confidence": surreal_entity_tag.confidence,
         });
@@ -1267,8 +1298,8 @@ impl CoreTagStorage for EAVGraphStore {
             .query(
                 r#"
                 CREATE type::thing($table, $id) SET
-                    entity_id = $entity_id,
-                    tag_id = $tag_id,
+                    entity_id = type::thing($entity_table, $entity_id_value),
+                    tag_id = type::thing($tag_table, $tag_id_value),
                     source = $source,
                     confidence = $confidence
                 "#,

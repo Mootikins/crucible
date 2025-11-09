@@ -1,6 +1,7 @@
 use anyhow::Result;
 use blake3::Hasher;
 use crucible_core::parser::types::ParsedDocument;
+use crucible_core::storage::{Relation as CoreRelation, RelationStorage, Tag as CoreTag, TagStorage, EntityTag};
 use serde_json::{Map, Value};
 
 use super::store::EAVGraphStore;
@@ -38,6 +39,29 @@ impl<'a> DocumentIngestor<'a> {
 
         let blocks = build_blocks(&entity_id, doc);
         self.store.replace_blocks(&entity_id, &blocks).await?;
+
+        // Extract and store relations from wikilinks and embeds
+        let relations = extract_relations(&entity_id, doc);
+        for relation in relations {
+            self.store.store_relation(relation).await?;
+        }
+
+        // Extract and store tag associations
+        let tags_to_store = extract_tags(doc);
+        for tag in &tags_to_store {
+            self.store.store_tag(tag.clone()).await?;
+        }
+
+        // Associate tags with this entity
+        let entity_id_str = format!("{}:{}", entity_id.table, entity_id.id);
+        for tag in &tags_to_store {
+            let entity_tag = EntityTag {
+                entity_id: entity_id_str.clone(),
+                tag_id: tag.id.clone(),
+                created_at: chrono::Utc::now(),
+            };
+            self.store.associate_tag(entity_tag).await?;
+        }
 
         Ok(entity_id)
     }
@@ -376,4 +400,90 @@ fn make_block_with_metadata(
     );
     block.metadata = metadata;
     block
+}
+
+/// Extract relations from wikilinks and embeds
+fn extract_relations(entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec<CoreRelation> {
+    let mut relations = Vec::new();
+    let from_entity_id = format!("{}:{}", entity_id.table, entity_id.id);
+
+    for wikilink in &doc.wikilinks {
+        // Determine target entity ID
+        // For now, we create unresolved targets (to_entity_id = None) since we don't
+        // know if the target note exists yet. The resolver will fill these in later.
+        let to_entity_id = Some(format!("note:{}", wikilink.target));
+
+        // Determine relation type
+        let relation_type = if wikilink.is_embed {
+            "embed"
+        } else {
+            "wikilink"
+        };
+
+        // Create the relation
+        let mut relation = CoreRelation::new(
+            from_entity_id.clone(),
+            to_entity_id,
+            relation_type,
+        );
+
+        // Add metadata about the wikilink
+        let mut metadata = serde_json::Map::new();
+        if let Some(alias) = &wikilink.alias {
+            metadata.insert("alias".to_string(), serde_json::json!(alias));
+        }
+        if let Some(heading_ref) = &wikilink.heading_ref {
+            metadata.insert("heading_ref".to_string(), serde_json::json!(heading_ref));
+        }
+        if let Some(block_ref) = &wikilink.block_ref {
+            metadata.insert("block_ref".to_string(), serde_json::json!(block_ref));
+        }
+        metadata.insert("offset".to_string(), serde_json::json!(wikilink.offset));
+
+        relation.metadata = serde_json::Value::Object(metadata);
+
+        relations.push(relation);
+    }
+
+    relations
+}
+
+/// Extract tags and build tag hierarchy
+fn extract_tags(doc: &ParsedDocument) -> Vec<CoreTag> {
+    use std::collections::HashMap;
+
+    let mut tags_map: HashMap<String, CoreTag> = HashMap::new();
+    let now = chrono::Utc::now();
+
+    // Process all tags from the document
+    for tag in doc.all_tags() {
+        let tag_name = tag.trim_start_matches('#').to_string();
+
+        // Handle hierarchical tags (e.g., "project/ai/nlp")
+        let parts: Vec<&str> = tag_name.split('/').collect();
+
+        // Create tags for each level of the hierarchy
+        let mut parent_id: Option<String> = None;
+        for i in 0..parts.len() {
+            let current_path = parts[0..=i].join("/");
+            // Use simple ID without "tag:" prefix - will be added by RecordId construction
+            let tag_id = current_path.replace('/', ":");
+
+            // Only create if not already in map
+            if !tags_map.contains_key(&tag_id) {
+                let tag = CoreTag {
+                    id: tag_id.clone(),
+                    name: current_path.clone(),
+                    parent_tag_id: parent_id.clone(),
+                    created_at: now,
+                    updated_at: now,
+                };
+                tags_map.insert(tag_id.clone(), tag);
+            }
+
+            parent_id = Some(tag_id);
+        }
+    }
+
+    tags_map.into_values().collect()
 }
