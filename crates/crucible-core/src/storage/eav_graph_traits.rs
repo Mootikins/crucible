@@ -1094,8 +1094,8 @@ mod tests {
         let text_val = PropertyValue::Text("hello".to_string());
         let num_val = PropertyValue::Number(42.5);
         let bool_val = PropertyValue::Bool(true);
-        let date_val = PropertyValue::Date(NaiveDate::from_ymd_opt(2024, 1, 15).unwrap());
-        let json_val = PropertyValue::Json(serde_json::json!({"key": "value"}));
+        let _date_val = PropertyValue::Date(NaiveDate::from_ymd_opt(2024, 1, 15).unwrap());
+        let _json_val = PropertyValue::Json(serde_json::json!({"key": "value"}));
 
         // Verify equality comparisons work
         assert_eq!(text_val, PropertyValue::Text("hello".to_string()));
