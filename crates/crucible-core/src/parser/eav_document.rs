@@ -140,9 +140,9 @@ impl EAVDocument {
 
         // Validate all relations have the entity as source
         for relation in &self.relations {
-            if relation.source_entity_id != self.entity.id {
+            if relation.from_entity_id != self.entity.id {
                 return Err(ValidationError::RelationSourceMismatch {
-                    relation_source: relation.source_entity_id.clone(),
+                    relation_source: relation.from_entity_id.clone(),
                     document_entity: self.entity.id.clone(),
                 });
             }
@@ -417,7 +417,7 @@ impl From<ValidationError> for StorageError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{PropertyValue, RelationType};
+    use crate::storage::PropertyValue;
 
     #[test]
     fn test_eav_document_builder_basic() {
@@ -535,17 +535,18 @@ mod tests {
             .entity_id("note:source")
             .entity_type(EntityType::Note)
             .add_relation(Relation {
-                source_entity_id: "note:source".to_string(),
-                target_entity_id: "note:target".to_string(),
-                relation_type: RelationType::Wikilink,
+                from_entity_id: "note:source".to_string(),
+                to_entity_id: Some("note:target".to_string()),
+                relation_type: "wikilink".to_string(),
                 created_at: now,
-                metadata: None,
+                metadata: serde_json::Value::Null,
+                ..Default::default()
             })
             .build()
             .unwrap();
 
         assert_eq!(doc.relations.len(), 1);
-        assert_eq!(doc.relations[0].relation_type, RelationType::Wikilink);
+        assert_eq!(doc.relations[0].relation_type, "wikilink");
     }
 
     #[test]
@@ -555,11 +556,12 @@ mod tests {
             .entity_id("note:test")
             .entity_type(EntityType::Note)
             .add_relation(Relation {
-                source_entity_id: "note:WRONG".to_string(), // Wrong source!
-                target_entity_id: "note:target".to_string(),
-                relation_type: RelationType::Wikilink,
+                from_entity_id: "note:WRONG".to_string(), // Wrong source!
+                to_entity_id: Some("note:target".to_string()),
+                relation_type: "wikilink".to_string(),
                 created_at: now,
-                metadata: None,
+                metadata: serde_json::Value::Null,
+                ..Default::default()
             })
             .build();
 

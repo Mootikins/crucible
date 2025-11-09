@@ -47,7 +47,7 @@ pub use deduplication_traits::{
 };
 pub use eav_graph_traits::{
     Block, BlockStorage, Entity, EntityStorage, EntityTag, EntityType, Property, PropertyNamespace,
-    PropertyStorage, PropertyValue, Relation, RelationStorage, RelationType, Tag, TagStorage,
+    PropertyStorage, PropertyValue, Relation, RelationStorage, Tag, TagStorage,
 };
 pub use deduplicator::{
     BlockUsagePattern, DeduplicationAnalysis, DeduplicationStats, Deduplicator,
