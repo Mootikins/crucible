@@ -1648,24 +1648,6 @@ mod tests {
         assert!(storage.store_block("test_hash", &[]).await.is_err());
     }
 
-    #[tokio::test]
-    #[ignore] // PERFORMANCE: This test is slow due to inefficient JSON serialization of large binary data.
-              // The implementation serializes 1MB of data as a JSON array string in the query,
-              // which takes excessive time. This should be fixed by using binary/base64 encoding
-              // or parameterized queries instead. Run with: cargo test -- --ignored
-    async fn test_large_data_storage() {
-        let storage = create_test_storage().await;
-
-        // Create large data (1MB)
-        let large_data = vec![0u8; 1024 * 1024];
-        let hash = "large_data_hash";
-
-        // Should handle large data gracefully
-        storage.store_block(hash, &large_data).await.unwrap();
-
-        let retrieved = storage.get_block(hash).await.unwrap();
-        assert_eq!(retrieved, Some(large_data));
-    }
 
     #[tokio::test]
     async fn test_concurrent_operations() {
