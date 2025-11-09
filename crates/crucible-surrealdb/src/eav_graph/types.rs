@@ -36,10 +36,6 @@ impl<T> RecordId<T> {
             _marker: std::marker::PhantomData,
         }
     }
-
-    pub fn to_string(&self) -> String {
-        format!("{}:{}", self.table, self.id)
-    }
 }
 
 impl<T> fmt::Display for RecordId<T> {
