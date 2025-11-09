@@ -651,12 +651,16 @@ impl CorePropertyStorage for EAVGraphStore {
         let props_array: Vec<serde_json::Value> = surreal_props
             .iter()
             .map(|prop| {
+                // INVARIANT: core_properties_to_surreal() always generates IDs for all properties
+                // See adapter.rs:117-129 where RecordId::new() is called for every property
                 let prop_id = prop
                     .id
                     .as_ref()
                     .expect("Property must have ID from conversion");
 
-                // Serialize PropertyValue as JSON
+                // INVARIANT: PropertyValue is a simple enum with #[derive(Serialize)]
+                // Serialization can only fail for types with custom serializers, not simple enums
+                // See crucible-core/src/storage/mod.rs:PropertyValue definition
                 let value_json = serde_json::to_value(&prop.value)
                     .expect("PropertyValue should always serialize");
 
@@ -964,9 +968,68 @@ impl CoreRelationStorage for EAVGraphStore {
     }
 
     async fn batch_store_relations(&self, relations: &[crucible_core::storage::Relation]) -> StorageResult<()> {
-        for relation in relations {
-            self.store_relation(relation.clone()).await?;
+        if relations.is_empty() {
+            return Ok(());
         }
+
+        // Convert core relations to SurrealDB relations
+        let surreal_rels: Vec<SurrealRelation> = relations
+            .iter()
+            .map(|r| core_relation_to_surreal(r.clone()))
+            .collect();
+
+        // Build array of relation objects for batch insert
+        let rels_array: Vec<serde_json::Value> = surreal_rels
+            .iter()
+            .map(|rel| {
+                // INVARIANT: core_relation_to_surreal() may not generate ID if relation.id is empty
+                // In that case, use a new UUID for the relation ID
+                let rel_id = rel.id.as_ref().map(|id| id.id.clone()).unwrap_or_else(|| {
+                    uuid::Uuid::new_v4().to_string()
+                });
+
+                json!({
+                    "rel_table": "relations",
+                    "rel_id": rel_id,
+                    "from_table": rel.from_id.table,
+                    "from_id": rel.from_id.id,
+                    "to_table": rel.to_id.table,
+                    "to_id": rel.to_id.id,
+                    "relation_type": rel.relation_type,
+                    "weight": rel.weight,
+                    "directed": rel.directed,
+                    "confidence": rel.confidence,
+                    "source": rel.source,
+                    "position": rel.position,
+                    "metadata": rel.metadata,
+                    "created_at": rel.created_at.to_rfc3339(),
+                })
+            })
+            .collect();
+
+        // Execute batch INSERT using FOR loop
+        self.client
+            .query(
+                r#"
+                FOR $rel IN $relations {
+                    CREATE type::thing($rel.rel_table, $rel.rel_id) SET
+                        in = type::thing($rel.from_table, $rel.from_id),
+                        out = type::thing($rel.to_table, $rel.to_id),
+                        relation_type = $rel.relation_type,
+                        weight = $rel.weight,
+                        directed = $rel.directed,
+                        confidence = $rel.confidence,
+                        source = $rel.source,
+                        position = $rel.position,
+                        metadata = $rel.metadata,
+                        created_at = <datetime> $rel.created_at
+                };
+                "#,
+                &[json!({"relations": rels_array})],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
         Ok(())
     }
 
@@ -1000,17 +1063,23 @@ impl CoreRelationStorage for EAVGraphStore {
         entity_id: &str,
         relation_type: Option<&str>,
     ) -> StorageResult<Vec<crucible_core::storage::Relation>> {
-        // Use 'in' field (graph edge source) instead of 'from_id'
-        let query = if let Some(rel_type) = relation_type {
-            "SELECT * FROM relations WHERE in = type::thing('entities', $entity_id) AND relation_type = $relation_type"
+        // Use 'in' field (graph edge source) to find relations originating FROM this entity
+        let (query, params) = if let Some(rel_type) = relation_type {
+            (
+                "SELECT * FROM relations WHERE in = type::thing('entities', $entity_id) AND relation_type = $relation_type",
+                json!({
+                    "entity_id": entity_id,
+                    "relation_type": rel_type,
+                })
+            )
         } else {
-            "SELECT * FROM relations WHERE in = type::thing('entities', $entity_id)"
+            (
+                "SELECT * FROM relations WHERE in = type::thing('entities', $entity_id)",
+                json!({
+                    "entity_id": entity_id,
+                })
+            )
         };
-
-        let params = json!({
-            "entity_id": entity_id,
-            "relation_type": relation_type.unwrap_or(""),
-        });
 
         let result = self
             .client
@@ -1037,17 +1106,23 @@ impl CoreRelationStorage for EAVGraphStore {
         entity_id: &str,
         relation_type: Option<&str>,
     ) -> StorageResult<Vec<crucible_core::storage::Relation>> {
-        // Use 'out' field (graph edge target) instead of 'to_id'
-        let query = if let Some(rel_type) = relation_type {
-            "SELECT * FROM relations WHERE out = type::thing('entities', $entity_id) AND relation_type = $relation_type"
+        // Use 'out' field (graph edge target) to find relations pointing TO this entity
+        let (query, params) = if let Some(rel_type) = relation_type {
+            (
+                "SELECT * FROM relations WHERE out = type::thing('entities', $entity_id) AND relation_type = $relation_type",
+                json!({
+                    "entity_id": entity_id,
+                    "relation_type": rel_type,
+                })
+            )
         } else {
-            "SELECT * FROM relations WHERE out = type::thing('entities', $entity_id)"
+            (
+                "SELECT * FROM relations WHERE out = type::thing('entities', $entity_id)",
+                json!({
+                    "entity_id": entity_id,
+                })
+            )
         };
-
-        let params = json!({
-            "entity_id": entity_id,
-            "relation_type": relation_type.unwrap_or(""),
-        });
 
         let result = self
             .client
@@ -1319,13 +1394,12 @@ impl CoreTagStorage for EAVGraphStore {
     async fn get_entity_tags(&self, entity_id: &str) -> StorageResult<Vec<crucible_core::storage::Tag>> {
         let params = json!({"entity_id": entity_id});
 
-        // Use graph traversal to fetch tags in a single query
-        // ->tag_id fetches the related tag record directly
+        // First, get all tag IDs associated with this entity
         let result = self
             .client
             .query(
                 r#"
-                SELECT ->tag_id.* as tags FROM entity_tags
+                SELECT tag_id FROM entity_tags
                 WHERE entity_id = type::thing('entities', $entity_id)
                 "#,
                 &[params],
@@ -1337,24 +1411,48 @@ impl CoreTagStorage for EAVGraphStore {
             return Ok(Vec::new());
         }
 
-        // Extract tags from the nested structure
-        let mut all_tags = Vec::new();
+        // Extract tag IDs from the result
+        let mut tag_ids = Vec::new();
         for record in &result.records {
-            if let Some(tags_value) = record.data.get("tags") {
-                // tags_value could be an array of tag objects
-                if let Some(tags_array) = tags_value.as_array() {
-                    for tag_value in tags_array {
-                        let surreal_tag: SurrealTag = serde_json::from_value(tag_value.clone())
-                            .map_err(|e| StorageError::Backend(format!("Failed to parse tag: {}", e)))?;
-                        all_tags.push(surreal_tag_to_core(surreal_tag));
+            if let Some(tag_id_value) = record.data.get("tag_id") {
+                // tag_id is a RecordId, extract the full ID string
+                if let Some(tag_id_obj) = tag_id_value.as_object() {
+                    if let (Some(table), Some(id)) = (tag_id_obj.get("table"), tag_id_obj.get("id")) {
+                        let table_str = table.as_str().unwrap_or("tags");
+                        let id_str = id.as_str().unwrap_or("");
+                        tag_ids.push(format!("{}:{}", table_str, id_str));
                     }
-                } else {
-                    // Single tag object
-                    let surreal_tag: SurrealTag = serde_json::from_value(tags_value.clone())
-                        .map_err(|e| StorageError::Backend(format!("Failed to parse tag: {}", e)))?;
-                    all_tags.push(surreal_tag_to_core(surreal_tag));
+                } else if let Some(tag_id_str) = tag_id_value.as_str() {
+                    tag_ids.push(tag_id_str.to_string());
                 }
             }
+        }
+
+        if tag_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Now fetch all tags in a single batch query
+        let tags_params = json!({"tag_ids": tag_ids});
+        let tags_result = self
+            .client
+            .query(
+                r#"
+                SELECT * FROM tags WHERE id IN $tag_ids
+                "#,
+                &[tags_params],
+            )
+            .await
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        // Parse tags from result
+        let mut all_tags = Vec::new();
+        for record in &tags_result.records {
+            let tag_value = serde_json::to_value(&record.data)
+                .map_err(|e| StorageError::Backend(format!("Failed to serialize tag data: {}", e)))?;
+            let surreal_tag: SurrealTag = serde_json::from_value(tag_value)
+                .map_err(|e| StorageError::Backend(format!("Failed to parse tag: {}", e)))?;
+            all_tags.push(surreal_tag_to_core(surreal_tag));
         }
 
         Ok(all_tags)
