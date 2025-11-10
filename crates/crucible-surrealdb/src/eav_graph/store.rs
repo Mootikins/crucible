@@ -1243,30 +1243,119 @@ use super::adapter::{
     core_entity_tag_to_surreal, core_tag_to_surreal, surreal_tag_to_core,
 };
 
+impl EAVGraphStore {
+    /// Recursively collect all descendant tag names (including the tag itself)
+    ///
+    /// Uses an iterative breadth-first approach to avoid stack overflow on deep hierarchies.
+    ///
+    /// # Arguments
+    ///
+    /// * `tag_id` - The root tag name to start from
+    ///
+    /// # Returns
+    ///
+    /// Vector of all tag names in the subtree (including the root)
+    ///
+    /// # Example
+    ///
+    /// Given hierarchy:
+    /// - project
+    ///   - project/ai
+    ///     - project/ai/nlp
+    ///     - project/ai/ml
+    ///   - project/web
+    ///
+    /// `collect_descendant_tag_names("project")` returns:
+    /// ["project", "project/ai", "project/ai/nlp", "project/ai/ml", "project/web"]
+    async fn collect_descendant_tag_names(&self, tag_id: &str) -> StorageResult<Vec<String>> {
+        let mut all_tag_ids = Vec::new();
+        let mut queue = std::collections::VecDeque::new();
+
+        // Start with the requested tag
+        queue.push_back(tag_id.to_string());
+        all_tag_ids.push(tag_id.to_string());
+
+        eprintln!("[DEBUG] Starting hierarchy collection for tag: {}", tag_id);
+
+        // Breadth-first traversal to collect all descendants
+        while let Some(current_tag_id) = queue.pop_front() {
+            eprintln!("[DEBUG] Processing tag: {}", current_tag_id);
+
+            // Get direct children of current tag
+            let children = self.get_child_tags(&current_tag_id).await?;
+            eprintln!("[DEBUG] Found {} children for tag: {}", children.len(), current_tag_id);
+
+            for child in children {
+                eprintln!("[DEBUG] Child: id={}, name={}, parent={:?}", child.id, child.name, child.parent_tag_id);
+                // Add child to results and queue for processing
+                all_tag_ids.push(child.name.clone());
+                queue.push_back(child.name);
+            }
+        }
+
+        eprintln!("[DEBUG] Final tag ID list: {:?}", all_tag_ids);
+        Ok(all_tag_ids)
+    }
+}
+
 #[async_trait]
 impl CoreTagStorage for EAVGraphStore {
     async fn store_tag(&self, tag: crucible_core::storage::Tag) -> StorageResult<String> {
-        // Generate RecordId for the tag
-        let tag_id = RecordId::new("tags", tag.id.clone());
-        let surreal_tag = core_tag_to_surreal(tag, Some(tag_id.clone()));
+        // Use the tag ID as-is (with slashes) - we'll use backticks in the query
+        let sanitized_id = tag.id.clone();
 
-        let (parent_table, parent_id, has_parent) = if let Some(parent) = &surreal_tag.parent_id {
-            (
-                serde_json::Value::String(parent.table.clone()),
-                serde_json::Value::String(parent.id.clone()),
-                serde_json::Value::Bool(true),
-            )
+        // If tag has a parent, look it up by name to get the actual record ID
+        let parent_record_id = if let Some(parent_tag_id) = &tag.parent_tag_id {
+            // Strip "tags:" prefix if present
+            let parent_name = if parent_tag_id.starts_with("tags:") {
+                parent_tag_id.strip_prefix("tags:").unwrap_or(parent_tag_id)
+            } else {
+                parent_tag_id
+            };
+
+            // Look up parent tag to get its actual record ID
+            let parent_tag = self.get_tag(parent_name).await?;
+            parent_tag.map(|t| RecordId::new("tags", t.id))
         } else {
-            (serde_json::Value::Null, serde_json::Value::Null, serde_json::Value::Bool(false))
+            None
         };
 
-        let params = json!({
-            "table": tag_id.table,
-            "id": tag_id.id,
+        // Create SurrealTag - we need to keep the parent record ID as a RecordId
+        let mut surreal_tag = core_tag_to_surreal(tag, None);
+        surreal_tag.parent_id = parent_record_id.clone();
+
+        // Build parent_id clause for the query
+        let (parent_clause, parent_params) = if let Some(parent) = &parent_record_id {
+            ("parent_id = type::thing($parent_table, $parent_id),".to_string(),
+             json!({
+                 "parent_table": parent.table,
+                 "parent_id": parent.id,
+             }))
+        } else {
+            ("parent_id = NONE,".to_string(), json!({}))
+        };
+
+        // Use raw SurrealQL UPSERT query with explicit record ID
+        // Use backticks around the ID to allow slashes
+        let query = format!(
+            r#"
+            UPSERT tags:`{}`
+            SET
+                name = $name,
+                {}
+                path = $path,
+                depth = $depth,
+                description = $description,
+                color = $color,
+                icon = $icon
+            RETURN AFTER;
+            "#,
+            sanitized_id,
+            parent_clause
+        );
+
+        let mut params = json!({
             "name": surreal_tag.name,
-            "parent_table": parent_table,
-            "parent_id": parent_id,
-            "has_parent": has_parent,
             "path": surreal_tag.path,
             "depth": surreal_tag.depth,
             "description": surreal_tag.description,
@@ -1274,58 +1363,30 @@ impl CoreTagStorage for EAVGraphStore {
             "icon": surreal_tag.icon,
         });
 
-        // Try UPDATE first
-        let result = self
-            .client
-            .query(
-                r#"
-                UPDATE type::thing($table, $id)
-                SET
-                    name = $name,
-                    parent_id = if $has_parent THEN type::thing($parent_table, $parent_id) ELSE NONE END,
-                    path = $path,
-                    depth = $depth,
-                    description = $description,
-                    color = $color,
-                    icon = $icon
-                RETURN NONE;
-                "#,
-                &[params.clone()],
-            )
+        // Merge parent params if present
+        if let Some(obj) = params.as_object_mut() {
+            if let Some(parent_obj) = parent_params.as_object() {
+                for (k, v) in parent_obj {
+                    obj.insert(k.clone(), v.clone());
+                }
+            }
+        }
+
+        self.client
+            .query(&query, &[params])
             .await
             .map_err(|e| StorageError::Backend(e.to_string()))?;
 
-        // If UPDATE didn't affect anything, CREATE it
-        if result.records.is_empty() {
-            self.client
-                .query(
-                    r#"
-                    CREATE type::thing($table, $id)
-                    SET
-                        name = $name,
-                        parent_id = if $has_parent THEN type::thing($parent_table, $parent_id) ELSE NONE END,
-                        path = $path,
-                        depth = $depth,
-                        description = $description,
-                        color = $color,
-                        icon = $icon
-                    RETURN NONE;
-                    "#,
-                    &[params],
-                )
-                .await
-                .map_err(|e| StorageError::Backend(e.to_string()))?;
-        }
-
-        Ok(tag_id.id)
+        // Return the tag ID (which is what's actually stored in the database)
+        Ok(sanitized_id)
     }
 
-    async fn get_tag(&self, id: &str) -> StorageResult<Option<crucible_core::storage::Tag>> {
-        let params = json!({"id": id});
+    async fn get_tag(&self, name: &str) -> StorageResult<Option<crucible_core::storage::Tag>> {
+        let params = json!({"name": name});
         let result = self
             .client
             .query(
-                "SELECT * FROM tags WHERE id = type::thing('tags', $id)",
+                "SELECT *, meta::id(id) as record_id_str FROM tags WHERE name = $name",
                 &[params],
             )
             .await
@@ -1335,21 +1396,52 @@ impl CoreTagStorage for EAVGraphStore {
             return Ok(None);
         }
 
-        let surreal_tag: SurrealTag = serde_json::from_value(
-            serde_json::to_value(&result.records[0].data)
-                .map_err(|e| StorageError::Backend(e.to_string()))?,
-        )
-        .map_err(|e| StorageError::Backend(e.to_string()))?;
+        let mut data = result.records[0].data.clone();
+
+        // Extract record_id_str and convert it to a RecordId for the id field
+        if let Some(record_id_str) = data.get("record_id_str").and_then(|v| v.as_str()) {
+            // Parse "project" or "tags:project" format
+            let id_part = if record_id_str.contains(':') {
+                record_id_str.split(':').last().unwrap_or(record_id_str)
+            } else {
+                record_id_str
+            };
+
+            // Create a proper RecordId JSON representation
+            data.insert(
+                "id".to_string(),
+                json!({
+                    "table": "tags",
+                    "id": id_part
+                })
+            );
+        }
+
+        // Convert HashMap to serde_json::Value
+        let data_value = serde_json::to_value(&data)
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+        let surreal_tag: SurrealTag = serde_json::from_value(data_value)
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
 
         Ok(Some(surreal_tag_to_core(surreal_tag)))
     }
 
-    async fn get_child_tags(&self, parent_tag_id: &str) -> StorageResult<Vec<crucible_core::storage::Tag>> {
-        let params = json!({"parent_id": parent_tag_id});
+    async fn get_child_tags(&self, parent_tag_name: &str) -> StorageResult<Vec<crucible_core::storage::Tag>> {
+        // First, get the parent tag to find its record ID
+        let parent_tag = self.get_tag(parent_tag_name).await?;
+
+        if parent_tag.is_none() {
+            return Ok(Vec::new());
+        }
+
+        let parent_id = parent_tag.unwrap().id;
+
+        let params = json!({"parent_id": parent_id});
         let result = self
             .client
             .query(
-                "SELECT * FROM tags WHERE parent_id = type::thing('tags', $parent_id)",
+                "SELECT *, meta::id(id) as record_id_str FROM tags WHERE parent_id = type::thing('tags', $parent_id)",
                 &[params],
             )
             .await
@@ -1359,11 +1451,30 @@ impl CoreTagStorage for EAVGraphStore {
             .records
             .iter()
             .map(|record| {
-                serde_json::from_value(
-                    serde_json::to_value(&record.data)
-                        .map_err(|e| StorageError::Backend(e.to_string()))?,
-                )
-                .map_err(|e| StorageError::Backend(e.to_string()))
+                let mut data = record.data.clone();
+
+                // Extract record_id_str and convert it to a RecordId for the id field
+                if let Some(record_id_str) = data.get("record_id_str").and_then(|v| v.as_str()) {
+                    let id_part = if record_id_str.contains(':') {
+                        record_id_str.split(':').last().unwrap_or(record_id_str)
+                    } else {
+                        record_id_str
+                    };
+
+                    data.insert(
+                        "id".to_string(),
+                        json!({
+                            "table": "tags",
+                            "id": id_part
+                        })
+                    );
+                }
+
+                let data_value = serde_json::to_value(&data)
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+                serde_json::from_value(data_value)
+                    .map_err(|e| StorageError::Backend(e.to_string()))
             })
             .collect::<StorageResult<Vec<_>>>()?;
 
@@ -1488,33 +1599,65 @@ impl CoreTagStorage for EAVGraphStore {
         Ok(all_tags)
     }
 
+    /// Get all entities tagged with the specified tag OR any of its descendant tags
+    ///
+    /// This implements hierarchical tag search: searching for "project" will also
+    /// find entities tagged with "project/ai", "project/ai/nlp", etc.
+    ///
+    /// # Arguments
+    ///
+    /// * `tag_id` - The tag ID to search for (e.g., "project", "project/ai")
+    ///
+    /// # Returns
+    ///
+    /// Vector of entity IDs that have the tag or any descendant tags
+    ///
+    /// # Example
+    ///
+    /// Given hierarchy: project -> project/ai -> project/ai/nlp
+    /// - `get_entities_by_tag("project")` returns entities with project, project/ai, or project/ai/nlp
+    /// - `get_entities_by_tag("project/ai")` returns entities with project/ai or project/ai/nlp
+    /// - `get_entities_by_tag("project/ai/nlp")` returns only entities with project/ai/nlp
     async fn get_entities_by_tag(&self, tag_id: &str) -> StorageResult<Vec<String>> {
-        let params = json!({"tag_id": tag_id});
-        let result = self
-            .client
-            .query(
-                r#"
-                SELECT entity_id FROM entity_tags
-                WHERE tag_id = type::thing('tags', $tag_id)
-                "#,
-                &[params],
-            )
-            .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+        // Collect all descendant tag names (including the tag itself)
+        let all_tag_names = self.collect_descendant_tag_names(tag_id).await?;
 
-        let entity_ids: Vec<String> = result
-            .records
-            .iter()
-            .filter_map(|record| {
-                record
+        if all_tag_names.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Query for entities with ANY of the collected tag names
+        // Use separate queries for each tag to work around SurrealDB's type::thing limitations with arrays
+        let mut all_entity_ids = std::collections::HashSet::new();
+
+        for tag_name_to_query in &all_tag_names {
+            // Use the tag name as-is (with slashes)
+            let params = json!({"tag_id": tag_name_to_query});
+            let result = self
+                .client
+                .query(
+                    r#"
+                    SELECT entity_id FROM entity_tags
+                    WHERE tag_id = type::thing('tags', $tag_id)
+                    "#,
+                    &[params],
+                )
+                .await
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
+
+            for record in &result.records {
+                if let Some(entity_id) = record
                     .data
                     .get("entity_id")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string())
-            })
-            .collect();
+                {
+                    all_entity_ids.insert(entity_id);
+                }
+            }
+        }
 
-        Ok(entity_ids)
+        Ok(all_entity_ids.into_iter().collect())
     }
 
     async fn dissociate_tag(&self, entity_id: &str, tag_id: &str) -> StorageResult<()> {
@@ -1687,5 +1830,313 @@ mod tests {
         assert_eq!(result.records.len(), 1);
         let record = &result.records[0];
         assert_eq!(record.data.get("dimensions").unwrap().as_i64(), Some(384));
+    }
+
+    // ============================================================================
+    // Hierarchical Tag Search Tests
+    // ============================================================================
+
+    use crucible_core::storage::{EntityTag, Tag};
+
+    /// Helper to create a tag with proper structure
+    fn create_tag(id: &str, name: &str, parent_id: Option<&str>) -> Tag {
+        Tag {
+            id: id.to_string(),
+            name: name.to_string(),
+            parent_tag_id: parent_id.map(|p| format!("tags:{}", p)),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    /// Helper to associate an entity with a tag
+    fn create_entity_tag(entity_id: &str, tag_id: &str) -> EntityTag {
+        EntityTag {
+            entity_id: entity_id.to_string(),
+            tag_id: tag_id.to_string(),
+            created_at: chrono::Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_hierarchical_tag_search_root_tag() {
+        // Test: Searching for root tag returns all descendants
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
+        apply_eav_graph_schema(&client).await.unwrap();
+        let store = EAVGraphStore::new(client.clone());
+
+        // Create tag hierarchy: project -> project/ai -> project/ai/nlp
+        let tag_project = create_tag("project", "project", None);
+        let tag_project_ai = create_tag("project/ai", "project/ai", Some("project"));
+        let tag_project_ai_nlp = create_tag("project/ai/nlp", "project/ai/nlp", Some("project/ai"));
+
+        store.store_tag(tag_project).await.unwrap();
+        store.store_tag(tag_project_ai).await.unwrap();
+        store.store_tag(tag_project_ai_nlp).await.unwrap();
+
+        // Create entities and tag them at different levels
+        let entity1_id = RecordId::new("entities", "note:entity1");
+        let entity2_id = RecordId::new("entities", "note:entity2");
+        let entity3_id = RecordId::new("entities", "note:entity3");
+
+        let entity1 = Entity::new(entity1_id.clone(), EntityType::Note);
+        let entity2 = Entity::new(entity2_id.clone(), EntityType::Note);
+        let entity3 = Entity::new(entity3_id.clone(), EntityType::Note);
+
+        store.upsert_entity(&entity1).await.unwrap();
+        store.upsert_entity(&entity2).await.unwrap();
+        store.upsert_entity(&entity3).await.unwrap();
+
+        // Entity1 tagged with "project"
+        store.associate_tag(create_entity_tag("note:entity1", "project")).await.unwrap();
+        // Entity2 tagged with "project/ai"
+        store.associate_tag(create_entity_tag("note:entity2", "project/ai")).await.unwrap();
+        // Entity3 tagged with "project/ai/nlp"
+        store.associate_tag(create_entity_tag("note:entity3", "project/ai/nlp")).await.unwrap();
+
+        // Search for root tag "project" should return all 3 entities
+        let entities = store.get_entities_by_tag("project").await.unwrap();
+        assert_eq!(entities.len(), 3, "Searching for 'project' should return all entities in the hierarchy");
+
+        // Verify all entities are present (order doesn't matter)
+        assert!(entities.contains(&"entities:note:entity1".to_string()));
+        assert!(entities.contains(&"entities:note:entity2".to_string()));
+        assert!(entities.contains(&"entities:note:entity3".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_hierarchical_tag_search_mid_level_tag() {
+        // Test: Searching for mid-level tag returns its subtree
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
+        apply_eav_graph_schema(&client).await.unwrap();
+        let store = EAVGraphStore::new(client.clone());
+
+        // Create tag hierarchy
+        let tag_project = create_tag("project", "project", None);
+        let tag_project_ai = create_tag("project/ai", "project/ai", Some("project"));
+        let tag_project_ai_nlp = create_tag("project/ai/nlp", "project/ai/nlp", Some("project/ai"));
+        let tag_project_web = create_tag("project/web", "project/web", Some("project"));
+
+        store.store_tag(tag_project).await.unwrap();
+        store.store_tag(tag_project_ai).await.unwrap();
+        store.store_tag(tag_project_ai_nlp).await.unwrap();
+        store.store_tag(tag_project_web).await.unwrap();
+
+        // Create entities
+        let entity1_id = RecordId::new("entities", "note:entity1");
+        let entity2_id = RecordId::new("entities", "note:entity2");
+        let entity3_id = RecordId::new("entities", "note:entity3");
+        let entity4_id = RecordId::new("entities", "note:entity4");
+
+        store.upsert_entity(&Entity::new(entity1_id.clone(), EntityType::Note)).await.unwrap();
+        store.upsert_entity(&Entity::new(entity2_id.clone(), EntityType::Note)).await.unwrap();
+        store.upsert_entity(&Entity::new(entity3_id.clone(), EntityType::Note)).await.unwrap();
+        store.upsert_entity(&Entity::new(entity4_id.clone(), EntityType::Note)).await.unwrap();
+
+        // Tag entities
+        store.associate_tag(create_entity_tag("note:entity1", "project")).await.unwrap();
+        store.associate_tag(create_entity_tag("note:entity2", "project/ai")).await.unwrap();
+        store.associate_tag(create_entity_tag("note:entity3", "project/ai/nlp")).await.unwrap();
+        store.associate_tag(create_entity_tag("note:entity4", "project/web")).await.unwrap();
+
+        // Search for "project/ai" should return entity2 and entity3, but NOT entity1 or entity4
+        let entities = store.get_entities_by_tag("project/ai").await.unwrap();
+        assert_eq!(entities.len(), 2, "Searching for 'project/ai' should return only AI subtree");
+
+        assert!(entities.contains(&"entities:note:entity2".to_string()));
+        assert!(entities.contains(&"entities:note:entity3".to_string()));
+        assert!(!entities.contains(&"entities:note:entity1".to_string()));
+        assert!(!entities.contains(&"entities:note:entity4".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_hierarchical_tag_search_leaf_tag() {
+        // Test: Searching for leaf tag returns only exact matches
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
+        apply_eav_graph_schema(&client).await.unwrap();
+        let store = EAVGraphStore::new(client.clone());
+
+        // Create tag hierarchy
+        let tag_project = create_tag("project", "project", None);
+        let tag_project_ai = create_tag("project/ai", "project/ai", Some("project"));
+        let tag_project_ai_nlp = create_tag("project/ai/nlp", "project/ai/nlp", Some("project/ai"));
+
+        store.store_tag(tag_project).await.unwrap();
+        store.store_tag(tag_project_ai).await.unwrap();
+        store.store_tag(tag_project_ai_nlp).await.unwrap();
+
+        // Create entities
+        let entity1_id = RecordId::new("entities", "note:entity1");
+        let entity2_id = RecordId::new("entities", "note:entity2");
+        let entity3_id = RecordId::new("entities", "note:entity3");
+
+        store.upsert_entity(&Entity::new(entity1_id.clone(), EntityType::Note)).await.unwrap();
+        store.upsert_entity(&Entity::new(entity2_id.clone(), EntityType::Note)).await.unwrap();
+        store.upsert_entity(&Entity::new(entity3_id.clone(), EntityType::Note)).await.unwrap();
+
+        // Tag entities
+        store.associate_tag(create_entity_tag("note:entity1", "project")).await.unwrap();
+        store.associate_tag(create_entity_tag("note:entity2", "project/ai")).await.unwrap();
+        store.associate_tag(create_entity_tag("note:entity3", "project/ai/nlp")).await.unwrap();
+
+        // Search for leaf tag "project/ai/nlp" should return only entity3
+        let entities = store.get_entities_by_tag("project/ai/nlp").await.unwrap();
+        assert_eq!(entities.len(), 1, "Searching for leaf tag should return only exact matches");
+        assert!(entities.contains(&"entities:note:entity3".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_hierarchical_tag_search_deep_hierarchy() {
+        // Test: Deep hierarchies (3+ levels) work correctly
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
+        apply_eav_graph_schema(&client).await.unwrap();
+        let store = EAVGraphStore::new(client.clone());
+
+        // Create 4-level deep hierarchy
+        let tag1 = create_tag("a", "a", None);
+        let tag2 = create_tag("a/b", "a/b", Some("a"));
+        let tag3 = create_tag("a/b/c", "a/b/c", Some("a/b"));
+        let tag4 = create_tag("a/b/c/d", "a/b/c/d", Some("a/b/c"));
+
+        store.store_tag(tag1).await.unwrap();
+        store.store_tag(tag2).await.unwrap();
+        store.store_tag(tag3).await.unwrap();
+        store.store_tag(tag4).await.unwrap();
+
+        // Create entities at each level
+        let e1 = RecordId::new("entities", "note:e1");
+        let e2 = RecordId::new("entities", "note:e2");
+        let e3 = RecordId::new("entities", "note:e3");
+        let e4 = RecordId::new("entities", "note:e4");
+
+        store.upsert_entity(&Entity::new(e1.clone(), EntityType::Note)).await.unwrap();
+        store.upsert_entity(&Entity::new(e2.clone(), EntityType::Note)).await.unwrap();
+        store.upsert_entity(&Entity::new(e3.clone(), EntityType::Note)).await.unwrap();
+        store.upsert_entity(&Entity::new(e4.clone(), EntityType::Note)).await.unwrap();
+
+        store.associate_tag(create_entity_tag("note:e1", "a")).await.unwrap();
+        store.associate_tag(create_entity_tag("note:e2", "a/b")).await.unwrap();
+        store.associate_tag(create_entity_tag("note:e3", "a/b/c")).await.unwrap();
+        store.associate_tag(create_entity_tag("note:e4", "a/b/c/d")).await.unwrap();
+
+        // Search from root should return all 4
+        let entities = store.get_entities_by_tag("a").await.unwrap();
+        assert_eq!(entities.len(), 4, "Root search should return all 4 levels");
+
+        // Search from level 2 should return 3 entities (b, c, d)
+        let entities = store.get_entities_by_tag("a/b").await.unwrap();
+        assert_eq!(entities.len(), 3, "Level 2 search should return 3 entities");
+
+        // Search from level 3 should return 2 entities (c, d)
+        let entities = store.get_entities_by_tag("a/b/c").await.unwrap();
+        assert_eq!(entities.len(), 2, "Level 3 search should return 2 entities");
+
+        // Search from level 4 should return 1 entity (d)
+        let entities = store.get_entities_by_tag("a/b/c/d").await.unwrap();
+        assert_eq!(entities.len(), 1, "Leaf search should return 1 entity");
+    }
+
+    #[tokio::test]
+    async fn test_hierarchical_tag_search_multiple_entities_same_tag() {
+        // Test: Multiple entities with the same tag are all returned
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
+        apply_eav_graph_schema(&client).await.unwrap();
+        let store = EAVGraphStore::new(client.clone());
+
+        // Create simple hierarchy
+        let tag_project = create_tag("project", "project", None);
+        let tag_project_ai = create_tag("project/ai", "project/ai", Some("project"));
+
+        store.store_tag(tag_project).await.unwrap();
+        store.store_tag(tag_project_ai).await.unwrap();
+
+        // Create multiple entities with same tag
+        let e1 = RecordId::new("entities", "note:e1");
+        let e2 = RecordId::new("entities", "note:e2");
+        let e3 = RecordId::new("entities", "note:e3");
+
+        store.upsert_entity(&Entity::new(e1.clone(), EntityType::Note)).await.unwrap();
+        store.upsert_entity(&Entity::new(e2.clone(), EntityType::Note)).await.unwrap();
+        store.upsert_entity(&Entity::new(e3.clone(), EntityType::Note)).await.unwrap();
+
+        // All tagged with same nested tag
+        store.associate_tag(create_entity_tag("note:e1", "project/ai")).await.unwrap();
+        store.associate_tag(create_entity_tag("note:e2", "project/ai")).await.unwrap();
+        store.associate_tag(create_entity_tag("note:e3", "project/ai")).await.unwrap();
+
+        // Search for parent should return all 3
+        let entities = store.get_entities_by_tag("project").await.unwrap();
+        assert_eq!(entities.len(), 3, "Should return all entities tagged with descendant");
+
+        // Search for exact tag should also return all 3
+        let entities = store.get_entities_by_tag("project/ai").await.unwrap();
+        assert_eq!(entities.len(), 3, "Should return all entities with exact tag match");
+    }
+
+    #[tokio::test]
+    async fn test_hierarchical_tag_search_nonexistent_tag() {
+        // Test: Searching for non-existent tag returns empty vector
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
+        apply_eav_graph_schema(&client).await.unwrap();
+        let store = EAVGraphStore::new(client.clone());
+
+        let entities = store.get_entities_by_tag("nonexistent").await.unwrap();
+        assert_eq!(entities.len(), 0, "Non-existent tag should return empty results");
+    }
+
+    #[tokio::test]
+    async fn test_hierarchical_tag_search_with_branching() {
+        // Test: Complex branching hierarchy
+        // Structure:
+        //   project
+        //   ├── project/ai
+        //   │   ├── project/ai/nlp
+        //   │   └── project/ai/ml
+        //   └── project/web
+        //       └── project/web/frontend
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
+        apply_eav_graph_schema(&client).await.unwrap();
+        let store = EAVGraphStore::new(client.clone());
+
+        // Create tag hierarchy
+        store.store_tag(create_tag("project", "project", None)).await.unwrap();
+        store.store_tag(create_tag("project/ai", "project/ai", Some("project"))).await.unwrap();
+        store.store_tag(create_tag("project/ai/nlp", "project/ai/nlp", Some("project/ai"))).await.unwrap();
+        store.store_tag(create_tag("project/ai/ml", "project/ai/ml", Some("project/ai"))).await.unwrap();
+        store.store_tag(create_tag("project/web", "project/web", Some("project"))).await.unwrap();
+        store.store_tag(create_tag("project/web/frontend", "project/web/frontend", Some("project/web"))).await.unwrap();
+
+        // Create entities
+        let e1 = Entity::new(RecordId::new("entities", "note:e1"), EntityType::Note);
+        let e2 = Entity::new(RecordId::new("entities", "note:e2"), EntityType::Note);
+        let e3 = Entity::new(RecordId::new("entities", "note:e3"), EntityType::Note);
+        let e4 = Entity::new(RecordId::new("entities", "note:e4"), EntityType::Note);
+
+        store.upsert_entity(&e1).await.unwrap();
+        store.upsert_entity(&e2).await.unwrap();
+        store.upsert_entity(&e3).await.unwrap();
+        store.upsert_entity(&e4).await.unwrap();
+
+        // Tag entities in different branches
+        store.associate_tag(create_entity_tag("note:e1", "project/ai/nlp")).await.unwrap();
+        store.associate_tag(create_entity_tag("note:e2", "project/ai/ml")).await.unwrap();
+        store.associate_tag(create_entity_tag("note:e3", "project/web")).await.unwrap();
+        store.associate_tag(create_entity_tag("note:e4", "project/web/frontend")).await.unwrap();
+
+        // Search from root should return all 4
+        let entities = store.get_entities_by_tag("project").await.unwrap();
+        assert_eq!(entities.len(), 4, "Root search should return all branches");
+
+        // Search for "project/ai" should return only AI branch (e1, e2)
+        let entities = store.get_entities_by_tag("project/ai").await.unwrap();
+        assert_eq!(entities.len(), 2, "AI branch should return 2 entities");
+        assert!(entities.contains(&"entities:note:e1".to_string()));
+        assert!(entities.contains(&"entities:note:e2".to_string()));
+
+        // Search for "project/web" should return only web branch (e3, e4)
+        let entities = store.get_entities_by_tag("project/web").await.unwrap();
+        assert_eq!(entities.len(), 2, "Web branch should return 2 entities");
+        assert!(entities.contains(&"entities:note:e3".to_string()));
+        assert!(entities.contains(&"entities:note:e4".to_string()));
     }
 }

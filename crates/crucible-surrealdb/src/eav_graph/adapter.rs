@@ -513,6 +513,7 @@ pub fn core_tag_to_surreal(
             } else {
                 id
             };
+            // Use ID as-is (with slashes)
             RecordId::new("tags", id_part)
         }),
         path,
@@ -554,6 +555,7 @@ pub fn core_entity_tag_to_surreal(
             } else {
                 &entity_tag.tag_id
             };
+            // Use ID as-is (with slashes)
             RecordId::new("tags", id_part)
         },
         source: "parser".to_string(),
