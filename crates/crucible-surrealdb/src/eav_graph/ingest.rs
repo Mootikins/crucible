@@ -222,23 +222,23 @@ mod tests {
         assert!(project_tag.is_some(), "Should have 'project' tag");
         assert_eq!(project_tag.unwrap().name, "project");
 
-        let ai_tag = store.get_tag("project:ai").await.unwrap();
+        let ai_tag = store.get_tag("project/ai").await.unwrap();
         assert!(ai_tag.is_some(), "Should have 'project/ai' tag");
         let ai_tag = ai_tag.unwrap();
         assert_eq!(ai_tag.name, "project/ai");
         // Adapter adds "tags:" prefix to parent_id
         assert_eq!(ai_tag.parent_tag_id, Some("tags:project".to_string()));
 
-        let nlp_tag = store.get_tag("project:ai:nlp").await.unwrap();
+        let nlp_tag = store.get_tag("project/ai/nlp").await.unwrap();
         assert!(nlp_tag.is_some(), "Should have 'project/ai/nlp' tag");
         let nlp_tag = nlp_tag.unwrap();
         assert_eq!(nlp_tag.name, "project/ai/nlp");
-        assert_eq!(nlp_tag.parent_tag_id, Some("tags:project:ai".to_string()));
+        assert_eq!(nlp_tag.parent_tag_id, Some("tags:project/ai".to_string()));
 
         let status_tag = store.get_tag("status").await.unwrap();
         assert!(status_tag.is_some(), "Should have 'status' tag");
 
-        let active_tag = store.get_tag("status:active").await.unwrap();
+        let active_tag = store.get_tag("status/active").await.unwrap();
         assert!(active_tag.is_some(), "Should have 'status/active' tag");
         let active_tag = active_tag.unwrap();
         assert_eq!(active_tag.parent_tag_id, Some("tags:status".to_string()));
@@ -917,7 +917,7 @@ fn extract_relations(entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -
 }
 
 /// Extract tags and build tag hierarchy
-fn extract_tags(doc: &ParsedDocument) -> Vec<CoreTag> {
+pub(crate) fn extract_tags(doc: &ParsedDocument) -> Vec<CoreTag> {
     use std::collections::HashMap;
 
     let mut tags_map: HashMap<String, CoreTag> = HashMap::new();
@@ -934,8 +934,8 @@ fn extract_tags(doc: &ParsedDocument) -> Vec<CoreTag> {
         let mut parent_id: Option<String> = None;
         for i in 0..parts.len() {
             let current_path = parts[0..=i].join("/");
-            // Use simple ID without "tag:" prefix - will be added by RecordId construction
-            let tag_id = current_path.replace('/', ":");
+            // Keep the slash separator for tag IDs (matches the display name)
+            let tag_id = current_path.clone();
 
             // Only create if not already in map
             if !tags_map.contains_key(&tag_id) {
@@ -953,5 +953,8 @@ fn extract_tags(doc: &ParsedDocument) -> Vec<CoreTag> {
         }
     }
 
-    tags_map.into_values().collect()
+    // Sort tags by depth (parent before children) to ensure proper storage order
+    let mut tags: Vec<CoreTag> = tags_map.into_values().collect();
+    tags.sort_by_key(|t| t.name.matches('/').count());
+    tags
 }
