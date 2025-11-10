@@ -11,6 +11,9 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+// Re-export BlockHash from parser to avoid duplication
+pub use crucible_parser::types::BlockHash;
+
 /// A BLAKE3 hash used for content addressing
 ///
 /// This type wraps a 32-byte BLAKE3 hash and provides convenient
@@ -67,65 +70,6 @@ impl fmt::Display for FileHash {
 }
 
 impl FromStr for FileHash {
-    type Err = HashError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::from_hex(s)
-    }
-}
-
-/// A BLAKE3 hash used for block-level content addressing
-///
-/// Similar to FileHash but specifically used for individual content blocks
-/// extracted from documents (headings, paragraphs, code blocks, etc.).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct BlockHash([u8; 32]);
-
-impl BlockHash {
-    /// Create a new BlockHash from raw bytes
-    pub fn new(bytes: [u8; 32]) -> Self {
-        Self(bytes)
-    }
-
-    /// Get the hash as a byte slice
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
-
-    /// Get the hash as a hex string
-    pub fn to_hex(&self) -> String {
-        hex::encode(self.0)
-    }
-
-    /// Create a BlockHash from a hex string
-    pub fn from_hex(hex: &str) -> Result<Self, HashError> {
-        let bytes = hex::decode(hex).map_err(|_| HashError::InvalidHexFormat)?;
-        if bytes.len() != 32 {
-            return Err(HashError::InvalidLength { len: bytes.len() });
-        }
-        let mut array = [0u8; 32];
-        array.copy_from_slice(&bytes);
-        Ok(Self(array))
-    }
-
-    /// Create a zero hash
-    pub fn zero() -> Self {
-        Self([0u8; 32])
-    }
-
-    /// Check if this is a zero hash
-    pub fn is_zero(&self) -> bool {
-        self.0 == [0u8; 32]
-    }
-}
-
-impl fmt::Display for BlockHash {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_hex())
-    }
-}
-
-impl FromStr for BlockHash {
     type Err = HashError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
