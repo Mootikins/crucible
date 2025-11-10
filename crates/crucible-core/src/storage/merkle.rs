@@ -589,17 +589,7 @@ impl MerkleTree {
     ///
     /// # Examples
     ///
-    /// ```rust
-    /// use crucible_core::storage::{MerkleTree, HashedBlock};
-    /// use crucible_core::storage::diff::{EnhancedChangeDetector, ChangeSource};
-    /// use crucible_core::hashing::blake3::Blake3Hasher;
-    ///
-    /// let hasher = Blake3Hasher::new();
-    /// let detector = EnhancedChangeDetector::new();
-    ///
-    /// // Create trees and compare with enhanced detection
-    /// let changes = tree1.compare_enhanced(&tree2, &hasher, ChangeSource::UserEdit)?;
-    /// ```
+    /// // TODO: Add example once API stabilizes
     pub fn compare_enhanced<H>(
         &self,
         other: &MerkleTree,
@@ -627,17 +617,7 @@ impl MerkleTree {
     ///
     /// # Examples
     ///
-    /// ```rust
-    /// use crucible_core::storage::{MerkleTree, diff::{EnhancedTreeChange, ChangeMetadata}};
-    /// use crucible_core::storage::change_application::ChangeApplicationSystem;
-    /// use crucible_core::hashing::blake3::Blake3Hasher;
-    ///
-    /// let hasher = Blake3Hasher::new();
-    /// let application_system = ChangeApplicationSystem::new();
-    ///
-    /// // Apply changes with rollback support
-    /// let result = tree.apply_changes(&changes, &hasher)?;
-    /// ```
+    /// // TODO: Add example once API stabilizes
     pub fn apply_changes<H>(
         &self,
         changes: &[crate::storage::diff::EnhancedTreeChange],

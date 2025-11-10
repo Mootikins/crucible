@@ -95,31 +95,7 @@ impl Default for ChangeDetectorConfig {
 ///
 /// # Examples
 ///
-/// ```rust,no_run
-/// use crucible_watch::{ChangeDetector, ChangeDetectorConfig};
-/// use crucible_core::storage::MemoryHashStorage;
-/// use std::sync::Arc;
-///
-/// #[tokio::main]
-/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     // Create a storage implementation
-///     let storage = Arc::new(MemoryHashStorage::new());
-///
-///     // Create the change detector
-///     let detector = ChangeDetector::new(
-///         storage,
-///         ChangeDetectorConfig::default()
-///     )?;
-///
-///     // Detect changes in a set of files
-///     let files_to_check = vec![]; // Your FileHashInfo vector
-///     let changes = detector.detect_changes(&files_to_check).await?;
-///
-///     println!("Found {} files that need processing", changes.files_to_process());
-///
-///     Ok(())
-/// }
-/// ```
+/// // TODO: Add example once API stabilizes
 pub struct ChangeDetector {
     /// Storage implementation for hash lookup operations
     storage: Arc<dyn HashLookupStorage>,

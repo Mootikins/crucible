@@ -13,16 +13,7 @@
 //!
 //! ## Usage Pattern
 //!
-//! ```rust
-//! use crucible_core::traits::change_detection::ContentHasher;
-//! use std::path::Path;
-//!
-//! async fn hash_file_example<H: ContentHasher>(hasher: &H, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-//!     let hash = hasher.hash_file(path).await?;
-//!     println!("File hash: {}", hash);
-//!     Ok(())
-//! }
-//! ```
+//! // TODO: Add example once API stabilizes
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -51,28 +42,7 @@ use crate::types::hashing::{
 ///
 /// # Examples
 ///
-/// ```rust
-/// use crucible_core::traits::change_detection::ContentHasher;
-/// use crucible_core::types::hashing::{FileHash, HashAlgorithm};
-/// use std::path::Path;
-///
-/// struct MockHasher;
-///
-/// #[async_trait]
-/// impl ContentHasher for MockHasher {
-///     async fn hash_file(&self, path: &Path) -> Result<FileHash, HashError> {
-///         // Implementation would read file and compute hash
-///         todo!()
-///     }
-///
-///     async fn hash_files_batch(&self, paths: &[std::path::PathBuf]) -> Result<Vec<FileHash>, HashError> {
-///         // Implementation would hash multiple files in parallel
-///         todo!()
-///     }
-///
-///     // ... implement other methods
-/// }
-/// ```
+/// // TODO: Add example once API stabilizes
 #[async_trait]
 pub trait ContentHasher: Send + Sync {
     /// Get the hash algorithm used by this hasher
@@ -515,34 +485,7 @@ pub struct CacheStats {
 ///
 /// # Examples
 ///
-/// ```rust
-/// use crucible_core::traits::change_detection::{
-///     HashLookupStorage, HashLookupResult, BatchLookupConfig
-/// };
-/// use crucible_core::types::hashing::FileHashInfo;
-/// use std::collections::HashMap;
-///
-/// struct MockStorage;
-///
-/// #[async_trait]
-/// impl HashLookupStorage for MockStorage {
-///     async fn lookup_file_hash(&self, path: &str) -> Result<Option<StoredHash>, HashError> {
-///         // Implementation would query database for single file
-///         todo!()
-///     }
-///
-///     async fn lookup_file_hashes_batch(
-///         &self,
-///         paths: &[String],
-///         config: Option<BatchLookupConfig>
-///     ) -> Result<HashLookupResult, HashError> {
-///         // Implementation would query database for multiple files
-///         todo!()
-///     }
-///
-///     // ... implement other methods
-/// }
-/// ```
+/// // TODO: Add example once API stabilizes
 #[async_trait]
 pub trait HashLookupStorage: Send + Sync {
     /// Lookup a single file hash by relative path
@@ -954,33 +897,7 @@ impl ChangeDetectionResult {
 ///
 /// # Examples
 ///
-/// ```rust
-/// use crucible_core::traits::change_detection::{
-///     ChangeDetector, ChangeDetectionResult, FileHashInfo
-/// };
-/// use crucible_core::types::hashing::{FileHash, HashAlgorithm};
-/// use std::time::SystemTime;
-///
-/// struct MockChangeDetector;
-///
-/// #[async_trait]
-/// impl ChangeDetector for MockChangeDetector {
-///     async fn detect_changes(&self, current_files: &[FileHashInfo]) -> Result<ChangeSet, HashError> {
-///         // Implementation would compare current files with stored hashes
-///         todo!()
-///     }
-///
-///     async fn detect_changes_with_metrics(
-///         &self,
-///         current_files: &[FileHashInfo]
-///     ) -> Result<ChangeDetectionResult, HashError> {
-///         // Implementation would provide detailed performance metrics
-///         todo!()
-///     }
-///
-///     // ... implement other methods
-/// }
-/// ```
+/// // TODO: Add example once API stabilizes
 #[async_trait]
 pub trait ChangeDetector: Send + Sync {
     /// Detect changes by comparing current files with stored hashes

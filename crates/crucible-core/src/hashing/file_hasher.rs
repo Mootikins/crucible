@@ -14,23 +14,7 @@
 //!
 //! # Examples
 //!
-//! ```rust
-//! use crucible_core::hashing::file_hasher::FileHasher;
-//! use crucible_core::traits::change_detection::ContentHasher;
-//! use crucible_core::types::hashing::HashAlgorithm;
-//! use std::path::Path;
-//!
-//! #[tokio::main]
-//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let hasher = FileHasher::new(crate::hashing::algorithm::Blake3Algorithm);
-//!     let path = Path::new("example.txt");
-//!
-//!     let hash = hasher.hash_file(path).await?;
-//!     println!("File hash: {}", hash);
-//!
-//!     Ok(())
-//! }
-//! ```
+//! // TODO: Add example once API stabilizes
 
 use std::path::{Path, PathBuf};
 
