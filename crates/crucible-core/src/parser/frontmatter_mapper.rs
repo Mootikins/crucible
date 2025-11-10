@@ -17,22 +17,7 @@ use std::collections::HashMap;
 
 /// Maps frontmatter key-value pairs to Property objects
 ///
-/// # Example
-///
-/// ```rust,ignore
-/// use crucible_core::parser::FrontmatterPropertyMapper;
-/// use serde_json::json;
-///
-/// let mut frontmatter = HashMap::new();
-/// frontmatter.insert("title".to_string(), json!("My Note"));
-/// frontmatter.insert("count".to_string(), json!(42));
-/// frontmatter.insert("published".to_string(), json!(true));
-///
-/// let mapper = FrontmatterPropertyMapper::new("note:123");
-/// let properties = mapper.map_to_properties(frontmatter);
-///
-/// assert_eq!(properties.len(), 3);
-/// ```
+/// See `FrontmatterPropertyMapper::new()` and `map_to_properties()` for usage.
 pub struct FrontmatterPropertyMapper {
     entity_id: String,
     namespace: PropertyNamespace,

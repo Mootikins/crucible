@@ -20,21 +20,7 @@ use std::time::{Duration, Instant};
 ///   └--[success_threshold]-- Half-Open <--[reset_timeout]--┘
 /// ```
 ///
-/// # Usage
-///
-/// ```rust,ignore
-/// let mut breaker = CircuitBreaker::new(CircuitBreakerConfig::default());
-///
-/// if breaker.can_execute() {
-///     match sink.write(doc).await {
-///         Ok(_) => breaker.record_success(),
-///         Err(_) => breaker.record_failure(),
-///     }
-/// } else {
-///     // Circuit open, skip write
-///     tracing::warn!("Circuit open, dropping write");
-/// }
-/// ```
+/// See `CircuitBreaker::new()` and state management methods for usage.
 #[derive(Debug, Clone)]
 pub struct CircuitBreaker {
     /// Current circuit state

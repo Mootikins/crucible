@@ -24,26 +24,7 @@
 //! 3. **Builder Pattern**: Fluent API for constructing documents
 //! 4. **Validation**: Ensures data integrity before storage
 //!
-//! ## Example
-//!
-//! ```rust,ignore
-//! use crucible_core::parser::EAVDocument;
-//! use crucible_core::storage::{Entity, EntityType, Property, PropertyValue, PropertyNamespace};
-//!
-//! let doc = EAVDocument::builder()
-//!     .entity_id("note:example")
-//!     .entity_type(EntityType::Note)
-//!     .add_property(Property {
-//!         entity_id: "note:example".to_string(),
-//!         namespace: PropertyNamespace::frontmatter(),
-//!         key: "author".to_string(),
-//!         value: PropertyValue::Text("John Doe".to_string()),
-//!         created_at: Utc::now(),
-//!         updated_at: Utc::now(),
-//!     })
-//!     .build()
-//!     .expect("Valid document");
-//! ```
+//! See `EAVDocument::builder()` for usage.
 
 use crate::storage::{
     Block, Entity, EntityTag, EntityType, Property, PropertyNamespace, Relation, StorageError, Tag,
@@ -197,17 +178,7 @@ impl EAVDocument {
 ///
 /// Provides a fluent API for building documents with validation.
 ///
-/// # Example
-///
-/// ```rust,ignore
-/// let doc = EAVDocument::builder()
-///     .entity_id("note:example")
-///     .entity_type(EntityType::Note)
-///     .content_hash("abc123")
-///     .add_property(property)
-///     .add_relation(relation)
-///     .build()?;
-/// ```
+/// See builder methods for usage.
 #[derive(Debug, Default)]
 pub struct EAVDocumentBuilder {
     entity_id: Option<String>,

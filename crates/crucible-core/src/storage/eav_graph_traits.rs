@@ -21,20 +21,7 @@
 //! 3. **Testable**: Mock implementations enable comprehensive unit testing
 //! 4. **Type Safe**: Strongly typed entities and properties
 //!
-//! ## Usage Example
-//!
-//! ```rust,ignore
-//! use crucible_core::storage::{EntityStorage, StorageResult};
-//!
-//! async fn store_note<S: EntityStorage>(storage: &S, note_id: &str) -> StorageResult<()> {
-//!     let entity = Entity::new(
-//!         RecordId::new("entities", note_id),
-//!         EntityType::Note,
-//!     );
-//!     storage.store_entity(entity).await?;
-//!     Ok(())
-//! }
-//! ```
+//! See the trait definitions below for usage patterns.
 
 use crate::storage::StorageResult;
 use async_trait::async_trait;
@@ -193,19 +180,7 @@ pub enum PropertyValue {
 /// This trait defines the fundamental operations for storing and retrieving entities.
 /// It is intentionally minimal to follow the Interface Segregation Principle.
 ///
-/// # Examples
-///
-/// ```rust,ignore
-/// use crucible_core::storage::{EntityStorage, Entity, EntityType};
-///
-/// async fn create_note<S: EntityStorage>(storage: &S) -> StorageResult<String> {
-///     let entity = Entity::new("note:example".to_string(), EntityType::Note)
-///         .with_content_hash("abc123")
-///         .with_search_text("Example note content");
-///
-///     storage.store_entity(entity).await
-/// }
-/// ```
+/// See trait implementation for usage.
 #[async_trait]
 pub trait EntityStorage: Send + Sync {
     /// Store a new entity or update an existing one
@@ -290,38 +265,7 @@ pub trait EntityStorage: Send + Sync {
 /// individually would require 100 database round-trips. Batch operations reduce
 /// this to a single operation.
 ///
-/// # Examples
-///
-/// ```rust,ignore
-/// use crucible_core::storage::{PropertyStorage, Property, PropertyValue, PropertyNamespace};
-///
-/// async fn store_frontmatter<S: PropertyStorage>(
-///     storage: &S,
-///     entity_id: &str,
-/// ) -> StorageResult<()> {
-///     let properties = vec![
-///         Property {
-///             entity_id: entity_id.to_string(),
-///             namespace: PropertyNamespace::frontmatter(),
-///             key: "author".to_string(),
-///             value: PropertyValue::Text("John Doe".to_string()),
-///             created_at: Utc::now(),
-///             updated_at: Utc::now(),
-///         },
-///         Property {
-///             entity_id: entity_id.to_string(),
-///             namespace: PropertyNamespace::frontmatter(),
-///             key: "priority".to_string(),
-///             value: PropertyValue::Number(5.0),
-///             created_at: Utc::now(),
-///             updated_at: Utc::now(),
-///         },
-///     ];
-///
-///     storage.batch_upsert_properties(properties).await?;
-///     Ok(())
-/// }
-/// ```
+/// See trait implementation for usage.
 #[async_trait]
 pub trait PropertyStorage: Send + Sync {
     /// Store or update multiple properties in a single operation
@@ -473,30 +417,7 @@ pub struct EntityTag {
 /// has a parent (or is a root block) and can have children, forming a tree
 /// structure that mirrors the document organization.
 ///
-/// # Examples
-///
-/// ```rust,ignore
-/// use crucible_core::storage::{BlockStorage, Block};
-///
-/// async fn store_heading<S: BlockStorage>(
-///     storage: &S,
-///     entity_id: &str,
-/// ) -> StorageResult<String> {
-///     let block = Block {
-///         id: "block:heading1".to_string(),
-///         entity_id: entity_id.to_string(),
-///         parent_block_id: None,
-///         content: "# Introduction".to_string(),
-///         block_type: "heading".to_string(),
-///         position: 0,
-///         created_at: Utc::now(),
-///         updated_at: Utc::now(),
-///         content_hash: None,
-///     };
-///
-///     storage.store_block(block).await
-/// }
-/// ```
+/// See trait implementation for usage.
 #[async_trait]
 pub trait BlockStorage: Send + Sync {
     /// Store a new block
@@ -531,37 +452,7 @@ pub trait BlockStorage: Send + Sync {
 /// can share the same tag. This trait manages both the tag taxonomy and the
 /// associations between entities and tags.
 ///
-/// # Examples
-///
-/// ```rust,ignore
-/// use crucible_core::storage::{TagStorage, Tag, EntityTag};
-///
-/// async fn tag_note<S: TagStorage>(
-///     storage: &S,
-///     entity_id: &str,
-///     tag_name: &str,
-/// ) -> StorageResult<()> {
-///     // Create or get tag
-///     let tag = Tag {
-///         id: format!("tag:{}", tag_name),
-///         name: tag_name.to_string(),
-///         parent_tag_id: None,
-///         created_at: Utc::now(),
-///         updated_at: Utc::now(),
-///     };
-///     storage.store_tag(tag).await?;
-///
-///     // Associate entity with tag
-///     let entity_tag = EntityTag {
-///         entity_id: entity_id.to_string(),
-///         tag_id: format!("tag:{}", tag_name),
-///         created_at: Utc::now(),
-///     };
-///     storage.associate_tag(entity_tag).await?;
-///
-///     Ok(())
-/// }
-/// ```
+/// See trait implementation for usage.
 #[async_trait]
 pub trait TagStorage: Send + Sync {
     /// Store a new tag
@@ -612,41 +503,6 @@ pub trait TagStorage: Send + Sync {
 ///
 /// Hashes are stored as raw bytes `[u8; 32]` in-memory but converted to hex strings
 /// for database storage. The adapter layer handles transparent conversion.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// // Wikilink: [[Related Note]]
-/// let wikilink = Relation {
-///     from_entity_id: "note:source".into(),
-///     to_entity_id: Some("note:related".into()),
-///     relation_type: "wikilink".into(),
-///     metadata: json!({ "link_text": "Related Note" }),
-///     ..Default::default()
-/// };
-///
-/// // Block link: [[Note#Heading^5#abc123]]
-/// let block_link = Relation {
-///     from_entity_id: "note:source".into(),
-///     to_entity_id: Some("note:target".into()),
-///     relation_type: "wikilink".into(),
-///     metadata: json!({ "heading": "Heading", "link_text": "Note" }),
-///     block_offset: Some(5),
-///     block_hash: Some([0xab, 0xc1, 0x23, ...]), // BLAKE3 hash
-///     ..Default::default()
-/// };
-///
-/// // Embed: ![[Summary#Overview^2#def456]]
-/// let embed = Relation {
-///     from_entity_id: "note:source".into(),
-///     to_entity_id: Some("note:summary".into()),
-///     relation_type: "embed".into(), // Reversed semantics
-///     metadata: json!({ "heading": "Overview", "embedded_content": "Summary" }),
-///     block_offset: Some(2),
-///     block_hash: Some([0xde, 0xf4, 0x56, ...]),
-///     ..Default::default()
-/// };
-/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Relation {
     /// Unique identifier (auto-generated on store)
@@ -763,21 +619,7 @@ impl Relation {
 /// to specific blocks. The hash provides validation and supports CAS lookup
 /// if the block moves.
 ///
-/// # Examples
-///
-/// ```rust,ignore
-/// use crucible_core::storage::{RelationStorage, Relation};
-///
-/// async fn link_notes<S: RelationStorage>(
-///     storage: &S,
-///     from: &str,
-///     to: &str,
-/// ) -> StorageResult<()> {
-///     let relation = Relation::wikilink(from, to);
-///     storage.store_relation(relation).await?;
-///     Ok(())
-/// }
-/// ```
+/// See trait implementation for usage.
 #[async_trait]
 pub trait RelationStorage: Send + Sync {
     /// Store a new relation
