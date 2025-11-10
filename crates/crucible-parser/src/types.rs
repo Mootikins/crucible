@@ -589,8 +589,17 @@ pub struct DocumentContent {
     /// Obsidian-style callouts extracted from content
     pub callouts: Vec<Callout>,
 
+    /// Regular blockquotes (not callouts)
+    pub blockquotes: Vec<Blockquote>,
+
     /// Footnote definitions and references
     pub footnotes: FootnoteMap,
+
+    /// Markdown tables
+    pub tables: Vec<Table>,
+
+    /// Horizontal rules (--- or ***)
+    pub horizontal_rules: Vec<HorizontalRule>,
 
     /// Word count (approximate)
     pub word_count: usize,
@@ -610,7 +619,10 @@ impl DocumentContent {
             lists: Vec::new(),
             latex_expressions: Vec::new(),
             callouts: Vec::new(),
+            blockquotes: Vec::new(),
             footnotes: FootnoteMap::new(),
+            tables: Vec::new(),
+            horizontal_rules: Vec::new(),
             word_count: 0,
             char_count: 0,
         }
@@ -837,6 +849,107 @@ pub enum TaskStatus {
     Completed,
     /// Task is pending ([ ])
     Pending,
+}
+
+/// A markdown table
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Table {
+    /// Raw table content (with pipes and formatting)
+    pub raw_content: String,
+    /// Table headers
+    pub headers: Vec<String>,
+    /// Number of columns
+    pub columns: usize,
+    /// Number of data rows (excluding header)
+    pub rows: usize,
+    /// Character offset in source
+    pub offset: usize,
+}
+
+impl Table {
+    /// Create a new table
+    pub fn new(raw_content: String, headers: Vec<String>, columns: usize, rows: usize, offset: usize) -> Self {
+        Self {
+            raw_content,
+            headers,
+            columns,
+            rows,
+            offset,
+        }
+    }
+}
+
+/// Blockquote content (not a callout)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Blockquote {
+    /// Blockquote content
+    pub content: String,
+    /// Nesting level (0 for single >, 1 for >>, etc.)
+    pub nested_level: u8,
+    /// Character offset in source
+    pub offset: usize,
+}
+
+impl Blockquote {
+    /// Create a new blockquote
+    pub fn new(content: String, offset: usize) -> Self {
+        Self {
+            content,
+            nested_level: 0,
+            offset,
+        }
+    }
+
+    /// Create a new blockquote with nesting level
+    pub fn with_nesting(content: String, nested_level: u8, offset: usize) -> Self {
+        Self {
+            content,
+            nested_level,
+            offset,
+        }
+    }
+}
+
+/// A horizontal rule / thematic break
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HorizontalRule {
+    /// Raw content (e.g., "---" or "***")
+    pub raw_content: String,
+
+    /// Style indicator (dash, asterisk, underscore)
+    pub style: String,
+
+    /// Character offset in source document
+    pub offset: usize,
+}
+
+impl HorizontalRule {
+    /// Create a new horizontal rule
+    pub fn new(raw_content: String, style: String, offset: usize) -> Self {
+        Self {
+            raw_content,
+            style,
+            offset,
+        }
+    }
+
+    /// Detect style from raw content
+    pub fn detect_style(content: &str) -> String {
+        if content.contains('-') {
+            "dash".to_string()
+        } else if content.contains('*') {
+            "asterisk".to_string()
+        } else if content.contains('_') {
+            "underscore".to_string()
+        } else {
+            "unknown".to_string()
+        }
+    }
+
+    /// Get the length of the horizontal rule
+    pub fn length(&self) -> usize {
+        self.raw_content.len()
+    }
 }
 
 /// AST block type enumeration
@@ -1150,6 +1263,16 @@ pub enum ASTBlockMetadata {
         is_block: bool,
     },
 
+    /// Table metadata
+    Table {
+        /// Number of rows (excluding header)
+        rows: usize,
+        /// Number of columns
+        columns: usize,
+        /// Table headers
+        headers: Vec<String>,
+    },
+
     /// Generic metadata for block types that don't need specific fields
     Generic,
 }
@@ -1188,6 +1311,15 @@ impl ASTBlockMetadata {
     /// Create LaTeX metadata
     pub fn latex(is_block: bool) -> Self {
         Self::Latex { is_block }
+    }
+
+    /// Create table metadata
+    pub fn table(rows: usize, columns: usize, headers: Vec<String>) -> Self {
+        Self::Table {
+            rows,
+            columns,
+            headers,
+        }
     }
 
     /// Create generic metadata
@@ -1495,6 +1627,24 @@ impl ParsedDocumentBuilder {
     /// Set content
     pub fn with_content(mut self, content: DocumentContent) -> Self {
         self.content = content;
+        self
+    }
+
+    /// Set callouts
+    pub fn with_callouts(mut self, callouts: Vec<Callout>) -> Self {
+        self.callouts = callouts;
+        self
+    }
+
+    /// Set LaTeX expressions
+    pub fn with_latex_expressions(mut self, latex_expressions: Vec<LatexExpression>) -> Self {
+        self.latex_expressions = latex_expressions;
+        self
+    }
+
+    /// Set footnotes
+    pub fn with_footnotes(mut self, footnotes: FootnoteMap) -> Self {
+        self.footnotes = footnotes;
         self
     }
 

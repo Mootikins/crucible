@@ -106,6 +106,7 @@ impl CrucibleParser {
             .with_extension(crate::create_basic_markdown_extension()) // Core markdown parsing (headings, lists, etc.)
             .with_extension(crate::create_latex_extension())
             .with_extension(crate::create_callout_extension())
+            .with_extension(crate::create_blockquote_extension())
             .with_extension(crate::create_enhanced_tags_extension())
             .with_extension(crate::create_footnote_extension());
 
@@ -340,7 +341,10 @@ impl MarkdownParserImplementation for CrucibleParser {
             lists: Vec::new(),
             latex_expressions: Vec::new(),
             callouts: Vec::new(),
+            blockquotes: Vec::new(),
             footnotes: crate::types::FootnoteMap::new(),
+            tables: Vec::new(),
+            horizontal_rules: Vec::new(),
         };
 
         // Apply syntax extensions
@@ -359,10 +363,18 @@ impl MarkdownParserImplementation for CrucibleParser {
             }
         }
 
+        // Extract top-level fields from document_content before building
+        let callouts = document_content.callouts.clone();
+        let latex_expressions = document_content.latex_expressions.clone();
+        let footnotes = document_content.footnotes.clone();
+
         // Create the initial parsed document using builder pattern
         let mut parsed_doc = ParsedDocument::builder(source_path.to_path_buf())
             .with_frontmatter(frontmatter)
             .with_content(document_content)
+            .with_callouts(callouts)
+            .with_latex_expressions(latex_expressions)
+            .with_footnotes(footnotes)
             .build();
 
         // Apply block-level processing if enabled (Phase 2 optimize-data-flow)
