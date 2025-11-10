@@ -3,7 +3,7 @@
 //! This module provides functionality to transform ParsedDocument instances
 //! into SurrealDB-compatible data structures for indexing.
 
-use crate::parser::types::ParsedDocument;
+use crucible_parser::types::ParsedDocument;
 use anyhow::Result;
 use serde_json::{Map, Value};
 
@@ -165,7 +165,7 @@ impl Default for SurrealDBAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::types::{
+    use crucible_parser::types::{
         DocumentContent, FootnoteMap, Frontmatter, FrontmatterFormat, Heading, Tag, Wikilink,
     };
 
@@ -194,6 +194,10 @@ mod tests {
                 code_blocks: vec![],
                 latex_expressions: vec![],
                 callouts: vec![],
+                blockquotes: vec![],
+                footnotes: FootnoteMap::new(),
+                tables: vec![],
+                horizontal_rules: vec![],
             },
             wikilinks: vec![Wikilink {
                 target: "link".to_string(),
@@ -215,6 +219,8 @@ mod tests {
             content_hash: "test_hash_123".to_string(),
             file_size: 100,
             parse_errors: Vec::new(),
+            block_hashes: vec![],
+            merkle_root: None,
         }
     }
 
@@ -345,6 +351,10 @@ mod tests {
                 lists: vec![],
                 latex_expressions: vec![],
                 callouts: vec![],
+                blockquotes: vec![],
+                footnotes: FootnoteMap::new(),
+                tables: vec![],
+                horizontal_rules: vec![],
             },
             wikilinks: vec![],
             tags: vec![],
@@ -355,6 +365,8 @@ mod tests {
             content_hash: "simple_hash".to_string(),
             file_size: 14,
             parse_errors: Vec::new(),
+            block_hashes: vec![],
+            merkle_root: None,
         };
 
         let record = adapter

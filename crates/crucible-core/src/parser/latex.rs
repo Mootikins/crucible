@@ -6,7 +6,7 @@
 
 use super::error::{ParseError, ParseErrorType};
 use super::extensions::SyntaxExtension;
-use super::types::DocumentContent;
+use crucible_parser::types::{DocumentContent, LatexExpression};
 use async_trait::async_trait;
 use regex::Regex;
 use std::sync::Arc;
@@ -97,7 +97,7 @@ impl LatexExtension {
             // Add the LaTeX expression to document content
             doc_content
                 .latex_expressions
-                .push(super::types::LatexExpression::new(
+                .push(LatexExpression::new(
                     latex_content.to_string(),
                     true, // is_block
                     full_match.start(),
@@ -166,7 +166,7 @@ impl LatexExtension {
             // Add the LaTeX expression to document content
             doc_content
                 .latex_expressions
-                .push(super::types::LatexExpression::new(
+                .push(LatexExpression::new(
                     latex_content.to_string(),
                     false, // is_inline
                     full_match.start(),

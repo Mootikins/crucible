@@ -5,42 +5,17 @@
 
 use crate::parser::error::ParserResult;
 use crate::parser::traits::{MarkdownParser, ParserCapabilities};
-use crate::parser::types::{DocumentContent, ParsedDocument};
+use crucible_parser::types::{DocumentContent, ParsedDocument};
 use async_trait::async_trait;
 use crucible_parser::MarkdownParserImplementation;
 use std::path::Path;
 
 /// Convert a parser crate ParsedDocument to a core ParsedDocument
+///
+/// NOTE: After type consolidation, ParsedDocument is the same type in both crates.
+/// This function is now a no-op that just returns the input directly.
 fn convert_parsed_document(parser_doc: crucible_parser::ParsedDocument) -> ParsedDocument {
-    // Create a simplified DocumentContent with just the essential fields
-    let core_content = DocumentContent {
-        plain_text: parser_doc.content.plain_text.clone(),
-        word_count: parser_doc.content.word_count,
-        char_count: parser_doc.content.char_count,
-        headings: vec![],          // Skip complex conversion for now
-        code_blocks: vec![],       // Skip complex conversion for now
-        paragraphs: vec![],        // Skip complex conversion for now
-        lists: vec![],             // Skip complex conversion for now
-        latex_expressions: vec![], // Skip complex conversion for now
-        callouts: vec![],          // Skip complex conversion for now
-    };
-
-    // Convert simple fields
-    let core_wikilinks = vec![]; // Skip complex conversion for now
-    let core_tags = vec![]; // Skip complex conversion for now
-    let core_frontmatter = None; // Skip complex conversion for now
-
-    // Create the core ParsedDocument using the legacy constructor for compatibility
-    ParsedDocument::legacy(
-        parser_doc.path,
-        core_frontmatter,
-        core_wikilinks,
-        core_tags,
-        core_content,
-        parser_doc.parsed_at,
-        parser_doc.content_hash,
-        parser_doc.file_size,
-    )
+    parser_doc
 }
 
 /// Adapter that implements core's MarkdownParser trait using the parser crate implementation

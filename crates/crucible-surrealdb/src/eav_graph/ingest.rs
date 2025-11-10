@@ -1,7 +1,7 @@
 use anyhow::Result;
 use blake3::Hasher;
 use crucible_core::merkle::HybridMerkleTree;
-use crucible_core::parser::types::ParsedDocument;
+use crucible_core::parser::ParsedDocument;
 use crucible_core::storage::{Relation as CoreRelation, RelationStorage, Tag as CoreTag, TagStorage};
 use serde_json::{Map, Value};
 
@@ -67,7 +67,7 @@ mod tests {
     use super::*;
     use crate::eav_graph::apply_eav_graph_schema;
     use crate::SurrealClient;
-    use crucible_core::parser::types::{
+    use crucible_core::parser::{
         DocumentContent, Frontmatter, FrontmatterFormat, Heading, Paragraph, Tag,
     };
     use serde_json::json;
@@ -122,7 +122,7 @@ mod tests {
 
     #[tokio::test]
     async fn ingest_document_extracts_wikilink_relations() {
-        use crucible_core::parser::types::Wikilink;
+        use crucible_core::parser::Wikilink;
         use crucible_core::storage::RelationStorage;
 
         let client = SurrealClient::new_isolated_memory().await.unwrap();
@@ -249,7 +249,7 @@ mod tests {
 
     #[tokio::test]
     async fn ingest_document_stores_relation_metadata() {
-        use crucible_core::parser::types::Wikilink;
+        use crucible_core::parser::Wikilink;
         use crucible_core::storage::RelationStorage;
 
         let client = SurrealClient::new_isolated_memory().await.unwrap();
@@ -295,7 +295,7 @@ mod tests {
 
     #[tokio::test]
     async fn relations_support_backlinks() {
-        use crucible_core::parser::types::Wikilink;
+        use crucible_core::parser::Wikilink;
         use crucible_core::storage::RelationStorage;
 
         let client = SurrealClient::new_isolated_memory().await.unwrap();
@@ -774,8 +774,8 @@ fn build_blocks(entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec
     for list in &doc.content.lists {
         let metadata = serde_json::json!({
             "type": match list.list_type {
-                crucible_core::parser::types::ListType::Ordered => "ordered",
-                crucible_core::parser::types::ListType::Unordered => "unordered",
+                crucible_core::parser::ListType::Ordered => "ordered",
+                crucible_core::parser::ListType::Unordered => "unordered",
             },
             "item_count": list.items.len()
         });
@@ -785,8 +785,8 @@ fn build_blocks(entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec
             .map(|item| {
                 if let Some(task_status) = &item.task_status {
                     let check = match task_status {
-                        crucible_core::parser::types::TaskStatus::Pending => " ",
-                        crucible_core::parser::types::TaskStatus::Completed => "x",
+                        crucible_core::parser::TaskStatus::Pending => " ",
+                        crucible_core::parser::TaskStatus::Completed => "x",
                     };
                     format!("- [{}] {}", check, item.content)
                 } else {

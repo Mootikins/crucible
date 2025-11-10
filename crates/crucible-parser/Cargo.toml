@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Core dependency
-crucible-core = { workspace = true }
+# Note: crucible-core dependency removed to break circular dependency
+# Parser uses local BlockHash copy, core re-exports parser types
+# This establishes parser as the canonical source for parser types
 
 # Async runtime
 async-trait = { workspace = true }
