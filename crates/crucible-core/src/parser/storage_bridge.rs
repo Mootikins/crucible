@@ -24,7 +24,7 @@
 use crate::hashing::blake3::Blake3Hasher;
 use crate::parser::error::ParserResult;
 use crate::parser::traits::{MarkdownParser, ParserCapabilities};
-use crate::parser::types::ParsedDocument;
+use crucible_parser::types::ParsedDocument;
 use crate::storage::builder::ContentAddressedStorageBuilder;
 use crate::storage::diff::EnhancedChangeDetector;
 use crate::storage::{

@@ -1,7 +1,7 @@
 use blake3::Hasher;
 use serde::{Deserialize, Serialize};
 
-use crate::parser::types::{Heading, Paragraph, ParsedDocument};
+use crucible_parser::types::{Heading, Paragraph, ParsedDocument};
 use crate::types::BlockHash;
 
 /// Hybrid Merkle tree that groups document content into semantic sections and
@@ -328,7 +328,7 @@ impl SectionBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::types::{DocumentContent, Heading, Paragraph};
+    use crucible_parser::types::{DocumentContent, Heading, Paragraph};
     use std::path::PathBuf;
 
     fn build_document() -> ParsedDocument {

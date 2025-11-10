@@ -16,7 +16,6 @@ pub mod pulldown;
 pub mod query_blocks;
 pub mod storage_bridge;
 pub mod traits;
-pub mod types;
 
 pub use adapter::SurrealDBAdapter;
 pub use bridge::{create_parser, create_parser_with_config, ParserAdapter, ParserConfig};
@@ -39,8 +38,49 @@ pub use storage_bridge::{
     StorageAwareParseResult, StorageAwareParser, StorageAwareParserConfig, StorageOperationResult,
 };
 pub use traits::{MarkdownParser, ParserCapabilities};
-pub use types::{
-    Callout, CodeBlock, DocumentContent, FootnoteDefinition, FootnoteMap, FootnoteReference,
-    Frontmatter, FrontmatterFormat, Heading, LatexExpression, ListBlock, ListItem, ListType,
-    Paragraph, ParsedDocument, ParsedDocumentBuilder, Tag, TaskStatus, Wikilink,
+
+// Re-export parser types for convenience
+// Canonical definitions are in crucible-parser crate
+pub use crucible_parser::types::{
+    // Core document types
+    ParsedDocument,
+    ParsedDocumentBuilder,
+    DocumentContent,
+    Frontmatter,
+    FrontmatterFormat,
+
+    // Link and tag types
+    Wikilink,
+    Tag,
+
+    // Content structure types
+    Heading,
+    CodeBlock,
+    Paragraph,
+    ListBlock,
+    ListItem,
+    ListType,
+    TaskStatus,
+
+    // Enhanced content types
+    Callout,
+    LatexExpression,
+
+    // Footnote types
+    FootnoteMap,
+    FootnoteDefinition,
+    FootnoteReference,
+
+    // AST types (new in parser, not previously in core)
+    ASTBlock,
+    ASTBlockMetadata,
+    ASTBlockType,
+
+    // Additional content types (new in parser)
+    Table,
+    Blockquote,
+    HorizontalRule,
+
+    // Hash type (parser's local copy to avoid circular dependency)
+    BlockHash,
 };

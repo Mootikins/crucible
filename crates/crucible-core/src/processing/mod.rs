@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 // Re-export ParsedDocument from parser for convenience
-pub use crate::parser::types::ParsedDocument;
+pub use crucible_parser::types::ParsedDocument;
 
 /// A processed document ready for database transaction building
 ///
@@ -400,7 +400,7 @@ impl DocumentProcessingJob {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::types::{DocumentContent, FootnoteMap, ParsedDocument};
+    use crucible_parser::types::{DocumentContent, FootnoteMap, ParsedDocument};
 
     fn create_test_document(path: &str) -> ParsedDocument {
         ParsedDocument {
@@ -416,6 +416,8 @@ mod tests {
             content_hash: "test_hash".to_string(),
             file_size: 0,
             parse_errors: Vec::new(),
+            block_hashes: vec![],
+            merkle_root: None,
         }
     }
 

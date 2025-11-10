@@ -4,7 +4,7 @@
 //! modular addition of new syntax features to the markdown parser.
 
 use super::error::ParseError;
-use super::types::DocumentContent;
+use crucible_parser::types::DocumentContent;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
