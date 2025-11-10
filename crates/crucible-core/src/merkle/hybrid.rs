@@ -1,8 +1,7 @@
 use blake3::Hasher;
 use serde::{Deserialize, Serialize};
 
-use crucible_parser::types::{Heading, Paragraph, ParsedDocument};
-use crate::types::BlockHash;
+use crucible_parser::types::{BlockHash, Heading, Paragraph, ParsedDocument};
 
 /// Hybrid Merkle tree that groups document content into semantic sections and
 /// stores block-level hashing inside each section.

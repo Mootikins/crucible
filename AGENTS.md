@@ -29,6 +29,29 @@ This file provides essential information for AI agents to understand and contrib
 
 ## 🏗️ Architecture
 
+### Type Ownership
+
+**Parser Types** are canonically defined in `crucible-parser/src/types.rs`.
+Core re-exports these types via `crucible_core::parser::*` for convenience.
+
+**Hash Types**: `BlockHash` is defined in `crucible-parser/src/types.rs` to avoid circular
+dependencies. Other hash infrastructure is in `crucible-core/src/types/hashing.rs`.
+
+**DO NOT duplicate types between crates.** Each type should be defined in exactly
+one location. Use re-exports for convenience.
+
+**Import patterns:**
+```rust
+// Parser types - prefer canonical location
+use crucible_parser::types::{ParsedDocument, Wikilink, Tag, BlockHash};
+
+// Or use re-export for convenience
+use crucible_core::parser::{ParsedDocument, Wikilink, Tag};
+
+// Hash infrastructure - from core
+use crucible_core::types::hashing::{FileHash, HashAlgorithm};
+```
+
 ### Core Components
 - **Rust Core** (`crates/crucible-core/`): Business logic, parsing, storage traits
 - **CLI** (`crates/crucible-cli/`): Command-line interface (current primary interface)
