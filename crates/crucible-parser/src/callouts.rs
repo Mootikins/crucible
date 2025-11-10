@@ -50,19 +50,8 @@ impl SyntaxExtension for CalloutExtension {
         let mut errors = Vec::new();
 
         // Pattern to match callout blocks starting with > [!type] possibly with title
-        let re = match Regex::new(r"(?m)^(>\s*\[!(\w+)\](?:\s+([^\\n]*))?)\s*\n((?:[^\n]*\n?)*)") {
-            Ok(re) => re,
-            Err(e) => {
-                errors.push(ParseError::error(
-                    format!("Failed to compile callout regex: {}", e),
-                    ParseErrorType::SyntaxError,
-                    0,
-                    0,
-                    0,
-                ));
-                return errors;
-            }
-        };
+        let re = Regex::new(r"(?m)^(>\s*\[!(\w+)\](?:\s+([^\\n]*))?)\s*\n((?:[^\n]*\n?)*)")
+            .expect("Callout regex is a compile-time constant and should never fail to compile");
 
         for cap in re.captures_iter(content) {
             let full_match = cap.get(0).unwrap();

@@ -500,10 +500,14 @@ fn compute_section_properties(
     entity_id: &RecordId<EntityRecord>,
     doc: &ParsedDocument,
 ) -> Vec<Property> {
-    let mut props = Vec::new();
-
     // Build the hybrid Merkle tree to extract sections
     let merkle_tree = HybridMerkleTree::from_document(doc);
+
+    // Pre-calculate capacity: 2 base properties + 2 per section
+    // Base: tree_root_hash, total_sections
+    // Per section: section_{n}_hash, section_{n}_metadata
+    let capacity = 2 + (merkle_tree.sections.len() * 2);
+    let mut props = Vec::with_capacity(capacity);
 
     // Store the root hash as a property
     props.push(Property::new(
@@ -571,7 +575,11 @@ fn core_properties(
     doc: &ParsedDocument,
     relative_path: &str,
 ) -> Vec<Property> {
-    let mut props = Vec::new();
+    // Pre-calculate capacity: 4 base properties + 1 if frontmatter exists
+    // Base: path, relative_path, title, tags
+    // Optional: frontmatter
+    let capacity = if doc.frontmatter.is_some() { 5 } else { 4 };
+    let mut props = Vec::with_capacity(capacity);
 
     props.push(Property::new(
         property_id(entity_id, "core", "path"),
@@ -700,7 +708,16 @@ fn property_id(
 }
 
 fn build_blocks(entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec<BlockNode> {
-    let mut blocks = Vec::new();
+    // Pre-calculate capacity: sum of all content types
+    // Headings + code_blocks + lists + callouts + latex + paragraphs (upper bound)
+    // Note: Actual paragraph count may be lower due to filtering empty ones
+    let capacity = doc.content.headings.len()
+        + doc.content.paragraphs.len()
+        + doc.content.code_blocks.len()
+        + doc.content.lists.len()
+        + doc.callouts.len()
+        + doc.content.latex_expressions.len();
+    let mut blocks = Vec::with_capacity(capacity);
     let mut index = 0;
 
     // Headings with metadata (level + text)
@@ -853,7 +870,9 @@ fn make_block_with_metadata(
 
 /// Extract relations from wikilinks and embeds
 fn extract_relations(entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec<CoreRelation> {
-    let mut relations = Vec::new();
+    // Pre-calculate capacity: one relation per wikilink
+    let capacity = doc.wikilinks.len();
+    let mut relations = Vec::with_capacity(capacity);
     let from_entity_id = format!("{}:{}", entity_id.table, entity_id.id);
 
     for wikilink in &doc.wikilinks {

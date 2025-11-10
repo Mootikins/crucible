@@ -67,7 +67,7 @@ impl HybridMerkleTree {
         let (sections, total_blocks) = build_sections(doc);
         let section_hashes: Vec<BlockHash> = sections
             .iter()
-            .map(|section| section.binary_tree.root_hash.clone())
+            .map(|section| section.binary_tree.root_hash)
             .collect();
         let root_hash = aggregate_hashes(&section_hashes);
 
@@ -120,7 +120,7 @@ impl BinaryMerkleTree {
         for (index, hash) in blocks {
             let node_index = nodes.len();
             nodes.push(MerkleNode::Leaf {
-                hash: hash.clone(),
+                hash: *hash,
                 block_index: *index,
             });
             current_level.push(node_index);
@@ -148,7 +148,7 @@ impl BinaryMerkleTree {
         }
 
         let root_index = current_level[0];
-        let root_hash = nodes[root_index].hash().clone();
+        let root_hash = *nodes[root_index].hash();
 
         Self {
             root_hash,
@@ -394,7 +394,7 @@ mod tests {
         // Verify root hash is computed from section hashes
         let section_hashes: Vec<BlockHash> = tree.sections
             .iter()
-            .map(|s| s.binary_tree.root_hash.clone())
+            .map(|s| s.binary_tree.root_hash)
             .collect();
         let expected_root = aggregate_hashes(&section_hashes);
         assert_eq!(tree.root_hash, expected_root,
@@ -415,7 +415,7 @@ mod tests {
     fn test_hash_changes_when_section_content_changes() {
         let doc_original = build_document();
         let tree_original = HybridMerkleTree::from_document(&doc_original);
-        let original_root_hash = tree_original.root_hash.clone();
+        let original_root_hash = tree_original.root_hash;
 
         // Modify content in the second section (Details)
         let mut doc_modified = build_document();
