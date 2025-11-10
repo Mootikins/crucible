@@ -591,6 +591,23 @@ fn build_blocks(entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec
         index += 1;
     }
 
+    // LaTeX expressions with inline/block flag
+    for latex in &doc.content.latex_expressions {
+        let metadata = serde_json::json!({
+            "inline": !latex.is_block,
+            "display_mode": latex.is_block
+        });
+        blocks.push(make_block_with_metadata(
+            entity_id,
+            &format!("latex{}", index),
+            index,
+            "latex",
+            &latex.expression,
+            metadata,
+        ));
+        index += 1;
+    }
+
     blocks
 }
 

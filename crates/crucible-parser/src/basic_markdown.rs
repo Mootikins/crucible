@@ -291,6 +291,22 @@ impl SyntaxExtension for BasicMarkdownExtension {
                     }
                     current_offset += 1;
                 }
+                Event::Rule => {
+                    // Horizontal rule detected
+                    // Determine style based on the raw content (default to dash)
+                    // Note: pulldown-cmark doesn't expose the original characters used,
+                    // so we'll default to "dash" for now
+                    let style = "dash".to_string();
+                    let raw_content = "---".to_string();
+
+                    doc_content.horizontal_rules.push(crate::types::HorizontalRule::new(
+                        raw_content,
+                        style,
+                        current_offset,
+                    ));
+
+                    current_offset += 3; // Approximate length
+                }
                 _ => {}
             }
         }

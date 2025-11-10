@@ -10,6 +10,7 @@
 pub mod basic_markdown;
 pub mod block_extractor;
 pub mod block_hasher;
+pub mod blockquotes;
 pub mod callouts;
 pub mod enhanced_tags;
 pub mod error;
@@ -30,14 +31,15 @@ pub use extensions::{
 pub use implementation::{BlockProcessingConfig, CrucibleParser};
 pub use traits::{MarkdownParserImplementation, ParserCapabilities};
 pub use types::{
-    ASTBlock, ASTBlockMetadata, ASTBlockType, BlockHash, Callout, CodeBlock, DocumentContent,
-    FootnoteDefinition, FootnoteMap, FootnoteReference, Frontmatter, FrontmatterFormat, Heading,
-    LatexExpression, ListBlock, ListItem, ListType, ParsedDocument, ParsedDocumentBuilder, Tag,
-    TaskStatus, Wikilink,
+    ASTBlock, ASTBlockMetadata, ASTBlockType, BlockHash, Blockquote, Callout, CodeBlock,
+    DocumentContent, FootnoteDefinition, FootnoteMap, FootnoteReference, Frontmatter,
+    FrontmatterFormat, Heading, LatexExpression, ListBlock, ListItem, ListType, ParsedDocument,
+    ParsedDocumentBuilder, Tag, TaskStatus, Wikilink,
 };
 
 // Convenience factory functions
 pub use basic_markdown::create_basic_markdown_extension;
+pub use blockquotes::create_blockquote_extension;
 pub use callouts::create_callout_extension;
 pub use enhanced_tags::create_enhanced_tags_extension;
 pub use footnotes::create_footnote_extension;

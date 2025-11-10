@@ -6,8 +6,8 @@
 
 use crate::error::ParseError;
 use crate::types::{
-    ASTBlock, ASTBlockMetadata, ASTBlockType, Callout, CodeBlock, Heading, LatexExpression,
-    ListBlock, ListType, ParsedDocument,
+    ASTBlock, ASTBlockMetadata, ASTBlockType, Callout, CodeBlock, Heading, HorizontalRule,
+    LatexExpression, ListBlock, ListType, ParsedDocument, Table,
 };
 use std::collections::HashMap;
 
@@ -396,6 +396,16 @@ impl BlockExtractor {
             }
         }
 
+        // Add tables
+        for (index, table) in document.content.tables.iter().enumerate() {
+            map.add_table(table.clone(), index);
+        }
+
+        // Add horizontal rules
+        for (index, hr) in document.content.horizontal_rules.iter().enumerate() {
+            map.add_horizontal_rule(hr.clone(), index);
+        }
+
         map
     }
 
@@ -453,6 +463,27 @@ impl BlockExtractor {
                 start_offset: latex.latex.offset,
                 end_offset: latex.latex.offset + latex.latex.length,
                 index: latex.index,
+            });
+        }
+
+        // Add all tables
+        for table in &content_map.tables {
+            let table_len = table.table.raw_content.len();
+            positions.push(ExtractionPosition {
+                block_type: ExtractionType::Table,
+                start_offset: table.table.offset,
+                end_offset: table.table.offset + table_len,
+                index: table.index,
+            });
+        }
+
+        // Add all horizontal rules
+        for hr in &content_map.horizontal_rules {
+            positions.push(ExtractionPosition {
+                block_type: ExtractionType::HorizontalRule,
+                start_offset: hr.hr.offset,
+                end_offset: hr.hr.offset + hr.hr.length(),
+                index: hr.index,
             });
         }
 
@@ -593,34 +624,81 @@ impl BlockExtractor {
         Ok(Some(block))
     }
 
-    /// Extract blockquote blocks (not yet implemented in ParsedDocument)
+    /// Extract blockquote blocks
     fn extract_blockquote_block(
         &self,
-        _document: &ParsedDocument,
-        _position: &ExtractionPosition,
+        document: &ParsedDocument,
+        position: &ExtractionPosition,
     ) -> Result<Option<ASTBlock>, ParseError> {
-        // TODO: Implement blockquote extraction when available in ParsedDocument
-        Ok(None)
+        if position.index >= document.content.blockquotes.len() {
+            return Ok(None);
+        }
+
+        let blockquote = &document.content.blockquotes[position.index];
+
+        let metadata = ASTBlockMetadata::Generic;
+
+        let block = ASTBlock::new(
+            ASTBlockType::Blockquote,
+            blockquote.content.clone(),
+            position.start_offset,
+            position.end_offset,
+            metadata,
+        );
+
+        Ok(Some(block))
     }
 
-    /// Extract table blocks (not yet implemented in ParsedDocument)
+    /// Extract table blocks
     fn extract_table_block(
         &self,
-        _document: &ParsedDocument,
-        _position: &ExtractionPosition,
+        document: &ParsedDocument,
+        position: &ExtractionPosition,
     ) -> Result<Option<ASTBlock>, ParseError> {
-        // TODO: Implement table extraction when available in ParsedDocument
-        Ok(None)
+        if position.index >= document.content.tables.len() {
+            return Ok(None);
+        }
+
+        let table = &document.content.tables[position.index];
+
+        let metadata = ASTBlockMetadata::table(
+            table.rows,
+            table.columns,
+            table.headers.clone(),
+        );
+
+        let block = ASTBlock::new(
+            ASTBlockType::Table,
+            table.raw_content.clone(),
+            table.offset,
+            table.offset + table.raw_content.len(),
+            metadata,
+        );
+
+        Ok(Some(block))
     }
 
-    /// Extract horizontal rule blocks (not yet implemented in ParsedDocument)
+    /// Extract horizontal rule blocks
     fn extract_horizontal_rule(
         &self,
-        _document: &ParsedDocument,
-        _position: &ExtractionPosition,
+        document: &ParsedDocument,
+        position: &ExtractionPosition,
     ) -> Result<Option<ASTBlock>, ParseError> {
-        // TODO: Implement horizontal rule extraction when available in ParsedDocument
-        Ok(None)
+        if position.index >= document.content.horizontal_rules.len() {
+            return Ok(None);
+        }
+
+        let hr = &document.content.horizontal_rules[position.index];
+
+        let block = ASTBlock::new(
+            ASTBlockType::HorizontalRule,
+            hr.raw_content.clone(),
+            hr.offset,
+            hr.offset + hr.raw_content.len(),
+            ASTBlockMetadata::Generic,
+        );
+
+        Ok(Some(block))
     }
 
     /// Extract thematic break blocks (not yet implemented in ParsedDocument)
@@ -715,6 +793,8 @@ struct ContentMap {
     lists: Vec<IndexedList>,
     callouts: Vec<IndexedCallout>,
     latex_expressions: Vec<IndexedLatex>,
+    tables: Vec<IndexedTable>,
+    horizontal_rules: Vec<IndexedHorizontalRule>,
 }
 
 #[derive(Debug, Clone)]
@@ -747,6 +827,18 @@ struct IndexedLatex {
     index: usize,
 }
 
+#[derive(Debug, Clone)]
+struct IndexedTable {
+    table: Table,
+    index: usize,
+}
+
+#[derive(Debug, Clone)]
+struct IndexedHorizontalRule {
+    hr: HorizontalRule,
+    index: usize,
+}
+
 impl ContentMap {
     fn new() -> Self {
         Self {
@@ -755,6 +847,8 @@ impl ContentMap {
             lists: Vec::new(),
             callouts: Vec::new(),
             latex_expressions: Vec::new(),
+            tables: Vec::new(),
+            horizontal_rules: Vec::new(),
         }
     }
 
@@ -777,6 +871,14 @@ impl ContentMap {
 
     fn add_latex(&mut self, latex: LatexExpression, index: usize) {
         self.latex_expressions.push(IndexedLatex { latex, index });
+    }
+
+    fn add_table(&mut self, table: Table, index: usize) {
+        self.tables.push(IndexedTable { table, index });
+    }
+
+    fn add_horizontal_rule(&mut self, hr: HorizontalRule, index: usize) {
+        self.horizontal_rules.push(IndexedHorizontalRule { hr, index });
     }
 }
 
