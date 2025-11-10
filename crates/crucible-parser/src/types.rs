@@ -1,4 +1,27 @@
 //! Core data types for parsed markdown documents
+//!
+//! # Type Ownership
+//!
+//! This module contains the **canonical definitions** of all parser-related types.
+//! These types are re-exported by `crucible-core::parser` for convenience.
+//!
+//! ## Canonical Locations
+//!
+//! - **Parser Types**: This module (`crucible_parser::types`)
+//! - **Hash Types**: This module (`BlockHash` - local to avoid circular deps)
+//! - **AST Types**: This module (parser implementation detail)
+//!
+//! ## Import Guidelines
+//!
+//! Prefer importing from the canonical location:
+//! ```rust,ignore
+//! use crucible_parser::types::{ParsedDocument, Wikilink, Tag, BlockHash};
+//! ```
+//!
+//! Re-exports are available for convenience:
+//! ```rust,ignore
+//! use crucible_core::parser::{ParsedDocument, Wikilink, Tag};
+//! ```
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
