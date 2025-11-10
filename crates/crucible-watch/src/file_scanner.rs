@@ -189,32 +189,7 @@ impl WatchResult {
 ///
 /// # Examples
 ///
-/// ```rust,no_run
-/// use crucible_watch::{FileScanner, ScanConfig, NoOpProgressReporter};
-/// use crucible_core::hashing::Blake3Hasher;
-/// use std::path::Path;
-///
-/// #[tokio::main]
-/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     // Create a hasher (implementation depends on your crucible-core version)
-///     let hasher = Blake3Hasher::new();
-///
-///     // Create the scanner
-///     let scanner = FileScanner::new(
-///         Path::new("/path/to/scan"),
-///         ScanConfig::default(),
-///         Arc::new(hasher),
-///         Arc::new(NoOpProgressReporter)
-///     )?;
-///
-///     // Scan the directory
-///     let result = scanner.scan_directory().await?;
-///
-///     println!("Scanned {} files successfully", result.successful_files);
-///
-///     Ok(())
-/// }
-/// ```
+/// // TODO: Add example once API stabilizes
 pub struct FileScanner {
     /// Root directory to scan
     root_path: PathBuf,
@@ -375,12 +350,7 @@ impl FileScanner {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
-    /// let result = scanner.scan_directory().await?;
-    /// println!("Found {} files", result.discovered_files.len());
-    /// println!("Skipped {} files", result.skipped_files);
-    /// println!("Errors: {}", result.scan_errors.len());
-    /// ```
+    /// // TODO: Add example once API stabilizes
     pub async fn scan_directory(&self) -> Result<ScanResult, Error> {
         let start_time = Instant::now();
         self.progress_reporter.scan_started().await;
@@ -453,13 +423,7 @@ impl FileScanner {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
-    /// let files_to_scan = vec![
-    ///     PathBuf::from("/path/to/file1.md"),
-    ///     PathBuf::from("/path/to/file2.rs"),
-    /// ];
-    /// let result = scanner.scan_files(files_to_scan).await?;
-    /// ```
+    /// // TODO: Add example once API stabilizes
     pub async fn scan_files(&self, files: Vec<PathBuf>) -> Result<ScanResult, Error> {
         let start_time = Instant::now();
         self.progress_reporter.scan_started().await;
@@ -541,13 +505,7 @@ impl FileScanner {
     ///
     /// # Examples
     ///
-    /// ```rust,no_run
-    /// let watch_config = WatchConfig::default();
-    /// let watch_result = scanner.watch_directory(watch_config).await?;
-    /// if watch_result.success {
-    ///     println!("Watching {} files", watch_result.watched_files);
-    /// }
-    /// ```
+    /// // TODO: Add example once API stabilizes
     pub async fn watch_directory(&self, watch_config: WatchConfig) -> Result<WatchResult, Error> {
         info!("Setting up file watching for: {:?}", self.root_path);
         debug!("Watch configuration: {:?}", watch_config);

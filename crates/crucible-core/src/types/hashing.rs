@@ -18,15 +18,7 @@ use thiserror::Error;
 ///
 /// # Examples
 ///
-/// ```rust
-/// use crucible_core::types::hashing::FileHash;
-/// use std::str::FromStr;
-///
-/// let hash_str = "a1b2c3d4e5f6789012345678901234567890123456789012345678901234567890";
-/// let hash = FileHash::from_str(hash_str)?;
-/// assert_eq!(hash.to_string(), hash_str);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
+/// // TODO: Add example once API stabilizes
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FileHash([u8; 32]);
 

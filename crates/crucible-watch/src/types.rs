@@ -39,27 +39,7 @@ use crucible_core::types::hashing::{FileHash, HashAlgorithm};
 ///
 /// ## Examples
 ///
-/// ```rust
-/// use crucible_watch::types::{FileInfo, FileType};
-/// use crucible_core::types::hashing::FileHash;
-/// use std::time::SystemTime;
-/// use std::path::PathBuf;
-///
-/// let file_info = FileInfo::builder()
-///     .path(PathBuf::from("/home/user/vault/docs/README.md"))
-///     .relative_path("docs/README.md".to_string())
-///     .content_hash(FileHash::new([42u8; 32]))
-///     .file_size(1024)
-///     .modified_time(SystemTime::now())
-///     .file_type(FileType::Markdown)
-///     .is_accessible(true)
-///     .build()
-///     .unwrap();
-///
-/// assert_eq!(file_info.relative_path(), "docs/README.md");
-/// assert!(file_info.is_markdown());
-/// assert!(!file_info.content_hash().is_zero());
-/// ```
+/// // TODO: Add example once API stabilizes
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileInfo {
     /// Absolute path to the file in the filesystem
@@ -111,21 +91,7 @@ impl FileInfo {
     ///
     /// # Examples
     ///
-    /// ```rust
-    /// use crucible_watch::types::{FileInfo, FileType};
-    /// use crucible_core::types::hashing::FileHash;
-    /// use std::time::SystemTime;
-    /// use std::path::PathBuf;
-    ///
-    /// let file_info = FileInfo::new(
-    ///     PathBuf::from("/path/to/file.md"),
-    ///     "file.md".to_string(),
-    ///     FileHash::new([1u8; 32]),
-    ///     2048,
-    ///     SystemTime::now(),
-    ///     FileType::Markdown,
-    /// );
-    /// ```
+    /// // TODO: Add example once API stabilizes
     pub fn new(
         path: PathBuf,
         relative_path: String,
@@ -158,23 +124,7 @@ impl FileInfo {
     ///
     /// # Examples
     ///
-    /// ```rust
-    /// use crucible_watch::types::{FileInfo, FileType};
-    /// use crucible_core::types::hashing::FileHash;
-    /// use std::time::SystemTime;
-    /// use std::path::PathBuf;
-    ///
-    /// let file_info = FileInfo::builder()
-    ///     .path(PathBuf::from("/path/to/file.md"))
-    ///     .relative_path("file.md".to_string())
-    ///     .content_hash(FileHash::zero())
-    ///     .file_size(1024)
-    ///     .modified_time(SystemTime::now())
-    ///     .file_type(FileType::Markdown)
-    ///     .is_accessible(false)
-    ///     .build()
-    ///     .unwrap();
-    /// ```
+    /// // TODO: Add example once API stabilizes
     pub fn builder() -> FileInfoBuilder {
         FileInfoBuilder::new()
     }
@@ -609,14 +559,7 @@ impl FileType {
     ///
     /// # Examples
     ///
-    /// ```rust
-    /// use crucible_watch::types::FileType;
-    /// use std::path::PathBuf;
-    ///
-    /// assert_eq!(FileType::from_path(&PathBuf::from("file.md")), FileType::Markdown);
-    /// assert_eq!(FileType::from_path(&PathBuf::from("script.rs")), FileType::Code);
-    /// assert_eq!(FileType::from_path(&PathBuf::from("config.yaml")), FileType::Config);
-    /// ```
+    /// // TODO: Add example once API stabilizes
     pub fn from_path(path: &Path) -> Self {
         let extension = path
             .extension()

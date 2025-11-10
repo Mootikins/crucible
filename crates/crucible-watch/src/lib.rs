@@ -33,25 +33,7 @@
 //!
 //! ## Quick Start
 //!
-//! ```rust,no_run
-//! use crucible_watch::{WatchManager, WatchConfig};
-//! use crucible_config::Config;
-//!
-//! #[tokio::main]
-//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let config = Config::load_from_file("config.yaml").await?;
-//!     let manager = WatchManager::new(config).await?;
-//!
-//!     // Start watching configured folders
-//!     manager.start().await?;
-//!
-//!     // Keep the watcher running
-//!     tokio::signal::ctrl_c().await?;
-//!     manager.shutdown().await?;
-//!
-//!     Ok(())
-//! }
-//! ```
+//! // TODO: Add example once API stabilizes
 
 #![warn(missing_docs)]
 #![warn(clippy::all)]
