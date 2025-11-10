@@ -1,5 +1,6 @@
 use anyhow::Result;
 use blake3::Hasher;
+use crucible_core::merkle::HybridMerkleTree;
 use crucible_core::parser::types::ParsedDocument;
 use crucible_core::storage::{Relation as CoreRelation, RelationStorage, Tag as CoreTag, TagStorage};
 use serde_json::{Map, Value};
@@ -44,6 +45,12 @@ impl<'a> DocumentIngestor<'a> {
         let relations = extract_relations(&entity_id, doc);
         for relation in relations {
             self.store.store_relation(relation).await?;
+        }
+
+        // Compute and store section hashes
+        let section_properties = compute_section_properties(&entity_id, doc);
+        for property in section_properties {
+            self.store.upsert_property(&property).await?;
         }
 
         // Note: Tag storage and associations are now handled separately by
@@ -340,6 +347,215 @@ mod tests {
         // The from_entity_id will be in "entities:note:backlink2.md" format due to adapter conversion
         assert_eq!(backlink.from_entity_id, format!("entities:{}", entity2_id.id));
     }
+
+    #[tokio::test]
+    async fn ingest_document_stores_section_hashes() {
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
+        apply_eav_graph_schema(&client).await.unwrap();
+        let store = EAVGraphStore::new(client.clone());
+        let ingestor = DocumentIngestor::new(&store);
+
+        // Create a document with multiple sections
+        let mut doc = sample_document();
+        doc.content.headings.clear();
+        doc.content.paragraphs.clear();
+
+        // Add headings to create sections
+        doc.content.headings.push(Heading::new(1, "Introduction", 0));
+        doc.content.headings.push(Heading::new(2, "Details", 50));
+        doc.content.headings.push(Heading::new(2, "Conclusion", 100));
+
+        // Add paragraphs for content
+        doc.content.paragraphs.push(Paragraph::new("Intro content".to_string(), 10));
+        doc.content.paragraphs.push(Paragraph::new("Detail content".to_string(), 60));
+        doc.content.paragraphs.push(Paragraph::new("Final thoughts".to_string(), 110));
+
+        let entity_id = ingestor.ingest(&doc, "notes/sections-test.md").await.unwrap();
+
+        // Query section properties
+        let result = client
+            .query(
+                "SELECT * FROM properties WHERE entity_id = type::thing('entities', $id) AND namespace = 'section'",
+                &[json!({ "id": entity_id.id })],
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.records.is_empty(), "Should have section properties");
+
+        // Verify we have the expected section properties
+        let props = &result.records;
+
+        // Should have: tree_root_hash, total_sections, and for each section: hash + metadata
+        // With 4 sections (root + 3 headings), we expect: 2 + (4 * 2) = 10 properties
+        assert!(props.len() >= 2, "Should have at least root hash and total sections");
+
+        // Check for tree_root_hash
+        let has_root_hash = props.iter().any(|p| {
+            p.data.get("key")
+                .and_then(|k| k.as_str())
+                .map(|k| k == "tree_root_hash")
+                .unwrap_or(false)
+        });
+        assert!(has_root_hash, "Should have tree_root_hash property");
+
+        // Check for total_sections
+        let total_sections = props.iter().find_map(|p| {
+            if p.data.get("key")?.as_str()? == "total_sections" {
+                // The value is stored as {"type": "number", "value": 4.0}
+                p.data.get("value")?.get("value")?.as_f64()
+            } else {
+                None
+            }
+        });
+        assert!(total_sections.is_some(), "Should have total_sections property");
+        assert!(total_sections.unwrap() > 0.0, "Should have at least one section");
+    }
+
+    #[tokio::test]
+    async fn section_hashes_are_retrievable() {
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
+        apply_eav_graph_schema(&client).await.unwrap();
+        let store = EAVGraphStore::new(client.clone());
+        let ingestor = DocumentIngestor::new(&store);
+
+        let mut doc = sample_document();
+        doc.content.headings.clear();
+        doc.content.paragraphs.clear();
+        doc.content.headings.push(Heading::new(1, "Test Section", 0));
+        doc.content.paragraphs.push(Paragraph::new("Test content".to_string(), 10));
+
+        let entity_id = ingestor.ingest(&doc, "notes/hash-test.md").await.unwrap();
+
+        // Query for section_0_hash
+        let result = client
+            .query(
+                "SELECT * FROM properties WHERE entity_id = type::thing('entities', $id) AND key = 'section_0_hash'",
+                &[json!({ "id": entity_id.id })],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.records.len(), 1, "Should find section_0_hash");
+
+        let hash_prop = &result.records[0];
+        // Value is stored as {"type": "text", "value": "hash_string"}
+        let hash_value = hash_prop.data.get("value")
+            .and_then(|v| v.get("value"))
+            .and_then(|v| v.as_str());
+        assert!(hash_value.is_some(), "Hash should be a string");
+        assert!(!hash_value.unwrap().is_empty(), "Hash should not be empty");
+    }
+
+    #[tokio::test]
+    async fn section_metadata_includes_heading_info() {
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
+        apply_eav_graph_schema(&client).await.unwrap();
+        let store = EAVGraphStore::new(client.clone());
+        let ingestor = DocumentIngestor::new(&store);
+
+        let mut doc = sample_document();
+        doc.content.headings.clear();
+        doc.content.paragraphs.clear();
+        doc.content.headings.push(Heading::new(2, "My Heading", 0));
+        doc.content.paragraphs.push(Paragraph::new("Content here".to_string(), 10));
+
+        let entity_id = ingestor.ingest(&doc, "notes/metadata-test.md").await.unwrap();
+
+        // Query for section metadata - just get all section properties and filter in code
+        let result = client
+            .query(
+                "SELECT * FROM properties WHERE entity_id = type::thing('entities', $id) AND namespace = 'section'",
+                &[json!({ "id": entity_id.id })],
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.records.is_empty(), "Should have section metadata");
+
+        // Find a section with heading metadata
+        // Value is stored as {"type": "json", "value": {...}}
+        let has_heading_metadata = result.records.iter().any(|prop| {
+            // Only look at metadata properties
+            let key = prop.data.get("key").and_then(|k| k.as_str());
+            if !key.map(|k| k.contains("_metadata")).unwrap_or(false) {
+                return false;
+            }
+
+            if let Some(outer_value) = prop.data.get("value") {
+                if let Some(inner_value) = outer_value.get("value") {
+                    return inner_value.get("heading_text").is_some()
+                        && inner_value.get("heading_level").is_some();
+                }
+            }
+            false
+        });
+
+        assert!(has_heading_metadata, "Should have heading metadata in at least one section");
+    }
+}
+
+/// Compute section properties from the document's Merkle tree
+fn compute_section_properties(
+    entity_id: &RecordId<EntityRecord>,
+    doc: &ParsedDocument,
+) -> Vec<Property> {
+    let mut props = Vec::new();
+
+    // Build the hybrid Merkle tree to extract sections
+    let merkle_tree = HybridMerkleTree::from_document(doc);
+
+    // Store the root hash as a property
+    props.push(Property::new(
+        property_id(entity_id, "section", "tree_root_hash"),
+        entity_id.clone(),
+        "section",
+        "tree_root_hash",
+        PropertyValue::Text(merkle_tree.root_hash.to_hex()),
+    ));
+
+    // Store total section count
+    props.push(Property::new(
+        property_id(entity_id, "section", "total_sections"),
+        entity_id.clone(),
+        "section",
+        "total_sections",
+        PropertyValue::Number(merkle_tree.sections.len() as f64),
+    ));
+
+    // Store metadata for each section
+    for (index, section) in merkle_tree.sections.iter().enumerate() {
+        // Store section hash
+        let hash_key = format!("section_{}_hash", index);
+        props.push(Property::new(
+            property_id(entity_id, "section", &hash_key),
+            entity_id.clone(),
+            "section",
+            &hash_key,
+            PropertyValue::Text(section.binary_tree.root_hash.to_hex()),
+        ));
+
+        // Store section metadata as JSON
+        let metadata_key = format!("section_{}_metadata", index);
+        let mut metadata = serde_json::Map::new();
+        metadata.insert("block_count".to_string(), serde_json::json!(section.block_count));
+        metadata.insert("depth".to_string(), serde_json::json!(section.depth));
+
+        if let Some(heading) = &section.heading {
+            metadata.insert("heading_text".to_string(), serde_json::json!(heading.text));
+            metadata.insert("heading_level".to_string(), serde_json::json!(heading.level));
+        }
+
+        props.push(Property::new(
+            property_id(entity_id, "section", &metadata_key),
+            entity_id.clone(),
+            "section",
+            &metadata_key,
+            PropertyValue::Json(Value::Object(metadata)),
+        ));
+    }
+
+    props
 }
 
 fn note_entity_id(relative_path: &str) -> RecordId<EntityRecord> {
