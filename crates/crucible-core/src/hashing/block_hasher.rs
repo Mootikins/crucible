@@ -765,6 +765,12 @@ enum SerializableMetadata {
     },
     /// LaTeX metadata
     Latex { is_block: bool },
+    /// Table metadata
+    Table {
+        rows: usize,
+        columns: usize,
+        headers: Vec<String>,
+    },
     /// Generic metadata
     Generic,
 }
@@ -802,6 +808,15 @@ impl SerializableMetadata {
             },
             ASTBlockMetadata::Latex { is_block } => Self::Latex {
                 is_block: *is_block,
+            },
+            ASTBlockMetadata::Table {
+                rows,
+                columns,
+                headers,
+            } => Self::Table {
+                rows: *rows,
+                columns: *columns,
+                headers: headers.clone(),
             },
             ASTBlockMetadata::Generic => Self::Generic,
         }

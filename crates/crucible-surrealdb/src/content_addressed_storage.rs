@@ -444,6 +444,29 @@ impl ContentAddressedStorageSurrealDB {
             ASTBlockMetadata::Latex { is_block } => {
                 metadata.insert("is_block".to_string(), serde_json::Value::Bool(*is_block));
             }
+            ASTBlockMetadata::Table {
+                rows,
+                columns,
+                headers,
+            } => {
+                metadata.insert(
+                    "rows".to_string(),
+                    serde_json::Value::Number(serde_json::Number::from(*rows as i64)),
+                );
+                metadata.insert(
+                    "columns".to_string(),
+                    serde_json::Value::Number(serde_json::Number::from(*columns as i64)),
+                );
+                metadata.insert(
+                    "headers".to_string(),
+                    serde_json::Value::Array(
+                        headers
+                            .iter()
+                            .map(|h| serde_json::Value::String(h.clone()))
+                            .collect(),
+                    ),
+                );
+            }
             ASTBlockMetadata::Generic => {
                 // No additional metadata for generic blocks
             }

@@ -337,6 +337,11 @@ impl<A: HashingAlgorithm> ASTBlockConverter<A> {
             Latex {
                 is_block: bool,
             },
+            Table {
+                rows: usize,
+                columns: usize,
+                headers: &'a [String],
+            },
             Generic,
         }
 
@@ -375,6 +380,15 @@ impl<A: HashingAlgorithm> ASTBlockConverter<A> {
                     is_block: *is_block,
                 }
             }
+            crucible_parser::types::ASTBlockMetadata::Table {
+                rows,
+                columns,
+                headers,
+            } => SerializableMetadata::Table {
+                rows: *rows,
+                columns: *columns,
+                headers,
+            },
             crucible_parser::types::ASTBlockMetadata::Generic => SerializableMetadata::Generic,
         };
 

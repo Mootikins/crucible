@@ -208,6 +208,7 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
     let mut code_blocks = Vec::new();
     let mut paragraphs = Vec::new();
     let mut lists = Vec::new();
+    let mut horizontal_rules = Vec::new();
     let mut plain_text = String::new();
     let mut current_offset = 0;
     let mut in_heading = false;
@@ -425,6 +426,22 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
                 }
                 current_offset += 1;
             }
+            Event::Rule => {
+                // Horizontal rule detected
+                // Determine style based on the raw content (default to dash)
+                // Note: pulldown-cmark doesn't expose the original characters used,
+                // so we'll default to "dash" for now
+                let style = "dash".to_string();
+                let raw_content = "---".to_string();
+
+                horizontal_rules.push(HorizontalRule::new(
+                    raw_content,
+                    style,
+                    current_offset,
+                ));
+
+                current_offset += 3; // Approximate length
+            }
             _ => {}
         }
     }
@@ -483,6 +500,11 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
         paragraphs,
         lists,
         latex_expressions: Vec::new(),
+        callouts: Vec::new(),
+        blockquotes: Vec::new(),
+        footnotes: FootnoteMap::new(),
+        tables: Vec::new(),
+        horizontal_rules,
         word_count,
         char_count,
     })
