@@ -47,12 +47,8 @@ impl SyntaxExtension for BlockquoteExtension {
         let errors = Vec::new();
 
         // Pattern to match blockquote lines
-        let re = match Regex::new(r"(?m)^(>+)\s*(.*)$") {
-            Ok(re) => re,
-            Err(_e) => {
-                return errors;
-            }
-        };
+        let re = Regex::new(r"(?m)^(>+)\s*(.*)$")
+            .expect("Blockquote regex is a compile-time constant and should never fail to compile");
 
         let lines: Vec<&str> = content.lines().collect();
 
@@ -85,8 +81,32 @@ impl SyntaxExtension for BlockquoteExtension {
                 // Count nesting level (number of > characters)
                 let nested_level = prefix.chars().filter(|&c| c == '>').count() as u8;
 
+                // Calculate total capacity needed for the blockquote content
+                // by looking ahead at consecutive lines with the same nesting level.
+                // We add +1 for each potential space separator between non-empty lines.
+                let mut total_capacity = text.len();
+                let mut lookahead = i + 1;
+                while lookahead < lines.len() {
+                    if let Some(next_cap) = re.captures(lines[lookahead]) {
+                        let next_prefix = next_cap.get(1).unwrap().as_str();
+                        let next_level = next_prefix.chars().filter(|&c| c == '>').count() as u8;
+
+                        if next_level == nested_level {
+                            let next_text = next_cap.get(2).unwrap().as_str();
+                            // Add text length + 1 for potential space separator
+                            total_capacity += next_text.len() + 1;
+                            lookahead += 1;
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+
                 // Collect all consecutive blockquote lines with same nesting level
-                let mut full_content = text.to_string();
+                let mut full_content = String::with_capacity(total_capacity);
+                full_content.push_str(text);
                 let start_offset = offset;
                 i += 1;
                 offset += line.len() + 1;

@@ -53,19 +53,8 @@ impl SyntaxExtension for QueryBlockExtension {
         let mut line_offset = 0;
 
         // Regex to match query blocks: ```query:language\ncode\n```
-        let re = match Regex::new(r"```query:([^\n]*)\n([\s\S]*?)```") {
-            Ok(re) => re,
-            Err(e) => {
-                errors.push(ParseError::error(
-                    format!("Failed to compile query block regex: {}", e),
-                    ParseErrorType::SyntaxError,
-                    0,
-                    0,
-                    0,
-                ));
-                return errors;
-            }
-        };
+        let re = Regex::new(r"```query:([^\n]*)\n([\s\S]*?)```")
+            .expect("Query block regex is a compile-time constant and should never fail to compile");
 
         for cap in re.captures_iter(content) {
             let full_match = cap.get(0).unwrap();
