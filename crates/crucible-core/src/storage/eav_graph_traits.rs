@@ -452,17 +452,20 @@ pub trait BlockStorage: Send + Sync {
 /// can share the same tag. This trait manages both the tag taxonomy and the
 /// associations between entities and tags.
 ///
+/// Tags are identified by their unique name (e.g., "project", "project/ai").
+/// Tag names use slash separators to denote hierarchy.
+///
 /// See trait implementation for usage.
 #[async_trait]
 pub trait TagStorage: Send + Sync {
-    /// Store a new tag
+    /// Store a new tag, returns the tag name (either inserted or existing)
     async fn store_tag(&self, tag: Tag) -> StorageResult<String>;
 
-    /// Get a tag by ID
-    async fn get_tag(&self, id: &str) -> StorageResult<Option<Tag>>;
+    /// Get a tag by its name (e.g., "project", "project/ai")
+    async fn get_tag(&self, name: &str) -> StorageResult<Option<Tag>>;
 
-    /// Get child tags of a parent tag
-    async fn get_child_tags(&self, parent_tag_id: &str) -> StorageResult<Vec<Tag>>;
+    /// Get all child tags for a given parent tag name
+    async fn get_child_tags(&self, parent_tag_name: &str) -> StorageResult<Vec<Tag>>;
 
     /// Associate a tag with an entity
     async fn associate_tag(&self, entity_tag: EntityTag) -> StorageResult<()>;
@@ -470,7 +473,7 @@ pub trait TagStorage: Send + Sync {
     /// Get all tags for an entity
     async fn get_entity_tags(&self, entity_id: &str) -> StorageResult<Vec<Tag>>;
 
-    /// Get all entities with a specific tag
+    /// Get all entities with a specific tag (includes descendant tags in hierarchy)
     async fn get_entities_by_tag(&self, tag_id: &str) -> StorageResult<Vec<String>>;
 
     /// Remove tag association from an entity

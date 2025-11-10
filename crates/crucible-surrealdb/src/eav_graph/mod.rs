@@ -10,6 +10,9 @@ pub mod schema;
 pub mod store;
 pub mod types;
 
+#[cfg(test)]
+mod relation_tag_edge_case_tests;
+
 pub use adapter::{
     core_properties_to_surreal, core_property_to_surreal, entity_id_to_string,
     string_to_entity_id, surreal_properties_to_core, surreal_property_to_core,
