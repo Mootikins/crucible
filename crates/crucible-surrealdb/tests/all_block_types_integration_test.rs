@@ -1,4 +1,4 @@
-use crucible_core::parser::types::{
+use crucible_core::parser::{
     Callout, CodeBlock, DocumentContent, Heading, LatexExpression, ListBlock, ListItem, ListType,
     Paragraph, ParsedDocument,
 };
