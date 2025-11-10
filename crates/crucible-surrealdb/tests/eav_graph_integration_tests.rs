@@ -1,4 +1,4 @@
-use crucible_core::parser::types::{DocumentContent, LatexExpression, ParsedDocument};
+use crucible_core::parser::{DocumentContent, LatexExpression, ParsedDocument};
 use crucible_surrealdb::eav_graph::{apply_eav_graph_schema, DocumentIngestor, EAVGraphStore};
 use crucible_surrealdb::SurrealClient;
 use std::path::PathBuf;
