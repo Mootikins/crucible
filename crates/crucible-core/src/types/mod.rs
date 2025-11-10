@@ -17,7 +17,7 @@
 pub mod hashing;
 
 // Re-export parser domain types
-pub use crate::parser::types::{
+pub use crucible_parser::types::{
     CodeBlock, DocumentContent, Frontmatter, FrontmatterFormat, Heading, ListBlock, ListItem,
     ListType, Paragraph, ParsedDocument, Tag, TaskStatus, Wikilink,
 };

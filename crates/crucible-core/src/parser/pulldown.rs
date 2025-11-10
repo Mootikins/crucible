@@ -2,7 +2,7 @@
 
 use super::error::ParserResult;
 use super::traits::{MarkdownParser, ParserCapabilities};
-use super::types::*;
+use crucible_parser::types::*;
 use async_trait::async_trait;
 use chrono::Utc;
 use pulldown_cmark::{Event, HeadingLevel, Parser as CmarkParser, Tag as CmarkTag, TagEnd};
@@ -92,7 +92,9 @@ impl MarkdownParser for PulldownParser {
             parsed_at: Utc::now(),
             content_hash,
             file_size,
-            parse_errors: Vec::new(), // TODO: Implement error collection
+            parse_errors: Vec::new(),      // TODO: Implement error collection
+            block_hashes: Vec::new(),      // Phase 2 field
+            merkle_root: None,             // Phase 2 field
         })
     }
 
@@ -467,7 +469,11 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
         paragraphs,
         lists,
         latex_expressions: Vec::new(),
-        callouts: Vec::new(), // Add missing field
+        callouts: Vec::new(),
+        blockquotes: Vec::new(),
+        footnotes: FootnoteMap::new(),
+        tables: Vec::new(),
+        horizontal_rules: Vec::new(),
         word_count,
         char_count,
     })

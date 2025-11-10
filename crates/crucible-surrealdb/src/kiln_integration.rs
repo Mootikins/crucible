@@ -13,7 +13,7 @@ use crate::eav_graph::{
 use crate::types::{DatabaseStats, Record};
 use crate::SurrealClient;
 use anyhow::{anyhow, Result};
-use crucible_core::parser::types::Wikilink;
+use crucible_core::parser::Wikilink;
 use crucible_core::types::{FrontmatterFormat, ParsedDocument, Tag};
 use serde_json::json;
 use std::collections::HashSet;
@@ -2246,7 +2246,7 @@ mod tests {
     use super::*;
     use crate::eav_graph::apply_eav_graph_schema;
     use crate::SurrealClient;
-    use crucible_core::parser::types::Wikilink;
+    use crucible_core::parser::Wikilink;
     use std::path::PathBuf;
 
     #[tokio::test]
