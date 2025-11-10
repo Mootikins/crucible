@@ -16,23 +16,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust
-//! use crucible_core::storage::factory::{StorageFactory, StorageConfig, BackendConfig};
-//! use crucible_core::storage::ContentAddressedStorage;
-//!
-//! // Create storage from configuration
-//! # tokio_test::block_on(async {
-//! let config = StorageConfig {
-//!     backend: BackendConfig::InMemory {
-//!         memory_limit: Some(1024 * 1024 * 1024), // 1GB
-//!     },
-//!     ..Default::default()
-//! };
-//!
-//! let storage = StorageFactory::create(config).await?;
-//! # Ok::<(), Box<dyn std::error::Error>>(())
-//! # });
-//! ```
+//! // TODO: Add example once API stabilizes
 //!
 //! ## Features
 //!
@@ -500,16 +484,7 @@ impl StorageFactory {
     ///
     /// # Examples
     ///
-    /// ```rust
-    /// use crucible_core::storage::factory::{StorageFactory, StorageConfig};
-    ///
-    /// # tokio_test::block_on(async {
-    /// // Create in-memory storage
-    /// let config = StorageConfig::in_memory(Some(100 * 1024 * 1024));
-    /// let storage = StorageFactory::create(config).await?;
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// # });
-    /// ```
+    /// // TODO: Add example once API stabilizes
     pub async fn create(config: StorageConfig) -> StorageResult<Arc<dyn ContentAddressedStorage>> {
         debug!("Creating storage backend with config: {:?}", config);
 

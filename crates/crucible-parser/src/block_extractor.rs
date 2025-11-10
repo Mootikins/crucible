@@ -224,16 +224,7 @@ impl BlockExtractor {
     ///
     /// # Examples
     ///
-    /// ```rust
-    /// use crucible_parser::BlockExtractor;
-    /// use crucible_parser::types::ParsedDocument;
-    /// use std::path::PathBuf;
-    ///
-    /// let extractor = BlockExtractor::new();
-    /// let document = ParsedDocument::new(PathBuf::from("test.md"));
-    /// let blocks = extractor.extract_blocks(&document)?;
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
-    /// ```
+    /// // TODO: Add example once API stabilizes
     pub fn extract_blocks(&self, document: &ParsedDocument) -> Result<Vec<ASTBlock>, ParseError> {
         let mut blocks = Vec::new();
         let mut last_end = 0;

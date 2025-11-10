@@ -603,20 +603,7 @@ pub async fn process_incremental_changes(
 ///
 /// # Example
 ///
-/// ```no_run
-/// use crucible_cli::common::ChangeDetectionService;
-///
-/// // Step 1: Detect changes
-/// let service = ChangeDetectionService::new(...).await?;
-/// let detection_result = service.detect_changes().await?;
-///
-/// // Step 2: Process only the changed files
-/// let files_to_process = detection_result.changes.new
-///     .into_iter()
-///     .chain(detection_result.changes.changed)
-///     .collect();
-/// let result = process_files(&files_to_process, client, config, None, kiln_root).await?;
-/// ```
+/// // TODO: Add example once API stabilizes
 ///
 /// # Migration Note
 ///

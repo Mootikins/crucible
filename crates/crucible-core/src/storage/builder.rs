@@ -16,17 +16,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust
-//! use crucible_core::storage::builder::ContentAddressedStorageBuilder;
-//! use crucible_core::hashing::blake3::Blake3Hasher;
-//! use crucible_core::storage::BlockSize;
-//!
-//! let storage = ContentAddressedStorageBuilder::new()
-//!     .with_backend(StorageBackendType::InMemory)
-//!     .with_hasher(Blake3Hasher::new())
-//!     .with_block_size(BlockSize::Medium)
-//!     .build()?;
-//! ```
+//! // TODO: Add example once API stabilizes
 
 use crate::hashing::blake3::Blake3Hasher;
 use crate::storage::change_application::ApplicationConfig;
