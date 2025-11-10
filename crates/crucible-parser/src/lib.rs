@@ -31,11 +31,14 @@ pub use extensions::{
 pub use implementation::{BlockProcessingConfig, CrucibleParser};
 pub use traits::{MarkdownParserImplementation, ParserCapabilities};
 pub use types::{
-    ASTBlock, ASTBlockMetadata, ASTBlockType, BlockHash, Blockquote, Callout, CodeBlock,
+    ASTBlock, ASTBlockMetadata, ASTBlockType, Blockquote, Callout, CodeBlock,
     DocumentContent, FootnoteDefinition, FootnoteMap, FootnoteReference, Frontmatter,
-    FrontmatterFormat, Heading, LatexExpression, ListBlock, ListItem, ListType, ParsedDocument,
-    ParsedDocumentBuilder, Tag, TaskStatus, Wikilink,
+    FrontmatterFormat, Heading, HorizontalRule, LatexExpression, ListBlock, ListItem, ListType,
+    ParsedDocument, ParsedDocumentBuilder, Table, Tag, TaskStatus, Wikilink,
 };
+
+// Re-export BlockHash from core for convenience
+pub use crucible_core::types::hashing::BlockHash;
 
 // Convenience factory functions
 pub use basic_markdown::create_basic_markdown_extension;
