@@ -126,15 +126,7 @@ pub trait StorageManagement: Send + Sync {
 /// This follows the Interface Segregation Principle (ISP) by splitting a large
 /// interface into focused sub-interfaces. Clients can depend on only what they need.
 ///
-/// # Examples
-///
-/// ```rust,ignore
-/// // A component that only needs block operations
-/// fn process_blocks<S: BlockOperations>(storage: &S) { ... }
-///
-/// // A component that needs full storage functionality
-/// fn manage_storage<S: ContentAddressedStorage>(storage: &S) { ... }
-/// ```
+/// See trait implementations for usage.
 pub trait ContentAddressedStorage: BlockOperations + TreeOperations + StorageManagement {}
 
 // Blanket implementations for Arc<T> where T implements the storage traits

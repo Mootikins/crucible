@@ -63,15 +63,7 @@ pub trait ToolExecutor: Send + Sync {
     ///
     /// Returns the tool execution result as a JSON value, or a `ToolError`.
     ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let params = json!({
-    ///     "query": "SELECT * FROM notes WHERE tags CONTAINS 'ai'"
-    /// });
-    /// let context = ExecutionContext::default();
-    /// let result = executor.execute_tool("query_notes", params, &context).await?;
-    /// ```
+    /// See trait implementation for usage.
     async fn execute_tool(
         &self,
         name: &str,

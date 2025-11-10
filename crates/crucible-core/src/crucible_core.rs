@@ -10,17 +10,7 @@
 //! - CLI/REPL/Desktop construct implementations and pass to Core via builder
 //!
 //! ## Usage
-//! ```ignore
-//! let storage = SurrealClient::new(config).await?;
-//! let parser = PulldownParser::new();
-//! let tools = RuneToolExecutor::new();
-//!
-//! let core = CrucibleCore::builder()
-//!     .with_storage(storage)
-//!     .with_parser(parser)
-//!     .with_tools(tools)
-//!     .build()?;
-//! ```
+//! Use `CrucibleCore::builder()` to construct instances with injected trait implementations.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -58,14 +48,6 @@ impl CrucibleCore {
     /// Create a new builder for CrucibleCore
     ///
     /// Use this to construct CrucibleCore instances with injected dependencies.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let storage = SurrealClient::new(config).await?;
-    /// let core = CrucibleCore::builder()
-    ///     .with_storage(storage)
-    ///     .build()?;
-    /// ```
     pub fn builder() -> CrucibleCoreBuilder {
         CrucibleCoreBuilder::new()
     }
@@ -148,19 +130,6 @@ impl CrucibleCore {
 /// Builder for constructing CrucibleCore instances with dependency injection
 ///
 /// Use this to inject trait implementations into CrucibleCore.
-///
-/// # Example
-/// ```ignore
-/// let storage = SurrealClient::new(config).await?;
-/// let parser = PulldownParser::new();
-/// let tools = RuneToolExecutor::new();
-///
-/// let core = CrucibleCore::builder()
-///     .with_storage(storage)
-///     .with_parser(parser)
-///     .with_tools(tools)
-///     .build()?;
-/// ```
 pub struct CrucibleCoreBuilder {
     storage: Option<Arc<dyn Storage>>,
     parser: Option<Arc<dyn MarkdownParser>>,
@@ -178,36 +147,18 @@ impl CrucibleCoreBuilder {
     }
 
     /// Set the storage implementation (required)
-    ///
-    /// # Example
-    /// ```ignore
-    /// let storage = SurrealClient::new(config).await?;
-    /// builder.with_storage(storage)
-    /// ```
     pub fn with_storage<S: Storage + 'static>(mut self, storage: S) -> Self {
         self.storage = Some(Arc::new(storage));
         self
     }
 
     /// Set the markdown parser implementation (optional)
-    ///
-    /// # Example
-    /// ```ignore
-    /// let parser = PulldownParser::new();
-    /// builder.with_parser(parser)
-    /// ```
     pub fn with_parser<P: MarkdownParser + 'static>(mut self, parser: P) -> Self {
         self.parser = Some(Arc::new(parser));
         self
     }
 
     /// Set the tool executor implementation (optional)
-    ///
-    /// # Example
-    /// ```ignore
-    /// let tools = RuneToolExecutor::new();
-    /// builder.with_tools(tools)
-    /// ```
     pub fn with_tools<T: ToolExecutor + 'static>(mut self, tools: T) -> Self {
         self.tools = Some(Arc::new(tools));
         self
