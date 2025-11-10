@@ -382,4 +382,252 @@ mod tests {
         assert!(diff.root_hash_changed);
         assert_eq!(diff.changed_sections.len(), 1);
     }
+
+    #[test]
+    fn test_section_hash_integration() {
+        let doc = build_document();
+        let tree = HybridMerkleTree::from_document(&doc);
+
+        // Verify tree structure: root -> sections -> blocks
+        assert_eq!(tree.sections.len(), 3, "Should have root + 2 heading sections");
+
+        // Verify root hash is computed from section hashes
+        let section_hashes: Vec<BlockHash> = tree.sections
+            .iter()
+            .map(|s| s.binary_tree.root_hash.clone())
+            .collect();
+        let expected_root = aggregate_hashes(&section_hashes);
+        assert_eq!(tree.root_hash, expected_root,
+                   "Root hash should be aggregation of section hashes");
+
+        // Verify sections with content have non-zero hashes
+        // Section 0 is root (may be empty), sections 1 and 2 have content
+        for (i, section) in tree.sections.iter().enumerate() {
+            if section.block_count > 0 {
+                assert!(!section.binary_tree.root_hash.is_zero(),
+                        "Section {} with {} blocks should have non-zero hash",
+                        i, section.block_count);
+            }
+        }
+    }
+
+    #[test]
+    fn test_hash_changes_when_section_content_changes() {
+        let doc_original = build_document();
+        let tree_original = HybridMerkleTree::from_document(&doc_original);
+        let original_root_hash = tree_original.root_hash.clone();
+
+        // Modify content in the second section (Details)
+        let mut doc_modified = build_document();
+        doc_modified.content.paragraphs[1].content = "Modified detail paragraph".to_string();
+        let tree_modified = HybridMerkleTree::from_document(&doc_modified);
+
+        // Root hash should change
+        assert_ne!(tree_modified.root_hash, original_root_hash,
+                   "Root hash must change when section content changes");
+
+        // The modified section's hash should change
+        assert_ne!(tree_modified.sections[2].binary_tree.root_hash,
+                   tree_original.sections[2].binary_tree.root_hash,
+                   "Modified section hash must change");
+
+        // Unmodified sections should have same hash
+        assert_eq!(tree_modified.sections[0].binary_tree.root_hash,
+                   tree_original.sections[0].binary_tree.root_hash,
+                   "Unmodified root section hash should remain stable");
+
+        assert_eq!(tree_modified.sections[1].binary_tree.root_hash,
+                   tree_original.sections[1].binary_tree.root_hash,
+                   "Unmodified intro section hash should remain stable");
+    }
+
+    #[test]
+    fn test_hash_stability_when_unrelated_sections_change() {
+        let doc_original = build_document();
+        let tree_original = HybridMerkleTree::from_document(&doc_original);
+
+        // Modify only the first section (Intro)
+        let mut doc_modified = build_document();
+        doc_modified.content.paragraphs[0].content = "Modified intro paragraph".to_string();
+        let tree_modified = HybridMerkleTree::from_document(&doc_modified);
+
+        // The first section should change
+        assert_ne!(tree_modified.sections[1].binary_tree.root_hash,
+                   tree_original.sections[1].binary_tree.root_hash,
+                   "Modified Intro section hash should change");
+
+        // The second section (Details) should remain unchanged
+        assert_eq!(tree_modified.sections[2].binary_tree.root_hash,
+                   tree_original.sections[2].binary_tree.root_hash,
+                   "Unrelated Details section hash must remain stable");
+
+        // Root section should remain unchanged (has no content)
+        assert_eq!(tree_modified.sections[0].binary_tree.root_hash,
+                   tree_original.sections[0].binary_tree.root_hash,
+                   "Root section hash should remain stable");
+    }
+
+    #[test]
+    fn test_multiple_sections_with_hierarchy() {
+        let mut doc = ParsedDocument::default();
+        doc.path = PathBuf::from("complex.md");
+        doc.content = DocumentContent::default();
+
+        // Create a more complex document with nested sections
+        doc.content.headings = vec![
+            Heading {
+                level: 1,
+                text: "Chapter 1".to_string(),
+                offset: 0,
+                id: Some("ch1".to_string()),
+            },
+            Heading {
+                level: 2,
+                text: "Section 1.1".to_string(),
+                offset: 100,
+                id: Some("s1-1".to_string()),
+            },
+            Heading {
+                level: 2,
+                text: "Section 1.2".to_string(),
+                offset: 200,
+                id: Some("s1-2".to_string()),
+            },
+            Heading {
+                level: 1,
+                text: "Chapter 2".to_string(),
+                offset: 300,
+                id: Some("ch2".to_string()),
+            },
+        ];
+
+        doc.content.paragraphs = vec![
+            Paragraph::new("Chapter 1 intro".to_string(), 10),
+            Paragraph::new("Section 1.1 content".to_string(), 110),
+            Paragraph::new("Section 1.2 content".to_string(), 210),
+            Paragraph::new("Chapter 2 content".to_string(), 310),
+        ];
+
+        let tree = HybridMerkleTree::from_document(&doc);
+
+        // Debug: Print section structure
+        // for (i, section) in tree.sections.iter().enumerate() {
+        //     eprintln!("Section {}: depth={}, heading={:?}, blocks={}",
+        //              i, section.depth, section.heading, section.block_count);
+        // }
+
+        // Should have root + 4 heading sections = 5 total
+        assert_eq!(tree.sections.len(), 5);
+        assert_eq!(tree.total_blocks, 4);
+
+        // The actual structure based on the stack-based algorithm:
+        // Sections are closed when a new heading of equal or lower level is encountered
+        // and they're added in the order they're closed (reversed at the end)
+        // So the final order is: root, Section 1.1, Section 1.2, Chapter 1, Chapter 2
+
+        // Find sections by their heading text instead of assuming order
+        let find_section = |heading_text: Option<&str>| -> usize {
+            tree.sections.iter().position(|s| {
+                match (&s.heading, heading_text) {
+                    (Some(h), Some(text)) => h.text == text,
+                    (None, None) => true,
+                    _ => false,
+                }
+            }).expect(&format!("Section {:?} not found", heading_text))
+        };
+
+        let root_idx = find_section(None);
+        let ch1_idx = find_section(Some("Chapter 1"));
+        let s11_idx = find_section(Some("Section 1.1"));
+        let s12_idx = find_section(Some("Section 1.2"));
+        let ch2_idx = find_section(Some("Chapter 2"));
+
+        // Verify section depths
+        assert_eq!(tree.sections[root_idx].depth, 0, "Root section");
+        assert_eq!(tree.sections[ch1_idx].depth, 1, "Chapter 1");
+        assert_eq!(tree.sections[s11_idx].depth, 2, "Section 1.1");
+        assert_eq!(tree.sections[s12_idx].depth, 2, "Section 1.2");
+        assert_eq!(tree.sections[ch2_idx].depth, 1, "Chapter 2");
+
+        // Modify only Section 1.2
+        let mut doc_modified = doc.clone();
+        doc_modified.content.paragraphs[2].content = "Modified Section 1.2".to_string();
+        let tree_modified = HybridMerkleTree::from_document(&doc_modified);
+
+        // Only Section 1.2's hash should change
+        assert_eq!(tree_modified.sections[root_idx].binary_tree.root_hash,
+                   tree.sections[root_idx].binary_tree.root_hash,
+                   "Root unchanged");
+        assert_eq!(tree_modified.sections[ch1_idx].binary_tree.root_hash,
+                   tree.sections[ch1_idx].binary_tree.root_hash,
+                   "Chapter 1 unchanged");
+        assert_eq!(tree_modified.sections[s11_idx].binary_tree.root_hash,
+                   tree.sections[s11_idx].binary_tree.root_hash,
+                   "Section 1.1 unchanged");
+        assert_ne!(tree_modified.sections[s12_idx].binary_tree.root_hash,
+                   tree.sections[s12_idx].binary_tree.root_hash,
+                   "Section 1.2 changed");
+        assert_eq!(tree_modified.sections[ch2_idx].binary_tree.root_hash,
+                   tree.sections[ch2_idx].binary_tree.root_hash,
+                   "Chapter 2 unchanged");
+    }
+
+    #[test]
+    fn test_empty_sections_have_zero_hash() {
+        let mut doc = ParsedDocument::default();
+        doc.path = PathBuf::from("empty.md");
+        doc.content = DocumentContent::default();
+
+        // Heading with no content
+        doc.content.headings = vec![
+            Heading {
+                level: 1,
+                text: "Empty Section".to_string(),
+                offset: 0,
+                id: Some("empty".to_string()),
+            },
+        ];
+        // No paragraphs
+
+        let tree = HybridMerkleTree::from_document(&doc);
+
+        // Should have root + 1 heading section
+        assert_eq!(tree.sections.len(), 2);
+        assert_eq!(tree.total_blocks, 0);
+
+        // Empty sections should have zero hash
+        assert!(tree.sections[0].binary_tree.root_hash.is_zero(),
+                "Empty root section should have zero hash");
+        assert!(tree.sections[1].binary_tree.root_hash.is_zero(),
+                "Empty heading section should have zero hash");
+    }
+
+    #[test]
+    fn test_section_binary_tree_structure() {
+        let doc = build_document();
+        let tree = HybridMerkleTree::from_document(&doc);
+
+        // Check that each section's binary tree has correct structure
+        for section in &tree.sections {
+            if section.block_count > 0 {
+                assert!(!section.binary_tree.nodes.is_empty(),
+                        "Non-empty section should have nodes");
+                assert_eq!(section.binary_tree.leaf_count, section.block_count,
+                          "Leaf count should match block count");
+
+                // Verify root node exists and is either a leaf (1 block) or internal (>1 blocks)
+                if section.block_count == 1 {
+                    assert_eq!(section.binary_tree.height, 0,
+                              "Single block should have height 0");
+                } else {
+                    assert!(section.binary_tree.height > 0,
+                           "Multiple blocks should have height > 0");
+                }
+            } else {
+                assert!(section.binary_tree.nodes.is_empty(),
+                       "Empty section should have no nodes");
+                assert_eq!(section.binary_tree.height, 0);
+            }
+        }
+    }
 }
