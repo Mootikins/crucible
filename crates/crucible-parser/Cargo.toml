@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# Core dependency
+crucible-core = { workspace = true }
+
 # Async runtime
 async-trait = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
