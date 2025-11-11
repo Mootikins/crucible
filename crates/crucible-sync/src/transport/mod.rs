@@ -6,7 +6,6 @@
 pub mod memory;
 pub mod traits;
 
-// pub mod websocket; // Disabled until implementation is complete
 
 // Re-export transport traits and basic implementations
 pub use memory::MemoryTransport;
