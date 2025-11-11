@@ -13,7 +13,7 @@ use surrealdb::sql::Thing;
 /// High-level helper for writing entities, properties, and blocks into the EAV+Graph schema.
 #[derive(Clone)]
 pub struct EAVGraphStore {
-    client: SurrealClient,
+    pub(crate) client: SurrealClient,
 }
 
 impl EAVGraphStore {
@@ -393,6 +393,7 @@ impl EAVGraphStore {
             "icon": tag.icon,
         });
 
+        // Use UPDATE to modify existing record
         let result = self
             .client
             .query(
@@ -405,15 +406,17 @@ impl EAVGraphStore {
                     depth = $depth,
                     description = $description,
                     color = $color,
-                    icon = $icon
-                RETURN NONE;
+                    icon = $icon;
                 "#,
                 &[params.clone()],
             )
             .await?;
 
+        // If UPDATE returned nothing, record doesn't exist - create it
         if result.records.is_empty() {
-            self.client
+            // Use CREATE ONLY to ensure we don't get duplicate errors
+            // If record was created between UPDATE and CREATE, just ignore the error
+            let create_result = self.client
                 .query(
                     r#"
                     CREATE type::thing($table, $id)
@@ -424,12 +427,20 @@ impl EAVGraphStore {
                         depth = $depth,
                         description = $description,
                         color = $color,
-                        icon = $icon
-                    RETURN NONE;
+                        icon = $icon;
                     "#,
                     &[params],
                 )
-                .await?;
+                .await;
+
+            // Ignore "already exists" errors - this is expected in concurrent scenarios
+            if let Err(e) = create_result {
+                let err_msg = e.to_string();
+                if !err_msg.contains("already exists") {
+                    return Err(anyhow::Error::from(e));
+                }
+                // Tag was created by another operation, this is fine
+            }
         }
 
         Ok(id.clone())

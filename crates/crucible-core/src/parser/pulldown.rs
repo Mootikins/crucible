@@ -85,6 +85,7 @@ impl MarkdownParser for PulldownParser {
             frontmatter,
             wikilinks,
             tags,
+            inline_links: Vec::new(),      // TODO: Implement inline link extraction
             content: doc_content,
             callouts: Vec::new(),          // TODO: Implement callout extraction
             latex_expressions: Vec::new(), // TODO: Implement LaTeX extraction
@@ -468,6 +469,7 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
         code_blocks,
         paragraphs,
         lists,
+        inline_links: Vec::new(),
         latex_expressions: Vec::new(),
         callouts: Vec::new(),
         blockquotes: Vec::new(),

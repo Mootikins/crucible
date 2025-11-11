@@ -339,6 +339,7 @@ impl MarkdownParserImplementation for CrucibleParser {
             code_blocks: Vec::new(),
             paragraphs: Vec::new(),
             lists: Vec::new(),
+            inline_links: Vec::new(),
             latex_expressions: Vec::new(),
             callouts: Vec::new(),
             blockquotes: Vec::new(),
