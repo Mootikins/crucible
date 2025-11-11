@@ -309,10 +309,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let hasher = FileHasher::new(Blake3Algorithm);
 
     // Create test files
-    let file1_path = temp_path.join("document.md");
+    let file1_path = temp_path.join("note.md");
     let file2_path = temp_path.join("readme.txt");
 
-    fs::write(&file1_path, "# Hello World\n\nThis is a test document.").await?;
+    fs::write(&file1_path, "# Hello World\n\nThis is a test note.").await?;
     fs::write(&file2_path, "This is a simple readme file.").await?;
 
     println!("Created test files:");
@@ -324,7 +324,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let hash2 = hasher.hash_file(&file2_path).await?;
 
     println!("File hashes:");
-    println!("  - document.md: {}", hash1);
+    println!("  - note.md: {}", hash1);
     println!("  - readme.txt: {}", hash2);
 
     // 2. File Info with Metadata
@@ -332,7 +332,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("---------------------------------");
 
     let info1 = hasher
-        .hash_file_info(&file1_path, "document.md".to_string())
+        .hash_file_info(&file1_path, "note.md".to_string())
         .await?;
     let info2 = hasher
         .hash_file_info(&file2_path, "readme.txt".to_string())
@@ -340,7 +340,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("File info:");
     println!(
-        "  - document.md: {} bytes, modified {:?}",
+        "  - note.md: {} bytes, modified {:?}",
         info1.size, info1.modified
     );
     println!(
@@ -434,14 +434,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
     let modified_info = hasher
-        .hash_file_info(&file1_path, "document.md".to_string())
+        .hash_file_info(&file1_path, "note.md".to_string())
         .await?;
 
     let current_files = vec![modified_info.clone(), info2.clone()];
     let changes = change_detector.detect_changes(&current_files).await?;
     let summary = changes.summary();
 
-    println!("\nAfter modifying document.md:");
+    println!("\nAfter modifying note.md:");
     println!("  - Total files: {}", summary.total_files);
     println!("  - Unchanged: {}", summary.unchanged);
     println!("  - Changed: {}", summary.changed);
@@ -451,7 +451,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Add a new file
     let file3_path = temp_path.join("new.md");
-    fs::write(&file3_path, "# New Document\n\nThis is a new file.").await?;
+    fs::write(&file3_path, "# New Note\n\nThis is a new file.").await?;
     let new_info = hasher
         .hash_file_info(&file3_path, "new.md".to_string())
         .await?;

@@ -7,7 +7,7 @@
 
 use chrono::Utc;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use crucible_core::parser::ParsedDocument;
+use crucible_core::parser::ParsedNote;
 use crucible_surrealdb::{
     kiln_integration::{
         get_document_embeddings, initialize_kiln_schema, retrieve_parsed_document, store_embedding,
@@ -17,9 +17,9 @@ use crucible_surrealdb::{
 };
 use std::path::PathBuf;
 
-// Helper to create test document
-fn create_test_document(path: PathBuf) -> ParsedDocument {
-    let mut doc = ParsedDocument::new(path);
+// Helper to create test note
+fn create_test_document(path: PathBuf) -> ParsedNote {
+    let mut doc = ParsedNote::new(path);
     doc.content.plain_text = "Benchmark test content".to_string();
     doc.parsed_at = Utc::now();
     doc
@@ -51,7 +51,7 @@ fn bench_record_id_lookup(c: &mut Criterion) {
             (client, note_ids)
         });
 
-        // Benchmark: Lookup middle document directly by ID
+        // Benchmark: Lookup middle note directly by ID
         let target_id = &note_ids[500];
 
         b.iter(|| {
@@ -74,7 +74,7 @@ fn bench_graph_traversal(c: &mut Criterion) {
             BenchmarkId::from_parameter(format!("{}_chunks", chunk_count)),
             chunk_count,
             |b, &count| {
-                // Setup: Create document with multiple embeddings
+                // Setup: Create note with multiple embeddings
                 let (client, note_id) = runtime.block_on(async {
                     let client = SurrealClient::new_memory().await.unwrap();
                     initialize_kiln_schema(&client).await.unwrap();
@@ -111,7 +111,7 @@ fn bench_graph_traversal(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark: Concurrent document storage
+/// Benchmark: Concurrent note storage
 fn bench_concurrent_storage(c: &mut Criterion) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
 
@@ -160,7 +160,7 @@ fn bench_embedding_storage(c: &mut Criterion) {
             BenchmarkId::from_parameter(format!("dim_{}", vector_size)),
             vector_size,
             |b, &dims| {
-                // Setup: Create document
+                // Setup: Create note
                 let (client, note_id) = runtime.block_on(async {
                     let client = SurrealClient::new_memory().await.unwrap();
                     initialize_kiln_schema(&client).await.unwrap();
