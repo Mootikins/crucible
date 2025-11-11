@@ -6,10 +6,11 @@
 **Author**: Matthew Krohn
 **Last Updated**: 2025-11-09
 
-**Progress**: 2/5 phases complete (40%)
+**Progress**: 3/6 phases complete (50%)
 - ✅ Phase 1: Frontmatter Extraction (1 day)
 - ✅ Phase 2: Block Parsing & Section Detection (1 day)
-- ⏳ Phase 3: Relation Extraction (next)
+- ✅ Phase 2.5: Content-Addressed Block Storage (2 days - COMPLETE)
+- ⏳ Phase 3: Relation Extraction (ready to start)
 - ⏳ Phase 4: Obsidian Extensions
 - ⏳ Phase 5: Integration & Testing
 
