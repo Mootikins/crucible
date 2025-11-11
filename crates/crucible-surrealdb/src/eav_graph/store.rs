@@ -363,6 +363,18 @@ impl EAVGraphStore {
     }
 
     /// Upsert (or create) a tag entry.
+    ///
+    /// This function implements a race-condition-safe upsert pattern using UPDATE-then-CREATE.
+    /// Since SurrealDB doesn't have native UPSERT for records with custom IDs, we use a
+    /// two-phase approach that safely handles concurrent tag creation from multiple threads.
+    ///
+    /// # Race Condition Handling:
+    /// 1. Try UPDATE - works if tag already exists (including if another thread just created it)
+    /// 2. If UPDATE fails (empty result), CREATE the tag
+    /// 3. If CREATE fails with "already exists", ignore it - another thread created the tag
+    ///
+    /// This ensures that concurrent operations never fail due to race conditions and that
+    /// the desired end state (tag exists with correct properties) is always achieved.
     pub async fn upsert_tag(&self, tag: &SurrealTag) -> Result<RecordId<TagRecord>> {
         let id = tag
             .id
@@ -393,7 +405,14 @@ impl EAVGraphStore {
             "icon": tag.icon,
         });
 
-        // Use UPDATE to modify existing record
+        // RACE CONDITION HANDLING: UPDATE-first approach
+        //
+        // SurrealDB doesn't have native UPSERT for records with custom IDs,
+        // so we use a two-phase approach to handle concurrent tag creation:
+        //
+        // Phase 1: Try UPDATE first - this works if the tag already exists
+        // If another thread created the tag between our check and now,
+        // UPDATE will successfully update it in place.
         let result = self
             .client
             .query(
@@ -412,10 +431,17 @@ impl EAVGraphStore {
             )
             .await?;
 
-        // If UPDATE returned nothing, record doesn't exist - create it
+        // Phase 2: Check if UPDATE succeeded
         if result.records.is_empty() {
-            // Use CREATE ONLY to ensure we don't get duplicate errors
-            // If record was created between UPDATE and CREATE, just ignore the error
+            // UPDATE returned empty results, meaning the tag doesn't exist yet.
+            // Now we need to CREATE it.
+            //
+            // RACE CONDITION SCENARIO:
+            // Thread A: UPDATE fails (tag doesn't exist)
+            // Thread B: UPDATE fails (tag doesn't exist)
+            // Thread A: CREATE succeeds (creates tag)
+            // Thread B: CREATE fails with "already exists" (because Thread A created it)
+            // This is EXPECTED behavior - Thread B should not fail the operation
             let create_result = self.client
                 .query(
                     r#"
@@ -433,13 +459,16 @@ impl EAVGraphStore {
                 )
                 .await;
 
-            // Ignore "already exists" errors - this is expected in concurrent scenarios
+            // Handle CREATE result with race condition awareness
             if let Err(e) = create_result {
                 let err_msg = e.to_string();
                 if !err_msg.contains("already exists") {
+                    // Unexpected error - propagate it
                     return Err(anyhow::Error::from(e));
                 }
-                // Tag was created by another operation, this is fine
+                // SUCCESS CASE: "already exists" error means another thread
+                // created the tag between our UPDATE and CREATE operations.
+                // This is exactly what we want - the tag exists now!
             }
         }
 
@@ -465,6 +494,18 @@ impl EAVGraphStore {
     }
 
     /// Upsert the mapping between an entity and a tag.
+    ///
+    /// This function implements a race-condition-safe upsert pattern using UPDATE-then-CREATE.
+    /// Since SurrealDB doesn't have native UPSERT for records with custom IDs, we use a
+    /// two-phase approach that safely handles concurrent entity-tag association creation.
+    ///
+    /// # Race Condition Handling:
+    /// 1. Try UPDATE - works if mapping already exists (including if another thread just created it)
+    /// 2. If UPDATE fails (empty result), CREATE the mapping
+    /// 3. If CREATE fails with "already exists", ignore it - another thread created the mapping
+    ///
+    /// This ensures that concurrent operations never fail due to race conditions and that
+    /// the desired end state (entity-tag mapping exists) is always achieved.
     pub async fn upsert_entity_tag(&self, mapping: &SurrealEntityTag) -> Result<()> {
         let id = mapping
             .id
@@ -482,6 +523,11 @@ impl EAVGraphStore {
             "confidence": mapping.confidence,
         });
 
+        // RACE CONDITION HANDLING: UPDATE-first approach for entity-tag mapping
+        //
+        // Phase 1: Try UPDATE first - this works if the mapping already exists
+        // If another thread created the mapping between our check and now,
+        // UPDATE will successfully update it in place.
         let result = self
             .client
             .query(
@@ -498,8 +544,18 @@ impl EAVGraphStore {
             )
             .await?;
 
+        // Phase 2: Check if UPDATE succeeded
         if result.records.is_empty() {
-            self.client
+            // UPDATE returned empty results, meaning the mapping doesn't exist yet.
+            // Now we need to CREATE it.
+            //
+            // RACE CONDITION SCENARIO:
+            // Thread A: UPDATE fails (mapping doesn't exist)
+            // Thread B: UPDATE fails (mapping doesn't exist)
+            // Thread A: CREATE succeeds (creates mapping)
+            // Thread B: CREATE fails with "already exists" (because Thread A created it)
+            // This is EXPECTED behavior - Thread B should not fail the operation
+            let create_result = self.client
                 .query(
                     r#"
                     CREATE type::thing($table, $id)
@@ -512,7 +568,19 @@ impl EAVGraphStore {
                     "#,
                     &[params],
                 )
-                .await?;
+                .await;
+
+            // Handle CREATE result with race condition awareness
+            if let Err(e) = create_result {
+                let err_msg = e.to_string();
+                if !err_msg.contains("already exists") {
+                    // Unexpected error - propagate it
+                    return Err(anyhow::Error::from(e));
+                }
+                // SUCCESS CASE: "already exists" error means another thread
+                // created the mapping between our UPDATE and CREATE operations.
+                // This is exactly what we want - the mapping exists now!
+            }
         }
 
         Ok(())
