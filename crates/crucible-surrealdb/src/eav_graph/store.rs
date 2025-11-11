@@ -631,6 +631,7 @@ impl EAVGraphStore {
             "source": relation.source,
             "position": relation.position,
             "metadata": relation.metadata,
+            "content_category": relation.content_category,
         });
 
         let result = self
@@ -647,7 +648,8 @@ impl EAVGraphStore {
                     confidence = $confidence,
                     source = $source,
                     position = $position,
-                    metadata = $metadata
+                    metadata = $metadata,
+                    content_category = $content_category
                 RETURN NONE;
                 "#,
                 &[params.clone()],
@@ -668,7 +670,8 @@ impl EAVGraphStore {
                         confidence = $confidence,
                         source = $source,
                         position = $position,
-                        metadata = $metadata
+                        metadata = $metadata,
+                        content_category = $content_category
                     RETURN NONE;
                     "#,
                     &[params],
@@ -1020,6 +1023,7 @@ impl CoreRelationStorage for EAVGraphStore {
             "source": surreal_relation.source,
             "position": surreal_relation.position,
             "metadata": surreal_relation.metadata,
+            "content_category": surreal_relation.content_category,
             "created_at": surreal_relation.created_at.to_rfc3339(),
         });
 
@@ -1036,6 +1040,7 @@ impl CoreRelationStorage for EAVGraphStore {
                     source = $source,
                     position = $position,
                     metadata = $metadata,
+                    content_category = $content_category,
                     created_at = <datetime> $created_at
                 "#,
                 &[params],
