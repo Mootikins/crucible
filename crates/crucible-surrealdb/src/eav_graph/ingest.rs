@@ -26,20 +26,20 @@ impl<'a> DocumentIngestor<'a> {
         doc: &ParsedDocument,
         relative_path: &str,
     ) -> Result<RecordId<EntityRecord>> {
-        let entity_id = note_entity_id(relative_path);
+        let entity_id = self.note_entity_id(relative_path);
 
         let mut entity = Entity::new(entity_id.clone(), EntityType::Note)
             .with_content_hash(doc.content_hash.clone())
             .with_search_text(doc.content.plain_text.clone());
-        entity.data = Some(entity_payload(doc, relative_path));
+        entity.data = Some(self.entity_payload(doc, relative_path));
 
         self.store.upsert_entity(&entity).await?;
 
-        for property in core_properties(&entity_id, doc, relative_path) {
+        for property in self.core_properties(&entity_id, doc, relative_path) {
             self.store.upsert_property(&property).await?;
         }
 
-        let blocks = build_blocks(&entity_id, doc);
+        let blocks = self.build_blocks(&entity_id, doc);
         self.store.replace_blocks(&entity_id, &blocks).await?;
 
         // Extract and store relations from wikilinks and embeds with resolution
@@ -49,19 +49,19 @@ impl<'a> DocumentIngestor<'a> {
         }
 
         // Extract and store inline link relations
-        let inline_link_relations = extract_inline_link_relations(&entity_id, doc);
+        let inline_link_relations = self.extract_inline_link_relations(&entity_id, doc);
         for relation in inline_link_relations {
             self.store.store_relation(relation).await?;
         }
 
         // Extract and store footnote relations
-        let footnote_relations = extract_footnote_relations(&entity_id, doc);
+        let footnote_relations = self.extract_footnote_relations(&entity_id, doc);
         for relation in footnote_relations {
             self.store.store_relation(relation).await?;
         }
 
         // Compute and store section hashes
-        let section_properties = compute_section_properties(&entity_id, doc);
+        let section_properties = self.compute_section_properties(&entity_id, doc);
         for property in section_properties {
             self.store.upsert_property(&property).await?;
         }
@@ -308,6 +308,465 @@ impl<'a> DocumentIngestor<'a> {
         let entity_part = entity_id.id.replace(':', "_");
         let tag_part = tag_id.id.replace(':', "_");
         RecordId::new("entity_tags", format!("{}:{}", entity_part, tag_part))
+    }
+
+    /// Generate a property record ID from entity ID, namespace, and key
+    fn property_id(
+        &self,
+        entity_id: &RecordId<EntityRecord>,
+        namespace: &str,
+        key: &str,
+    ) -> RecordId<PropertyRecord> {
+        RecordId::new(
+            "properties",
+            format!("{}:{}:{}", entity_id.id, namespace, key),
+        )
+    }
+
+    /// Compute section properties from the document's Merkle tree
+    fn compute_section_properties(
+        &self,
+        entity_id: &RecordId<EntityRecord>,
+        doc: &ParsedDocument,
+    ) -> Vec<Property> {
+        // Build the hybrid Merkle tree to extract sections
+        let merkle_tree = HybridMerkleTree::from_document(doc);
+
+        // Pre-calculate capacity: 2 base properties + 2 per section
+        // Base: tree_root_hash, total_sections
+        // Per section: section_{n}_hash, section_{n}_metadata
+        let capacity = 2 + (merkle_tree.sections.len() * 2);
+        let mut props = Vec::with_capacity(capacity);
+
+        // Store the root hash as a property
+        props.push(Property::new(
+            self.property_id(entity_id, "section", "tree_root_hash"),
+            entity_id.clone(),
+            "section",
+            "tree_root_hash",
+            PropertyValue::Text(merkle_tree.root_hash.to_hex()),
+        ));
+
+        // Store total section count
+        props.push(Property::new(
+            self.property_id(entity_id, "section", "total_sections"),
+            entity_id.clone(),
+            "section",
+            "total_sections",
+            PropertyValue::Number(merkle_tree.sections.len() as f64),
+        ));
+
+        // Store metadata for each section
+        for (index, section) in merkle_tree.sections.iter().enumerate() {
+            // Store section hash
+            let hash_key = format!("section_{}_hash", index);
+            props.push(Property::new(
+                self.property_id(entity_id, "section", &hash_key),
+                entity_id.clone(),
+                "section",
+                &hash_key,
+                PropertyValue::Text(section.binary_tree.root_hash.to_hex()),
+            ));
+
+            // Store section metadata as JSON
+            let metadata_key = format!("section_{}_metadata", index);
+            let mut metadata = serde_json::Map::new();
+            metadata.insert("block_count".to_string(), serde_json::json!(section.block_count));
+            metadata.insert("depth".to_string(), serde_json::json!(section.depth));
+
+            if let Some(heading) = &section.heading {
+                metadata.insert("heading_text".to_string(), serde_json::json!(heading.text));
+                metadata.insert("heading_level".to_string(), serde_json::json!(heading.level));
+            }
+
+            props.push(Property::new(
+                self.property_id(entity_id, "section", &metadata_key),
+                entity_id.clone(),
+                "section",
+                &metadata_key,
+                PropertyValue::Json(Value::Object(metadata)),
+            ));
+        }
+
+        props
+    }
+
+    /// Compute core document properties
+    fn core_properties(
+        &self,
+        entity_id: &RecordId<EntityRecord>,
+        doc: &ParsedDocument,
+        relative_path: &str,
+    ) -> Vec<Property> {
+        // Pre-calculate capacity: 4 base properties + 1 if frontmatter exists
+        // Base: path, relative_path, title, tags
+        // Optional: frontmatter
+        let capacity = if doc.frontmatter.is_some() { 5 } else { 4 };
+        let mut props = Vec::with_capacity(capacity);
+
+        props.push(Property::new(
+            self.property_id(entity_id, "core", "path"),
+            entity_id.clone(),
+            "core",
+            "path",
+            PropertyValue::Text(doc.path.to_string_lossy().to_string()),
+        ));
+
+        props.push(Property::new(
+            self.property_id(entity_id, "core", "relative_path"),
+            entity_id.clone(),
+            "core",
+            "relative_path",
+            PropertyValue::Text(relative_path.to_string()),
+        ));
+
+        props.push(Property::new(
+            self.property_id(entity_id, "core", "title"),
+            entity_id.clone(),
+            "core",
+            "title",
+            PropertyValue::Text(doc.title()),
+        ));
+
+        props.push(Property::new(
+            self.property_id(entity_id, "core", "tags"),
+            entity_id.clone(),
+            "core",
+            "tags",
+            PropertyValue::Json(Value::Array(
+                doc.all_tags()
+                    .into_iter()
+                    .map(Value::String)
+                    .collect::<Vec<_>>(),
+            )),
+        ));
+
+        if let Some(frontmatter) = &doc.frontmatter {
+            let fm_value = Value::Object(
+                frontmatter
+                    .properties()
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect::<serde_json::Map<_, _>>(),
+            );
+            props.push(Property::new(
+                self.property_id(entity_id, "core", "frontmatter"),
+                entity_id.clone(),
+                "core",
+                "frontmatter",
+                PropertyValue::Json(fm_value),
+            ));
+        }
+
+        props
+    }
+
+    /// Generate entity payload data from parsed document
+    fn entity_payload(&self, doc: &ParsedDocument, relative_path: &str) -> Value {
+        let tags = doc
+            .all_tags()
+            .into_iter()
+            .map(Value::String)
+            .collect::<Vec<_>>();
+
+        let frontmatter_value = doc.frontmatter.as_ref().map(|fm| {
+            let map = fm
+                .properties()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect::<Map<_, _>>();
+            Value::Object(map)
+        });
+
+        let mut payload = Map::new();
+        payload.insert(
+            "path".to_string(),
+            Value::String(doc.path.to_string_lossy().into_owned()),
+        );
+        payload.insert(
+            "relative_path".to_string(),
+            Value::String(relative_path.to_string()),
+        );
+        payload.insert("title".to_string(), Value::String(doc.title()));
+        payload.insert(
+            "content".to_string(),
+            Value::String(doc.content.plain_text.clone()),
+        );
+        payload.insert("tags".to_string(), Value::Array(tags));
+        if let Some(frontmatter) = frontmatter_value {
+            payload.insert("frontmatter".to_string(), frontmatter);
+        }
+        payload.insert(
+            "parsed_at".to_string(),
+            Value::String(doc.parsed_at.to_rfc3339()),
+        );
+        payload.insert(
+            "file_size".to_string(),
+            Value::Number(serde_json::Number::from(doc.file_size)),
+        );
+        payload.insert(
+            "content_hash".to_string(),
+            Value::String(doc.content_hash.clone()),
+        );
+        payload.insert(
+            "wikilink_count".to_string(),
+            Value::Number(serde_json::Number::from(doc.wikilinks.len() as u64)),
+        );
+        payload.insert(
+            "created_via".to_string(),
+            Value::String("parser".to_string()),
+        );
+
+        Value::Object(payload)
+    }
+
+    /// Generate entity ID from relative path
+    fn note_entity_id(&self, relative_path: &str) -> RecordId<EntityRecord> {
+        let normalized = relative_path
+            .trim_start_matches(std::path::MAIN_SEPARATOR)
+            .replace('\\', "/")
+            .replace(':', "_");
+        RecordId::new("entities", format!("note:{}", normalized))
+    }
+
+    /// Extract inline link relations from the document
+    fn extract_inline_link_relations(&self, entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec<CoreRelation> {
+        let capacity = doc.inline_links.len();
+        let mut relations = Vec::with_capacity(capacity);
+        let from_entity_id = format!("{}:{}", entity_id.table, entity_id.id);
+
+        for inline_link in &doc.inline_links {
+            // Create relation for inline link
+            // For external URLs, to_entity_id is None (no entity to link to)
+            // For relative links, we could potentially resolve them to entities
+            let to_entity_id = if inline_link.is_relative() {
+                // Could parse relative path to entity ID
+                // For now, just store the URL in metadata
+                None
+            } else {
+                None // External URLs don't have entity IDs
+            };
+
+            let mut relation = CoreRelation::new(
+                from_entity_id.clone(),
+                to_entity_id,
+                "link",
+            );
+
+            // Add metadata about the inline link
+            let mut metadata = serde_json::Map::new();
+            metadata.insert("url".to_string(), serde_json::json!(inline_link.url));
+            metadata.insert("text".to_string(), serde_json::json!(inline_link.text));
+            if let Some(title) = &inline_link.title {
+                metadata.insert("title".to_string(), serde_json::json!(title));
+            }
+            metadata.insert("offset".to_string(), serde_json::json!(inline_link.offset));
+            metadata.insert("is_external".to_string(), serde_json::json!(inline_link.is_external()));
+
+            relation.metadata = serde_json::Value::Object(metadata);
+
+            relations.push(relation);
+        }
+
+        relations
+    }
+
+    /// Extract footnote relations from the document
+    fn extract_footnote_relations(&self, entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec<CoreRelation> {
+        let capacity = doc.footnotes.references.len();
+        let mut relations = Vec::with_capacity(capacity);
+        let from_entity_id = format!("{}:{}", entity_id.table, entity_id.id);
+
+        for footnote_ref in &doc.footnotes.references {
+            // Only create relations for references that have definitions
+            if let Some(definition) = doc.footnotes.definitions.get(&footnote_ref.identifier) {
+                let mut relation = CoreRelation::new(
+                    from_entity_id.clone(),
+                    None, // Footnotes are self-referential (within the same document)
+                    "footnote",
+                );
+
+                // Add metadata about the footnote
+                let mut metadata = serde_json::Map::new();
+                metadata.insert("label".to_string(), serde_json::json!(footnote_ref.identifier));
+                metadata.insert("content".to_string(), serde_json::json!(definition.content));
+                metadata.insert("ref_offset".to_string(), serde_json::json!(footnote_ref.offset));
+                metadata.insert("def_offset".to_string(), serde_json::json!(definition.offset));
+                if let Some(order) = footnote_ref.order_number {
+                    metadata.insert("order".to_string(), serde_json::json!(order));
+                }
+
+                relation.metadata = serde_json::Value::Object(metadata);
+
+                relations.push(relation);
+            }
+        }
+
+        relations
+    }
+
+    /// Create block with metadata
+    fn make_block_with_metadata(
+        &self,
+        entity_id: &RecordId<EntityRecord>,
+        suffix: &str,
+        block_index: i32,
+        block_type: &str,
+        content: &str,
+        metadata: Value,
+    ) -> BlockNode {
+        let mut hasher = Hasher::new();
+        hasher.update(content.as_bytes());
+        let hash = hasher.finalize().to_hex().to_string();
+
+        let mut block = BlockNode::new(
+            RecordId::new("blocks", format!("{}:{}", entity_id.id, suffix)),
+            entity_id.clone(),
+            block_index,
+            block_type,
+            content,
+            hash,
+        );
+        block.metadata = metadata;
+        block
+    }
+
+    /// Build blocks from document content
+    fn build_blocks(&self, entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec<BlockNode> {
+        // Pre-calculate capacity: sum of all content types
+        // Headings + code_blocks + lists + callouts + latex + paragraphs (upper bound)
+        // Note: Actual paragraph count may be lower due to filtering empty ones
+        let capacity = doc.content.headings.len()
+            + doc.content.paragraphs.len()
+            + doc.content.code_blocks.len()
+            + doc.content.lists.len()
+            + doc.callouts.len()
+            + doc.content.latex_expressions.len();
+        let mut blocks = Vec::with_capacity(capacity);
+        let mut index = 0;
+
+        // Headings with metadata (level + text)
+        for heading in &doc.content.headings {
+            let metadata = serde_json::json!({
+                "level": heading.level,
+                "text": heading.text.clone()
+            });
+            blocks.push(self.make_block_with_metadata(
+                entity_id,
+                &format!("h{}", index),
+                index,
+                "heading",
+                &heading.text,
+                metadata,
+            ));
+            index += 1;
+        }
+
+        // Paragraphs (non-empty only)
+        for paragraph in &doc.content.paragraphs {
+            if paragraph.content.trim().is_empty() {
+                continue;
+            }
+            blocks.push(self.make_block_with_metadata(
+                entity_id,
+                &format!("p{}", index),
+                index,
+                "paragraph",
+                &paragraph.content,
+                serde_json::json!({}),
+            ));
+            index += 1;
+        }
+
+        // Code blocks with language + line count metadata
+        for code_block in &doc.content.code_blocks {
+            let metadata = serde_json::json!({
+                "language": code_block.language.clone().unwrap_or_default(),
+                "line_count": code_block.content.lines().count()
+            });
+            blocks.push(self.make_block_with_metadata(
+                entity_id,
+                &format!("code{}", index),
+                index,
+                "code",
+                &code_block.content,
+                metadata,
+            ));
+            index += 1;
+        }
+
+        // Lists with type + item count metadata
+        for list in &doc.content.lists {
+            let metadata = serde_json::json!({
+                "type": match list.list_type {
+                    crucible_core::parser::ListType::Ordered => "ordered",
+                    crucible_core::parser::ListType::Unordered => "unordered",
+                },
+                "item_count": list.items.len()
+            });
+
+            // Serialize list as text (simple approach for now)
+            let list_text = list.items.iter()
+                .map(|item| {
+                    if let Some(task_status) = &item.task_status {
+                        let check = match task_status {
+                            crucible_core::parser::TaskStatus::Pending => " ",
+                            crucible_core::parser::TaskStatus::Completed => "x",
+                        };
+                        format!("- [{}] {}", check, item.content)
+                    } else {
+                        format!("- {}", item.content)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            blocks.push(self.make_block_with_metadata(
+                entity_id,
+                &format!("list{}", index),
+                index,
+                "list",
+                &list_text,
+                metadata,
+            ));
+            index += 1;
+        }
+
+        // Callouts with type + title metadata
+        for callout in &doc.callouts {
+            let metadata = serde_json::json!({
+                "callout_type": callout.callout_type.clone(),
+                "title": callout.title.clone().unwrap_or_default()
+            });
+            blocks.push(self.make_block_with_metadata(
+                entity_id,
+                &format!("callout{}", index),
+                index,
+                "callout",
+                &callout.content,
+                metadata,
+            ));
+            index += 1;
+        }
+
+        // LaTeX expressions with inline/block flag
+        for latex in &doc.content.latex_expressions {
+            let metadata = serde_json::json!({
+                "inline": !latex.is_block,
+                "display_mode": latex.is_block
+            });
+            blocks.push(self.make_block_with_metadata(
+                entity_id,
+                &format!("latex{}", index),
+                index,
+                "latex",
+                &latex.expression,
+                metadata,
+            ));
+            index += 1;
+        }
+
+        blocks
     }
 }
 
@@ -1046,452 +1505,5 @@ mod tests {
     }
 }
 
-/// Compute section properties from the document's Merkle tree
-fn compute_section_properties(
-    entity_id: &RecordId<EntityRecord>,
-    doc: &ParsedDocument,
-) -> Vec<Property> {
-    // Build the hybrid Merkle tree to extract sections
-    let merkle_tree = HybridMerkleTree::from_document(doc);
 
-    // Pre-calculate capacity: 2 base properties + 2 per section
-    // Base: tree_root_hash, total_sections
-    // Per section: section_{n}_hash, section_{n}_metadata
-    let capacity = 2 + (merkle_tree.sections.len() * 2);
-    let mut props = Vec::with_capacity(capacity);
-
-    // Store the root hash as a property
-    props.push(Property::new(
-        property_id(entity_id, "section", "tree_root_hash"),
-        entity_id.clone(),
-        "section",
-        "tree_root_hash",
-        PropertyValue::Text(merkle_tree.root_hash.to_hex()),
-    ));
-
-    // Store total section count
-    props.push(Property::new(
-        property_id(entity_id, "section", "total_sections"),
-        entity_id.clone(),
-        "section",
-        "total_sections",
-        PropertyValue::Number(merkle_tree.sections.len() as f64),
-    ));
-
-    // Store metadata for each section
-    for (index, section) in merkle_tree.sections.iter().enumerate() {
-        // Store section hash
-        let hash_key = format!("section_{}_hash", index);
-        props.push(Property::new(
-            property_id(entity_id, "section", &hash_key),
-            entity_id.clone(),
-            "section",
-            &hash_key,
-            PropertyValue::Text(section.binary_tree.root_hash.to_hex()),
-        ));
-
-        // Store section metadata as JSON
-        let metadata_key = format!("section_{}_metadata", index);
-        let mut metadata = serde_json::Map::new();
-        metadata.insert("block_count".to_string(), serde_json::json!(section.block_count));
-        metadata.insert("depth".to_string(), serde_json::json!(section.depth));
-
-        if let Some(heading) = &section.heading {
-            metadata.insert("heading_text".to_string(), serde_json::json!(heading.text));
-            metadata.insert("heading_level".to_string(), serde_json::json!(heading.level));
-        }
-
-        props.push(Property::new(
-            property_id(entity_id, "section", &metadata_key),
-            entity_id.clone(),
-            "section",
-            &metadata_key,
-            PropertyValue::Json(Value::Object(metadata)),
-        ));
-    }
-
-    props
-}
-
-fn note_entity_id(relative_path: &str) -> RecordId<EntityRecord> {
-    let normalized = relative_path
-        .trim_start_matches(std::path::MAIN_SEPARATOR)
-        .replace('\\', "/")
-        .replace(':', "_");
-    RecordId::new("entities", format!("note:{}", normalized))
-}
-
-fn core_properties(
-    entity_id: &RecordId<EntityRecord>,
-    doc: &ParsedDocument,
-    relative_path: &str,
-) -> Vec<Property> {
-    // Pre-calculate capacity: 4 base properties + 1 if frontmatter exists
-    // Base: path, relative_path, title, tags
-    // Optional: frontmatter
-    let capacity = if doc.frontmatter.is_some() { 5 } else { 4 };
-    let mut props = Vec::with_capacity(capacity);
-
-    props.push(Property::new(
-        property_id(entity_id, "core", "path"),
-        entity_id.clone(),
-        "core",
-        "path",
-        PropertyValue::Text(doc.path.to_string_lossy().to_string()),
-    ));
-
-    props.push(Property::new(
-        property_id(entity_id, "core", "relative_path"),
-        entity_id.clone(),
-        "core",
-        "relative_path",
-        PropertyValue::Text(relative_path.to_string()),
-    ));
-
-    props.push(Property::new(
-        property_id(entity_id, "core", "title"),
-        entity_id.clone(),
-        "core",
-        "title",
-        PropertyValue::Text(doc.title()),
-    ));
-
-    props.push(Property::new(
-        property_id(entity_id, "core", "tags"),
-        entity_id.clone(),
-        "core",
-        "tags",
-        PropertyValue::Json(Value::Array(
-            doc.all_tags()
-                .into_iter()
-                .map(Value::String)
-                .collect::<Vec<_>>(),
-        )),
-    ));
-
-    if let Some(frontmatter) = &doc.frontmatter {
-        let fm_value = Value::Object(
-            frontmatter
-                .properties()
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect::<serde_json::Map<_, _>>(),
-        );
-        props.push(Property::new(
-            property_id(entity_id, "core", "frontmatter"),
-            entity_id.clone(),
-            "core",
-            "frontmatter",
-            PropertyValue::Json(fm_value),
-        ));
-    }
-
-    props
-}
-
-fn entity_payload(doc: &ParsedDocument, relative_path: &str) -> Value {
-    let tags = doc
-        .all_tags()
-        .into_iter()
-        .map(Value::String)
-        .collect::<Vec<_>>();
-
-    let frontmatter_value = doc.frontmatter.as_ref().map(|fm| {
-        let map = fm
-            .properties()
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect::<Map<_, _>>();
-        Value::Object(map)
-    });
-
-    let mut payload = Map::new();
-    payload.insert(
-        "path".to_string(),
-        Value::String(doc.path.to_string_lossy().into_owned()),
-    );
-    payload.insert(
-        "relative_path".to_string(),
-        Value::String(relative_path.to_string()),
-    );
-    payload.insert("title".to_string(), Value::String(doc.title()));
-    payload.insert(
-        "content".to_string(),
-        Value::String(doc.content.plain_text.clone()),
-    );
-    payload.insert("tags".to_string(), Value::Array(tags));
-    if let Some(frontmatter) = frontmatter_value {
-        payload.insert("frontmatter".to_string(), frontmatter);
-    }
-    payload.insert(
-        "parsed_at".to_string(),
-        Value::String(doc.parsed_at.to_rfc3339()),
-    );
-    payload.insert(
-        "file_size".to_string(),
-        Value::Number(serde_json::Number::from(doc.file_size)),
-    );
-    payload.insert(
-        "content_hash".to_string(),
-        Value::String(doc.content_hash.clone()),
-    );
-    payload.insert(
-        "wikilink_count".to_string(),
-        Value::Number(serde_json::Number::from(doc.wikilinks.len() as u64)),
-    );
-    payload.insert(
-        "created_via".to_string(),
-        Value::String("parser".to_string()),
-    );
-
-    Value::Object(payload)
-}
-
-fn property_id(
-    entity_id: &RecordId<EntityRecord>,
-    namespace: &str,
-    key: &str,
-) -> RecordId<PropertyRecord> {
-    RecordId::new(
-        "properties",
-        format!("{}:{}:{}", entity_id.id, namespace, key),
-    )
-}
-
-fn build_blocks(entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec<BlockNode> {
-    // Pre-calculate capacity: sum of all content types
-    // Headings + code_blocks + lists + callouts + latex + paragraphs (upper bound)
-    // Note: Actual paragraph count may be lower due to filtering empty ones
-    let capacity = doc.content.headings.len()
-        + doc.content.paragraphs.len()
-        + doc.content.code_blocks.len()
-        + doc.content.lists.len()
-        + doc.callouts.len()
-        + doc.content.latex_expressions.len();
-    let mut blocks = Vec::with_capacity(capacity);
-    let mut index = 0;
-
-    // Headings with metadata (level + text)
-    for heading in &doc.content.headings {
-        let metadata = serde_json::json!({
-            "level": heading.level,
-            "text": heading.text.clone()
-        });
-        blocks.push(make_block_with_metadata(
-            entity_id,
-            &format!("h{}", index),
-            index,
-            "heading",
-            &heading.text,
-            metadata,
-        ));
-        index += 1;
-    }
-
-    // Paragraphs (non-empty only)
-    for paragraph in &doc.content.paragraphs {
-        if paragraph.content.trim().is_empty() {
-            continue;
-        }
-        blocks.push(make_block_with_metadata(
-            entity_id,
-            &format!("p{}", index),
-            index,
-            "paragraph",
-            &paragraph.content,
-            serde_json::json!({}),
-        ));
-        index += 1;
-    }
-
-    // Code blocks with language + line count metadata
-    for code_block in &doc.content.code_blocks {
-        let metadata = serde_json::json!({
-            "language": code_block.language.clone().unwrap_or_default(),
-            "line_count": code_block.content.lines().count()
-        });
-        blocks.push(make_block_with_metadata(
-            entity_id,
-            &format!("code{}", index),
-            index,
-            "code",
-            &code_block.content,
-            metadata,
-        ));
-        index += 1;
-    }
-
-    // Lists with type + item count metadata
-    for list in &doc.content.lists {
-        let metadata = serde_json::json!({
-            "type": match list.list_type {
-                crucible_core::parser::ListType::Ordered => "ordered",
-                crucible_core::parser::ListType::Unordered => "unordered",
-            },
-            "item_count": list.items.len()
-        });
-
-        // Serialize list as text (simple approach for now)
-        let list_text = list.items.iter()
-            .map(|item| {
-                if let Some(task_status) = &item.task_status {
-                    let check = match task_status {
-                        crucible_core::parser::TaskStatus::Pending => " ",
-                        crucible_core::parser::TaskStatus::Completed => "x",
-                    };
-                    format!("- [{}] {}", check, item.content)
-                } else {
-                    format!("- {}", item.content)
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        blocks.push(make_block_with_metadata(
-            entity_id,
-            &format!("list{}", index),
-            index,
-            "list",
-            &list_text,
-            metadata,
-        ));
-        index += 1;
-    }
-
-    // Callouts with type + title metadata
-    for callout in &doc.callouts {
-        let metadata = serde_json::json!({
-            "callout_type": callout.callout_type.clone(),
-            "title": callout.title.clone().unwrap_or_default()
-        });
-        blocks.push(make_block_with_metadata(
-            entity_id,
-            &format!("callout{}", index),
-            index,
-            "callout",
-            &callout.content,
-            metadata,
-        ));
-        index += 1;
-    }
-
-    // LaTeX expressions with inline/block flag
-    for latex in &doc.content.latex_expressions {
-        let metadata = serde_json::json!({
-            "inline": !latex.is_block,
-            "display_mode": latex.is_block
-        });
-        blocks.push(make_block_with_metadata(
-            entity_id,
-            &format!("latex{}", index),
-            index,
-            "latex",
-            &latex.expression,
-            metadata,
-        ));
-        index += 1;
-    }
-
-    blocks
-}
-
-fn make_block_with_metadata(
-    entity_id: &RecordId<EntityRecord>,
-    suffix: &str,
-    block_index: i32,
-    block_type: &str,
-    content: &str,
-    metadata: Value,
-) -> BlockNode {
-    let mut hasher = Hasher::new();
-    hasher.update(content.as_bytes());
-    let hash = hasher.finalize().to_hex().to_string();
-
-    let mut block = BlockNode::new(
-        RecordId::new("blocks", format!("{}:{}", entity_id.id, suffix)),
-        entity_id.clone(),
-        block_index,
-        block_type,
-        content,
-        hash,
-    );
-    block.metadata = metadata;
-    block
-}
-
-/// Extract inline link relations from the document
-fn extract_inline_link_relations(entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec<CoreRelation> {
-    let capacity = doc.inline_links.len();
-    let mut relations = Vec::with_capacity(capacity);
-    let from_entity_id = format!("{}:{}", entity_id.table, entity_id.id);
-
-    for inline_link in &doc.inline_links {
-        // Create relation for inline link
-        // For external URLs, to_entity_id is None (no entity to link to)
-        // For relative links, we could potentially resolve them to entities
-        let to_entity_id = if inline_link.is_relative() {
-            // Could parse relative path to entity ID
-            // For now, just store the URL in metadata
-            None
-        } else {
-            None // External URLs don't have entity IDs
-        };
-
-        let mut relation = CoreRelation::new(
-            from_entity_id.clone(),
-            to_entity_id,
-            "link",
-        );
-
-        // Add metadata about the inline link
-        let mut metadata = serde_json::Map::new();
-        metadata.insert("url".to_string(), serde_json::json!(inline_link.url));
-        metadata.insert("text".to_string(), serde_json::json!(inline_link.text));
-        if let Some(title) = &inline_link.title {
-            metadata.insert("title".to_string(), serde_json::json!(title));
-        }
-        metadata.insert("offset".to_string(), serde_json::json!(inline_link.offset));
-        metadata.insert("is_external".to_string(), serde_json::json!(inline_link.is_external()));
-
-        relation.metadata = serde_json::Value::Object(metadata);
-
-        relations.push(relation);
-    }
-
-    relations
-}
-
-/// Extract footnote relations from the document
-fn extract_footnote_relations(entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec<CoreRelation> {
-    let capacity = doc.footnotes.references.len();
-    let mut relations = Vec::with_capacity(capacity);
-    let from_entity_id = format!("{}:{}", entity_id.table, entity_id.id);
-
-    for footnote_ref in &doc.footnotes.references {
-        // Only create relations for references that have definitions
-        if let Some(definition) = doc.footnotes.definitions.get(&footnote_ref.identifier) {
-            let mut relation = CoreRelation::new(
-                from_entity_id.clone(),
-                None, // Footnotes are self-referential (within the same document)
-                "footnote",
-            );
-
-            // Add metadata about the footnote
-            let mut metadata = serde_json::Map::new();
-            metadata.insert("label".to_string(), serde_json::json!(footnote_ref.identifier));
-            metadata.insert("content".to_string(), serde_json::json!(definition.content));
-            metadata.insert("ref_offset".to_string(), serde_json::json!(footnote_ref.offset));
-            metadata.insert("def_offset".to_string(), serde_json::json!(definition.offset));
-            if let Some(order) = footnote_ref.order_number {
-                metadata.insert("order".to_string(), serde_json::json!(order));
-            }
-
-            relation.metadata = serde_json::Value::Object(metadata);
-
-            relations.push(relation);
-        }
-    }
-
-    relations
-}
 

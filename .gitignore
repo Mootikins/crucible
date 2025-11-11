@@ -61,3 +61,4 @@ crates/crucible-llm/.fastembed_cache/
 
 # OpenCode IDE
 .opencode/
+.aider*
