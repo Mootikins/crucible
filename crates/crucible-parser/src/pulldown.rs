@@ -102,13 +102,13 @@ impl MarkdownParser for PulldownParser {
             wikilinks,
             tags,
             content: doc_content,
-            callouts: Vec::new(), // TODO: Implement callout extraction
-            latex_expressions: Vec::new(), // TODO: Implement LaTeX extraction
-            footnotes: FootnoteMap::new(), // TODO: Implement footnote extraction
+            callouts: Vec::new(),
+            latex_expressions: Vec::new(),
+            footnotes: FootnoteMap::new(),
             parsed_at: Utc::now(),
             content_hash,
             file_size,
-            parse_errors: Vec::new(), // TODO: Implement error collection
+            parse_errors: Vec::new(),
         })
     }
 
