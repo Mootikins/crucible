@@ -779,7 +779,7 @@ impl DatabaseTransactionConsumer {
 
             // Attempt transaction with retry logic
             loop {
-                let result = match timeout(
+                let _result = match timeout(
                     self.config.transaction_timeout,
                     self.execute_transaction(&batchable_tx.transaction),
                 )
@@ -1142,7 +1142,7 @@ impl DatabaseTransactionConsumer {
 mod tests {
     use super::*;
     use crate::transaction_queue::{
-        DatabaseTransaction, TransactionQueue, TransactionQueueConfig, TransactionTimestamp,
+        DatabaseTransaction, TransactionTimestamp,
     };
     use std::path::PathBuf;
 
