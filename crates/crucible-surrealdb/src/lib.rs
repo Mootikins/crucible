@@ -47,8 +47,6 @@ pub mod surreal_client;
 pub mod transaction_consumer;
 pub mod transaction_queue;
 pub mod types;
-// Block storage module (currently has compilation errors, being refactored)
-// pub mod block_storage;
 
 // Embedding modules
 pub mod embedding;

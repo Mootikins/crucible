@@ -29,9 +29,6 @@ pub mod transport;
 pub use document::Document;
 pub use sync::SyncInstance;
 
-// pub mod security; // Disabled until implementation is complete
-
-// pub mod discovery; // Disabled until implementation is complete
 
 /// Core synchronization error types
 #[derive(thiserror::Error, Debug)]
