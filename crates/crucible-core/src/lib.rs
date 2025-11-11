@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod canvas;
 pub mod config;
+pub mod content_category;
 pub mod crdt;
 pub mod crucible_core;
 pub mod database;
@@ -25,6 +26,7 @@ pub use config::{
     ConfigChange, ConfigManager, CrucibleConfig, FeatureConfig, LoggingConfig, NetworkConfig,
     PerformanceConfig, ServiceConfig, ServiceDatabaseConfig,
 };
+pub use content_category::{ContentCategory, ContentCategoryError};
 pub use crucible_core::CrucibleCore;
 
 // Re-export processing handoff types
