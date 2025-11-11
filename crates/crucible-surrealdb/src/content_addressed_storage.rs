@@ -556,7 +556,7 @@ impl crucible_core::storage::traits::BlockOperations for ContentAddressedStorage
 
         // Delete the block
         let query = format!("DELETE FROM content_blocks:`{}`", hash);
-        let result = self
+        let _result = self
             .client
             .query(&query, &[])
             .await
@@ -662,7 +662,7 @@ impl crucible_core::storage::traits::TreeOperations for ContentAddressedStorageS
 
         // Delete the tree
         let query = format!("DELETE FROM merkle_trees:`{}`", root_hash);
-        let result =
+        let _result =
             self.client.query(&query, &[]).await.map_err(|e| {
                 StorageError::backend(format!("Failed to delete Merkle tree: {}", e))
             })?;
@@ -1438,7 +1438,7 @@ mod tests {
     use super::*;
     use crucible_core::hashing::blake3::Blake3Hasher;
     use crucible_core::storage::traits::{BlockOperations, StorageManagement, TreeOperations};
-    use crucible_core::storage::{ContentHasher, HashedBlock};
+    use crucible_core::storage::ContentHasher;
 
     /// Test helper to create a test storage instance
     async fn create_test_storage() -> ContentAddressedStorageSurrealDB {

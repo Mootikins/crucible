@@ -519,7 +519,7 @@ impl<S: DeduplicationStorage> DeduplicationReportGenerator<S> {
         if !report.recommendations.is_empty() {
             output.push_str("Recommendations:\n");
             for (i, rec) in report.recommendations.iter().enumerate() {
-                let priority_color = match rec.priority {
+                let _priority_color = match rec.priority {
                     RecommendationPriority::High => Color::Red,
                     RecommendationPriority::Medium => Color::Yellow,
                     RecommendationPriority::Low => Color::Green,

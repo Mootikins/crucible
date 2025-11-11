@@ -1039,8 +1039,7 @@ mod tests {
     use crate::kiln_integration::initialize_kiln_schema;
     use crate::types::RecordId;
     use crate::SurrealClient;
-    use std::path::PathBuf;
-
+    
     async fn setup_client() -> SurrealClient {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         initialize_kiln_schema(&client).await.unwrap();
