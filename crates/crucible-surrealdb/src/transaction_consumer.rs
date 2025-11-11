@@ -187,24 +187,24 @@ impl BatchCollector {
             return false;
         }
 
-        // Simple heuristic: wait for transactions from the same directory or with same document prefix
+        // Simple heuristic: wait for transactions from the same directory or with same note prefix
         match (&self.pending_transactions[0].transaction, new_transaction) {
             (
                 DatabaseTransaction::Create {
-                    document: existing_doc,
+                    note: existing_doc,
                     ..
                 },
                 DatabaseTransaction::Create {
-                    document: new_doc, ..
+                    note: new_doc, ..
                 },
             ) => existing_doc.path.parent() == new_doc.path.parent(),
             (
                 DatabaseTransaction::Update {
-                    document: existing_doc,
+                    note: existing_doc,
                     ..
                 },
                 DatabaseTransaction::Update {
-                    document: new_doc, ..
+                    note: new_doc, ..
                 },
             ) => existing_doc.path.parent() == new_doc.path.parent(),
             _ => false,
@@ -464,7 +464,7 @@ impl DatabaseTransactionConsumer {
                 true
             }
             DatabaseTransaction::Update { .. } => {
-                // Update operations depend on document existing, but for simplicity we'll allow them
+                // Update operations depend on note existing, but for simplicity we'll allow them
                 // The intelligent consumer will handle create vs update logic
                 true
             }
@@ -634,51 +634,51 @@ impl DatabaseTransactionConsumer {
     async fn execute_transaction(&self, transaction: &DatabaseTransaction) -> Result<()> {
         match transaction {
             DatabaseTransaction::Create {
-                document,
+                note,
                 kiln_root,
                 ..
             } => {
-                debug!("Creating document: {}", document.path.display());
+                debug!("Creating note: {}", note.path.display());
 
-                // Store the document and all its relationships in one operation
+                // Store the note and all its relationships in one operation
                 let document_id = crate::kiln_integration::store_parsed_document(
                     &self.client,
-                    document,
+                    note,
                     kiln_root,
                 )
                 .await?;
 
                 // Create all related entities (links, embeds, tags) automatically
-                self.create_document_relationships(&document_id, document, kiln_root)
+                self.create_document_relationships(&document_id, note, kiln_root)
                     .await?;
             }
 
             DatabaseTransaction::Update {
-                document,
+                note,
                 kiln_root,
                 ..
             } => {
-                debug!("Updating document: {}", document.path.display());
+                debug!("Updating note: {}", note.path.display());
 
-                // Check if document exists and determine what changed
+                // Check if note exists and determine what changed
                 let document_id =
-                    crate::kiln_integration::generate_document_id(&document.path, kiln_root);
+                    crate::kiln_integration::generate_document_id(&note.path, kiln_root);
                 let existing_doc = self.get_existing_document(&document_id).await?;
 
                 if let Some(existing_document) = existing_doc {
                     // Intelligent diffing - update only what changed
-                    self.update_document_intelligently(&existing_document, document, kiln_root)
+                    self.update_document_intelligently(&existing_document, note, kiln_root)
                         .await?;
                 } else {
-                    // Document doesn't exist, treat as create
-                    info!("Document {} not found, treating as create", document_id);
+                    // Note doesn't exist, treat as create
+                    info!("Note {} not found, treating as create", document_id);
                     let created_id = crate::kiln_integration::store_parsed_document(
                         &self.client,
-                        document,
+                        note,
                         kiln_root,
                     )
                     .await?;
-                    self.create_document_relationships(&created_id, document, kiln_root)
+                    self.create_document_relationships(&created_id, note, kiln_root)
                         .await?;
                 }
             }
@@ -688,9 +688,9 @@ impl DatabaseTransactionConsumer {
                 kiln_root,
                 ..
             } => {
-                debug!("Deleting document: {}", document_id);
+                debug!("Deleting note: {}", document_id);
 
-                // Remove document and all its relationships
+                // Remove note and all its relationships
                 self.delete_document_completely(document_id, kiln_root)
                     .await?;
             }
@@ -903,8 +903,8 @@ impl DatabaseTransactionConsumer {
                 DatabaseTransaction::Delete { .. } => "Delete".to_string(),
             },
             file_path: match transaction {
-                DatabaseTransaction::Create { document, .. }
-                | DatabaseTransaction::Update { document, .. } => Some(document.path.clone()),
+                DatabaseTransaction::Create { note, .. }
+                | DatabaseTransaction::Update { note, .. } => Some(note.path.clone()),
                 DatabaseTransaction::Delete { .. } => None,
             },
             retry_count,
@@ -976,19 +976,19 @@ impl DatabaseTransactionConsumer {
         Ok(())
     }
 
-    /// Helper method to create all document relationships (wikilinks, embeds, tags)
+    /// Helper method to create all note relationships (wikilinks, embeds, tags)
     async fn create_document_relationships(
         &self,
         document_id: &str,
-        document: &crucible_core::types::ParsedDocument,
+        note: &crucible_core::types::ParsedNote,
         kiln_root: &std::path::Path,
     ) -> Result<()> {
         // Create wikilink edges
-        if !document.wikilinks.is_empty() {
+        if !note.wikilinks.is_empty() {
             crate::kiln_integration::create_wikilink_edges(
                 &self.client,
                 document_id,
-                document,
+                note,
                 kiln_root,
             )
             .await?;
@@ -998,12 +998,12 @@ impl DatabaseTransactionConsumer {
         crate::kiln_integration::create_embed_relationships(
             &self.client,
             document_id,
-            document,
+            note,
             kiln_root,
         )
         .await?;
 
-        // Tags are now automatically stored during document ingestion in DocumentIngestor
+        // Tags are now automatically stored during note ingestion in NoteIngestor
 
         // Note: embeds are handled through content processing, not as separate relationships
         // The intelligent consumer handles all content-related updates automatically
@@ -1011,31 +1011,31 @@ impl DatabaseTransactionConsumer {
         Ok(())
     }
 
-    /// Helper method to get existing document from database
+    /// Helper method to get existing note from database
     async fn get_existing_document(
         &self,
         document_id: &str,
-    ) -> Result<Option<crucible_core::types::ParsedDocument>> {
+    ) -> Result<Option<crucible_core::types::ParsedNote>> {
         // For now, always return None to simplify the intelligent consumer
         // This means all Update operations will be treated as Create operations
         // which is fine for the simple queue architecture goal of eliminating lock contention
         debug!(
-            "Checking for existing document: {} (simplified check)",
+            "Checking for existing note: {} (simplified check)",
             document_id
         );
         Ok(None)
     }
 
-    /// Helper method to intelligently update document based on diff
+    /// Helper method to intelligently update note based on diff
     async fn update_document_intelligently(
         &self,
-        _existing: &crucible_core::types::ParsedDocument,
-        new: &crucible_core::types::ParsedDocument,
+        _existing: &crucible_core::types::ParsedNote,
+        new: &crucible_core::types::ParsedNote,
         kiln_root: &std::path::Path,
     ) -> Result<()> {
-        debug!("Updating document: {}", new.path.display());
+        debug!("Updating note: {}", new.path.display());
 
-        // Simple intelligent update: just store the new document
+        // Simple intelligent update: just store the new note
         // The consumer is "intelligent" because it figures out what to do automatically
         // without the processing layer having to specify granular operations
         let document_id =
@@ -1046,13 +1046,13 @@ impl DatabaseTransactionConsumer {
         Ok(())
     }
 
-    /// Helper method to completely delete a document and all its relationships
+    /// Helper method to completely delete a note and all its relationships
     async fn delete_document_completely(
         &self,
         document_id: &str,
         _kiln_root: &std::path::Path,
     ) -> Result<()> {
-        info!("Deleting document: {}", document_id);
+        info!("Deleting note: {}", document_id);
 
         let entity_id = parse_entity_record_id(document_id)?;
         let store = EAVGraphStore::new(self.client.as_ref().clone());
@@ -1210,7 +1210,7 @@ mod tests {
 
         let tx = DatabaseTransaction::Create {
             transaction_id: "test-1".to_string(),
-            document: crucible_core::types::ParsedDocument::default(),
+            note: crucible_core::types::ParsedNote::default(),
             kiln_root: PathBuf::from("/test"),
             timestamp: TransactionTimestamp::now(),
         };

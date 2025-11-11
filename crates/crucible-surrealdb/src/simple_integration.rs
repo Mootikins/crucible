@@ -13,7 +13,7 @@ use crate::kiln_scanner::parse_file_to_document;
 use crate::surreal_client::SurrealClient;
 use crate::transaction_queue::{DatabaseTransaction, TransactionQueue, TransactionTimestamp};
 
-/// Simple integration: enqueue a single document for processing
+/// Simple integration: enqueue a single note for processing
 ///
 /// This replaces the complex QueueBasedProcessor::process_file() with a simple
 /// function that just creates a transaction and enqueues it.
@@ -23,11 +23,11 @@ pub async fn enqueue_document(
     file_path: &Path,
     kiln_root: &Path,
 ) -> Result<String> {
-    debug!("Enqueuing document: {}", file_path.display());
+    debug!("Enqueuing note: {}", file_path.display());
 
-    // Parse the document
-    let document = parse_file_to_document(file_path).await?;
-    let document_id = crate::kiln_integration::generate_document_id(&document.path, kiln_root);
+    // Parse the note
+    let note = parse_file_to_document(file_path).await?;
+    let document_id = crate::kiln_integration::generate_document_id(&note.path, kiln_root);
 
     // Determine if this is create or update based on simple existence check
     let transaction_type = if document_exists_fast(client, &document_id).await? {
@@ -40,13 +40,13 @@ pub async fn enqueue_document(
     let transaction = match transaction_type {
         "Create" => DatabaseTransaction::Create {
             transaction_id: format!("create-{}-{}", document_id, uuid::Uuid::new_v4()),
-            document,
+            note,
             kiln_root: kiln_root.to_path_buf(),
             timestamp: TransactionTimestamp::now(),
         },
         "Update" => DatabaseTransaction::Update {
             transaction_id: format!("update-{}-{}", document_id, uuid::Uuid::new_v4()),
-            document,
+            note,
             kiln_root: kiln_root.to_path_buf(),
             timestamp: TransactionTimestamp::now(),
         },
@@ -62,19 +62,19 @@ pub async fn enqueue_document(
     let _result_receiver = queue.enqueue(transaction).await?;
 
     info!(
-        "Enqueued {} transaction for document: {}",
+        "Enqueued {} transaction for note: {}",
         transaction_type, document_id
     );
     Ok(document_id)
 }
 
-/// Simple integration: enqueue document deletion
+/// Simple integration: enqueue note deletion
 pub async fn enqueue_document_deletion(
     queue: &TransactionQueue,
     file_path: &Path,
     kiln_root: &Path,
 ) -> Result<String> {
-    debug!("Enqueuing document deletion: {}", file_path.display());
+    debug!("Enqueuing note deletion: {}", file_path.display());
 
     let document_id = crate::kiln_integration::generate_document_id(file_path, kiln_root);
 
@@ -87,7 +87,7 @@ pub async fn enqueue_document_deletion(
 
     let _result_receiver = queue.enqueue(transaction).await?;
 
-    info!("Enqueued delete transaction for document: {}", document_id);
+    info!("Enqueued delete transaction for note: {}", document_id);
     Ok(document_id)
 }
 
@@ -111,9 +111,9 @@ pub async fn enqueue_documents(
     Ok(document_ids)
 }
 
-/// Fast check if document exists (simplified - doesn't load full document)
+/// Fast check if note exists (simplified - doesn't load full note)
 async fn document_exists_fast(_client: &Arc<SurrealClient>, _document_id: &str) -> Result<bool> {
-    // For now, assume document doesn't exist to simplify logic
+    // For now, assume note doesn't exist to simplify logic
     // This means all operations will be treated as Creates
     // The intelligent consumer will handle Create vs Update logic automatically
     Ok(false)

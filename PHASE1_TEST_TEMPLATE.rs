@@ -27,7 +27,7 @@ impl FrontmatterParser {
         Self { strict_mode: true }
     }
 
-    /// Extract frontmatter from document content
+    /// Extract frontmatter from note content
     ///
     /// Returns: (frontmatter_text, body_text, format)
     pub fn extract_frontmatter(&self, content: &str) -> ParserResult<(Option<String>, String, FrontmatterFormat)> {
@@ -109,7 +109,7 @@ mod tests {
 
     /// Standard YAML frontmatter for reuse
     fn sample_yaml_basic() -> &'static str {
-        r#"title: My Document
+        r#"title: My Note
 author: John Doe
 date: 2025-11-08
 status: active"#
@@ -127,7 +127,7 @@ categories: [dev, learning]"#
 
     /// YAML with nested objects
     fn sample_yaml_nested() -> &'static str {
-        r#"title: Complex Document
+        r#"title: Complex Note
 metadata:
   author: Jane Doe
   created: 2025-11-01
@@ -139,13 +139,13 @@ metadata:
 
     /// Standard TOML frontmatter for reuse
     fn sample_toml_basic() -> &'static str {
-        r#"title = "My Document"
+        r#"title = "My Note"
 author = "John Doe"
 date = "2025-11-08"
 status = "active""#
     }
 
-    /// Complete markdown document with YAML frontmatter
+    /// Complete markdown note with YAML frontmatter
     fn complete_document_yaml() -> &'static str {
         r#"---
 title: Introduction to Rust
@@ -155,11 +155,11 @@ tags: [rust, programming, learning]
 
 # Introduction to Rust
 
-This is the main content of the document.
+This is the main content of the note.
 It comes after the frontmatter."#
     }
 
-    /// Complete markdown document with TOML frontmatter
+    /// Complete markdown note with TOML frontmatter
     fn complete_document_toml() -> &'static str {
         r#"+++
 title = "Introduction to Rust"
@@ -169,7 +169,7 @@ tags = ["rust", "programming", "learning"]
 
 # Introduction to Rust
 
-This is the main content of the document."#
+This is the main content of the note."#
     }
 
     // ========================================================================
@@ -205,7 +205,7 @@ This is the main content of the document."#
     #[test]
     fn test_extract_no_frontmatter() {
         let parser = FrontmatterParser::new();
-        let content = "# Just a Markdown Document\n\nNo frontmatter here.";
+        let content = "# Just a Markdown Note\n\nNo frontmatter here.";
 
         let (fm, body, format) = parser.extract_frontmatter(content)
             .expect("Should handle content without frontmatter");
@@ -272,7 +272,7 @@ author: John Doe"#;
     #[test]
     fn test_validate_invalid_yaml_bad_indentation() {
         let parser = FrontmatterParser::new();
-        let invalid = r#"title: My Document
+        let invalid = r#"title: My Note
   author: John  # Wrong indentation - extra space
    date: 2025-11-08"#;
 
@@ -300,7 +300,7 @@ author: John Doe"#;
         let values = parser.parse_yaml_values(yaml)
             .expect("Should parse YAML values");
 
-        assert_eq!(values.get("title"), Some(&"My Document".to_string()));
+        assert_eq!(values.get("title"), Some(&"My Note".to_string()));
         assert_eq!(values.get("author"), Some(&"John Doe".to_string()));
         assert_eq!(values.get("date"), Some(&"2025-11-08".to_string()));
     }
@@ -331,7 +331,7 @@ author = "John Doe""#;
     #[test]
     fn test_validate_invalid_toml_bad_syntax() {
         let parser = FrontmatterParser::new();
-        let invalid = r#"title = My Document
+        let invalid = r#"title = My Note
 author = John Doe (missing quotes)"#;
 
         let result = parser.validate_toml(invalid);
@@ -412,7 +412,7 @@ TITLE: "UPPERCASE KEY""#;
         let content = "Some content\n---\nThis looks like frontmatter\n---\nBut isn't";
 
         let (fm, body, format) = parser.extract_frontmatter(content)
-            .expect("Should not treat mid-document delimiters as frontmatter");
+            .expect("Should not treat mid-note delimiters as frontmatter");
 
         assert!(fm.is_none(), "Delimiter not at start should not create frontmatter");
         assert_eq!(format, FrontmatterFormat::None);
@@ -453,10 +453,10 @@ TITLE: "UPPERCASE KEY""#;
     #[test]
     fn test_extract_and_validate_yaml_pipeline() {
         let parser = FrontmatterParser::new();
-        let document = complete_document_yaml();
+        let note = complete_document_yaml();
 
         // Extract frontmatter
-        let (fm, body, format) = parser.extract_frontmatter(document)
+        let (fm, body, format) = parser.extract_frontmatter(note)
             .expect("Should extract frontmatter");
 
         assert_eq!(format, FrontmatterFormat::Yaml);
@@ -471,10 +471,10 @@ TITLE: "UPPERCASE KEY""#;
     #[test]
     fn test_extract_and_validate_toml_pipeline() {
         let parser = FrontmatterParser::new();
-        let document = complete_document_toml();
+        let note = complete_document_toml();
 
         // Extract frontmatter
-        let (fm, body, format) = parser.extract_frontmatter(document)
+        let (fm, body, format) = parser.extract_frontmatter(note)
             .expect("Should extract frontmatter");
 
         assert_eq!(format, FrontmatterFormat::Toml);

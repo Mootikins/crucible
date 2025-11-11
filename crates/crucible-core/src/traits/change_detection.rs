@@ -108,7 +108,7 @@ pub trait ContentHasher: Send + Sync {
     /// Hash multiple blocks in batch
     ///
     /// This method efficiently hashes multiple content blocks, which is useful
-    /// when processing a complete document.
+    /// when processing a complete note.
     ///
     /// # Arguments
     ///
@@ -155,8 +155,8 @@ pub trait ContentHasher: Send + Sync {
     ///
     /// * `content` - The content to hash
     /// * `block_type` - Type of block (heading, paragraph, code, etc.)
-    /// * `start_offset` - Start position in source document
-    /// * `end_offset` - End position in source document
+    /// * `start_offset` - Start position in source note
+    /// * `end_offset` - End position in source note
     ///
     /// # Returns
     ///

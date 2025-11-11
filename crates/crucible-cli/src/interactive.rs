@@ -20,7 +20,7 @@ impl From<SearchResult> for SearchResultWithScore {
         let doc_id = result.document_id.0; // Move once
         Self {
             id: doc_id.clone(),
-            title: doc_id, // Use document ID as title for now
+            title: doc_id, // Use note ID as title for now
             content: result.snippet.unwrap_or_default(),
             score: result.score,
         }
@@ -146,15 +146,15 @@ mod tests {
     fn test_filter_items_fuzzy_match() {
         let mut picker = FuzzyPicker::new();
         let items = vec![
-            "my-document.md".to_string(),
-            "your-document.md".to_string(),
+            "my-note.md".to_string(),
+            "your-note.md".to_string(),
             "other-file.md".to_string(),
         ];
 
         let results = picker.filter_items(&items, "mydoc");
 
         assert!(results.len() > 0);
-        assert_eq!(results[0].0, 0); // Should match "my-document.md"
+        assert_eq!(results[0].0, 0); // Should match "my-note.md"
     }
 
     #[test]

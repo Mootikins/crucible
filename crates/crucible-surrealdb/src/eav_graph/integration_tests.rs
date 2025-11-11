@@ -11,21 +11,21 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::eav_graph::{apply_eav_graph_schema, DocumentIngestor, EAVGraphStore};
+    use crate::eav_graph::{apply_eav_graph_schema, NoteIngestor, EAVGraphStore};
     use crate::SurrealClient;
     use crucible_core::parser::{
-        Callout, CodeBlock, DocumentContent, Heading, LatexExpression, ListBlock, ListItem,
-        ListType, Paragraph, ParsedDocument,
+        Callout, CodeBlock, NoteContent, Heading, LatexExpression, ListBlock, ListItem,
+        ListType, Paragraph, ParsedNote,
     };
     use std::path::PathBuf;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_latex_blocks_stored() {
-        // Manually build a test document with LaTeX to test the ingestor
-        let mut doc = ParsedDocument::default();
+        // Manually build a test note with LaTeX to test the ingestor
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("math.md");
         doc.content_hash = "test123".into();
-        doc.content = DocumentContent::default();
+        doc.content = NoteContent::default();
         doc.content.plain_text = "Math formulas here".into();
 
         // Add inline LaTeX
@@ -47,7 +47,7 @@ mod tests {
         let client = SurrealClient::new_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let entity_id = ingestor.ingest(&doc, "math.md").await.unwrap();
 
@@ -128,14 +128,14 @@ mod tests {
     /// 2. Stored in the database with proper metadata
     #[tokio::test]
     async fn test_all_block_types_end_to_end() {
-        // Manually build a test document with all block types
-        let mut doc = ParsedDocument::default();
+        // Manually build a test note with all block types
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("test/all_types.md");
         doc.content_hash = "test_all_types_hash".into();
 
         // Build content with all block types
-        let mut content = DocumentContent::new();
-        content.plain_text = "Comprehensive test document with all block types".into();
+        let mut content = NoteContent::new();
+        content.plain_text = "Comprehensive test note with all block types".into();
 
         // 1. Headings
         content.add_heading(Heading::new(1, "Introduction", 0));
@@ -149,7 +149,7 @@ mod tests {
             100,
         ));
         content.paragraphs.push(Paragraph::new(
-            "End of document.".to_string(),
+            "End of note.".to_string(),
             600,
         ));
 
@@ -187,7 +187,7 @@ mod tests {
 
         doc.content = content;
 
-        // 5. Callouts (stored at document level, not in content)
+        // 5. Callouts (stored at note level, not in content)
         doc.callouts.push(Callout::with_title(
             "note",
             "Important Note",
@@ -196,17 +196,17 @@ mod tests {
         ));
 
         // Note: Blockquote, Table, and Horizontal Rule blocks are created by the ingestor
-        // from markdown parsing, but since we're manually building the document, we can't
-        // easily add them here. The ingestor creates blocks from the DocumentContent fields.
+        // from markdown parsing, but since we're manually building the note, we can't
+        // easily add them here. The ingestor creates blocks from the NoteContent fields.
         // These would need to be tested in a separate test that uses actual markdown parsing.
 
         // Set up database
         let client = SurrealClient::new_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
-        // Ingest the document
+        // Ingest the note
         let entity_id = ingestor.ingest(&doc, "test/all_types.md").await.unwrap();
 
         // Query blocks using SQL directly
@@ -228,7 +228,7 @@ mod tests {
             }
         }
 
-        // Verify core block types that we can create from DocumentContent
+        // Verify core block types that we can create from NoteContent
         assert!(
             block_types.contains("heading"),
             "Missing heading blocks. Found types: {:?}",
@@ -446,13 +446,13 @@ mod tests {
     /// Test that block types maintain order and hierarchy
     #[tokio::test]
     async fn test_block_order_and_hierarchy() {
-        // Manually build a test document with hierarchical headings
-        let mut doc = ParsedDocument::default();
+        // Manually build a test note with hierarchical headings
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("test/hierarchy.md");
         doc.content_hash = "test_hierarchy_hash".into();
 
-        let mut content = DocumentContent::new();
-        content.plain_text = "Hierarchical document structure".into();
+        let mut content = NoteContent::new();
+        content.plain_text = "Hierarchical note structure".into();
 
         // Add headings and paragraphs in order
         content.add_heading(Heading::new(1, "Section 1", 0));
@@ -476,7 +476,7 @@ mod tests {
         let client = SurrealClient::new_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let entity_id = ingestor.ingest(&doc, "test/hierarchy.md").await.unwrap();
 
@@ -491,7 +491,7 @@ mod tests {
 
         let blocks = result.records;
 
-        // Blocks should be in document order
+        // Blocks should be in note order
         let mut previous_block_index = -1_i64;
         for block in &blocks {
             let block_index = block

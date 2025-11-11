@@ -1,5 +1,5 @@
 //! Integration handler for automatic file parsing and database indexing.
-//! Integrates PulldownParser with file watching for real-time document processing.
+//! Integrates PulldownParser with file watching for real-time note processing.
 //! Emits EmbeddingEvent objects for integration with the embedding pipeline.
 
 use crate::{
@@ -17,7 +17,7 @@ use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, error, info, warn};
 
 /// Handler for automatically indexing files when they change.
-/// Integrates with PulldownParser for document parsing and prepares for database storage.
+/// Integrates with PulldownParser for note parsing and prepares for database storage.
 /// Emits EmbeddingEvent objects for the embedding pipeline.
 pub struct IndexingHandler {
     supported_extensions: Vec<String>,
@@ -206,16 +206,16 @@ impl IndexingHandler {
 
     async fn remove_file_index(&self, path: &PathBuf) -> Result<()> {
         debug!("Removing index for file: {}", path.display());
-        // Phase 4: Remove document and associated blocks from database
+        // Phase 4: Remove note and associated blocks from database
         debug!("Database removal will be implemented in Phase 4");
         Ok(())
     }
 
-    /// Create and emit an embedding event from parsed document content
+    /// Create and emit an embedding event from parsed note content
     async fn create_and_emit_embedding_event(
         &self,
         path: &PathBuf,
-        parsed_doc: &crucible_core::parser::ParsedDocument,
+        parsed_doc: &crucible_core::parser::ParsedNote,
         file_size: u64,
         trigger_event: crate::events::FileEventKind,
     ) -> Result<()> {
@@ -265,10 +265,10 @@ impl IndexingHandler {
         Ok(())
     }
 
-    /// Extract content from parsed document for embedding
+    /// Extract content from parsed note for embedding
     fn extract_content_for_embedding(
         &self,
-        parsed_doc: &crucible_core::parser::ParsedDocument,
+        parsed_doc: &crucible_core::parser::ParsedNote,
     ) -> String {
         let mut content_parts = Vec::new();
 
@@ -281,7 +281,7 @@ impl IndexingHandler {
         // Add frontmatter metadata as structured text
         if let Some(ref frontmatter) = parsed_doc.frontmatter {
             if !frontmatter.raw.trim().is_empty() {
-                content_parts.push("## Document Metadata".to_string());
+                content_parts.push("## Note Metadata".to_string());
                 content_parts.push(frontmatter.raw.clone());
                 content_parts.push(String::new()); // Empty line after metadata
             }
@@ -389,7 +389,7 @@ impl IndexingHandler {
     /// Report parsing progress and performance metrics
     fn report_parsing_progress(
         &self,
-        doc: &crucible_core::parser::ParsedDocument,
+        doc: &crucible_core::parser::ParsedNote,
         file_size: u64,
         elapsed: std::time::Duration,
     ) {
@@ -502,11 +502,11 @@ impl IndexingHandler {
         }
     }
 
-    /// Log details about a parsed document for debugging and progress tracking
-    fn log_parsed_document(&self, doc: &crucible_core::parser::ParsedDocument) {
+    /// Log details about a parsed note for debugging and progress tracking
+    fn log_parsed_document(&self, doc: &crucible_core::parser::ParsedNote) {
         let content = &doc.content;
 
-        debug!("Parsed document summary:");
+        debug!("Parsed note summary:");
         debug!("  - Title: {}", doc.title());
         debug!("  - Headings: {}", content.headings.len());
         debug!("  - Paragraphs: {}", content.paragraphs.len());

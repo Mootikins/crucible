@@ -413,9 +413,9 @@ pub struct EntityTag {
 
 /// Storage for hierarchical content blocks
 ///
-/// Blocks represent the hierarchical structure of document content. Each block
+/// Blocks represent the hierarchical structure of note content. Each block
 /// has a parent (or is a root block) and can have children, forming a tree
-/// structure that mirrors the document organization.
+/// structure that mirrors the note organization.
 ///
 /// See trait implementation for usage.
 #[async_trait]

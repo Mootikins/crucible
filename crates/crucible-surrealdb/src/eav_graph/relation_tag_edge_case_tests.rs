@@ -2,16 +2,16 @@
 ///
 /// This test suite verifies that all wikilink and tag variants are correctly:
 /// 1. Parsed by crucible-parser
-/// 2. Extracted by DocumentIngestor
+/// 2. Extracted by NoteIngestor
 /// 3. Stored in relations/tags tables with proper metadata
 ///
 /// These tests use `new_isolated_memory()` to ensure complete test isolation.
 
 #[cfg(test)]
 mod edge_cases {
-    use super::super::{apply_eav_graph_schema, DocumentIngestor, EAVGraphStore};
+    use super::super::{apply_eav_graph_schema, NoteIngestor, EAVGraphStore};
     use crate::SurrealClient;
-    use crucible_core::parser::{ParsedDocument, Tag, Wikilink};
+    use crucible_core::parser::{ParsedNote, Tag, Wikilink};
     use crucible_core::storage::{RelationStorage, TagStorage};
     use std::path::PathBuf;
 
@@ -22,7 +22,7 @@ mod edge_cases {
     #[tokio::test]
     async fn test_basic_wikilink() {
         // [[Note]]
-        let mut doc = ParsedDocument::default();
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("test.md");
         doc.content_hash = "test_basic_wikilink".into();
 
@@ -38,7 +38,7 @@ mod edge_cases {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let entity_id = ingestor.ingest(&doc, "test.md").await.unwrap();
 
@@ -56,7 +56,7 @@ mod edge_cases {
     #[tokio::test]
     async fn test_aliased_wikilink() {
         // [[Note|Display Text]]
-        let mut doc = ParsedDocument::default();
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("test.md");
         doc.content_hash = "test_aliased_wikilink".into();
 
@@ -72,7 +72,7 @@ mod edge_cases {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let entity_id = ingestor.ingest(&doc, "test.md").await.unwrap();
 
@@ -89,7 +89,7 @@ mod edge_cases {
     #[tokio::test]
     async fn test_heading_ref_wikilink() {
         // [[Note#Heading]]
-        let mut doc = ParsedDocument::default();
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("test.md");
         doc.content_hash = "test_heading_ref".into();
 
@@ -105,7 +105,7 @@ mod edge_cases {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let entity_id = ingestor.ingest(&doc, "test.md").await.unwrap();
 
@@ -122,7 +122,7 @@ mod edge_cases {
     #[tokio::test]
     async fn test_block_ref_wikilink() {
         // [[Note#^block123]]
-        let mut doc = ParsedDocument::default();
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("test.md");
         doc.content_hash = "test_block_ref".into();
 
@@ -138,7 +138,7 @@ mod edge_cases {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let entity_id = ingestor.ingest(&doc, "test.md").await.unwrap();
 
@@ -155,7 +155,7 @@ mod edge_cases {
     #[tokio::test]
     async fn test_embed_wikilink() {
         // ![[Image or Note]]
-        let mut doc = ParsedDocument::default();
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("test.md");
         doc.content_hash = "test_embed".into();
 
@@ -171,7 +171,7 @@ mod edge_cases {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let entity_id = ingestor.ingest(&doc, "test.md").await.unwrap();
 
@@ -187,7 +187,7 @@ mod edge_cases {
     async fn test_combined_wikilink() {
         // [[Note#Heading^5#hash]]
         // This is an advanced block link with heading, occurrence, and hash
-        let mut doc = ParsedDocument::default();
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("test.md");
         doc.content_hash = "test_combined".into();
 
@@ -203,7 +203,7 @@ mod edge_cases {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let entity_id = ingestor.ingest(&doc, "test.md").await.unwrap();
 
@@ -224,7 +224,7 @@ mod edge_cases {
 
     #[tokio::test]
     async fn test_multiple_wikilinks() {
-        let mut doc = ParsedDocument::default();
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("test.md");
         doc.content_hash = "test_multiple".into();
 
@@ -258,7 +258,7 @@ mod edge_cases {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let entity_id = ingestor.ingest(&doc, "test.md").await.unwrap();
 
@@ -308,7 +308,7 @@ mod edge_cases {
     #[tokio::test]
     async fn test_simple_tag() {
         // #simple
-        let mut doc = ParsedDocument::default();
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("test.md");
         doc.content_hash = "test_simple_tag".into();
 
@@ -317,7 +317,7 @@ mod edge_cases {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         ingestor.ingest(&doc, "test.md").await.unwrap();
 
@@ -333,7 +333,7 @@ mod edge_cases {
     #[tokio::test]
     async fn test_nested_tag() {
         // #nested/tag
-        let mut doc = ParsedDocument::default();
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("test.md");
         doc.content_hash = "test_nested_tag".into();
 
@@ -342,7 +342,7 @@ mod edge_cases {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         ingestor.ingest(&doc, "test.md").await.unwrap();
 
@@ -370,7 +370,7 @@ mod edge_cases {
     #[tokio::test]
     async fn test_deep_hierarchy_tag() {
         // #multi/level/hierarchy
-        let mut doc = ParsedDocument::default();
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("test.md");
         doc.content_hash = "test_deep_tag".into();
 
@@ -379,7 +379,7 @@ mod edge_cases {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         ingestor.ingest(&doc, "test.md").await.unwrap();
 
@@ -418,7 +418,7 @@ mod edge_cases {
 
     #[tokio::test]
     async fn test_multiple_tags() {
-        let mut doc = ParsedDocument::default();
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("test.md");
         doc.content_hash = "test_multiple_tags".into();
 
@@ -429,7 +429,7 @@ mod edge_cases {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let entity_id = ingestor.ingest(&doc, "test.md").await.unwrap();
 
@@ -458,18 +458,18 @@ mod edge_cases {
         assert_eq!(high.parent_tag_id, Some("tags:priority".to_string()));
 
         // Note: Entity-tag associations are handled separately by kiln_integration,
-        // not by the DocumentIngestor. This test only verifies tag creation.
+        // not by the NoteIngestor. This test only verifies tag creation.
     }
 
     #[tokio::test]
     async fn test_tag_deduplication() {
         // Multiple documents with same tags should reuse existing tags
-        let mut doc1 = ParsedDocument::default();
+        let mut doc1 = ParsedNote::default();
         doc1.path = PathBuf::from("doc1.md");
         doc1.content_hash = "test_dedup_1".into();
         doc1.tags.push(Tag::new("shared", 10));
 
-        let mut doc2 = ParsedDocument::default();
+        let mut doc2 = ParsedNote::default();
         doc2.path = PathBuf::from("doc2.md");
         doc2.content_hash = "test_dedup_2".into();
         doc2.tags.push(Tag::new("shared", 10));
@@ -477,7 +477,7 @@ mod edge_cases {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         // Store tags and ingest both documents
         let entity_id1 = ingestor.ingest(&doc1, "doc1.md").await.unwrap();
@@ -506,20 +506,20 @@ mod edge_cases {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         // Create tag hierarchy: project -> project/ai -> project/ai/nlp
-        let mut doc1 = ParsedDocument::default();
+        let mut doc1 = ParsedNote::default();
         doc1.path = PathBuf::from("doc1.md");
         doc1.content_hash = "hash1".into();
         doc1.tags.push(Tag::new("project", 0));
 
-        let mut doc2 = ParsedDocument::default();
+        let mut doc2 = ParsedNote::default();
         doc2.path = PathBuf::from("doc2.md");
         doc2.content_hash = "hash2".into();
         doc2.tags.push(Tag::new("project/ai", 0));
 
-        let mut doc3 = ParsedDocument::default();
+        let mut doc3 = ParsedNote::default();
         doc3.path = PathBuf::from("doc3.md");
         doc3.content_hash = "hash3".into();
         doc3.tags.push(Tag::new("project/ai/nlp", 0));
@@ -556,19 +556,19 @@ mod edge_cases {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
-        let mut doc1 = ParsedDocument::default();
+        let mut doc1 = ParsedNote::default();
         doc1.path = PathBuf::from("doc1.md");
         doc1.content_hash = "hash1".into();
         doc1.tags.push(Tag::new("project", 0));
 
-        let mut doc2 = ParsedDocument::default();
+        let mut doc2 = ParsedNote::default();
         doc2.path = PathBuf::from("doc2.md");
         doc2.content_hash = "hash2".into();
         doc2.tags.push(Tag::new("project/ai", 0));
 
-        let mut doc3 = ParsedDocument::default();
+        let mut doc3 = ParsedNote::default();
         doc3.path = PathBuf::from("doc3.md");
         doc3.content_hash = "hash3".into();
         doc3.tags.push(Tag::new("project/ai/nlp", 0));
@@ -605,14 +605,14 @@ mod edge_cases {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
-        let mut doc1 = ParsedDocument::default();
+        let mut doc1 = ParsedNote::default();
         doc1.path = PathBuf::from("doc1.md");
         doc1.content_hash = "hash1".into();
         doc1.tags.push(Tag::new("project/ai", 0));
 
-        let mut doc2 = ParsedDocument::default();
+        let mut doc2 = ParsedNote::default();
         doc2.path = PathBuf::from("doc2.md");
         doc2.content_hash = "hash2".into();
         doc2.tags.push(Tag::new("project/ai/nlp", 0));
@@ -640,15 +640,15 @@ mod edge_cases {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         // Only create child tags, no entities with parent tag
-        let mut doc1 = ParsedDocument::default();
+        let mut doc1 = ParsedNote::default();
         doc1.path = PathBuf::from("doc1.md");
         doc1.content_hash = "hash1".into();
         doc1.tags.push(Tag::new("research/ml", 0));
 
-        // Ingest document - tags are automatically associated during ingestion
+        // Ingest note - tags are automatically associated during ingestion
         let entity1 = ingestor.ingest(&doc1, "doc1.md").await.unwrap();
 
         // Search for parent tag that has no direct entities

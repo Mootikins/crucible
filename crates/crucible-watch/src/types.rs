@@ -527,8 +527,8 @@ pub enum FileType {
     Code,
     /// Configuration files (.yaml, .json, .toml, etc.)
     Config,
-    /// Document files (.pdf, .doc, .odt, etc.)
-    Document,
+    /// Note files (.pdf, .doc, .odt, etc.)
+    Note,
     /// Image files (.png, .jpg, .svg, etc.)
     Image,
     /// Audio files (.mp3, .wav, .ogg, etc.)
@@ -576,7 +576,7 @@ impl FileType {
             Some("yaml") | Some("yml") | Some("json") | Some("toml") | Some("ini")
             | Some("cfg") | Some("conf") | Some("xml") | Some("plist") => FileType::Config,
             Some("pdf") | Some("doc") | Some("docx") | Some("odt") | Some("rtf") => {
-                FileType::Document
+                FileType::Note
             }
             Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("svg") | Some("bmp")
             | Some("webp") | Some("ico") => FileType::Image,
@@ -622,7 +622,7 @@ impl FileType {
             FileType::Text => "text",
             FileType::Code => "code",
             FileType::Config => "config",
-            FileType::Document => "document",
+            FileType::Note => "note",
             FileType::Image => "image",
             FileType::Audio => "audio",
             FileType::Video => "video",

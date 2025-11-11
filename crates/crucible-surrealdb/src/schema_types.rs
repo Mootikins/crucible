@@ -48,7 +48,7 @@ impl<T> std::fmt::Display for RecordId<T> {
 // Notes Table
 // ============================================================================
 
-/// A note/document in the knowledge kiln
+/// A note/note in the knowledge kiln
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Note {
     /// Record ID (format: "notes:path/to/file.md")
@@ -62,7 +62,7 @@ pub struct Note {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_hash: Option<String>,
 
-    /// Document title (extracted from frontmatter or first heading)
+    /// Note title (extracted from frontmatter or first heading)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
 
@@ -276,7 +276,7 @@ pub struct Wikilink {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<String>,
 
-    /// Character offset in source document
+    /// Character offset in source note
     pub position: i32,
 
     /// When the link was created
@@ -668,7 +668,7 @@ mod tests {
         let from = RecordId::new("notes", "a.md");
         let to = RecordId::new("notes", "b.md");
         let link = Wikilink::new(from, to, "Link Text", 123)
-            .with_context("This is a link to another document")
+            .with_context("This is a link to another note")
             .with_weight(2.0);
 
         assert_eq!(link.link_text, "Link Text");

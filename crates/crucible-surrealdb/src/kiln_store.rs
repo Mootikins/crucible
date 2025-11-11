@@ -1,4 +1,4 @@
-//! Trait abstraction for kiln document storage operations.
+//! Trait abstraction for kiln note storage operations.
 //!
 //! This module provides the `KilnStore` trait, which defines the minimal interface
 //! needed for storing and retrieving embeddings with metadata. The trait is designed
@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
 
-/// Minimal trait for kiln document storage operations.
+/// Minimal trait for kiln note storage operations.
 ///
 /// This trait provides the minimum interface needed for storing and
 /// retrieving embeddings with metadata. It's designed for testability
@@ -43,16 +43,16 @@ use std::collections::HashMap;
 pub trait KilnStore: Send + Sync {
     // === Core Storage Operations ===
 
-    /// Store an embedding for a document.
+    /// Store an embedding for a note.
     ///
-    /// This is the primary write operation. If a document with the same `file_path`
+    /// This is the primary write operation. If a note with the same `file_path`
     /// already exists, it will be replaced.
     ///
     /// # Arguments
-    /// - `file_path`: Unique identifier for the document (typically relative path)
-    /// - `content`: Full markdown content of the document
+    /// - `file_path`: Unique identifier for the note (typically relative path)
+    /// - `content`: Full markdown content of the note
     /// - `embedding`: Vector embedding (typically 384 or 768 dimensions)
-    /// - `metadata`: Document metadata (title, tags, properties, timestamps)
+    /// - `metadata`: Note metadata (title, tags, properties, timestamps)
     async fn store_embedding(
         &self,
         file_path: &str,
@@ -63,7 +63,7 @@ pub trait KilnStore: Send + Sync {
 
     /// Update metadata without changing embedding.
     ///
-    /// Use this when document metadata changes but content (and thus embedding) remains the same.
+    /// Use this when note metadata changes but content (and thus embedding) remains the same.
     /// More efficient than re-generating and storing the embedding.
     ///
     /// # Returns
@@ -83,7 +83,7 @@ pub trait KilnStore: Send + Sync {
         properties: HashMap<String, Value>,
     ) -> Result<bool>;
 
-    /// Delete a document from the store.
+    /// Delete a note from the store.
     ///
     /// # Returns
     /// `Ok(true)` if deleted, `Ok(false)` if file didn't exist
@@ -91,18 +91,18 @@ pub trait KilnStore: Send + Sync {
 
     // === Retrieval Operations ===
 
-    /// Get embedding data for a document.
+    /// Get embedding data for a note.
     ///
     /// # Returns
     /// `Ok(Some(data))` if found, `Ok(None)` if not found
     async fn get_embedding(&self, file_path: &str) -> Result<Option<EmbeddingData>>;
 
-    /// Check if a document exists in the store.
+    /// Check if a note exists in the store.
     ///
     /// More efficient than `get_embedding` when you only need existence check.
     async fn file_exists(&self, file_path: &str) -> Result<bool>;
 
-    /// List all document file paths in the store.
+    /// List all note file paths in the store.
     ///
     /// Returns paths in arbitrary order (implementation-dependent).
     async fn list_files(&self) -> Result<Vec<String>>;
@@ -296,7 +296,7 @@ impl InMemoryKilnStore {
         Ok(())
     }
 
-    /// Get current document count (for test assertions).
+    /// Get current note count (for test assertions).
     pub fn len(&self) -> usize {
         self.storage.read().map(|s| s.len()).unwrap_or(0)
     }
@@ -538,24 +538,24 @@ impl KilnStore for InMemoryKilnStore {
         let mut failed = 0;
         let mut errors = Vec::new();
 
-        for document in &operation.documents {
-            let embedding_data = EmbeddingData::from(document.clone());
+        for note in &operation.documents {
+            let embedding_data = EmbeddingData::from(note.clone());
             let result = match operation.operation_type {
                 BatchOperationType::Create => self
                     .store_embedding(
-                        &document.file_path,
-                        &document.content,
-                        &document.embedding,
+                        &note.file_path,
+                        &note.content,
+                        &note.embedding,
                         &embedding_data.metadata,
                     )
                     .await
                     .map(|_| ()),
                 BatchOperationType::Update => self
-                    .update_metadata(&document.file_path, &embedding_data.metadata)
+                    .update_metadata(&note.file_path, &embedding_data.metadata)
                     .await
                     .map(|_| ()),
                 BatchOperationType::Delete => {
-                    self.delete_file(&document.file_path).await.map(|_| ())
+                    self.delete_file(&note.file_path).await.map(|_| ())
                 }
             };
 
@@ -563,7 +563,7 @@ impl KilnStore for InMemoryKilnStore {
                 Ok(_) => successful += 1,
                 Err(e) => {
                     failed += 1;
-                    errors.push(format!("{}: {}", document.file_path, e));
+                    errors.push(format!("{}: {}", note.file_path, e));
                 }
             }
         }

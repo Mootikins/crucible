@@ -6,7 +6,7 @@
 //! ## Features
 //!
 //! - **Native Vector Storage**: Efficient storage of embeddings as arrays
-//! - **Graph Relations**: Support for document relationships
+//! - **Graph Relations**: Support for note relationships
 //! - **ACID Transactions**: Full transaction support
 //! - **Live Queries**: Real-time cache updates
 //! - **Schema Flexibility**: Dynamic fields without migrations
@@ -76,7 +76,7 @@ pub use types::{
     DbError,
     DbResult,
     // Legacy embedding types for tests
-    Document,
+    Note,
     EmbeddingData,
     EmbeddingDocument,
     EmbeddingMetadata,
@@ -113,7 +113,7 @@ pub use kiln_scanner::{
 // Kiln pipeline connector exports
 pub use kiln_pipeline_connector::{
     generate_document_id_from_path, get_parsed_documents_from_scan,
-    transform_parsed_document_to_embedding_inputs, BatchProcessingResult, DocumentProcessingResult,
+    transform_parsed_document_to_embedding_inputs, BatchProcessingResult, NoteProcessingResult,
     KilnPipelineConfig, KilnPipelineConnector,
 };
 

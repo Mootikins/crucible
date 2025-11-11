@@ -1,18 +1,18 @@
 //! Embedding Processing Pipeline
 //!
-//! Document processing pipeline for generating and storing vector embeddings.
+//! Note processing pipeline for generating and storing vector embeddings.
 //! Supports bulk processing, incremental updates, and content chunking strategies.
 
 use crate::embedding_config::*;
 use crate::embedding_pool::EmbeddingThreadPool;
 use crate::SurrealClient;
 use anyhow::{anyhow, Result};
-use crucible_core::types::ParsedDocument;
+use crucible_core::types::ParsedNote;
 use std::collections::HashMap;
 use std::time::Instant;
 use tracing::{debug, error, info, warn};
 
-/// Default chunk size for document processing (characters)
+/// Default chunk size for note processing (characters)
 const DEFAULT_CHUNK_SIZE: usize = 1000;
 
 /// Default overlap between chunks (characters)
@@ -103,22 +103,22 @@ impl EmbeddingPipeline {
             let mut processing_tasks = Vec::new();
 
             for document_id in chunk {
-                if let Some(document) = documents.get(document_id) {
-                    // Chunk the document
-                    let chunks = self.chunk_document(document, &config);
+                if let Some(note) = documents.get(document_id) {
+                    // Chunk the note
+                    let chunks = self.chunk_document(note, &config);
 
                     for (chunk_index, chunk_content) in chunks.iter().enumerate() {
                         let chunk_id = format!("{}_{}", document_id, chunk_index);
                         processing_tasks.push((chunk_id.clone(), chunk_content.clone()));
                     }
                 } else {
-                    warn!("Document {} not found in database", document_id);
+                    warn!("Note {} not found in database", document_id);
                     result.failed_count += 1;
 
                     let error = EmbeddingError::new(
                         document_id.clone(),
                         EmbeddingErrorType::DatabaseError,
-                        "Document not found in database".to_string(),
+                        "Note not found in database".to_string(),
                     );
                     result.errors.push(error);
                 }
@@ -153,7 +153,7 @@ impl EmbeddingPipeline {
         Ok(result)
     }
 
-    /// Process a single document incrementally (only if changed)
+    /// Process a single note incrementally (only if changed)
     pub async fn process_document_incremental(
         &self,
         client: &SurrealClient,
@@ -162,26 +162,26 @@ impl EmbeddingPipeline {
         let start_time = Instant::now();
 
         info!(
-            "Starting incremental processing for document {}",
+            "Starting incremental processing for note {}",
             document_id
         );
 
-        // Retrieve document from database
-        let document = self.retrieve_document(client, document_id).await?;
-        let document = match document {
+        // Retrieve note from database
+        let note = self.retrieve_document(client, document_id).await?;
+        let note = match note {
             Some(doc) => doc,
             None => {
-                warn!("Document {} not found in database", document_id);
-                return Err(anyhow!("Document not found: {}", document_id));
+                warn!("Note {} not found in database", document_id);
+                return Err(anyhow!("Note not found: {}", document_id));
             }
         };
 
-        // Chunk the document first
+        // Chunk the note first
         let config = self.thread_pool.model_type().await;
-        let chunks = self.chunk_document(&document, &config);
+        let chunks = self.chunk_document(&note, &config);
 
         debug!(
-            "Document {} chunked into {} parts for processing",
+            "Note {} chunked into {} parts for processing",
             document_id,
             chunks.len()
         );
@@ -215,7 +215,7 @@ impl EmbeddingPipeline {
             }
         }
 
-        // Delete chunks that no longer exist (document got shorter)
+        // Delete chunks that no longer exist (note got shorter)
         for (&existing_pos, _) in existing_chunk_hashes.iter() {
             if existing_pos >= chunks.len() {
                 chunks_to_delete.push(existing_pos);
@@ -225,17 +225,17 @@ impl EmbeddingPipeline {
         // If no chunks changed, skip processing
         if chunks_to_process.is_empty() && chunks_to_delete.is_empty() {
             info!(
-                "Document {} unchanged (all {} chunks match), skipping processing",
+                "Note {} unchanged (all {} chunks match), skipping processing",
                 document_id,
                 chunks.len()
             );
             return Ok(IncrementalProcessingResult::skipped(
-                document.content_hash.clone(),
+                note.content_hash.clone(),
             ));
         }
 
         info!(
-            "Document {}: {} chunks to re-embed, {} to delete (out of {} total)",
+            "Note {}: {} chunks to re-embed, {} to delete (out of {} total)",
             document_id,
             chunks_to_process.len(),
             chunks_to_delete.len(),
@@ -302,21 +302,21 @@ impl EmbeddingPipeline {
             }
         }
 
-        // Update document's last processed timestamp
+        // Update note's last processed timestamp
         self.update_document_processed_timestamp(client, document_id)
             .await?;
 
         let processing_time = start_time.elapsed();
 
         info!(
-            "Incremental processing complete for document {}: {} embeddings created in {:?}",
+            "Incremental processing complete for note {}: {} embeddings created in {:?}",
             document_id, embeddings_created, processing_time
         );
 
         Ok(IncrementalProcessingResult::processed(
             embeddings_created,
             embeddings_updated,
-            document.content_hash.clone(),
+            note.content_hash.clone(),
             processing_time,
         ))
     }
@@ -348,7 +348,7 @@ impl EmbeddingPipeline {
                 }
                 Err(e) => {
                     error!(
-                        "Failed to process document {} incrementally: {}",
+                        "Failed to process note {} incrementally: {}",
                         document_id, e
                     );
                     // In batch processing, we might want to continue with other documents
@@ -372,30 +372,30 @@ impl EmbeddingPipeline {
         &self,
         client: &SurrealClient,
         document_ids: &[String],
-    ) -> Result<HashMap<String, ParsedDocument>> {
+    ) -> Result<HashMap<String, ParsedNote>> {
         let mut documents = HashMap::new();
 
         for document_id in document_ids {
-            if let Ok(Some(document)) = self.retrieve_document(client, document_id).await {
-                documents.insert(document_id.clone(), document);
+            if let Ok(Some(note)) = self.retrieve_document(client, document_id).await {
+                documents.insert(document_id.clone(), note);
             }
         }
 
         Ok(documents)
     }
 
-    /// Retrieve a single document from database
+    /// Retrieve a single note from database
     async fn retrieve_document(
         &self,
         _client: &SurrealClient,
         _document_id: &str,
-    ) -> Result<Option<ParsedDocument>> {
+    ) -> Result<Option<ParsedNote>> {
         // This would be implemented in the kiln_integration module
-        // For now, return None to indicate document not found
+        // For now, return None to indicate note not found
         Ok(None)
     }
 
-    /// Store document embedding in database
+    /// Store note embedding in database
     async fn store_document_embedding(
         &self,
         _client: &SurrealClient,
@@ -403,7 +403,7 @@ impl EmbeddingPipeline {
     ) -> Result<()> {
         // This would store the embedding in the database
         debug!(
-            "Storing embedding for document {}, chunk {} ({} dimensions)",
+            "Storing embedding for note {}, chunk {} ({} dimensions)",
             embedding.document_id,
             embedding.chunk_id.as_deref().unwrap_or("main"),
             embedding.dimensions()
@@ -411,24 +411,24 @@ impl EmbeddingPipeline {
         Ok(())
     }
 
-    /// Update document's processed timestamp
+    /// Update note's processed timestamp
     async fn update_document_processed_timestamp(
         &self,
         _client: &SurrealClient,
         _document_id: &str,
     ) -> Result<()> {
-        // This would update the document's metadata
-        debug!("Updating processed timestamp for document {}", _document_id);
+        // This would update the note's metadata
+        debug!("Updating processed timestamp for note {}", _document_id);
         Ok(())
     }
 
-    /// Chunk document content for processing
+    /// Chunk note content for processing
     fn chunk_document(
         &self,
-        document: &ParsedDocument,
+        note: &ParsedNote,
         _model_type: &EmbeddingModel,
     ) -> Vec<String> {
-        let content = &document.content.plain_text;
+        let content = &note.content.plain_text;
 
         // For empty content, return no chunks
         if content.is_empty() {
@@ -473,8 +473,8 @@ impl EmbeddingPipeline {
         }
 
         debug!(
-            "Document {} chunked into {} parts (chunk size: {}, overlap: {})",
-            document.path.display(),
+            "Note {} chunked into {} parts (chunk size: {}, overlap: {})",
+            note.path.display(),
             chunks.len(),
             self.chunk_size,
             self.chunk_overlap
@@ -483,7 +483,7 @@ impl EmbeddingPipeline {
         chunks
     }
 
-    /// Process a single document with retry logic
+    /// Process a single note with retry logic
     pub async fn process_document_with_retry(
         &self,
         client: &SurrealClient,
@@ -501,7 +501,7 @@ impl EmbeddingPipeline {
                         Vec::new(),
                     ))
                 } else {
-                    // Document was skipped, which is a form of success
+                    // Note was skipped, which is a form of success
                     Ok(RetryProcessingResult::success(
                         1,
                         start_time.elapsed(),
@@ -537,7 +537,7 @@ pub async fn process_documents_with_embeddings(
         .await
 }
 
-/// Process a single document incrementally
+/// Process a single note incrementally
 pub async fn process_document_incremental(
     thread_pool: &EmbeddingThreadPool,
     client: &SurrealClient,
@@ -561,7 +561,7 @@ pub async fn process_documents_incremental(
         .await
 }
 
-/// Process a document with retry logic
+/// Process a note with retry logic
 pub async fn process_document_with_retry(
     thread_pool: &EmbeddingThreadPool,
     client: &SurrealClient,
@@ -573,23 +573,23 @@ pub async fn process_document_with_retry(
         .await
 }
 
-/// Update document content in database
+/// Update note content in database
 pub async fn update_document_content(
     _client: &SurrealClient,
     _document_id: &str,
-    _document: &ParsedDocument,
+    _document: &ParsedNote,
 ) -> Result<()> {
     // This would be implemented in the kiln_integration module
-    info!("Updating content for document {}", _document_id);
+    info!("Updating content for note {}", _document_id);
     Ok(())
 }
 
-/// Get document embeddings from database
+/// Get note embeddings from database
 pub async fn get_document_embeddings(
     _client: &SurrealClient,
     _document_id: &str,
 ) -> Result<Vec<DocumentEmbedding>> {
-    // This would query the database for document embeddings
+    // This would query the database for note embeddings
     // For now, return empty vector
     Ok(Vec::new())
 }
@@ -631,18 +631,18 @@ mod tests {
         let thread_pool = EmbeddingThreadPool::new(config).await.unwrap();
         let pipeline = EmbeddingPipeline::new(thread_pool);
 
-        let mut document = ParsedDocument::new(std::path::PathBuf::from("/test/doc.md"));
+        let mut note = ParsedNote::new(std::path::PathBuf::from("/test/doc.md"));
 
         // Short content - should be single chunk
-        document.content.plain_text = "Short content".to_string();
-        let chunks = pipeline.chunk_document(&document, &EmbeddingModel::LocalStandard);
+        note.content.plain_text = "Short content".to_string();
+        let chunks = pipeline.chunk_document(&note, &EmbeddingModel::LocalStandard);
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0], "Short content");
 
         // Long content - should be multiple chunks
-        let long_content = "This is a very long document that should be chunked. ".repeat(50);
-        document.content.plain_text = long_content.clone();
-        let chunks = pipeline.chunk_document(&document, &EmbeddingModel::LocalStandard);
+        let long_content = "This is a very long note that should be chunked. ".repeat(50);
+        note.content.plain_text = long_content.clone();
+        let chunks = pipeline.chunk_document(&note, &EmbeddingModel::LocalStandard);
         assert!(chunks.len() > 1);
 
         // Check that chunks overlap and cover the content
@@ -650,8 +650,8 @@ mod tests {
         assert!(combined_length >= long_content.len()); // Due to overlap
 
         // Empty content - should return empty
-        document.content.plain_text = String::new();
-        let chunks = pipeline.chunk_document(&document, &EmbeddingModel::LocalStandard);
+        note.content.plain_text = String::new();
+        let chunks = pipeline.chunk_document(&note, &EmbeddingModel::LocalStandard);
         assert_eq!(chunks.len(), 0);
     }
 
@@ -704,7 +704,7 @@ mod tests {
             .process_document_incremental(&client, "nonexistent_doc")
             .await;
 
-        // Should fail because document doesn't exist
+        // Should fail because note doesn't exist
         assert!(result.is_err());
 
         thread_pool.shutdown().await.unwrap();

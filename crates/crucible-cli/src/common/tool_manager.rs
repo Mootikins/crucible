@@ -221,7 +221,7 @@ impl ToolRegistry {
             || tool_name.starts_with("list_")
         {
             "kiln".to_string()
-        } else if tool_name.contains("document")
+        } else if tool_name.contains("note")
             || tool_name.contains("content")
             || tool_name.contains("filename")
             || tool_name.contains("sync")

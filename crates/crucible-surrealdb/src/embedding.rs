@@ -1,7 +1,7 @@
 //! Vector Embedding Module
 //!
 //! This module provides comprehensive vector embedding functionality for the Crucible
-//! knowledge management system. It includes thread pool management, document processing
+//! knowledge management system. It includes thread pool management, note processing
 //! pipelines, and database integration for semantic search and retrieval.
 
 // Re-export key types and functions from other embedding modules

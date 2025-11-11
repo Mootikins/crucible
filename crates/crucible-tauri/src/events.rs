@@ -20,8 +20,8 @@ pub fn emit_document_created(app_handle: &tauri::AppHandle, document_id: String,
     let event = DocumentCreatedEvent { document_id, title };
 
     app_handle
-        .emit("document-created", &event)
-        .expect("Failed to emit document-created event");
+        .emit("note-created", &event)
+        .expect("Failed to emit note-created event");
 }
 
 #[allow(dead_code)]
@@ -36,6 +36,6 @@ pub fn emit_document_updated(
     };
 
     app_handle
-        .emit("document-updated", &event)
-        .expect("Failed to emit document-updated event");
+        .emit("note-updated", &event)
+        .expect("Failed to emit note-updated event");
 }

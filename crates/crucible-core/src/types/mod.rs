@@ -6,9 +6,9 @@
 //! ## Organization
 //!
 //! Domain types are currently defined in their respective modules:
-//! - Parser types: `parser::types` (ParsedDocument, Wikilink, Tag, etc.)
-//! - Database types: `database` (Record, QueryResult, Node, Edge, Document, etc.)
-//! - Document types: `document` (DocumentNode, ViewportState)
+//! - Parser types: `parser::types` (ParsedNote, Wikilink, Tag, etc.)
+//! - Database types: `database` (Record, QueryResult, Node, Edge, Note, etc.)
+//! - Note types: `note` (NoteNode, ViewportState)
 //! - Property types: `properties` (PropertyMap, PropertyValue)
 //! - Hashing types: `hashing` (FileHash, BlockHash, HashAlgorithm, etc.)
 //!
@@ -18,8 +18,8 @@ pub mod hashing;
 
 // Re-export parser domain types
 pub use crucible_parser::types::{
-    CodeBlock, DocumentContent, Frontmatter, FrontmatterFormat, Heading, ListBlock, ListItem,
-    ListType, Paragraph, ParsedDocument, Tag, TaskStatus, Wikilink,
+    CodeBlock, NoteContent, Frontmatter, FrontmatterFormat, Heading, ListBlock, ListItem,
+    ListType, Paragraph, ParsedNote, Tag, TaskStatus, Wikilink,
 };
 
 // Re-export database domain types
@@ -32,8 +32,8 @@ pub use crate::database::{
     DbResult,
     // Graph types
     Direction,
-    // Document types
-    Document,
+    // Note types
+    Note,
     DocumentId,
     DocumentMetadata,
     Edge,
@@ -45,8 +45,8 @@ pub use crate::database::{
     RecordId,
 };
 
-// Re-export document types
-pub use crate::document::{DocumentNode, ViewportState};
+// Re-export note types
+pub use crate::note::{NoteNode, ViewportState};
 
 // Re-export property types
 pub use crate::properties::{PropertyMap, PropertyValue};
