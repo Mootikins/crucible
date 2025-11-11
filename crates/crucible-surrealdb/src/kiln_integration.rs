@@ -326,6 +326,7 @@ pub async fn create_wikilink_edges(
                 "heading_ref": wikilink.heading_ref,
                 "block_ref": wikilink.block_ref,
             }),
+            content_category: "note".to_string(),
             created_at: chrono::Utc::now(),
         };
 
@@ -456,6 +457,7 @@ async fn create_backlink_relation(
         source: "parser".to_string(),
         position: Some(position as i32),
         metadata,
+        content_category: "note".to_string(),
         created_at: chrono::Utc::now(),
     };
 
@@ -876,6 +878,7 @@ pub async fn create_embed_relationships(
                 "heading_ref": wikilink.heading_ref,
                 "block_ref": wikilink.block_ref,
             }),
+            content_category: "note".to_string(),
             created_at: chrono::Utc::now(),
         };
         store.upsert_relation(&relation).await?;
