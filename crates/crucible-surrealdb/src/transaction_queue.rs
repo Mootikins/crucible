@@ -33,23 +33,23 @@ impl TransactionTimestamp {
 /// Simplified to 3 CRUD operations - the consumer figures out what actually changed
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DatabaseTransaction {
-    /// Create a new document (intelligent consumer will handle all sub-operations)
+    /// Create a new note (intelligent consumer will handle all sub-operations)
     Create {
         transaction_id: String,
-        document: crucible_core::types::ParsedDocument,
+        note: crucible_core::types::ParsedNote,
         kiln_root: PathBuf,
         timestamp: TransactionTimestamp,
     },
 
-    /// Update an existing document (consumer detects what changed via diffing)
+    /// Update an existing note (consumer detects what changed via diffing)
     Update {
         transaction_id: String,
-        document: crucible_core::types::ParsedDocument,
+        note: crucible_core::types::ParsedNote,
         kiln_root: PathBuf,
         timestamp: TransactionTimestamp,
     },
 
-    /// Delete a document entirely
+    /// Delete a note entirely
     Delete {
         transaction_id: String,
         document_id: String,
@@ -90,22 +90,22 @@ impl DatabaseTransaction {
     /// Simplified CRUD approach - minimal dependencies since consumer handles all sub-operations
     pub fn depends_on(&self, other: &DatabaseTransaction) -> bool {
         match (self, other) {
-            // Update/Delete operations on the same document should be ordered
+            // Update/Delete operations on the same note should be ordered
             (
-                DatabaseTransaction::Update { document: _, .. }
+                DatabaseTransaction::Update { note: _, .. }
                 | DatabaseTransaction::Delete { document_id: _, .. },
-                DatabaseTransaction::Create { document: _, .. }
-                | DatabaseTransaction::Update { document: _, .. },
+                DatabaseTransaction::Create { note: _, .. }
+                | DatabaseTransaction::Update { note: _, .. },
             ) => {
                 let self_id = match self {
-                    DatabaseTransaction::Update { document, .. } => document.path.clone(),
+                    DatabaseTransaction::Update { note, .. } => note.path.clone(),
                     DatabaseTransaction::Delete { document_id, .. } => document_id.clone().into(),
                     _ => return false,
                 };
 
                 let other_id = match other {
-                    DatabaseTransaction::Create { document, .. } => document.path.clone(),
-                    DatabaseTransaction::Update { document, .. } => document.path.clone(),
+                    DatabaseTransaction::Create { note, .. } => note.path.clone(),
+                    DatabaseTransaction::Update { note, .. } => note.path.clone(),
                     _ => return false,
                 };
 
@@ -448,7 +448,7 @@ mod tests {
         // Create a test transaction
         let transaction = DatabaseTransaction::Create {
             transaction_id: "test-1".to_string(),
-            document: crucible_core::types::ParsedDocument::new(PathBuf::from("test.md")),
+            note: crucible_core::types::ParsedNote::new(PathBuf::from("test.md")),
             kiln_root: PathBuf::from("/test"),
             timestamp: TransactionTimestamp::now(),
         };
@@ -475,7 +475,7 @@ mod tests {
     fn test_crud_transaction_methods() {
         let create_tx = DatabaseTransaction::Create {
             transaction_id: "create-1".to_string(),
-            document: crucible_core::types::ParsedDocument::new(PathBuf::from("test.md")),
+            note: crucible_core::types::ParsedNote::new(PathBuf::from("test.md")),
             kiln_root: PathBuf::from("/test"),
             timestamp: TransactionTimestamp::now(),
         };
@@ -485,7 +485,7 @@ mod tests {
 
         let update_tx = DatabaseTransaction::Update {
             transaction_id: "update-1".to_string(),
-            document: crucible_core::types::ParsedDocument::new(PathBuf::from("test.md")),
+            note: crucible_core::types::ParsedNote::new(PathBuf::from("test.md")),
             kiln_root: PathBuf::from("/test"),
             timestamp: TransactionTimestamp::now(),
         };

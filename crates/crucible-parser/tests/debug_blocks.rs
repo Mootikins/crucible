@@ -17,7 +17,7 @@ More text.
     let parser = crucible_parser::CrucibleParser::with_block_processing();
     let parsed = parser.parse_content(content, Path::new("test.md")).await.unwrap();
 
-    println!("Parsed document:");
+    println!("Parsed note:");
     println!("  - path: {:?}", parsed.path);
     println!("  - headings count: {}", parsed.content.headings.len());
     println!("  - block_hashes count: {}", parsed.block_hashes.len());

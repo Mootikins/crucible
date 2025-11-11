@@ -1,4 +1,4 @@
-use crucible_core::DocumentNode;
+use crucible_core::NoteNode;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -30,36 +30,36 @@ pub async fn search_documents(
 #[tauri::command]
 pub async fn get_document(_path: String) -> std::result::Result<serde_json::Value, String> {
     // MCP functionality has been removed - please use crucible-services instead
-    Err("Document retrieval functionality has been moved to crucible-services".to_string())
+    Err("Note retrieval functionality has been moved to crucible-services".to_string())
 }
 
 #[tauri::command]
 pub async fn create_document(
     request: CreateDocumentRequest,
-) -> std::result::Result<DocumentNode, String> {
-    let document = DocumentNode::new(request.title.clone(), request.content.clone());
+) -> std::result::Result<NoteNode, String> {
+    let note = NoteNode::new(request.title.clone(), request.content.clone());
 
-    // MCP functionality has been removed - document creation is now handled by crucible-services
-    // For now, just return the document without persisting
-    Ok(document)
+    // MCP functionality has been removed - note creation is now handled by crucible-services
+    // For now, just return the note without persisting
+    Ok(note)
 }
 
 #[tauri::command]
 pub async fn update_document(_path: String, _content: String) -> std::result::Result<(), String> {
     // MCP functionality has been removed - please use crucible-services instead
-    Err("Document update functionality has been moved to crucible-services".to_string())
+    Err("Note update functionality has been moved to crucible-services".to_string())
 }
 
 #[tauri::command]
 pub async fn delete_document(_path: String) -> std::result::Result<(), String> {
-    // TODO: Implement document deletion
+    // TODO: Implement note deletion
     Err("Not implemented".to_string())
 }
 
 #[tauri::command]
 pub async fn list_documents() -> std::result::Result<Vec<String>, String> {
     // MCP functionality has been removed - please use crucible-services instead
-    Err("Document listing functionality has been moved to crucible-services".to_string())
+    Err("Note listing functionality has been moved to crucible-services".to_string())
 }
 
 #[tauri::command]

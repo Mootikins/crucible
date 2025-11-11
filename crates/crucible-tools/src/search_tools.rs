@@ -157,7 +157,7 @@ pub fn get_index_stats() -> ToolFunction {
                 }),
                 json!({
                     "name": "metadata_index",
-                    "type": "document",
+                    "type": "note",
                     "size_bytes": 2097152,
                     "documents": 1250,
                     "last_updated": "2024-01-20T15:30:00Z",

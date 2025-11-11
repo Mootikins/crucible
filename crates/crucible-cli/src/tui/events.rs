@@ -90,7 +90,7 @@ pub struct StatusUpdate {
     /// Database backend type (e.g., "SurrealDB")
     pub db_type: Option<String>,
 
-    /// Total document count
+    /// Total note count
     pub doc_count: Option<u64>,
 
     /// Database size in bytes
@@ -115,7 +115,7 @@ impl StatusUpdate {
         self
     }
 
-    /// Set document count
+    /// Set note count
     pub fn with_doc_count(mut self, count: u64) -> Self {
         self.doc_count = Some(count);
         self

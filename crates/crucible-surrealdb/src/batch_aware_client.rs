@@ -40,19 +40,19 @@ pub trait BatchAwareRead {
     async fn get_batch_status(&self) -> crate::consistency::FlushStatus;
 }
 
-/// Document state from database including consistency information
+/// Note state from database including consistency information
 #[derive(Debug, Clone)]
 pub struct FileDocumentState {
     /// Path to the file
     pub path: String,
 
-    /// Document content hash
+    /// Note content hash
     pub file_hash: Option<String>,
 
-    /// Document metadata (from database)
+    /// Note metadata (from database)
     pub metadata: Option<serde_json::Value>,
 
-    /// Whether the document exists in database
+    /// Whether the note exists in database
     pub exists: bool,
 
     /// Pending operations affecting this file
@@ -277,7 +277,7 @@ impl BatchAwareSurrealClient {
         &self,
         file_path: &Path,
     ) -> Result<Option<FileDocumentState>> {
-        // Query for document by path
+        // Query for note by path
         let sql = "SELECT * FROM notes WHERE path = $path";
         let params = vec![serde_json::json!({"path": file_path.to_string_lossy()})];
 

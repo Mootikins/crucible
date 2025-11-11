@@ -845,7 +845,7 @@ impl Repl {
         storage: &SurrealClient,
         kiln_path: &std::path::Path,
     ) -> Result<()> {
-        use crucible_core::ParsedDocument;
+        use crucible_core::ParsedNote;
         use crucible_surrealdb::kiln_integration::store_parsed_document;
 
         // Scan for markdown files in test-kiln
@@ -864,8 +864,8 @@ impl Repl {
         for file_path in files {
             let content = std::fs::read_to_string(&file_path)?;
 
-            // Create parsed document
-            let mut doc = ParsedDocument::new(file_path.clone());
+            // Create parsed note
+            let mut doc = ParsedNote::new(file_path.clone());
             doc.content.plain_text = content.clone();
             doc.parsed_at = chrono::Utc::now();
             doc.content_hash = format!(
@@ -877,10 +877,10 @@ impl Repl {
             );
             doc.file_size = content.len() as u64;
 
-            // Store document in database
+            // Store note in database
             store_parsed_document(storage, &doc, kiln_path)
                 .await
-                .map_err(|e| anyhow::anyhow!("Failed to store document {:?}: {}", file_path, e))?;
+                .map_err(|e| anyhow::anyhow!("Failed to store note {:?}: {}", file_path, e))?;
         }
 
         Ok(())

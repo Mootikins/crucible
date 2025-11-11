@@ -20,7 +20,7 @@ use crate::embedding_pool::EmbeddingThreadPool;
 use crate::hash_lookup::{lookup_file_hashes_batch_cached, BatchLookupConfig, HashLookupCache};
 use crate::kiln_integration::*;
 use crate::SurrealClient;
-use crucible_core::types::ParsedDocument;
+use crucible_core::types::ParsedNote;
 
 /// Configuration for kiln scanning operations
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -978,7 +978,7 @@ impl KilnScanner {
         file_info: &KilnFileInfo,
     ) -> Result<()> {
         // Parse the file
-        let document = parse_file_to_document(&file_info.path).await?;
+        let note = parse_file_to_document(&file_info.path).await?;
 
         // Get kiln root from state (set during scan_kiln_directory)
         let kiln_root = self
@@ -987,25 +987,25 @@ impl KilnScanner {
             .as_ref()
             .ok_or_else(|| anyhow!("Kiln path not set in scanner state"))?;
 
-        // Store the document
-        let doc_id = store_parsed_document(client, &document, kiln_root).await?;
+        // Store the note
+        let doc_id = store_parsed_document(client, &note, kiln_root).await?;
 
         // Create relationships
         if self.config.process_wikilinks {
-            create_wikilink_edges(client, &doc_id, &document, kiln_root).await?;
+            create_wikilink_edges(client, &doc_id, &note, kiln_root).await?;
         }
 
         if self.config.process_embeds {
-            create_embed_relationships(client, &doc_id, &document, kiln_root).await?;
+            create_embed_relationships(client, &doc_id, &note, kiln_root).await?;
         }
 
-        // Tags are now automatically stored during document ingestion in DocumentIngestor
+        // Tags are now automatically stored during note ingestion in NoteIngestor
 
         // Process embeddings if enabled
         if self.config.enable_embeddings {
             if let Some(_embedding_pool) = &self.embedding_pool {
                 // For now, just log that embedding processing would happen
-                debug!("Would process embeddings for document: {}", doc_id);
+                debug!("Would process embeddings for note: {}", doc_id);
             }
         }
 
@@ -1124,14 +1124,14 @@ impl KilnScanner {
     }
 }
 
-/// Parse a file to ParsedDocument
-pub async fn parse_file_to_document(file_path: &Path) -> Result<ParsedDocument> {
+/// Parse a file to ParsedNote
+pub async fn parse_file_to_document(file_path: &Path) -> Result<ParsedNote> {
     use crucible_core::parser::{MarkdownParser, PulldownParser};
 
     let parser = PulldownParser::new();
-    let document = parser.parse_file(file_path).await?;
+    let note = parser.parse_file(file_path).await?;
 
-    Ok(document)
+    Ok(note)
 }
 
 #[cfg(test)]
@@ -1155,7 +1155,7 @@ mod tests {
         // Create test markdown files
         tokio::fs::write(
             test_path.join("test1.md"),
-            "# Test Document\n\nContent here.",
+            "# Test Note\n\nContent here.",
         )
         .await
         .unwrap();
@@ -1168,7 +1168,7 @@ mod tests {
         tokio::fs::create_dir(&subdir).await.unwrap();
         tokio::fs::write(
             subdir.join("test3.md"),
-            "# Nested Document\n\nNested content.",
+            "# Nested Note\n\nNested content.",
         )
         .await
         .unwrap();
@@ -1263,9 +1263,9 @@ mod tests {
         let test_file = temp_dir.path().join("test.md");
 
         // Create test markdown file
-        let content = r#"# Test Document
+        let content = r#"# Test Note
 
-This is a test document with some **bold** text and *italic* text.
+This is a test note with some **bold** text and *italic* text.
 
 ## Section 1
 
@@ -1278,18 +1278,18 @@ More content here.
         tokio::fs::write(&test_file, content).await.unwrap();
 
         // Test parsing
-        let document = parse_file_to_document(&test_file).await.unwrap();
+        let note = parse_file_to_document(&test_file).await.unwrap();
 
         // The title extraction might work differently than expected, so let's just check it has some content
-        let title = document.title();
-        assert!(!title.is_empty(), "Document should have a title");
-        println!("Document title: {}", title);
+        let title = note.title();
+        assert!(!title.is_empty(), "Note should have a title");
+        println!("Note title: {}", title);
 
-        assert!(document
+        assert!(note
             .content
             .plain_text
-            .contains("This is a test document"));
-        assert!(!document.wikilinks.is_empty() || document.wikilinks.is_empty());
+            .contains("This is a test note"));
+        assert!(!note.wikilinks.is_empty() || note.wikilinks.is_empty());
         // Should work either way
     }
 
@@ -1389,13 +1389,13 @@ More content here.
         // Create test markdown files
         tokio::fs::write(
             test_path.join("test1.md"),
-            "# Test Document 1\n\nContent here.",
+            "# Test Note 1\n\nContent here.",
         )
         .await
         .unwrap();
         tokio::fs::write(
             test_path.join("test2.md"),
-            "# Test Document 2\n\nDifferent content here.",
+            "# Test Note 2\n\nDifferent content here.",
         )
         .await
         .unwrap();

@@ -1,7 +1,7 @@
 //! Block Storage Operations for Content-Addressed Storage
 //!
 //! This module provides high-level operations for storing and retrieving blocks
-//! in the content-addressed storage system with document awareness.
+//! in the content-addressed storage system with note awareness.
 //!
 //! The storage is generic over the hashing algorithm, allowing for flexible
 //! algorithm selection (BLAKE3, SHA256, etc.) following the Open/Closed Principle.
@@ -16,17 +16,17 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-/// Block storage interface for document-aware operations
+/// Block storage interface for note-aware operations
 #[async_trait]
 pub trait BlockStorage: Send + Sync {
-    /// Store blocks for a document
+    /// Store blocks for a note
     async fn store_document_blocks(
         &self,
         document_id: &str,
         blocks: &[ASTBlock],
     ) -> StorageResult<()>;
 
-    /// Get all blocks for a document
+    /// Get all blocks for a note
     async fn get_document_blocks(&self, document_id: &str) -> StorageResult<Vec<StoredBlock>>;
 
     /// Find documents containing a specific block hash
@@ -35,27 +35,27 @@ pub trait BlockStorage: Send + Sync {
     /// Get block content by hash
     async fn get_block_by_hash(&self, block_hash: &str) -> StorageResult<Option<StoredBlock>>;
 
-    /// Delete all blocks for a document
+    /// Delete all blocks for a note
     async fn delete_document_blocks(&self, document_id: &str) -> StorageResult<()>;
 
     /// Get deduplication statistics
     async fn get_deduplication_stats(&self) -> StorageResult<DeduplicationStats>;
 }
 
-/// A stored block with document context
+/// A stored block with note context
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredBlock {
-    /// Document identifier (file path)
+    /// Note identifier (file path)
     pub document_id: String,
-    /// Block index within the document
+    /// Block index within the note
     pub block_index: usize,
     /// Content hash of the block
     pub block_hash: String,
     /// Block type for context
     pub block_type: String,
-    /// Start position in source document
+    /// Start position in source note
     pub start_offset: usize,
-    /// End position in source document
+    /// End position in source note
     pub end_offset: usize,
     /// Block content
     pub block_content: String,
@@ -390,7 +390,7 @@ mod tests {
     async fn test_store_and_get_document_blocks() {
         let storage = BlockStorageSurrealDB::new_memory(Blake3Algorithm).await.unwrap();
 
-        let document_id = "test/document.md";
+        let document_id = "test/note.md";
         let blocks = vec![
             create_test_ast_block("# Test Heading", ASTBlockType::Heading, 0, 13),
             create_test_ast_block("Test paragraph content.", ASTBlockType::Paragraph, 14, 38),

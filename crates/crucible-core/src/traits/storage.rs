@@ -47,7 +47,7 @@ pub enum StorageError {
 /// Unified storage abstraction
 ///
 /// This trait defines the essential operations that CrucibleCore needs from its storage layer.
-/// It combines relational, graph, and document concerns into the methods that Core actually uses.
+/// It combines relational, graph, and note concerns into the methods that Core actually uses.
 ///
 /// ## Design Rationale
 ///
@@ -156,7 +156,7 @@ impl QueryResult {
     }
 }
 
-/// Database record (row/document)
+/// Database record (row/note)
 ///
 /// Represents a single result record with an optional ID and field data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,7 +164,7 @@ pub struct Record {
     /// Optional record identifier
     pub id: Option<RecordId>,
 
-    /// Record field data (column values or document fields)
+    /// Record field data (column values or note fields)
     pub data: HashMap<String, serde_json::Value>,
 }
 

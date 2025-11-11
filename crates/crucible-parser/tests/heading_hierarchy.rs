@@ -4,7 +4,7 @@
 //! and depth to blocks based on heading hierarchy.
 
 use crucible_parser::{BlockExtractor, MarkdownParserImplementation};
-use crucible_parser::types::ParsedDocument;
+use crucible_parser::types::ParsedNote;
 use std::path::{Path, PathBuf};
 
 #[tokio::test]
@@ -172,8 +172,8 @@ Content in section 2.
 
 #[tokio::test]
 async fn test_blocks_without_headings() {
-    // Document preamble before any headings
-    let content = r#"This is the document preamble.
+    // Note preamble before any headings
+    let content = r#"This is the note preamble.
 
 More preamble content.
 

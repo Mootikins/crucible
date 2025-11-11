@@ -191,7 +191,7 @@ impl Reranker for FastEmbedReranker {
             .await
             .map_err(|e| anyhow!("Failed to spawn reranking task: {}", e))??;
 
-        // Combine rerank scores with original document data
+        // Combine rerank scores with original note data
         let mut results: Vec<RerankResult> = reranked
             .into_iter()
             .enumerate()

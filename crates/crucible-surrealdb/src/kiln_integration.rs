@@ -1,19 +1,19 @@
 //! Kiln Integration Module
 //!
 //! This module provides the integration layer between the parser system and SurrealDB.
-//! It implements the bridge between ParsedDocument structures and the database schema.
+//! It implements the bridge between ParsedNote structures and the database schema.
 //! Includes comprehensive vector embedding support for semantic search and processing.
 
 use crate::embedding_config::*;
 use crate::eav_graph::{
-    apply_eav_graph_schema, DocumentIngestor, EntityRecord as EAVGraphEntityRecord,
+    apply_eav_graph_schema, NoteIngestor, EntityRecord as EAVGraphEntityRecord,
     EAVGraphStore, RecordId as EAVGraphRecordId, Relation, RelationRecord,
 };
 use crate::types::{DatabaseStats, Record};
 use crate::SurrealClient;
 use anyhow::{anyhow, Result};
 use crucible_core::parser::Wikilink;
-use crucible_core::types::{FrontmatterFormat, ParsedDocument, Tag};
+use crucible_core::types::{FrontmatterFormat, ParsedNote, Tag};
 use serde_json::json;
 use std::path::{Component, Path, PathBuf};
 use tracing::{debug, error, info, warn};
@@ -25,28 +25,28 @@ pub async fn initialize_kiln_schema(client: &SurrealClient) -> Result<()> {
     Ok(())
 }
 
-/// Store a ParsedDocument in the database
+/// Store a ParsedNote in the database
 ///
 /// # Arguments
 /// * `client` - SurrealDB client
-/// * `doc` - The parsed document to store
+/// * `doc` - The parsed note to store
 /// * `kiln_root` - Root path of the kiln (for generating relative IDs)
 ///
 /// # Returns
 /// The record ID (e.g., "entities:note:Projects/file.md")
 pub async fn store_parsed_document(
     client: &SurrealClient,
-    doc: &ParsedDocument,
+    doc: &ParsedNote,
     kiln_root: &std::path::Path,
 ) -> Result<String> {
     let store = EAVGraphStore::new(client.clone());
-    let ingestor = DocumentIngestor::new(&store);
+    let ingestor = NoteIngestor::new(&store);
     let relative_path = resolve_relative_path(&doc.path, kiln_root);
     let entity_id = ingestor.ingest(doc, &relative_path).await?;
     let record_id = format!("entities:{}", entity_id.id);
 
     info!(
-        "Stored document {} with {} wikilinks and {} tags (relations pending)",
+        "Stored note {} with {} wikilinks and {} tags (relations pending)",
         record_id,
         doc.wikilinks.len(),
         doc.tags.len()
@@ -212,13 +212,13 @@ async fn relate_embedding_record(
     Ok(())
 }
 
-/// Retrieve a ParsedDocument from the database by ID
-pub async fn retrieve_parsed_document(client: &SurrealClient, id: &str) -> Result<ParsedDocument> {
+/// Retrieve a ParsedNote from the database by ID
+pub async fn retrieve_parsed_document(client: &SurrealClient, id: &str) -> Result<ParsedNote> {
     let normalized = normalize_document_id(id);
     if let Some(doc) = fetch_document_by_id(client, &normalized).await? {
         Ok(doc)
     } else {
-        Err(anyhow::anyhow!("Document not found: {}", normalized))
+        Err(anyhow::anyhow!("Note not found: {}", normalized))
     }
 }
 
@@ -273,11 +273,11 @@ pub async fn get_embedding_index_metadata(
     }
 }
 
-/// Create wikilink relationships for a document
+/// Create wikilink relationships for a note
 pub async fn create_wikilink_edges(
     client: &SurrealClient,
     doc_id: &str,
-    doc: &ParsedDocument,
+    doc: &ParsedNote,
     kiln_root: &Path,
 ) -> Result<()> {
     if doc.wikilinks.is_empty() {
@@ -357,7 +357,7 @@ pub(crate) fn parse_entity_record_id(doc_id: &str) -> Result<EAVGraphRecordId<EA
     let normalized = normalize_document_id(doc_id);
     let (_, id) = normalized
         .split_once(':')
-        .ok_or_else(|| anyhow!("invalid document id '{}'", doc_id))?;
+        .ok_or_else(|| anyhow!("invalid note id '{}'", doc_id))?;
     Ok(EAVGraphRecordId::new("entities", id))
 }
 
@@ -380,7 +380,7 @@ fn relation_record_id(
 
 
 fn resolve_wikilink_target(
-    doc: &ParsedDocument,
+    doc: &ParsedNote,
     kiln_root: &Path,
     wikilink: &Wikilink,
 ) -> Option<String> {
@@ -494,7 +494,7 @@ fn embed_type_from_metadata(value: &serde_json::Value) -> String {
 async fn fetch_document_by_id(
     client: &SurrealClient,
     record_id: &str,
-) -> Result<Option<ParsedDocument>> {
+) -> Result<Option<ParsedNote>> {
     let normalized = normalize_document_id(record_id);
     let (table, id) = match normalized.split_once(':') {
         Some((table, id)) => (table.to_string(), id.to_string()),
@@ -516,7 +516,7 @@ async fn query_relation_documents(
     client: &SurrealClient,
     doc_id: &str,
     relation_type: &str,
-) -> Result<Vec<ParsedDocument>> {
+) -> Result<Vec<ParsedNote>> {
     let entity = parse_entity_record_id(doc_id)?;
     let sql = r#"
         SELECT out AS target
@@ -577,7 +577,7 @@ async fn find_entity_id_by_title(
 async fn query_embedding_sources_for_entity(
     client: &SurrealClient,
     entity_id: &EAVGraphRecordId<EAVGraphEntityRecord>,
-) -> Result<Vec<ParsedDocument>> {
+) -> Result<Vec<ParsedNote>> {
     let pairs = fetch_embed_relation_pairs(client).await?;
     let target_key = entity_id.id.clone();
     let mut documents = Vec::new();
@@ -596,7 +596,7 @@ async fn query_embedding_sources_for_entity(
 async fn query_embedding_sources_by_title(
     client: &SurrealClient,
     target_title: &str,
-) -> Result<Vec<ParsedDocument>> {
+) -> Result<Vec<ParsedNote>> {
     let pairs = fetch_embed_relation_pairs(client).await?;
     let mut documents = Vec::new();
 
@@ -649,7 +649,7 @@ fn record_body(reference: &str) -> &str {
 pub async fn get_linked_documents(
     client: &SurrealClient,
     doc_id: &str,
-) -> Result<Vec<ParsedDocument>> {
+) -> Result<Vec<ParsedNote>> {
     query_relation_documents(client, doc_id, "wikilink").await
 }
 
@@ -657,7 +657,7 @@ pub async fn get_linked_documents(
 pub async fn get_documents_by_tag(
     client: &SurrealClient,
     tag: &str,
-) -> Result<Vec<ParsedDocument>> {
+) -> Result<Vec<ParsedNote>> {
     // Tags are stored using the path directly (e.g., "project/ai/nlp")
     let tag_path = tag.trim().trim_start_matches('#');
     let sql = r#"
@@ -685,7 +685,7 @@ pub async fn get_documents_by_tag(
 
 // Helper functions
 
-async fn convert_record_to_parsed_document(record: &Record) -> Result<ParsedDocument> {
+async fn convert_record_to_parsed_document(record: &Record) -> Result<ParsedNote> {
     let data_map = record.data.get("data").and_then(|value| value.as_object());
 
     let path = data_map
@@ -693,7 +693,7 @@ async fn convert_record_to_parsed_document(record: &Record) -> Result<ParsedDocu
         .or_else(|| record.data.get("path").and_then(|v| v.as_str()))
         .unwrap_or("unknown.md");
 
-    let mut doc = ParsedDocument::new(PathBuf::from(path));
+    let mut doc = ParsedNote::new(PathBuf::from(path));
 
     doc.content.plain_text = data_map
         .and_then(|obj| obj.get("content").and_then(|v| v.as_str()))
@@ -823,11 +823,11 @@ fn normalize_tag_name(tag: &str) -> String {
 // EMBED RELATIONSHIP FUNCTIONS
 // =============================================================================
 
-/// Create embed relationships for a document
+/// Create embed relationships for a note
 pub async fn create_embed_relationships(
     client: &SurrealClient,
     doc_id: &str,
-    doc: &ParsedDocument,
+    doc: &ParsedNote,
     kiln_root: &Path,
 ) -> Result<()> {
     let embeds: Vec<(usize, &Wikilink)> = doc
@@ -897,15 +897,15 @@ pub async fn create_embed_relationships(
     Ok(())
 }
 
-/// Get documents embedded by a document
+/// Get documents embedded by a note
 pub async fn get_embedded_documents(
     client: &SurrealClient,
     doc_id: &str,
-) -> Result<Vec<ParsedDocument>> {
+) -> Result<Vec<ParsedNote>> {
     query_relation_documents(client, doc_id, "embed").await
 }
 
-/// Get embed metadata for a document
+/// Get embed metadata for a note
 pub async fn get_embed_metadata(
     client: &SurrealClient,
     doc_id: &str,
@@ -981,7 +981,7 @@ pub async fn get_embedded_documents_by_type(
     client: &SurrealClient,
     doc_id: &str,
     embed_type: &str,
-) -> Result<Vec<ParsedDocument>> {
+) -> Result<Vec<ParsedNote>> {
     let entity = parse_entity_record_id(doc_id)?;
     let sql = r#"
         SELECT out, metadata
@@ -1025,11 +1025,11 @@ pub async fn get_embedded_documents_by_type(
 pub async fn get_wikilinked_documents(
     client: &SurrealClient,
     doc_id: &str,
-) -> Result<Vec<ParsedDocument>> {
+) -> Result<Vec<ParsedNote>> {
     query_relation_documents(client, doc_id, "wikilink").await
 }
 
-/// Get wikilink relations for a document
+/// Get wikilink relations for a note
 pub async fn get_wikilink_relations(
     client: &SurrealClient,
     doc_id: &str,
@@ -1083,7 +1083,7 @@ pub async fn get_wikilink_relations(
     Ok(relations)
 }
 
-/// Get embed relations for a document
+/// Get embed relations for a note
 pub async fn get_embed_relations(
     client: &SurrealClient,
     doc_id: &str,
@@ -1136,11 +1136,11 @@ pub async fn get_embed_relations(
     Ok(relations)
 }
 
-/// Get documents that embed a specific target document
+/// Get documents that embed a specific target note
 pub async fn get_embedding_documents(
     client: &SurrealClient,
     target_title: &str,
-) -> Result<Vec<ParsedDocument>> {
+) -> Result<Vec<ParsedNote>> {
     if let Some(entity_id) = find_entity_id_by_title(client, target_title).await? {
         let docs = query_embedding_sources_for_entity(client, &entity_id).await?;
         if !docs.is_empty() {
@@ -1278,7 +1278,7 @@ pub struct EmbedRelation {
 // EMBEDDING INTEGRATION FUNCTIONS
 // =============================================================================
 
-/// Store document embedding in database
+/// Store note embedding in database
 pub async fn store_document_embedding(
     client: &SurrealClient,
     embedding: &DocumentEmbedding,
@@ -1301,7 +1301,7 @@ pub async fn store_document_embedding(
     .await?;
 
     debug!(
-        "Stored embedding for document {} via graph relations",
+        "Stored embedding for note {} via graph relations",
         embedding.document_id
     );
 
@@ -1315,11 +1315,11 @@ pub async fn store_document_embedding(
 ///
 /// # Arguments
 /// * `client` - SurrealDB client
-/// * `note_id` - Document record ID (legacy values are normalized automatically)
+/// * `note_id` - Note record ID (legacy values are normalized automatically)
 /// * `vector` - Embedding vector
 /// * `embedding_model` - Model name used for embedding
 /// * `chunk_size` - Size of the text chunk
-/// * `chunk_position` - Position of this chunk in the document
+/// * `chunk_position` - Position of this chunk in the note
 /// * `dimensions` - Optional vector dimensions (for compatibility checking)
 /// * `chunk_content` - Optional chunk content (for hash computation)
 ///
@@ -1373,11 +1373,11 @@ pub async fn store_embedding(
 ///
 /// # Arguments
 /// * `client` - SurrealDB client
-/// * `note_id` - Document record ID (legacy `notes:` ids are normalized automatically)
+/// * `note_id` - Note record ID (legacy `notes:` ids are normalized automatically)
 /// * `vector` - Embedding vector
 /// * `embedding_model` - Model name used for embedding
 /// * `chunk_size` - Size of the text chunk
-/// * `chunk_position` - Position of this chunk in the document
+/// * `chunk_position` - Position of this chunk in the note
 /// * `logical_chunk_id` - Optional logical chunk identifier (e.g., "chunk-0", "chunk-1")
 /// * `dimensions` - Optional vector dimensions (for compatibility checking)
 ///
@@ -1429,7 +1429,7 @@ pub async fn store_embedding_with_chunk_id(
     Ok(chunk_id)
 }
 
-/// Get document embeddings from database
+/// Get note embeddings from database
 pub async fn get_document_embeddings(
     client: &SurrealClient,
     document_id: &str,
@@ -1444,7 +1444,7 @@ pub async fn get_document_embeddings(
     let result = client
         .query(&sql, &[])
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to query document embeddings via graph: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to query note embeddings via graph: {}", e))?;
 
     let mut embeddings = Vec::new();
 
@@ -1475,7 +1475,7 @@ pub async fn get_document_embeddings(
     Ok(embeddings)
 }
 
-/// Clear all embeddings for a document (deletes graph edges and embedding records)
+/// Clear all embeddings for a note (deletes graph edges and embedding records)
 pub async fn clear_document_embeddings(client: &SurrealClient, document_id: &str) -> Result<()> {
     // Convert document_id to note_id format
     let note_id = if document_id.starts_with("notes:") {
@@ -1519,21 +1519,21 @@ pub async fn clear_document_embeddings(client: &SurrealClient, document_id: &str
     }
 
     debug!(
-        "Cleared {} embeddings and edges for document {}",
+        "Cleared {} embeddings and edges for note {}",
         embedding_ids.len(),
         document_id
     );
     Ok(())
 }
 
-/// Get existing chunk hashes for a document
+/// Get existing chunk hashes for a note
 ///
 /// Returns a HashMap mapping chunk_position -> chunk_hash for existing embeddings
 pub async fn get_document_chunk_hashes(
     client: &SurrealClient,
     doc_id: &str,
 ) -> Result<std::collections::HashMap<usize, String>> {
-    debug!("Getting chunk hashes for document: {}", doc_id);
+    debug!("Getting chunk hashes for note: {}", doc_id);
 
     let normalized = normalize_document_id(doc_id);
     let scope = chunk_namespace(&normalized);
@@ -1566,7 +1566,7 @@ pub async fn get_document_chunk_hashes(
     }
 
     debug!(
-        "Found {} chunk hashes for document {}",
+        "Found {} chunk hashes for note {}",
         chunk_hashes.len(),
         doc_id
     );
@@ -1574,7 +1574,7 @@ pub async fn get_document_chunk_hashes(
     Ok(chunk_hashes)
 }
 
-/// Delete specific chunks by position for a document
+/// Delete specific chunks by position for a note
 ///
 /// This is used for incremental re-embedding to delete only changed chunks
 pub async fn delete_document_chunks(
@@ -1587,7 +1587,7 @@ pub async fn delete_document_chunks(
     }
 
     debug!(
-        "Deleting {} chunks for document: {}",
+        "Deleting {} chunks for note: {}",
         chunk_positions.len(),
         doc_id
     );
@@ -1612,7 +1612,7 @@ pub async fn delete_document_chunks(
         }
     }
 
-    debug!("Deleted {} chunks for document {}", total_deleted, doc_id);
+    debug!("Deleted {} chunks for note {}", total_deleted, doc_id);
 
     Ok(total_deleted)
 }
@@ -1626,7 +1626,7 @@ pub async fn get_database_stats(client: &SurrealClient) -> Result<DatabaseStats>
     let documents_result = client
         .query(documents_sql, &[])
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to query document count: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to query note count: {}", e))?;
     let embeddings_result = client
         .query(embeddings_sql, &[])
         .await
@@ -1686,26 +1686,26 @@ pub async fn semantic_search(
         embedding_provider.provider_name()
     );
 
-    // Retrieve all document embeddings from database
+    // Retrieve all note embeddings from database
     let stored_embeddings = match get_all_document_embeddings(client).await {
         Ok(embeddings) => embeddings,
         Err(e) => {
-            error!("Failed to retrieve document embeddings: {}", e);
-            return Err(anyhow!("Failed to retrieve document embeddings: {}", e));
+            error!("Failed to retrieve note embeddings: {}", e);
+            return Err(anyhow!("Failed to retrieve note embeddings: {}", e));
         }
     };
 
     if stored_embeddings.is_empty() {
-        debug!("No document embeddings found in database");
+        debug!("No note embeddings found in database");
         return Ok(Vec::new());
     }
 
     debug!(
-        "Retrieved {} document embeddings for similarity calculation",
+        "Retrieved {} note embeddings for similarity calculation",
         stored_embeddings.len()
     );
 
-    // Calculate cosine similarity between query and all document embeddings
+    // Calculate cosine similarity between query and all note embeddings
     let mut similarity_results = Vec::new();
     for doc_embedding in stored_embeddings {
         // Only calculate similarity if dimensions match
@@ -1714,7 +1714,7 @@ pub async fn semantic_search(
             similarity_results.push((doc_embedding.document_id.clone(), similarity));
         } else {
             debug!(
-                "Skipping document {} due to dimension mismatch (query: {}, doc: {})",
+                "Skipping note {} due to dimension mismatch (query: {}, doc: {})",
                 doc_embedding.document_id,
                 query_embedding.len(),
                 doc_embedding.vector.len()
@@ -1806,12 +1806,12 @@ pub async fn semantic_search_with_reranking(
             reranker.model_info().name
         );
 
-        // Fetch full document content for reranking
+        // Fetch full note content for reranking
         // Optimized: Use indexed document_id field for O(1) lookups
         let mut documents = Vec::new();
         let mut failed_retrievals = 0;
         eprintln!(
-            "DEBUG RERANK: Starting optimized document retrieval for {} results",
+            "DEBUG RERANK: Starting optimized note retrieval for {} results",
             initial_results.len()
         );
 
@@ -1823,21 +1823,21 @@ pub async fn semantic_search_with_reranking(
                 Ok(Some(doc)) => {
                     let text = doc.content.plain_text.clone();
                     eprintln!(
-                        "DEBUG RERANK: Retrieved document with {} chars of text",
+                        "DEBUG RERANK: Retrieved note with {} chars of text",
                         text.len()
                     );
                     documents.push((normalized_id, text, *vec_score));
                 }
                 Ok(None) => {
                     eprintln!(
-                        "DEBUG RERANK: Document not found for document_id: {}",
+                        "DEBUG RERANK: Note not found for document_id: {}",
                         document_id
                     );
                     failed_retrievals += 1;
                 }
                 Err(e) => {
                     eprintln!(
-                        "DEBUG RERANK: Failed to fetch document {}: {}",
+                        "DEBUG RERANK: Failed to fetch note {}: {}",
                         document_id, e
                     );
                     failed_retrievals += 1;
@@ -1880,14 +1880,14 @@ pub async fn semantic_search_with_reranking(
 // EMBEDDING HELPER FUNCTIONS
 // =============================================================================
 
-/// Retrieve all document embeddings from the database
+/// Retrieve all note embeddings from the database
 pub async fn get_all_document_embeddings(client: &SurrealClient) -> Result<Vec<DocumentEmbedding>> {
     let sql = "SELECT * FROM embeddings";
 
     let result = client
         .query(sql, &[])
         .await
-        .map_err(|e| anyhow!("Failed to retrieve document embeddings: {}", e))?;
+        .map_err(|e| anyhow!("Failed to retrieve note embeddings: {}", e))?;
 
     let mut embeddings = Vec::new();
     for record in result.records {
@@ -2146,7 +2146,7 @@ mod tests {
         // Create a test note
         let kiln_root = PathBuf::from("/test/kiln");
         let doc_path = PathBuf::from("/test/kiln/Projects/test_file.md");
-        let mut doc = ParsedDocument::new(doc_path.clone());
+        let mut doc = ParsedNote::new(doc_path.clone());
         doc.content.plain_text = "Test content for embedding".to_string();
         doc.content_hash = "test_hash_123".to_string();
 
@@ -2226,7 +2226,7 @@ mod tests {
         // Create a test note
         let kiln_root = PathBuf::from("/test/kiln");
         let doc_path = PathBuf::from("/test/kiln/Projects/large_file.md");
-        let mut doc = ParsedDocument::new(doc_path.clone());
+        let mut doc = ParsedNote::new(doc_path.clone());
         doc.content.plain_text = "Large test content".to_string();
         doc.content_hash = "test_hash_456".to_string();
 
@@ -2284,7 +2284,7 @@ mod tests {
         apply_eav_graph_schema(&client).await.unwrap();
 
         let kiln_root = PathBuf::from("/vault");
-        let mut doc = ParsedDocument::new(kiln_root.join("projects/sample.md"));
+        let mut doc = ParsedNote::new(kiln_root.join("projects/sample.md"));
         doc.content_hash = "tag-hash-1".into();
         doc.tags.push(Tag::new("project/crucible", 0));
         doc.tags.push(Tag::new("design/ui", 0));
@@ -2293,7 +2293,7 @@ mod tests {
             .await
             .unwrap();
 
-        // Tags are now automatically stored during document ingestion
+        // Tags are now automatically stored during note ingestion
 
         let tags = client.query("SELECT * FROM tags", &[]).await.unwrap();
         assert_eq!(tags.records.len(), 4);
@@ -2315,13 +2315,13 @@ mod tests {
         apply_eav_graph_schema(&client).await.unwrap();
         let kiln_root = PathBuf::from("/vault");
 
-        let mut doc = ParsedDocument::new(kiln_root.join("projects/source.md"));
+        let mut doc = ParsedNote::new(kiln_root.join("projects/source.md"));
         doc.content_hash = "wikihash".into();
         doc.content.plain_text = "Scenario with wikilinks".into();
         doc.wikilinks.push(Wikilink::new("TargetNote", 5));
         doc.wikilinks.push(Wikilink::new("../Shared/OtherDoc", 15));
 
-        let mut target_doc = ParsedDocument::new(kiln_root.join("projects/TargetNote.md"));
+        let mut target_doc = ParsedNote::new(kiln_root.join("projects/TargetNote.md"));
         target_doc.content_hash = "targethash".into();
         target_doc.content.plain_text = "Target note".into();
         store_parsed_document(&client, &target_doc, &kiln_root)
@@ -2385,12 +2385,12 @@ mod tests {
         apply_eav_graph_schema(&client).await.unwrap();
         let kiln_root = PathBuf::from("/vault");
 
-        let mut doc = ParsedDocument::new(kiln_root.join("media/source.md"));
+        let mut doc = ParsedNote::new(kiln_root.join("media/source.md"));
         doc.content_hash = "embedhash".into();
         doc.content.plain_text = "Doc with embeds".into();
         doc.wikilinks.push(Wikilink::embed("Assets/Diagram", 3));
 
-        let mut target_doc = ParsedDocument::new(kiln_root.join("media/Assets/Diagram.md"));
+        let mut target_doc = ParsedNote::new(kiln_root.join("media/Assets/Diagram.md"));
         target_doc.content_hash = "diagramhash".into();
         target_doc.content.plain_text = "Diagram content".into();
         store_parsed_document(&client, &target_doc, &kiln_root)
@@ -2495,7 +2495,7 @@ mod tests {
     }
 }
 
-/// Generate a document ID from path and kiln root
+/// Generate a note ID from path and kiln root
 pub fn generate_document_id(
     document_path: &std::path::Path,
     kiln_root: &std::path::Path,

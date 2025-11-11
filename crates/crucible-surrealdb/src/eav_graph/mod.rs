@@ -19,7 +19,7 @@ pub use adapter::{
     core_properties_to_surreal, core_property_to_surreal, entity_id_to_string,
     string_to_entity_id, surreal_properties_to_core, surreal_property_to_core,
 };
-pub use ingest::DocumentIngestor;
+pub use ingest::NoteIngestor;
 pub use schema::apply_eav_graph_schema;
 pub use store::EAVGraphStore;
 pub use types::*;

@@ -2,7 +2,7 @@
 //!
 //! This module provides reranking capabilities that can be applied after initial
 //! vector search to improve result relevance. Rerankers use cross-attention models
-//! that better understand query-document relationships compared to vector similarity.
+//! that better understand query-note relationships compared to vector similarity.
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -14,9 +14,9 @@ pub use fastembed::FastEmbedReranker;
 /// Result from a reranking operation
 #[derive(Debug, Clone)]
 pub struct RerankResult {
-    /// Document identifier
+    /// Note identifier
     pub document_id: String,
-    /// Document text content
+    /// Note text content
     pub text: String,
     /// Reranking score (higher is more relevant)
     pub score: f64,
@@ -88,7 +88,7 @@ mod tests {
     fn test_rerank_result_creation() {
         let result = RerankResult {
             document_id: "doc123".to_string(),
-            text: "Test document".to_string(),
+            text: "Test note".to_string(),
             score: 0.95,
             original_index: 5,
         };

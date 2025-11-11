@@ -3,7 +3,7 @@
 //! This module provides trait abstractions for different database models:
 //! - RelationalDB: SQL-like operations with tables, joins, and aggregations
 //! - GraphDB: Graph operations with nodes, edges, and traversals
-//! - DocumentDB: Document operations with collections, search, and aggregations
+//! - DocumentDB: Note operations with collections, search, and aggregations
 //!
 //! These traits allow the same underlying database (like SurrealDB) to be used
 //! through different data access patterns, enabling evaluation of which model
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // Re-export common database types from existing modules
-pub use crate::document::DocumentNode;
+pub use crate::note::NoteNode;
 pub use crate::properties::{PropertyMap, PropertyValue};
 
 /// Common result type for database operations
@@ -205,9 +205,9 @@ pub trait GraphDB: Send + Sync {
 // DOCUMENT DATABASE TRAIT
 // ==============================================================================
 
-/// Document database operations trait
+/// Note database operations trait
 ///
-/// Provides document operations with collections, flexible schemas, search,
+/// Provides note operations with collections, flexible schemas, search,
 /// and aggregations. Best for content management, search, and analytics.
 #[async_trait]
 pub trait DocumentDB: Send + Sync {
@@ -220,13 +220,13 @@ pub trait DocumentDB: Send + Sync {
     /// List all collections
     async fn list_collections(&self) -> DbResult<Vec<String>>;
 
-    /// Create a document in a collection
-    async fn create_document(&self, collection: &str, document: Document) -> DbResult<DocumentId>;
+    /// Create a note in a collection
+    async fn create_document(&self, collection: &str, note: Note) -> DbResult<DocumentId>;
 
-    /// Get a document by its ID
-    async fn get_document(&self, collection: &str, id: &DocumentId) -> DbResult<Option<Document>>;
+    /// Get a note by its ID
+    async fn get_document(&self, collection: &str, id: &DocumentId) -> DbResult<Option<Note>>;
 
-    /// Update a document (partial update)
+    /// Update a note (partial update)
     async fn update_document(
         &self,
         collection: &str,
@@ -234,15 +234,15 @@ pub trait DocumentDB: Send + Sync {
         updates: DocumentUpdates,
     ) -> DbResult<()>;
 
-    /// Replace a document completely
+    /// Replace a note completely
     async fn replace_document(
         &self,
         collection: &str,
         id: &DocumentId,
-        document: Document,
+        note: Note,
     ) -> DbResult<()>;
 
-    /// Delete a document
+    /// Delete a note
     async fn delete_document(&self, collection: &str, id: &DocumentId) -> DbResult<()>;
 
     /// Query documents with filtering, sorting, and pagination
@@ -279,7 +279,7 @@ pub trait DocumentDB: Send + Sync {
     async fn insert_documents(
         &self,
         collection: &str,
-        documents: Vec<Document>,
+        documents: Vec<Note>,
     ) -> DbResult<BatchResult>;
 
     /// Count documents matching a filter
@@ -718,7 +718,7 @@ pub struct Subgraph {
 // DOCUMENT TYPES
 // ==============================================================================
 
-/// Document identifier
+/// Note identifier
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct DocumentId(pub String);
 
@@ -728,14 +728,14 @@ impl std::fmt::Display for DocumentId {
     }
 }
 
-/// Document schema (optional)
+/// Note schema (optional)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentSchema {
     pub fields: Vec<FieldDefinition>,
     pub validation: Option<ValidationRules>,
 }
 
-/// Field definition in document schema
+/// Field definition in note schema
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldDefinition {
     pub name: String,
@@ -744,7 +744,7 @@ pub struct FieldDefinition {
     pub index: Option<bool>,
 }
 
-/// Document field types
+/// Note field types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DocumentFieldType {
     String,
@@ -766,15 +766,15 @@ pub struct ValidationRules {
     pub custom_rules: HashMap<String, serde_json::Value>,
 }
 
-/// Document
+/// Note
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Document {
+pub struct Note {
     pub id: Option<DocumentId>,
     pub content: serde_json::Value,
     pub metadata: DocumentMetadata,
 }
 
-/// Document metadata
+/// Note metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentMetadata {
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -785,7 +785,7 @@ pub struct DocumentMetadata {
     pub collection: Option<String>,
 }
 
-/// Document query operations
+/// Note query operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentQuery {
     pub collection: String,
@@ -796,7 +796,7 @@ pub struct DocumentQuery {
     pub skip: Option<u32>,
 }
 
-/// Document filter
+/// Note filter
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DocumentFilter {
     And(Vec<DocumentFilter>),
@@ -843,14 +843,14 @@ pub enum DocumentFilter {
     },
 }
 
-/// Document sort specification
+/// Note sort specification
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentSort {
     pub field: String,
     pub direction: OrderDirection,
 }
 
-/// Document updates (partial updates)
+/// Note updates (partial updates)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentUpdates {
     pub set: Option<HashMap<String, serde_json::Value>>,
@@ -887,7 +887,7 @@ pub struct SearchResult {
     pub snippet: Option<String>,
 }
 
-/// Aggregation pipeline for document analytics
+/// Aggregation pipeline for note analytics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AggregationPipeline {
     pub stages: Vec<AggregationStage>,
@@ -934,7 +934,7 @@ pub struct GroupOperation {
     pub alias: Option<String>,
 }
 
-/// Result of document aggregation
+/// Result of note aggregation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AggregationResult {
     pub results: Vec<serde_json::Value>,

@@ -1,7 +1,7 @@
 //! Traits for pipeline output sinks
 
 use super::error::SinkResult;
-use crate::parser::ParsedDocument;
+use crate::parser::ParsedNote;
 use async_trait::async_trait;
 
 /// Trait for pipeline output destinations
@@ -28,10 +28,10 @@ use async_trait::async_trait;
 /// and only return errors for fatal conditions that require pipeline attention.
 #[async_trait]
 pub trait OutputSink: Send + Sync {
-    /// Process a parsed document
+    /// Process a parsed note
     ///
     /// This is the main entry point for writing documents. Implementations should:
-    /// - Validate the document
+    /// - Validate the note
     /// - Transform as needed for destination
     /// - Buffer writes if appropriate
     /// - Handle transient errors with retry
@@ -45,7 +45,7 @@ pub trait OutputSink: Send + Sync {
     ///
     /// This method should be fast (<10ms for buffered writes). Slow operations
     /// should be batched and flushed separately.
-    async fn write(&self, doc: ParsedDocument) -> SinkResult<()>;
+    async fn write(&self, doc: ParsedNote) -> SinkResult<()>;
 
     /// Flush buffered writes to destination
     ///

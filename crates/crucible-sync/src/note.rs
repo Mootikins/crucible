@@ -1,4 +1,4 @@
-//! Document handling with Yrs CRDT integration
+//! Note handling with Yrs CRDT integration
 //!
 //! This module provides a wrapper around Yrs documents to handle
 //! CRDT operations, updates, and content management.
@@ -10,9 +10,9 @@ use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::Encode;
 use yrs::{Doc, GetString, ReadTxn, Text, Transact, Update};
 
-/// Error types for document operations
+/// Error types for note operations
 #[derive(Error, Debug)]
-pub enum DocumentError {
+pub enum NoteError {
     #[error("Yrs error: {0}")]
     Yrs(String),
 
@@ -23,15 +23,15 @@ pub enum DocumentError {
     InvalidUpdate(String),
 }
 
-/// A document wrapper around Yrs CRDT
+/// A note wrapper around Yrs CRDT
 #[derive(Clone)]
-pub struct Document {
+pub struct Note {
     doc: Arc<RwLock<Doc>>,
     id: String,
 }
 
-impl Document {
-    /// Create a new document with the given ID
+impl Note {
+    /// Create a new note with the given ID
     pub fn new(id: impl Into<String>) -> Self {
         let doc = Doc::new();
         let text = doc.get_or_insert_text("content");
@@ -49,13 +49,13 @@ impl Document {
         }
     }
 
-    /// Get the document ID
+    /// Get the note ID
     pub fn id(&self) -> &str {
         &self.id
     }
 
     /// Insert text at the specified position
-    pub async fn insert_text(&self, index: u32, text: &str) -> Result<(), DocumentError> {
+    pub async fn insert_text(&self, index: u32, text: &str) -> Result<(), NoteError> {
         let doc = self.doc.read().await;
         let text_elem = doc.get_or_insert_text("content");
         let mut txn = doc.transact_mut();
@@ -65,7 +65,7 @@ impl Document {
     }
 
     /// Delete text in the specified range
-    pub async fn delete_text(&self, index: u32, length: u32) -> Result<(), DocumentError> {
+    pub async fn delete_text(&self, index: u32, length: u32) -> Result<(), NoteError> {
         let doc = self.doc.read().await;
         let text_elem = doc.get_or_insert_text("content");
 
@@ -97,11 +97,11 @@ impl Document {
         text_elem.get_string(&txn)
     }
 
-    /// Apply an update to the document
-    pub async fn apply_update(&self, update: Vec<u8>) -> Result<(), DocumentError> {
+    /// Apply an update to the note
+    pub async fn apply_update(&self, update: Vec<u8>) -> Result<(), NoteError> {
         let doc = self.doc.read().await;
         let mut txn = doc.transact_mut();
-        let update = Update::decode_v1(&update).map_err(|e| DocumentError::Yrs(e.to_string()))?;
+        let update = Update::decode_v1(&update).map_err(|e| NoteError::Yrs(e.to_string()))?;
         let _ = txn.apply_update(update); // Result intentionally ignored - apply_update returns ()
         txn.commit();
         Ok(())
@@ -111,7 +111,7 @@ impl Document {
     pub async fn get_updates_since(
         &self,
         state_vector: Vec<u8>,
-    ) -> Result<Vec<Vec<u8>>, DocumentError> {
+    ) -> Result<Vec<Vec<u8>>, NoteError> {
         let doc = self.doc.read().await;
         let txn = doc.transact();
 
@@ -123,7 +123,7 @@ impl Document {
         }
 
         let sv = yrs::StateVector::decode_v1(&state_vector)
-            .map_err(|e| DocumentError::Yrs(e.to_string()))?;
+            .map_err(|e| NoteError::Yrs(e.to_string()))?;
         let updates = txn.encode_diff_v1(&sv);
         Ok(vec![updates])
     }
@@ -142,14 +142,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_document_creation() {
-        let doc = Document::new("test-doc");
+        let doc = Note::new("test-doc");
         assert_eq!(doc.id(), "test-doc");
         assert_eq!(doc.get_content().await, "");
     }
 
     #[tokio::test]
     async fn test_insert_text() {
-        let doc = Document::new("test-doc");
+        let doc = Note::new("test-doc");
         doc.insert_text(0, "Hello").await.unwrap();
         assert_eq!(doc.get_content().await, "Hello");
 
@@ -159,7 +159,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_text() {
-        let doc = Document::new("test-doc");
+        let doc = Note::new("test-doc");
         doc.insert_text(0, "Hello, World").await.unwrap();
 
         doc.delete_text(5, 2).await.unwrap(); // Delete ", "
@@ -168,7 +168,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_state_vector_updates() {
-        let doc1 = Document::new("test-doc");
+        let doc1 = Note::new("test-doc");
         doc1.insert_text(0, "Hello").await.unwrap();
 
         let sv = doc1.get_state_vector().await;
@@ -176,7 +176,7 @@ mod tests {
         // but our implementation returns the current state as an update when given empty SV
         // This is expected behavior for our sync use case
         let updates = doc1.get_updates_since(sv.clone()).await.unwrap();
-        // The update contains the current document state, which is fine for sync
+        // The update contains the current note state, which is fine for sync
 
         // Apply more changes
         doc1.insert_text(5, ", World").await.unwrap();

@@ -1,17 +1,17 @@
 //! Main synchronization orchestrator
 //!
 //! This module provides the main SyncInstance that coordinates
-//! document operations, transport, and synchronization.
+//! note operations, transport, and synchronization.
 
 use crate::transport::{MemoryTransport, Transport};
-use crate::{Document, SyncError, SyncResult};
+use crate::{Note, SyncError, SyncResult};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// A sync instance that manages document synchronization
+/// A sync instance that manages note synchronization
 pub struct SyncInstance {
-    document: Document,
+    note: Note,
     #[allow(dead_code)]
     transport: Arc<RwLock<dyn Transport>>,
     peers: Arc<RwLock<HashMap<String, Arc<dyn Transport>>>>,
@@ -20,68 +20,68 @@ pub struct SyncInstance {
 impl SyncInstance {
     /// Create a new sync instance with in-memory transport
     pub async fn new(document_id: impl Into<String>) -> SyncResult<Self> {
-        let document = Document::new(document_id);
+        let note = Note::new(document_id);
         let transport: Arc<RwLock<dyn Transport>> = Arc::new(RwLock::new(MemoryTransport::new()));
 
         Ok(Self {
-            document,
+            note,
             transport,
             peers: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
-    /// Get the document ID
+    /// Get the note ID
     pub fn id(&self) -> &str {
-        self.document.id()
+        self.note.id()
     }
 
-    /// Insert text into the document
+    /// Insert text into the note
     pub async fn insert_text(&self, index: u32, text: &str) -> SyncResult<()> {
-        self.document.insert_text(index, text).await?;
+        self.note.insert_text(index, text).await?;
         self.broadcast_update().await?;
         Ok(())
     }
 
-    /// Delete text from the document
+    /// Delete text from the note
     pub async fn delete_text(&self, index: u32, length: u32) -> SyncResult<()> {
-        self.document.delete_text(index, length).await?;
+        self.note.delete_text(index, length).await?;
         self.broadcast_update().await?;
         Ok(())
     }
 
-    /// Get the current document content
+    /// Get the current note content
     pub async fn get_text(&self) -> String {
-        self.document.get_content().await
+        self.note.get_content().await
     }
 
     /// Sync with another instance (direct connection)
     pub async fn sync_with(&self, other: &SyncInstance) -> SyncResult<()> {
         // Only sync documents with the same ID
-        if self.document.id() != other.document.id() {
-            // Different document IDs - no sync should occur
+        if self.note.id() != other.note.id() {
+            // Different note IDs - no sync should occur
             return Ok(());
         }
 
         // Get our current state vector
-        let our_sv = self.document.get_state_vector().await;
+        let our_sv = self.note.get_state_vector().await;
 
         // Get updates from other instance
-        let their_updates = other.document.get_updates_since(our_sv).await?;
+        let their_updates = other.note.get_updates_since(our_sv).await?;
 
         // Apply their updates
         for update in their_updates {
-            self.document.apply_update(update).await?;
+            self.note.apply_update(update).await?;
         }
 
         // Get their state vector
-        let their_sv = other.document.get_state_vector().await;
+        let their_sv = other.note.get_state_vector().await;
 
         // Get our updates they don't have
-        let our_updates = self.document.get_updates_since(their_sv).await?;
+        let our_updates = self.note.get_updates_since(their_sv).await?;
 
         // Apply our updates to them
         for update in our_updates {
-            other.document.apply_update(update).await?;
+            other.note.apply_update(update).await?;
         }
 
         Ok(())
@@ -90,9 +90,9 @@ impl SyncInstance {
     /// Apply changes using a closure for batch operations
     pub async fn apply_change<F, R>(&self, f: F) -> SyncResult<R>
     where
-        F: FnOnce(&Document) -> R,
+        F: FnOnce(&Note) -> R,
     {
-        let result = f(&self.document);
+        let result = f(&self.note);
         self.broadcast_update().await?;
         Ok(result)
     }
@@ -107,7 +107,7 @@ impl SyncInstance {
     /// Broadcast current state to all connected peers
     async fn broadcast_update(&self) -> SyncResult<()> {
         // Get all updates since empty state vector (full sync)
-        let updates = self.document.get_updates_since(vec![]).await?;
+        let updates = self.note.get_updates_since(vec![]).await?;
 
         // Send to all peers
         let peers = self.peers.read().await;
@@ -163,7 +163,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_sync_with_instance() -> SyncResult<()> {
-        // Arrange: Two sync instances with same document
+        // Arrange: Two sync instances with same note
         let sync_a = SyncInstance::new("doc1").await?;
         let sync_b = SyncInstance::new("doc1").await?;
 
@@ -210,7 +210,7 @@ mod tests {
 
         let result = sync
             .apply_change(|doc| {
-                // This would normally modify the document
+                // This would normally modify the note
                 doc.id().to_string()
             })
             .await?;

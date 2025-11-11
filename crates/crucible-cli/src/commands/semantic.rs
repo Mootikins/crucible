@@ -735,14 +735,14 @@ async fn convert_vector_search_results(
             }
             Err(err) => {
                 warn!(
-                    "Failed to load parsed document {} from database: {}",
+                    "Failed to load parsed note {} from database: {}",
                     document_id, err
                 );
 
                 cli_results.push(SearchResultWithScore {
                     id: document_id.clone(),
-                    title: format!("Document {}", document_id),
-                    content: "Document content not available".to_string(),
+                    title: format!("Note {}", document_id),
+                    content: "Note content not available".to_string(),
                     score: similarity_score,
                 });
             }
