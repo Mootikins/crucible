@@ -335,8 +335,7 @@ pub fn development_scan_config() -> ScanConfig {
 mod tests {
     use super::*;
     use std::fs;
-    use std::io::Write;
-    use tempfile::TempDir;
+        use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_file_scanning_service_creation() {

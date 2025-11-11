@@ -93,7 +93,7 @@ pub async fn execute(
 
     // Create storage backend
     let storage = create_storage_backend(&config)?;
-    let storage = Arc::new(storage);
+    let _storage = Arc::new(storage);
 
     // Create parser
     let block_parser = PulldownParser::new();
@@ -149,7 +149,7 @@ fn create_storage_backend(_config: &CliConfig) -> StorageResult<Arc<dyn ContentA
 }
 
 /// Parse a single file
-async fn parse_file(parser: &StorageAwareParser, path: &Path) -> ParseResult {
+async fn parse_file(_parser: &StorageAwareParser, path: &Path) -> ParseResult {
     let parse_start = Instant::now();
 
     // Simple implementation - read file and create basic structure

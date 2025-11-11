@@ -12,11 +12,10 @@ use tracing::{debug, error, info, warn};
 
 use crucible_core::{
     traits::change_detection::{
-        ChangeDetectionMetrics, ChangeDetectionResult, ChangeDetector as ChangeDetectorTrait,
-        ChangeSet, HashLookupStorage, StoredHash,
+        ChangeDetectionMetrics, ChangeDetectionResult, ChangeSet, HashLookupStorage, StoredHash,
     },
     types::hashing::{HashAlgorithm, HashError},
-    FileHash, FileHashInfo,
+    FileHashInfo,
 };
 use crucible_surrealdb::{hash_lookup::SurrealHashLookupStorage, SurrealClient};
 use crucible_watch::ChangeDetectorConfig;
@@ -708,8 +707,7 @@ pub fn detection_only_config() -> ChangeDetectionServiceConfig {
 mod tests {
     use super::*;
     use std::fs;
-    use std::io::Write;
-    use tempfile::TempDir;
+        use tempfile::TempDir;
 
     async fn create_test_service() -> Result<(ChangeDetectionService, TempDir)> {
         let temp_dir = TempDir::new()?;
