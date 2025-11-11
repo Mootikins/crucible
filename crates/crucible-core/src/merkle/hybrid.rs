@@ -1,9 +1,9 @@
 use blake3::Hasher;
 use serde::{Deserialize, Serialize};
 
-use crucible_parser::types::{BlockHash, Heading, Paragraph, ParsedDocument};
+use crucible_parser::types::{BlockHash, Heading, Paragraph, ParsedNote};
 
-/// Hybrid Merkle tree that groups document content into semantic sections and
+/// Hybrid Merkle tree that groups note content into semantic sections and
 /// stores block-level hashing inside each section.
 #[derive(Debug, Clone)]
 pub struct HybridMerkleTree {
@@ -62,7 +62,7 @@ pub struct SectionChange {
 }
 
 impl HybridMerkleTree {
-    pub fn from_document(doc: &ParsedDocument) -> Self {
+    pub fn from_document(doc: &ParsedNote) -> Self {
         let (sections, total_blocks) = build_sections(doc);
         let section_hashes: Vec<BlockHash> = sections
             .iter()
@@ -176,7 +176,7 @@ impl MerkleNode {
     }
 }
 
-fn build_sections(doc: &ParsedDocument) -> (Vec<SectionNode>, usize) {
+fn build_sections(doc: &ParsedNote) -> (Vec<SectionNode>, usize) {
     let mut nodes = Vec::new();
 
     for heading in &doc.content.headings {
@@ -327,13 +327,13 @@ impl SectionBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_parser::types::{DocumentContent, Heading, Paragraph};
+    use crucible_parser::types::{NoteContent, Heading, Paragraph};
     use std::path::PathBuf;
 
-    fn build_document() -> ParsedDocument {
-        let mut doc = ParsedDocument::default();
+    fn build_document() -> ParsedNote {
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("sample.md");
-        doc.content = DocumentContent::default();
+        doc.content = NoteContent::default();
 
         doc.content.headings = vec![
             Heading {
@@ -468,11 +468,11 @@ mod tests {
 
     #[test]
     fn test_multiple_sections_with_hierarchy() {
-        let mut doc = ParsedDocument::default();
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("complex.md");
-        doc.content = DocumentContent::default();
+        doc.content = NoteContent::default();
 
-        // Create a more complex document with nested sections
+        // Create a more complex note with nested sections
         doc.content.headings = vec![
             Heading {
                 level: 1,
@@ -573,9 +573,9 @@ mod tests {
 
     #[test]
     fn test_empty_sections_have_zero_hash() {
-        let mut doc = ParsedDocument::default();
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("empty.md");
-        doc.content = DocumentContent::default();
+        doc.content = NoteContent::default();
 
         // Heading with no content
         doc.content.headings = vec![

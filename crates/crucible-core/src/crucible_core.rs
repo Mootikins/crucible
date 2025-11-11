@@ -25,7 +25,7 @@ use crate::traits::{MarkdownParser, Storage, ToolExecutor};
 /// ## Dependency Inversion
 /// Core depends on abstractions (traits), not concrete implementations:
 /// - `Storage` - Database/persistence operations
-/// - `MarkdownParser` - Document parsing
+/// - `MarkdownParser` - Note parsing
 /// - `ToolExecutor` - Tool/plugin execution
 ///
 /// Use `CrucibleCore::builder()` to construct instances.

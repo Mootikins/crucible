@@ -536,7 +536,7 @@ impl EmbeddingThreadPool {
         *self.shutdown_signal.read().await
     }
 
-    /// Process a single document with retry logic
+    /// Process a single note with retry logic
     pub async fn process_document_with_retry(
         &self,
         document_id: &str,
@@ -591,7 +591,7 @@ impl EmbeddingThreadPool {
                     // Check if we should retry
                     if attempt_count < max_attempts {
                         warn!(
-                            "Document {} processing failed (attempt {}/{}), retrying in {}ms: {}",
+                            "Note {} processing failed (attempt {}/{}), retrying in {}ms: {}",
                             document_id,
                             attempt_count,
                             max_attempts,
@@ -603,7 +603,7 @@ impl EmbeddingThreadPool {
                         continue;
                     } else {
                         error!(
-                            "Document {} processing failed after {} attempts: {}",
+                            "Note {} processing failed after {} attempts: {}",
                             document_id,
                             attempt_count,
                             e.to_string()
@@ -625,7 +625,7 @@ impl EmbeddingThreadPool {
         }
     }
 
-    /// Internal document processing without retry logic
+    /// Internal note processing without retry logic
     async fn process_document_internal(
         &self,
         document_id: &str,
@@ -654,7 +654,7 @@ impl EmbeddingThreadPool {
         .map_err(|_| anyhow!("Embedding generation timeout"))??;
 
         debug!(
-            "Generated {}-dimensional embedding for document {}",
+            "Generated {}-dimensional embedding for note {}",
             embedding.len(),
             document_id
         );
@@ -1145,7 +1145,7 @@ mod tests {
 
         // Test embedding generation
         let result = pool
-            .process_document_with_retry("test_doc", "This is a test document for mock embeddings.")
+            .process_document_with_retry("test_doc", "This is a test note for mock embeddings.")
             .await
             .unwrap();
 
@@ -1230,9 +1230,9 @@ mod tests {
         .unwrap();
 
         let documents = vec![
-            ("doc1".to_string(), "First document content".to_string()),
-            ("doc2".to_string(), "Second document content".to_string()),
-            ("doc3".to_string(), "Third document content".to_string()),
+            ("doc1".to_string(), "First note content".to_string()),
+            ("doc2".to_string(), "Second note content".to_string()),
+            ("doc3".to_string(), "Third note content".to_string()),
         ];
 
         let result = pool.process_batch(documents).await.unwrap();
@@ -1355,7 +1355,7 @@ mod tests {
         let result = pool
             .process_document_with_retry(
                 "test_doc",
-                "This is a test document for embedding generation.",
+                "This is a test note for embedding generation.",
             )
             .await
             .unwrap();
@@ -1386,9 +1386,9 @@ mod tests {
         let pool = EmbeddingThreadPool::new(config).await.unwrap();
 
         let documents = vec![
-            ("doc1".to_string(), "First document content".to_string()),
-            ("doc2".to_string(), "Second document content".to_string()),
-            ("doc3".to_string(), "Third document content".to_string()),
+            ("doc1".to_string(), "First note content".to_string()),
+            ("doc2".to_string(), "Second note content".to_string()),
+            ("doc3".to_string(), "Third note content".to_string()),
         ];
 
         let result = pool.process_batch(documents).await.unwrap();
@@ -1413,7 +1413,7 @@ mod tests {
         assert_eq!(metrics.active_workers, 0);
         assert!(!metrics.circuit_breaker_open);
 
-        // Process a document
+        // Process a note
         pool.process_document_with_retry("test", "content")
             .await
             .unwrap();

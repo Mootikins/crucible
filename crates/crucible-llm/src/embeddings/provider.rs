@@ -679,9 +679,9 @@ pub trait EmbeddingProvider: Send + Sync {
     /// let provider = create_provider(config).await?;
     ///
     /// let texts = vec![
-    ///     "First document".to_string(),
-    ///     "Second document".to_string(),
-    ///     "Third document".to_string(),
+    ///     "First note".to_string(),
+    ///     "Second note".to_string(),
+    ///     "Third note".to_string(),
     /// ];
     ///
     /// let responses = provider.embed_batch(texts).await?;

@@ -473,7 +473,7 @@ impl EventDrivenEmbeddingProcessor {
         let start_time = Instant::now();
 
         info!(
-            "🔄 Sending document to embedding pool: {}",
+            "🔄 Sending note to embedding pool: {}",
             event.file_path.display()
         );
         // Process with embedding pool
@@ -486,7 +486,7 @@ impl EventDrivenEmbeddingProcessor {
                     event.file_path.display(),
                     e
                 );
-                Error::Embedding(format!("Failed to process document: {}", e))
+                Error::Embedding(format!("Failed to process note: {}", e))
             })?;
 
         let elapsed = start_time.elapsed();
@@ -557,7 +557,7 @@ impl EventDrivenEmbeddingProcessor {
             .embedding_pool
             .process_document_with_retry(&embedding_event.document_id, &embedding_event.content)
             .await
-            .map_err(|e| Error::Embedding(format!("Failed to process document: {}", e)))?;
+            .map_err(|e| Error::Embedding(format!("Failed to process note: {}", e)))?;
 
         let elapsed = start_time.elapsed();
 

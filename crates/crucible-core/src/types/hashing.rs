@@ -220,10 +220,10 @@ pub struct BlockHashInfo {
     /// Block type (heading, paragraph, code, etc.)
     pub block_type: String,
 
-    /// Start position in the source document
+    /// Start position in the source note
     pub start_offset: usize,
 
-    /// End position in the source document
+    /// End position in the source note
     pub end_offset: usize,
 
     /// Hash algorithm used

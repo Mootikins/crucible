@@ -60,20 +60,20 @@ struct MerkleTreeRecord {
     pub metadata: Option<HashMap<String, serde_json::Value>>,
 }
 
-/// Database record for document-block mapping
+/// Database record for note-block mapping
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentBlockRecord {
-    /// Document identifier (file path)
+    /// Note identifier (file path)
     pub document_id: String,
-    /// Block index within the document
+    /// Block index within the note
     pub block_index: usize,
     /// Content hash of the block
     pub block_hash: String,
     /// Block type for context
     pub block_type: String,
-    /// Start position in source document
+    /// Start position in source note
     pub start_offset: usize,
-    /// End position in source document
+    /// End position in source note
     pub end_offset: usize,
     /// Block content
     pub block_content: String,
@@ -303,7 +303,7 @@ impl ContentAddressedStorageSurrealDB {
         Ok(())
     }
 
-    /// Store blocks for a document (BlockStorage trait implementation)
+    /// Store blocks for a note (BlockStorage trait implementation)
     pub async fn store_document_blocks_from_ast(
         &self,
         document_id: &str,
@@ -313,7 +313,7 @@ impl ContentAddressedStorageSurrealDB {
             let block_type = self.ast_block_type_to_string(&block.block_type);
             let block_metadata = Some(self.ast_block_to_metadata(block));
 
-            // Store document block directly (inline store_document_block logic)
+            // Store note block directly (inline store_document_block logic)
             if document_id.is_empty() {
                 return Err(StorageError::InvalidOperation(
                     "Empty document_id provided".to_string(),
@@ -355,7 +355,7 @@ impl ContentAddressedStorageSurrealDB {
             );
 
             self.client.query(&query, &[]).await.map_err(|e| {
-                StorageError::backend(format!("Failed to store document block: {}", e))
+                StorageError::backend(format!("Failed to store note block: {}", e))
             })?;
         }
 
@@ -763,13 +763,13 @@ impl ContentAddressedStorage for ContentAddressedStorageSurrealDB {}
 
 impl ContentAddressedStorageSurrealDB {
     // ========================================================================
-    // Document-Block Mapping Methods
+    // Note-Block Mapping Methods
     // ========================================================================
 
-    /// Store a document-block mapping
+    /// Store a note-block mapping
     ///
-    /// This maps a block to its document context, enabling content-addressed storage
-    /// with document awareness for change detection and deduplication.
+    /// This maps a block to its note context, enabling content-addressed storage
+    /// with note awareness for change detection and deduplication.
     pub async fn store_document_block(
         &self,
         document_id: &str,
@@ -838,13 +838,13 @@ impl ContentAddressedStorageSurrealDB {
         );
 
         self.client.query(&query, &[]).await.map_err(|e| {
-            StorageError::backend(format!("Failed to store document block mapping: {}", e))
+            StorageError::backend(format!("Failed to store note block mapping: {}", e))
         })?;
 
         Ok(())
     }
 
-    /// Get all blocks for a document
+    /// Get all blocks for a note
     pub async fn get_document_blocks(
         &self,
         document_id: &str,
@@ -861,7 +861,7 @@ impl ContentAddressedStorageSurrealDB {
         );
 
         let result = self.client.query(&query, &[]).await.map_err(|e| {
-            StorageError::backend(format!("Failed to retrieve document blocks: {}", e))
+            StorageError::backend(format!("Failed to retrieve note blocks: {}", e))
         })?;
 
         let mut blocks = Vec::new();
@@ -1234,7 +1234,7 @@ impl ContentAddressedStorageSurrealDB {
         Ok(hash_to_count)
     }
 
-    /// Delete all blocks for a document
+    /// Delete all blocks for a note
     pub async fn delete_document_blocks(&self, document_id: &str) -> StorageResult<usize> {
         if document_id.is_empty() {
             return Err(StorageError::InvalidOperation(
@@ -1248,7 +1248,7 @@ impl ContentAddressedStorageSurrealDB {
         );
 
         let result = self.client.query(&query, &[]).await.map_err(|e| {
-            StorageError::backend(format!("Failed to delete document blocks: {}", e))
+            StorageError::backend(format!("Failed to delete note blocks: {}", e))
         })?;
 
         // Count how many were deleted (approximate)

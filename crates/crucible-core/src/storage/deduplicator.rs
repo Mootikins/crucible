@@ -90,7 +90,7 @@ pub struct DeduplicationStats {
     pub most_duplicated_blocks: Vec<DuplicateGroup>,
     /// Block type distribution
     pub block_type_distribution: HashMap<String, usize>,
-    /// Document duplication patterns
+    /// Note duplication patterns
     pub document_patterns: Vec<DocumentDuplicationPattern>,
     /// Statistics calculated at
     pub calculated_at: DateTime<Utc>,
@@ -144,9 +144,9 @@ pub struct BlockUsagePattern {
 /// Single usage event
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageEvent {
-    /// Document ID
+    /// Note ID
     pub document_id: String,
-    /// Timestamp when block was added to document
+    /// Timestamp when block was added to note
     pub timestamp: DateTime<Utc>,
     /// Event type (added, modified, referenced)
     pub event_type: UsageEventType,
@@ -155,20 +155,20 @@ pub struct UsageEvent {
 /// Types of usage events
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum UsageEventType {
-    /// Block was added to document
+    /// Block was added to note
     Added,
-    /// Block was modified in document
+    /// Block was modified in note
     Modified,
-    /// Block was referenced by another document
+    /// Block was referenced by another note
     Referenced,
 }
 
-/// Document duplication pattern
+/// Note duplication pattern
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentDuplicationPattern {
-    /// Document ID
+    /// Note ID
     pub document_id: String,
-    /// Total blocks in document
+    /// Total blocks in note
     pub total_blocks: usize,
     /// Unique blocks (not shared with other documents)
     pub unique_blocks: usize,
@@ -183,7 +183,7 @@ pub struct DocumentDuplicationPattern {
 /// Similarity between two documents
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentSimilarity {
-    /// Similar document ID
+    /// Similar note ID
     pub document_id: String,
     /// Number of shared blocks
     pub shared_blocks: usize,

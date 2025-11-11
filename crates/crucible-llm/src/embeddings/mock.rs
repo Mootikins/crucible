@@ -259,7 +259,7 @@ impl EmbeddingFixtures {
             full
         });
 
-        embeddings.insert("This is a test document".to_string(), {
+        embeddings.insert("This is a test note".to_string(), {
             let base = vec![0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1];
             let mut full = vec![0.0; 768];
             full[..8].copy_from_slice(&base);
@@ -286,16 +286,16 @@ impl EmbeddingFixtures {
         // Generate embeddings for large batch processing test
         for i in 0..50 {
             embeddings.insert(
-                format!("Test document {}", i),
+                format!("Test note {}", i),
                 vec![0.1 + i as f32 * 0.01; 768],
             );
         }
 
         // Batch embedding fixtures
         let batch_texts = vec![
-            "First document".to_string(),
-            "Second document".to_string(),
-            "Third document".to_string(),
+            "First note".to_string(),
+            "Second note".to_string(),
+            "Third note".to_string(),
         ];
 
         let batch_responses = vec![

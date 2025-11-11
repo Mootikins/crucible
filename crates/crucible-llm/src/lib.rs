@@ -12,7 +12,7 @@
 //! ## Modules
 //!
 //! - [`embeddings`]: Text embedding generation and management
-//! - [`reranking`]: Document reranking for improved search relevance
+//! - [`reranking`]: Note reranking for improved search relevance
 //!
 //! ## Example
 //!

@@ -21,9 +21,9 @@ use crate::kiln_scanner::{
 use crate::simple_integration;
 use crate::transaction_queue::TransactionQueue;
 use crate::SurrealClient;
-use crucible_core::types::ParsedDocument;
+use crucible_core::types::ParsedNote;
 
-/// Orchestrates the processing of a single document through the full pipeline
+/// Orchestrates the processing of a single note through the full pipeline
 pub struct DocumentProcessor<'a> {
     client: &'a SurrealClient,
     embedding_pool: Option<&'a EmbeddingThreadPool>,
@@ -49,53 +49,53 @@ impl<'a> DocumentProcessor<'a> {
         info!("🔄 Starting processing: {}", file_info.path.display());
 
         // Step 1: Parse the file
-        let document = self.parse_file(file_info).await?;
+        let note = self.parse_file(file_info).await?;
 
-        // Step 2: Store the document
-        let doc_id = self.store_document(&document).await?;
+        // Step 2: Store the note
+        let doc_id = self.store_document(&note).await?;
 
         // Step 3: Create relationships
-        self.create_relationships(&doc_id, &document).await?;
+        self.create_relationships(&doc_id, &note).await?;
 
         // Step 4: Process embeddings (optional)
-        self.process_embeddings(&doc_id, &document).await?;
+        self.process_embeddings(&doc_id, &note).await?;
 
         info!("✅ Successfully completed: {}", file_info.path.display());
         Ok(())
     }
 
-    /// Parse the markdown file into a ParsedDocument
-    async fn parse_file(&self, file_info: &KilnFileInfo) -> Result<ParsedDocument> {
+    /// Parse the markdown file into a ParsedNote
+    async fn parse_file(&self, file_info: &KilnFileInfo) -> Result<ParsedNote> {
         debug!("  📄 Parsing file...");
-        let document = crate::kiln_scanner::parse_file_to_document(&file_info.path)
+        let note = crate::kiln_scanner::parse_file_to_document(&file_info.path)
             .await
             .map_err(|e| {
                 error!("  ❌ Parse failed for {}: {}", file_info.path.display(), e);
                 anyhow::anyhow!("Failed to parse file {}: {}", file_info.path.display(), e)
             })?;
         debug!("  ✅ Parse complete");
-        Ok(document)
+        Ok(note)
     }
 
-    /// Store the parsed document in the database
-    async fn store_document(&self, document: &ParsedDocument) -> Result<String> {
-        debug!("  💾 Storing document...");
-        let doc_id = store_parsed_document(self.client, document, self.kiln_root)
+    /// Store the parsed note in the database
+    async fn store_document(&self, note: &ParsedNote) -> Result<String> {
+        debug!("  💾 Storing note...");
+        let doc_id = store_parsed_document(self.client, note, self.kiln_root)
             .await
             .map_err(|e| {
-                error!("  ❌ Store failed for document {}: {}", document.path.display(), e);
-                anyhow::anyhow!("Failed to store document {}: {}", document.path.display(), e)
+                error!("  ❌ Store failed for note {}: {}", note.path.display(), e);
+                anyhow::anyhow!("Failed to store note {}: {}", note.path.display(), e)
             })?;
-        debug!("  ✅ Document stored with ID: {}", doc_id);
+        debug!("  ✅ Note stored with ID: {}", doc_id);
         Ok(doc_id)
     }
 
-    /// Create wikilink and embed relationships for the document
-    async fn create_relationships(&self, doc_id: &str, document: &ParsedDocument) -> Result<()> {
+    /// Create wikilink and embed relationships for the note
+    async fn create_relationships(&self, doc_id: &str, note: &ParsedNote) -> Result<()> {
         debug!("  🔗 Creating relationships...");
 
         // Create wikilink relationships
-        create_wikilink_edges(self.client, doc_id, document, self.kiln_root)
+        create_wikilink_edges(self.client, doc_id, note, self.kiln_root)
             .await
             .map_err(|e| {
                 error!("  ❌ Wikilink relationship creation failed for {}: {}", doc_id, e);
@@ -103,20 +103,20 @@ impl<'a> DocumentProcessor<'a> {
             })?;
 
         // Create embed relationships
-        create_embed_relationships(self.client, doc_id, document, self.kiln_root)
+        create_embed_relationships(self.client, doc_id, note, self.kiln_root)
             .await
             .map_err(|e| {
                 error!("  ❌ Embed relationship creation failed for {}: {}", doc_id, e);
                 anyhow::anyhow!("Failed to create embed relationships for {}: {}", doc_id, e)
             })?;
 
-        // Note: Tags are now automatically stored during document ingestion in DocumentIngestor
+        // Note: Tags are now automatically stored during note ingestion in NoteIngestor
         debug!("  ✅ Relationships created");
         Ok(())
     }
 
-    /// Generate and store embeddings for the document (if embedding pool is available)
-    async fn process_embeddings(&self, doc_id: &str, document: &ParsedDocument) -> Result<()> {
+    /// Generate and store embeddings for the note (if embedding pool is available)
+    async fn process_embeddings(&self, doc_id: &str, note: &ParsedNote) -> Result<()> {
         if let Some(pool) = self.embedding_pool {
             debug!("  🧮 Generating embeddings...");
             // Use KilnPipelineConnector to process embeddings
@@ -125,7 +125,7 @@ impl<'a> DocumentProcessor<'a> {
                 self.kiln_root.to_path_buf(),
             );
             match connector
-                .process_document_to_embedding(self.client, document)
+                .process_document_to_embedding(self.client, note)
                 .await
             {
                 Ok(result) => {
@@ -457,12 +457,12 @@ pub async fn process_single_file_with_queue(
 
     match simple_integration::enqueue_document(queue, client, &file_info.path, kiln_root).await {
         Ok(document_id) => {
-            info!("✅ Successfully enqueued document: {}", document_id);
+            info!("✅ Successfully enqueued note: {}", document_id);
             Ok(true)
         }
         Err(e) => {
             error!(
-                "❌ Failed to enqueue document {}: {}",
+                "❌ Failed to enqueue note {}: {}",
                 file_info.path.display(),
                 e
             );
@@ -786,16 +786,16 @@ pub async fn process_files(
 
 /// Process embeddings for a list of documents (mocked for now)
 pub async fn process_document_embeddings(
-    documents: &[ParsedDocument],
+    documents: &[ParsedNote],
     _embedding_pool: &EmbeddingThreadPool,
     _client: &SurrealClient,
 ) -> Result<Vec<EmbeddingProcessingResult>> {
     let mut results = Vec::new();
 
-    for document in documents {
+    for note in documents {
         debug!(
-            "Would process embeddings for document: {}",
-            document.path.display()
+            "Would process embeddings for note: {}",
+            note.path.display()
         );
 
         // Mock successful processing
@@ -1008,7 +1008,7 @@ pub async fn needs_processing(file_info: &KilnFileInfo, client: &SurrealClient) 
         Some(hash) => hash,
         None => {
             debug!(
-                "Document {} not found in database, needs processing",
+                "Note {} not found in database, needs processing",
                 file_info.relative_path
             );
             return Ok(true);
@@ -1049,19 +1049,19 @@ pub async fn needs_processing(file_info: &KilnFileInfo, client: &SurrealClient) 
         let processed_system_time: std::time::SystemTime = processed_time.into();
         if file_info.modified_time <= processed_system_time {
             debug!(
-                "Document {} unchanged (hash matches and file not modified after processing)",
+                "Note {} unchanged (hash matches and file not modified after processing)",
                 file_info.relative_path
             );
             return Ok(false);
         }
 
         debug!(
-            "Document {} modified after processing (file: {:?}, processed: {:?})",
+            "Note {} modified after processing (file: {:?}, processed: {:?})",
             file_info.relative_path, file_info.modified_time, processed_time
         );
     } else {
         debug!(
-            "Document {} hash mismatch (stored: {}..., current: {}...)",
+            "Note {} hash mismatch (stored: {}..., current: {}...)",
             file_info.relative_path,
             &stored_hash_hex[..8],
             &current_hash_hex[..8]
@@ -1071,7 +1071,7 @@ pub async fn needs_processing(file_info: &KilnFileInfo, client: &SurrealClient) 
     Ok(true)
 }
 
-/// Query document hashes for multiple files in a single database call
+/// Query note hashes for multiple files in a single database call
 ///
 /// This function efficiently retrieves content hashes for multiple files using
 /// a single parameterized query with an IN clause, which is much faster than
@@ -1143,7 +1143,7 @@ async fn bulk_query_document_hashes(
     let result = client
         .query(&sql, &[])
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to query document hashes: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to query note hashes: {}", e))?;
 
     debug!("Query returned {} records", result.records.len());
 
@@ -1730,23 +1730,23 @@ mod document_processor_tests {
     use tempfile::TempDir;
     use tokio::fs;
 
-    /// Helper function to create a test document with realistic content
-    async fn create_test_document(path: &Path) -> ParsedDocument {
-        let content = r#"# Test Document
+    /// Helper function to create a test note with realistic content
+    async fn create_test_document(path: &Path) -> ParsedNote {
+        let content = r#"# Test Note
 
-This is a test document with some **bold** text and *italic* text.
+This is a test note with some **bold** text and *italic* text.
 
 ## Section 1
 
-Some content here with a [[wikilink]] to another document.
+Some content here with a [[wikilink]] to another note.
 
 ## Section 2
 
-More content here with an embed: ![[embeded-document]]
+More content here with an embed: ![[embeded-note]]
 
 Some tags: #tag1 #tag2
 
-End of document.
+End of note.
 "#;
         fs::write(path, content).await.unwrap();
         crate::kiln_scanner::parse_file_to_document(path).await.unwrap()
@@ -1792,8 +1792,8 @@ End of document.
         let test_file = temp_dir.path().join("test.md");
         let kiln_root = temp_dir.path().to_path_buf();
 
-        // Create test document
-        let document = create_test_document(&test_file).await;
+        // Create test note
+        let note = create_test_document(&test_file).await;
         let file_info = create_test_file_info(test_file, &kiln_root);
 
         // Create processor
@@ -1803,12 +1803,12 @@ End of document.
         // Test parsing
         let parsed_document = processor.parse_file(&file_info).await.unwrap();
 
-        // Verify parsed document
-        assert_eq!(parsed_document.path, document.path);
+        // Verify parsed note
+        assert_eq!(parsed_document.path, note.path);
         assert!(!parsed_document.title().is_empty());
-        assert!(parsed_document.content.plain_text.contains("test document"));
+        assert!(parsed_document.content.plain_text.contains("test note"));
         // Check that we have the expected structure (may or may not have links depending on parser)
-        assert!(!parsed_document.content.plain_text.is_empty(), "Document should have content");
+        assert!(!parsed_document.content.plain_text.is_empty(), "Note should have content");
     }
 
     #[tokio::test]
@@ -1838,8 +1838,8 @@ End of document.
         let test_file = temp_dir.path().join("test.md");
         let kiln_root = temp_dir.path().to_path_buf();
 
-        // Create test document
-        let document = create_test_document(&test_file).await;
+        // Create test note
+        let note = create_test_document(&test_file).await;
 
         // Initialize database schema
         let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
@@ -1848,21 +1848,21 @@ End of document.
         // Create processor
         let processor = DocumentProcessor::new(&client, None, &kiln_root);
 
-        // Test storing document
-        let doc_id = processor.store_document(&document).await.unwrap();
+        // Test storing note
+        let doc_id = processor.store_document(&note).await.unwrap();
 
-        // Verify document ID format
+        // Verify note ID format
         assert!(!doc_id.is_empty());
         assert!(doc_id.starts_with("entities:"));
 
-        // Verify document was actually stored by querying it back
+        // Verify note was actually stored by querying it back
         // Use simple query by table name since exact record ID querying is complex
         let query_result = client
             .query("SELECT count() as count FROM entities", &[])
             .await
             .unwrap();
         assert!(!query_result.records.is_empty());
-        // If we got here, the document was stored successfully
+        // If we got here, the note was stored successfully
     }
 
     #[tokio::test]
@@ -1871,8 +1871,8 @@ End of document.
         let test_file = temp_dir.path().join("test.md");
         let kiln_root = temp_dir.path().to_path_buf();
 
-        // Create test document
-        let document = create_test_document(&test_file).await;
+        // Create test note
+        let note = create_test_document(&test_file).await;
 
         // Initialize database schema
         let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
@@ -1881,8 +1881,8 @@ End of document.
         // Create processor
         let processor = DocumentProcessor::new(&client, None, &kiln_root);
 
-        // Test storing document works normally
-        let result = processor.store_document(&document).await;
+        // Test storing note works normally
+        let result = processor.store_document(&note).await;
         assert!(result.is_ok());
 
         // This test verifies that the store_document method handles normal operations gracefully.
@@ -1898,15 +1898,15 @@ End of document.
         let test_file = temp_dir.path().join("test.md");
         let kiln_root = temp_dir.path().to_path_buf();
 
-        // Create test document with wikilinks and embeds
-        let document = create_test_document(&test_file).await;
+        // Create test note with wikilinks and embeds
+        let note = create_test_document(&test_file).await;
 
         // Initialize database schema
         let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
         kiln_integration::initialize_kiln_schema(&client).await.unwrap();
 
-        // Store the document first
-        let doc_id = kiln_integration::store_parsed_document(&client, &document, &kiln_root)
+        // Store the note first
+        let doc_id = kiln_integration::store_parsed_document(&client, &note, &kiln_root)
             .await
             .unwrap();
 
@@ -1914,7 +1914,7 @@ End of document.
         let processor = DocumentProcessor::new(&client, None, &kiln_root);
 
         // Test creating relationships
-        let result = processor.create_relationships(&doc_id, &document).await;
+        let result = processor.create_relationships(&doc_id, &note).await;
         assert!(result.is_ok());
 
         // Verify relationships were created (checking for relation records)
@@ -1924,7 +1924,7 @@ End of document.
         );
         let relation_result = client.query(&relation_query, &[]).await.unwrap();
         // Note: The exact number depends on the implementation, but should have some relations
-        // if the document has wikilinks and embeds
+        // if the note has wikilinks and embeds
     }
 
     #[tokio::test]
@@ -1932,18 +1932,18 @@ End of document.
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("empty.md");
 
-        // Create empty document
-        let content = "# Empty Document\n\nNo links or embeds here.";
+        // Create empty note
+        let content = "# Empty Note\n\nNo links or embeds here.";
         fs::write(&test_file, content).await.unwrap();
-        let document = crate::kiln_scanner::parse_file_to_document(&test_file).await.unwrap();
+        let note = crate::kiln_scanner::parse_file_to_document(&test_file).await.unwrap();
         let kiln_root = temp_dir.path().to_path_buf();
 
         // Initialize database schema
         let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
         kiln_integration::initialize_kiln_schema(&client).await.unwrap();
 
-        // Store the document first
-        let doc_id = kiln_integration::store_parsed_document(&client, &document, &kiln_root)
+        // Store the note first
+        let doc_id = kiln_integration::store_parsed_document(&client, &note, &kiln_root)
             .await
             .unwrap();
 
@@ -1951,7 +1951,7 @@ End of document.
         let processor = DocumentProcessor::new(&client, None, &kiln_root);
 
         // Test creating relationships should succeed even with no links
-        let result = processor.create_relationships(&doc_id, &document).await;
+        let result = processor.create_relationships(&doc_id, &note).await;
         assert!(result.is_ok());
     }
 
@@ -1961,15 +1961,15 @@ End of document.
         let test_file = temp_dir.path().join("test.md");
         let kiln_root = temp_dir.path().to_path_buf();
 
-        // Create test document
-        let document = create_test_document(&test_file).await;
+        // Create test note
+        let note = create_test_document(&test_file).await;
 
         // Initialize database schema
         let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
         kiln_integration::initialize_kiln_schema(&client).await.unwrap();
 
-        // Store the document first
-        let doc_id = kiln_integration::store_parsed_document(&client, &document, &kiln_root)
+        // Store the note first
+        let doc_id = kiln_integration::store_parsed_document(&client, &note, &kiln_root)
             .await
             .unwrap();
 
@@ -1981,7 +1981,7 @@ End of document.
         let processor = DocumentProcessor::new(&client, Some(&embedding_pool), &kiln_root);
 
         // Test processing embeddings (should not fail)
-        let result = processor.process_embeddings(&doc_id, &document).await;
+        let result = processor.process_embeddings(&doc_id, &note).await;
         assert!(result.is_ok());
 
         // Clean up
@@ -1994,15 +1994,15 @@ End of document.
         let test_file = temp_dir.path().join("test.md");
         let kiln_root = temp_dir.path().to_path_buf();
 
-        // Create test document
-        let document = create_test_document(&test_file).await;
+        // Create test note
+        let note = create_test_document(&test_file).await;
 
         // Initialize database schema
         let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
         kiln_integration::initialize_kiln_schema(&client).await.unwrap();
 
-        // Store the document first
-        let doc_id = kiln_integration::store_parsed_document(&client, &document, &kiln_root)
+        // Store the note first
+        let doc_id = kiln_integration::store_parsed_document(&client, &note, &kiln_root)
             .await
             .unwrap();
 
@@ -2010,7 +2010,7 @@ End of document.
         let processor = DocumentProcessor::new(&client, None, &kiln_root);
 
         // Test processing embeddings should succeed but skip processing
-        let result = processor.process_embeddings(&doc_id, &document).await;
+        let result = processor.process_embeddings(&doc_id, &note).await;
         assert!(result.is_ok());
     }
 
@@ -2020,8 +2020,8 @@ End of document.
         let test_file = temp_dir.path().join("test.md");
         let kiln_root = temp_dir.path().to_path_buf();
 
-        // Create test document
-        let document = create_test_document(&test_file).await;
+        // Create test note
+        let note = create_test_document(&test_file).await;
         let file_info = create_test_file_info(test_file, &kiln_root);
 
         // Initialize database schema
@@ -2039,13 +2039,13 @@ End of document.
         let result = processor.process_file(&file_info).await;
         assert!(result.is_ok());
 
-        // Verify document was stored by checking it exists in database
+        // Verify note was stored by checking it exists in database
         // Note: We can't easily get the exact doc_id without exposing it,
         // but we can check that documents exist
         let docs_query = "SELECT count() as count FROM entities";
         let query_result = client.query(docs_query, &[]).await.unwrap();
 
-        // Should have at least one document
+        // Should have at least one note
         assert!(!query_result.records.is_empty());
 
         // Clean up
@@ -2082,11 +2082,11 @@ End of document.
         let test_file = temp_dir.path().join("test.md");
         let kiln_root = temp_dir.path().to_path_buf();
 
-        // Create test document
-        let document = create_test_document(&test_file).await;
+        // Create test note
+        let note = create_test_document(&test_file).await;
         let mut file_info = create_test_file_info(test_file, &kiln_root);
 
-        // Create client and try to process with invalid document structure
+        // Create client and try to process with invalid note structure
         // (using empty path which should cause validation errors)
         let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
         let processor = DocumentProcessor::new(&client, None, &kiln_root);

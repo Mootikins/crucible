@@ -1,4 +1,4 @@
-//! Document Processing Handoff Types
+//! Note Processing Handoff Types
 //!
 //! This module provides clean "handoff" types that enable proper layer separation
 //! between file parsing, coordination, and database operations in the queue-based
@@ -17,23 +17,23 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-// Re-export ParsedDocument from parser for convenience
-pub use crucible_parser::types::ParsedDocument;
+// Re-export ParsedNote from parser for convenience
+pub use crucible_parser::types::ParsedNote;
 
-/// A processed document ready for database transaction building
+/// A processed note ready for database transaction building
 ///
 /// This type represents the complete output of the file parsing process,
 /// containing everything needed to build database transactions but without
 /// any knowledge of how those transactions should be structured.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProcessedDocument {
-    /// The parsed document content and structure
-    pub document: ParsedDocument,
+pub struct ProcessedNote {
+    /// The parsed note content and structure
+    pub note: ParsedNote,
 
-    /// The root path of the kiln this document belongs to
+    /// The root path of the kiln this note belongs to
     pub kiln_root: PathBuf,
 
-    /// When this document was processed
+    /// When this note was processed
     pub processed_at: SystemTime,
 
     /// The processing context and metadata
@@ -43,13 +43,13 @@ pub struct ProcessedDocument {
 /// Context information about the processing operation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessingContext {
-    /// The processing job ID this document belongs to
+    /// The processing job ID this note belongs to
     pub job_id: String,
 
     /// The source of this processing operation
     pub source: ProcessingSource,
 
-    /// Priority level for this document
+    /// Priority level for this note
     pub priority: ProcessingPriority,
 
     /// Additional metadata about the processing
@@ -100,7 +100,7 @@ impl Default for ProcessingPriority {
 /// Additional processing metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessingMetadata {
-    /// Whether this is a new document or an update
+    /// Whether this is a new note or an update
     pub is_new_document: bool,
 
     /// Whether embeddings should be generated
@@ -124,12 +124,12 @@ impl Default for ProcessingMetadata {
     }
 }
 
-/// A document processing job that coordinates multiple document processing operations
+/// A note processing job that coordinates multiple note processing operations
 ///
 /// This represents a complete processing job that may involve multiple documents
 /// and provides the coordination needed for efficient batch processing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DocumentProcessingJob {
+pub struct NoteProcessingJob {
     /// Unique identifier for this processing job
     pub job_id: String,
 
@@ -167,7 +167,7 @@ pub struct JobConfiguration {
     /// Maximum concurrent processing threads
     pub max_concurrent: Option<usize>,
 
-    /// Processing timeout per document
+    /// Processing timeout per note
     pub document_timeout: Option<std::time::Duration>,
 }
 
@@ -223,22 +223,22 @@ impl Default for JobStats {
     }
 }
 
-/// Result of processing a single document
+/// Result of processing a single note
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum DocumentProcessingResult {
-    /// Document was successfully processed and queued for database operations
+pub enum NoteProcessingResult {
+    /// Note was successfully processed and queued for database operations
     Success {
-        /// The processed document
-        document: ProcessedDocument,
+        /// The processed note
+        note: ProcessedNote,
         /// Number of database transactions generated
         transaction_count: usize,
         /// Processing time
         processing_time: std::time::Duration,
     },
 
-    /// Document processing failed
+    /// Note processing failed
     Failure {
-        /// Document path that failed
+        /// Note path that failed
         path: PathBuf,
         /// Error description
         error: String,
@@ -246,54 +246,54 @@ pub enum DocumentProcessingResult {
         processing_time: std::time::Duration,
     },
 
-    /// Document was skipped (e.g., unchanged)
+    /// Note was skipped (e.g., unchanged)
     Skipped {
-        /// Document path that was skipped
+        /// Note path that was skipped
         path: PathBuf,
         /// Reason for skipping
         reason: String,
     },
 }
 
-impl DocumentProcessingResult {
-    /// Get the document path if available
+impl NoteProcessingResult {
+    /// Get the note path if available
     pub fn path(&self) -> Option<&PathBuf> {
         match self {
-            DocumentProcessingResult::Success { document, .. } => Some(&document.document.path),
-            DocumentProcessingResult::Failure { path, .. } => Some(path),
-            DocumentProcessingResult::Skipped { path, .. } => Some(path),
+            NoteProcessingResult::Success { note, .. } => Some(&note.note.path),
+            NoteProcessingResult::Failure { path, .. } => Some(path),
+            NoteProcessingResult::Skipped { path, .. } => Some(path),
         }
     }
 
     /// Check if the result represents success
     pub fn is_success(&self) -> bool {
-        matches!(self, DocumentProcessingResult::Success { .. })
+        matches!(self, NoteProcessingResult::Success { .. })
     }
 
     /// Get the processing time
     pub fn processing_time(&self) -> std::time::Duration {
         match self {
-            DocumentProcessingResult::Success {
+            NoteProcessingResult::Success {
                 processing_time, ..
             }
-            | DocumentProcessingResult::Failure {
+            | NoteProcessingResult::Failure {
                 processing_time, ..
             } => *processing_time,
-            DocumentProcessingResult::Skipped { .. } => std::time::Duration::from_millis(0),
+            NoteProcessingResult::Skipped { .. } => std::time::Duration::from_millis(0),
         }
     }
 }
 
-impl ProcessedDocument {
-    /// Create a new processed document
+impl ProcessedNote {
+    /// Create a new processed note
     pub fn new(
-        document: ParsedDocument,
+        note: ParsedNote,
         kiln_root: PathBuf,
         job_id: String,
         source: ProcessingSource,
     ) -> Self {
         Self {
-            document,
+            note,
             kiln_root,
             processed_at: SystemTime::now(),
             context: ProcessingContext {
@@ -305,23 +305,23 @@ impl ProcessedDocument {
         }
     }
 
-    /// Create a processed document with custom context
+    /// Create a processed note with custom context
     pub fn with_context(
-        document: ParsedDocument,
+        note: ParsedNote,
         kiln_root: PathBuf,
         context: ProcessingContext,
     ) -> Self {
         Self {
-            document,
+            note,
             kiln_root,
             processed_at: SystemTime::now(),
             context,
         }
     }
 
-    /// Get the document path
+    /// Get the note path
     pub fn path(&self) -> &PathBuf {
-        &self.document.path
+        &self.note.path
     }
 
     /// Get the job ID
@@ -340,7 +340,7 @@ impl ProcessedDocument {
     }
 }
 
-impl DocumentProcessingJob {
+impl NoteProcessingJob {
     /// Create a new processing job
     pub fn new(job_id: String, source: ProcessingSource, config: JobConfiguration) -> Self {
         Self {
@@ -366,17 +366,17 @@ impl DocumentProcessingJob {
         }
     }
 
-    /// Record a successful document processing
+    /// Record a successful note processing
     pub fn record_success(&mut self) {
         self.stats.successful += 1;
     }
 
-    /// Record a failed document processing
+    /// Record a failed note processing
     pub fn record_failure(&mut self) {
         self.stats.failed += 1;
     }
 
-    /// Record a skipped document
+    /// Record a skipped note
     pub fn record_skip(&mut self) {
         self.stats.skipped += 1;
     }
@@ -400,12 +400,12 @@ impl DocumentProcessingJob {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_parser::types::{DocumentContent, FootnoteMap, ParsedDocument};
+    use crucible_parser::types::{NoteContent, FootnoteMap, ParsedNote};
 
-    fn create_test_document(path: &str) -> ParsedDocument {
-        ParsedDocument {
+    fn create_test_document(path: &str) -> ParsedNote {
+        ParsedNote {
             path: PathBuf::from(path),
-            content: DocumentContent::default(),
+            content: NoteContent::default(),
             frontmatter: None,
             wikilinks: Vec::new(),
             tags: Vec::new(),
@@ -425,7 +425,7 @@ mod tests {
     #[test]
     fn test_processed_document_creation() {
         let doc = create_test_document("test.md");
-        let processed = ProcessedDocument::new(
+        let processed = ProcessedNote::new(
             doc,
             PathBuf::from("/test"),
             "job-123".to_string(),
@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn test_processing_job() {
-        let mut job = DocumentProcessingJob::new(
+        let mut job = NoteProcessingJob::new(
             "job-123".to_string(),
             ProcessingSource::StartupScan,
             JobConfiguration::default(),
@@ -462,15 +462,15 @@ mod tests {
     #[test]
     fn test_document_processing_result() {
         let doc = create_test_document("test.md");
-        let processed = ProcessedDocument::new(
+        let processed = ProcessedNote::new(
             doc,
             PathBuf::from("/test"),
             "job-123".to_string(),
             ProcessingSource::StartupScan,
         );
 
-        let success = DocumentProcessingResult::Success {
-            document: processed,
+        let success = NoteProcessingResult::Success {
+            note: processed,
             transaction_count: 3,
             processing_time: std::time::Duration::from_millis(100),
         };

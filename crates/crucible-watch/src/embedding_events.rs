@@ -25,7 +25,7 @@ pub struct EmbeddingEvent {
     /// Content to be embedded (extracted from file)
     pub content: String,
 
-    /// Document ID for embedding storage
+    /// Note ID for embedding storage
     pub document_id: String,
 
     /// Timestamp when this embedding event was created
@@ -240,14 +240,14 @@ impl Default for EventDrivenEmbeddingConfig {
     }
 }
 
-/// Generate a document ID from file path and content
+/// Generate a note ID from file path and content
 pub fn generate_document_id(file_path: &PathBuf, content: &str) -> String {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
     let mut hasher = DefaultHasher::new();
 
-    // Hash the file path and content to create a unique document ID
+    // Hash the file path and content to create a unique note ID
     file_path.hash(&mut hasher);
     content.hash(&mut hasher);
 

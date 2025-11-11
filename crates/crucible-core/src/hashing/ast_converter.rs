@@ -134,7 +134,7 @@ impl<A: HashingAlgorithm> ASTBlockConverter<A> {
     /// # Arguments
     ///
     /// * `block` - The AST block to convert
-    /// * `index` - The index of this block in the document (used for ordering)
+    /// * `index` - The index of this block in the note (used for ordering)
     /// * `is_last` - Whether this is the last block in the sequence
     ///
     /// # Returns

@@ -5,4 +5,4 @@
 
 pub use crate::parser::error::{ParserError, ParserResult};
 pub use crate::parser::traits::{MarkdownParser, ParserCapabilities, ParserRequirements};
-pub use crucible_parser::types::ParsedDocument;
+pub use crucible_parser::types::ParsedNote;

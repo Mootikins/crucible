@@ -18,13 +18,13 @@ mod tests {
         let test_path = temp_dir.path().to_path_buf();
 
         // Create test markdown files
-        tokio::fs::write(test_path.join("test1.md"), "# Test Document\n\nContent here.").await.unwrap();
+        tokio::fs::write(test_path.join("test1.md"), "# Test Note\n\nContent here.").await.unwrap();
         tokio::fs::write(test_path.join("test2.txt"), "Not a markdown file").await.unwrap();
 
         // Create subdirectory
         let subdir = test_path.join("subdir");
         tokio::fs::create_dir(&subdir).await.unwrap();
-        tokio::fs::write(subdir.join("test3.md"), "# Nested Document\n\nNested content.").await.unwrap();
+        tokio::fs::write(subdir.join("test3.md"), "# Nested Note\n\nNested content.").await.unwrap();
 
         // Test scanning
         let config = KilnScannerConfig::default();
@@ -113,9 +113,9 @@ mod tests {
         let test_file = temp_dir.path().join("test.md");
 
         // Create test markdown file
-        let content = r#"# Test Document
+        let content = r#"# Test Note
 
-This is a test document with some **bold** text and *italic* text.
+This is a test note with some **bold** text and *italic* text.
 
 ## Section 1
 
@@ -128,10 +128,10 @@ More content here.
         tokio::fs::write(&test_file, content).await.unwrap();
 
         // Test parsing
-        let document = parse_file_to_document(&test_file).await.unwrap();
+        let note = parse_file_to_document(&test_file).await.unwrap();
 
-        assert_eq!(document.title(), "Test Document");
-        assert!(document.content.plain_text.contains("This is a test document"));
-        assert!(!document.wikilinks.is_empty() || document.wikilinks.is_empty()); // Should work either way
+        assert_eq!(note.title(), "Test Note");
+        assert!(note.content.plain_text.contains("This is a test note"));
+        assert!(!note.wikilinks.is_empty() || note.wikilinks.is_empty()); // Should work either way
     }
 }

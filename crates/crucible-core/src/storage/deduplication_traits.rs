@@ -16,7 +16,7 @@ pub trait DeduplicationStorage: Send + Sync {
     /// Find all documents containing a specific block hash
     async fn find_documents_with_block(&self, block_hash: &str) -> StorageResult<Vec<String>>;
 
-    /// Get all blocks for a specific document
+    /// Get all blocks for a specific note
     async fn get_document_blocks(&self, document_id: &str) -> StorageResult<Vec<BlockInfo>>;
 
     /// Get block content by hash
@@ -62,17 +62,17 @@ pub trait DeduplicationStorage: Send + Sync {
 pub struct BlockInfo {
     /// Block hash
     pub block_hash: String,
-    /// Document ID containing the block
+    /// Note ID containing the block
     pub document_id: String,
-    /// Block index within document
+    /// Block index within note
     pub block_index: usize,
     /// Block type
     pub block_type: String,
     /// Block content
     pub block_content: String,
-    /// Start offset in source document
+    /// Start offset in source note
     pub start_offset: usize,
-    /// End offset in source document
+    /// End offset in source note
     pub end_offset: usize,
     /// Block metadata
     pub block_metadata: HashMap<String, serde_json::Value>,

@@ -1,4 +1,4 @@
-use crucible_parser::types::{ParsedDocument, Table};
+use crucible_parser::types::{ParsedNote, Table};
 use crucible_parser::BlockExtractor;
 use std::path::PathBuf;
 
@@ -9,8 +9,8 @@ fn test_table_extraction() {
 | Alice | 30 | Dev |
 | Bob | 25 | Designer |"#;
 
-    // Create a document with a table
-    let mut doc = ParsedDocument::new(PathBuf::from("test.md"));
+    // Create a note with a table
+    let mut doc = ParsedNote::new(PathBuf::from("test.md"));
 
     // Create table struct
     let headers = vec!["Name".to_string(), "Age".to_string(), "Role".to_string()];

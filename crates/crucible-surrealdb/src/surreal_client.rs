@@ -588,7 +588,7 @@ mod tests {
 
         // Create note and embedding
         client
-            .query("CREATE notes:doc1 SET title = 'Document 1'", &[])
+            .query("CREATE notes:doc1 SET title = 'Note 1'", &[])
             .await
             .unwrap();
 

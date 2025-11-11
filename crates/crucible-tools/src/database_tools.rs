@@ -137,7 +137,7 @@ async fn perform_integrated_semantic_search(
                             .plain_text
                             .lines()
                             .next()
-                            .unwrap_or("Untitled Document")
+                            .unwrap_or("Untitled Note")
                             .to_string()
                     });
 
@@ -157,12 +157,12 @@ async fn perform_integrated_semantic_search(
                 }));
             }
             Err(_) => {
-                // If document retrieval fails, create basic result
+                // If note retrieval fails, create basic result
                 tool_results.push(json!({
                     "id": document_id,
                     "file_path": document_id,
-                    "title": format!("Document {}", document_id),
-                    "content": "Document content not available",
+                    "title": format!("Note {}", document_id),
+                    "content": "Note content not available",
                     "score": similarity_score
                 }));
             }
@@ -250,7 +250,7 @@ pub fn search_by_content() -> ToolFunction {
 
             let mock_results = vec![json!({
                 "file_path": "notes/database-design.md",
-                "content": "This document discusses database design patterns and best practices...",
+                "content": "This note discusses database design patterns and best practices...",
                 "metadata": {
                     "title": "Database Design",
                     "tags": ["database", "design"]
@@ -342,29 +342,29 @@ pub fn update_note_properties() -> ToolFunction {
     }
 }
 
-/// Index a specific document for search - Phase 2.1 `ToolFunction`
+/// Index a specific note for search - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn index_document() -> ToolFunction {
     |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            let document = parameters
-                .get("document")
+            let note = parameters
+                .get("note")
                 .cloned()
-                .ok_or_else(|| ToolError::Other("Missing 'document' parameter".to_string()))?;
+                .ok_or_else(|| ToolError::Other("Missing 'note' parameter".to_string()))?;
 
-            let document_id = document
+            let document_id = note
                 .get("id")
                 .and_then(|id| id.as_str())
                 .unwrap_or("unknown");
 
-            info!("Indexing document: {}", document_id);
+            info!("Indexing note: {}", document_id);
 
             let result_data = json!({
                 "indexed": true,
                 "document_id": document_id,
-                "document": document,
+                "note": note,
                 "user_id": user_id,
                 "session_id": session_id
             });
@@ -378,14 +378,14 @@ pub fn index_document() -> ToolFunction {
     }
 }
 
-/// Get document statistics from the database - Phase 2.1 `ToolFunction`
+/// Get note statistics from the database - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn get_document_stats() -> ToolFunction {
     |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
-            info!("Getting document statistics");
+            info!("Getting note statistics");
 
             let stats = json!({
                 "total_documents": 1250,

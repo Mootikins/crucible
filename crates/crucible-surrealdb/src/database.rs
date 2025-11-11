@@ -2,7 +2,7 @@
 //!
 //! This module provides a SurrealDB-based implementation that offers:
 //! - Native vector storage as arrays
-//! - Graph relations for document connections
+//! - Graph relations for note connections
 //! - ACID transactions
 //! - Live queries for real-time updates
 //! - Better performance than JSON-based storage
@@ -224,7 +224,7 @@ impl SurrealEmbeddingDatabase {
         let mut results = Vec::new();
 
         for (file_path, embedding_data) in storage.iter() {
-            // Check if the document has ALL the requested tags
+            // Check if the note has ALL the requested tags
             let document_tags = &embedding_data.metadata.tags;
 
             if tags
@@ -252,7 +252,7 @@ impl SurrealEmbeddingDatabase {
         for (file_path, embedding_data) in storage.iter() {
             let mut matches_all = true;
 
-            // Check if the document matches ALL the requested properties
+            // Check if the note matches ALL the requested properties
             for (key, expected_value) in properties {
                 if let Some(actual_value) = embedding_data.metadata.properties.get(key) {
                     if actual_value != expected_value {
@@ -260,7 +260,7 @@ impl SurrealEmbeddingDatabase {
                         break;
                     }
                 } else {
-                    // Property doesn't exist in the document
+                    // Property doesn't exist in the note
                     matches_all = false;
                     break;
                 }
@@ -389,27 +389,27 @@ impl SurrealEmbeddingDatabase {
         let mut failed = 0;
         let mut errors = Vec::new();
 
-        for document in &operation.documents {
+        for note in &operation.documents {
             let result = match operation.operation_type {
                 BatchOperationType::Create => {
-                    let embedding_data = EmbeddingData::from(document.clone());
+                    let embedding_data = EmbeddingData::from(note.clone());
                     self.store_embedding(
-                        &document.file_path,
-                        &document.content,
-                        &document.embedding,
+                        &note.file_path,
+                        &note.content,
+                        &note.embedding,
                         &embedding_data.metadata,
                     )
                     .await
                     .map(|_| ())
                 }
                 BatchOperationType::Update => {
-                    let embedding_data = EmbeddingData::from(document.clone());
-                    self.update_metadata(&document.file_path, &embedding_data.metadata)
+                    let embedding_data = EmbeddingData::from(note.clone());
+                    self.update_metadata(&note.file_path, &embedding_data.metadata)
                         .await
                         .map(|_| ())
                 }
                 BatchOperationType::Delete => {
-                    self.delete_file(&document.file_path).await.map(|_| ())
+                    self.delete_file(&note.file_path).await.map(|_| ())
                 }
             };
 
@@ -417,7 +417,7 @@ impl SurrealEmbeddingDatabase {
                 Ok(_) => successful += 1,
                 Err(e) => {
                     failed += 1;
-                    errors.push(format!("{}: {}", document.file_path, e));
+                    errors.push(format!("{}: {}", note.file_path, e));
                 }
             }
         }
@@ -472,7 +472,7 @@ impl SurrealEmbeddingDatabase {
         let mut relations = self
             .relations
             .write()
-            .expect("Relations lock poisoned - document links may be corrupted");
+            .expect("Relations lock poisoned - note links may be corrupted");
 
         relations.push((
             from_file.to_string(),
@@ -509,7 +509,7 @@ impl SurrealEmbeddingDatabase {
         let mut relations = self
             .relations
             .write()
-            .expect("Relations lock poisoned - document links may be corrupted");
+            .expect("Relations lock poisoned - note links may be corrupted");
         relations.push((
             from_file.to_string(),
             to_file.to_string(),
@@ -534,7 +534,7 @@ impl SurrealEmbeddingDatabase {
         let mut relations = self
             .relations
             .write()
-            .expect("Relations lock poisoned - document links may be corrupted");
+            .expect("Relations lock poisoned - note links may be corrupted");
         let initial_len = relations.len();
 
         relations.retain(|(from, to, rel_type, _)| {
@@ -560,7 +560,7 @@ impl SurrealEmbeddingDatabase {
         let relations = self
             .relations
             .read()
-            .expect("Relations lock poisoned - document links may be corrupted");
+            .expect("Relations lock poisoned - note links may be corrupted");
         let mut related_files = Vec::new();
 
         for (from_file, to_file, rel_type, _properties) in relations.iter() {
@@ -701,7 +701,7 @@ mod tests {
     fn create_test_metadata(file_path: &str) -> EmbeddingMetadata {
         EmbeddingMetadata {
             file_path: file_path.to_string(),
-            title: Some("Test Document".to_string()),
+            title: Some("Test Note".to_string()),
             tags: vec!["test".to_string(), "rust".to_string()],
             folder: "test".to_string(),
             properties: HashMap::new(), // Use empty properties to avoid enum issues

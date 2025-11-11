@@ -69,7 +69,7 @@ pub fn create_basic_kiln() -> Result<TempDir> {
         ),
         (
             "Project Architecture.md",
-            "# Project Architecture\n\nThis document describes the architecture.",
+            "# Project Architecture\n\nThis note describes the architecture.",
         ),
         ("Testing Notes.md", "# Testing\n\nSome testing notes here."),
         ("README.md", "# README\n\nThis is the main README file."),

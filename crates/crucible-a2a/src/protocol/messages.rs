@@ -154,7 +154,7 @@ pub enum ArtifactType {
     Code,
     Data,
     Image,
-    Document,
+    Note,
 }
 
 /// Artifact content (can be inline or reference)

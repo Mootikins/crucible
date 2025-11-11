@@ -321,7 +321,7 @@ pub enum EmbeddingErrorType {
     CircuitBreakerOpen,
     /// Network or external service error
     ExternalServiceError,
-    /// Document parsing error
+    /// Note parsing error
     DocumentParsingError,
     /// Database operation error
     DatabaseError,
@@ -342,13 +342,13 @@ impl EmbeddingErrorType {
     /// Get error description
     pub fn description(&self) -> &'static str {
         match self {
-            EmbeddingErrorType::ProcessingError => "Document processing failed",
+            EmbeddingErrorType::ProcessingError => "Note processing failed",
             EmbeddingErrorType::TimeoutError => "Operation timed out",
             EmbeddingErrorType::ResourceError => "Insufficient resources",
             EmbeddingErrorType::ConfigurationError => "Invalid configuration",
             EmbeddingErrorType::CircuitBreakerOpen => "Circuit breaker is open",
             EmbeddingErrorType::ExternalServiceError => "External service error",
-            EmbeddingErrorType::DocumentParsingError => "Document parsing failed",
+            EmbeddingErrorType::DocumentParsingError => "Note parsing failed",
             EmbeddingErrorType::DatabaseError => "Database operation failed",
         }
     }
@@ -357,7 +357,7 @@ impl EmbeddingErrorType {
 /// Detailed error information for embedding operations
 #[derive(Debug, Clone, PartialEq)]
 pub struct EmbeddingError {
-    /// ID of the document that failed
+    /// ID of the note that failed
     pub document_id: String,
 
     /// Type of error that occurred
@@ -469,10 +469,10 @@ impl Default for EmbeddingProcessingResult {
     }
 }
 
-/// Result of incremental document processing
+/// Result of incremental note processing
 #[derive(Debug, Clone, PartialEq)]
 pub struct IncrementalProcessingResult {
-    /// Whether the document was processed
+    /// Whether the note was processed
     pub processed: bool,
 
     /// Number of new embeddings created
@@ -481,18 +481,18 @@ pub struct IncrementalProcessingResult {
     /// Number of existing embeddings updated
     pub embeddings_updated: usize,
 
-    /// Content hash of the processed document
+    /// Content hash of the processed note
     pub content_hash: String,
 
     /// Time taken for processing
     pub processing_time: Duration,
 
-    /// Whether the document was skipped (no changes)
+    /// Whether the note was skipped (no changes)
     pub skipped: bool,
 }
 
 impl IncrementalProcessingResult {
-    /// Create result for skipped document
+    /// Create result for skipped note
     pub fn skipped(content_hash: String) -> Self {
         Self {
             processed: false,
@@ -504,7 +504,7 @@ impl IncrementalProcessingResult {
         }
     }
 
-    /// Create result for processed document
+    /// Create result for processed note
     pub fn processed(
         embeddings_created: usize,
         embeddings_updated: usize,
@@ -623,10 +623,10 @@ impl RetryProcessingResult {
     }
 }
 
-/// Document embedding representation
+/// Note embedding representation
 #[derive(Debug, Clone, PartialEq)]
 pub struct DocumentEmbedding {
-    /// ID of the document
+    /// ID of the note
     pub document_id: String,
 
     /// ID of the chunk (if chunked)
@@ -644,12 +644,12 @@ pub struct DocumentEmbedding {
     /// Size of the original text chunk
     pub chunk_size: usize,
 
-    /// Position of the chunk in the document
+    /// Position of the chunk in the note
     pub chunk_position: Option<usize>,
 }
 
 impl DocumentEmbedding {
-    /// Create a new document embedding
+    /// Create a new note embedding
     pub fn new(document_id: String, vector: Vec<f32>, embedding_model: String) -> Self {
         Self {
             document_id,
