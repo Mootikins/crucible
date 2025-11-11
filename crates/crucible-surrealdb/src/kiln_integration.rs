@@ -6,9 +6,8 @@
 
 use crate::embedding_config::*;
 use crate::eav_graph::{
-    apply_eav_graph_schema, DocumentIngestor, EntityRecord as EAVGraphEntityRecord, EntityTag,
-    EntityTagRecord, EAVGraphStore, RecordId as EAVGraphRecordId, Relation, RelationRecord, Tag as EAVGraphTag,
-    TagRecord,
+    apply_eav_graph_schema, DocumentIngestor, EntityRecord as EAVGraphEntityRecord,
+    EAVGraphStore, RecordId as EAVGraphRecordId, Relation, RelationRecord,
 };
 use crate::types::{DatabaseStats, Record};
 use crate::SurrealClient;
@@ -16,7 +15,6 @@ use anyhow::{anyhow, Result};
 use crucible_core::parser::Wikilink;
 use crucible_core::types::{FrontmatterFormat, ParsedDocument, Tag};
 use serde_json::json;
-use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 use tracing::{debug, error, info, warn};
 
@@ -353,55 +351,6 @@ pub async fn create_wikilink_edges(
     Ok(())
 }
 
-/// Create tag associations for a document
-pub async fn create_tag_associations(
-    client: &SurrealClient,
-    doc_id: &str,
-    doc: &ParsedDocument,
-) -> Result<()> {
-    let mut unique_tags = HashSet::new();
-    let tags: Vec<String> = doc
-        .all_tags()
-        .into_iter()
-        .filter(|tag| {
-            let trimmed = tag.trim();
-            !trimmed.is_empty() && unique_tags.insert(trimmed.to_string())
-        })
-        .collect();
-
-    if tags.is_empty() {
-        debug!("no tags detected for {}", doc.path.display());
-        return Ok(());
-    }
-
-    let entity_id = parse_entity_record_id(doc_id)?;
-    let store = EAVGraphStore::new(client.clone());
-
-    store.delete_entity_tags(&entity_id).await?;
-
-    let mut created = 0usize;
-    for tag in tags {
-        if let Some(tag_id) = ensure_tag_hierarchy(&store, &tag).await? {
-            let mapping = EntityTag {
-                id: Some(entity_tag_record_id(&entity_id, &tag_id)),
-                entity_id: entity_id.clone(),
-                tag_id,
-                source: "parser".into(),
-                confidence: 1.0,
-            };
-            store.upsert_entity_tag(&mapping).await?;
-            created += 1;
-        }
-    }
-
-    debug!(
-        "created {} tag associations for {}",
-        created,
-        doc.path.display()
-    );
-
-    Ok(())
-}
 
 pub(crate) fn parse_entity_record_id(doc_id: &str) -> Result<EAVGraphRecordId<EAVGraphEntityRecord>> {
     let normalized = normalize_document_id(doc_id);
@@ -411,14 +360,6 @@ pub(crate) fn parse_entity_record_id(doc_id: &str) -> Result<EAVGraphRecordId<EA
     Ok(EAVGraphRecordId::new("entities", id))
 }
 
-fn entity_tag_record_id(
-    entity_id: &EAVGraphRecordId<EAVGraphEntityRecord>,
-    tag_id: &EAVGraphRecordId<TagRecord>,
-) -> EAVGraphRecordId<EntityTagRecord> {
-    let entity_part = entity_id.id.replace(':', "_");
-    let tag_part = tag_id.id.replace(':', "_");
-    EAVGraphRecordId::new("entity_tags", format!("{}:{}", entity_part, tag_part))
-}
 
 fn relation_record_id(
     from_id: &EAVGraphRecordId<EAVGraphEntityRecord>,
@@ -435,71 +376,7 @@ fn relation_record_id(
     )
 }
 
-fn normalize_tag_identifier(path: &str) -> String {
-    path.trim()
-        .to_lowercase()
-        .replace('#', "")
-        .replace([' ', '\t'], "_")
-        .replace(['/', '\\'], "__")
-        .replace(':', "_")
-}
 
-fn tag_segments(tag_path: &str) -> Vec<String> {
-    tag_path
-        .trim()
-        .trim_start_matches('#')
-        .split('/')
-        .filter_map(|segment| {
-            let trimmed = segment.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        })
-        .collect()
-}
-
-async fn ensure_tag_hierarchy(
-    store: &EAVGraphStore,
-    tag_path: &str,
-) -> Result<Option<EAVGraphRecordId<TagRecord>>> {
-    let segments = tag_segments(tag_path);
-    if segments.is_empty() {
-        return Ok(None);
-    }
-
-    let mut current_path = String::new();
-    let mut parent: Option<EAVGraphRecordId<TagRecord>> = None;
-
-    for (depth, segment) in segments.iter().enumerate() {
-        if !current_path.is_empty() {
-            current_path.push('/');
-        }
-        current_path.push_str(segment);
-
-        let tag_id = EAVGraphRecordId::new(
-            "tags",
-            format!("tag:{}", normalize_tag_identifier(&current_path)),
-        );
-
-        let record = EAVGraphTag {
-            id: Some(tag_id.clone()),
-            name: current_path.clone(),
-            parent_id: parent.clone(),
-            path: current_path.clone(),
-            depth: depth as i32,
-            description: None,
-            color: None,
-            icon: None,
-        };
-
-        store.upsert_tag(&record).await?;
-        parent = Some(tag_id);
-    }
-
-    Ok(parent)
-}
 
 fn resolve_wikilink_target(
     doc: &ParsedDocument,
@@ -779,7 +656,8 @@ pub async fn get_documents_by_tag(
     client: &SurrealClient,
     tag: &str,
 ) -> Result<Vec<ParsedDocument>> {
-    let normalized = normalize_tag_identifier(tag);
+    // Tags are stored using the path directly (e.g., "project/ai/nlp")
+    let tag_path = tag.trim().trim_start_matches('#');
     let sql = r#"
         SELECT entity_id
         FROM entity_tags
@@ -787,7 +665,7 @@ pub async fn get_documents_by_tag(
     "#;
 
     let result = client
-        .query(sql, &[json!({ "tag_id": format!("tag:{}", normalized) })])
+        .query(sql, &[json!({ "tag_id": tag_path })])
         .await
         .map_err(|e| anyhow::anyhow!("Failed to query documents by tag: {}", e))?;
 
@@ -2412,9 +2290,7 @@ mod tests {
             .await
             .unwrap();
 
-        create_tag_associations(&client, &doc_id, &doc)
-            .await
-            .unwrap();
+        // Tags are now automatically stored during document ingestion
 
         let tags = client.query("SELECT * FROM tags", &[]).await.unwrap();
         assert_eq!(tags.records.len(), 4);

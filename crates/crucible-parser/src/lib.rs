@@ -17,6 +17,7 @@ pub mod error;
 pub mod extensions;
 pub mod footnotes;
 pub mod implementation;
+pub mod inline_links;
 pub mod latex;
 pub mod traits;
 pub mod types;
@@ -33,8 +34,8 @@ pub use traits::{MarkdownParserImplementation, ParserCapabilities};
 pub use types::{
     ASTBlock, ASTBlockMetadata, ASTBlockType, BlockHash, Blockquote, Callout, CodeBlock,
     DocumentContent, FootnoteDefinition, FootnoteMap, FootnoteReference, Frontmatter,
-    FrontmatterFormat, Heading, HorizontalRule, LatexExpression, ListBlock, ListItem, ListType,
-    ParsedDocument, ParsedDocumentBuilder, Table, Tag, TaskStatus, Wikilink,
+    FrontmatterFormat, Heading, HorizontalRule, InlineLink, LatexExpression, ListBlock, ListItem,
+    ListType, ParsedDocument, ParsedDocumentBuilder, Table, Tag, TaskStatus, Wikilink,
 };
 
 // Convenience factory functions
@@ -43,4 +44,5 @@ pub use blockquotes::create_blockquote_extension;
 pub use callouts::create_callout_extension;
 pub use enhanced_tags::create_enhanced_tags_extension;
 pub use footnotes::create_footnote_extension;
+pub use inline_links::create_inline_link_extension;
 pub use latex::create_latex_extension;
