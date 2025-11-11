@@ -146,6 +146,10 @@ DEFINE FIELD metadata ON TABLE relations
     TYPE object
     DEFAULT {};
 
+DEFINE FIELD content_category ON TABLE relations
+    TYPE string
+    ASSERT $value IN ["note", "image", "video", "audio", "pdf", "document", "other", "web", "youtube", "github", "wikipedia", "stackoverflow", "external"];
+
 DEFINE FIELD context ON TABLE relations
     TYPE option<string>;
 

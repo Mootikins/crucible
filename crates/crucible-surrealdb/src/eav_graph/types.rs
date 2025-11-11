@@ -311,6 +311,8 @@ pub struct Relation {
     pub position: Option<i32>,
     #[serde(default)]
     pub metadata: Value,
+    #[serde(default = "default_content_category")]
+    pub content_category: String,
     #[serde(default = "Utc::now")]
     pub created_at: DateTime<Utc>,
 }
@@ -321,6 +323,10 @@ fn default_weight() -> f32 {
 
 fn default_directed() -> bool {
     true
+}
+
+fn default_content_category() -> String {
+    "note".to_string()
 }
 
 /// Block-level storage for AST nodes.
