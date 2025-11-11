@@ -24,7 +24,7 @@
 use crate::hashing::blake3::Blake3Hasher;
 use crate::parser::error::ParserResult;
 use crate::parser::traits::{MarkdownParser, ParserCapabilities};
-use crucible_parser::types::ParsedDocument;
+use crucible_parser::types::ParsedNote;
 use crate::storage::builder::ContentAddressedStorageBuilder;
 use crate::storage::diff::EnhancedChangeDetector;
 use crate::storage::{
@@ -55,7 +55,7 @@ pub struct StorageAwareParserConfig {
     pub store_metadata: bool,
     /// Enable parallel processing for large documents
     pub enable_parallel_processing: bool,
-    /// Threshold for parallel processing (minimum document size)
+    /// Threshold for parallel processing (minimum note size)
     pub parallel_threshold: usize,
 }
 
@@ -77,8 +77,8 @@ impl Default for StorageAwareParserConfig {
 /// Result type for storage-aware parsing operations
 #[derive(Debug, Clone)]
 pub struct StorageAwareParseResult {
-    /// The parsed document
-    pub document: ParsedDocument,
+    /// The parsed note
+    pub note: ParsedNote,
     /// Optional Merkle tree for content integrity
     pub merkle_tree: Option<MerkleTree>,
     /// Hashed blocks for efficient storage
@@ -96,7 +96,7 @@ pub struct StorageAwareParseResult {
 impl Default for StorageAwareParseResult {
     fn default() -> Self {
         Self {
-            document: ParsedDocument::default(),
+            note: ParsedNote::default(),
             merkle_tree: None,
             blocks: Vec::new(),
             content_hash: String::new(),
@@ -377,7 +377,7 @@ impl StorageAwareParser {
     /// # Arguments
     /// * `blocks` - Blocks to store
     /// * `tree` - Merkle tree to store
-    /// * `document` - Parsed document metadata
+    /// * `note` - Parsed note metadata
     /// * `storage` - Storage backend
     ///
     /// # Returns
@@ -386,7 +386,7 @@ impl StorageAwareParser {
         &self,
         blocks: &[HashedBlock],
         tree: &MerkleTree,
-        _document: &ParsedDocument,
+        _document: &ParsedNote,
         storage: Arc<dyn ContentAddressedStorage>,
     ) -> ParserResult<StorageOperationResult> {
         let start_time = SystemTime::now();
@@ -519,11 +519,11 @@ impl StorageAwareParser {
 
 #[async_trait]
 impl MarkdownParser for StorageAwareParser {
-    async fn parse_file(&self, path: &Path) -> ParserResult<ParsedDocument> {
+    async fn parse_file(&self, path: &Path) -> ParserResult<ParsedNote> {
         self.base_parser.parse_file(path).await
     }
 
-    fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedDocument> {
+    fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote> {
         self.base_parser.parse_content(content, source_path)
     }
 
@@ -546,10 +546,10 @@ impl StorageAwareMarkdownParser for StorageAwareParser {
         let start_time = SystemTime::now();
 
         // Parse the file using base parser
-        let document = self.base_parser.parse_file(path).await?;
+        let note = self.base_parser.parse_file(path).await?;
 
         // Extract plain text content for block processing
-        let content = &document.content.plain_text;
+        let content = &note.content.plain_text;
 
         // Create hashed blocks
         let blocks = if self.config.enable_storage || self.config.enable_merkle_trees {
@@ -570,7 +570,7 @@ impl StorageAwareMarkdownParser for StorageAwareParser {
             if self.config.enable_storage && !blocks.is_empty() {
                 if let Some(ref tree) = merkle_tree {
                     Some(
-                        self.store_content(&blocks, tree, &document, storage_backend)
+                        self.store_content(&blocks, tree, &note, storage_backend)
                             .await?,
                     )
                 } else {
@@ -611,7 +611,7 @@ impl StorageAwareMarkdownParser for StorageAwareParser {
         );
 
         Ok(StorageAwareParseResult {
-            document,
+            note,
             merkle_tree,
             blocks,
             content_hash,
@@ -630,7 +630,7 @@ impl StorageAwareMarkdownParser for StorageAwareParser {
         let start_time = SystemTime::now();
 
         // Parse the content using base parser
-        let document = self.base_parser.parse_content(content, source_path)?;
+        let note = self.base_parser.parse_content(content, source_path)?;
 
         // Create hashed blocks
         let blocks = if self.config.enable_storage || self.config.enable_merkle_trees {
@@ -651,7 +651,7 @@ impl StorageAwareMarkdownParser for StorageAwareParser {
             if self.config.enable_storage && !blocks.is_empty() {
                 if let Some(ref tree) = merkle_tree {
                     Some(
-                        self.store_content(&blocks, tree, &document, storage_backend)
+                        self.store_content(&blocks, tree, &note, storage_backend)
                             .await?,
                     )
                 } else {
@@ -692,7 +692,7 @@ impl StorageAwareMarkdownParser for StorageAwareParser {
         );
 
         Ok(StorageAwareParseResult {
-            document,
+            note,
             merkle_tree,
             blocks,
             content_hash,
@@ -712,7 +712,7 @@ impl StorageAwareMarkdownParser for StorageAwareParser {
         let start_time = SystemTime::now();
 
         // Parse the new content
-        let document = self.base_parser.parse_content(new_content, source_path)?;
+        let note = self.base_parser.parse_content(new_content, source_path)?;
 
         // Create hashed blocks
         let blocks = if self.config.enable_storage || self.config.enable_merkle_trees {
@@ -741,7 +741,7 @@ impl StorageAwareMarkdownParser for StorageAwareParser {
             if self.config.enable_storage && !blocks.is_empty() {
                 if let Some(ref tree) = merkle_tree {
                     Some(
-                        self.store_content(&blocks, tree, &document, storage_backend)
+                        self.store_content(&blocks, tree, &note, storage_backend)
                             .await?,
                     )
                 } else {
@@ -782,7 +782,7 @@ impl StorageAwareMarkdownParser for StorageAwareParser {
         );
 
         Ok(StorageAwareParseResult {
-            document,
+            note,
             merkle_tree,
             blocks,
             content_hash,
@@ -1014,7 +1014,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_parse_content_with_storage_no_backend() {
         let parser = factory::create_storage_aware_parser();
-        let content = "# Test Document\n\nThis is a test document with some content.";
+        let content = "# Test Note\n\nThis is a test note with some content.";
         let source_path = Path::new("test.md");
 
         let result = parser
@@ -1024,9 +1024,9 @@ mod tests {
         assert!(result.is_ok());
         let parse_result = result.unwrap();
 
-        // Check document structure
-        assert!(!parse_result.document.content.plain_text.is_empty());
-        assert_eq!(parse_result.document.path, source_path);
+        // Check note structure
+        assert!(!parse_result.note.content.plain_text.is_empty());
+        assert_eq!(parse_result.note.path, source_path);
 
         // Check blocks
         assert!(!parse_result.blocks.is_empty());
@@ -1067,7 +1067,7 @@ mod tests {
             .unwrap();
 
         // Check that both results have structure
-        assert!(!result2.document.content.plain_text.is_empty());
+        assert!(!result2.note.content.plain_text.is_empty());
         assert!(!result2.blocks.is_empty());
         assert!(result2.merkle_tree.is_some());
 

@@ -69,7 +69,7 @@ impl Default for CoordinatorConfig {
 pub struct ParsingOperation {
     /// Unique identifier for the operation
     pub id: String,
-    /// Source path of the document
+    /// Source path of the note
     pub source_path: PathBuf,
     /// Content to parse (if parsing from string)
     pub content: Option<String>,
@@ -176,9 +176,9 @@ pub struct BatchStatistics {
     pub total_unique_blocks: usize,
     /// Average deduplication ratio
     pub average_deduplication_ratio: f32,
-    /// Average parse time per document
+    /// Average parse time per note
     pub average_parse_time_ms: f64,
-    /// Average storage time per document
+    /// Average storage time per note
     pub average_storage_time_ms: f64,
     /// Total number of changes detected
     pub total_changes: usize,

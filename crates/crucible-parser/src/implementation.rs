@@ -10,7 +10,7 @@ use crate::block_hasher::SimpleBlockHasher;
 use crate::error::{ParserError, ParserResult};
 use crate::extensions::ExtensionRegistry;
 use crate::traits::{MarkdownParserImplementation, ParserCapabilities};
-use crate::types::{DocumentContent, ParsedDocument};
+use crate::types::{NoteContent, ParsedNote};
 
 /// Default implementation of the MarkdownParserImplementation trait
 ///
@@ -163,28 +163,28 @@ impl CrucibleParser {
 
     /// Process blocks for Phase 2 optimize-data-flow
     ///
-    /// This method extracts AST blocks from the parsed document, computes their hashes,
+    /// This method extracts AST blocks from the parsed note, computes their hashes,
     /// and builds a Merkle tree for efficient change detection.
     ///
     /// # Arguments
     ///
-    /// * `document` - The parsed document to process (modified in place)
+    /// * `note` - The parsed note to process (modified in place)
     ///
     /// # Returns
     ///
     /// Ok(()) if processing succeeded, Err(ParserError) if processing failed
-    async fn process_blocks(&self, document: &mut ParsedDocument) -> ParserResult<()> {
+    async fn process_blocks(&self, note: &mut ParsedNote) -> ParserResult<()> {
         // Create block extractor with configured settings
         let extractor = BlockExtractor::with_config(self.block_config.extraction_config.clone());
 
-        // Extract AST blocks from the document
+        // Extract AST blocks from the note
         let blocks = extractor
-            .extract_blocks(document)
+            .extract_blocks(note)
             .map_err(|e| ParserError::parse_failed(format!("Block extraction failed: {:?}", e)))?;
 
         // If no blocks were extracted, clear hash data and return
         if blocks.is_empty() {
-            document.clear_hash_data();
+            note.clear_hash_data();
             return Ok(());
         }
 
@@ -199,9 +199,9 @@ impl CrucibleParser {
             ParserError::parse_failed(format!("Merkle tree construction failed: {}", e))
         })?;
 
-        // Update document with hash data
-        document.block_hashes = block_hashes;
-        document.merkle_root = Some(merkle_root);
+        // Update note with hash data
+        note.block_hashes = block_hashes;
+        note.merkle_root = Some(merkle_root);
 
         Ok(())
     }
@@ -298,7 +298,7 @@ impl Default for CrucibleParser {
 
 #[async_trait]
 impl MarkdownParserImplementation for CrucibleParser {
-    async fn parse_file(&self, path: &Path) -> ParserResult<ParsedDocument> {
+    async fn parse_file(&self, path: &Path) -> ParserResult<ParsedNote> {
         // Read file contents
         let mut file = fs::File::open(path).await.map_err(ParserError::Io)?;
 
@@ -319,7 +319,7 @@ impl MarkdownParserImplementation for CrucibleParser {
         &self,
         content: &str,
         source_path: &Path,
-    ) -> ParserResult<ParsedDocument> {
+    ) -> ParserResult<ParsedNote> {
         // Parse frontmatter
         let (frontmatter_raw, content, frontmatter_format) = self.parse_frontmatter(content);
 
@@ -330,8 +330,8 @@ impl MarkdownParserImplementation for CrucibleParser {
             None
         };
 
-        // Create initial document content
-        let mut document_content = DocumentContent {
+        // Create initial note content
+        let mut document_content = NoteContent {
             plain_text: content.to_string(),
             word_count: content.split_whitespace().count(),
             char_count: content.chars().count(),
@@ -369,8 +369,8 @@ impl MarkdownParserImplementation for CrucibleParser {
         let latex_expressions = document_content.latex_expressions.clone();
         let footnotes = document_content.footnotes.clone();
 
-        // Create the initial parsed document using builder pattern
-        let mut parsed_doc = ParsedDocument::builder(source_path.to_path_buf())
+        // Create the initial parsed note using builder pattern
+        let mut parsed_doc = ParsedNote::builder(source_path.to_path_buf())
             .with_frontmatter(frontmatter)
             .with_content(document_content)
             .with_callouts(callouts)
@@ -557,7 +557,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_content_with_block_processing_disabled() {
-        let content = r#"# Test Document
+        let content = r#"# Test Note
 
 This is a paragraph.
 
@@ -592,7 +592,7 @@ let x = 42;
 
     #[tokio::test]
     async fn test_parse_content_with_block_processing_enabled() {
-        let content = r#"# Test Document
+        let content = r#"# Test Note
 
 This is a paragraph.
 
@@ -644,7 +644,7 @@ let x = 42;
         let doc = result.unwrap();
         // No frontmatter title, so title() returns the filename without extension
         assert_eq!(doc.title(), "test");
-        // Document should still be valid even if block processing fails
+        // Note should still be valid even if block processing fails
     }
 
     #[tokio::test]
@@ -739,8 +739,8 @@ Content 2."#;
 
     #[tokio::test]
     async fn test_large_document_block_processing() {
-        // Create a larger document to test performance and stability
-        let mut content = String::from("# Large Document\n\n");
+        // Create a larger note to test performance and stability
+        let mut content = String::from("# Large Note\n\n");
 
         for i in 0..20 {
             content.push_str(&format!("## Section {}\n\n", i + 1));

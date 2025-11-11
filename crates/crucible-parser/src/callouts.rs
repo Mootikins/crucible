@@ -6,7 +6,7 @@
 
 use super::error::{ParseError, ParseErrorType};
 use super::extensions::SyntaxExtension;
-use super::types::{Callout, DocumentContent};
+use super::types::{Callout, NoteContent};
 use async_trait::async_trait;
 
 use regex::Regex;
@@ -46,7 +46,7 @@ impl SyntaxExtension for CalloutExtension {
         content.contains("[!") && content.contains("]")
     }
 
-    async fn parse(&self, content: &str, doc_content: &mut DocumentContent) -> Vec<ParseError> {
+    async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
         let mut errors = Vec::new();
 
         // Pattern to match callout blocks starting with > [!type] possibly with title
@@ -81,7 +81,7 @@ impl SyntaxExtension for CalloutExtension {
                 Callout::new(callout_type, full_content, full_match.start())
             };
 
-            // Add the callout to document content
+            // Add the callout to note content
             doc_content.callouts.push(callout);
         }
 
@@ -201,19 +201,19 @@ mod tests {
     async fn test_basic_callout_parsing() {
         let extension = CalloutExtension::new();
         let content = "> [!note] This is a simple note";
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
         assert_eq!(errors.len(), 0);
-        // Note: We need to modify DocumentContent to have callouts field
+        // Note: We need to modify NoteContent to have callouts field
     }
 
     #[tokio::test]
     async fn test_callout_with_title() {
         let extension = CalloutExtension::new();
         let content = "> [!warning] Important Warning\nThis is the warning content.";
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -229,7 +229,7 @@ First line of info
 Second line of info
 > Regular paragraph
         "#;
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -241,7 +241,7 @@ Second line of info
     async fn test_unknown_callout_type() {
         let extension = CalloutExtension::new();
         let content = "> [!unknowntype] Custom callout\nSome content";
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -260,7 +260,7 @@ Note content
 > [!warning] Warning message
 Warning details
         "#;
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 

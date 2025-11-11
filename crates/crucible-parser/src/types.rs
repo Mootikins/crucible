@@ -1,4 +1,4 @@
-//! Core data types for parsed markdown documents
+//! Core data types for parsed markdown notes
 //!
 //! # Type Ownership
 //!
@@ -15,12 +15,12 @@
 //!
 //! Prefer importing from the canonical location:
 //! ```rust,ignore
-//! use crucible_parser::types::{ParsedDocument, Wikilink, Tag, BlockHash};
+//! use crucible_parser::types::{ParsedNote, Wikilink, Tag, BlockHash};
 //! ```
 //!
 //! Re-exports are available for convenience:
 //! ```rust,ignore
-//! use crucible_core::parser::{ParsedDocument, Wikilink, Tag};
+//! use crucible_core::parser::{ParsedNote, Wikilink, Tag};
 //! ```
 
 use chrono::{DateTime, NaiveDate, Utc};
@@ -112,14 +112,14 @@ impl std::str::FromStr for BlockHash {
     }
 }
 
-/// A fully parsed markdown document with extracted metadata
+/// A fully parsed markdown note with extracted metadata
 ///
 /// This structure represents the parsed and indexed form of a markdown file,
 /// containing all structured data needed for indexing and querying.
 ///
 /// # Memory Characteristics
 ///
-/// Estimated size: ~3 KB per document (increased from enhanced parsing)
+/// Estimated size: ~3 KB per note (increased from enhanced parsing)
 /// - PathBuf: ~24 bytes (SmallVec optimization)
 /// - Frontmatter: ~200 bytes average
 /// - Wikilinks: ~50 bytes × 10 avg = 500 bytes
@@ -131,7 +131,7 @@ impl std::str::FromStr for BlockHash {
 /// - Block hashes: ~64 bytes × 5 avg = 320 bytes (Phase 2 enhancement)
 /// - Merkle root: 32 bytes (Phase 2 enhancement)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ParsedDocument {
+pub struct ParsedNote {
     /// Original file path (absolute)
     pub path: PathBuf,
 
@@ -147,8 +147,8 @@ pub struct ParsedDocument {
     /// Extracted inline markdown links [text](url)
     pub inline_links: Vec<InlineLink>,
 
-    /// Parsed document content structure
-    pub content: DocumentContent,
+    /// Parsed note content structure
+    pub content: NoteContent,
 
     /// Extracted Obsidian-style callouts > [!type]
     pub callouts: Vec<Callout>,
@@ -159,7 +159,7 @@ pub struct ParsedDocument {
     /// Footnote definitions and references
     pub footnotes: FootnoteMap,
 
-    /// When this document was parsed
+    /// When this note was parsed
     pub parsed_at: DateTime<Utc>,
 
     /// Hash of file content (for change detection)
@@ -175,7 +175,7 @@ pub struct ParsedDocument {
     ///
     /// This field stores hashes of individual content blocks (headings, paragraphs,
     /// code blocks, etc.) enabling fine-grained change detection and Merkle tree diffing.
-    /// Each block hash represents a discrete semantic unit within the document.
+    /// Each block hash represents a discrete semantic unit within the note.
     ///
     /// Empty until Phase 2 implementation populates it during parsing.
     /// Maintained for backward compatibility - existing documents will have empty vectors.
@@ -185,7 +185,7 @@ pub struct ParsedDocument {
     /// Merkle root hash of all block hashes for Phase 2 optimize-data-flow
     ///
     /// This field stores the root hash of the Merkle tree constructed from all
-    /// block hashes in the document. It enables efficient document-level change
+    /// block hashes in the note. It enables efficient note-level change
     /// detection while supporting fine-grained diffing when needed.
     ///
     /// None until Phase 2 implementation computes it during parsing.
@@ -194,15 +194,15 @@ pub struct ParsedDocument {
     pub merkle_root: Option<BlockHash>,
 }
 
-impl ParsedDocument {
-    /// Create a new parsed document
+impl ParsedNote {
+    /// Create a new parsed note
     pub fn new(path: PathBuf) -> Self {
         Self::builder(path).build()
     }
 
-    /// Create a document builder for migration compatibility
-    pub fn builder(path: PathBuf) -> ParsedDocumentBuilder {
-        ParsedDocumentBuilder::new(path)
+    /// Create a note builder for migration compatibility
+    pub fn builder(path: PathBuf) -> ParsedNoteBuilder {
+        ParsedNoteBuilder::new(path)
     }
 
     /// Legacy compatibility constructor for existing tests
@@ -211,7 +211,7 @@ impl ParsedDocument {
         frontmatter: Option<Frontmatter>,
         wikilinks: Vec<Wikilink>,
         tags: Vec<Tag>,
-        content: DocumentContent,
+        content: NoteContent,
         parsed_at: DateTime<Utc>,
         content_hash: String,
         file_size: u64,
@@ -236,14 +236,14 @@ impl ParsedDocument {
     }
 }
 
-impl Default for ParsedDocument {
+impl Default for ParsedNote {
     fn default() -> Self {
         Self::new(PathBuf::from(""))
     }
 }
 
-impl ParsedDocument {
-    /// Get the document title (from frontmatter or filename)
+impl ParsedNote {
+    /// Get the note title (from frontmatter or filename)
     pub fn title(&self) -> String {
         self.frontmatter
             .as_ref()
@@ -277,7 +277,7 @@ impl ParsedDocument {
         self.content.headings.first().map(|h| h.text.as_str())
     }
 
-    /// Check if this document has block hashes (Phase 2 support)
+    /// Check if this note has block hashes (Phase 2 support)
     pub fn has_block_hashes(&self) -> bool {
         !self.block_hashes.is_empty()
     }
@@ -287,7 +287,7 @@ impl ParsedDocument {
         self.block_hashes.len()
     }
 
-    /// Check if this document has a Merkle root (Phase 2 support)
+    /// Check if this note has a Merkle root (Phase 2 support)
     pub fn has_merkle_root(&self) -> bool {
         self.merkle_root.is_some()
     }
@@ -464,7 +464,7 @@ pub struct Wikilink {
     /// Optional display alias
     pub alias: Option<String>,
 
-    /// Character offset in source document
+    /// Character offset in source note
     pub offset: usize,
 
     /// Whether this is an embed (![[note]])
@@ -551,7 +551,7 @@ impl Wikilink {
 
 /// Tag reference #tag or #nested/tag
 ///
-/// Represents a tag in the document. Supports nested tags with forward slashes.
+/// Represents a tag in the note. Supports nested tags with forward slashes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Tag {
     /// Full tag name (without #)
@@ -560,7 +560,7 @@ pub struct Tag {
     /// Tag path components (for nested tags)
     pub path: Vec<String>,
 
-    /// Character offset in source document
+    /// Character offset in source note
     pub offset: usize,
 }
 
@@ -597,9 +597,9 @@ impl Tag {
     }
 }
 
-/// Parsed document content structure
+/// Parsed note content structure
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct DocumentContent {
+pub struct NoteContent {
     /// Plain text content (markdown syntax stripped)
     ///
     /// Limited to first 1000 characters for search preview.
@@ -646,7 +646,7 @@ pub struct DocumentContent {
     pub char_count: usize,
 }
 
-impl DocumentContent {
+impl NoteContent {
     /// Create empty content
     pub fn new() -> Self {
         Self {
@@ -691,7 +691,7 @@ impl DocumentContent {
         self.code_blocks.push(block);
     }
 
-    /// Get document outline (headings only)
+    /// Get note outline (headings only)
     pub fn outline(&self) -> Vec<String> {
         self.headings
             .iter()
@@ -958,7 +958,7 @@ pub struct HorizontalRule {
     /// Style indicator (dash, asterisk, underscore)
     pub style: String,
 
-    /// Character offset in source document
+    /// Character offset in source note
     pub offset: usize,
 }
 
@@ -994,7 +994,7 @@ impl HorizontalRule {
 /// AST block type enumeration
 ///
 /// Represents the different types of semantic blocks that can be extracted
-/// from a markdown document. Each block type corresponds to a natural
+/// from a markdown note. Each block type corresponds to a natural
 /// semantic boundary that aligns with user mental model and HTML rendering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ASTBlockType {
@@ -1046,7 +1046,7 @@ impl std::fmt::Display for ASTBlockType {
     }
 }
 
-/// AST Block representing a semantic unit in a markdown document
+/// AST Block representing a semantic unit in a markdown note
 ///
 /// AST blocks are natural semantic boundaries that correspond to complete
 /// structural elements in markdown. Each block represents one coherent
@@ -1075,10 +1075,10 @@ pub struct ASTBlock {
     /// The actual content of this block
     pub content: String,
 
-    /// Character offset where this block starts in the source document
+    /// Character offset where this block starts in the source note
     pub start_offset: usize,
 
-    /// Character offset where this block ends in the source document
+    /// Character offset where this block ends in the source note
     pub end_offset: usize,
 
     /// Cryptographic hash of the block content (BLAKE3)
@@ -1103,7 +1103,7 @@ pub struct ASTBlock {
     ///
     /// This enables:
     /// - Merkle tree construction (rehash only changed subtree)
-    /// - Document structure queries ("all blocks under X")
+    /// - Note structure queries ("all blocks under X")
     /// - Context breadcrumbs for AI/search
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_block_id: Option<String>,
@@ -1379,7 +1379,7 @@ pub struct Callout {
     /// Callout content
     pub content: String,
 
-    /// Character offset in source document
+    /// Character offset in source note
     pub offset: usize,
 
     /// Whether this is a known callout type
@@ -1464,7 +1464,7 @@ pub struct LatexExpression {
     /// Whether this is inline ($) or block ($$) math
     pub is_block: bool,
 
-    /// Character offset in source document
+    /// Character offset in source note
     pub offset: usize,
 
     /// Length of the expression in source
@@ -1511,7 +1511,7 @@ pub struct InlineLink {
     /// Optional link title attribute
     pub title: Option<String>,
 
-    /// Character offset in source document
+    /// Character offset in source note
     pub offset: usize,
 }
 
@@ -1604,7 +1604,7 @@ pub struct FootnoteDefinition {
     /// Footnote content
     pub content: String,
 
-    /// Character offset in source document
+    /// Character offset in source note
     pub offset: usize,
 
     /// Line number in source
@@ -1629,7 +1629,7 @@ pub struct FootnoteReference {
     /// Footnote identifier (without [^])
     pub identifier: String,
 
-    /// Character offset in source document
+    /// Character offset in source note
     pub offset: usize,
 
     /// Reference order number (for sequential numbering)
@@ -1656,14 +1656,14 @@ impl FootnoteReference {
     }
 }
 
-/// Builder for ParsedDocument to support migration and test compatibility
-pub struct ParsedDocumentBuilder {
+/// Builder for ParsedNote to support migration and test compatibility
+pub struct ParsedNoteBuilder {
     path: PathBuf,
     frontmatter: Option<Frontmatter>,
     wikilinks: Vec<Wikilink>,
     tags: Vec<Tag>,
     inline_links: Vec<InlineLink>,
-    content: DocumentContent,
+    content: NoteContent,
     callouts: Vec<Callout>,
     latex_expressions: Vec<LatexExpression>,
     footnotes: FootnoteMap,
@@ -1675,7 +1675,7 @@ pub struct ParsedDocumentBuilder {
     merkle_root: Option<BlockHash>,
 }
 
-impl ParsedDocumentBuilder {
+impl ParsedNoteBuilder {
     /// Create a new builder with just the path
     pub fn new(path: PathBuf) -> Self {
         Self {
@@ -1684,7 +1684,7 @@ impl ParsedDocumentBuilder {
             wikilinks: Vec::new(),
             tags: Vec::new(),
             inline_links: Vec::new(),
-            content: DocumentContent::default(),
+            content: NoteContent::default(),
             callouts: Vec::new(),
             latex_expressions: Vec::new(),
             footnotes: FootnoteMap::new(),
@@ -1722,7 +1722,7 @@ impl ParsedDocumentBuilder {
     }
 
     /// Set content
-    pub fn with_content(mut self, content: DocumentContent) -> Self {
+    pub fn with_content(mut self, content: NoteContent) -> Self {
         self.content = content;
         self
     }
@@ -1775,9 +1775,9 @@ impl ParsedDocumentBuilder {
         self
     }
 
-    /// Build the ParsedDocument
-    pub fn build(self) -> ParsedDocument {
-        ParsedDocument {
+    /// Build the ParsedNote
+    pub fn build(self) -> ParsedNote {
+        ParsedNote {
             path: self.path,
             frontmatter: self.frontmatter,
             wikilinks: self.wikilinks,
@@ -1854,14 +1854,14 @@ mod tests {
 
     #[test]
     fn test_document_content_word_count() {
-        let content = DocumentContent::new().with_plain_text("Hello world test".to_string());
+        let content = NoteContent::new().with_plain_text("Hello world test".to_string());
         assert_eq!(content.word_count, 3);
         assert_eq!(content.char_count, 16);
     }
 
     #[test]
-    fn test_parsed_document_all_tags() {
-        let mut doc = ParsedDocument::new(PathBuf::from("test.md"));
+    fn test_parsed_note_all_tags() {
+        let mut doc = ParsedNote::new(PathBuf::from("test.md"));
         doc.tags = vec![Tag::new("rust", 0), Tag::new("ai", 10)];
 
         let yaml = "tags: [project, parsing]";
@@ -2063,8 +2063,8 @@ mod tests {
     }
 
     #[test]
-    fn test_parsed_document_with_block_hashes() {
-        let mut doc = ParsedDocument::new(PathBuf::from("test.md"));
+    fn test_parsed_note_with_block_hashes() {
+        let mut doc = ParsedNote::new(PathBuf::from("test.md"));
 
         // Create some test block hashes
         let hash1 = BlockHash::new([
@@ -2107,7 +2107,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parsed_document_builder_with_hashes() {
+    fn test_parsed_note_builder_with_hashes() {
         let hash1 = BlockHash::new([
             0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
             0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
@@ -2120,7 +2120,7 @@ mod tests {
             0x5d, 0x5e, 0x5f, 0x60,
         ]);
 
-        let doc = ParsedDocument::builder(PathBuf::from("test.md"))
+        let doc = ParsedNote::builder(PathBuf::from("test.md"))
             .with_block_hashes(vec![hash1])
             .with_merkle_root(Some(merkle_root))
             .build();
@@ -2133,18 +2133,18 @@ mod tests {
     }
 
     #[test]
-    fn test_parsed_document_backward_compatibility() {
+    fn test_parsed_note_backward_compatibility() {
         // Test that legacy constructor still works with empty hash fields
         let path = PathBuf::from("test.md");
         let frontmatter = None;
         let wikilinks = vec![];
         let tags = vec![];
-        let content = DocumentContent::new();
+        let content = NoteContent::new();
         let parsed_at = Utc::now();
         let content_hash = "test_hash".to_string();
         let file_size = 1024;
 
-        let doc = ParsedDocument::legacy(
+        let doc = ParsedNote::legacy(
             path.clone(),
             frontmatter,
             wikilinks,
@@ -2168,7 +2168,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parsed_document_serialization_with_hashes() {
+    fn test_parsed_note_serialization_with_hashes() {
         let hash1 = BlockHash::new([
             0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
             0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
@@ -2181,14 +2181,14 @@ mod tests {
             0x5d, 0x5e, 0x5f, 0x60,
         ]);
 
-        let original_doc = ParsedDocument::builder(PathBuf::from("test.md"))
+        let original_doc = ParsedNote::builder(PathBuf::from("test.md"))
             .with_block_hashes(vec![hash1])
             .with_merkle_root(Some(merkle_root))
             .build();
 
         // Test JSON serialization
         let json = serde_json::to_string(&original_doc).expect("Failed to serialize");
-        let deserialized_doc: ParsedDocument =
+        let deserialized_doc: ParsedNote =
             serde_json::from_str(&json).expect("Failed to deserialize");
 
         // Verify the fields are preserved

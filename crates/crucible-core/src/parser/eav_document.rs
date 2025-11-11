@@ -1,4 +1,4 @@
-//! EAV+Graph Document Representation
+//! EAV+Graph Note Representation
 //!
 //! This module provides an intermediate representation for converting parsed markdown
 //! documents into the Entity-Attribute-Value + Graph storage model. It acts as a bridge
@@ -7,13 +7,13 @@
 //! ## Purpose
 //!
 //! The `EAVDocument` type solves the impedance mismatch between:
-//! - **ParsedDocument**: Markdown-focused structure (headings, blocks, wikilinks)
+//! - **ParsedNote**: Markdown-focused structure (headings, blocks, wikilinks)
 //! - **Storage Traits**: EAV+Graph focused (entities, properties, relations)
 //!
 //! ## Architecture
 //!
 //! ```text
-//! ParsedDocument → EAVDocument → Storage Traits
+//! ParsedNote → EAVDocument → Storage Traits
 //!     (parser)    (intermediate)    (database)
 //! ```
 //!
@@ -36,9 +36,9 @@ use std::collections::HashMap;
 // EAVDocument - Intermediate Representation
 // ============================================================================
 
-/// Intermediate representation of a parsed document in EAV+Graph format
+/// Intermediate representation of a parsed note in EAV+Graph format
 ///
-/// This type bridges the gap between ParsedDocument (markdown structure) and
+/// This type bridges the gap between ParsedNote (markdown structure) and
 /// the storage traits (EAV+Graph structure). It provides:
 ///
 /// - Type-safe entity representation
@@ -82,12 +82,12 @@ pub struct EAVDocument {
 }
 
 impl EAVDocument {
-    /// Create a new document builder
+    /// Create a new note builder
     pub fn builder() -> EAVDocumentBuilder {
         EAVDocumentBuilder::new()
     }
 
-    /// Validate the document structure
+    /// Validate the note structure
     ///
     /// Ensures:
     /// - Entity has a valid ID
@@ -337,8 +337,8 @@ pub enum ValidationError {
     #[error("Entity ID cannot be empty")]
     EmptyEntityId,
 
-    /// Property references different entity than document
-    #[error("Property entity mismatch: property references '{property_entity}' but document entity is '{document_entity}' (namespace: {namespace}, key: {key})")]
+    /// Property references different entity than note
+    #[error("Property entity mismatch: property references '{property_entity}' but note entity is '{document_entity}' (namespace: {namespace}, key: {key})")]
     PropertyEntityMismatch {
         property_entity: String,
         document_entity: String,
@@ -346,23 +346,23 @@ pub enum ValidationError {
         key: String,
     },
 
-    /// Relation source doesn't match document entity
-    #[error("Relation source mismatch: relation source is '{relation_source}' but document entity is '{document_entity}'")]
+    /// Relation source doesn't match note entity
+    #[error("Relation source mismatch: relation source is '{relation_source}' but note entity is '{document_entity}'")]
     RelationSourceMismatch {
         relation_source: String,
         document_entity: String,
     },
 
-    /// Block entity doesn't match document entity
-    #[error("Block entity mismatch: block references '{block_entity}' but document entity is '{document_entity}' (block_id: {block_id})")]
+    /// Block entity doesn't match note entity
+    #[error("Block entity mismatch: block references '{block_entity}' but note entity is '{document_entity}' (block_id: {block_id})")]
     BlockEntityMismatch {
         block_entity: String,
         document_entity: String,
         block_id: String,
     },
 
-    /// Entity tag doesn't match document entity
-    #[error("Entity tag mismatch: tag references '{tag_entity}' but document entity is '{document_entity}' (tag_id: {tag_id})")]
+    /// Entity tag doesn't match note entity
+    #[error("Entity tag mismatch: tag references '{tag_entity}' but note entity is '{document_entity}' (tag_id: {tag_id})")]
     EntityTagMismatch {
         tag_entity: String,
         document_entity: String,

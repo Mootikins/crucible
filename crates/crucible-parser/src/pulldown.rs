@@ -42,7 +42,7 @@ impl Default for PulldownParser {
 
 #[async_trait]
 impl MarkdownParser for PulldownParser {
-    async fn parse_file(&self, path: &Path) -> ParserResult<ParsedDocument> {
+    async fn parse_file(&self, path: &Path) -> ParserResult<ParsedNote> {
         // Read file as raw bytes first (matches scanner behavior for consistent hashing)
         let bytes = tokio::fs::read(path).await?;
 
@@ -68,13 +68,13 @@ impl MarkdownParser for PulldownParser {
         self.parse_content_with_bytes(&content, &bytes, path)
     }
 
-    fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedDocument> {
+    fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote> {
         // For backwards compatibility, hash the content string
         // Note: New code should use parse_content_with_bytes for consistent hashing
         self.parse_content_with_bytes(content, content.as_bytes(), source_path)
     }
 
-    fn parse_content_with_bytes(&self, content: &str, raw_bytes: &[u8], source_path: &Path) -> ParserResult<ParsedDocument> {
+    fn parse_content_with_bytes(&self, content: &str, raw_bytes: &[u8], source_path: &Path) -> ParserResult<ParsedNote> {
         // Extract frontmatter (YAML between --- delimiters)
         let (frontmatter, body) = extract_frontmatter(content)?;
 
@@ -96,7 +96,7 @@ impl MarkdownParser for PulldownParser {
         // Get file size from raw bytes (matches actual file size)
         let file_size = raw_bytes.len() as u64;
 
-        Ok(ParsedDocument {
+        Ok(ParsedNote {
             path: source_path.to_path_buf(),
             frontmatter,
             wikilinks,
@@ -200,8 +200,8 @@ fn should_include_tag(match_text: &str, content: &str, offset: usize) -> bool {
     true
 }
 
-/// Parse document structure with pulldown-cmark
-fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
+/// Parse note structure with pulldown-cmark
+fn parse_content_structure(body: &str) -> ParserResult<NoteContent> {
     let parser = CmarkParser::new(body);
 
     let mut headings = Vec::new();
@@ -493,7 +493,7 @@ fn parse_content_structure(body: &str) -> ParserResult<DocumentContent> {
         plain_text
     };
 
-    Ok(DocumentContent {
+    Ok(NoteContent {
         plain_text,
         headings,
         code_blocks,

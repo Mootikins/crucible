@@ -10,7 +10,7 @@
 
 use super::error::{ParseError, ParseErrorType};
 use super::extensions::SyntaxExtension;
-use super::types::{DocumentContent, FootnoteDefinition, FootnoteReference};
+use super::types::{NoteContent, FootnoteDefinition, FootnoteReference};
 use async_trait::async_trait;
 
 use regex::Regex;
@@ -59,7 +59,7 @@ impl SyntaxExtension for FootnoteExtension {
         content.contains("[^") || content.contains('^')
     }
 
-    async fn parse(&self, content: &str, doc_content: &mut DocumentContent) -> Vec<ParseError> {
+    async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
         let mut errors = Vec::new();
         let footnotes = &mut doc_content.footnotes;
 
@@ -174,7 +174,7 @@ impl SyntaxExtension for FootnoteExtension {
         // Validate references and definitions
         self.validate_footnotes(&references_found, &definitions_found, &mut errors);
 
-        // Assign order numbers to references based on document order
+        // Assign order numbers to references based on note order
         let mut ordered_references = Vec::new();
         let mut seen_identifiers: HashSet<String> = HashSet::new();
         let mut order_counter = 1;
@@ -339,7 +339,7 @@ mod tests {
         let content = r#"This is text with a footnote[^1].
 
 [^1]: This is the footnote content."#;
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -365,7 +365,7 @@ mod tests {
     Second line indented
     Third line with more content
     Final paragraph of footnote"#;
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -383,7 +383,7 @@ mod tests {
     async fn test_inline_footnotes() {
         let extension = FootnoteExtension::new();
         let content = "This text has an^inline footnote^ right in the middle.";
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -405,7 +405,7 @@ mod tests {
 
 [^1]: First footnote content.
 [^2]: Second footnote content."#;
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -437,7 +437,7 @@ mod tests {
 
 [^dup]: First definition
 [^dup]: Second definition"#;
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -455,7 +455,7 @@ mod tests {
     async fn test_orphaned_footnote_reference() {
         let extension = FootnoteExtension::new();
         let content = "This has an orphaned footnote[^missing].";
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -475,7 +475,7 @@ mod tests {
         let content = r#"This text has no references.
 
 [^unused]: This definition is never referenced."#;
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -496,7 +496,7 @@ mod tests {
 
 [^custom-note]: Custom identifier with hyphens
 [^123]: Numeric identifier"#;
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -516,7 +516,7 @@ mod tests {
         let content = r#"First reference[^1] and second reference[^1].
 
 [^1]: Shared footnote content"#;
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -560,7 +560,7 @@ mod tests {
         let extension = FootnoteExtension::new();
         let content = r#"# Title
 
-This document has various content:
+This note has various content:
 
 - List item with footnote[^1]
 - Another item with^inline footnote
@@ -570,7 +570,7 @@ This document has various content:
 ## Subsection
 
 More text here."#;
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 

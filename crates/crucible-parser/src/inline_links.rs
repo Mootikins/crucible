@@ -8,7 +8,7 @@
 
 use super::error::ParseError;
 use super::extensions::SyntaxExtension;
-use super::types::{DocumentContent, InlineLink};
+use super::types::{NoteContent, InlineLink};
 use async_trait::async_trait;
 
 use regex::Regex;
@@ -61,7 +61,7 @@ impl SyntaxExtension for InlineLinkExtension {
         content.contains("](")
     }
 
-    async fn parse(&self, content: &str, doc_content: &mut DocumentContent) -> Vec<ParseError> {
+    async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
         let errors = Vec::new();
 
         // Extract all inline links
@@ -118,7 +118,7 @@ mod tests {
     async fn test_basic_inline_link_parsing() {
         let extension = InlineLinkExtension::new();
         let content = "Check out [Rust](https://rust-lang.org) for more info.";
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -136,7 +136,7 @@ mod tests {
     async fn test_inline_link_with_title() {
         let extension = InlineLinkExtension::new();
         let content = r#"Visit [Rust](https://rust-lang.org "The Rust Programming Language") today!"#;
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -154,7 +154,7 @@ mod tests {
     async fn test_multiple_inline_links() {
         let extension = InlineLinkExtension::new();
         let content = r#"Check [Rust](https://rust-lang.org) and [GitHub](https://github.com) for more."#;
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -174,7 +174,7 @@ mod tests {
     async fn test_relative_links() {
         let extension = InlineLinkExtension::new();
         let content = "See [other note](./notes/other.md) for details.";
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -198,7 +198,7 @@ External: [Rust](https://rust-lang.org "Official Site")
 Relative: [Guide](./guide.md)
 Another: [API](https://docs.rs)
 "#;
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -226,7 +226,7 @@ Another: [API](https://docs.rs)
     async fn test_link_offset_tracking() {
         let extension = InlineLinkExtension::new();
         let content = "Start [first](url1) middle [second](url2) end";
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -252,7 +252,7 @@ Another: [API](https://docs.rs)
     async fn test_empty_content() {
         let extension = InlineLinkExtension::new();
         let content = "";
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -264,7 +264,7 @@ Another: [API](https://docs.rs)
     async fn test_no_links() {
         let extension = InlineLinkExtension::new();
         let content = "This is plain text with [[wikilinks]] but no inline links.";
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 

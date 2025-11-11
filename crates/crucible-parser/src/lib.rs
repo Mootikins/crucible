@@ -33,9 +33,9 @@ pub use implementation::{BlockProcessingConfig, CrucibleParser};
 pub use traits::{MarkdownParserImplementation, ParserCapabilities};
 pub use types::{
     ASTBlock, ASTBlockMetadata, ASTBlockType, BlockHash, Blockquote, Callout, CodeBlock,
-    DocumentContent, FootnoteDefinition, FootnoteMap, FootnoteReference, Frontmatter,
+    NoteContent, FootnoteDefinition, FootnoteMap, FootnoteReference, Frontmatter,
     FrontmatterFormat, Heading, HorizontalRule, InlineLink, LatexExpression, ListBlock, ListItem,
-    ListType, ParsedDocument, ParsedDocumentBuilder, Table, Tag, TaskStatus, Wikilink,
+    ListType, ParsedNote, ParsedNoteBuilder, Table, Tag, TaskStatus, Wikilink,
 };
 
 // Convenience factory functions

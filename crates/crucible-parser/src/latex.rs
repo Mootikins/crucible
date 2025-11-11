@@ -6,7 +6,7 @@
 
 use super::error::{ParseError, ParseErrorType};
 use super::extensions::SyntaxExtension;
-use super::types::DocumentContent;
+use super::types::NoteContent;
 use async_trait::async_trait;
 use regex::Regex;
 use std::sync::Arc;
@@ -46,7 +46,7 @@ impl SyntaxExtension for LatexExtension {
             && (content.contains("$$") || content.chars().filter(|&c| c == '$').count() >= 2)
     }
 
-    async fn parse(&self, content: &str, doc_content: &mut DocumentContent) -> Vec<ParseError> {
+    async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
         let mut errors = Vec::new();
 
         // Extract block math expressions first ($$...$$)
@@ -77,7 +77,7 @@ impl LatexExtension {
     fn extract_block_latex(
         &self,
         content: &str,
-        doc_content: &mut DocumentContent,
+        doc_content: &mut NoteContent,
     ) -> Result<(), ParseError> {
         // Pattern to match $$...$$ blocks
         let re = Regex::new(r"\$\$([\s\S]*?)\$\$").map_err(|e| {
@@ -99,7 +99,7 @@ impl LatexExtension {
                 return Err(error);
             }
 
-            // Add the LaTeX expression to document content
+            // Add the LaTeX expression to note content
             doc_content
                 .latex_expressions
                 .push(super::types::LatexExpression::new(
@@ -117,7 +117,7 @@ impl LatexExtension {
     fn extract_inline_latex(
         &self,
         original_content: &str,
-        doc_content: &mut DocumentContent,
+        doc_content: &mut NoteContent,
     ) -> Result<(), ParseError> {
         // Remove block expressions first to avoid double-matching
         let content_without_blocks = Regex::new(r"\$\$[\s\S]*?\$\$")
@@ -181,7 +181,7 @@ impl LatexExtension {
                 continue; // Skip problematic expressions rather than fail
             }
 
-            // Add the LaTeX expression to document content
+            // Add the LaTeX expression to note content
             doc_content
                 .latex_expressions
                 .push(super::types::LatexExpression::new(
@@ -290,12 +290,12 @@ mod tests {
     async fn test_inline_latex_parsing() {
         let extension = LatexExtension::new();
         let content = "The formula $E=mc^2$ describes mass-energy equivalence.";
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
         assert_eq!(errors.len(), 0);
-        // Note: We need to modify DocumentContent to have latex_expressions field
+        // Note: We need to modify NoteContent to have latex_expressions field
     }
 
     #[tokio::test]
@@ -306,7 +306,7 @@ The integral is:
 $$\int_0^1 f(x)dx = F(1) - F(0)$$
 This is the result.
         "#;
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -335,7 +335,7 @@ This is the result.
     async fn test_mixed_inline_and_block() {
         let extension = LatexExtension::new();
         let content = "Inline $x+y$ and block $$\\frac{a}{b}$$ math.";
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
