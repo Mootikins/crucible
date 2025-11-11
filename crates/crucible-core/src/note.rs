@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DocumentNode {
+pub struct NoteNode {
     pub id: Uuid,
     pub title: String,
     pub content: String,
@@ -17,7 +17,7 @@ pub struct DocumentNode {
     pub position: i32,
 }
 
-impl DocumentNode {
+impl NoteNode {
     pub fn new(title: String, content: String) -> Self {
         let now = Utc::now();
         Self {
@@ -62,7 +62,7 @@ mod tests {
 
     #[test]
     fn test_document_node_new() {
-        let doc = DocumentNode::new("Test Title".to_string(), "Test Content".to_string());
+        let doc = NoteNode::new("Test Title".to_string(), "Test Content".to_string());
 
         assert_eq!(doc.title, "Test Title");
         assert_eq!(doc.content, "Test Content");
@@ -76,18 +76,18 @@ mod tests {
 
     #[test]
     fn test_document_node_uuid_unique() {
-        let doc1 = DocumentNode::new("Doc 1".to_string(), "Content 1".to_string());
-        let doc2 = DocumentNode::new("Doc 2".to_string(), "Content 2".to_string());
+        let doc1 = NoteNode::new("Doc 1".to_string(), "Content 1".to_string());
+        let doc2 = NoteNode::new("Doc 2".to_string(), "Content 2".to_string());
 
         assert_ne!(doc1.id, doc2.id);
     }
 
     #[test]
     fn test_document_node_serialization() {
-        let doc = DocumentNode::new("Test".to_string(), "Content".to_string());
+        let doc = NoteNode::new("Test".to_string(), "Content".to_string());
         let json = serde_json::to_string(&doc).unwrap();
 
-        let deserialized: DocumentNode = serde_json::from_str(&json).unwrap();
+        let deserialized: NoteNode = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.id, doc.id);
         assert_eq!(deserialized.title, doc.title);
         assert_eq!(deserialized.content, doc.content);

@@ -1,9 +1,9 @@
 //! Adapter to convert parsed documents into SurrealDB records
 //!
-//! This module provides functionality to transform ParsedDocument instances
+//! This module provides functionality to transform ParsedNote instances
 //! into SurrealDB-compatible data structures for indexing.
 
-use crate::parser::types::ParsedDocument;
+use crate::parser::types::ParsedNote;
 use anyhow::Result;
 use serde_json::{Map, Value};
 
@@ -36,10 +36,10 @@ impl SurrealDBAdapter {
         self
     }
 
-    /// Convert a parsed document into a SurrealDB note record
+    /// Convert a parsed note into a SurrealDB note record
     ///
     /// Returns a JSON object suitable for insertion into the `notes` table
-    pub fn to_note_record(&self, doc: &ParsedDocument) -> Result<Value> {
+    pub fn to_note_record(&self, doc: &ParsedNote) -> Result<Value> {
         let mut record = Map::new();
 
         // Path: string representation of PathBuf
@@ -98,10 +98,10 @@ impl SurrealDBAdapter {
         Ok(Value::Object(record))
     }
 
-    /// Extract wikilink edges from a document
+    /// Extract wikilink edges from a note
     ///
     /// Returns a vec of (source_path, target_path, context) tuples
-    pub fn to_wikilink_edges(&self, doc: &ParsedDocument) -> Result<Vec<(String, String, String)>> {
+    pub fn to_wikilink_edges(&self, doc: &ParsedNote) -> Result<Vec<(String, String, String)>> {
         let source_path = doc.path.to_string_lossy().to_string();
         let mut edges = Vec::new();
 
@@ -115,10 +115,10 @@ impl SurrealDBAdapter {
         Ok(edges)
     }
 
-    /// Extract tag associations from a document
+    /// Extract tag associations from a note
     ///
     /// Returns a vec of (note_path, tag_name) tuples
-    pub fn to_tag_associations(&self, doc: &ParsedDocument) -> Result<Vec<(String, String)>> {
+    pub fn to_tag_associations(&self, doc: &ParsedNote) -> Result<Vec<(String, String)>> {
         let note_path = doc.path.to_string_lossy().to_string();
         let mut associations = Vec::new();
 
@@ -166,21 +166,21 @@ impl Default for SurrealDBAdapter {
 mod tests {
     use super::*;
     use crate::parser::types::{
-        DocumentContent, Frontmatter, FrontmatterFormat, Heading, Tag, Wikilink,
+        NoteContent, Frontmatter, FrontmatterFormat, Heading, Tag, Wikilink,
     };
 
-    fn create_test_document() -> ParsedDocument {
+    fn create_test_document() -> ParsedNote {
         use chrono::Utc;
         use std::path::PathBuf;
 
         // Create frontmatter using the raw string format
         let frontmatter_raw = "title: Test Note\ntags: [project, ai]\nstatus: active".to_string();
 
-        ParsedDocument {
+        ParsedNote {
             path: PathBuf::from("Projects/test.md"),
             frontmatter: Some(Frontmatter::new(frontmatter_raw, FrontmatterFormat::Yaml)),
-            content: DocumentContent {
-                plain_text: "Test\n\nThis is a test document with link and tag.".to_string(),
+            content: NoteContent {
+                plain_text: "Test\n\nThis is a test note with link and tag.".to_string(),
                 word_count: 10,
                 char_count: 47,
                 paragraphs: vec![],
@@ -235,7 +235,7 @@ mod tests {
         assert!(!record["content"]
             .as_str()
             .unwrap()
-            .contains("This is a test document"));
+            .contains("This is a test note"));
         assert!(record["content"].as_str().unwrap().len() <= 1000);
     }
 
@@ -251,7 +251,7 @@ mod tests {
         // Should include full plain_text content when configured
         assert_eq!(
             record["content"],
-            "Test\n\nThis is a test document with link and tag."
+            "Test\n\nThis is a test note with link and tag."
         );
     }
 
@@ -288,7 +288,7 @@ mod tests {
         assert_eq!(edges.len(), 1);
         assert_eq!(edges[0].0, "Projects/test.md"); // source
         assert_eq!(edges[0].1, "link"); // target
-        assert!(edges[0].2.contains("test document")); // context
+        assert!(edges[0].2.contains("test note")); // context
     }
 
     #[test]
@@ -331,10 +331,10 @@ mod tests {
 
         let adapter = SurrealDBAdapter::new();
 
-        let doc = ParsedDocument {
+        let doc = ParsedNote {
             path: PathBuf::from("simple.md"),
             frontmatter: None,
-            content: DocumentContent {
+            content: NoteContent {
                 plain_text: "Simple content".to_string(),
                 word_count: 2,
                 char_count: 14,

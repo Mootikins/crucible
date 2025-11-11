@@ -5,16 +5,16 @@
 
 use crate::parser::error::ParserResult;
 use crate::parser::traits::{MarkdownParser, ParserCapabilities};
-use crucible_parser::types::ParsedDocument;
+use crucible_parser::types::ParsedNote;
 use async_trait::async_trait;
 use crucible_parser::MarkdownParserImplementation;
 use std::path::Path;
 
-/// Convert a parser crate ParsedDocument to a core ParsedDocument
+/// Convert a parser crate ParsedNote to a core ParsedNote
 ///
-/// NOTE: After type consolidation, ParsedDocument is the same type in both crates.
+/// NOTE: After type consolidation, ParsedNote is the same type in both crates.
 /// This function is now a no-op that just returns the input directly.
-fn convert_parsed_document(parser_doc: crucible_parser::ParsedDocument) -> ParsedDocument {
+fn convert_parsed_document(parser_doc: crucible_parser::ParsedNote) -> ParsedNote {
     parser_doc
 }
 
@@ -50,7 +50,7 @@ impl Default for ParserAdapter {
 
 #[async_trait]
 impl MarkdownParser for ParserAdapter {
-    async fn parse_file(&self, path: &Path) -> ParserResult<ParsedDocument> {
+    async fn parse_file(&self, path: &Path) -> ParserResult<ParsedNote> {
         self.inner
             .parse_file(path)
             .await
@@ -83,7 +83,7 @@ impl MarkdownParser for ParserAdapter {
             })
     }
 
-    fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedDocument> {
+    fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote> {
         // Use tokio runtime handle to block on the async implementation
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {

@@ -1,13 +1,13 @@
-//! Block Extractor for converting ParsedDocument to ASTBlock format
+//! Block Extractor for converting ParsedNote to ASTBlock format
 //!
 //! This module provides the BlockExtractor struct which converts the flat
-//! content structure of ParsedDocument into semantically meaningful AST blocks.
-//! Each block represents a natural semantic boundary in the markdown document.
+//! content structure of ParsedNote into semantically meaningful AST blocks.
+//! Each block represents a natural semantic boundary in the markdown note.
 
 use crate::error::ParseError;
 use crate::types::{
     ASTBlock, ASTBlockMetadata, ASTBlockType, Callout, CodeBlock, Heading, HorizontalRule,
-    LatexExpression, ListBlock, ListType, ParsedDocument, Table,
+    LatexExpression, ListBlock, ListType, ParsedNote, Table,
 };
 use std::collections::HashMap;
 
@@ -141,17 +141,17 @@ impl HeadingTree {
     }
 }
 
-/// Extracts AST blocks from a ParsedDocument
+/// Extracts AST blocks from a ParsedNote
 ///
 /// The BlockExtractor is responsible for converting the flat content structure
-/// of ParsedDocument into semantically meaningful AST blocks. It analyzes the
+/// of ParsedNote into semantically meaningful AST blocks. It analyzes the
 /// various content elements (headings, paragraphs, code blocks, etc.) and
 /// creates appropriate ASTBlock representations with proper positioning
 /// information and metadata.
 ///
 /// # Extraction Strategy
 ///
-/// The extractor processes content in document order, creating blocks that
+/// The extractor processes content in note order, creating blocks that
 /// align with natural semantic boundaries:
 /// - Headings become separate blocks
 /// - Code blocks become separate blocks
@@ -208,39 +208,39 @@ impl BlockExtractor {
         Self { config }
     }
 
-    /// Extract AST blocks from a ParsedDocument
+    /// Extract AST blocks from a ParsedNote
     ///
     /// This is the main entry point for block extraction. It processes the
-    /// document content and creates a vector of AST blocks in document order.
+    /// note content and creates a vector of AST blocks in note order.
     ///
     /// # Arguments
     ///
-    /// * `document` - The ParsedDocument to extract blocks from
+    /// * `note` - The ParsedNote to extract blocks from
     ///
     /// # Returns
     ///
-    /// A vector of AST blocks in document order, or an error if extraction
+    /// A vector of AST blocks in note order, or an error if extraction
     /// encounters invalid data.
     ///
     /// # Examples
     ///
     /// // TODO: Add example once API stabilizes
-    pub fn extract_blocks(&self, document: &ParsedDocument) -> Result<Vec<ASTBlock>, ParseError> {
+    pub fn extract_blocks(&self, note: &ParsedNote) -> Result<Vec<ASTBlock>, ParseError> {
         let mut blocks = Vec::new();
         let mut last_end = 0;
         let mut heading_tree = HeadingTree::new();
 
         // Create a map of all content positions for efficient lookup
-        let content_map = self.build_content_map(document);
+        let content_map = self.build_content_map(note);
 
-        // Process content in document order
+        // Process content in note order
         let positions = self.get_extraction_positions(&content_map);
 
         for position in positions {
             // Fill gaps with paragraphs if needed
             if position.start_offset > last_end && self.config.merge_consecutive_paragraphs {
                 if let Some(paragraph_blocks) =
-                    self.extract_gap_paragraphs(document, last_end, position.start_offset)?
+                    self.extract_gap_paragraphs(note, last_end, position.start_offset)?
                 {
                     // Assign hierarchy to paragraph blocks based on current heading tree
                     for mut para_block in paragraph_blocks {
@@ -254,18 +254,18 @@ impl BlockExtractor {
 
             // Extract the specific block type
             let block = match position.block_type {
-                ExtractionType::Heading => self.extract_heading_block(document, &position)?,
-                ExtractionType::CodeBlock => self.extract_code_block(document, &position)?,
-                ExtractionType::List => self.extract_list_block(document, &position)?,
-                ExtractionType::Callout => self.extract_callout_block(document, &position)?,
-                ExtractionType::Latex => self.extract_latex_block(document, &position)?,
-                ExtractionType::Blockquote => self.extract_blockquote_block(document, &position)?,
-                ExtractionType::Table => self.extract_table_block(document, &position)?,
+                ExtractionType::Heading => self.extract_heading_block(note, &position)?,
+                ExtractionType::CodeBlock => self.extract_code_block(note, &position)?,
+                ExtractionType::List => self.extract_list_block(note, &position)?,
+                ExtractionType::Callout => self.extract_callout_block(note, &position)?,
+                ExtractionType::Latex => self.extract_latex_block(note, &position)?,
+                ExtractionType::Blockquote => self.extract_blockquote_block(note, &position)?,
+                ExtractionType::Table => self.extract_table_block(note, &position)?,
                 ExtractionType::HorizontalRule => {
-                    self.extract_horizontal_rule(document, &position)?
+                    self.extract_horizontal_rule(note, &position)?
                 }
                 ExtractionType::ThematicBreak => {
-                    self.extract_thematic_break(document, &position)?
+                    self.extract_thematic_break(note, &position)?
                 }
             };
 
@@ -294,9 +294,9 @@ impl BlockExtractor {
         }
 
         // Handle any remaining content as paragraphs
-        if last_end < document.content.plain_text.len() {
+        if last_end < note.content.plain_text.len() {
             if let Some(paragraph_blocks) =
-                self.extract_gap_paragraphs(document, last_end, document.content.plain_text.len())?
+                self.extract_gap_paragraphs(note, last_end, note.content.plain_text.len())?
             {
                 for mut para_block in paragraph_blocks {
                     para_block = self.assign_hierarchy(para_block, &heading_tree, blocks.len());
@@ -346,54 +346,54 @@ impl BlockExtractor {
     }
 
     /// Build a map of all content positions for efficient processing
-    fn build_content_map(&self, document: &ParsedDocument) -> ContentMap {
+    fn build_content_map(&self, note: &ParsedNote) -> ContentMap {
         let mut map = ContentMap::new();
 
         // Add headings
-        for (index, heading) in document.content.headings.iter().enumerate() {
+        for (index, heading) in note.content.headings.iter().enumerate() {
             map.add_heading(heading.clone(), index);
         }
 
         // Add code blocks
-        for (index, code_block) in document.content.code_blocks.iter().enumerate() {
+        for (index, code_block) in note.content.code_blocks.iter().enumerate() {
             map.add_code_block(code_block.clone(), index);
         }
 
         // Add lists
-        for (index, list) in document.content.lists.iter().enumerate() {
+        for (index, list) in note.content.lists.iter().enumerate() {
             map.add_list(list.clone(), index);
         }
 
-        // Add callouts from both document.content.callouts and document.callouts
-        for (index, callout) in document.content.callouts.iter().enumerate() {
+        // Add callouts from both note.content.callouts and note.callouts
+        for (index, callout) in note.content.callouts.iter().enumerate() {
             map.add_callout(callout.clone(), index);
         }
-        for (index, callout) in document.callouts.iter().enumerate() {
-            if !document.content.callouts.contains(callout) {
-                map.add_callout(callout.clone(), index + document.content.callouts.len());
+        for (index, callout) in note.callouts.iter().enumerate() {
+            if !note.content.callouts.contains(callout) {
+                map.add_callout(callout.clone(), index + note.content.callouts.len());
             }
         }
 
         // Add LaTeX expressions
-        for (index, latex) in document.content.latex_expressions.iter().enumerate() {
+        for (index, latex) in note.content.latex_expressions.iter().enumerate() {
             map.add_latex(latex.clone(), index);
         }
-        for (index, latex) in document.latex_expressions.iter().enumerate() {
-            if !document.content.latex_expressions.contains(latex) {
+        for (index, latex) in note.latex_expressions.iter().enumerate() {
+            if !note.content.latex_expressions.contains(latex) {
                 map.add_latex(
                     latex.clone(),
-                    index + document.content.latex_expressions.len(),
+                    index + note.content.latex_expressions.len(),
                 );
             }
         }
 
         // Add tables
-        for (index, table) in document.content.tables.iter().enumerate() {
+        for (index, table) in note.content.tables.iter().enumerate() {
             map.add_table(table.clone(), index);
         }
 
         // Add horizontal rules
-        for (index, hr) in document.content.horizontal_rules.iter().enumerate() {
+        for (index, hr) in note.content.horizontal_rules.iter().enumerate() {
             map.add_horizontal_rule(hr.clone(), index);
         }
 
@@ -478,7 +478,7 @@ impl BlockExtractor {
             });
         }
 
-        // Sort by start offset to maintain document order
+        // Sort by start offset to maintain note order
         positions.sort_by_key(|p| p.start_offset);
         positions
     }
@@ -486,10 +486,10 @@ impl BlockExtractor {
     /// Extract a heading block
     fn extract_heading_block(
         &self,
-        document: &ParsedDocument,
+        note: &ParsedNote,
         position: &ExtractionPosition,
     ) -> Result<Option<ASTBlock>, ParseError> {
-        let heading = &document.content.headings[position.index];
+        let heading = &note.content.headings[position.index];
         let metadata = ASTBlockMetadata::heading(heading.level, heading.id.clone());
 
         let block = ASTBlock::new(
@@ -506,10 +506,10 @@ impl BlockExtractor {
     /// Extract a code block
     fn extract_code_block(
         &self,
-        document: &ParsedDocument,
+        note: &ParsedNote,
         position: &ExtractionPosition,
     ) -> Result<Option<ASTBlock>, ParseError> {
-        let code_block = &document.content.code_blocks[position.index];
+        let code_block = &note.content.code_blocks[position.index];
         let metadata = ASTBlockMetadata::code(code_block.language.clone(), code_block.line_count);
 
         let block = ASTBlock::new(
@@ -526,10 +526,10 @@ impl BlockExtractor {
     /// Extract a list block
     fn extract_list_block(
         &self,
-        document: &ParsedDocument,
+        note: &ParsedNote,
         position: &ExtractionPosition,
     ) -> Result<Option<ASTBlock>, ParseError> {
-        let list = &document.content.lists[position.index];
+        let list = &note.content.lists[position.index];
         let metadata = ASTBlockMetadata::list(list.list_type, list.item_count);
 
         // Combine all list items into a single content string
@@ -562,14 +562,14 @@ impl BlockExtractor {
     /// Extract a callout block
     fn extract_callout_block(
         &self,
-        document: &ParsedDocument,
+        note: &ParsedNote,
         position: &ExtractionPosition,
     ) -> Result<Option<ASTBlock>, ParseError> {
-        // Try to get callout from content.callouts first, then from document.callouts
-        let callout = if position.index < document.content.callouts.len() {
-            &document.content.callouts[position.index]
+        // Try to get callout from content.callouts first, then from note.callouts
+        let callout = if position.index < note.content.callouts.len() {
+            &note.content.callouts[position.index]
         } else {
-            &document.callouts[position.index - document.content.callouts.len()]
+            &note.callouts[position.index - note.content.callouts.len()]
         };
 
         let metadata = ASTBlockMetadata::callout(
@@ -592,14 +592,14 @@ impl BlockExtractor {
     /// Extract a LaTeX block
     fn extract_latex_block(
         &self,
-        document: &ParsedDocument,
+        note: &ParsedNote,
         position: &ExtractionPosition,
     ) -> Result<Option<ASTBlock>, ParseError> {
-        // Try to get LaTeX from content.latex_expressions first, then from document.latex_expressions
-        let latex = if position.index < document.content.latex_expressions.len() {
-            &document.content.latex_expressions[position.index]
+        // Try to get LaTeX from content.latex_expressions first, then from note.latex_expressions
+        let latex = if position.index < note.content.latex_expressions.len() {
+            &note.content.latex_expressions[position.index]
         } else {
-            &document.latex_expressions[position.index - document.content.latex_expressions.len()]
+            &note.latex_expressions[position.index - note.content.latex_expressions.len()]
         };
 
         let metadata = ASTBlockMetadata::latex(latex.is_block);
@@ -618,14 +618,14 @@ impl BlockExtractor {
     /// Extract blockquote blocks
     fn extract_blockquote_block(
         &self,
-        document: &ParsedDocument,
+        note: &ParsedNote,
         position: &ExtractionPosition,
     ) -> Result<Option<ASTBlock>, ParseError> {
-        if position.index >= document.content.blockquotes.len() {
+        if position.index >= note.content.blockquotes.len() {
             return Ok(None);
         }
 
-        let blockquote = &document.content.blockquotes[position.index];
+        let blockquote = &note.content.blockquotes[position.index];
 
         let metadata = ASTBlockMetadata::Generic;
 
@@ -643,14 +643,14 @@ impl BlockExtractor {
     /// Extract table blocks
     fn extract_table_block(
         &self,
-        document: &ParsedDocument,
+        note: &ParsedNote,
         position: &ExtractionPosition,
     ) -> Result<Option<ASTBlock>, ParseError> {
-        if position.index >= document.content.tables.len() {
+        if position.index >= note.content.tables.len() {
             return Ok(None);
         }
 
-        let table = &document.content.tables[position.index];
+        let table = &note.content.tables[position.index];
 
         let metadata = ASTBlockMetadata::table(
             table.rows,
@@ -672,14 +672,14 @@ impl BlockExtractor {
     /// Extract horizontal rule blocks
     fn extract_horizontal_rule(
         &self,
-        document: &ParsedDocument,
+        note: &ParsedNote,
         position: &ExtractionPosition,
     ) -> Result<Option<ASTBlock>, ParseError> {
-        if position.index >= document.content.horizontal_rules.len() {
+        if position.index >= note.content.horizontal_rules.len() {
             return Ok(None);
         }
 
-        let hr = &document.content.horizontal_rules[position.index];
+        let hr = &note.content.horizontal_rules[position.index];
 
         let block = ASTBlock::new(
             ASTBlockType::HorizontalRule,
@@ -692,20 +692,20 @@ impl BlockExtractor {
         Ok(Some(block))
     }
 
-    /// Extract thematic break blocks (not yet implemented in ParsedDocument)
+    /// Extract thematic break blocks (not yet implemented in ParsedNote)
     fn extract_thematic_break(
         &self,
-        _document: &ParsedDocument,
+        _document: &ParsedNote,
         _position: &ExtractionPosition,
     ) -> Result<Option<ASTBlock>, ParseError> {
-        // TODO: Implement thematic break extraction when available in ParsedDocument
+        // TODO: Implement thematic break extraction when available in ParsedNote
         Ok(None)
     }
 
     /// Extract paragraph blocks from gaps between other content
     fn extract_gap_paragraphs(
         &self,
-        document: &ParsedDocument,
+        note: &ParsedNote,
         start_offset: usize,
         end_offset: usize,
     ) -> Result<Option<Vec<ASTBlock>>, ParseError> {
@@ -714,10 +714,10 @@ impl BlockExtractor {
         }
 
         // Extract the text content for this gap
-        let content = if end_offset <= document.content.plain_text.len() {
-            &document.content.plain_text[start_offset..end_offset]
+        let content = if end_offset <= note.content.plain_text.len() {
+            &note.content.plain_text[start_offset..end_offset]
         } else {
-            &document.content.plain_text[start_offset..]
+            &note.content.plain_text[start_offset..]
         };
 
         let content = content.trim();
@@ -904,11 +904,11 @@ mod tests {
     use chrono::Utc;
     use std::path::PathBuf;
 
-    fn create_test_document() -> ParsedDocument {
-        let mut content = DocumentContent::new();
+    fn create_test_document() -> ParsedNote {
+        let mut content = NoteContent::new();
 
         // Add some test content
-        content.add_heading(Heading::new(1, "Test Document", 0));
+        content.add_heading(Heading::new(1, "Test Note", 0));
         content.add_heading(Heading::new(2, "Section 1", 20));
 
         content.add_code_block(CodeBlock::new(
@@ -924,11 +924,11 @@ mod tests {
 
         // Add plain text content
         content = content.with_plain_text(
-            "This is a test document.\n\nIt has multiple paragraphs.\n\nAnd various content types."
+            "This is a test note.\n\nIt has multiple paragraphs.\n\nAnd various content types."
                 .to_string(),
         );
 
-        ParsedDocument::builder(PathBuf::from("test.md"))
+        ParsedNote::builder(PathBuf::from("test.md"))
             .with_content(content)
             .with_parsed_at(Utc::now())
             .with_content_hash("test_hash".to_string())
@@ -961,9 +961,9 @@ mod tests {
     #[test]
     fn test_extract_blocks_from_document() {
         let extractor = BlockExtractor::new();
-        let document = create_test_document();
+        let note = create_test_document();
 
-        let blocks = extractor.extract_blocks(&document).unwrap();
+        let blocks = extractor.extract_blocks(&note).unwrap();
 
         // Should have extracted heading, code block, and list blocks
         assert!(!blocks.is_empty());
@@ -978,7 +978,7 @@ mod tests {
     #[test]
     fn test_extract_heading_block() {
         let extractor = BlockExtractor::new();
-        let document = create_test_document();
+        let note = create_test_document();
 
         let position = ExtractionPosition {
             block_type: ExtractionType::Heading,
@@ -988,17 +988,17 @@ mod tests {
         };
 
         let block = extractor
-            .extract_heading_block(&document, &position)
+            .extract_heading_block(&note, &position)
             .unwrap()
             .unwrap();
 
         assert_eq!(block.block_type, ASTBlockType::Heading);
-        assert_eq!(block.content, "Test Document");
+        assert_eq!(block.content, "Test Note");
         assert_eq!(block.start_offset, 0);
 
         if let ASTBlockMetadata::Heading { level, id } = block.metadata {
             assert_eq!(level, 1);
-            assert_eq!(id, Some("test-document".to_string()));
+            assert_eq!(id, Some("test-note".to_string()));
         } else {
             panic!("Expected heading metadata");
         }
@@ -1007,7 +1007,7 @@ mod tests {
     #[test]
     fn test_extract_code_block() {
         let extractor = BlockExtractor::new();
-        let document = create_test_document();
+        let note = create_test_document();
 
         let position = ExtractionPosition {
             block_type: ExtractionType::CodeBlock,
@@ -1017,7 +1017,7 @@ mod tests {
         };
 
         let block = extractor
-            .extract_code_block(&document, &position)
+            .extract_code_block(&note, &position)
             .unwrap()
             .unwrap();
 
@@ -1040,7 +1040,7 @@ mod tests {
     #[test]
     fn test_extract_list_block() {
         let extractor = BlockExtractor::new();
-        let document = create_test_document();
+        let note = create_test_document();
 
         let position = ExtractionPosition {
             block_type: ExtractionType::List,
@@ -1050,7 +1050,7 @@ mod tests {
         };
 
         let block = extractor
-            .extract_list_block(&document, &position)
+            .extract_list_block(&note, &position)
             .unwrap()
             .unwrap();
 
@@ -1073,9 +1073,9 @@ mod tests {
     #[test]
     fn test_content_map_building() {
         let extractor = BlockExtractor::new();
-        let document = create_test_document();
+        let note = create_test_document();
 
-        let content_map = extractor.build_content_map(&document);
+        let content_map = extractor.build_content_map(&note);
 
         assert_eq!(content_map.headings.len(), 2);
         assert_eq!(content_map.code_blocks.len(), 1);
@@ -1101,9 +1101,9 @@ mod tests {
     #[test]
     fn test_extract_gap_paragraphs() {
         let extractor = BlockExtractor::new();
-        let document = create_test_document();
+        let note = create_test_document();
 
-        let paragraphs = extractor.extract_gap_paragraphs(&document, 0, 50).unwrap();
+        let paragraphs = extractor.extract_gap_paragraphs(&note, 0, 50).unwrap();
 
         // Should extract some paragraph content from the gap
         assert!(paragraphs.is_some());
@@ -1120,10 +1120,10 @@ mod tests {
     #[test]
     fn test_empty_gap_handling() {
         let extractor = BlockExtractor::new();
-        let document = create_test_document();
+        let note = create_test_document();
 
         let paragraphs = extractor
-            .extract_gap_paragraphs(&document, 1000, 1000)
+            .extract_gap_paragraphs(&note, 1000, 1000)
             .unwrap();
         assert!(paragraphs.is_none());
     }

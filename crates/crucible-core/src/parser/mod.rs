@@ -42,10 +42,10 @@ pub use traits::{MarkdownParser, ParserCapabilities};
 // Re-export parser types for convenience
 // Canonical definitions are in crucible-parser crate
 pub use crucible_parser::types::{
-    // Core document types
-    ParsedDocument,
-    ParsedDocumentBuilder,
-    DocumentContent,
+    // Core note types
+    ParsedNote,
+    ParsedNoteBuilder,
+    NoteContent,
     Frontmatter,
     FrontmatterFormat,
 

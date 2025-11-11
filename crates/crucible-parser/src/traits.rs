@@ -1,26 +1,26 @@
 //! Traits for crucible-parser implementation
 
 use crate::error::ParserResult;
-use crate::types::ParsedDocument;
+use crate::types::ParsedNote;
 use async_trait::async_trait;
 use std::path::Path;
 
 /// Core trait for parsing markdown documents
 ///
 /// This trait defines the interface for parsing markdown files into structured
-/// `ParsedDocument` instances. This is the implementation trait that the
+/// `ParsedNote` instances. This is the implementation trait that the
 /// crucible-core crate can use through dependency injection.
 #[async_trait]
 pub trait MarkdownParserImplementation: Send + Sync {
     /// Parse a markdown file from the filesystem
-    async fn parse_file(&self, path: &Path) -> ParserResult<ParsedDocument>;
+    async fn parse_file(&self, path: &Path) -> ParserResult<ParsedNote>;
 
     /// Parse markdown content from a string
     async fn parse_content(
         &self,
         content: &str,
         source_path: &Path,
-    ) -> ParserResult<ParsedDocument>;
+    ) -> ParserResult<ParsedNote>;
 
     /// Get parser capabilities
     fn capabilities(&self) -> ParserCapabilities;

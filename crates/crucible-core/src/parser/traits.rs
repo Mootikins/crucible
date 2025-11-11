@@ -1,14 +1,14 @@
 //! Traits for markdown parsing
 
 use super::error::ParserResult;
-use crucible_parser::types::ParsedDocument;
+use crucible_parser::types::ParsedNote;
 use async_trait::async_trait;
 use std::path::Path;
 
 /// Core trait for parsing markdown documents
 ///
 /// This trait defines the interface for parsing markdown files into structured
-/// `ParsedDocument` instances. Implementations should handle:
+/// `ParsedNote` instances. Implementations should handle:
 /// - Frontmatter extraction (YAML/TOML)
 /// - Wikilink parsing [[note]]
 /// - Tag extraction #tag
@@ -33,7 +33,7 @@ pub trait MarkdownParser: Send + Sync {
     /// 1. Read the file contents
     /// 2. Validate file size against limits
     /// 3. Parse the content
-    /// 4. Return a fully populated `ParsedDocument`
+    /// 4. Return a fully populated `ParsedNote`
     ///
     /// # Errors
     ///
@@ -47,7 +47,7 @@ pub trait MarkdownParser: Send + Sync {
     ///
     /// This method performs blocking IO and should be called from
     /// `tokio::task::spawn_blocking` in the pipeline.
-    async fn parse_file(&self, path: &Path) -> ParserResult<ParsedDocument>;
+    async fn parse_file(&self, path: &Path) -> ParserResult<ParsedNote>;
 
     /// Parse markdown content from a string
     ///
@@ -64,7 +64,7 @@ pub trait MarkdownParser: Send + Sync {
     /// Returns `ParserError` if parsing fails. Note that malformed frontmatter
     /// should not be fatal - the parser should continue and report the error
     /// in the result.
-    fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedDocument>;
+    fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote>;
 
     /// Get parser capabilities and configuration
     ///

@@ -41,7 +41,7 @@ pub enum ParserError {
     InvalidPath(String),
 }
 
-/// Non-fatal parsing error for tracking issues during document parsing
+/// Non-fatal parsing error for tracking issues during note parsing
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParseError {
     /// Error message
