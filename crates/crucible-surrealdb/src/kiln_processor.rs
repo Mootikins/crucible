@@ -389,7 +389,7 @@ pub async fn process_kiln_files_with_queue(
     files: &[KilnFileInfo],
     client: &Arc<SurrealClient>,
     queue: &TransactionQueue,
-    config: &KilnScannerConfig,
+    _config: &KilnScannerConfig,
     kiln_root: &std::path::Path,
 ) -> Result<KilnProcessResult> {
     let start_time = std::time::Instant::now();
@@ -643,7 +643,7 @@ pub async fn process_incremental_changes(
     let change_detection_start = std::time::Instant::now();
     let (changed_files, change_metrics) =
         detect_changed_files_efficient(client, &markdown_files, kiln_root).await?;
-    let change_detection_time = change_detection_start.elapsed();
+    let _change_detection_time = change_detection_start.elapsed();
 
     // Log comprehensive change detection metrics
     info!("📊 {}", change_metrics.performance_summary());
@@ -1318,7 +1318,7 @@ async fn convert_paths_to_file_infos(
 async fn detect_changed_files_efficient(
     client: &SurrealClient,
     file_infos: &[&KilnFileInfo],
-    kiln_root: &Path,
+    _kiln_root: &Path,
 ) -> Result<(Vec<KilnFileInfo>, ChangeDetectionMetrics)> {
     if file_infos.is_empty() {
         debug!("No files to check for changes");
