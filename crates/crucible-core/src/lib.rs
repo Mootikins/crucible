@@ -16,7 +16,6 @@ pub mod storage;
 pub mod test_support;
 pub mod traits;
 pub mod types;
-// pub mod task_router; // Temporarily disabled due to compilation issues
 
 pub use agent::{
     AgentDefinition, AgentLoader, AgentMatch, AgentQuery, AgentRegistry, CapabilityMatcher,
@@ -151,11 +150,6 @@ pub use sink::{
     CircuitBreaker, CircuitBreakerConfig, CircuitState, OutputSink, SinkError, SinkHealth,
     SinkResult,
 };
-// pub use task_router::{
-//     TaskRouter, TaskAnalyzer, IntelligentRouter, TaskQueueManager, ExecutionEngine,
-//     ResultAggregator, ErrorHandler, PerformanceMonitor, UserRequest, TaskResult,
-//     TaskAnalysis, RoutingDecision, TaskExecutionResult, SystemStatus
-// };
 
 #[derive(Debug, thiserror::Error)]
 pub enum CrucibleError {
