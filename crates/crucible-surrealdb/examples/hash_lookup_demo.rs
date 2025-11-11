@@ -160,7 +160,7 @@ async fn main() -> Result<()> {
     // Modify a file
     fs::write(
         kiln_path.join("test1.md"),
-        "# Modified Test Document\n\nThis content has been changed.",
+        "# Modified Test Note\n\nThis content has been changed.",
     )
     .await?;
     println!("✏️  Modified test1.md");
@@ -199,9 +199,9 @@ async fn setup_test_files(kiln_path: &PathBuf) -> Result<()> {
     // Create test markdown files
     fs::write(
         kiln_path.join("test1.md"),
-        r#"# Test Document 1
+        r#"# Test Note 1
 
-This is the first test document.
+This is the first test note.
 
 ## Section 1
 
@@ -216,9 +216,9 @@ More content here.
 
     fs::write(
         kiln_path.join("test2.md"),
-        r#"# Test Document 2
+        r#"# Test Note 2
 
-This is the second test document with different content.
+This is the second test note with different content.
 
 ## Features
 
@@ -228,16 +228,16 @@ This is the second test document with different content.
 
 ## Conclusion
 
-This document demonstrates file hashing.
+This note demonstrates file hashing.
 "#,
     )
     .await?;
 
     fs::write(
         kiln_path.join("test3.md"),
-        r#"# Test Document 3
+        r#"# Test Note 3
 
-This document contains code examples:
+This note contains code examples:
 
 ```rust
 fn hello_world() {
@@ -257,9 +257,9 @@ Use the function above to greet the world.
 
     fs::write(
         kiln_path.join("subdir/nested.md"),
-        r#"# Nested Document
+        r#"# Nested Note
 
-This document is in a subdirectory.
+This note is in a subdirectory.
 "#,
     )
     .await?;
