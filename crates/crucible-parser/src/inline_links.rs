@@ -6,7 +6,7 @@
 //! - External links: `[text](https://example.com)`
 //! - Relative links: `[text](./relative/path.md)`
 
-use super::error::{ParseError, ParseErrorType};
+use super::error::ParseError;
 use super::extensions::SyntaxExtension;
 use super::types::{DocumentContent, InlineLink};
 use async_trait::async_trait;
