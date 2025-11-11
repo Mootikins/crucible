@@ -11,6 +11,8 @@ pub mod store;
 pub mod types;
 
 #[cfg(test)]
+mod integration_tests;
+#[cfg(test)]
 mod relation_tag_edge_case_tests;
 
 pub use adapter::{
