@@ -1090,14 +1090,6 @@ pub async fn needs_processing(file_info: &KilnFileInfo, client: &SurrealClient) 
 /// - Optimized for large path lists (100+ files)
 /// - Empty input returns empty HashMap without database call
 ///
-/// # Example
-/// ```ignore
-/// let paths = vec![PathBuf::from("note1.md"), PathBuf::from("note2.md")];
-/// let hashes = bulk_query_document_hashes(&client, &paths).await?;
-/// for (path, hash) in hashes {
-///     println!("{}: {}", path.display(), hash);
-/// }
-/// ```
 async fn bulk_query_document_hashes(
     client: &SurrealClient,
     paths: &[PathBuf],
@@ -1201,11 +1193,6 @@ async fn bulk_query_document_hashes(
 /// # Errors
 /// Returns an error if a critical file operation fails
 ///
-/// # Example
-/// ```ignore
-/// let paths = vec![PathBuf::from("note1.md"), PathBuf::from("note2.md")];
-/// let file_infos = convert_paths_to_file_infos(&paths, kiln_root).await?;
-/// ```
 async fn convert_paths_to_file_infos(
     paths: &[PathBuf],
     kiln_root: &Path,
@@ -1305,16 +1292,6 @@ async fn convert_paths_to_file_infos(
 /// Returns an error only if critical database operations fail. Individual file
 /// lookup errors are logged but don't stop the overall operation.
 ///
-/// # Example
-/// ```ignore
-/// let all_files = scan_kiln_directory(&kiln_path, &config).await?;
-/// let markdown_files: Vec<&KilnFileInfo> = all_files.iter()
-///     .filter(|f| f.is_markdown && f.is_accessible)
-///     .collect();
-/// let (changed_files, metrics) = detect_changed_files_efficient(&client, &markdown_files, kiln_root).await?;
-/// println!("Found {} changed files out of {}", changed_files.len(), markdown_files.len());
-/// metrics.log_metrics();
-/// ```
 async fn detect_changed_files_efficient(
     client: &SurrealClient,
     file_infos: &[&KilnFileInfo],
@@ -1553,12 +1530,6 @@ async fn detect_changed_files_efficient(
 /// - In-memory hash comparison (fast)
 /// - Returns files where hash mismatches OR not in database (new files)
 ///
-/// # Example
-/// ```ignore
-/// let all_files = scan_kiln_directory(&kiln_path, &config).await?;
-/// let changed_files = detect_changed_files(&client, &all_files).await?;
-/// println!("Found {} changed files out of {}", changed_files.len(), all_files.len());
-/// ```
 async fn detect_changed_files(
     client: &SurrealClient,
     file_infos: &[KilnFileInfo],
@@ -1644,18 +1615,6 @@ async fn detect_changed_files(
 /// Returns an error if critical operations fail. Per-file errors are logged
 /// but don't stop processing of other files.
 ///
-/// # Example
-/// ```ignore
-/// let changed_paths = vec![PathBuf::from("note1.md")];
-/// let result = process_kiln_delta(
-///     changed_paths,
-///     &client,
-///     &config,
-///     Some(&embedding_pool),
-///     &kiln_root
-/// ).await?;
-/// println!("Processed {} files in {:?}", result.processed_count, result.total_processing_time);
-/// ```
 pub async fn process_kiln_delta(
     changed_files: Vec<PathBuf>,
     client: &SurrealClient,
