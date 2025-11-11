@@ -1088,19 +1088,6 @@ impl<'a> DocumentIngestor<'a> {
     /// - **Documents**: MD, MARKDOWN, TXT, RST, ADOC
     /// - **Code**: JS, TS, PY, JAVA, CPP, C, GO, RS, PHP, RB, HTML, CSS
     ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// // Local files
-    /// let image_type = DocumentIngestor::classify_embed_type("image.png"); // returns "image"
-    /// let pdf_type = DocumentIngestor::classify_embed_type("document.pdf"); // returns "pdf"
-    /// let note_type = DocumentIngestor::classify_embed_type("note.md"); // returns "note"
-    ///
-    /// // External URLs
-    /// let video_type = DocumentIngestor::classify_embed_type("https://youtube.com/watch?v=123"); // returns "video"
-    /// let external_type = DocumentIngestor::classify_embed_type("https://example.com"); // returns "external"
-    /// ```
-    ///
     /// # Arguments
     ///
     /// * `target` - The embed target (file path or URL)
@@ -1328,18 +1315,6 @@ impl<'a> DocumentIngestor<'a> {
     /// - **Path Traversal Prevention**: Validates local file paths
     /// - **Injection Prevention**: Validates URL encoding and structure
     /// - **DoS Prevention**: Limits target length and validates formats
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// // Valid targets
-    /// let valid1 = DocumentIngestor::validate_embed_target("note.md"); // returns Ok(())
-    /// let valid2 = DocumentIngestor::validate_embed_target("https://example.com/image.png"); // returns Ok(())
-    ///
-    /// // Invalid targets
-    /// let invalid1 = DocumentIngestor::validate_embed_target(""); // returns Err("Embed target cannot be empty")
-    /// let invalid2 = DocumentIngestor::validate_embed_target("javascript:alert('xss')"); // returns Err("dangerous URL scheme")
-    /// ```
     ///
     /// # Arguments
     ///
