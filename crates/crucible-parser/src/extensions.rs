@@ -4,7 +4,7 @@
 //! modular addition of new syntax features to the markdown parser.
 
 use super::error::ParseError;
-use super::types::DocumentContent;
+use super::types::NoteContent;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -35,15 +35,15 @@ pub trait SyntaxExtension: Send + Sync {
     ///
     /// This method should parse the content and extract any structured data
     /// that the extension recognizes. The parsed data should be added to the
-    /// DocumentContent.
+    /// NoteContent.
     ///
     /// # Arguments
     /// * `content` - The markdown content to parse
-    /// * `doc_content` - The document content to modify with parsed results
+    /// * `doc_content` - The note content to modify with parsed results
     ///
     /// # Returns
     /// A list of parse errors encountered (non-fatal)
-    async fn parse(&self, content: &str, doc_content: &mut DocumentContent) -> Vec<ParseError>;
+    async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError>;
 
     /// Get the priority of this extension (higher = applied first)
     fn priority(&self) -> u8 {
@@ -56,8 +56,8 @@ pub trait SyntaxExtension: Send + Sync {
     }
 
     /// Process content synchronously (convenience method for tests)
-    fn process_content(&self, content: &str) -> DocumentContent {
-        let mut doc_content = DocumentContent::new();
+    fn process_content(&self, content: &str) -> NoteContent {
+        let mut doc_content = NoteContent::new();
         // Use block_in_place to bridge async to sync for tests
         let rt = tokio::runtime::Handle::current();
         rt.block_on(async {
@@ -188,14 +188,14 @@ impl ExtensionRegistry {
     ///
     /// # Arguments
     /// * `content` - The markdown content to parse
-    /// * `doc_content` - The document content to modify
+    /// * `doc_content` - The note content to modify
     ///
     /// # Returns
     /// A list of all parse errors from all extensions
     pub async fn apply_extensions(
         &self,
         content: &str,
-        doc_content: &mut DocumentContent,
+        doc_content: &mut NoteContent,
     ) -> Vec<ParseError> {
         let mut all_errors = Vec::new();
 
@@ -323,7 +323,7 @@ mod tests {
         async fn parse(
             &self,
             content: &str,
-            _doc_content: &mut DocumentContent,
+            _doc_content: &mut NoteContent,
         ) -> Vec<ParseError> {
             if content.contains("error") {
                 vec![ParseError::error(
@@ -368,7 +368,7 @@ mod tests {
 
         registry.register(ext).unwrap();
 
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
         let errors = registry
             .apply_extensions("test content", &mut doc_content)
             .await;

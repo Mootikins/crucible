@@ -5,7 +5,7 @@ pub mod content_category;
 pub mod crdt;
 pub mod crucible_core;
 pub mod database;
-pub mod document;
+pub mod note;
 pub mod hashing;
 pub mod merkle;
 pub mod parser;
@@ -30,7 +30,7 @@ pub use crucible_core::CrucibleCore;
 
 // Re-export processing handoff types
 pub use processing::{
-    DocumentProcessingJob, DocumentProcessingResult, JobConfiguration, JobStats, ProcessedDocument,
+    NoteProcessingJob, NoteProcessingResult, JobConfiguration, JobStats, ProcessedNote,
     ProcessingContext, ProcessingMetadata, ProcessingPriority, ProcessingSource,
 };
 
@@ -49,7 +49,7 @@ pub use types::{
     ChangeSet,
     ChangeSummary,
     // Storage trait types (from traits/storage.rs)
-    // Note: Parser types (ParsedDocument, Wikilink, Tag, etc.) are exported from parser:: module below
+    // Note: Parser types (ParsedNote, Wikilink, Tag, etc.) are exported from parser:: module below
     ExecutionContext,
     FileHash,
     FileHashInfo,
@@ -75,11 +75,11 @@ pub use database::{
     // Core types
     DbResult,
     Direction,
-    Document,
+    Note,
     DocumentDB,
     DocumentFieldType,
     DocumentFilter,
-    // Document types
+    // Note types
     DocumentId,
     DocumentMetadata,
     DocumentQuery,
@@ -130,14 +130,14 @@ pub use database::{
     UpdateClause,
     ValidationRules,
 };
-pub use document::{DocumentNode, ViewportState};
+pub use note::{NoteNode, ViewportState};
 pub use parser::{
     CodeBlock,
-    DocumentContent,
+    NoteContent,
     Frontmatter,
     FrontmatterFormat,
     Heading,
-    ParsedDocument,
+    ParsedNote,
     ParserCapabilities,
     ParserError,
     ParserResult,
@@ -153,7 +153,7 @@ pub use sink::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum CrucibleError {
-    #[error("Document not found: {0}")]
+    #[error("Note not found: {0}")]
     DocumentNotFound(uuid::Uuid),
 
     #[error("Invalid operation: {0}")]

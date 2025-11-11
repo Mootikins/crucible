@@ -29,7 +29,7 @@ use tokio::time::timeout;
 
 /// Example 1: Basic Storage-Aware Parsing
 ///
-/// Demonstrates how to parse a markdown document with automatic storage integration,
+/// Demonstrates how to parse a markdown note with automatic storage integration,
 /// Merkle tree creation, and change detection.
 pub async fn basic_storage_aware_parsing_example() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Basic Storage-Aware Parsing Example ===\n");
@@ -46,7 +46,7 @@ pub async fn basic_storage_aware_parsing_example() -> Result<(), Box<dyn std::er
 
 ## Introduction
 
-This document covers advanced Rust programming concepts including:
+This note covers advanced Rust programming concepts including:
 
 - Memory management and ownership
 - Concurrency with async/await
@@ -75,8 +75,8 @@ Master these concepts to become proficient in Rust development.
         .parse_content_with_storage(content, source_path, Some(storage))
         .await?;
 
-    println!("✅ Parsed document successfully!");
-    println!("📄 Document path: {}", result.document.path.display());
+    println!("✅ Parsed note successfully!");
+    println!("📄 Note path: {}", result.note.path.display());
     println!("🔤 Content hash: {}", result.content_hash);
     println!("🧱 Number of blocks: {}", result.blocks.len());
     println!("🌳 Merkle tree created: {}", result.merkle_tree.is_some());
@@ -132,10 +132,10 @@ pub async fn batch_processing_example() -> Result<(), Box<dyn std::error::Error>
 
     // Create multiple parsing operations
     let documents = vec![
-        ("document1.md", "# Document 1\n\nContent for document 1..."),
-        ("document2.md", "# Document 2\n\nContent for document 2..."),
-        ("document3.md", "# Document 3\n\nContent for document 3..."),
-        ("document4.md", "# Document 4\n\nContent for document 4..."),
+        ("document1.md", "# Note 1\n\nContent for note 1..."),
+        ("document2.md", "# Note 2\n\nContent for note 2..."),
+        ("document3.md", "# Note 3\n\nContent for note 3..."),
+        ("document4.md", "# Note 4\n\nContent for note 4..."),
     ];
 
     let operations: Vec<ParsingOperation> = documents
@@ -204,14 +204,14 @@ pub async fn batch_processing_example() -> Result<(), Box<dyn std::error::Error>
 
 /// Example 3: Change Detection and Comparison
 ///
-/// Demonstrates how to detect changes between document versions.
+/// Demonstrates how to detect changes between note versions.
 pub async fn change_detection_example() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n=== Change Detection Example ===\n");
 
     let parser = parser_factory::create_storage_aware_parser();
     let storage = create_mock_storage_backend();
 
-    // Original document
+    // Original note
     let original_content = r#"
 # Project Roadmap
 
@@ -233,15 +233,15 @@ pub async fn change_detection_example() -> Result<(), Box<dyn std::error::Error>
 
     let source_path = Path::new("roadmap.md");
 
-    println!("📄 Parsing original document...");
+    println!("📄 Parsing original note...");
     let original_result = parser
         .parse_content_with_storage(original_content, source_path, Some(Arc::clone(&storage)))
         .await?;
 
-    println!("✅ Original document parsed");
+    println!("✅ Original note parsed");
     println!("🔤 Original hash: {}", original_result.content_hash);
 
-    // Modified document
+    // Modified note
     let modified_content = r#"
 # Project Roadmap
 
@@ -268,7 +268,7 @@ pub async fn change_detection_example() -> Result<(), Box<dyn std::error::Error>
 - Community management
 "#;
 
-    println!("\n📄 Parsing modified document...");
+    println!("\n📄 Parsing modified note...");
     let modified_result = parser
         .parse_and_compare(
             modified_content,
@@ -278,7 +278,7 @@ pub async fn change_detection_example() -> Result<(), Box<dyn std::error::Error>
         )
         .await?;
 
-    println!("✅ Modified document parsed");
+    println!("✅ Modified note parsed");
     println!("🔤 Modified hash: {}", modified_result.content_hash);
 
     // Analyze changes
@@ -399,7 +399,7 @@ pub async fn performance_optimization_example() -> Result<(), Box<dyn std::error
     let source_path = Path::new("large_document.md");
 
     println!(
-        "📄 Generated large document ({} lines, {} bytes)",
+        "📄 Generated large note ({} lines, {} bytes)",
         large_content.lines().count(),
         large_content.len()
     );
@@ -412,7 +412,7 @@ pub async fn performance_optimization_example() -> Result<(), Box<dyn std::error
     )
     .await??;
 
-    println!("✅ Large document parsed successfully!");
+    println!("✅ Large note parsed successfully!");
     println!("🔤 Content hash: {}", parse_result.content_hash);
     println!("🧱 Blocks created: {}", parse_result.blocks.len());
     println!(
@@ -461,7 +461,7 @@ pub async fn error_handling_example() -> Result<(), Box<dyn std::error::Error>> 
         ParsingOperation {
             id: "valid_op".to_string(),
             source_path: PathBuf::from("valid.md"),
-            content: Some("# Valid Document\n\nThis should parse successfully.".to_string()),
+            content: Some("# Valid Note\n\nThis should parse successfully.".to_string()),
             operation_type: OperationType::FromContent,
             priority: OperationPriority::Normal,
             metadata: OperationMetadata::default(),
@@ -525,7 +525,7 @@ pub async fn error_handling_example() -> Result<(), Box<dyn std::error::Error>> 
             .map(|r| ParsingOperation {
                 id: format!("retry_{}", r.operation_id),
                 source_path: PathBuf::from("retry.md"),
-                content: Some("# Retry Document\n\nThis should work now.".to_string()),
+                content: Some("# Retry Note\n\nThis should work now.".to_string()),
                 operation_type: OperationType::FromContent,
                 priority: OperationPriority::High,
                 metadata: OperationMetadata {
@@ -555,8 +555,8 @@ fn create_mock_storage_backend() -> Arc<dyn ContentAddressedStorage> {
 /// Helper function to generate large markdown content for testing
 fn generate_large_markdown_content(lines: usize) -> String {
     let mut content = String::new();
-    content.push_str("# Large Document\n\n");
-    content.push_str("This is a large document generated for performance testing.\n\n");
+    content.push_str("# Large Note\n\n");
+    content.push_str("This is a large note generated for performance testing.\n\n");
 
     for i in 1..=lines {
         if i % 20 == 0 {
@@ -564,7 +564,7 @@ fn generate_large_markdown_content(lines: usize) -> String {
         }
 
         content.push_str(&format!(
-            "This is line {} of the document. It contains some sample text to test parsing performance. ",
+            "This is line {} of the note. It contains some sample text to test parsing performance. ",
             i
         ));
 
@@ -586,7 +586,7 @@ fn generate_large_markdown_content(lines: usize) -> String {
         }
     }
 
-    content.push_str("\n## Conclusion\n\nEnd of large document.\n");
+    content.push_str("\n## Conclusion\n\nEnd of large note.\n");
     content
 }
 
@@ -608,7 +608,7 @@ pub async fn run_all_examples() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n📚 Key Features Demonstrated:");
     println!("   ✅ Storage-aware parsing with automatic Merkle tree creation");
     println!("   ✅ Batch processing with parallel operations");
-    println!("   ✅ Change detection and document comparison");
+    println!("   ✅ Change detection and note comparison");
     println!("   ✅ Performance optimization techniques");
     println!("   ✅ Robust error handling and recovery");
     println!("   ✅ Transaction support for batch operations");

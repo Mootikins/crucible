@@ -2,7 +2,7 @@ use anyhow::Result;
 use blake3::Hasher;
 use crucible_core::content_category::ContentCategory;
 use crucible_core::merkle::HybridMerkleTree;
-use crucible_core::parser::ParsedDocument;
+use crucible_core::parser::ParsedNote;
 use crucible_core::storage::{Relation as CoreRelation, RelationStorage};
 use serde_json::{Map, Value};
 
@@ -62,7 +62,7 @@ fn classify_content(target: &str) -> ContentCategory {
     }
 }
 
-/// # Document Ingestion with Advanced Embed Processing
+/// # Note Ingestion with Advanced Embed Processing
 ///
 /// This module provides high-level functionality for ingesting parsed documents into the
 /// EAV+Graph schema with comprehensive support for embed processing and wikilink resolution.
@@ -75,7 +75,7 @@ fn classify_content(target: &str) -> ContentCategory {
 /// - **Images**: PNG, JPG, SVG, WebP, etc. with format-specific metadata
 /// - **Videos**: MP4, AVI, MOV, WebM, plus platform detection (YouTube, Vimeo)
 /// - **Audio**: MP3, WAV, M4A, OGG, plus platform detection (SoundCloud, Spotify)
-/// - **Documents**: PDF files with document-specific processing
+/// - **Documents**: PDF files with note-specific processing
 /// - **Notes**: Markdown files with internal note embedding
 /// - **External**: URLs and web content with security validation
 ///
@@ -96,14 +96,14 @@ fn classify_content(target: &str) -> ContentCategory {
 /// ## Usage Example
 ///
 /// ```rust,no_run
-/// # use crucible_surrealdb::eav_graph::{DocumentIngestor, EAVGraphStore};
+/// # use crucible_surrealdb::eav_graph::{NoteIngestor, EAVGraphStore};
 /// # use crucible_surrealdb::SurrealClient;
-/// # use crucible_core::parser::ParsedDocument;
+/// # use crucible_core::parser::ParsedNote;
 /// # async fn example() -> anyhow::Result<()> {
 /// # let client = SurrealClient::new_memory().await?;
 /// # let store = EAVGraphStore::new(client);
-/// let ingestor = DocumentIngestor::new(&store);
-/// # let parsed_doc = ParsedDocument::default();
+/// let ingestor = NoteIngestor::new(&store);
+/// # let parsed_doc = ParsedNote::default();
 /// let entity_id = ingestor.ingest(&parsed_doc, "note.md").await?;
 /// # Ok(())
 /// # }
@@ -111,25 +111,25 @@ fn classify_content(target: &str) -> ContentCategory {
 ///
 /// The ingestor automatically:
 /// 1. Creates or updates the note entity
-/// 2. Processes and stores all document blocks
+/// 2. Processes and stores all note blocks
 /// 3. Extracts and resolves wikilinks and embeds
 /// 4. Creates relations with comprehensive metadata
 /// 5. Handles tags and hierarchical structures
 /// 6. Validates and classifies embed content
 ///
 /// High-level helper for writing parsed documents into the EAV+Graph schema.
-pub struct DocumentIngestor<'a> {
+pub struct NoteIngestor<'a> {
     store: &'a EAVGraphStore,
 }
 
-impl<'a> DocumentIngestor<'a> {
+impl<'a> NoteIngestor<'a> {
     pub fn new(store: &'a EAVGraphStore) -> Self {
         Self { store }
     }
 
     pub async fn ingest(
         &self,
-        doc: &ParsedDocument,
+        doc: &ParsedNote,
         relative_path: &str,
     ) -> Result<RecordId<EntityRecord>> {
         let entity_id = self.note_entity_id(relative_path);
@@ -256,7 +256,7 @@ impl<'a> DocumentIngestor<'a> {
 
     /// Extract relations from wikilinks with target resolution and advanced embed variant support.
     ///
-    /// This function processes all wikilinks and embeds in a document, creating relations with
+    /// This function processes all wikilinks and embeds in a note, creating relations with
     /// comprehensive metadata including embed type classification, validation, and variant support.
     ///
     /// # Processing Pipeline
@@ -284,7 +284,7 @@ impl<'a> DocumentIngestor<'a> {
     /// # Arguments
     ///
     /// * `entity_id` - The source entity ID for the relations
-    /// * `doc` - The parsed document containing wikilinks and embeds
+    /// * `doc` - The parsed note containing wikilinks and embeds
     ///
     /// # Returns
     ///
@@ -292,7 +292,7 @@ impl<'a> DocumentIngestor<'a> {
     async fn extract_relations_with_resolution(
         &self,
         entity_id: &RecordId<EntityRecord>,
-        doc: &ParsedDocument,
+        doc: &ParsedNote,
     ) -> Result<Vec<CoreRelation>> {
         let mut relations = Vec::with_capacity(doc.wikilinks.len());
         let from_entity_id = format!("{}:{}", entity_id.table, entity_id.id);
@@ -676,13 +676,13 @@ impl<'a> DocumentIngestor<'a> {
         serde_json::Value::Object(hints)
     }
 
-    /// Store tags and create tag associations for a document
+    /// Store tags and create tag associations for a note
     ///
-    /// Extracts tags from ParsedDocument, ensures hierarchical structure exists,
+    /// Extracts tags from ParsedNote, ensures hierarchical structure exists,
     /// and creates entity_tag associations.
     async fn store_tags(
         &self,
-        doc: &ParsedDocument,
+        doc: &ParsedNote,
         entity_id: &RecordId<EntityRecord>,
     ) -> Result<()> {
         // Collect unique tags
@@ -800,11 +800,11 @@ impl<'a> DocumentIngestor<'a> {
         )
     }
 
-    /// Compute section properties from the document's Merkle tree
+    /// Compute section properties from the note's Merkle tree
     fn compute_section_properties(
         &self,
         entity_id: &RecordId<EntityRecord>,
-        doc: &ParsedDocument,
+        doc: &ParsedNote,
     ) -> Vec<Property> {
         // Build the hybrid Merkle tree to extract sections
         let merkle_tree = HybridMerkleTree::from_document(doc);
@@ -868,11 +868,11 @@ impl<'a> DocumentIngestor<'a> {
         props
     }
 
-    /// Compute core document properties
+    /// Compute core note properties
     fn core_properties(
         &self,
         entity_id: &RecordId<EntityRecord>,
-        doc: &ParsedDocument,
+        doc: &ParsedNote,
         relative_path: &str,
     ) -> Vec<Property> {
         // Pre-calculate capacity: 4 base properties + 1 if frontmatter exists
@@ -938,8 +938,8 @@ impl<'a> DocumentIngestor<'a> {
         props
     }
 
-    /// Generate entity payload data from parsed document
-    fn entity_payload(&self, doc: &ParsedDocument, relative_path: &str) -> Value {
+    /// Generate entity payload data from parsed note
+    fn entity_payload(&self, doc: &ParsedNote, relative_path: &str) -> Value {
         let tags = doc
             .all_tags()
             .into_iter()
@@ -1006,8 +1006,8 @@ impl<'a> DocumentIngestor<'a> {
         RecordId::new("entities", format!("note:{}", normalized))
     }
 
-    /// Extract inline link relations from the document
-    fn extract_inline_link_relations(&self, entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec<CoreRelation> {
+    /// Extract inline link relations from the note
+    fn extract_inline_link_relations(&self, entity_id: &RecordId<EntityRecord>, doc: &ParsedNote) -> Vec<CoreRelation> {
         let capacity = doc.inline_links.len();
         let mut relations = Vec::with_capacity(capacity);
         let from_entity_id = format!("{}:{}", entity_id.table, entity_id.id);
@@ -1080,8 +1080,8 @@ impl<'a> DocumentIngestor<'a> {
     /// - **Legacy**: M4A, AAC, WMA, AIFF
     /// - **Platforms**: SoundCloud, Spotify
     ///
-    /// ## Document Formats
-    /// - **PDF**: Portable Document Format
+    /// ## Note Formats
+    /// - **PDF**: Portable Note Format
     /// - **Office**: DOC, DOCX, PPT, PPTX, XLSX, ODT, ODS, ODP
     ///
     /// ## Code & Text
@@ -1193,9 +1193,9 @@ impl<'a> DocumentIngestor<'a> {
                 // Image formats
                 "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" | "bmp" | "ico" | "avif" | "tiff" => "image",
 
-                // Document formats
+                // Note formats
                 "pdf" => "pdf",
-                "doc" | "docx" | "odt" | "rtf" => "external",  // Document types
+                "doc" | "docx" | "odt" | "rtf" => "external",  // Note types
 
                 // Audio formats
                 "mp3" | "wav" | "m4a" | "ogg" | "flac" | "aac" | "wma" | "opus" => "audio",
@@ -1242,7 +1242,7 @@ impl<'a> DocumentIngestor<'a> {
                     // Image formats
                     "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" | "bmp" | "ico" | "avif" | "tiff" | "psd" => "image",
 
-                    // Document formats
+                    // Note formats
                     "pdf" => "pdf",
                     "doc" | "docx" | "odt" | "rtf" | "pages" => "external",
 
@@ -1252,7 +1252,7 @@ impl<'a> DocumentIngestor<'a> {
                     // Video formats
                     "mp4" | "avi" | "mov" | "mkv" | "webm" | "m4v" | "wmv" | "flv" | "ogv" | "3gp" => "video",
 
-                    // Text and document formats
+                    // Text and note formats
                     "md" | "markdown" | "txt" | "rst" | "adoc" => "note",
 
                     // Data formats (often embedded as documentation)
@@ -2011,10 +2011,10 @@ impl<'a> DocumentIngestor<'a> {
 
     /// Process note embed logic (markdown files)
     ///
-    /// Handles embedded markdown files and notes with document-specific metadata.
+    /// Handles embedded markdown files and notes with note-specific metadata.
     fn process_note_embed(&self, metadata: &mut serde_json::Map<String, serde_json::Value>, target: &str) {
         metadata.insert("content_category".to_string(), serde_json::json!(ContentCategory::Note.as_str()));
-        metadata.insert("media_type".to_string(), serde_json::json!("document"));
+        metadata.insert("media_type".to_string(), serde_json::json!("note"));
 
         // Note-specific processing
         metadata.insert("text_based".to_string(), serde_json::json!(true));
@@ -2074,8 +2074,8 @@ impl<'a> DocumentIngestor<'a> {
         metadata.insert("accessibility_features".to_string(), serde_json::json!(vec!["screen_reader", "high_contrast", "text_sizing"]));
     }
 
-    /// Extract footnote relations from the document
-    fn extract_footnote_relations(&self, entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec<CoreRelation> {
+    /// Extract footnote relations from the note
+    fn extract_footnote_relations(&self, entity_id: &RecordId<EntityRecord>, doc: &ParsedNote) -> Vec<CoreRelation> {
         let capacity = doc.footnotes.references.len();
         let mut relations = Vec::with_capacity(capacity);
         let from_entity_id = format!("{}:{}", entity_id.table, entity_id.id);
@@ -2085,7 +2085,7 @@ impl<'a> DocumentIngestor<'a> {
             if let Some(definition) = doc.footnotes.definitions.get(&footnote_ref.identifier) {
                 let mut relation = CoreRelation::new(
                     from_entity_id.clone(),
-                    None, // Footnotes are self-referential (within the same document)
+                    None, // Footnotes are self-referential (within the same note)
                     "footnote",
                 );
 
@@ -2134,8 +2134,8 @@ impl<'a> DocumentIngestor<'a> {
         block
     }
 
-    /// Build blocks from document content
-    fn build_blocks(&self, entity_id: &RecordId<EntityRecord>, doc: &ParsedDocument) -> Vec<BlockNode> {
+    /// Build blocks from note content
+    fn build_blocks(&self, entity_id: &RecordId<EntityRecord>, doc: &ParsedNote) -> Vec<BlockNode> {
         // Pre-calculate capacity: sum of all content types
         // Headings + code_blocks + lists + callouts + latex + paragraphs (upper bound)
         // Note: Actual paragraph count may be lower due to filtering empty ones
@@ -2279,17 +2279,17 @@ mod tests {
     use crate::eav_graph::apply_eav_graph_schema;
     use crate::SurrealClient;
     use crucible_core::parser::{
-        DocumentContent, Frontmatter, FrontmatterFormat, Heading, Paragraph, Tag,
+        NoteContent, Frontmatter, FrontmatterFormat, Heading, Paragraph, Tag,
     };
     use crucible_core::storage::{RelationStorage, TagStorage};
     use serde_json::json;
     use std::path::PathBuf;
 
-    fn sample_document() -> ParsedDocument {
-        let mut doc = ParsedDocument::default();
+    fn sample_document() -> ParsedNote {
+        let mut doc = ParsedNote::default();
         doc.path = PathBuf::from("notes/sample.md");
         doc.content_hash = "abc123".into();
-        doc.content = DocumentContent::default();
+        doc.content = NoteContent::default();
         doc.content.plain_text = "Hello world".into();
         doc.content
             .paragraphs
@@ -2308,7 +2308,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let doc = sample_document();
         let entity_id = ingestor.ingest(&doc, "notes/sample.md").await.unwrap();
@@ -2340,7 +2340,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         // Create target notes first so wikilinks can be resolved
         let mut target_doc1 = sample_document();
@@ -2353,7 +2353,7 @@ mod tests {
         target_doc2.tags.clear();
         ingestor.ingest(&target_doc2, "embedded-note.md").await.unwrap();
 
-        // Now create document with wikilinks
+        // Now create note with wikilinks
         let mut doc = sample_document();
         doc.wikilinks.push(Wikilink {
             target: "other-note".to_string(),
@@ -2427,7 +2427,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.tags.clear();
@@ -2474,7 +2474,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.wikilinks.push(Wikilink {
@@ -2520,7 +2520,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         // Create two documents with cross-references
         let mut doc1 = sample_document();
@@ -2572,9 +2572,9 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
-        // Create a document with multiple sections
+        // Create a note with multiple sections
         let mut doc = sample_document();
         doc.content.headings.clear();
         doc.content.paragraphs.clear();
@@ -2636,7 +2636,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.content.headings.clear();
@@ -2673,7 +2673,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.inline_links.push(InlineLink::new(
@@ -2743,7 +2743,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
 
@@ -2810,7 +2810,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.content.headings.clear();
@@ -2860,7 +2860,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         // Create two notes with same name in different folders
         let mut doc1 = sample_document();
@@ -2922,9 +2922,9 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
-        // Create document with various embed types
+        // Create note with various embed types
         let mut doc = sample_document();
         doc.path = PathBuf::from("test-embeds.md");
         doc.tags.clear();
@@ -3053,7 +3053,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.path = PathBuf::from("edge-cases.md");
@@ -3156,7 +3156,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         // Create note with wikilink to non-existent target
         let mut doc = sample_document();
@@ -3193,7 +3193,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         // Create target note
         let mut target_doc = sample_document();
@@ -3250,7 +3250,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         // Create target note
         let mut target_doc = sample_document();
@@ -3393,7 +3393,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.path = PathBuf::from("content-specific-test.md");
@@ -3419,7 +3419,7 @@ mod tests {
         });
 
         doc.wikilinks.push(Wikilink {
-            target: "document.pdf".to_string(),
+            target: "note.pdf".to_string(),
             alias: None,
             heading_ref: None,
             block_ref: None,
@@ -3515,7 +3515,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.path = PathBuf::from("validation-test.md");
@@ -3598,7 +3598,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.path = PathBuf::from("complexity-test.md");
@@ -3691,7 +3691,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.path = PathBuf::from("external-metadata-test.md");
@@ -3802,9 +3802,9 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
-        // Create target document
+        // Create target note
         let mut target_doc = sample_document();
         target_doc.path = PathBuf::from("TargetNote.md");
         target_doc.tags.clear();
@@ -3947,7 +3947,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.path = PathBuf::from("embed-types-comprehensive.md");
@@ -3984,10 +3984,10 @@ mod tests {
             ("audio.m4a", "audio", "m4a"),
             ("audio.webm", "audio", "webm"),
 
-            // Document types
-            ("document.pdf", "pdf", "pdf"),
-            ("document.doc", "external", "doc"), // Not specifically handled
-            ("document.docx", "external", "docx"), // Not specifically handled
+            // Note types
+            ("note.pdf", "pdf", "pdf"),
+            ("note.doc", "external", "doc"), // Not specifically handled
+            ("note.docx", "external", "docx"), // Not specifically handled
 
             // Code files
             ("code.js", "note", "js"),
@@ -4104,7 +4104,7 @@ mod tests {
                     );
                     assert_eq!(
                         relation.metadata.get("media_type").and_then(|v| v.as_str()),
-                        Some("document")
+                        Some("note")
                     );
                 },
                 "external" => {
@@ -4127,7 +4127,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.path = PathBuf::from("external-url-basic.md");
@@ -4266,7 +4266,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.path = PathBuf::from("content-specific-comprehensive.md");
@@ -4292,7 +4292,7 @@ mod tests {
             ("audio.flac", "audio", vec![("requires_embed_player", "false")]),
 
             // PDF with specific processing
-            ("document.pdf", "pdf", vec![
+            ("note.pdf", "pdf", vec![
                 ("requires_pdf_viewer", "true"),
                 ("paginated", "true"),
                 ("text_searchable", "true"),
@@ -4415,7 +4415,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         // Create target documents
         let mut target_doc1 = sample_document();
@@ -4430,7 +4430,7 @@ mod tests {
         target_doc2.tags.push(Tag::new("docs/reference", 0));
         ingestor.ingest(&target_doc2, "target2.md").await.unwrap();
 
-        // Create source document with mixed content
+        // Create source note with mixed content
         let mut doc = sample_document();
         doc.path = PathBuf::from("integration-test.md");
         doc.tags.clear();
@@ -4556,7 +4556,7 @@ mod tests {
 
         // 3. Check backlinks work correctly (existing functionality not broken)
         let backlinks = store.get_backlinks(&entity_id.id, None).await.unwrap();
-        assert!(backlinks.is_empty(), "Source document should have no backlinks");
+        assert!(backlinks.is_empty(), "Source note should have no backlinks");
 
         // 4. Check entities and blocks are created normally
         let entities = client
@@ -4582,7 +4582,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.path = PathBuf::from("performance-edge-cases.md");
@@ -4639,7 +4639,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.path = PathBuf::from("url-classification.md");
@@ -4666,7 +4666,7 @@ mod tests {
 
             // Internal files (should be classified by their extension)
             ("test.png", "image", false),
-            ("document.pdf", "pdf", false),
+            ("note.pdf", "pdf", false),
             ("audio.mp3", "audio", false),
             ("video.mp4", "video", false),
             ("note.md", "note", false),
@@ -4766,7 +4766,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.path = PathBuf::from("metadata-extraction-comprehensive.md");
@@ -4789,7 +4789,7 @@ mod tests {
             ("song.mp3", "audio"),
 
             // PDF with specific properties
-            ("document.pdf", "pdf"),
+            ("note.pdf", "pdf"),
 
             // Notes with documentation detection
             ("README.md", "note"),
@@ -4862,7 +4862,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.path = PathBuf::from("file-extension-case-sensitivity.md");
@@ -4893,7 +4893,7 @@ mod tests {
             ("audio.M4A", "audio"),
 
             // Documents - various cases
-            ("document.PDF", "pdf"),
+            ("note.PDF", "pdf"),
             ("slides.PPTX", "external"),
             ("spreadsheet.XLSX", "external"),
             ("archive.ZIP", "external"),
@@ -4943,7 +4943,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.path = PathBuf::from("embed-tag-block-interaction.md");
@@ -5080,7 +5080,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.path = PathBuf::from("backward-compatibility.md");
@@ -5159,13 +5159,13 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
-        doc.path = PathBuf::from("large-document-performance.md");
+        doc.path = PathBuf::from("large-note-performance.md");
         doc.tags.clear();
 
-        // Create a document with many blocks and embeds to test performance
+        // Create a note with many blocks and embeds to test performance
         let num_blocks = 1000;
         let num_embeds = 500;
 
@@ -5200,12 +5200,12 @@ mod tests {
 
         // Measure ingestion performance
         let start_time = std::time::Instant::now();
-        let entity_id = ingestor.ingest(&doc, "large-document-performance.md").await.unwrap();
+        let entity_id = ingestor.ingest(&doc, "large-note-performance.md").await.unwrap();
         let ingestion_time = start_time.elapsed();
 
-        // Should complete within reasonable time for large document
+        // Should complete within reasonable time for large note
         assert!(ingestion_time.as_millis() < 10000,
-                "Large document ingestion should complete within 10 seconds, took {:?}", ingestion_time);
+                "Large note ingestion should complete within 10 seconds, took {:?}", ingestion_time);
 
         // Verify all relations were created efficiently
         let relations = store.get_relations(&entity_id.id, Some("embed")).await.unwrap();
@@ -5239,7 +5239,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.path = PathBuf::from("unicode-special-characters.md");
@@ -5257,7 +5257,7 @@ mod tests {
             // Unicode in aliases
             ("photo.jpg", "Photo de Famille"), // French alias
             ("video.mp4", "ビデオ"), // Japanese alias
-            ("document.pdf", "مستند"), // Arabic alias
+            ("note.pdf", "مستند"), // Arabic alias
 
             // Special characters in headings
             ("note.md", "Section & Subsection"),
@@ -5322,7 +5322,7 @@ mod tests {
                 4 => "image",   // صورة.webp
                 5 => "image",   // photo.jpg
                 6 => "video",   // video.mp4
-                7 => "pdf",     // document.pdf
+                7 => "pdf",     // note.pdf
                 8 => "note",    // note.md
                 9 => "note",    // file.txt
                 10 => "note",   // page.md
@@ -5406,7 +5406,7 @@ mod tests {
         }
     }
 
-    // Note: Concurrent processing test removed due to DocumentIngestor not implementing Clone
+    // Note: Concurrent processing test removed due to NoteIngestor not implementing Clone
     // This functionality can be tested in integration tests instead
 
     #[tokio::test]
@@ -5417,7 +5417,7 @@ mod tests {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         apply_eav_graph_schema(&client).await.unwrap();
         let store = EAVGraphStore::new(client.clone());
-        let ingestor = DocumentIngestor::new(&store);
+        let ingestor = NoteIngestor::new(&store);
 
         let mut doc = sample_document();
         doc.path = PathBuf::from("edge-case-urls-paths.md");

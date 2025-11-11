@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use crate::error::ParseError;
 use crate::extensions::SyntaxExtension;
-use crate::types::{CodeBlock, DocumentContent, Heading, ListBlock, ListItem, ListType, Paragraph};
+use crate::types::{CodeBlock, NoteContent, Heading, ListBlock, ListItem, ListType, Paragraph};
 
 /// Extension for parsing basic markdown structures
 #[derive(Debug, Clone)]
@@ -86,7 +86,7 @@ impl SyntaxExtension for BasicMarkdownExtension {
     }
 
     fn priority(&self) -> u8 {
-        // Highest priority - should run first to establish document structure
+        // Highest priority - should run first to establish note structure
         100
     }
 
@@ -94,7 +94,7 @@ impl SyntaxExtension for BasicMarkdownExtension {
         self.enabled
     }
 
-    async fn parse(&self, content: &str, doc_content: &mut DocumentContent) -> Vec<ParseError> {
+    async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
         let errors = Vec::new();
         let parser = CmarkParser::new(content);
 
@@ -364,7 +364,7 @@ mod tests {
 ### Level 3"#;
 
         let ext = BasicMarkdownExtension::new();
-        let mut doc = DocumentContent::new();
+        let mut doc = NoteContent::new();
         let errors = ext.parse(content, &mut doc).await;
 
         assert!(errors.is_empty());
@@ -382,7 +382,7 @@ mod tests {
         let content = "This is a paragraph.\n\nThis is another paragraph.";
 
         let ext = BasicMarkdownExtension::new();
-        let mut doc = DocumentContent::new();
+        let mut doc = NoteContent::new();
         let errors = ext.parse(content, &mut doc).await;
 
         assert!(errors.is_empty());
@@ -400,7 +400,7 @@ no language
 ```"#;
 
         let ext = BasicMarkdownExtension::new();
-        let mut doc = DocumentContent::new();
+        let mut doc = NoteContent::new();
         let errors = ext.parse(content, &mut doc).await;
 
         assert!(errors.is_empty());
@@ -418,7 +418,7 @@ no language
 - [x] Task 2"#;
 
         let ext = BasicMarkdownExtension::new();
-        let mut doc = DocumentContent::new();
+        let mut doc = NoteContent::new();
         let errors = ext.parse(content, &mut doc).await;
 
         assert!(errors.is_empty());
@@ -442,7 +442,7 @@ fn main() {}
 - Item 2"#;
 
         let ext = BasicMarkdownExtension::new();
-        let mut doc = DocumentContent::new();
+        let mut doc = NoteContent::new();
         let errors = ext.parse(content, &mut doc).await;
 
         assert!(errors.is_empty());

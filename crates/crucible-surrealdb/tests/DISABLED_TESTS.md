@@ -2,51 +2,47 @@
 
 ## Overview
 
-The following integration test files have been disabled (renamed to `.disabled` suffix) because they use a deprecated API that no longer exists in the current EAVGraphStore implementation.
+The following integration test files have been disabled (renamed to `.disabled` suffix) because they use deprecated APIs or test functionality that is no longer relevant.
 
 ## Disabled Files
 
 ### `block_storage_integration_tests.rs.disabled`
-- **Reason**: Uses old `BlockStorage` trait methods that are no longer implemented
+- **Reason**: Tests outdated `BlockStorage` trait and `Block` struct that are no longer used
+- **Status**: **PERMANENTLY DISABLED** - Functionality is now tested by `src/eav_graph/integration_tests.rs`
+- **Current Approach**: Uses `DocumentIngestor::ingest()` which handles end-to-end parsing → storage
 - **Old API used**:
-  - `EAVGraphStore::new_in_memory()` (doesn't exist, should be `SurrealClient::new_isolated_memory()` + `EAVGraphStore::new(client)`)
-  - `store_block()`, `get_block()`, `get_blocks()`, etc. (replaced by `replace_blocks()`)
-  - `store_entity()` (replaced by `upsert_entity()`)
+  - `Block` struct and `BlockStorage` trait (replaced by `BlockNode` and `DocumentIngestor`)
+  - `store_block()`, `get_block()`, `get_blocks()` methods (replaced by `replace_blocks()`)
+  - Individual block CRUD operations (replaced by document-level ingestion)
 
-### `property_storage_integration_tests.rs.disabled`
-- **Reason**: Uses old property storage API
-- **Old API used**:
-  - `SurrealClient::new_memory()` (should use `new_isolated_memory()` for tests)
-  - Old property storage methods that may no longer match current API
+## Re-enabled Files
 
-## Current API
+### `property_storage_integration_tests.rs` ✅ **RE-ENABLED**
+- **Date Re-enabled**: 2025-11-11
+- **Status**: All 8 tests passing
+- **API Updated**: Uses current `SurrealClient::new_memory()` and existing property storage methods
+- **Coverage**: Tests frontmatter → property mapping → storage pipeline
 
-The current EAVGraphStore uses:
-- `upsert_entity(entity: &Entity)` - Store/update entities
-- `upsert_property(property: &Property)` - Store/update properties
-- `replace_blocks(entity_id, blocks: &[BlockNode])` - Replace all blocks for an entity
-- `upsert_embedding(embedding: &EmbeddingVector)` - Store embeddings
-- `upsert_tag(tag: &SurrealTag)` - Store tags
-- `upsert_relation(relation: &SurrealRelation)` - Store relations
+## Current Testing Approach
 
-## Next Steps
+The current integration testing strategy uses:
 
-To re-enable these tests:
+1. **Document-Level Integration Tests** (`src/eav_graph/integration_tests.rs`):
+   - Tests complete parsing → ingestion → storage pipeline
+   - Uses `DocumentIngestor::ingest()` for end-to-end testing
+   - Covers all block types, metadata, and relationships
+   - 1 active test with comprehensive coverage
 
-1. Update the test setup to use:
-   ```rust
-   let client = SurrealClient::new_isolated_memory().await.unwrap();
-   apply_eav_graph_schema(&client).await.unwrap();
-   let store = EAVGraphStore::new(client);
-   ```
+2. **Property Storage Tests** (`tests/property_storage_integration_tests.rs`):
+   - Tests frontmatter → property mapping pipeline
+   - Validates all property value types (Text, Number, Bool, Date, JSON)
+   - 8 passing tests with full CRUD operations
 
-2. Replace old method calls with new API:
-   - `store_block(block)` → `replace_blocks(&entity_id, &[block])`
-   - `store_entity(entity)` → `upsert_entity(&entity)`
-   - Update assertions to match new return types
+3. **Comprehensive Unit Tests** (`src/eav_graph/store.rs`):
+   - Individual method testing with 60+ test functions
+   - Schema validation, query execution, data integrity
+   - All storage operations and edge cases
 
-3. Consider whether these tests duplicate coverage already provided by the unit tests in `src/eav_graph/store.rs`
+## Date Updated
 
-## Date Disabled
-
-2025-11-09 - Test isolation refactor
+2025-11-11 - Phase 5 integration testing work

@@ -5,7 +5,7 @@
 
 use super::error::ParseError;
 use super::extensions::SyntaxExtension;
-use super::types::{Blockquote, DocumentContent};
+use super::types::{Blockquote, NoteContent};
 use async_trait::async_trait;
 use regex::Regex;
 
@@ -43,7 +43,7 @@ impl SyntaxExtension for BlockquoteExtension {
         content.contains('>')
     }
 
-    async fn parse(&self, content: &str, doc_content: &mut DocumentContent) -> Vec<ParseError> {
+    async fn parse(&self, content: &str, doc_content: &mut NoteContent) -> Vec<ParseError> {
         let errors = Vec::new();
 
         // Pattern to match blockquote lines

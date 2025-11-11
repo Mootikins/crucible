@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// This enum provides a standardized way to classify different types of content
 /// across the Crucible knowledge management system. It's designed to be used
-/// for document classification, link processing, and content organization.
+/// for note classification, link processing, and content organization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ContentCategory {
     /// Markdown files (.md, .markdown)
@@ -47,8 +47,8 @@ impl ContentCategory {
     pub const AUDIO: Self = Self::Audio;
     /// PDF files category
     pub const PDF: Self = Self::PDF;
-    /// Document files category
-    pub const DOCUMENT: Self = Self::Document;
+    /// Note files category
+    pub const DOCUMENT: Self = Self::Note;
     /// Other files category
     pub const OTHER: Self = Self::Other;
     /// Web content category

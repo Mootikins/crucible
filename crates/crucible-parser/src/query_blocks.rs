@@ -4,7 +4,7 @@
 //! ```query:SQL SELECT * FROM documents WHERE tags CONTAINS 'project'```
 
 use super::extensions::SyntaxExtension;
-use super::types::{CodeBlock, DocumentContent};
+use super::types::{CodeBlock, NoteContent};
 use super::error::{ParseError, ParseErrorType};
 use async_trait::async_trait;
 use regex::Regex;
@@ -47,7 +47,7 @@ impl SyntaxExtension for QueryBlockExtension {
     async fn parse(
         &self,
         content: &str,
-        doc_content: &mut DocumentContent,
+        doc_content: &mut NoteContent,
     ) -> Vec<ParseError> {
         let mut errors = Vec::new();
         let mut line_offset = 0;
@@ -122,7 +122,7 @@ mod tests {
     async fn test_query_block_parsing() {
         let extension = QueryBlockExtension::new();
         let content = "Some content\n```query:SQL\nSELECT * FROM documents\n```";
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -138,7 +138,7 @@ mod tests {
     async fn test_invalid_query_type() {
         let extension = QueryBlockExtension::new();
         let content = "```query:unknown\nSELECT * FROM table\n```";
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
@@ -164,7 +164,7 @@ Second query:
 SELECT * FROM documents WHERE tags CONTAINS 'project'
 ```
         "#;
-        let mut doc_content = DocumentContent::new();
+        let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
 
