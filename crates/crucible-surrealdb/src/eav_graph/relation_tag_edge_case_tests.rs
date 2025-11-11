@@ -10,20 +10,10 @@
 #[cfg(test)]
 mod edge_cases {
     use super::super::{apply_eav_graph_schema, DocumentIngestor, EAVGraphStore};
-    use crate::eav_graph::ingest::extract_tags;
     use crate::SurrealClient;
     use crucible_core::parser::{ParsedDocument, Tag, Wikilink};
     use crucible_core::storage::{RelationStorage, TagStorage};
     use std::path::PathBuf;
-
-    /// Helper to extract and store tags (tags are not auto-stored by ingestor)
-    async fn store_tags_for_doc(doc: &ParsedDocument, store: &EAVGraphStore) {
-        let tags = extract_tags(doc);
-        for tag in tags {
-            // Ignore errors for duplicate tags (this is expected in deduplication tests)
-            let _ = store.store_tag(tag).await;
-        }
-    }
 
     // ============================================================================
     // Wikilink Edge Cases
@@ -58,10 +48,8 @@ mod edge_cases {
 
         let rel = &relations[0];
         assert_eq!(rel.relation_type, "wikilink");
-        assert_eq!(
-            rel.to_entity_id,
-            Some("entities:note:Target Note".to_string())
-        );
+        // With resolution, unresolved links have to_entity_id = None
+        assert_eq!(rel.to_entity_id, None, "Unresolved wikilink should have no target");
         assert_eq!(rel.metadata.get("alias"), None);
     }
 
@@ -292,11 +280,12 @@ mod edge_cases {
             a_offset.cmp(&b_offset)
         });
 
-        // Verify first link
+        // Verify first link - unresolved, so no target
         assert_eq!(relations[0].relation_type, "wikilink");
         assert_eq!(
             relations[0].to_entity_id,
-            Some("entities:note:Note 1".to_string())
+            None,
+            "Unresolved wikilink should have no target"
         );
 
         // Verify second link has alias
@@ -330,7 +319,6 @@ mod edge_cases {
         let store = EAVGraphStore::new(client.clone());
         let ingestor = DocumentIngestor::new(&store);
 
-        store_tags_for_doc(&doc, &store).await;
         ingestor.ingest(&doc, "test.md").await.unwrap();
 
         let tag = store
@@ -356,7 +344,6 @@ mod edge_cases {
         let store = EAVGraphStore::new(client.clone());
         let ingestor = DocumentIngestor::new(&store);
 
-        store_tags_for_doc(&doc, &store).await;
         ingestor.ingest(&doc, "test.md").await.unwrap();
 
         let parent = store
@@ -394,7 +381,6 @@ mod edge_cases {
         let store = EAVGraphStore::new(client.clone());
         let ingestor = DocumentIngestor::new(&store);
 
-        store_tags_for_doc(&doc, &store).await;
         ingestor.ingest(&doc, "test.md").await.unwrap();
 
         let hierarchy = store
@@ -445,7 +431,6 @@ mod edge_cases {
         let store = EAVGraphStore::new(client.clone());
         let ingestor = DocumentIngestor::new(&store);
 
-        store_tags_for_doc(&doc, &store).await;
         let entity_id = ingestor.ingest(&doc, "test.md").await.unwrap();
 
         // Verify tags were created
@@ -495,10 +480,8 @@ mod edge_cases {
         let ingestor = DocumentIngestor::new(&store);
 
         // Store tags and ingest both documents
-        store_tags_for_doc(&doc1, &store).await;
         let entity_id1 = ingestor.ingest(&doc1, "doc1.md").await.unwrap();
 
-        store_tags_for_doc(&doc2, &store).await;
         let entity_id2 = ingestor.ingest(&doc2, "doc2.md").await.unwrap();
 
         // Should only have 1 'shared' tag despite 2 documents using it
@@ -541,42 +524,10 @@ mod edge_cases {
         doc3.content_hash = "hash3".into();
         doc3.tags.push(Tag::new("project/ai/nlp", 0));
 
-        // Store tags and create entity-tag associations
-        store_tags_for_doc(&doc1, &store).await;
-        store_tags_for_doc(&doc2, &store).await;
-        store_tags_for_doc(&doc3, &store).await;
-
+        // Ingest documents - tags are automatically associated during ingestion
         let entity1 = ingestor.ingest(&doc1, "doc1.md").await.unwrap();
         let entity2 = ingestor.ingest(&doc2, "doc2.md").await.unwrap();
         let entity3 = ingestor.ingest(&doc3, "doc3.md").await.unwrap();
-
-        // Create entity-tag associations manually (normally done by kiln_integration)
-        use crucible_core::storage::{EntityTag, TagStorage};
-        use chrono::Utc;
-        store
-            .associate_tag(EntityTag {
-                entity_id: entity1.id.clone(),
-                tag_id: "project".to_string(),
-                created_at: Utc::now(),
-            })
-            .await
-            .unwrap();
-        store
-            .associate_tag(EntityTag {
-                entity_id: entity2.id.clone(),
-                tag_id: "project/ai".to_string(),
-                created_at: Utc::now(),
-            })
-            .await
-            .unwrap();
-        store
-            .associate_tag(EntityTag {
-                entity_id: entity3.id.clone(),
-                tag_id: "project/ai/nlp".to_string(),
-                created_at: Utc::now(),
-            })
-            .await
-            .unwrap();
 
         // Search for parent tag should return all three entities
         let results = store.get_entities_by_tag("project").await.unwrap();
@@ -622,40 +573,10 @@ mod edge_cases {
         doc3.content_hash = "hash3".into();
         doc3.tags.push(Tag::new("project/ai/nlp", 0));
 
-        store_tags_for_doc(&doc1, &store).await;
-        store_tags_for_doc(&doc2, &store).await;
-        store_tags_for_doc(&doc3, &store).await;
-
+        // Ingest documents - tags are automatically associated during ingestion
         let entity1 = ingestor.ingest(&doc1, "doc1.md").await.unwrap();
         let entity2 = ingestor.ingest(&doc2, "doc2.md").await.unwrap();
         let entity3 = ingestor.ingest(&doc3, "doc3.md").await.unwrap();
-
-        use crucible_core::storage::{EntityTag, TagStorage};
-        use chrono::Utc;
-        store
-            .associate_tag(EntityTag {
-                entity_id: entity1.id.clone(),
-                tag_id: "project".to_string(),
-                created_at: Utc::now(),
-            })
-            .await
-            .unwrap();
-        store
-            .associate_tag(EntityTag {
-                entity_id: entity2.id.clone(),
-                tag_id: "project/ai".to_string(),
-                created_at: Utc::now(),
-            })
-            .await
-            .unwrap();
-        store
-            .associate_tag(EntityTag {
-                entity_id: entity3.id.clone(),
-                tag_id: "project/ai/nlp".to_string(),
-                created_at: Utc::now(),
-            })
-            .await
-            .unwrap();
 
         // Search for mid-level tag
         let results = store.get_entities_by_tag("project/ai").await.unwrap();
@@ -696,30 +617,9 @@ mod edge_cases {
         doc2.content_hash = "hash2".into();
         doc2.tags.push(Tag::new("project/ai/nlp", 0));
 
-        store_tags_for_doc(&doc1, &store).await;
-        store_tags_for_doc(&doc2, &store).await;
-
+        // Ingest documents - tags are automatically associated during ingestion
         let entity1 = ingestor.ingest(&doc1, "doc1.md").await.unwrap();
         let entity2 = ingestor.ingest(&doc2, "doc2.md").await.unwrap();
-
-        use crucible_core::storage::{EntityTag, TagStorage};
-        use chrono::Utc;
-        store
-            .associate_tag(EntityTag {
-                entity_id: entity1.id.clone(),
-                tag_id: "project/ai".to_string(),
-                created_at: Utc::now(),
-            })
-            .await
-            .unwrap();
-        store
-            .associate_tag(EntityTag {
-                entity_id: entity2.id.clone(),
-                tag_id: "project/ai/nlp".to_string(),
-                created_at: Utc::now(),
-            })
-            .await
-            .unwrap();
 
         // Search for leaf tag
         let results = store.get_entities_by_tag("project/ai/nlp").await.unwrap();
@@ -748,19 +648,8 @@ mod edge_cases {
         doc1.content_hash = "hash1".into();
         doc1.tags.push(Tag::new("research/ml", 0));
 
-        store_tags_for_doc(&doc1, &store).await;
+        // Ingest document - tags are automatically associated during ingestion
         let entity1 = ingestor.ingest(&doc1, "doc1.md").await.unwrap();
-
-        use crucible_core::storage::{EntityTag, TagStorage};
-        use chrono::Utc;
-        store
-            .associate_tag(EntityTag {
-                entity_id: entity1.id.clone(),
-                tag_id: "research/ml".to_string(),
-                created_at: Utc::now(),
-            })
-            .await
-            .unwrap();
 
         // Search for parent tag that has no direct entities
         let results = store.get_entities_by_tag("research").await.unwrap();

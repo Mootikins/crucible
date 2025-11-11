@@ -886,7 +886,7 @@ async fn process_single_file_internal(
     debug!("  🔗 Creating relationships...");
     create_wikilink_edges(client, &doc_id, &document, kiln_root).await?;
     create_embed_relationships(client, &doc_id, &document, kiln_root).await?;
-    create_tag_associations(client, &doc_id, &document).await?;
+    // Tags are now automatically stored during document ingestion in DocumentIngestor
     debug!("  ✅ Relationships created");
 
     // Process embeddings if available

@@ -144,6 +144,9 @@ pub struct ParsedDocument {
     /// Extracted tags #tag
     pub tags: Vec<Tag>,
 
+    /// Extracted inline markdown links [text](url)
+    pub inline_links: Vec<InlineLink>,
+
     /// Parsed document content structure
     pub content: DocumentContent,
 
@@ -218,6 +221,7 @@ impl ParsedDocument {
             frontmatter,
             wikilinks,
             tags,
+            inline_links: Vec::new(),
             content,
             callouts: Vec::new(),
             latex_expressions: Vec::new(),
@@ -614,6 +618,9 @@ pub struct DocumentContent {
     /// List blocks (for structured content extraction)
     pub lists: Vec<ListBlock>,
 
+    /// Inline markdown links [text](url)
+    pub inline_links: Vec<InlineLink>,
+
     /// LaTeX mathematical expressions extracted from content
     pub latex_expressions: Vec<LatexExpression>,
 
@@ -648,6 +655,7 @@ impl DocumentContent {
             code_blocks: Vec::new(),
             paragraphs: Vec::new(),
             lists: Vec::new(),
+            inline_links: Vec::new(),
             latex_expressions: Vec::new(),
             callouts: Vec::new(),
             blockquotes: Vec::new(),
@@ -1489,6 +1497,56 @@ impl LatexExpression {
     }
 }
 
+/// Inline markdown link [text](url)
+///
+/// Represents a standard markdown link (not a wikilink).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InlineLink {
+    /// Link text (displayed to user)
+    pub text: String,
+
+    /// URL or relative path
+    pub url: String,
+
+    /// Optional link title attribute
+    pub title: Option<String>,
+
+    /// Character offset in source document
+    pub offset: usize,
+}
+
+impl InlineLink {
+    /// Create a new inline link
+    pub fn new(text: String, url: String, offset: usize) -> Self {
+        Self {
+            text,
+            url,
+            title: None,
+            offset,
+        }
+    }
+
+    /// Create an inline link with title
+    pub fn with_title(text: String, url: String, title: String, offset: usize) -> Self {
+        Self {
+            text,
+            url,
+            title: Some(title),
+            offset,
+        }
+    }
+
+    /// Check if this is an external link (starts with http:// or https://)
+    pub fn is_external(&self) -> bool {
+        self.url.starts_with("http://") || self.url.starts_with("https://")
+    }
+
+    /// Check if this is a relative link (internal to vault)
+    pub fn is_relative(&self) -> bool {
+        !self.is_external()
+    }
+}
+
 /// Footnote definitions and references
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FootnoteMap {
@@ -1604,6 +1662,7 @@ pub struct ParsedDocumentBuilder {
     frontmatter: Option<Frontmatter>,
     wikilinks: Vec<Wikilink>,
     tags: Vec<Tag>,
+    inline_links: Vec<InlineLink>,
     content: DocumentContent,
     callouts: Vec<Callout>,
     latex_expressions: Vec<LatexExpression>,
@@ -1624,6 +1683,7 @@ impl ParsedDocumentBuilder {
             frontmatter: None,
             wikilinks: Vec::new(),
             tags: Vec::new(),
+            inline_links: Vec::new(),
             content: DocumentContent::default(),
             callouts: Vec::new(),
             latex_expressions: Vec::new(),
@@ -1652,6 +1712,12 @@ impl ParsedDocumentBuilder {
     /// Set tags
     pub fn with_tags(mut self, tags: Vec<Tag>) -> Self {
         self.tags = tags;
+        self
+    }
+
+    /// Set inline links
+    pub fn with_inline_links(mut self, inline_links: Vec<InlineLink>) -> Self {
+        self.inline_links = inline_links;
         self
     }
 
@@ -1716,6 +1782,7 @@ impl ParsedDocumentBuilder {
             frontmatter: self.frontmatter,
             wikilinks: self.wikilinks,
             tags: self.tags,
+            inline_links: self.inline_links,
             content: self.content,
             callouts: self.callouts,
             latex_expressions: self.latex_expressions,

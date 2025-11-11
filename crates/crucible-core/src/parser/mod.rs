@@ -51,6 +51,7 @@ pub use crucible_parser::types::{
 
     // Link and tag types
     Wikilink,
+    InlineLink,
     Tag,
 
     // Content structure types

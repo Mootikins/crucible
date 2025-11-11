@@ -999,7 +999,7 @@ impl KilnScanner {
             create_embed_relationships(client, &doc_id, &document, kiln_root).await?;
         }
 
-        create_tag_associations(client, &doc_id, &document).await?;
+        // Tags are now automatically stored during document ingestion in DocumentIngestor
 
         // Process embeddings if enabled
         if self.config.enable_embeddings {

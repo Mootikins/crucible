@@ -1003,11 +1003,7 @@ impl DatabaseTransactionConsumer {
         )
         .await?;
 
-        // Create tag associations
-        if !document.tags.is_empty() {
-            crate::kiln_integration::create_tag_associations(&self.client, document_id, document)
-                .await?;
-        }
+        // Tags are now automatically stored during document ingestion in DocumentIngestor
 
         // Note: embeds are handled through content processing, not as separate relationships
         // The intelligent consumer handles all content-related updates automatically
