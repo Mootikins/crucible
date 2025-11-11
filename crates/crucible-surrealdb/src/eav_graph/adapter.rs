@@ -307,9 +307,17 @@ use super::types::{
 ///
 /// Maps the database-agnostic core Relation type to the SurrealDB-specific
 /// type with RecordId fields. Block link fields (offset, hash, occurrence)
-/// are stored in metadata.
+/// are stored in metadata, and content_category is extracted from metadata
+/// to a direct field for database schema compliance.
 pub fn core_relation_to_surreal(relation: core::Relation) -> SurrealRelation {
-    // Store block link fields in metadata
+    // Extract content_category from metadata if present, otherwise use default
+    let content_category = relation.metadata
+        .get("content_category")
+        .and_then(|v| v.as_str())
+        .unwrap_or("note")
+        .to_string();
+
+    // Store block link fields in metadata and remove content_category from metadata
     let mut metadata = relation.metadata.clone();
     if let Some(offset) = relation.block_offset {
         metadata["block_offset"] = serde_json::json!(offset);
@@ -323,6 +331,11 @@ pub fn core_relation_to_surreal(relation: core::Relation) -> SurrealRelation {
     }
     if let Some(context) = relation.context {
         metadata["context"] = serde_json::json!(context);
+    }
+
+    // Remove content_category from metadata since it's now a direct field
+    if let Some(obj) = metadata.as_object_mut() {
+        obj.remove("content_category");
     }
 
     SurrealRelation {
@@ -344,6 +357,7 @@ pub fn core_relation_to_surreal(relation: core::Relation) -> SurrealRelation {
         source: "parser".to_string(),
         position: None,
         metadata,
+        content_category,
         created_at: relation.created_at,
     }
 }
@@ -351,7 +365,8 @@ pub fn core_relation_to_surreal(relation: core::Relation) -> SurrealRelation {
 /// Convert SurrealDB Relation to core Relation
 ///
 /// Maps the SurrealDB-specific Relation type back to the database-agnostic
-/// core type. Extracts block link fields from metadata.
+/// core type. Extracts block link fields from metadata and moves content_category
+/// from direct field back to metadata for round-trip consistency.
 pub fn surreal_relation_to_core(surreal: SurrealRelation) -> core::Relation {
     // Extract block link fields from metadata
     let block_offset = surreal.metadata["block_offset"].as_u64().map(|v| v as u32);
@@ -377,6 +392,14 @@ pub fn surreal_relation_to_core(surreal: SurrealRelation) -> core::Relation {
         .as_str()
         .map(|s| s.to_string());
 
+    // Move content_category from direct field back to metadata for round-trip consistency
+    let mut metadata = surreal.metadata;
+    if !metadata.is_null() {
+        metadata["content_category"] = serde_json::Value::String(surreal.content_category.clone());
+    } else {
+        metadata = serde_json::json!({"content_category": surreal.content_category});
+    }
+
     core::Relation {
         id: surreal
             .id
@@ -389,7 +412,7 @@ pub fn surreal_relation_to_core(surreal: SurrealRelation) -> core::Relation {
             Some(entity_id_to_string(&surreal.to_id))
         },
         relation_type: surreal.relation_type,
-        metadata: surreal.metadata,
+        metadata,
         context,
         block_offset,
         block_hash,
@@ -444,6 +467,7 @@ mod relation_conversion_tests {
             source: "parser".to_string(),
             position: None,
             metadata: serde_json::Value::Null,
+            content_category: "note".to_string(),
             created_at: chrono::Utc::now(),
         };
 
@@ -483,6 +507,58 @@ mod relation_conversion_tests {
 
         let core_rel = surreal_relation_to_core(surreal);
         assert_eq!(core_rel.to_entity_id, None);
+    }
+
+    #[test]
+    fn test_content_category_round_trip() {
+        // Test with content_category in metadata (core format)
+        let mut metadata = serde_json::Map::new();
+        metadata.insert("content_category".to_string(), serde_json::Value::String("block".to_string()));
+        metadata.insert("alias".to_string(), serde_json::Value::String("Test Alias".to_string()));
+
+        let relation = core::Relation {
+            id: "test123".to_string(),
+            from_entity_id: "note:source".to_string(),
+            to_entity_id: Some("note:target".to_string()),
+            relation_type: "wikilink".to_string(),
+            metadata: serde_json::Value::Object(metadata),
+            context: None,
+            block_offset: None,
+            block_hash: None,
+            heading_occurrence: None,
+            created_at: chrono::Utc::now(),
+        };
+
+        // Convert to SurrealDB format
+        let surreal = core_relation_to_surreal(relation);
+
+        // Verify content_category was extracted to direct field
+        assert_eq!(surreal.content_category, "block");
+        assert_eq!(surreal.metadata["alias"], "Test Alias");
+        // content_category should be removed from metadata
+        assert!(surreal.metadata.get("content_category").is_none());
+
+        // Convert back to core format
+        let core_back = surreal_relation_to_core(surreal);
+
+        // Verify content_category is back in metadata
+        assert_eq!(core_back.metadata["content_category"], "block");
+        assert_eq!(core_back.metadata["alias"], "Test Alias");
+    }
+
+    #[test]
+    fn test_content_category_default() {
+        // Test with no content_category in metadata (should default to "note")
+        let relation = core::Relation::wikilink("note:source", "note:target");
+
+        let surreal = core_relation_to_surreal(relation);
+
+        // Should default to "note"
+        assert_eq!(surreal.content_category, "note");
+
+        // Round trip should preserve the default
+        let core_back = surreal_relation_to_core(surreal);
+        assert_eq!(core_back.metadata["content_category"], "note");
     }
 }
 
