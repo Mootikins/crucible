@@ -409,6 +409,7 @@ mod tests {
             frontmatter: None,
             wikilinks: Vec::new(),
             tags: Vec::new(),
+            inline_links: Vec::new(),
             callouts: Vec::new(),
             latex_expressions: Vec::new(),
             footnotes: FootnoteMap::new(),
