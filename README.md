@@ -8,6 +8,10 @@ Crucible is a high-performance knowledge management system built around a simple
 
 > **Architecture Note:** The system routes every interface (CLI chat today, desktop/web/agent integrations tomorrow) through a shared `crucible-core` façade. Markdown files remain the source of truth for portability and lock-in avoidance—the database is optional infrastructure for rich queries.
 
+## 📖 User Philosophy
+
+This project is guided by user-focused principles that ensure technology serves human knowledge management. See [docs/PHILOSOPHY.md](docs/PHILOSOPHY.md) for the complete user story philosophy that drives all development decisions.
+
 ## ✨ Key Features
 
 ### Agent-First Knowledge Discovery
