@@ -151,7 +151,7 @@ mod tests {
             "other-file.md".to_string(),
         ];
 
-        let results = picker.filter_items(&items, "mydoc");
+        let results = picker.filter_items(&items, "mynote");
 
         assert!(results.len() > 0);
         assert_eq!(results[0].0, 0); // Should match "my-note.md"
