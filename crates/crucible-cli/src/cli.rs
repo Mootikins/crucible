@@ -1,8 +1,6 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-// Import process command types
-use crate::commands::process::ProcessCommands;
 
 #[derive(Parser)]
 #[command(name = "cru")]
@@ -97,42 +95,17 @@ pub enum Commands {
         limit: u32,
     },
 
-    /// Semantic search using embeddings across kiln content
-    Semantic {
-        /// Search query
-        query: String,
-
-        /// Number of results
-        #[arg(short = 'n', long, default_value = "10")]
-        top_k: u32,
-
-        /// Output format (plain, json, table)
-        #[arg(short = 'f', long, default_value = "plain")]
-        format: String,
-
-        /// Show similarity scores
-        #[arg(short = 's', long)]
-        show_scores: bool,
-    },
-
-    /// Note operations
-    #[command(subcommand)]
-    Note(NoteCommands),
-
+  
+    
     /// Display kiln statistics
     Stats,
 
-    /// Test tool loading and execution
-    Test,
-
+  
     /// Configuration management
     #[command(subcommand)]
     Config(ConfigCommands),
 
-    /// Kiln processing management
-    #[command(subcommand)]
-    Process(ProcessCommands),
-
+    
     /// Show changes between files or directories
     Diff {
         /// First file or directory to compare
@@ -330,46 +303,3 @@ pub enum StorageCommands {
     },
 }
 
-#[derive(Subcommand)]
-pub enum NoteCommands {
-    /// Get a note by path or ID
-    Get {
-        /// File path or ID
-        path: String,
-
-        /// Output format (plain, json)
-        #[arg(short = 'f', long, default_value = "plain")]
-        format: String,
-    },
-
-    /// Create a new note
-    Create {
-        /// Path for the new note
-        path: String,
-
-        /// Note content
-        #[arg(short, long)]
-        content: Option<String>,
-
-        /// Open in $EDITOR after creation
-        #[arg(short, long)]
-        edit: bool,
-    },
-
-    /// Update note properties
-    Update {
-        /// File path
-        path: String,
-
-        /// Properties as JSON object
-        #[arg(short = 'p', long)]
-        properties: String,
-    },
-
-    /// List all notes
-    List {
-        /// Output format (plain, json, table)
-        #[arg(short = 'f', long, default_value = "table")]
-        format: String,
-    },
-}
