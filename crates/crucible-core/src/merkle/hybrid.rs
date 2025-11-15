@@ -218,6 +218,26 @@ impl HybridMerkleTree {
     }
 }
 
+impl Default for HybridMerkleTree {
+    /// Creates an empty Merkle tree with zero hash
+    ///
+    /// This is primarily useful for testing and initialization scenarios.
+    fn default() -> Self {
+        Self {
+            root_hash: NodeHash::zero(),
+            sections: vec![SectionNode {
+                heading: None,
+                depth: 0,
+                binary_tree: BinaryMerkleTree::empty(),
+                block_count: 0,
+            }],
+            total_blocks: 0,
+            virtual_sections: None,
+            is_virtualized: false,
+        }
+    }
+}
+
 impl BinaryMerkleTree {
     pub fn empty() -> Self {
         Self {
