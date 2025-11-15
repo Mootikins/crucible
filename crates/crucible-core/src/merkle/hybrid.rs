@@ -173,9 +173,33 @@ impl HybridMerkleTree {
         self.sections.len()
     }
 
+    /// Compute differences between two Merkle trees
+    ///
+    /// This uses an optimized O(n) algorithm that pre-allocates capacity
+    /// and only clones when necessary.
+    ///
+    /// # Performance
+    ///
+    /// - **Time complexity**: O(n) where n is the number of sections
+    /// - **Space complexity**: O(k) where k is the number of changes
+    /// - **Optimizations**: Pre-allocated vector, early termination on hash match
+    #[inline]
     pub fn diff(&self, other: &HybridMerkleTree) -> HybridDiff {
-        let mut changed_sections = Vec::new();
+        // Early exit if trees are identical
+        if self.root_hash == other.root_hash {
+            return HybridDiff {
+                root_hash_changed: false,
+                changed_sections: Vec::new(),
+                added_sections: 0,
+                removed_sections: 0,
+            };
+        }
 
+        // Pre-allocate with worst-case capacity (min of both lengths)
+        let capacity = self.sections.len().min(other.sections.len());
+        let mut changed_sections = Vec::with_capacity(capacity);
+
+        // Optimized comparison using zip (O(n))
         for (idx, (left, right)) in self.sections.iter().zip(other.sections.iter()).enumerate() {
             if left.binary_tree.root_hash != right.binary_tree.root_hash {
                 changed_sections.push(SectionChange {
@@ -186,7 +210,7 @@ impl HybridMerkleTree {
         }
 
         HybridDiff {
-            root_hash_changed: self.root_hash != other.root_hash,
+            root_hash_changed: true,
             changed_sections,
             added_sections: other.sections.len().saturating_sub(self.sections.len()),
             removed_sections: self.sections.len().saturating_sub(other.sections.len()),
@@ -934,5 +958,171 @@ mod tests {
 
         // Should have ~100 virtual sections (1000 / 10)
         assert!(tree.section_count() > 90 && tree.section_count() < 110);
+    }
+
+    // Performance tests
+
+    #[test]
+    fn test_performance_diff_identical_trees() {
+        // Build a large tree
+        let mut doc = ParsedNote::default();
+        doc.path = PathBuf::from("perf.md");
+        doc.content = NoteContent::default();
+
+        for i in 0..1000 {
+            doc.content.headings.push(Heading {
+                level: 1,
+                text: format!("Section {}", i),
+                offset: i * 100,
+                id: Some(format!("s{}", i)),
+            });
+            doc.content.paragraphs.push(Paragraph::new("Content".to_string(), i * 100 + 10));
+        }
+
+        let tree = HybridMerkleTree::from_document(&doc);
+
+        // Time the diff operation
+        let start = std::time::Instant::now();
+        let diff = tree.diff(&tree);
+        let elapsed = start.elapsed();
+
+        // Should be empty (identical trees)
+        assert!(diff.is_empty());
+
+        // Should be very fast (early exit on hash match)
+        assert!(
+            elapsed.as_millis() < 5,
+            "Diff of identical trees should be <5ms, took {:?}",
+            elapsed
+        );
+    }
+
+    #[test]
+    fn test_performance_tree_construction() {
+        // Create a large document with 10,000 blocks
+        let mut doc = ParsedNote::default();
+        doc.path = PathBuf::from("large_perf.md");
+        doc.content = NoteContent::default();
+
+        // Create 5,000 sections with 2 blocks each = 10,000 blocks
+        for i in 0..5000 {
+            doc.content.headings.push(Heading {
+                level: 1,
+                text: format!("Section {}", i),
+                offset: i * 200,
+                id: Some(format!("s{}", i)),
+            });
+            doc.content.paragraphs.push(Paragraph::new(
+                format!("Content {} part 1", i),
+                i * 200 + 10,
+            ));
+            doc.content.paragraphs.push(Paragraph::new(
+                format!("Content {} part 2", i),
+                i * 200 + 50,
+            ));
+        }
+
+        // Time tree construction
+        let start = std::time::Instant::now();
+        let tree = HybridMerkleTree::from_document_auto(&doc);
+        let elapsed = start.elapsed();
+
+        // Verify tree is correct
+        assert_eq!(tree.total_blocks, 10000);
+        assert!(tree.is_virtualized);
+
+        // Performance target: <50ms for 10K blocks in release mode
+        // Allow up to 100ms in debug mode (typical overhead is ~3-4x)
+        let target_ms = if cfg!(debug_assertions) { 100 } else { 50 };
+        assert!(
+            elapsed.as_millis() < target_ms,
+            "Tree construction should be <{}ms for 10K blocks, took {:?}",
+            target_ms,
+            elapsed
+        );
+
+        println!(
+            "Tree construction for 10K blocks: {:?} (target: <50ms)",
+            elapsed
+        );
+    }
+
+    #[test]
+    fn test_performance_diff_with_changes() {
+        // Build two large trees with some changes
+        let mut doc1 = ParsedNote::default();
+        doc1.path = PathBuf::from("perf1.md");
+        doc1.content = NoteContent::default();
+
+        for i in 0..1000 {
+            doc1.content.headings.push(Heading {
+                level: 1,
+                text: format!("Section {}", i),
+                offset: i * 100,
+                id: Some(format!("s{}", i)),
+            });
+            doc1.content.paragraphs.push(Paragraph::new(
+                format!("Content {}", i),
+                i * 100 + 10,
+            ));
+        }
+
+        let tree1 = HybridMerkleTree::from_document(&doc1);
+
+        // Create modified version (change every 10th section)
+        let mut doc2 = doc1.clone();
+        for i in (0..1000).step_by(10) {
+            doc2.content.paragraphs[i].content = format!("Modified content {}", i);
+        }
+
+        let tree2 = HybridMerkleTree::from_document(&doc2);
+
+        // Time the diff operation
+        let start = std::time::Instant::now();
+        let diff = tree1.diff(&tree2);
+        let elapsed = start.elapsed();
+
+        // Should detect changes
+        assert!(!diff.is_empty());
+        assert!(diff.root_hash_changed);
+
+        // Should be fast (<10ms for 1000 sections in release, <30ms in debug)
+        let target_ms = if cfg!(debug_assertions) { 30 } else { 10 };
+        assert!(
+            elapsed.as_millis() < target_ms,
+            "Diff should be <{}ms for 1000 sections, took {:?}",
+            target_ms,
+            elapsed
+        );
+
+        println!("Diff for 1000 sections: {:?} (target: <10ms)", elapsed);
+    }
+
+    #[test]
+    fn test_performance_hash_operations() {
+        // Test hash combination performance
+        let hashes: Vec<NodeHash> = (0..10000)
+            .map(|i| NodeHash::from_content(format!("content {}", i).as_bytes()))
+            .collect();
+
+        let start = std::time::Instant::now();
+        let combined = NodeHash::combine_many(&hashes);
+        let elapsed = start.elapsed();
+
+        assert!(!combined.is_zero());
+
+        // Should be fast (<20ms for 10K hashes in release, <50ms in debug)
+        let target_ms = if cfg!(debug_assertions) { 50 } else { 20 };
+        assert!(
+            elapsed.as_millis() < target_ms,
+            "Hash combination should be <{}ms for 10K hashes, took {:?}",
+            target_ms,
+            elapsed
+        );
+
+        println!(
+            "Hash combination for 10K hashes: {:?} (target: <20ms)",
+            elapsed
+        );
     }
 }

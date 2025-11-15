@@ -38,6 +38,7 @@ pub mod kiln_pipeline_connector;
 pub mod kiln_processor;
 pub mod kiln_scanner;
 pub mod kiln_store;
+pub mod merkle_persistence;
 pub mod metrics;
 pub mod migration;
 pub mod query;
@@ -134,6 +135,11 @@ pub use hash_lookup::{
     check_file_needs_update, lookup_changed_files_since, lookup_file_hash,
     lookup_file_hashes_batch, lookup_file_hashes_batch_cached, lookup_files_by_content_hashes,
     BatchLookupConfig, CacheStats, HashLookupCache, HashLookupResult, StoredFileHash,
+};
+
+// Merkle tree persistence exports
+pub use merkle_persistence::{
+    HybridTreeRecord, MerklePersistence, SectionRecord, VirtualSectionRecord,
 };
 
 // Block storage functionality is integrated into ContentAddressedStorageSurrealDB

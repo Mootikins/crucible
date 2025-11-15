@@ -116,6 +116,11 @@ impl NodeHash {
     /// ```rust,ignore
     /// let hash = NodeHash::from_content(b"Hello, World!");
     /// ```
+    ///
+    /// # Performance
+    ///
+    /// This is a hot path in tree construction. Inlined for performance.
+    #[inline]
     pub fn from_content(content: &[u8]) -> Self {
         let digest = blake3::hash(content);
         let mut bytes = [0u8; 16];
@@ -140,6 +145,11 @@ impl NodeHash {
     /// let right = NodeHash::from_content(b"right");
     /// let parent = NodeHash::combine(&left, &right);
     /// ```
+    ///
+    /// # Performance
+    ///
+    /// This is a hot path in tree construction. Inlined for performance.
+    #[inline]
     pub fn combine(left: &NodeHash, right: &NodeHash) -> Self {
         let mut hasher = Hasher::new();
         hasher.update(&left.0);
@@ -172,6 +182,11 @@ impl NodeHash {
     /// ];
     /// let combined = NodeHash::combine_many(&hashes);
     /// ```
+    ///
+    /// # Performance
+    ///
+    /// Optimized for combining multiple hashes in one pass.
+    #[inline]
     pub fn combine_many(hashes: &[NodeHash]) -> Self {
         if hashes.is_empty() {
             return Self::zero();
