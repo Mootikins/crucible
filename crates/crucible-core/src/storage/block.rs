@@ -8,11 +8,12 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
 /// Configuration for block processing
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BlockSize {
     /// Fixed 1KB blocks
     Small,
     /// Fixed 4KB blocks (default)
+    #[default]
     Medium,
     /// Fixed 8KB blocks
     Large,
@@ -20,12 +21,6 @@ pub enum BlockSize {
     Adaptive { min: usize, max: usize },
     /// Custom block size
     Custom(usize),
-}
-
-impl Default for BlockSize {
-    fn default() -> Self {
-        Self::Medium // 4KB default
-    }
 }
 
 impl BlockSize {

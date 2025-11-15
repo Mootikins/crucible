@@ -24,7 +24,6 @@
 use crate::hashing::blake3::Blake3Hasher;
 use crate::parser::error::ParserResult;
 use crate::parser::traits::{MarkdownParser, ParserCapabilities};
-use crucible_parser::types::ParsedNote;
 use crate::storage::builder::ContentAddressedStorageBuilder;
 use crate::storage::diff::EnhancedChangeDetector;
 use crate::storage::{
@@ -33,6 +32,7 @@ use crate::storage::{
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use crucible_parser::types::ParsedNote;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
@@ -75,7 +75,7 @@ impl Default for StorageAwareParserConfig {
 }
 
 /// Result type for storage-aware parsing operations
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct StorageAwareParseResult {
     /// The parsed note
     pub note: ParsedNote,
@@ -91,20 +91,6 @@ pub struct StorageAwareParseResult {
     pub statistics: ParseStatistics,
     /// Changes detected since last parse (if applicable)
     pub changes: Option<Vec<EnhancedTreeChange>>,
-}
-
-impl Default for StorageAwareParseResult {
-    fn default() -> Self {
-        Self {
-            note: ParsedNote::default(),
-            merkle_tree: None,
-            blocks: Vec::new(),
-            content_hash: String::new(),
-            storage_result: None,
-            statistics: ParseStatistics::default(),
-            changes: None,
-        }
-    }
 }
 
 /// Statistics about the parsing operation
@@ -289,11 +275,7 @@ impl StorageAwareParser {
         config: StorageAwareParserConfig,
     ) -> Self {
         // Extract hasher from builder or use default
-        let hasher = match storage_builder {
-            // In a full implementation, we'd extract the hasher from the builder
-            // For now, use the default Blake3 hasher
-            _ => Arc::new(Blake3Hasher::new()),
-        };
+        let hasher = Arc::new(Blake3Hasher::new());
 
         Self {
             base_parser,

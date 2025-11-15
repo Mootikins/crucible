@@ -121,7 +121,12 @@ pub fn core_properties_to_surreal(core_props: Vec<core::Property>) -> Vec<Surrea
             // Generate a property ID: entities:note:test:frontmatter:title
             let prop_id = RecordId::new(
                 "properties",
-                format!("{}:{}:{}", prop.entity_id, prop.namespace.0.as_ref(), prop.key),
+                format!(
+                    "{}:{}:{}",
+                    prop.entity_id,
+                    prop.namespace.0.as_ref(),
+                    prop.key
+                ),
             );
             core_property_to_surreal(prop, Some(prop_id))
         })
@@ -299,8 +304,8 @@ mod tests {
 // ============================================================================
 
 use super::types::{
-    EntityTag as SurrealEntityTag, EntityTagRecord, Relation as SurrealRelation,
-    Tag as SurrealTag, TagRecord,
+    EntityTag as SurrealEntityTag, EntityTagRecord, Relation as SurrealRelation, Tag as SurrealTag,
+    TagRecord,
 };
 
 /// Convert core Relation to SurrealDB Relation
@@ -311,7 +316,8 @@ use super::types::{
 /// to a direct field for database schema compliance.
 pub fn core_relation_to_surreal(relation: core::Relation) -> SurrealRelation {
     // Extract content_category from metadata if present, otherwise use default
-    let content_category = relation.metadata
+    let content_category = relation
+        .metadata
         .get("content_category")
         .and_then(|v| v.as_str())
         .unwrap_or("note")
@@ -370,27 +376,21 @@ pub fn core_relation_to_surreal(relation: core::Relation) -> SurrealRelation {
 pub fn surreal_relation_to_core(surreal: SurrealRelation) -> core::Relation {
     // Extract block link fields from metadata
     let block_offset = surreal.metadata["block_offset"].as_u64().map(|v| v as u32);
-    let block_hash = surreal.metadata["block_hash"]
-        .as_str()
-        .and_then(|hex_str| {
-            hex::decode(hex_str)
-                .ok()
-                .and_then(|bytes| {
-                    if bytes.len() == 32 {
-                        let mut hash = [0u8; 32];
-                        hash.copy_from_slice(&bytes);
-                        Some(hash)
-                    } else {
-                        None
-                    }
-                })
-        });
+    let block_hash = surreal.metadata["block_hash"].as_str().and_then(|hex_str| {
+        hex::decode(hex_str).ok().and_then(|bytes| {
+            if bytes.len() == 32 {
+                let mut hash = [0u8; 32];
+                hash.copy_from_slice(&bytes);
+                Some(hash)
+            } else {
+                None
+            }
+        })
+    });
     let heading_occurrence = surreal.metadata["heading_occurrence"]
         .as_u64()
         .map(|v| v as u32);
-    let context = surreal.metadata["context"]
-        .as_str()
-        .map(|s| s.to_string());
+    let context = surreal.metadata["context"].as_str().map(|s| s.to_string());
 
     // Move content_category from direct field back to metadata for round-trip consistency
     let mut metadata = surreal.metadata;
@@ -474,7 +474,10 @@ mod relation_conversion_tests {
         let core_rel = surreal_relation_to_core(surreal);
 
         assert_eq!(core_rel.from_entity_id, "entities:note:source");
-        assert_eq!(core_rel.to_entity_id, Some("entities:note:target".to_string()));
+        assert_eq!(
+            core_rel.to_entity_id,
+            Some("entities:note:target".to_string())
+        );
         assert_eq!(core_rel.relation_type, "embed");
     }
 
@@ -513,8 +516,14 @@ mod relation_conversion_tests {
     fn test_content_category_round_trip() {
         // Test with content_category in metadata (core format)
         let mut metadata = serde_json::Map::new();
-        metadata.insert("content_category".to_string(), serde_json::Value::String("block".to_string()));
-        metadata.insert("alias".to_string(), serde_json::Value::String("Test Alias".to_string()));
+        metadata.insert(
+            "content_category".to_string(),
+            serde_json::Value::String("block".to_string()),
+        );
+        metadata.insert(
+            "alias".to_string(),
+            serde_json::Value::String("Test Alias".to_string()),
+        );
 
         let relation = core::Relation {
             id: "test123".to_string(),
@@ -570,10 +579,7 @@ mod relation_conversion_tests {
 ///
 /// Maps the database-agnostic core Tag type to the SurrealDB-specific
 /// type with RecordId fields and additional metadata (path, depth).
-pub fn core_tag_to_surreal(
-    tag: core::Tag,
-    tag_id: Option<RecordId<TagRecord>>,
-) -> SurrealTag {
+pub fn core_tag_to_surreal(tag: core::Tag, tag_id: Option<RecordId<TagRecord>>) -> SurrealTag {
     // Parse the tag name to build hierarchical path
     let parts: Vec<&str> = tag.name.split('/').collect();
     let depth = parts.len() as i32;
@@ -611,7 +617,9 @@ pub fn surreal_tag_to_core(surreal: SurrealTag) -> core::Tag {
             .map(|id| id.id)
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
         name: surreal.name,
-        parent_tag_id: surreal.parent_id.map(|id| format!("{}:{}", id.table, id.id)),
+        parent_tag_id: surreal
+            .parent_id
+            .map(|id| format!("{}:{}", id.table, id.id)),
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
     }
@@ -627,7 +635,10 @@ pub fn core_entity_tag_to_surreal(
         entity_id: string_to_entity_id(&entity_tag.entity_id),
         tag_id: {
             let id_part = if entity_tag.tag_id.starts_with("tags:") {
-                entity_tag.tag_id.strip_prefix("tags:").unwrap_or(&entity_tag.tag_id)
+                entity_tag
+                    .tag_id
+                    .strip_prefix("tags:")
+                    .unwrap_or(&entity_tag.tag_id)
             } else {
                 &entity_tag.tag_id
             };
@@ -771,10 +782,8 @@ mod tag_conversion_tests {
             created_at: now,
         };
 
-        let surreal = core_entity_tag_to_surreal(
-            original.clone(),
-            Some(RecordId::new("entity_tags", "et1")),
-        );
+        let surreal =
+            core_entity_tag_to_surreal(original.clone(), Some(RecordId::new("entity_tags", "et1")));
         let result = surreal_entity_tag_to_core(surreal);
 
         // IDs will have table prefix after round-trip
