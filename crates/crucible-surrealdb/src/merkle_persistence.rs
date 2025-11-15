@@ -21,7 +21,7 @@ use std::collections::HashMap;
 ///
 /// This stores the core tree structure and configuration without the full
 /// section data, which is stored separately for efficiency.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HybridTreeRecord {
     /// Unique identifier for this tree (typically document path)
     pub id: String,
@@ -47,7 +47,7 @@ pub struct HybridTreeRecord {
 ///
 /// Sections are stored separately from the tree record to enable efficient
 /// partial updates and path sharding across the database.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SectionRecord {
     /// Tree ID this section belongs to
     pub tree_id: String,
@@ -73,7 +73,7 @@ pub struct SectionRecord {
 ///
 /// Virtual sections aggregate multiple sections for large documents,
 /// reducing memory usage and improving performance.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VirtualSectionRecord {
     /// Tree ID this virtual section belongs to
     pub tree_id: String,
@@ -100,6 +100,7 @@ pub struct VirtualSectionRecord {
 }
 
 /// Persistence layer for Hybrid Merkle trees
+#[derive(Clone)]
 pub struct MerklePersistence {
     client: SurrealClient,
 }
