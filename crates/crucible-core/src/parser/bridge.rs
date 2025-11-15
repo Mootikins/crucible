@@ -5,8 +5,8 @@
 
 use crate::parser::error::ParserResult;
 use crate::parser::traits::{MarkdownParser, ParserCapabilities};
-use crucible_parser::types::ParsedNote;
 use async_trait::async_trait;
+use crucible_parser::types::ParsedNote;
 use crucible_parser::MarkdownParserImplementation;
 use std::path::Path;
 

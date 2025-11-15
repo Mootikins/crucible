@@ -4,11 +4,11 @@
 //! It implements the bridge between ParsedNote structures and the database schema.
 //! Includes comprehensive vector embedding support for semantic search and processing.
 
-use crate::embedding_config::*;
 use crate::eav_graph::{
-    apply_eav_graph_schema, NoteIngestor, EntityRecord as EAVGraphEntityRecord,
-    EAVGraphStore, RecordId as EAVGraphRecordId, Relation, RelationRecord,
+    apply_eav_graph_schema, EAVGraphStore, EntityRecord as EAVGraphEntityRecord, NoteIngestor,
+    RecordId as EAVGraphRecordId, Relation, RelationRecord,
 };
+use crate::embedding_config::*;
 use crate::types::{DatabaseStats, Record};
 use crate::SurrealClient;
 use anyhow::{anyhow, Result};
@@ -352,15 +352,15 @@ pub async fn create_wikilink_edges(
     Ok(())
 }
 
-
-pub(crate) fn parse_entity_record_id(doc_id: &str) -> Result<EAVGraphRecordId<EAVGraphEntityRecord>> {
+pub(crate) fn parse_entity_record_id(
+    doc_id: &str,
+) -> Result<EAVGraphRecordId<EAVGraphEntityRecord>> {
     let normalized = normalize_document_id(doc_id);
     let (_, id) = normalized
         .split_once(':')
         .ok_or_else(|| anyhow!("invalid note id '{}'", doc_id))?;
     Ok(EAVGraphRecordId::new("entities", id))
 }
-
 
 fn relation_record_id(
     from_id: &EAVGraphRecordId<EAVGraphEntityRecord>,
@@ -376,8 +376,6 @@ fn relation_record_id(
         format!("rel:{}:{}:{}:{}", from_part, rel_part, to_part, position),
     )
 }
-
-
 
 fn resolve_wikilink_target(
     doc: &ParsedNote,
@@ -646,18 +644,12 @@ fn record_body(reference: &str) -> &str {
 }
 
 /// Get documents linked via wikilinks
-pub async fn get_linked_documents(
-    client: &SurrealClient,
-    doc_id: &str,
-) -> Result<Vec<ParsedNote>> {
+pub async fn get_linked_documents(client: &SurrealClient, doc_id: &str) -> Result<Vec<ParsedNote>> {
     query_relation_documents(client, doc_id, "wikilink").await
 }
 
 /// Get documents by tag
-pub async fn get_documents_by_tag(
-    client: &SurrealClient,
-    tag: &str,
-) -> Result<Vec<ParsedNote>> {
+pub async fn get_documents_by_tag(client: &SurrealClient, tag: &str) -> Result<Vec<ParsedNote>> {
     // Tags are stored using the path directly (e.g., "project/ai/nlp")
     let tag_path = tag.trim().trim_start_matches('#');
     let sql = r#"
@@ -1836,10 +1828,7 @@ pub async fn semantic_search_with_reranking(
                     failed_retrievals += 1;
                 }
                 Err(e) => {
-                    eprintln!(
-                        "DEBUG RERANK: Failed to fetch note {}: {}",
-                        document_id, e
-                    );
+                    eprintln!("DEBUG RERANK: Failed to fetch note {}: {}", document_id, e);
                     failed_retrievals += 1;
                 }
             }

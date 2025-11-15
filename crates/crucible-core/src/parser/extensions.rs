@@ -4,8 +4,8 @@
 //! modular addition of new syntax features to the markdown parser.
 
 use super::error::ParseError;
-use crucible_parser::types::NoteContent;
 use async_trait::async_trait;
+use crucible_parser::types::NoteContent;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -289,11 +289,7 @@ mod tests {
             content.contains("test") || content.contains("error")
         }
 
-        async fn parse(
-            &self,
-            content: &str,
-            _doc_content: &mut NoteContent,
-        ) -> Vec<ParseError> {
+        async fn parse(&self, content: &str, _doc_content: &mut NoteContent) -> Vec<ParseError> {
             if content.contains("error") {
                 vec![ParseError::error(
                     "Test error".to_string(),

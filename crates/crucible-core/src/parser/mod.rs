@@ -19,17 +19,17 @@ pub mod traits;
 
 pub use adapter::SurrealDBAdapter;
 pub use bridge::{create_parser, create_parser_with_config, ParserAdapter, ParserConfig};
-pub use eav_document::{EAVDocument, EAVDocumentBuilder, ValidationError};
-pub use frontmatter_mapper::FrontmatterPropertyMapper;
 pub use coordinator::{
     factory as coordinator_factory, BatchOperationResult, BatchStatistics, CoordinatorConfig,
     CoordinatorStatistics, DefaultParserStorageCoordinator, OperationMetadata, OperationPriority,
     OperationResult, OperationType, ParserStorageCoordinator, ParsingOperation, TransactionContext,
 };
+pub use eav_document::{EAVDocument, EAVDocumentBuilder, ValidationError};
 pub use error::{ErrorSeverity, ParseError, ParseErrorType, ParserError, ParserResult};
 pub use extensions::{
     ExtensionRegistry, ExtensionRegistryBuilder, ExtensionRegistryStats, SyntaxExtension,
 };
+pub use frontmatter_mapper::FrontmatterPropertyMapper;
 pub use latex::{create_latex_extension, LatexExtension};
 pub use pulldown::PulldownParser;
 pub use query_blocks::{create_query_block_extension, QueryBlockExtension};
@@ -42,46 +42,46 @@ pub use traits::{MarkdownParser, ParserCapabilities};
 // Re-export parser types for convenience
 // Canonical definitions are in crucible-parser crate
 pub use crucible_parser::types::{
-    // Core note types
-    ParsedNote,
-    ParsedNoteBuilder,
-    NoteContent,
-    Frontmatter,
-    FrontmatterFormat,
-
-    // Link and tag types
-    Wikilink,
-    InlineLink,
-    Tag,
-
-    // Content structure types
-    Heading,
-    CodeBlock,
-    Paragraph,
-    ListBlock,
-    ListItem,
-    ListType,
-    TaskStatus,
-
-    // Enhanced content types
-    Callout,
-    LatexExpression,
-
-    // Footnote types
-    FootnoteMap,
-    FootnoteDefinition,
-    FootnoteReference,
-
     // AST types (new in parser, not previously in core)
     ASTBlock,
     ASTBlockMetadata,
     ASTBlockType,
 
-    // Additional content types (new in parser)
-    Table,
-    Blockquote,
-    HorizontalRule,
-
     // Hash type (parser's local copy to avoid circular dependency)
     BlockHash,
+    Blockquote,
+    // Enhanced content types
+    Callout,
+    CodeBlock,
+    FootnoteDefinition,
+    // Footnote types
+    FootnoteMap,
+    FootnoteReference,
+
+    Frontmatter,
+    FrontmatterFormat,
+
+    // Content structure types
+    Heading,
+    HorizontalRule,
+
+    InlineLink,
+    LatexExpression,
+
+    ListBlock,
+    ListItem,
+    ListType,
+    NoteContent,
+    Paragraph,
+    // Core note types
+    ParsedNote,
+    ParsedNoteBuilder,
+    // Additional content types (new in parser)
+    Table,
+    Tag,
+
+    TaskStatus,
+
+    // Link and tag types
+    Wikilink,
 };

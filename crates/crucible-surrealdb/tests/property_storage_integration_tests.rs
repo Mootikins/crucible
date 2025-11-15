@@ -39,7 +39,11 @@ tags: ["rust", "testing"]
     let mapper = FrontmatterPropertyMapper::new("note:test123");
     let properties = mapper.map_to_properties(frontmatter.properties().clone());
 
-    assert_eq!(properties.len(), 6, "Should have 6 properties from frontmatter");
+    assert_eq!(
+        properties.len(),
+        6,
+        "Should have 6 properties from frontmatter"
+    );
 
     // Step 3: Store in database (Phase 1.3)
     let count = store.batch_upsert_properties(properties).await.unwrap();
@@ -343,7 +347,10 @@ async fn test_upsert_semantics() {
 
     // Verify value was updated
     let title = &retrieved[0];
-    assert_eq!(title.value, PropertyValue::Text("Updated Title".to_string()));
+    assert_eq!(
+        title.value,
+        PropertyValue::Text("Updated Title".to_string())
+    );
 }
 
 #[tokio::test]

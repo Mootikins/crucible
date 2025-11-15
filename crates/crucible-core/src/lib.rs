@@ -5,9 +5,9 @@ pub mod content_category;
 pub mod crdt;
 pub mod crucible_core;
 pub mod database;
-pub mod note;
 pub mod hashing;
 pub mod merkle;
+pub mod note;
 pub mod parser;
 pub mod processing;
 pub mod properties;
@@ -30,7 +30,7 @@ pub use crucible_core::CrucibleCore;
 
 // Re-export processing handoff types
 pub use processing::{
-    NoteProcessingJob, NoteProcessingResult, JobConfiguration, JobStats, ProcessedNote,
+    JobConfiguration, JobStats, NoteProcessingJob, NoteProcessingResult, ProcessedNote,
     ProcessingContext, ProcessingMetadata, ProcessingPriority, ProcessingSource,
 };
 
@@ -75,7 +75,6 @@ pub use database::{
     // Core types
     DbResult,
     Direction,
-    Note,
     DocumentDB,
     DocumentFieldType,
     DocumentFilter,
@@ -107,6 +106,7 @@ pub use database::{
     NodeId,
     NodePattern,
     NodeProperties,
+    Note,
     OrderClause,
     OrderDirection,
     Path,
@@ -133,10 +133,10 @@ pub use database::{
 pub use note::{NoteNode, ViewportState};
 pub use parser::{
     CodeBlock,
-    NoteContent,
     Frontmatter,
     FrontmatterFormat,
     Heading,
+    NoteContent,
     ParsedNote,
     ParserCapabilities,
     ParserError,

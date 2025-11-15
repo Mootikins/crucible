@@ -2,9 +2,9 @@
 
 use super::error::ParserResult;
 use super::traits::{MarkdownParser, ParserCapabilities};
-use crucible_parser::types::*;
 use async_trait::async_trait;
 use chrono::Utc;
+use crucible_parser::types::*;
 use pulldown_cmark::{Event, HeadingLevel, Parser as CmarkParser, Tag as CmarkTag, TagEnd};
 use std::path::Path;
 
@@ -85,7 +85,7 @@ impl MarkdownParser for PulldownParser {
             frontmatter,
             wikilinks,
             tags,
-            inline_links: Vec::new(),      // TODO: Implement inline link extraction
+            inline_links: Vec::new(), // TODO: Implement inline link extraction
             content: doc_content,
             callouts: Vec::new(),          // TODO: Implement callout extraction
             latex_expressions: Vec::new(), // TODO: Implement LaTeX extraction
@@ -93,9 +93,9 @@ impl MarkdownParser for PulldownParser {
             parsed_at: Utc::now(),
             content_hash,
             file_size,
-            parse_errors: Vec::new(),      // TODO: Implement error collection
-            block_hashes: Vec::new(),      // Phase 2 field
-            merkle_root: None,             // Phase 2 field
+            parse_errors: Vec::new(), // TODO: Implement error collection
+            block_hashes: Vec::new(), // Phase 2 field
+            merkle_root: None,        // Phase 2 field
         })
     }
 
