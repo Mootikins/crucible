@@ -1153,12 +1153,9 @@ mod tests {
         let test_path = temp_dir.path().to_path_buf();
 
         // Create test markdown files
-        tokio::fs::write(
-            test_path.join("test1.md"),
-            "# Test Note\n\nContent here.",
-        )
-        .await
-        .unwrap();
+        tokio::fs::write(test_path.join("test1.md"), "# Test Note\n\nContent here.")
+            .await
+            .unwrap();
         tokio::fs::write(test_path.join("test2.txt"), "Not a markdown file")
             .await
             .unwrap();
@@ -1166,12 +1163,9 @@ mod tests {
         // Create subdirectory
         let subdir = test_path.join("subdir");
         tokio::fs::create_dir(&subdir).await.unwrap();
-        tokio::fs::write(
-            subdir.join("test3.md"),
-            "# Nested Note\n\nNested content.",
-        )
-        .await
-        .unwrap();
+        tokio::fs::write(subdir.join("test3.md"), "# Nested Note\n\nNested content.")
+            .await
+            .unwrap();
 
         // Test scanning
         let config = KilnScannerConfig::default();
@@ -1285,10 +1279,7 @@ More content here.
         assert!(!title.is_empty(), "Note should have a title");
         println!("Note title: {}", title);
 
-        assert!(note
-            .content
-            .plain_text
-            .contains("This is a test note"));
+        assert!(note.content.plain_text.contains("This is a test note"));
         assert!(!note.wikilinks.is_empty() || note.wikilinks.is_empty());
         // Should work either way
     }
@@ -1387,12 +1378,9 @@ More content here.
         let test_path = temp_dir.path().to_path_buf();
 
         // Create test markdown files
-        tokio::fs::write(
-            test_path.join("test1.md"),
-            "# Test Note 1\n\nContent here.",
-        )
-        .await
-        .unwrap();
+        tokio::fs::write(test_path.join("test1.md"), "# Test Note 1\n\nContent here.")
+            .await
+            .unwrap();
         tokio::fs::write(
             test_path.join("test2.md"),
             "# Test Note 2\n\nDifferent content here.",

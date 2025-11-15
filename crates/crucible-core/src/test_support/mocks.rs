@@ -882,11 +882,11 @@ impl HashLookupStorage for MockHashLookupStorage {
 
         let mut result: HashMap<String, Vec<StoredHash>> = HashMap::new();
 
-        for (_, stored) in &state.stored_hashes {
+        for stored in state.stored_hashes.values() {
             if content_hashes.contains(&stored.content_hash) {
                 result
                     .entry(stored.content_hash.to_hex())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(stored.clone());
             }
         }

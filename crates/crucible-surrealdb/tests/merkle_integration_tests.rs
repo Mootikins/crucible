@@ -22,7 +22,9 @@ async fn create_test_client() -> SurrealClient {
         username: "root".to_string(),
         password: "root".to_string(),
     };
-    SurrealClient::new(config).await.expect("Failed to create test client")
+    SurrealClient::new(config)
+        .await
+        .expect("Failed to create test client")
 }
 
 /// Create a realistic test document with multiple sections
@@ -35,7 +37,11 @@ fn create_complex_document() -> ParsedNote {
 
     // Add multiple sections with hierarchical headings
     let sections = vec![
-        ("Introduction", 1, "This is the introduction to the document."),
+        (
+            "Introduction",
+            1,
+            "This is the introduction to the document.",
+        ),
         ("Background", 1, "Background information goes here."),
         ("Technical Details", 2, "Detailed technical content."),
         ("Implementation", 2, "Implementation specifics."),
@@ -55,7 +61,9 @@ fn create_complex_document() -> ParsedNote {
         offset += heading_text.len() + level + 2; // Account for # markers and newline
 
         // Add content paragraph
-        doc.content.paragraphs.push(Paragraph::new(content.to_string(), offset));
+        doc.content
+            .paragraphs
+            .push(Paragraph::new(content.to_string(), offset));
         offset += content.len() + 2; // Account for paragraph and newline
     }
 
@@ -82,7 +90,9 @@ fn create_large_document(section_count: usize) -> ParsedNote {
         });
         offset += heading_text.len() + 3; // # + space + newline
 
-        doc.content.paragraphs.push(Paragraph::new(content_text.clone(), offset));
+        doc.content
+            .paragraphs
+            .push(Paragraph::new(content_text.clone(), offset));
         offset += content_text.len() + 2;
     }
 
@@ -101,7 +111,10 @@ async fn test_end_to_end_pipeline() {
     // 2. Build Merkle tree
     let tree = HybridMerkleTree::from_document(&doc);
     assert_eq!(tree.sections.len(), 8); // root + 7 sections
-    assert!(!tree.is_virtualized, "Should not be virtualized with only 8 sections");
+    assert!(
+        !tree.is_virtualized,
+        "Should not be virtualized with only 8 sections"
+    );
 
     // 3. Persist the tree
     persistence
@@ -116,20 +129,46 @@ async fn test_end_to_end_pipeline() {
         .expect("Failed to retrieve tree");
 
     // 5. Verify integrity
-    assert_eq!(tree.root_hash, retrieved_tree.root_hash, "Root hashes should match");
-    assert_eq!(tree.sections.len(), retrieved_tree.sections.len(), "Section count should match");
-    assert_eq!(tree.total_blocks, retrieved_tree.total_blocks, "Total blocks should match");
-    assert_eq!(tree.is_virtualized, retrieved_tree.is_virtualized, "Virtualization state should match");
+    assert_eq!(
+        tree.root_hash, retrieved_tree.root_hash,
+        "Root hashes should match"
+    );
+    assert_eq!(
+        tree.sections.len(),
+        retrieved_tree.sections.len(),
+        "Section count should match"
+    );
+    assert_eq!(
+        tree.total_blocks, retrieved_tree.total_blocks,
+        "Total blocks should match"
+    );
+    assert_eq!(
+        tree.is_virtualized, retrieved_tree.is_virtualized,
+        "Virtualization state should match"
+    );
 
     // 6. Verify each section hash matches
-    for (i, (original, retrieved)) in tree.sections.iter().zip(retrieved_tree.sections.iter()).enumerate() {
+    for (i, (original, retrieved)) in tree
+        .sections
+        .iter()
+        .zip(retrieved_tree.sections.iter())
+        .enumerate()
+    {
         assert_eq!(
-            original.binary_tree.root_hash,
-            retrieved.binary_tree.root_hash,
-            "Section {} hash should match", i
+            original.binary_tree.root_hash, retrieved.binary_tree.root_hash,
+            "Section {} hash should match",
+            i
         );
-        assert_eq!(original.heading, retrieved.heading, "Section {} heading should match", i);
-        assert_eq!(original.depth, retrieved.depth, "Section {} depth should match", i);
+        assert_eq!(
+            original.heading, retrieved.heading,
+            "Section {} heading should match",
+            i
+        );
+        assert_eq!(
+            original.depth, retrieved.depth,
+            "Section {} depth should match",
+            i
+        );
     }
 
     println!("✅ End-to-end pipeline test passed!");
@@ -159,15 +198,20 @@ async fn test_incremental_update_with_content_changes() {
 
     // 3. Verify root hash changed
     assert_ne!(
-        tree1.root_hash,
-        tree2.root_hash,
+        tree1.root_hash, tree2.root_hash,
         "Root hash should change when content changes"
     );
 
     // 4. Detect which sections changed
     let diff = tree2.diff(&tree1);
-    assert!(diff.root_hash_changed, "Diff should detect root hash change");
-    assert!(!diff.changed_sections.is_empty(), "Should detect changed sections");
+    assert!(
+        diff.root_hash_changed,
+        "Diff should detect root hash change"
+    );
+    assert!(
+        !diff.changed_sections.is_empty(),
+        "Should detect changed sections"
+    );
 
     // 5. Update incrementally
     let changed_indices: Vec<usize> = diff
@@ -183,15 +227,18 @@ async fn test_incremental_update_with_content_changes() {
 
     // 6. Retrieve and verify
     let retrieved = persistence.retrieve_tree(&tree_id).await.unwrap();
-    assert_eq!(tree2.root_hash, retrieved.root_hash, "Updated tree should match");
+    assert_eq!(
+        tree2.root_hash, retrieved.root_hash,
+        "Updated tree should match"
+    );
 
     // 7. Verify unchanged sections still match original
     for (i, section) in tree2.sections.iter().enumerate() {
         if !changed_indices.contains(&i) {
             assert_eq!(
-                section.binary_tree.root_hash,
-                tree1.sections[i].binary_tree.root_hash,
-                "Unchanged section {} should have same hash", i
+                section.binary_tree.root_hash, tree1.sections[i].binary_tree.root_hash,
+                "Unchanged section {} should have same hash",
+                i
             );
         }
     }
@@ -214,14 +261,23 @@ async fn test_large_document_virtualization() {
     let tree = HybridMerkleTree::from_document_with_config(&doc, config);
 
     // 3. Verify virtualization occurred
-    assert!(tree.is_virtualized, "Should be virtualized with 150 sections");
-    assert!(tree.virtual_sections.is_some(), "Should have virtual sections");
+    assert!(
+        tree.is_virtualized,
+        "Should be virtualized with 150 sections"
+    );
+    assert!(
+        tree.virtual_sections.is_some(),
+        "Should have virtual sections"
+    );
 
     let virtual_sections = tree.virtual_sections.as_ref().unwrap();
     assert!(!virtual_sections.is_empty(), "Should have virtual sections");
 
-    println!("   Tree has {} sections, {} virtual sections",
-             tree.sections.len(), virtual_sections.len());
+    println!(
+        "   Tree has {} sections, {} virtual sections",
+        tree.sections.len(),
+        virtual_sections.len()
+    );
 
     // 4. Persist the virtualized tree
     persistence
@@ -235,18 +291,47 @@ async fn test_large_document_virtualization() {
         .await
         .expect("Should retrieve virtualized tree");
 
-    assert_eq!(tree.root_hash, retrieved.root_hash, "Root hash should match");
-    assert_eq!(tree.is_virtualized, retrieved.is_virtualized, "Virtualization state should match");
-    assert_eq!(tree.sections.len(), retrieved.sections.len(), "Section count should match");
+    assert_eq!(
+        tree.root_hash, retrieved.root_hash,
+        "Root hash should match"
+    );
+    assert_eq!(
+        tree.is_virtualized, retrieved.is_virtualized,
+        "Virtualization state should match"
+    );
+    assert_eq!(
+        tree.sections.len(),
+        retrieved.sections.len(),
+        "Section count should match"
+    );
 
     // 6. Verify virtual sections were persisted correctly
-    assert!(retrieved.virtual_sections.is_some(), "Retrieved tree should have virtual sections");
+    assert!(
+        retrieved.virtual_sections.is_some(),
+        "Retrieved tree should have virtual sections"
+    );
     let retrieved_virtual = retrieved.virtual_sections.as_ref().unwrap();
-    assert_eq!(virtual_sections.len(), retrieved_virtual.len(), "Virtual section count should match");
+    assert_eq!(
+        virtual_sections.len(),
+        retrieved_virtual.len(),
+        "Virtual section count should match"
+    );
 
-    for (i, (original, retrieved)) in virtual_sections.iter().zip(retrieved_virtual.iter()).enumerate() {
-        assert_eq!(original.hash, retrieved.hash, "Virtual section {} hash should match", i);
-        assert_eq!(original.section_count, retrieved.section_count, "Virtual section {} count should match", i);
+    for (i, (original, retrieved)) in virtual_sections
+        .iter()
+        .zip(retrieved_virtual.iter())
+        .enumerate()
+    {
+        assert_eq!(
+            original.hash, retrieved.hash,
+            "Virtual section {} hash should match",
+            i
+        );
+        assert_eq!(
+            original.section_count, retrieved.section_count,
+            "Virtual section {} count should match",
+            i
+        );
     }
 
     println!("✅ Large document virtualization test passed!");
@@ -277,8 +362,14 @@ async fn test_note_ingestor_integration() {
         .expect("Should retrieve tree metadata")
         .expect("Tree should exist");
 
-    assert_eq!(tree_metadata.id, doc_path, "Tree ID should match document path");
-    assert!(!tree_metadata.is_virtualized, "Small document shouldn't be virtualized");
+    assert_eq!(
+        tree_metadata.id, doc_path,
+        "Tree ID should match document path"
+    );
+    assert!(
+        !tree_metadata.is_virtualized,
+        "Small document shouldn't be virtualized"
+    );
 
     // 4. Verify we can retrieve the full tree
     let tree = persistence
@@ -307,7 +398,10 @@ async fn test_note_ingestor_integration() {
         .await
         .expect("Should retrieve updated tree");
 
-    assert_ne!(tree.root_hash, updated_tree.root_hash, "Root hash should change after update");
+    assert_ne!(
+        tree.root_hash, updated_tree.root_hash,
+        "Root hash should change after update"
+    );
 
     println!("✅ NoteIngestor integration test passed!");
 }
@@ -334,9 +428,7 @@ async fn test_concurrent_tree_operations() {
             let path = doc.path.to_string_lossy().to_string();
             let persistence = persistence.clone();
 
-            async move {
-                persistence.store_tree(&path, &tree).await
-            }
+            async move { persistence.store_tree(&path, &tree).await }
         })
         .collect();
 
@@ -355,9 +447,7 @@ async fn test_concurrent_tree_operations() {
             let path = doc.path.to_string_lossy().to_string();
             let persistence = persistence.clone();
 
-            async move {
-                persistence.retrieve_tree(&path).await
-            }
+            async move { persistence.retrieve_tree(&path).await }
         })
         .collect();
 
@@ -395,7 +485,10 @@ async fn test_persistence_error_handling() {
 
     assert!(result.is_err(), "Should error on invalid indices");
     let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("Invalid section index"), "Error should mention invalid index");
+    assert!(
+        err_msg.contains("Invalid section index"),
+        "Error should mention invalid index"
+    );
 
     // Test 3: Metadata for non-existent tree
     let metadata = persistence
@@ -403,7 +496,10 @@ async fn test_persistence_error_handling() {
         .await
         .expect("Should not error");
 
-    assert!(metadata.is_none(), "Should return None for non-existent tree");
+    assert!(
+        metadata.is_none(),
+        "Should return None for non-existent tree"
+    );
 
     println!("✅ Error handling test passed!");
 }
@@ -425,7 +521,10 @@ async fn test_tree_deletion_cleanup() {
     assert!(metadata.is_some(), "Tree should exist");
 
     // 3. Delete the tree
-    persistence.delete_tree(&tree_id).await.expect("Deletion should succeed");
+    persistence
+        .delete_tree(&tree_id)
+        .await
+        .expect("Deletion should succeed");
 
     // 4. Verify it's gone
     let metadata_after = persistence.get_tree_metadata(&tree_id).await.unwrap();
@@ -433,7 +532,10 @@ async fn test_tree_deletion_cleanup() {
 
     // 5. Verify retrieval fails
     let retrieve_result = persistence.retrieve_tree(&tree_id).await;
-    assert!(retrieve_result.is_err(), "Should error when retrieving deleted tree");
+    assert!(
+        retrieve_result.is_err(),
+        "Should error when retrieving deleted tree"
+    );
 
     println!("✅ Deletion cleanup test passed!");
 }

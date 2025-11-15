@@ -1,8 +1,8 @@
 //! Traits for markdown parsing
 
 use super::error::ParserResult;
-use crucible_parser::types::ParsedNote;
 use async_trait::async_trait;
+use crucible_parser::types::ParsedNote;
 use std::path::Path;
 
 /// Core trait for parsing markdown documents

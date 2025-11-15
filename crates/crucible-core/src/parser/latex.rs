@@ -6,8 +6,8 @@
 
 use super::error::{ParseError, ParseErrorType};
 use super::extensions::SyntaxExtension;
-use crucible_parser::types::{NoteContent, LatexExpression};
 use async_trait::async_trait;
+use crucible_parser::types::{LatexExpression, NoteContent};
 use regex::Regex;
 use std::sync::Arc;
 
@@ -90,19 +90,15 @@ impl LatexExtension {
             let latex_content = cap.get(1).unwrap().as_str();
 
             // Basic LaTeX validation
-            if let Err(error) = self.validate_latex_syntax(latex_content) {
-                return Err(error);
-            }
+            self.validate_latex_syntax(latex_content)?;
 
             // Add the LaTeX expression to note content
-            doc_content
-                .latex_expressions
-                .push(LatexExpression::new(
-                    latex_content.to_string(),
-                    true, // is_block
-                    full_match.start(),
-                    full_match.len(),
-                ));
+            doc_content.latex_expressions.push(LatexExpression::new(
+                latex_content.to_string(),
+                true, // is_block
+                full_match.start(),
+                full_match.len(),
+            ));
         }
 
         Ok(())
@@ -164,14 +160,12 @@ impl LatexExtension {
             }
 
             // Add the LaTeX expression to note content
-            doc_content
-                .latex_expressions
-                .push(LatexExpression::new(
-                    latex_content.to_string(),
-                    false, // is_inline
-                    full_match.start(),
-                    full_match.len(),
-                ));
+            doc_content.latex_expressions.push(LatexExpression::new(
+                latex_content.to_string(),
+                false, // is_inline
+                full_match.start(),
+                full_match.len(),
+            ));
         }
 
         Ok(())

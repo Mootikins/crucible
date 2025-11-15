@@ -153,17 +153,13 @@ impl VirtualSection {
         }
 
         // Aggregate hashes from all sections
-        let section_hashes: Vec<NodeHash> = sections
-            .iter()
-            .map(|s| s.binary_tree.root_hash)
-            .collect();
+        let section_hashes: Vec<NodeHash> =
+            sections.iter().map(|s| s.binary_tree.root_hash).collect();
 
         let hash = NodeHash::combine_many(&section_hashes);
 
         // Find primary heading (first non-None heading)
-        let primary_heading = sections
-            .iter()
-            .find_map(|s| s.heading.clone());
+        let primary_heading = sections.iter().find_map(|s| s.heading.clone());
 
         // Calculate depth range
         let mut min_depth = u8::MAX;
@@ -233,7 +229,10 @@ impl VirtualSection {
     /// let config = VirtualizationConfig::default();
     /// let virtual_sections = VirtualSection::virtualize(&sections, &config);
     /// ```
-    pub fn virtualize(sections: &[SectionNode], config: &VirtualizationConfig) -> Vec<VirtualSection> {
+    pub fn virtualize(
+        sections: &[SectionNode],
+        config: &VirtualizationConfig,
+    ) -> Vec<VirtualSection> {
         // If below threshold, don't virtualize - create one virtual section per real section
         if sections.len() <= config.threshold {
             return sections
@@ -305,7 +304,11 @@ mod tests {
     use super::*;
     use crate::merkle::hybrid::BinaryMerkleTree;
 
-    fn create_test_section(depth: u8, heading_text: Option<&str>, block_count: usize) -> SectionNode {
+    fn create_test_section(
+        depth: u8,
+        heading_text: Option<&str>,
+        block_count: usize,
+    ) -> SectionNode {
         SectionNode {
             heading: heading_text.map(|text| HeadingSummary {
                 text: text.to_string(),
@@ -484,10 +487,8 @@ mod tests {
         let virtual_section = VirtualSection::from_sections(&sections, 0);
 
         // Hash should be aggregation of section hashes
-        let section_hashes: Vec<NodeHash> = sections
-            .iter()
-            .map(|s| s.binary_tree.root_hash)
-            .collect();
+        let section_hashes: Vec<NodeHash> =
+            sections.iter().map(|s| s.binary_tree.root_hash).collect();
         let expected_hash = NodeHash::combine_many(&section_hashes);
 
         assert_eq!(virtual_section.hash, expected_hash);
@@ -530,9 +531,7 @@ mod tests {
 
     #[test]
     fn test_virtual_section_serialization() {
-        let sections = vec![
-            create_test_section(1, Some("Test"), 5),
-        ];
+        let sections = vec![create_test_section(1, Some("Test"), 5)];
 
         let virtual_section = VirtualSection::from_sections(&sections, 0);
 

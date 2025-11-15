@@ -98,15 +98,25 @@ impl<'a> DocumentProcessor<'a> {
         create_wikilink_edges(self.client, doc_id, note, self.kiln_root)
             .await
             .map_err(|e| {
-                error!("  ❌ Wikilink relationship creation failed for {}: {}", doc_id, e);
-                anyhow::anyhow!("Failed to create wikilink relationships for {}: {}", doc_id, e)
+                error!(
+                    "  ❌ Wikilink relationship creation failed for {}: {}",
+                    doc_id, e
+                );
+                anyhow::anyhow!(
+                    "Failed to create wikilink relationships for {}: {}",
+                    doc_id,
+                    e
+                )
             })?;
 
         // Create embed relationships
         create_embed_relationships(self.client, doc_id, note, self.kiln_root)
             .await
             .map_err(|e| {
-                error!("  ❌ Embed relationship creation failed for {}: {}", doc_id, e);
+                error!(
+                    "  ❌ Embed relationship creation failed for {}: {}",
+                    doc_id, e
+                );
                 anyhow::anyhow!("Failed to create embed relationships for {}: {}", doc_id, e)
             })?;
 
@@ -793,10 +803,7 @@ pub async fn process_document_embeddings(
     let mut results = Vec::new();
 
     for note in documents {
-        debug!(
-            "Would process embeddings for note: {}",
-            note.path.display()
-        );
+        debug!("Would process embeddings for note: {}", note.path.display());
 
         // Mock successful processing
         results.push(EmbeddingProcessingResult {
@@ -1002,18 +1009,17 @@ pub async fn needs_processing(file_info: &KilnFileInfo, client: &SurrealClient) 
         return Ok(true);
     }
 
-    let stored_hash = match crate::hash_lookup::lookup_file_hash(client, &file_info.relative_path)
-        .await?
-    {
-        Some(hash) => hash,
-        None => {
-            debug!(
-                "Note {} not found in database, needs processing",
-                file_info.relative_path
-            );
-            return Ok(true);
-        }
-    };
+    let stored_hash =
+        match crate::hash_lookup::lookup_file_hash(client, &file_info.relative_path).await? {
+            Some(hash) => hash,
+            None => {
+                debug!(
+                    "Note {} not found in database, needs processing",
+                    file_info.relative_path
+                );
+                return Ok(true);
+            }
+        };
 
     let stored_hash_hex = stored_hash.file_hash;
     let current_hash_hex = file_info.content_hash_hex();
@@ -1749,7 +1755,9 @@ Some tags: #tag1 #tag2
 End of note.
 "#;
         fs::write(path, content).await.unwrap();
-        crate::kiln_scanner::parse_file_to_document(path).await.unwrap()
+        crate::kiln_scanner::parse_file_to_document(path)
+            .await
+            .unwrap()
     }
 
     /// Helper function to create a test file info structure
@@ -1780,7 +1788,8 @@ End of note.
         // Test with embedding pool (using mock config)
         let config = EmbeddingConfig::default();
         let embedding_pool = EmbeddingThreadPool::new(config).await.unwrap();
-        let processor_with_pool = DocumentProcessor::new(&client, Some(&embedding_pool), &kiln_root);
+        let processor_with_pool =
+            DocumentProcessor::new(&client, Some(&embedding_pool), &kiln_root);
         assert_eq!(processor_with_pool.client as *const _, &client as *const _);
         assert!(processor_with_pool.embedding_pool.is_some());
         assert_eq!(processor_with_pool.kiln_root, kiln_root);
@@ -1808,7 +1817,10 @@ End of note.
         assert!(!parsed_document.title().is_empty());
         assert!(parsed_document.content.plain_text.contains("test note"));
         // Check that we have the expected structure (may or may not have links depending on parser)
-        assert!(!parsed_document.content.plain_text.is_empty(), "Note should have content");
+        assert!(
+            !parsed_document.content.plain_text.is_empty(),
+            "Note should have content"
+        );
     }
 
     #[tokio::test]
@@ -1843,7 +1855,9 @@ End of note.
 
         // Initialize database schema
         let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
-        kiln_integration::initialize_kiln_schema(&client).await.unwrap();
+        kiln_integration::initialize_kiln_schema(&client)
+            .await
+            .unwrap();
 
         // Create processor
         let processor = DocumentProcessor::new(&client, None, &kiln_root);
@@ -1876,7 +1890,9 @@ End of note.
 
         // Initialize database schema
         let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
-        kiln_integration::initialize_kiln_schema(&client).await.unwrap();
+        kiln_integration::initialize_kiln_schema(&client)
+            .await
+            .unwrap();
 
         // Create processor
         let processor = DocumentProcessor::new(&client, None, &kiln_root);
@@ -1903,7 +1919,9 @@ End of note.
 
         // Initialize database schema
         let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
-        kiln_integration::initialize_kiln_schema(&client).await.unwrap();
+        kiln_integration::initialize_kiln_schema(&client)
+            .await
+            .unwrap();
 
         // Store the note first
         let doc_id = kiln_integration::store_parsed_document(&client, &note, &kiln_root)
@@ -1935,12 +1953,16 @@ End of note.
         // Create empty note
         let content = "# Empty Note\n\nNo links or embeds here.";
         fs::write(&test_file, content).await.unwrap();
-        let note = crate::kiln_scanner::parse_file_to_document(&test_file).await.unwrap();
+        let note = crate::kiln_scanner::parse_file_to_document(&test_file)
+            .await
+            .unwrap();
         let kiln_root = temp_dir.path().to_path_buf();
 
         // Initialize database schema
         let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
-        kiln_integration::initialize_kiln_schema(&client).await.unwrap();
+        kiln_integration::initialize_kiln_schema(&client)
+            .await
+            .unwrap();
 
         // Store the note first
         let doc_id = kiln_integration::store_parsed_document(&client, &note, &kiln_root)
@@ -1966,7 +1988,9 @@ End of note.
 
         // Initialize database schema
         let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
-        kiln_integration::initialize_kiln_schema(&client).await.unwrap();
+        kiln_integration::initialize_kiln_schema(&client)
+            .await
+            .unwrap();
 
         // Store the note first
         let doc_id = kiln_integration::store_parsed_document(&client, &note, &kiln_root)
@@ -1999,7 +2023,9 @@ End of note.
 
         // Initialize database schema
         let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
-        kiln_integration::initialize_kiln_schema(&client).await.unwrap();
+        kiln_integration::initialize_kiln_schema(&client)
+            .await
+            .unwrap();
 
         // Store the note first
         let doc_id = kiln_integration::store_parsed_document(&client, &note, &kiln_root)
@@ -2026,7 +2052,9 @@ End of note.
 
         // Initialize database schema
         let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
-        kiln_integration::initialize_kiln_schema(&client).await.unwrap();
+        kiln_integration::initialize_kiln_schema(&client)
+            .await
+            .unwrap();
 
         // Create embedding pool (will use mock embeddings)
         let config = EmbeddingConfig::default();
@@ -2064,7 +2092,9 @@ End of note.
 
         // Initialize database schema
         let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
-        kiln_integration::initialize_kiln_schema(&client).await.unwrap();
+        kiln_integration::initialize_kiln_schema(&client)
+            .await
+            .unwrap();
 
         // Create processor
         let processor = DocumentProcessor::new(&client, None, &kiln_root);
@@ -2114,7 +2144,9 @@ End of note.
 
         // Initialize database schema
         let client = crate::SurrealClient::new_isolated_memory().await.unwrap();
-        kiln_integration::initialize_kiln_schema(&client).await.unwrap();
+        kiln_integration::initialize_kiln_schema(&client)
+            .await
+            .unwrap();
 
         // Create processor
         let processor = DocumentProcessor::new(&client, None, &kiln_root);

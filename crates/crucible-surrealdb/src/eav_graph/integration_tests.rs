@@ -11,11 +11,11 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::eav_graph::{apply_eav_graph_schema, NoteIngestor, EAVGraphStore};
+    use crate::eav_graph::{apply_eav_graph_schema, EAVGraphStore, NoteIngestor};
     use crate::SurrealClient;
     use crucible_core::parser::{
-        Callout, CodeBlock, NoteContent, Heading, LatexExpression, ListBlock, ListItem,
-        ListType, Paragraph, ParsedNote,
+        Callout, CodeBlock, Heading, LatexExpression, ListBlock, ListItem, ListType, NoteContent,
+        Paragraph, ParsedNote,
     };
     use std::path::PathBuf;
 
@@ -148,10 +148,9 @@ mod tests {
             "This is a regular paragraph with some text.".to_string(),
             100,
         ));
-        content.paragraphs.push(Paragraph::new(
-            "End of note.".to_string(),
-            600,
-        ));
+        content
+            .paragraphs
+            .push(Paragraph::new("End of note.".to_string(), 600));
 
         // 3. Code blocks
         content.add_code_block(CodeBlock::new(
@@ -467,9 +466,10 @@ mod tests {
         ));
 
         content.add_heading(Heading::new(1, "Section 2", 120));
-        content
-            .paragraphs
-            .push(Paragraph::new("Paragraph under section 2.".to_string(), 140));
+        content.paragraphs.push(Paragraph::new(
+            "Paragraph under section 2.".to_string(),
+            140,
+        ));
 
         doc.content = content;
 

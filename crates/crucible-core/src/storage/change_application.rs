@@ -376,7 +376,7 @@ impl ChangeApplicationSystem {
             failed_changes: failed_changes.len(),
             resolved_conflicts: 0, // Could be tracked in conflict resolution
             total_time_ms,
-            avg_time_per_change_ms: if changes.len() > 0 {
+            avg_time_per_change_ms: if !changes.is_empty() {
                 total_time_ms as f64 / changes.len() as f64
             } else {
                 0.0
@@ -887,7 +887,7 @@ impl ChangeApplicationSystem {
 
             block_operations
                 .entry(index)
-                .or_insert_with(VecDeque::new)
+                .or_default()
                 .push_back(change.clone());
         }
 

@@ -235,12 +235,8 @@ pub trait DocumentDB: Send + Sync {
     ) -> DbResult<()>;
 
     /// Replace a note completely
-    async fn replace_document(
-        &self,
-        collection: &str,
-        id: &DocumentId,
-        note: Note,
-    ) -> DbResult<()>;
+    async fn replace_document(&self, collection: &str, id: &DocumentId, note: Note)
+        -> DbResult<()>;
 
     /// Delete a note
     async fn delete_document(&self, collection: &str, id: &DocumentId) -> DbResult<()>;
