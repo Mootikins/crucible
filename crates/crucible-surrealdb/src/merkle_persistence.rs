@@ -152,19 +152,24 @@ impl MerklePersistence {
             .map_err(|e| DbError::query(format!("Failed to store tree metadata: {}", e)))?;
 
         // 2. Store sections with binary encoding
+        let mut cumulative_blocks = 0;
         for (index, section) in tree.sections.iter().enumerate() {
             // Serialize the full section node using bincode for efficiency
             let section_data = bincode::serialize(section)
                 .map_err(|e| DbError::serialization(format!("Failed to serialize section: {}", e)))?;
 
+            let start_block = cumulative_blocks;
+            let end_block = cumulative_blocks + section.block_count;
+            cumulative_blocks = end_block;
+
             let section_record = SectionRecord {
                 tree_id: tree_id.to_string(),
                 section_index: index,
-                section_hash: section.hash.to_hex(),
-                heading: section.heading.clone(),
+                section_hash: section.binary_tree.root_hash.to_hex(),
+                heading: section.heading.as_ref().map(|h| h.text.clone()),
                 depth: section.depth,
-                start_block: section.start_block,
-                end_block: section.end_block,
+                start_block,
+                end_block,
                 section_data,
                 created_at: now,
             };
@@ -274,24 +279,25 @@ impl MerklePersistence {
             Some(
                 virtual_records
                     .into_iter()
-                    .map(|record| VirtualSection {
-                        hash: NodeHash::from_hex(&record.hash)
-                            .map_err(|e| DbError::serialization(format!("Invalid hash: {}", e)))
-                            .unwrap(),
-                        primary_heading: record.primary_heading.map(|text| {
-                            crucible_core::merkle::HeadingSummary {
-                                text,
-                                depth: record.min_depth,
-                            }
-                        }),
-                        min_depth: record.min_depth,
-                        max_depth: record.max_depth,
-                        section_count: record.section_count,
-                        total_blocks: record.total_blocks,
-                        start_index: record.start_index,
-                        end_index: record.end_index,
+                    .map(|record| -> Result<VirtualSection, DbError> {
+                        Ok(VirtualSection {
+                            hash: NodeHash::from_hex(&record.hash)
+                                .map_err(|e| DbError::serialization(format!("Invalid hash: {}", e)))?,
+                            primary_heading: record.primary_heading.map(|text| {
+                                crucible_core::merkle::HeadingSummary {
+                                    text,
+                                    level: record.min_depth,
+                                }
+                            }),
+                            min_depth: record.min_depth,
+                            max_depth: record.max_depth,
+                            section_count: record.section_count,
+                            total_blocks: record.total_blocks,
+                            start_index: record.start_index,
+                            end_index: record.end_index,
+                        })
                     })
-                    .collect(),
+                    .collect::<Result<Vec<_>, _>>()?,
             )
         } else {
             None
@@ -368,20 +374,32 @@ impl MerklePersistence {
             .map_err(|e| DbError::query(format!("Failed to update tree metadata: {}", e)))?;
 
         // 2. Update only changed sections
+        // First compute cumulative block ranges
+        let mut cumulative_blocks = 0;
+        let mut block_ranges: Vec<(usize, usize)> = Vec::with_capacity(tree.sections.len());
+        for section in &tree.sections {
+            let start = cumulative_blocks;
+            let end = cumulative_blocks + section.block_count;
+            block_ranges.push((start, end));
+            cumulative_blocks = end;
+        }
+
         for &index in changed_section_indices {
             if let Some(section) = tree.sections.get(index) {
                 let section_data = bincode::serialize(section).map_err(|e| {
                     DbError::serialization(format!("Failed to serialize section: {}", e))
                 })?;
 
+                let (start_block, end_block) = block_ranges[index];
+
                 let section_record = SectionRecord {
                     tree_id: tree_id.to_string(),
                     section_index: index,
-                    section_hash: section.hash.to_hex(),
-                    heading: section.heading.clone(),
+                    section_hash: section.binary_tree.root_hash.to_hex(),
+                    heading: section.heading.as_ref().map(|h| h.text.clone()),
                     depth: section.depth,
-                    start_block: section.start_block,
-                    end_block: section.end_block,
+                    start_block,
+                    end_block,
                     section_data,
                     created_at: now,
                 };
