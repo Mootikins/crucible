@@ -161,10 +161,7 @@ impl EmbeddingPipeline {
     ) -> Result<IncrementalProcessingResult> {
         let start_time = Instant::now();
 
-        info!(
-            "Starting incremental processing for note {}",
-            document_id
-        );
+        info!("Starting incremental processing for note {}", document_id);
 
         // Retrieve note from database
         let note = self.retrieve_document(client, document_id).await?;
@@ -423,11 +420,7 @@ impl EmbeddingPipeline {
     }
 
     /// Chunk note content for processing
-    fn chunk_document(
-        &self,
-        note: &ParsedNote,
-        _model_type: &EmbeddingModel,
-    ) -> Vec<String> {
+    fn chunk_document(&self, note: &ParsedNote, _model_type: &EmbeddingModel) -> Vec<String> {
         let content = &note.content.plain_text;
 
         // For empty content, return no chunks

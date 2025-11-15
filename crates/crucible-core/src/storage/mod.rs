@@ -45,10 +45,6 @@ pub use change_application::{
 pub use deduplication_traits::{
     BlockInfo, DeduplicationCapable, DeduplicationStorage, DuplicateBlockInfo, StorageUsageStats,
 };
-pub use eav_graph_traits::{
-    Block, BlockStorage, Entity, EntityStorage, EntityTag, EntityType, Property, PropertyNamespace,
-    PropertyStorage, PropertyValue, Relation, RelationStorage, Tag, TagStorage,
-};
 pub use deduplicator::{
     BlockUsagePattern, DeduplicationAnalysis, DeduplicationStats, Deduplicator,
     DefaultDeduplicator, DocumentDuplicationPattern, DocumentSimilarity, DuplicateGroup,
@@ -57,6 +53,10 @@ pub use deduplicator::{
 pub use diff::{
     CacheStats as DiffCacheStats, ChangeMetadata, ChangeSource, DiffConfig, EnhancedChangeDetector,
     EnhancedTreeChange, MovedBlockInfo,
+};
+pub use eav_graph_traits::{
+    Block, BlockStorage, Entity, EntityStorage, EntityTag, EntityType, Property, PropertyNamespace,
+    PropertyStorage, PropertyValue, Relation, RelationStorage, Tag, TagStorage,
 };
 pub use error::{StorageError, StorageResult};
 pub use factory::{BackendConfig, HashAlgorithm, StorageConfig, StorageFactory};

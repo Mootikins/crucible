@@ -438,7 +438,7 @@ impl EnhancedChangeDetector {
                                 new_hash: new_node.hash.clone(),
                                 similarity_score: 0.0,
                                 metadata: ChangeMetadata {
-                                    source: source.clone(),
+                                    source: source,
                                     confidence: 1.0,
                                     category: Some("modification".to_string()),
                                     ..Default::default()
@@ -454,7 +454,7 @@ impl EnhancedChangeDetector {
                         index: old_idx,
                         hash: node.hash.clone(),
                         metadata: ChangeMetadata {
-                            source: source.clone(),
+                            source: source,
                             confidence: 1.0,
                             category: Some("deletion".to_string()),
                             ..Default::default()
@@ -473,7 +473,7 @@ impl EnhancedChangeDetector {
                         index: new_idx,
                         hash: node.hash.clone(),
                         metadata: ChangeMetadata {
-                            source: source.clone(),
+                            source: source,
                             confidence: 1.0,
                             category: Some("addition".to_string()),
                             ..Default::default()
@@ -586,7 +586,7 @@ impl EnhancedChangeDetector {
                                     new_hash: new_node.hash.clone(),
                                     similarity_score: similarity,
                                     metadata: ChangeMetadata {
-                                        source: source.clone(),
+                                        source: source,
                                         confidence: similarity,
                                         category: Some("modification".to_string()),
                                         context: {
@@ -606,7 +606,7 @@ impl EnhancedChangeDetector {
                                     index: i,
                                     hash: old_node.hash.clone(),
                                     metadata: ChangeMetadata {
-                                        source: source.clone(),
+                                        source: source,
                                         confidence: 1.0,
                                         category: Some("deletion".to_string()),
                                         ..Default::default()
@@ -616,7 +616,7 @@ impl EnhancedChangeDetector {
                                     index: i,
                                     hash: new_node.hash.clone(),
                                     metadata: ChangeMetadata {
-                                        source: source.clone(),
+                                        source: source,
                                         confidence: 1.0,
                                         category: Some("addition".to_string()),
                                         ..Default::default()
@@ -635,7 +635,7 @@ impl EnhancedChangeDetector {
                             index: i,
                             hash: old_node.hash.clone(),
                             metadata: ChangeMetadata {
-                                source: source.clone(),
+                                source: source,
                                 confidence: 1.0,
                                 category: Some("deletion".to_string()),
                                 ..Default::default()
@@ -651,7 +651,7 @@ impl EnhancedChangeDetector {
                             index: i,
                             hash: new_node.hash.clone(),
                             metadata: ChangeMetadata {
-                                source: source.clone(),
+                                source: source,
                                 confidence: 1.0,
                                 category: Some("addition".to_string()),
                                 ..Default::default()
@@ -814,7 +814,7 @@ impl EnhancedChangeDetector {
             new_hash: new_block.hash.clone(),
             similarity_score: 0.0,
             metadata: ChangeMetadata {
-                source: source.clone(),
+                source: *source,
                 confidence: 0.8,
                 category: Some("parallel_detection".to_string()),
                 ..Default::default()
@@ -837,7 +837,7 @@ impl EnhancedChangeDetector {
                 old_depth: old_tree.depth,
                 new_depth: new_tree.depth,
                 metadata: ChangeMetadata {
-                    source: source.clone(),
+                    source: *source,
                     confidence: 1.0,
                     category: Some("structure".to_string()),
                     ..Default::default()
