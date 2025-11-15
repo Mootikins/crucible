@@ -4,9 +4,9 @@ use serde_json::{json, Value};
 use crate::{QueryResult, SurrealClient};
 
 use super::types::{
-    BlockNode, EmbeddingVector, Entity, EntityRecord, EntityTag as SurrealEntityTag,
-    Property, PropertyRecord, RecordId, Relation as SurrealRelation, RelationRecord,
-    Tag as SurrealTag, TagRecord,
+    BlockNode, EmbeddingVector, Entity, EntityRecord, EntityTag as SurrealEntityTag, Property,
+    PropertyRecord, RecordId, Relation as SurrealRelation, RelationRecord, Tag as SurrealTag,
+    TagRecord,
 };
 use surrealdb::sql::Thing;
 
@@ -555,7 +555,8 @@ impl EAVGraphStore {
             // Thread A: CREATE succeeds (creates mapping)
             // Thread B: CREATE fails with "already exists" (because Thread A created it)
             // This is EXPECTED behavior - Thread B should not fail the operation
-            let create_result = self.client
+            let create_result = self
+                .client
                 .query(
                     r#"
                     CREATE type::thing($table, $id)
@@ -611,7 +612,10 @@ impl EAVGraphStore {
     }
 
     /// Upsert a relation record.
-    pub async fn upsert_relation(&self, relation: &SurrealRelation) -> Result<RecordId<RelationRecord>> {
+    pub async fn upsert_relation(
+        &self,
+        relation: &SurrealRelation,
+    ) -> Result<RecordId<RelationRecord>> {
         let id = relation
             .id
             .as_ref()
@@ -688,14 +692,9 @@ impl EAVGraphStore {
 // ============================================================================
 
 use async_trait::async_trait;
-use crucible_core::storage::{
-    PropertyStorage as CorePropertyStorage, StorageError, StorageResult,
-};
+use crucible_core::storage::{PropertyStorage as CorePropertyStorage, StorageError, StorageResult};
 
-use super::adapter::{
-    core_properties_to_surreal, string_to_entity_id,
-    surreal_properties_to_core,
-};
+use super::adapter::{core_properties_to_surreal, string_to_entity_id, surreal_properties_to_core};
 
 #[async_trait]
 impl CorePropertyStorage for EAVGraphStore {
@@ -996,18 +995,22 @@ impl CorePropertyStorage for EAVGraphStore {
 // RelationStorage Implementation
 // ============================================================================
 
-use crucible_core::storage::RelationStorage as CoreRelationStorage;
 use super::adapter::{core_relation_to_surreal, surreal_relation_to_core};
+use crucible_core::storage::RelationStorage as CoreRelationStorage;
 
 #[async_trait]
 impl CoreRelationStorage for EAVGraphStore {
-    async fn store_relation(&self, relation: crucible_core::storage::Relation) -> StorageResult<String> {
+    async fn store_relation(
+        &self,
+        relation: crucible_core::storage::Relation,
+    ) -> StorageResult<String> {
         let surreal_relation = core_relation_to_surreal(relation);
 
         // Generate ID if not provided
-        let id = surreal_relation.id.clone().unwrap_or_else(|| {
-            RecordId::new("relations", format!("rel:{}", uuid::Uuid::new_v4()))
-        });
+        let id = surreal_relation
+            .id
+            .clone()
+            .unwrap_or_else(|| RecordId::new("relations", format!("rel:{}", uuid::Uuid::new_v4())));
 
         let params = json!({
             "table": id.table,
@@ -1051,7 +1054,10 @@ impl CoreRelationStorage for EAVGraphStore {
         Ok(id.id)
     }
 
-    async fn batch_store_relations(&self, relations: &[crucible_core::storage::Relation]) -> StorageResult<()> {
+    async fn batch_store_relations(
+        &self,
+        relations: &[crucible_core::storage::Relation],
+    ) -> StorageResult<()> {
         if relations.is_empty() {
             return Ok(());
         }
@@ -1068,9 +1074,11 @@ impl CoreRelationStorage for EAVGraphStore {
             .map(|rel| {
                 // INVARIANT: core_relation_to_surreal() may not generate ID if relation.id is empty
                 // In that case, use a new UUID for the relation ID
-                let rel_id = rel.id.as_ref().map(|id| id.id.clone()).unwrap_or_else(|| {
-                    uuid::Uuid::new_v4().to_string()
-                });
+                let rel_id = rel
+                    .id
+                    .as_ref()
+                    .map(|id| id.id.clone())
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
                 json!({
                     "rel_table": "relations",
@@ -1117,7 +1125,10 @@ impl CoreRelationStorage for EAVGraphStore {
         Ok(())
     }
 
-    async fn get_relation(&self, id: &str) -> StorageResult<Option<crucible_core::storage::Relation>> {
+    async fn get_relation(
+        &self,
+        id: &str,
+    ) -> StorageResult<Option<crucible_core::storage::Relation>> {
         let params = json!({"id": id});
 
         let result = self
@@ -1164,7 +1175,7 @@ impl CoreRelationStorage for EAVGraphStore {
                 "SELECT * FROM relations WHERE in = type::thing('entities', $entity_id)",
                 json!({
                     "entity_id": clean_entity_id,
-                })
+                }),
             )
         };
 
@@ -1210,7 +1221,7 @@ impl CoreRelationStorage for EAVGraphStore {
                 "SELECT * FROM relations WHERE out = type::thing('entities', $entity_id)",
                 json!({
                     "entity_id": clean_entity_id,
-                })
+                }),
             )
         };
 
@@ -1300,7 +1311,9 @@ impl CoreRelationStorage for EAVGraphStore {
         .map_err(|e| StorageError::Backend(e.to_string()))?;
 
         // Construct block ID from entity + offset
-        let block_offset = surreal_relation.metadata["block_offset"].as_u64().unwrap_or(0) as u32;
+        let block_offset = surreal_relation.metadata["block_offset"]
+            .as_u64()
+            .unwrap_or(0) as u32;
         Ok(Some(format!("{}#block_{}", entity_id, block_offset)))
     }
 }
@@ -1322,10 +1335,8 @@ fn thing_value<T>(id: &RecordId<T>) -> serde_json::Value {
 // TagStorage Implementation
 // ============================================================================
 
+use super::adapter::{core_entity_tag_to_surreal, core_tag_to_surreal, surreal_tag_to_core};
 use crucible_core::storage::TagStorage as CoreTagStorage;
-use super::adapter::{
-    core_entity_tag_to_surreal, core_tag_to_surreal, surreal_tag_to_core,
-};
 
 impl EAVGraphStore {
     /// Recursively collect all descendant tag names (including the tag itself)
@@ -1367,10 +1378,17 @@ impl EAVGraphStore {
 
             // Get direct children of current tag
             let children = self.get_child_tags(&current_tag_id).await?;
-            eprintln!("[DEBUG] Found {} children for tag: {}", children.len(), current_tag_id);
+            eprintln!(
+                "[DEBUG] Found {} children for tag: {}",
+                children.len(),
+                current_tag_id
+            );
 
             for child in children {
-                eprintln!("[DEBUG] Child: id={}, name={}, parent={:?}", child.id, child.name, child.parent_tag_id);
+                eprintln!(
+                    "[DEBUG] Child: id={}, name={}, parent={:?}",
+                    child.id, child.name, child.parent_tag_id
+                );
                 // Add child to results and queue for processing
                 all_tag_ids.push(child.name.clone());
                 queue.push_back(child.name);
@@ -1410,11 +1428,13 @@ impl CoreTagStorage for EAVGraphStore {
 
         // Build parent_id clause for the query
         let (parent_clause, parent_params) = if let Some(parent) = &parent_record_id {
-            ("parent_id = type::thing($parent_table, $parent_id),".to_string(),
-             json!({
-                 "parent_table": parent.table,
-                 "parent_id": parent.id,
-             }))
+            (
+                "parent_id = type::thing($parent_table, $parent_id),".to_string(),
+                json!({
+                    "parent_table": parent.table,
+                    "parent_id": parent.id,
+                }),
+            )
         } else {
             ("parent_id = NONE,".to_string(), json!({}))
         };
@@ -1434,8 +1454,7 @@ impl CoreTagStorage for EAVGraphStore {
                 icon = $icon
             RETURN AFTER;
             "#,
-            sanitized_id,
-            parent_clause
+            sanitized_id, parent_clause
         );
 
         let mut params = json!({
@@ -1497,21 +1516,24 @@ impl CoreTagStorage for EAVGraphStore {
                 json!({
                     "table": "tags",
                     "id": id_part
-                })
+                }),
             );
         }
 
         // Convert HashMap to serde_json::Value
-        let data_value = serde_json::to_value(&data)
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+        let data_value =
+            serde_json::to_value(&data).map_err(|e| StorageError::Backend(e.to_string()))?;
 
-        let surreal_tag: SurrealTag = serde_json::from_value(data_value)
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
+        let surreal_tag: SurrealTag =
+            serde_json::from_value(data_value).map_err(|e| StorageError::Backend(e.to_string()))?;
 
         Ok(Some(surreal_tag_to_core(surreal_tag)))
     }
 
-    async fn get_child_tags(&self, parent_tag_name: &str) -> StorageResult<Vec<crucible_core::storage::Tag>> {
+    async fn get_child_tags(
+        &self,
+        parent_tag_name: &str,
+    ) -> StorageResult<Vec<crucible_core::storage::Tag>> {
         // First, get the parent tag to find its record ID
         let parent_tag = self.get_tag(parent_tag_name).await?;
 
@@ -1550,28 +1572,31 @@ impl CoreTagStorage for EAVGraphStore {
                         json!({
                             "table": "tags",
                             "id": id_part
-                        })
+                        }),
                     );
                 }
 
                 let data_value = serde_json::to_value(&data)
                     .map_err(|e| StorageError::Backend(e.to_string()))?;
 
-                serde_json::from_value(data_value)
-                    .map_err(|e| StorageError::Backend(e.to_string()))
+                serde_json::from_value(data_value).map_err(|e| StorageError::Backend(e.to_string()))
             })
             .collect::<StorageResult<Vec<_>>>()?;
 
         Ok(tags.into_iter().map(surreal_tag_to_core).collect())
     }
 
-    async fn associate_tag(&self, entity_tag: crucible_core::storage::EntityTag) -> StorageResult<()> {
+    async fn associate_tag(
+        &self,
+        entity_tag: crucible_core::storage::EntityTag,
+    ) -> StorageResult<()> {
         // Generate RecordId for the entity_tag
         let entity_tag_id = RecordId::new(
             "entity_tags",
             format!("{}:{}", entity_tag.entity_id, entity_tag.tag_id),
         );
-        let surreal_entity_tag = core_entity_tag_to_surreal(entity_tag, Some(entity_tag_id.clone()));
+        let surreal_entity_tag =
+            core_entity_tag_to_surreal(entity_tag, Some(entity_tag_id.clone()));
 
         let params = json!({
             "table": entity_tag_id.table,
@@ -1601,7 +1626,10 @@ impl CoreTagStorage for EAVGraphStore {
         Ok(())
     }
 
-    async fn get_entity_tags(&self, entity_id: &str) -> StorageResult<Vec<crucible_core::storage::Tag>> {
+    async fn get_entity_tags(
+        &self,
+        entity_id: &str,
+    ) -> StorageResult<Vec<crucible_core::storage::Tag>> {
         // Strip the 'entities:' prefix if present to get just the ID part
         let clean_entity_id = entity_id.strip_prefix("entities:").unwrap_or(entity_id);
 
@@ -1633,13 +1661,16 @@ impl CoreTagStorage for EAVGraphStore {
                     tag_ids.push(tag_id_str.to_string());
                 } else if let Some(tag_id_obj) = tag_id_value.as_object() {
                     // Handle {"table": "tags", "id": "project:ai:nlp"} format
-                    if let (Some(table), Some(id)) = (tag_id_obj.get("table"), tag_id_obj.get("id")) {
+                    if let (Some(table), Some(id)) = (tag_id_obj.get("table"), tag_id_obj.get("id"))
+                    {
                         let table_str = table.as_str().unwrap_or("tags");
                         let id_str = id.as_str().unwrap_or("");
                         tag_ids.push(format!("{}:{}", table_str, id_str));
                     }
                     // Handle {"tb": "tags", "id": "project:ai:nlp"} format
-                    else if let (Some(table), Some(id)) = (tag_id_obj.get("tb"), tag_id_obj.get("id")) {
+                    else if let (Some(table), Some(id)) =
+                        (tag_id_obj.get("tb"), tag_id_obj.get("id"))
+                    {
                         let table_str = table.as_str().unwrap_or("tags");
                         // Handle nested ID formats like {"String": "project:ai:nlp"}
                         let id_str = if let Some(id_str) = id.as_str() {
@@ -1972,15 +2003,28 @@ mod tests {
         store.upsert_entity(&entity3).await.unwrap();
 
         // Entity1 tagged with "project"
-        store.associate_tag(create_entity_tag("note:entity1", "project")).await.unwrap();
+        store
+            .associate_tag(create_entity_tag("note:entity1", "project"))
+            .await
+            .unwrap();
         // Entity2 tagged with "project/ai"
-        store.associate_tag(create_entity_tag("note:entity2", "project/ai")).await.unwrap();
+        store
+            .associate_tag(create_entity_tag("note:entity2", "project/ai"))
+            .await
+            .unwrap();
         // Entity3 tagged with "project/ai/nlp"
-        store.associate_tag(create_entity_tag("note:entity3", "project/ai/nlp")).await.unwrap();
+        store
+            .associate_tag(create_entity_tag("note:entity3", "project/ai/nlp"))
+            .await
+            .unwrap();
 
         // Search for root tag "project" should return all 3 entities
         let entities = store.get_entities_by_tag("project").await.unwrap();
-        assert_eq!(entities.len(), 3, "Searching for 'project' should return all entities in the hierarchy");
+        assert_eq!(
+            entities.len(),
+            3,
+            "Searching for 'project' should return all entities in the hierarchy"
+        );
 
         // Verify all entities are present (order doesn't matter)
         assert!(entities.contains(&"entities:note:entity1".to_string()));
@@ -2012,20 +2056,48 @@ mod tests {
         let entity3_id = RecordId::new("entities", "note:entity3");
         let entity4_id = RecordId::new("entities", "note:entity4");
 
-        store.upsert_entity(&Entity::new(entity1_id.clone(), EntityType::Note)).await.unwrap();
-        store.upsert_entity(&Entity::new(entity2_id.clone(), EntityType::Note)).await.unwrap();
-        store.upsert_entity(&Entity::new(entity3_id.clone(), EntityType::Note)).await.unwrap();
-        store.upsert_entity(&Entity::new(entity4_id.clone(), EntityType::Note)).await.unwrap();
+        store
+            .upsert_entity(&Entity::new(entity1_id.clone(), EntityType::Note))
+            .await
+            .unwrap();
+        store
+            .upsert_entity(&Entity::new(entity2_id.clone(), EntityType::Note))
+            .await
+            .unwrap();
+        store
+            .upsert_entity(&Entity::new(entity3_id.clone(), EntityType::Note))
+            .await
+            .unwrap();
+        store
+            .upsert_entity(&Entity::new(entity4_id.clone(), EntityType::Note))
+            .await
+            .unwrap();
 
         // Tag entities
-        store.associate_tag(create_entity_tag("note:entity1", "project")).await.unwrap();
-        store.associate_tag(create_entity_tag("note:entity2", "project/ai")).await.unwrap();
-        store.associate_tag(create_entity_tag("note:entity3", "project/ai/nlp")).await.unwrap();
-        store.associate_tag(create_entity_tag("note:entity4", "project/web")).await.unwrap();
+        store
+            .associate_tag(create_entity_tag("note:entity1", "project"))
+            .await
+            .unwrap();
+        store
+            .associate_tag(create_entity_tag("note:entity2", "project/ai"))
+            .await
+            .unwrap();
+        store
+            .associate_tag(create_entity_tag("note:entity3", "project/ai/nlp"))
+            .await
+            .unwrap();
+        store
+            .associate_tag(create_entity_tag("note:entity4", "project/web"))
+            .await
+            .unwrap();
 
         // Search for "project/ai" should return entity2 and entity3, but NOT entity1 or entity4
         let entities = store.get_entities_by_tag("project/ai").await.unwrap();
-        assert_eq!(entities.len(), 2, "Searching for 'project/ai' should return only AI subtree");
+        assert_eq!(
+            entities.len(),
+            2,
+            "Searching for 'project/ai' should return only AI subtree"
+        );
 
         assert!(entities.contains(&"entities:note:entity2".to_string()));
         assert!(entities.contains(&"entities:note:entity3".to_string()));
@@ -2054,18 +2126,40 @@ mod tests {
         let entity2_id = RecordId::new("entities", "note:entity2");
         let entity3_id = RecordId::new("entities", "note:entity3");
 
-        store.upsert_entity(&Entity::new(entity1_id.clone(), EntityType::Note)).await.unwrap();
-        store.upsert_entity(&Entity::new(entity2_id.clone(), EntityType::Note)).await.unwrap();
-        store.upsert_entity(&Entity::new(entity3_id.clone(), EntityType::Note)).await.unwrap();
+        store
+            .upsert_entity(&Entity::new(entity1_id.clone(), EntityType::Note))
+            .await
+            .unwrap();
+        store
+            .upsert_entity(&Entity::new(entity2_id.clone(), EntityType::Note))
+            .await
+            .unwrap();
+        store
+            .upsert_entity(&Entity::new(entity3_id.clone(), EntityType::Note))
+            .await
+            .unwrap();
 
         // Tag entities
-        store.associate_tag(create_entity_tag("note:entity1", "project")).await.unwrap();
-        store.associate_tag(create_entity_tag("note:entity2", "project/ai")).await.unwrap();
-        store.associate_tag(create_entity_tag("note:entity3", "project/ai/nlp")).await.unwrap();
+        store
+            .associate_tag(create_entity_tag("note:entity1", "project"))
+            .await
+            .unwrap();
+        store
+            .associate_tag(create_entity_tag("note:entity2", "project/ai"))
+            .await
+            .unwrap();
+        store
+            .associate_tag(create_entity_tag("note:entity3", "project/ai/nlp"))
+            .await
+            .unwrap();
 
         // Search for leaf tag "project/ai/nlp" should return only entity3
         let entities = store.get_entities_by_tag("project/ai/nlp").await.unwrap();
-        assert_eq!(entities.len(), 1, "Searching for leaf tag should return only exact matches");
+        assert_eq!(
+            entities.len(),
+            1,
+            "Searching for leaf tag should return only exact matches"
+        );
         assert!(entities.contains(&"entities:note:entity3".to_string()));
     }
 
@@ -2093,15 +2187,39 @@ mod tests {
         let e3 = RecordId::new("entities", "note:e3");
         let e4 = RecordId::new("entities", "note:e4");
 
-        store.upsert_entity(&Entity::new(e1.clone(), EntityType::Note)).await.unwrap();
-        store.upsert_entity(&Entity::new(e2.clone(), EntityType::Note)).await.unwrap();
-        store.upsert_entity(&Entity::new(e3.clone(), EntityType::Note)).await.unwrap();
-        store.upsert_entity(&Entity::new(e4.clone(), EntityType::Note)).await.unwrap();
+        store
+            .upsert_entity(&Entity::new(e1.clone(), EntityType::Note))
+            .await
+            .unwrap();
+        store
+            .upsert_entity(&Entity::new(e2.clone(), EntityType::Note))
+            .await
+            .unwrap();
+        store
+            .upsert_entity(&Entity::new(e3.clone(), EntityType::Note))
+            .await
+            .unwrap();
+        store
+            .upsert_entity(&Entity::new(e4.clone(), EntityType::Note))
+            .await
+            .unwrap();
 
-        store.associate_tag(create_entity_tag("note:e1", "a")).await.unwrap();
-        store.associate_tag(create_entity_tag("note:e2", "a/b")).await.unwrap();
-        store.associate_tag(create_entity_tag("note:e3", "a/b/c")).await.unwrap();
-        store.associate_tag(create_entity_tag("note:e4", "a/b/c/d")).await.unwrap();
+        store
+            .associate_tag(create_entity_tag("note:e1", "a"))
+            .await
+            .unwrap();
+        store
+            .associate_tag(create_entity_tag("note:e2", "a/b"))
+            .await
+            .unwrap();
+        store
+            .associate_tag(create_entity_tag("note:e3", "a/b/c"))
+            .await
+            .unwrap();
+        store
+            .associate_tag(create_entity_tag("note:e4", "a/b/c/d"))
+            .await
+            .unwrap();
 
         // Search from root should return all 4
         let entities = store.get_entities_by_tag("a").await.unwrap();
@@ -2139,22 +2257,48 @@ mod tests {
         let e2 = RecordId::new("entities", "note:e2");
         let e3 = RecordId::new("entities", "note:e3");
 
-        store.upsert_entity(&Entity::new(e1.clone(), EntityType::Note)).await.unwrap();
-        store.upsert_entity(&Entity::new(e2.clone(), EntityType::Note)).await.unwrap();
-        store.upsert_entity(&Entity::new(e3.clone(), EntityType::Note)).await.unwrap();
+        store
+            .upsert_entity(&Entity::new(e1.clone(), EntityType::Note))
+            .await
+            .unwrap();
+        store
+            .upsert_entity(&Entity::new(e2.clone(), EntityType::Note))
+            .await
+            .unwrap();
+        store
+            .upsert_entity(&Entity::new(e3.clone(), EntityType::Note))
+            .await
+            .unwrap();
 
         // All tagged with same nested tag
-        store.associate_tag(create_entity_tag("note:e1", "project/ai")).await.unwrap();
-        store.associate_tag(create_entity_tag("note:e2", "project/ai")).await.unwrap();
-        store.associate_tag(create_entity_tag("note:e3", "project/ai")).await.unwrap();
+        store
+            .associate_tag(create_entity_tag("note:e1", "project/ai"))
+            .await
+            .unwrap();
+        store
+            .associate_tag(create_entity_tag("note:e2", "project/ai"))
+            .await
+            .unwrap();
+        store
+            .associate_tag(create_entity_tag("note:e3", "project/ai"))
+            .await
+            .unwrap();
 
         // Search for parent should return all 3
         let entities = store.get_entities_by_tag("project").await.unwrap();
-        assert_eq!(entities.len(), 3, "Should return all entities tagged with descendant");
+        assert_eq!(
+            entities.len(),
+            3,
+            "Should return all entities tagged with descendant"
+        );
 
         // Search for exact tag should also return all 3
         let entities = store.get_entities_by_tag("project/ai").await.unwrap();
-        assert_eq!(entities.len(), 3, "Should return all entities with exact tag match");
+        assert_eq!(
+            entities.len(),
+            3,
+            "Should return all entities with exact tag match"
+        );
     }
 
     #[tokio::test]
@@ -2165,7 +2309,11 @@ mod tests {
         let store = EAVGraphStore::new(client.clone());
 
         let entities = store.get_entities_by_tag("nonexistent").await.unwrap();
-        assert_eq!(entities.len(), 0, "Non-existent tag should return empty results");
+        assert_eq!(
+            entities.len(),
+            0,
+            "Non-existent tag should return empty results"
+        );
     }
 
     #[tokio::test]
@@ -2183,12 +2331,42 @@ mod tests {
         let store = EAVGraphStore::new(client.clone());
 
         // Create tag hierarchy
-        store.store_tag(create_tag("project", "project", None)).await.unwrap();
-        store.store_tag(create_tag("project/ai", "project/ai", Some("project"))).await.unwrap();
-        store.store_tag(create_tag("project/ai/nlp", "project/ai/nlp", Some("project/ai"))).await.unwrap();
-        store.store_tag(create_tag("project/ai/ml", "project/ai/ml", Some("project/ai"))).await.unwrap();
-        store.store_tag(create_tag("project/web", "project/web", Some("project"))).await.unwrap();
-        store.store_tag(create_tag("project/web/frontend", "project/web/frontend", Some("project/web"))).await.unwrap();
+        store
+            .store_tag(create_tag("project", "project", None))
+            .await
+            .unwrap();
+        store
+            .store_tag(create_tag("project/ai", "project/ai", Some("project")))
+            .await
+            .unwrap();
+        store
+            .store_tag(create_tag(
+                "project/ai/nlp",
+                "project/ai/nlp",
+                Some("project/ai"),
+            ))
+            .await
+            .unwrap();
+        store
+            .store_tag(create_tag(
+                "project/ai/ml",
+                "project/ai/ml",
+                Some("project/ai"),
+            ))
+            .await
+            .unwrap();
+        store
+            .store_tag(create_tag("project/web", "project/web", Some("project")))
+            .await
+            .unwrap();
+        store
+            .store_tag(create_tag(
+                "project/web/frontend",
+                "project/web/frontend",
+                Some("project/web"),
+            ))
+            .await
+            .unwrap();
 
         // Create entities
         let e1 = Entity::new(RecordId::new("entities", "note:e1"), EntityType::Note);
@@ -2202,10 +2380,22 @@ mod tests {
         store.upsert_entity(&e4).await.unwrap();
 
         // Tag entities in different branches
-        store.associate_tag(create_entity_tag("note:e1", "project/ai/nlp")).await.unwrap();
-        store.associate_tag(create_entity_tag("note:e2", "project/ai/ml")).await.unwrap();
-        store.associate_tag(create_entity_tag("note:e3", "project/web")).await.unwrap();
-        store.associate_tag(create_entity_tag("note:e4", "project/web/frontend")).await.unwrap();
+        store
+            .associate_tag(create_entity_tag("note:e1", "project/ai/nlp"))
+            .await
+            .unwrap();
+        store
+            .associate_tag(create_entity_tag("note:e2", "project/ai/ml"))
+            .await
+            .unwrap();
+        store
+            .associate_tag(create_entity_tag("note:e3", "project/web"))
+            .await
+            .unwrap();
+        store
+            .associate_tag(create_entity_tag("note:e4", "project/web/frontend"))
+            .await
+            .unwrap();
 
         // Search from root should return all 4
         let entities = store.get_entities_by_tag("project").await.unwrap();

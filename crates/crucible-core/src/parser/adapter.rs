@@ -3,8 +3,8 @@
 //! This module provides functionality to transform ParsedNote instances
 //! into SurrealDB-compatible data structures for indexing.
 
-use crucible_parser::types::ParsedNote;
 use anyhow::Result;
+use crucible_parser::types::ParsedNote;
 use serde_json::{Map, Value};
 
 /// Adapter for converting parsed documents to SurrealDB records
@@ -166,7 +166,7 @@ impl Default for SurrealDBAdapter {
 mod tests {
     use super::*;
     use crucible_parser::types::{
-        NoteContent, FootnoteMap, Frontmatter, FrontmatterFormat, Heading, Tag, Wikilink,
+        FootnoteMap, Frontmatter, FrontmatterFormat, Heading, NoteContent, Tag, Wikilink,
     };
 
     fn create_test_document() -> ParsedNote {

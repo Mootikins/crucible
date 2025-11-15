@@ -9,7 +9,7 @@
 
 #[cfg(test)]
 mod edge_cases {
-    use super::super::{apply_eav_graph_schema, NoteIngestor, EAVGraphStore};
+    use super::super::{apply_eav_graph_schema, EAVGraphStore, NoteIngestor};
     use crate::SurrealClient;
     use crucible_core::parser::{ParsedNote, Tag, Wikilink};
     use crucible_core::storage::{RelationStorage, TagStorage};
@@ -49,7 +49,10 @@ mod edge_cases {
         let rel = &relations[0];
         assert_eq!(rel.relation_type, "wikilink");
         // With resolution, unresolved links have to_entity_id = None
-        assert_eq!(rel.to_entity_id, None, "Unresolved wikilink should have no target");
+        assert_eq!(
+            rel.to_entity_id, None,
+            "Unresolved wikilink should have no target"
+        );
         assert_eq!(rel.metadata.get("alias"), None);
     }
 
@@ -283,17 +286,13 @@ mod edge_cases {
         // Verify first link - unresolved, so no target
         assert_eq!(relations[0].relation_type, "wikilink");
         assert_eq!(
-            relations[0].to_entity_id,
-            None,
+            relations[0].to_entity_id, None,
             "Unresolved wikilink should have no target"
         );
 
         // Verify second link has alias
         assert_eq!(
-            relations[1]
-                .metadata
-                .get("alias")
-                .and_then(|v| v.as_str()),
+            relations[1].metadata.get("alias").and_then(|v| v.as_str()),
             Some("Link 2")
         );
 

@@ -233,7 +233,7 @@ impl EAVDocumentBuilder {
     pub fn add_property(mut self, property: Property) -> Self {
         self.properties
             .entry(property.namespace.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(property);
         self
     }
@@ -411,9 +411,7 @@ mod tests {
     #[test]
     fn test_eav_document_builder_missing_fields() {
         // Missing entity_id
-        let result = EAVDocument::builder()
-            .entity_type(EntityType::Note)
-            .build();
+        let result = EAVDocument::builder().entity_type(EntityType::Note).build();
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),

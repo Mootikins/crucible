@@ -238,11 +238,13 @@ impl Default for BackendConfig {
 /// BLAKE3 is recommended for production due to its speed and security.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum HashAlgorithm {
     /// BLAKE3 hashing (recommended)
     ///
     /// Fast, secure, and well-suited for content-addressed storage.
     /// Provides excellent performance on modern hardware.
+    #[default]
     Blake3,
 
     /// SHA-256 hashing (legacy)
@@ -250,12 +252,6 @@ pub enum HashAlgorithm {
     /// Widely supported but slower than BLAKE3. Use for compatibility
     /// with existing systems that expect SHA-256 hashes.
     Sha256,
-}
-
-impl Default for HashAlgorithm {
-    fn default() -> Self {
-        Self::Blake3
-    }
 }
 
 /// Complete storage configuration
