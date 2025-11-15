@@ -1,13 +1,20 @@
-use blake3::Hasher;
 use serde::{Deserialize, Serialize};
 
+use crate::merkle::NodeHash;
 use crucible_parser::types::{BlockHash, Heading, Paragraph, ParsedNote};
 
 /// Hybrid Merkle tree that groups note content into semantic sections and
 /// stores block-level hashing inside each section.
+///
+/// ## Hash Strategy
+///
+/// - **Content hashes** (leaves): Full 32-byte `BlockHash` for content integrity
+/// - **Tree hashes** (nodes): Compact 16-byte `NodeHash` for structure and change detection
+///
+/// This dual-hash approach optimizes memory usage while maintaining content integrity.
 #[derive(Debug, Clone)]
 pub struct HybridMerkleTree {
-    pub root_hash: BlockHash,
+    pub root_hash: NodeHash,
     pub sections: Vec<SectionNode>,
     pub total_blocks: usize,
 }
@@ -28,7 +35,7 @@ pub struct HeadingSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BinaryMerkleTree {
-    pub root_hash: BlockHash,
+    pub root_hash: NodeHash,
     pub nodes: Vec<MerkleNode>,
     pub height: usize,
     pub leaf_count: usize,
@@ -36,12 +43,14 @@ pub struct BinaryMerkleTree {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum MerkleNode {
+    /// Leaf node storing content hash (32 bytes for integrity)
     Leaf {
         hash: BlockHash,
         block_index: usize,
     },
+    /// Internal node with compact hash (16 bytes for efficiency)
     Internal {
-        hash: BlockHash,
+        hash: NodeHash,
         left: usize,
         right: usize,
     },
@@ -64,11 +73,11 @@ pub struct SectionChange {
 impl HybridMerkleTree {
     pub fn from_document(doc: &ParsedNote) -> Self {
         let (sections, total_blocks) = build_sections(doc);
-        let section_hashes: Vec<BlockHash> = sections
+        let section_hashes: Vec<NodeHash> = sections
             .iter()
             .map(|section| section.binary_tree.root_hash)
             .collect();
-        let root_hash = aggregate_hashes(&section_hashes);
+        let root_hash = NodeHash::combine_many(&section_hashes);
 
         Self {
             root_hash,
@@ -101,7 +110,7 @@ impl HybridMerkleTree {
 impl BinaryMerkleTree {
     pub fn empty() -> Self {
         Self {
-            root_hash: BlockHash::zero(),
+            root_hash: NodeHash::zero(),
             nodes: Vec::new(),
             height: 0,
             leaf_count: 0,
@@ -116,6 +125,7 @@ impl BinaryMerkleTree {
         let mut nodes = Vec::new();
         let mut current_level = Vec::new();
 
+        // Create leaf nodes with BlockHash for content integrity
         for (index, hash) in blocks {
             let node_index = nodes.len();
             nodes.push(MerkleNode::Leaf {
@@ -132,7 +142,28 @@ impl BinaryMerkleTree {
             for chunk in current_level.chunks(2) {
                 let left_idx = chunk[0];
                 let right_idx = if chunk.len() == 2 { chunk[1] } else { chunk[0] };
-                let combined = combine_pair(nodes[left_idx].hash(), nodes[right_idx].hash());
+
+                // Combine hashes: convert BlockHash to NodeHash for internal nodes
+                let combined = match (&nodes[left_idx], &nodes[right_idx]) {
+                    (MerkleNode::Leaf { hash: left, .. }, MerkleNode::Leaf { hash: right, .. }) => {
+                        // Convert BlockHash to NodeHash for tree structure
+                        let left_node = NodeHash::from_content(left.as_bytes());
+                        let right_node = NodeHash::from_content(right.as_bytes());
+                        NodeHash::combine(&left_node, &right_node)
+                    }
+                    (MerkleNode::Leaf { hash: left, .. }, MerkleNode::Internal { hash: right, .. }) => {
+                        let left_node = NodeHash::from_content(left.as_bytes());
+                        NodeHash::combine(&left_node, right)
+                    }
+                    (MerkleNode::Internal { hash: left, .. }, MerkleNode::Leaf { hash: right, .. }) => {
+                        let right_node = NodeHash::from_content(right.as_bytes());
+                        NodeHash::combine(left, &right_node)
+                    }
+                    (MerkleNode::Internal { hash: left, .. }, MerkleNode::Internal { hash: right, .. }) => {
+                        NodeHash::combine(left, right)
+                    }
+                };
+
                 let node_index = nodes.len();
                 nodes.push(MerkleNode::Internal {
                     hash: combined,
@@ -147,7 +178,10 @@ impl BinaryMerkleTree {
         }
 
         let root_index = current_level[0];
-        let root_hash = *nodes[root_index].hash();
+        let root_hash = match &nodes[root_index] {
+            MerkleNode::Leaf { hash, .. } => NodeHash::from_content(hash.as_bytes()),
+            MerkleNode::Internal { hash, .. } => *hash,
+        };
 
         Self {
             root_hash,
@@ -167,14 +201,7 @@ impl HybridDiff {
     }
 }
 
-impl MerkleNode {
-    pub fn hash(&self) -> &BlockHash {
-        match self {
-            MerkleNode::Leaf { hash, .. } => hash,
-            MerkleNode::Internal { hash, .. } => hash,
-        }
-    }
-}
+// Removed hash() method - leaves and internals have different hash types now
 
 fn build_sections(doc: &ParsedNote) -> (Vec<SectionNode>, usize) {
     let mut nodes = Vec::new();
@@ -233,37 +260,7 @@ fn close_sections_until(
     }
 }
 
-fn aggregate_hashes(hashes: &[BlockHash]) -> BlockHash {
-    if hashes.is_empty() {
-        return BlockHash::zero();
-    }
-
-    let mut level: Vec<BlockHash> = hashes.to_vec();
-    while level.len() > 1 {
-        let mut next = Vec::new();
-        for chunk in level.chunks(2) {
-            let left = &chunk[0];
-            let right = if chunk.len() == 2 {
-                &chunk[1]
-            } else {
-                &chunk[0]
-            };
-            next.push(combine_pair(left, right));
-        }
-        level = next;
-    }
-    level.pop().unwrap()
-}
-
-fn combine_pair(left: &BlockHash, right: &BlockHash) -> BlockHash {
-    let mut hasher = Hasher::new();
-    hasher.update(left.as_bytes());
-    hasher.update(right.as_bytes());
-    let digest = hasher.finalize();
-    let mut array = [0u8; 32];
-    array.copy_from_slice(digest.as_bytes());
-    BlockHash::new(array)
-}
+// aggregate_hashes and combine_pair removed - now using NodeHash::combine_many
 
 fn hash_block_content(content: &str) -> BlockHash {
     let digest = blake3::hash(content.as_bytes());
@@ -391,11 +388,11 @@ mod tests {
         assert_eq!(tree.sections.len(), 3, "Should have root + 2 heading sections");
 
         // Verify root hash is computed from section hashes
-        let section_hashes: Vec<BlockHash> = tree.sections
+        let section_hashes: Vec<NodeHash> = tree.sections
             .iter()
             .map(|s| s.binary_tree.root_hash)
             .collect();
-        let expected_root = aggregate_hashes(&section_hashes);
+        let expected_root = NodeHash::combine_many(&section_hashes);
         assert_eq!(tree.root_hash, expected_root,
                    "Root hash should be aggregation of section hashes");
 
