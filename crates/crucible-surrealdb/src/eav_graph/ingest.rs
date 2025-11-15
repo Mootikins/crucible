@@ -11,6 +11,7 @@ use super::types::{
     BlockNode, Entity, EntityRecord, EntityTag, EntityTagRecord, EntityType, Property,
     PropertyRecord, PropertyValue, RecordId, TagRecord,
 };
+use crate::merkle_persistence::MerklePersistence;
 
 
 /// Classify content type for universal link processing
@@ -120,11 +121,26 @@ fn classify_content(target: &str) -> ContentCategory {
 /// High-level helper for writing parsed documents into the EAV+Graph schema.
 pub struct NoteIngestor<'a> {
     store: &'a EAVGraphStore,
+    merkle_persistence: Option<MerklePersistence>,
 }
 
 impl<'a> NoteIngestor<'a> {
     pub fn new(store: &'a EAVGraphStore) -> Self {
-        Self { store }
+        Self {
+            store,
+            merkle_persistence: None,
+        }
+    }
+
+    /// Create a new ingestor with Merkle tree persistence enabled
+    ///
+    /// This enables automatic persistence of Merkle trees during ingestion
+    /// for efficient incremental change detection.
+    pub fn with_merkle_persistence(store: &'a EAVGraphStore, persistence: MerklePersistence) -> Self {
+        Self {
+            store,
+            merkle_persistence: Some(persistence),
+        }
     }
 
     pub async fn ingest(
@@ -166,8 +182,8 @@ impl<'a> NoteIngestor<'a> {
             self.store.store_relation(relation).await?;
         }
 
-        // Compute and store section hashes
-        let section_properties = self.compute_section_properties(&entity_id, doc);
+        // Compute and store section hashes (with optional Merkle tree persistence)
+        let section_properties = self.compute_section_properties(&entity_id, doc, relative_path).await?;
         for property in section_properties {
             self.store.upsert_property(&property).await?;
         }
@@ -801,13 +817,44 @@ impl<'a> NoteIngestor<'a> {
     }
 
     /// Compute section properties from the note's Merkle tree
-    fn compute_section_properties(
+    async fn compute_section_properties(
         &self,
         entity_id: &RecordId<EntityRecord>,
         doc: &ParsedNote,
-    ) -> Vec<Property> {
+        relative_path: &str,
+    ) -> Result<Vec<Property>> {
         // Build the hybrid Merkle tree to extract sections
         let merkle_tree = HybridMerkleTree::from_document(doc);
+
+        // Persist the tree if persistence is enabled
+        if let Some(ref persistence) = self.merkle_persistence {
+            // Try to get the old tree for incremental updates
+            if let Ok(Some(old_metadata)) = persistence.get_tree_metadata(relative_path).await {
+                // If root hash changed, do incremental update
+                if old_metadata.root_hash != merkle_tree.root_hash.to_hex() {
+                    // Compare trees to find changed sections
+                    if let Ok(old_tree) = persistence.retrieve_tree(relative_path).await {
+                        let diff = merkle_tree.diff(&old_tree);
+                        let changed_indices: Vec<usize> = diff
+                            .changed_sections
+                            .iter()
+                            .map(|change| change.index)
+                            .collect();
+
+                        persistence
+                            .update_tree_incremental(relative_path, &merkle_tree, &changed_indices)
+                            .await?;
+                    } else {
+                        // Old tree retrieval failed, store new tree
+                        persistence.store_tree(relative_path, &merkle_tree).await?;
+                    }
+                }
+                // If hash unchanged, no update needed
+            } else {
+                // No existing tree, store the new one
+                persistence.store_tree(relative_path, &merkle_tree).await?;
+            }
+        }
 
         // Pre-calculate capacity: 2 base properties + 2 per section
         // Base: tree_root_hash, total_sections
@@ -865,7 +912,7 @@ impl<'a> NoteIngestor<'a> {
             ));
         }
 
-        props
+        Ok(props)
     }
 
     /// Compute core note properties
