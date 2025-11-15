@@ -121,26 +121,45 @@ fn classify_content(target: &str) -> ContentCategory {
 /// High-level helper for writing parsed documents into the EAV+Graph schema.
 pub struct NoteIngestor<'a> {
     store: &'a EAVGraphStore,
-    merkle_persistence: Option<MerklePersistence>,
+    merkle_store: Option<Box<dyn crucible_core::merkle::MerkleStore>>,
 }
 
 impl<'a> NoteIngestor<'a> {
     pub fn new(store: &'a EAVGraphStore) -> Self {
         Self {
             store,
-            merkle_persistence: None,
+            merkle_store: None,
         }
     }
 
-    /// Create a new ingestor with Merkle tree persistence enabled
+    /// Create a new ingestor with Merkle tree storage enabled
     ///
     /// This enables automatic persistence of Merkle trees during ingestion
     /// for efficient incremental change detection.
-    pub fn with_merkle_persistence(store: &'a EAVGraphStore, persistence: MerklePersistence) -> Self {
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use crucible_surrealdb::{EAVGraphStore, MerklePersistence};
+    /// use crucible_core::merkle::MerkleStore;
+    ///
+    /// let store = EAVGraphStore::new(client.clone());
+    /// let merkle_store = MerklePersistence::new(client);
+    /// let ingestor = NoteIngestor::with_merkle_store(&store, Box::new(merkle_store));
+    /// ```
+    pub fn with_merkle_store(store: &'a EAVGraphStore, merkle_store: Box<dyn crucible_core::merkle::MerkleStore>) -> Self {
         Self {
             store,
-            merkle_persistence: Some(persistence),
+            merkle_store: Some(merkle_store),
         }
+    }
+
+    /// Deprecated: Use `with_merkle_store` instead
+    ///
+    /// This method is kept for backward compatibility but will be removed in a future version.
+    #[deprecated(since = "0.1.0", note = "Use `with_merkle_store` instead for better abstraction")]
+    pub fn with_merkle_persistence(store: &'a EAVGraphStore, persistence: MerklePersistence) -> Self {
+        Self::with_merkle_store(store, Box::new(persistence))
     }
 
     pub async fn ingest(
@@ -826,14 +845,16 @@ impl<'a> NoteIngestor<'a> {
         // Build the hybrid Merkle tree to extract sections
         let merkle_tree = HybridMerkleTree::from_document(doc);
 
-        // Persist the tree if persistence is enabled
-        if let Some(ref persistence) = self.merkle_persistence {
+        // Persist the tree if storage is enabled
+        if let Some(ref merkle_store) = self.merkle_store {
+            use crucible_core::merkle::MerkleStore;
+
             // Try to get the old tree for incremental updates
-            if let Ok(Some(old_metadata)) = persistence.get_tree_metadata(relative_path).await {
+            if let Ok(Some(old_metadata)) = merkle_store.get_metadata(relative_path).await {
                 // If root hash changed, do incremental update
                 if old_metadata.root_hash != merkle_tree.root_hash.to_hex() {
                     // Compare trees to find changed sections
-                    if let Ok(old_tree) = persistence.retrieve_tree(relative_path).await {
+                    if let Ok(old_tree) = merkle_store.retrieve(relative_path).await {
                         let diff = merkle_tree.diff(&old_tree);
                         let changed_indices: Vec<usize> = diff
                             .changed_sections
@@ -841,18 +862,18 @@ impl<'a> NoteIngestor<'a> {
                             .map(|change| change.section_index)
                             .collect();
 
-                        persistence
-                            .update_tree_incremental(relative_path, &merkle_tree, &changed_indices)
+                        merkle_store
+                            .update_incremental(relative_path, &merkle_tree, &changed_indices)
                             .await?;
                     } else {
                         // Old tree retrieval failed, store new tree
-                        persistence.store_tree(relative_path, &merkle_tree).await?;
+                        merkle_store.store(relative_path, &merkle_tree).await?;
                     }
                 }
                 // If hash unchanged, no update needed
             } else {
                 // No existing tree, store the new one
-                persistence.store_tree(relative_path, &merkle_tree).await?;
+                merkle_store.store(relative_path, &merkle_tree).await?;
             }
         }
 
