@@ -838,7 +838,7 @@ impl<'a> NoteIngestor<'a> {
                         let changed_indices: Vec<usize> = diff
                             .changed_sections
                             .iter()
-                            .map(|change| change.index)
+                            .map(|change| change.section_index)
                             .collect();
 
                         persistence
