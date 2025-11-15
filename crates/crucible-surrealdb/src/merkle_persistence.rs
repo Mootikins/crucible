@@ -354,12 +354,28 @@ impl MerklePersistence {
     /// * `tree_id` - Unique identifier for the tree
     /// * `tree` - The updated tree
     /// * `changed_section_indices` - Indices of sections that changed
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any section index is out of bounds
     pub async fn update_tree_incremental(
         &self,
         tree_id: &str,
         tree: &HybridMerkleTree,
         changed_section_indices: &[usize],
     ) -> DbResult<()> {
+        // Validate all indices are in bounds before making any changes
+        for &index in changed_section_indices {
+            if index >= tree.sections.len() {
+                return Err(DbError::InvalidOperation(format!(
+                    "Invalid section index {}: tree '{}' has {} sections",
+                    index,
+                    tree_id,
+                    tree.sections.len()
+                )));
+            }
+        }
+
         let now = chrono::Utc::now();
 
         // 1. Update tree metadata
@@ -385,37 +401,37 @@ impl MerklePersistence {
         }
 
         for &index in changed_section_indices {
-            if let Some(section) = tree.sections.get(index) {
-                let section_data = bincode::serialize(section).map_err(|e| {
-                    DbError::serialization(format!("Failed to serialize section: {}", e))
+            // Safe to index directly - we validated bounds above
+            let section = &tree.sections[index];
+            let section_data = bincode::serialize(section).map_err(|e| {
+                DbError::serialization(format!("Failed to serialize section: {}", e))
+            })?;
+
+            let (start_block, end_block) = block_ranges[index];
+
+            let section_record = SectionRecord {
+                tree_id: tree_id.to_string(),
+                section_index: index,
+                section_hash: section.binary_tree.root_hash.to_hex(),
+                heading: section.heading.as_ref().map(|h| h.text.clone()),
+                depth: section.depth,
+                start_block,
+                end_block,
+                section_data,
+                created_at: now,
+            };
+
+            self.client
+                .execute_query(&format!(
+                    "UPDATE section:{{tree_id: $tree_id, index: $index}} CONTENT $section"
+                ))
+                .bind(("tree_id", tree_id))
+                .bind(("index", index))
+                .bind(("section", section_record))
+                .await
+                .map_err(|e| {
+                    DbError::query(format!("Failed to update section {}: {}", index, e))
                 })?;
-
-                let (start_block, end_block) = block_ranges[index];
-
-                let section_record = SectionRecord {
-                    tree_id: tree_id.to_string(),
-                    section_index: index,
-                    section_hash: section.binary_tree.root_hash.to_hex(),
-                    heading: section.heading.as_ref().map(|h| h.text.clone()),
-                    depth: section.depth,
-                    start_block,
-                    end_block,
-                    section_data,
-                    created_at: now,
-                };
-
-                self.client
-                    .execute_query(&format!(
-                        "UPDATE section:{{tree_id: $tree_id, index: $index}} CONTENT $section"
-                    ))
-                    .bind(("tree_id", tree_id))
-                    .bind(("index", index))
-                    .bind(("section", section_record))
-                    .await
-                    .map_err(|e| {
-                        DbError::query(format!("Failed to update section {}: {}", index, e))
-                    })?;
-            }
         }
 
         Ok(())
@@ -456,11 +472,62 @@ impl MerklePersistence {
     }
 }
 
-/// Sanitize ID for use in SurrealDB record IDs
+/// Sanitize and validate ID for use in SurrealDB record IDs
 ///
-/// Replaces problematic characters with underscores.
+/// This provides defense-in-depth protection against SQL injection and malformed IDs:
+/// - Validates length (1-255 characters)
+/// - Rejects control characters and null bytes
+/// - Sanitizes filesystem and SQL injection characters
+/// - Ensures only safe characters remain
+///
+/// # Arguments
+///
+/// * `id` - The identifier to sanitize
+///
+/// # Returns
+///
+/// Sanitized identifier safe for use in SurrealDB queries
+///
+/// # Panics
+///
+/// Panics if the ID is empty or longer than 255 characters. This is intentional
+/// as these should be caught during development/testing.
 fn sanitize_id(id: &str) -> String {
-    id.replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_")
+    // Validate length
+    assert!(
+        !id.is_empty() && id.len() <= 255,
+        "Tree ID must be between 1 and 255 characters, got {} characters",
+        id.len()
+    );
+
+    // Check for control characters and null bytes (security risk)
+    assert!(
+        !id.chars().any(|c| c.is_control() || c == '\0'),
+        "Tree ID contains invalid control characters or null bytes"
+    );
+
+    // Sanitize: Replace all potentially dangerous characters with underscores
+    // This includes:
+    // - Filesystem separators: / \ :
+    // - SQL injection characters: ' ; --
+    // - Wildcards and special chars: * ? " < > |
+    // - Whitespace (replace with underscore for clarity)
+    id.chars()
+        .map(|c| match c {
+            // Filesystem separators
+            '/' | '\\' | ':' => '_',
+            // SQL injection risks
+            '\'' | ';' | '-' if id.contains("--") => '_',
+            // Wildcards and special characters
+            '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            // Whitespace
+            c if c.is_whitespace() => '_',
+            // Allow alphanumeric, underscore, period, and hyphen
+            c if c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-' => c,
+            // Replace anything else with underscore
+            _ => '_',
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -596,8 +663,69 @@ mod tests {
 
     #[test]
     fn test_sanitize_id() {
+        // Basic filesystem path sanitization
         assert_eq!(sanitize_id("path/to/file.md"), "path_to_file.md");
         assert_eq!(sanitize_id("C:\\Windows\\path"), "C__Windows_path");
         assert_eq!(sanitize_id("normal_id"), "normal_id");
+
+        // SQL injection attempts
+        assert_eq!(sanitize_id("test'; DROP TABLE--"), "test___DROP_TABLE__");
+        assert_eq!(sanitize_id("test'OR'1'='1"), "test_OR_1___1");
+
+        // Whitespace handling
+        assert_eq!(sanitize_id("file with spaces.md"), "file_with_spaces.md");
+        assert_eq!(sanitize_id("tab\tseparated"), "tab_separated");
+
+        // Special characters
+        assert_eq!(sanitize_id("test<script>alert()</script>"), "test_script_alert___script_");
+        assert_eq!(sanitize_id("wildcards*?.txt"), "wildcards___.txt");
+
+        // Valid characters preserved
+        assert_eq!(sanitize_id("valid-file_name.123.md"), "valid-file_name.123.md");
+        assert_eq!(sanitize_id("UPPERCASE"), "UPPERCASE");
+    }
+
+    #[test]
+    #[should_panic(expected = "Tree ID must be between 1 and 255 characters")]
+    fn test_sanitize_id_empty() {
+        sanitize_id("");
+    }
+
+    #[test]
+    #[should_panic(expected = "Tree ID must be between 1 and 255 characters")]
+    fn test_sanitize_id_too_long() {
+        let long_id = "a".repeat(256);
+        sanitize_id(&long_id);
+    }
+
+    #[test]
+    #[should_panic(expected = "contains invalid control characters")]
+    fn test_sanitize_id_null_byte() {
+        sanitize_id("test\0file");
+    }
+
+    #[test]
+    #[should_panic(expected = "contains invalid control characters")]
+    fn test_sanitize_id_control_chars() {
+        sanitize_id("test\x01\x02file");
+    }
+
+    #[tokio::test]
+    async fn test_update_incremental_invalid_index() {
+        let client = create_test_client().await;
+        let persistence = MerklePersistence::new(client);
+
+        let doc = create_test_note("# Test\n\nContent.");
+        let tree = HybridMerkleTree::from_document(&doc);
+
+        // Try to update with out-of-bounds index
+        let result = persistence
+            .update_tree_incremental("test_bounds", &tree, &[999])
+            .await;
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Invalid section index"));
+        assert!(err_msg.contains("999"));
     }
 }
