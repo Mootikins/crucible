@@ -33,6 +33,7 @@ pub mod content_addressed_storage;
 pub mod database;
 pub mod eav_graph;
 pub mod hash_lookup;
+#[cfg(feature = "embeddings")]
 pub mod kiln_integration;
 pub mod kiln_pipeline_connector;
 pub mod kiln_processor;
@@ -53,6 +54,7 @@ pub mod types;
 pub mod embedding;
 pub mod embedding_config;
 pub mod embedding_pipeline;
+#[cfg(feature = "embeddings")]
 pub mod embedding_pool;
 
 pub use content_addressed_storage::ContentAddressedStorageSurrealDB;
@@ -97,6 +99,7 @@ pub use embedding_config::{
     PrivacyMode, ThreadPoolMetrics,
 };
 pub use embedding_pipeline::EmbeddingPipeline;
+#[cfg(feature = "embeddings")]
 pub use embedding_pool::{EmbeddingSignature, EmbeddingThreadPool};
 
 // Kiln scanner exports
