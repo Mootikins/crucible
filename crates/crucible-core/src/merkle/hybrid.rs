@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::merkle::NodeHash;
+use crate::merkle::{NodeHash, VirtualSection, VirtualizationConfig};
 use crucible_parser::types::{BlockHash, Heading, Paragraph, ParsedNote};
 
 /// Hybrid Merkle tree that groups note content into semantic sections and
@@ -12,11 +12,21 @@ use crucible_parser::types::{BlockHash, Heading, Paragraph, ParsedNote};
 /// - **Tree hashes** (nodes): Compact 16-byte `NodeHash` for structure and change detection
 ///
 /// This dual-hash approach optimizes memory usage while maintaining content integrity.
+///
+/// ## Virtualization
+///
+/// For documents with many sections (>100 by default), sections are automatically
+/// grouped into virtual sections to prevent memory exhaustion while maintaining
+/// performance and accuracy.
 #[derive(Debug, Clone)]
 pub struct HybridMerkleTree {
     pub root_hash: NodeHash,
     pub sections: Vec<SectionNode>,
     pub total_blocks: usize,
+    /// Virtual sections for large documents (None if not virtualized)
+    pub virtual_sections: Option<Vec<VirtualSection>>,
+    /// Whether this tree uses virtualization
+    pub is_virtualized: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -71,19 +81,96 @@ pub struct SectionChange {
 }
 
 impl HybridMerkleTree {
+    /// Create a Merkle tree from a document without virtualization
+    ///
+    /// This is the default method that maintains backward compatibility.
+    /// For large documents, use `from_document_with_config()` instead.
     pub fn from_document(doc: &ParsedNote) -> Self {
-        let (sections, total_blocks) = build_sections(doc);
-        let section_hashes: Vec<NodeHash> = sections
-            .iter()
-            .map(|section| section.binary_tree.root_hash)
-            .collect();
-        let root_hash = NodeHash::combine_many(&section_hashes);
+        Self::from_document_with_config(doc, &VirtualizationConfig::disabled())
+    }
 
-        Self {
-            root_hash,
-            sections,
-            total_blocks,
+    /// Create a Merkle tree from a document with custom virtualization config
+    ///
+    /// This method enables automatic virtualization for large documents based
+    /// on the provided configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `doc` - The parsed document
+    /// * `config` - Virtualization configuration
+    ///
+    /// # Returns
+    ///
+    /// A new HybridMerkleTree, potentially with virtual sections
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let config = VirtualizationConfig::default();
+    /// let tree = HybridMerkleTree::from_document_with_config(&doc, &config);
+    /// ```
+    pub fn from_document_with_config(doc: &ParsedNote, config: &VirtualizationConfig) -> Self {
+        let (sections, total_blocks) = build_sections(doc);
+
+        // Check if virtualization should be enabled
+        let should_virtualize = VirtualSection::should_virtualize(sections.len(), config);
+
+        if should_virtualize {
+            // Create virtual sections
+            let virtual_sections = VirtualSection::virtualize(&sections, config);
+
+            // Compute root hash from virtual section hashes
+            let virtual_hashes: Vec<NodeHash> = virtual_sections
+                .iter()
+                .map(|vs| vs.hash)
+                .collect();
+            let root_hash = NodeHash::combine_many(&virtual_hashes);
+
+            Self {
+                root_hash,
+                sections,
+                total_blocks,
+                virtual_sections: Some(virtual_sections),
+                is_virtualized: true,
+            }
+        } else {
+            // No virtualization needed
+            let section_hashes: Vec<NodeHash> = sections
+                .iter()
+                .map(|section| section.binary_tree.root_hash)
+                .collect();
+            let root_hash = NodeHash::combine_many(&section_hashes);
+
+            Self {
+                root_hash,
+                sections,
+                total_blocks,
+                virtual_sections: None,
+                is_virtualized: false,
+            }
         }
+    }
+
+    /// Create a tree with automatic virtualization using default config
+    ///
+    /// This is a convenience method that uses the default virtualization
+    /// configuration (threshold: 100 sections).
+    pub fn from_document_auto(doc: &ParsedNote) -> Self {
+        Self::from_document_with_config(doc, &VirtualizationConfig::default())
+    }
+
+    /// Get the number of sections (virtual or real)
+    pub fn section_count(&self) -> usize {
+        if self.is_virtualized {
+            self.virtual_sections.as_ref().map_or(0, |vs| vs.len())
+        } else {
+            self.sections.len()
+        }
+    }
+
+    /// Get the actual (real) section count
+    pub fn real_section_count(&self) -> usize {
+        self.sections.len()
     }
 
     pub fn diff(&self, other: &HybridMerkleTree) -> HybridDiff {
@@ -625,5 +712,227 @@ mod tests {
                 assert_eq!(section.binary_tree.height, 0);
             }
         }
+    }
+
+    // Virtualization tests
+
+    #[test]
+    fn test_tree_without_virtualization() {
+        let doc = build_document();
+        let tree = HybridMerkleTree::from_document(&doc);
+
+        // Should not be virtualized (small document)
+        assert!(!tree.is_virtualized);
+        assert!(tree.virtual_sections.is_none());
+        assert_eq!(tree.section_count(), tree.real_section_count());
+    }
+
+    #[test]
+    fn test_tree_with_virtualization_disabled() {
+        let doc = build_document();
+        let config = VirtualizationConfig::disabled();
+        let tree = HybridMerkleTree::from_document_with_config(&doc, &config);
+
+        // Should not be virtualized even with many sections
+        assert!(!tree.is_virtualized);
+        assert!(tree.virtual_sections.is_none());
+    }
+
+    #[test]
+    fn test_tree_with_virtualization_enabled() {
+        // Create a document with many sections (above threshold)
+        let mut doc = ParsedNote::default();
+        doc.path = PathBuf::from("large.md");
+        doc.content = NoteContent::default();
+
+        // Create 150 headings (above default threshold of 100)
+        for i in 0..150 {
+            doc.content.headings.push(Heading {
+                level: ((i % 3) + 1) as u8,
+                text: format!("Section {}", i),
+                offset: i * 100,
+                id: Some(format!("s{}", i)),
+            });
+
+            // Add a paragraph for each heading
+            doc.content.paragraphs.push(Paragraph::new(
+                format!("Content for section {}", i),
+                i * 100 + 10,
+            ));
+        }
+
+        let config = VirtualizationConfig::default();
+        let tree = HybridMerkleTree::from_document_with_config(&doc, &config);
+
+        // Should be virtualized
+        assert!(tree.is_virtualized);
+        assert!(tree.virtual_sections.is_some());
+
+        // Should have virtual sections
+        let virtual_sections = tree.virtual_sections.as_ref().unwrap();
+        assert!(virtual_sections.len() > 0);
+        assert!(virtual_sections.len() < tree.real_section_count());
+
+        // Verify section count methods
+        assert_eq!(tree.section_count(), virtual_sections.len());
+        assert!(tree.real_section_count() > tree.section_count());
+    }
+
+    #[test]
+    fn test_tree_virtualization_auto() {
+        // Create large document
+        let mut doc = ParsedNote::default();
+        doc.path = PathBuf::from("large.md");
+        doc.content = NoteContent::default();
+
+        for i in 0..120 {
+            doc.content.headings.push(Heading {
+                level: 1,
+                text: format!("Section {}", i),
+                offset: i * 100,
+                id: Some(format!("s{}", i)),
+            });
+            doc.content.paragraphs.push(Paragraph::new(
+                format!("Content {}", i),
+                i * 100 + 10,
+            ));
+        }
+
+        let tree = HybridMerkleTree::from_document_auto(&doc);
+
+        // Should be virtualized with default config
+        assert!(tree.is_virtualized);
+        assert!(tree.virtual_sections.is_some());
+    }
+
+    #[test]
+    fn test_virtualized_tree_hash_correctness() {
+        // Create large document
+        let mut doc = ParsedNote::default();
+        doc.path = PathBuf::from("test.md");
+        doc.content = NoteContent::default();
+
+        for i in 0..150 {
+            doc.content.headings.push(Heading {
+                level: 1,
+                text: format!("Section {}", i),
+                offset: i * 100,
+                id: Some(format!("s{}", i)),
+            });
+            doc.content.paragraphs.push(Paragraph::new(
+                format!("Content {}", i),
+                i * 100 + 10,
+            ));
+        }
+
+        let config = VirtualizationConfig::default();
+        let tree = HybridMerkleTree::from_document_with_config(&doc, &config);
+
+        // Verify root hash is computed from virtual sections
+        if let Some(ref virtual_sections) = tree.virtual_sections {
+            let virtual_hashes: Vec<NodeHash> = virtual_sections
+                .iter()
+                .map(|vs| vs.hash)
+                .collect();
+            let expected_root = NodeHash::combine_many(&virtual_hashes);
+
+            assert_eq!(tree.root_hash, expected_root,
+                      "Root hash should be aggregation of virtual section hashes");
+        }
+    }
+
+    #[test]
+    fn test_virtualization_threshold_boundary() {
+        let mut doc = ParsedNote::default();
+        doc.path = PathBuf::from("boundary.md");
+        doc.content = NoteContent::default();
+
+        let config = VirtualizationConfig::default();
+
+        // Test below threshold (should NOT virtualize)
+        // Note: build_sections creates a root section + heading sections
+        // So 99 headings = 100 sections (root + 99 headings)
+        for i in 0..99 {
+            doc.content.headings.push(Heading {
+                level: 1,
+                text: format!("Section {}", i),
+                offset: i * 100,
+                id: Some(format!("s{}", i)),
+            });
+            doc.content.paragraphs.push(Paragraph::new("Content".to_string(), i * 100 + 10));
+        }
+
+        let tree_at_threshold = HybridMerkleTree::from_document_with_config(&doc, &config);
+        assert!(!tree_at_threshold.is_virtualized, "Should not virtualize at threshold (100 sections)");
+
+        // Add two more sections to go above threshold
+        doc.content.headings.push(Heading {
+            level: 1,
+            text: "Section 99".to_string(),
+            offset: 9900,
+            id: Some("s99".to_string()),
+        });
+        doc.content.paragraphs.push(Paragraph::new("Content".to_string(), 9910));
+
+        doc.content.headings.push(Heading {
+            level: 1,
+            text: "Section 100".to_string(),
+            offset: 10000,
+            id: Some("s100".to_string()),
+        });
+        doc.content.paragraphs.push(Paragraph::new("Content".to_string(), 10010));
+
+        let tree_above_threshold = HybridMerkleTree::from_document_with_config(&doc, &config);
+        assert!(tree_above_threshold.is_virtualized, "Should virtualize above threshold (102 sections)");
+    }
+
+    #[test]
+    fn test_backward_compatibility() {
+        let doc = build_document();
+
+        // Old method (from_document) should work exactly as before
+        let tree_old = HybridMerkleTree::from_document(&doc);
+
+        // Should not be virtualized
+        assert!(!tree_old.is_virtualized);
+        assert!(tree_old.virtual_sections.is_none());
+
+        // All existing tests should still pass
+        assert_eq!(tree_old.total_blocks, 2);
+        assert_eq!(tree_old.sections.len(), 3);
+        assert!(!tree_old.root_hash.is_zero());
+    }
+
+    #[test]
+    fn test_large_document_memory_efficiency() {
+        // Simulate very large document
+        let mut doc = ParsedNote::default();
+        doc.path = PathBuf::from("huge.md");
+        doc.content = NoteContent::default();
+
+        for i in 0..1000 {
+            doc.content.headings.push(Heading {
+                level: 1,
+                text: format!("Section {}", i),
+                offset: i * 100,
+                id: Some(format!("s{}", i)),
+            });
+            doc.content.paragraphs.push(Paragraph::new(
+                format!("Content {}", i),
+                i * 100 + 10,
+            ));
+        }
+
+        let tree = HybridMerkleTree::from_document_auto(&doc);
+
+        // Should be virtualized
+        assert!(tree.is_virtualized);
+
+        // Virtual section count should be much smaller than real section count
+        let reduction_ratio = tree.section_count() as f64 / tree.real_section_count() as f64;
+        assert!(reduction_ratio < 0.2, "Should have significant reduction in active sections");
+
+        // Should have ~100 virtual sections (1000 / 10)
+        assert!(tree.section_count() > 90 && tree.section_count() < 110);
     }
 }
