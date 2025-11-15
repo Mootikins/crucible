@@ -50,9 +50,6 @@ parking_lot = "0.12"
 rayon = { version = "1.8", optional = true }
 futures = "0.3"
 
-# Merkle tree optimization dependencies
-lru = "0.12"
-
 [features]
 default = ["core"]
 core = []

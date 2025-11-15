@@ -17,6 +17,23 @@ use crucible_core::parser::ParsedNote;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Current serialization format version
+///
+/// Increment this when making breaking changes to SectionNode serialization.
+/// This enables migration support for backward compatibility.
+const SECTION_FORMAT_VERSION: u32 = 1;
+
+/// Versioned wrapper for SectionNode binary serialization
+///
+/// This enables detecting format changes and migrating old data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct VersionedSection {
+    /// Format version number
+    version: u32,
+    /// The actual section data
+    data: SectionNode,
+}
+
 /// Database record for Hybrid Merkle tree metadata
 ///
 /// This stores the core tree structure and configuration without the full
@@ -155,8 +172,12 @@ impl MerklePersistence {
         // 2. Store sections with binary encoding
         let mut cumulative_blocks = 0;
         for (index, section) in tree.sections.iter().enumerate() {
-            // Serialize the full section node using bincode for efficiency
-            let section_data = bincode::serialize(section)
+            // Wrap section in versioned envelope before serialization
+            let versioned = VersionedSection {
+                version: SECTION_FORMAT_VERSION,
+                data: section.clone(),
+            };
+            let section_data = bincode::serialize(&versioned)
                 .map_err(|e| DbError::serialization(format!("Failed to serialize section: {}", e)))?;
 
             let start_block = cumulative_blocks;
@@ -256,12 +277,24 @@ impl MerklePersistence {
             .take(0)
             .map_err(|e| DbError::query(format!("Failed to parse sections: {}", e)))?;
 
-        // Deserialize sections from binary data
+        // Deserialize sections from binary data with version checking
         let sections: Result<Vec<SectionNode>, _> = section_records
             .iter()
             .map(|record| {
-                bincode::deserialize(&record.section_data)
-                    .map_err(|e| DbError::serialization(format!("Failed to deserialize section: {}", e)))
+                let versioned: VersionedSection = bincode::deserialize(&record.section_data)
+                    .map_err(|e| DbError::serialization(format!("Failed to deserialize section: {}", e)))?;
+
+                // Check version and migrate if needed
+                if versioned.version != SECTION_FORMAT_VERSION {
+                    // For now, we only have version 1, so this is an error
+                    // In the future, add migration logic here
+                    return Err(DbError::serialization(format!(
+                        "Unsupported section format version: expected {}, got {}",
+                        SECTION_FORMAT_VERSION, versioned.version
+                    )));
+                }
+
+                Ok(versioned.data)
             })
             .collect();
         let sections = sections?;
@@ -404,7 +437,11 @@ impl MerklePersistence {
         for &index in changed_section_indices {
             // Safe to index directly - we validated bounds above
             let section = &tree.sections[index];
-            let section_data = bincode::serialize(section).map_err(|e| {
+            let versioned = VersionedSection {
+                version: SECTION_FORMAT_VERSION,
+                data: section.clone(),
+            };
+            let section_data = bincode::serialize(&versioned).map_err(|e| {
                 DbError::serialization(format!("Failed to serialize section: {}", e))
             })?;
 
@@ -529,6 +566,82 @@ fn sanitize_id(id: &str) -> String {
             _ => '_',
         })
         .collect()
+}
+
+// Implement the MerkleStore trait for SurrealDB backend
+#[async_trait::async_trait]
+impl crucible_core::merkle::MerkleStore for MerklePersistence {
+    async fn store(&self, id: &str, tree: &HybridMerkleTree) -> crucible_core::merkle::StorageResult<()> {
+        self.store_tree(id, tree)
+            .await
+            .map_err(|e| crucible_core::merkle::StorageError::Storage(e.to_string()))
+    }
+
+    async fn retrieve(&self, id: &str) -> crucible_core::merkle::StorageResult<HybridMerkleTree> {
+        self.retrieve_tree(id)
+            .await
+            .map_err(|e| match e {
+                DbError::NotFound(_) => crucible_core::merkle::StorageError::NotFound(id.to_string()),
+                _ => crucible_core::merkle::StorageError::Storage(e.to_string()),
+            })
+    }
+
+    async fn delete(&self, id: &str) -> crucible_core::merkle::StorageResult<()> {
+        self.delete_tree(id)
+            .await
+            .map_err(|e| crucible_core::merkle::StorageError::Storage(e.to_string()))
+    }
+
+    async fn get_metadata(&self, id: &str) -> crucible_core::merkle::StorageResult<Option<crucible_core::merkle::TreeMetadata>> {
+        let meta = self.get_tree_metadata(id)
+            .await
+            .map_err(|e| crucible_core::merkle::StorageError::Storage(e.to_string()))?;
+
+        Ok(meta.map(|m| crucible_core::merkle::TreeMetadata {
+            id: m.id,
+            root_hash: m.root_hash,
+            section_count: m.section_count,
+            total_blocks: m.total_blocks,
+            is_virtualized: m.is_virtualized,
+            virtual_section_count: m.virtual_section_count.unwrap_or(0),
+            created_at: m.created_at.to_rfc3339(),
+            updated_at: m.updated_at.to_rfc3339(),
+            metadata: m.metadata,
+        }))
+    }
+
+    async fn update_incremental(
+        &self,
+        id: &str,
+        tree: &HybridMerkleTree,
+        changed_sections: &[usize],
+    ) -> crucible_core::merkle::StorageResult<()> {
+        self.update_tree_incremental(id, tree, changed_sections)
+            .await
+            .map_err(|e| match e {
+                DbError::InvalidOperation(_) => crucible_core::merkle::StorageError::InvalidOperation(e.to_string()),
+                DbError::NotFound(_) => crucible_core::merkle::StorageError::NotFound(id.to_string()),
+                _ => crucible_core::merkle::StorageError::Storage(e.to_string()),
+            })
+    }
+
+    async fn list_trees(&self) -> crucible_core::merkle::StorageResult<Vec<crucible_core::merkle::TreeMetadata>> {
+        let trees = self.list_trees()
+            .await
+            .map_err(|e| crucible_core::merkle::StorageError::Storage(e.to_string()))?;
+
+        Ok(trees.into_iter().map(|m| crucible_core::merkle::TreeMetadata {
+            id: m.id,
+            root_hash: m.root_hash,
+            section_count: m.section_count,
+            total_blocks: m.total_blocks,
+            is_virtualized: m.is_virtualized,
+            virtual_section_count: m.virtual_section_count.unwrap_or(0),
+            created_at: m.created_at.to_rfc3339(),
+            updated_at: m.updated_at.to_rfc3339(),
+            metadata: m.metadata,
+        }).collect())
+    }
 }
 
 #[cfg(test)]
