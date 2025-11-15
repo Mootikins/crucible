@@ -402,7 +402,8 @@ impl MerkleStore for InMemoryMerkleStore {
 
     async fn list_trees(&self) -> StorageResult<Vec<TreeMetadata>> {
         let trees = self.trees.read().await;
-        let mut metadata: Vec<TreeMetadata> = trees.values().map(|(_, meta)| meta.clone()).collect();
+        let mut metadata: Vec<TreeMetadata> =
+            trees.values().map(|(_, meta)| meta.clone()).collect();
 
         // Sort by updated_at descending (newest first)
         metadata.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
@@ -485,9 +486,7 @@ mod tests {
         store.store("test-id", &tree).await.unwrap();
 
         // Invalid section index
-        let result = store
-            .update_incremental("test-id", &tree, &[999])
-            .await;
+        let result = store.update_incremental("test-id", &tree, &[999]).await;
 
         assert!(matches!(result, Err(StorageError::InvalidOperation(_))));
     }

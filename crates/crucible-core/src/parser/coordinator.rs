@@ -783,6 +783,12 @@ pub struct MockStorageBackend {
     name: String,
 }
 
+impl Default for MockStorageBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockStorageBackend {
     pub fn new() -> Self {
         Self {

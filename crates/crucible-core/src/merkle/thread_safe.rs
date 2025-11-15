@@ -610,7 +610,9 @@ mod tests {
                 offset: i * 100,
                 id: Some(format!("s{}", i)),
             });
-            doc.content.paragraphs.push(Paragraph::new("Content".to_string(), i * 100 + 10));
+            doc.content
+                .paragraphs
+                .push(Paragraph::new("Content".to_string(), i * 100 + 10));
         }
 
         let tree = ThreadSafeMerkleTree::new_auto(&doc);

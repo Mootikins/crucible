@@ -76,11 +76,11 @@ pub use types::{
     DatabaseStats,
     DbError,
     DbResult,
-    // Legacy embedding types for tests
-    Note,
     EmbeddingData,
     EmbeddingDocument,
     EmbeddingMetadata,
+    // Legacy embedding types for tests
+    Note,
     QueryResult,
     Record,
     RecordId,
@@ -114,8 +114,8 @@ pub use kiln_scanner::{
 // Kiln pipeline connector exports
 pub use kiln_pipeline_connector::{
     generate_document_id_from_path, get_parsed_documents_from_scan,
-    transform_parsed_document_to_embedding_inputs, BatchProcessingResult, NoteProcessingResult,
-    KilnPipelineConfig, KilnPipelineConnector,
+    transform_parsed_document_to_embedding_inputs, BatchProcessingResult, KilnPipelineConfig,
+    KilnPipelineConnector, NoteProcessingResult,
 };
 
 // Simple integration exports (replaces complex QueueBasedProcessor)

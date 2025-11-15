@@ -147,10 +147,7 @@ impl KilnPipelineConnector {
             transform_parsed_document_to_embedding_inputs(note, &self.config, &self.kiln_root);
 
         if embedding_inputs.is_empty() {
-            warn!(
-                "No embedding inputs generated for note: {}",
-                document_id
-            );
+            warn!("No embedding inputs generated for note: {}", document_id);
             return Ok(NoteProcessingResult {
                 document_id,
                 embeddings_generated: 0,
@@ -415,9 +412,7 @@ impl KilnPipelineConnector {
             let document_id = generate_document_id_from_path(&note.path, &self.kiln_root);
 
             // Check if note needs processing based on content hash
-            match check_document_needs_processing(client, &document_id, &note.content_hash)
-                .await
-            {
+            match check_document_needs_processing(client, &document_id, &note.content_hash).await {
                 Ok(needs_processing) => {
                     if needs_processing {
                         documents_to_process.push(note.clone());
@@ -459,10 +454,7 @@ impl KilnPipelineConnector {
         for note in &documents_to_process {
             let document_id = generate_document_id_from_path(&note.path, &self.kiln_root);
             if let Err(e) = clear_document_embeddings(client, &document_id).await {
-                warn!(
-                    "Failed to clear embeddings for note {}: {}",
-                    document_id, e
-                );
+                warn!("Failed to clear embeddings for note {}: {}", document_id, e);
             }
         }
 
@@ -727,10 +719,7 @@ mod tests {
         let test_cases = vec![
             ("/kiln/note.md", "kiln_document_md"),
             ("/kiln/nested/note.md", "kiln_nested_document_md"),
-            (
-                "/kiln/with spaces/note.md",
-                "kiln_with_spaces_document_md",
-            ),
+            ("/kiln/with spaces/note.md", "kiln_with_spaces_document_md"),
         ];
 
         for (path, _expected_contains) in test_cases {

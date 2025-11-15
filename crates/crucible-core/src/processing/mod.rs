@@ -76,12 +76,13 @@ pub enum ProcessingSource {
 }
 
 /// Processing priority levels
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum ProcessingPriority {
     /// Low priority - background processing
     Low = 1,
 
     /// Normal priority - standard processing
+    #[default]
     Normal = 2,
 
     /// High priority - user-requested operations
@@ -89,12 +90,6 @@ pub enum ProcessingPriority {
 
     /// Critical priority - system operations
     Critical = 4,
-}
-
-impl Default for ProcessingPriority {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 /// Additional processing metadata
@@ -185,7 +180,7 @@ impl Default for JobConfiguration {
 }
 
 /// Statistics for a processing job
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct JobStats {
     /// Number of documents successfully processed
     pub successful: usize,
@@ -207,20 +202,6 @@ pub struct JobStats {
 
     /// Processing duration
     pub duration: Option<std::time::Duration>,
-}
-
-impl Default for JobStats {
-    fn default() -> Self {
-        Self {
-            successful: 0,
-            failed: 0,
-            skipped: 0,
-            total: 0,
-            started_at: None,
-            completed_at: None,
-            duration: None,
-        }
-    }
 }
 
 /// Result of processing a single note
@@ -306,11 +287,7 @@ impl ProcessedNote {
     }
 
     /// Create a processed note with custom context
-    pub fn with_context(
-        note: ParsedNote,
-        kiln_root: PathBuf,
-        context: ProcessingContext,
-    ) -> Self {
+    pub fn with_context(note: ParsedNote, kiln_root: PathBuf, context: ProcessingContext) -> Self {
         Self {
             note,
             kiln_root,
@@ -400,7 +377,7 @@ impl NoteProcessingJob {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_parser::types::{NoteContent, FootnoteMap, ParsedNote};
+    use crucible_parser::types::{FootnoteMap, NoteContent, ParsedNote};
 
     fn create_test_document(path: &str) -> ParsedNote {
         ParsedNote {

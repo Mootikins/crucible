@@ -582,7 +582,7 @@ fn generate_large_markdown_content(lines: usize) -> String {
                 i, i
             ));
         } else {
-            content.push_str("\n");
+            content.push('\n');
         }
     }
 

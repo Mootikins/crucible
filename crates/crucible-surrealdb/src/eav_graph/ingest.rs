@@ -13,7 +13,6 @@ use super::types::{
 };
 use crate::merkle_persistence::MerklePersistence;
 
-
 /// Classify content type for universal link processing
 fn classify_content(target: &str) -> ContentCategory {
     // Helper function to check if string is a URL
@@ -30,9 +29,15 @@ fn classify_content(target: &str) -> ContentCategory {
     if !is_url(target) {
         return match get_extension(target) {
             Some("md") | Some("markdown") => ContentCategory::Note,
-            Some("png") | Some("jpg") | Some("jpeg") | Some("svg") | Some("gif") | Some("webp") => ContentCategory::Image,
-            Some("mp4") | Some("avi") | Some("mov") | Some("webm") | Some("mkv") => ContentCategory::Video,
-            Some("mp3") | Some("wav") | Some("ogg") | Some("flac") | Some("aac") => ContentCategory::Audio,
+            Some("png") | Some("jpg") | Some("jpeg") | Some("svg") | Some("gif") | Some("webp") => {
+                ContentCategory::Image
+            }
+            Some("mp4") | Some("avi") | Some("mov") | Some("webm") | Some("mkv") => {
+                ContentCategory::Video
+            }
+            Some("mp3") | Some("wav") | Some("ogg") | Some("flac") | Some("aac") => {
+                ContentCategory::Audio
+            }
             Some("pdf") => ContentCategory::PDF,
             Some("doc") | Some("docx") | Some("txt") | Some("rtf") => ContentCategory::Document,
             _ => ContentCategory::Other, // unrecognized file types
@@ -52,7 +57,9 @@ fn classify_content(target: &str) -> ContentCategory {
     } else if get_extension(target).is_some() {
         // URLs with file extensions - classify by type
         match get_extension(target) {
-            Some("png") | Some("jpg") | Some("jpeg") | Some("svg") | Some("gif") => ContentCategory::Image,
+            Some("png") | Some("jpg") | Some("jpeg") | Some("svg") | Some("gif") => {
+                ContentCategory::Image
+            }
             Some("mp4") | Some("avi") | Some("mov") | Some("webm") => ContentCategory::Video,
             Some("mp3") | Some("wav") | Some("ogg") => ContentCategory::Audio,
             Some("pdf") => ContentCategory::PDF,
@@ -147,7 +154,10 @@ impl<'a> NoteIngestor<'a> {
     /// let merkle_store = MerklePersistence::new(client);
     /// let ingestor = NoteIngestor::with_merkle_store(&store, Box::new(merkle_store));
     /// ```
-    pub fn with_merkle_store(store: &'a EAVGraphStore, merkle_store: Box<dyn crucible_core::merkle::MerkleStore>) -> Self {
+    pub fn with_merkle_store(
+        store: &'a EAVGraphStore,
+        merkle_store: Box<dyn crucible_core::merkle::MerkleStore>,
+    ) -> Self {
         Self {
             store,
             merkle_store: Some(merkle_store),
@@ -157,8 +167,14 @@ impl<'a> NoteIngestor<'a> {
     /// Deprecated: Use `with_merkle_store` instead
     ///
     /// This method is kept for backward compatibility but will be removed in a future version.
-    #[deprecated(since = "0.1.0", note = "Use `with_merkle_store` instead for better abstraction")]
-    pub fn with_merkle_persistence(store: &'a EAVGraphStore, persistence: MerklePersistence) -> Self {
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use `with_merkle_store` instead for better abstraction"
+    )]
+    pub fn with_merkle_persistence(
+        store: &'a EAVGraphStore,
+        persistence: MerklePersistence,
+    ) -> Self {
         Self::with_merkle_store(store, Box::new(persistence))
     }
 
@@ -184,7 +200,9 @@ impl<'a> NoteIngestor<'a> {
         self.store.replace_blocks(&entity_id, &blocks).await?;
 
         // Extract and store relations from wikilinks and embeds with resolution
-        let relations = self.extract_relations_with_resolution(&entity_id, doc).await?;
+        let relations = self
+            .extract_relations_with_resolution(&entity_id, doc)
+            .await?;
         for relation in relations {
             self.store.store_relation(relation).await?;
         }
@@ -202,7 +220,9 @@ impl<'a> NoteIngestor<'a> {
         }
 
         // Compute and store section hashes (with optional Merkle tree persistence)
-        let section_properties = self.compute_section_properties(&entity_id, doc, relative_path).await?;
+        let section_properties = self
+            .compute_section_properties(&entity_id, doc, relative_path)
+            .await?;
         for property in section_properties {
             self.store.upsert_property(&property).await?;
         }
@@ -231,7 +251,11 @@ impl<'a> NoteIngestor<'a> {
         // SurrealDB returns the id in the record's id field, not in the data
         let query = "SELECT * FROM entities WHERE type = 'note' LIMIT 100";
 
-        let result = self.store.client.query(query, &[]).await
+        let result = self
+            .store
+            .client
+            .query(query, &[])
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to query entities: {}", e))?;
 
         // Extract candidate paths from results - filter by target match
@@ -248,7 +272,8 @@ impl<'a> NoteIngestor<'a> {
                         // The ID is in the record's id field from SurrealDB
                         // For our query, we can derive it from the path since we know the pattern
                         // The entity ID format is "entities:note:path"
-                        let entity_id_str = format!("note:{}", path.replace('\\', "/").replace(':', "_"));
+                        let entity_id_str =
+                            format!("note:{}", path.replace('\\', "/").replace(':', "_"));
 
                         candidates.push((path.to_string(), entity_id_str));
                     }
@@ -259,10 +284,7 @@ impl<'a> NoteIngestor<'a> {
         match candidates.len() {
             0 => {
                 // No matches - emit warning
-                tracing::warn!(
-                    "Unresolved wikilink '{}' - no matching files found",
-                    target
-                );
+                tracing::warn!("Unresolved wikilink '{}' - no matching files found", target);
                 Ok((None, vec![]))
             }
             1 => {
@@ -274,9 +296,8 @@ impl<'a> NoteIngestor<'a> {
             }
             _ => {
                 // Ambiguous - return candidates for metadata
-                let candidate_paths: Vec<String> = candidates.iter()
-                    .map(|(path, _)| path.clone())
-                    .collect();
+                let candidate_paths: Vec<String> =
+                    candidates.iter().map(|(path, _)| path.clone()).collect();
 
                 tracing::warn!(
                     "Ambiguous wikilink '{}' - found {} candidates: {}",
@@ -343,10 +364,15 @@ impl<'a> NoteIngestor<'a> {
                 );
 
                 // Create error metadata and continue processing with error information
-                let error_metadata = self.handle_embed_processing_error(&validation_error, wikilink);
+                let error_metadata =
+                    self.handle_embed_processing_error(&validation_error, wikilink);
 
                 // Still create relation but mark as invalid
-                let relation_type = if wikilink.is_embed { "embed" } else { "wikilink" };
+                let relation_type = if wikilink.is_embed {
+                    "embed"
+                } else {
+                    "wikilink"
+                };
                 let mut relation = CoreRelation::new(
                     from_entity_id.clone(),
                     None, // No valid target
@@ -366,13 +392,19 @@ impl<'a> NoteIngestor<'a> {
             }
 
             // Resolve the target
-            let (resolved_target, candidates) = self.resolve_wikilink_target(
-                &wikilink.target,
-                wikilink.heading_ref.as_deref(),
-                wikilink.block_ref.as_deref(),
-            ).await?;
+            let (resolved_target, candidates) = self
+                .resolve_wikilink_target(
+                    &wikilink.target,
+                    wikilink.heading_ref.as_deref(),
+                    wikilink.block_ref.as_deref(),
+                )
+                .await?;
 
-            let relation_type = if wikilink.is_embed { "embed" } else { "wikilink" };
+            let relation_type = if wikilink.is_embed {
+                "embed"
+            } else {
+                "wikilink"
+            };
 
             let mut relation = CoreRelation::new(
                 from_entity_id.clone(),
@@ -385,7 +417,10 @@ impl<'a> NoteIngestor<'a> {
 
             // Universal content classification for all link types
             let content_category = classify_content(&wikilink.target);
-            metadata.insert("content_category".to_string(), serde_json::json!(content_category.as_str()));
+            metadata.insert(
+                "content_category".to_string(),
+                serde_json::json!(content_category.as_str()),
+            );
 
             // For embeds, preserve the embed flag and add external flag if applicable
             if wikilink.is_embed {
@@ -396,14 +431,18 @@ impl<'a> NoteIngestor<'a> {
                 metadata.insert("embed_type".to_string(), serde_json::json!(embed_type));
 
                 // Add external flag for external URLs
-                let is_external = wikilink.target.starts_with("http://") || wikilink.target.starts_with("https://");
+                let is_external = wikilink.target.starts_with("http://")
+                    || wikilink.target.starts_with("https://");
                 if is_external {
                     metadata.insert("is_external".to_string(), serde_json::json!(true));
                 }
 
                 // For external embed types, set content_category to "external" as fallback for unknown extensions
                 if embed_type == "external" {
-                    metadata.insert("content_category".to_string(), serde_json::json!("external"));
+                    metadata.insert(
+                        "content_category".to_string(),
+                        serde_json::json!("external"),
+                    );
                 } else {
                     // Process content-specific embed logic for rich metadata
                     self.process_content_specific_embed(&mut metadata, wikilink);
@@ -427,12 +466,18 @@ impl<'a> NoteIngestor<'a> {
     ///
     /// Handles complex wikilink combinations including headings, block references,
     /// aliases, and their various interactions.
-    async fn process_wikilink_metadata(&self, wikilink: &crucible_core::parser::Wikilink) -> Result<serde_json::Map<String, serde_json::Value>> {
+    async fn process_wikilink_metadata(
+        &self,
+        wikilink: &crucible_core::parser::Wikilink,
+    ) -> Result<serde_json::Map<String, serde_json::Value>> {
         let mut metadata = serde_json::Map::new();
 
         // Basic metadata
         metadata.insert("offset".to_string(), serde_json::json!(wikilink.offset));
-        metadata.insert("target".to_string(), serde_json::json!(wikilink.target.clone()));
+        metadata.insert(
+            "target".to_string(),
+            serde_json::json!(wikilink.target.clone()),
+        );
 
         // Alias processing - support for complex alias scenarios
         if let Some(alias) = &wikilink.alias {
@@ -462,7 +507,10 @@ impl<'a> NoteIngestor<'a> {
                 }
             } else {
                 metadata.insert("heading_ref_valid".to_string(), serde_json::json!(false));
-                metadata.insert("heading_ref_error".to_string(), serde_json::json!("Invalid heading reference format"));
+                metadata.insert(
+                    "heading_ref_error".to_string(),
+                    serde_json::json!("Invalid heading reference format"),
+                );
             }
         } else {
             metadata.insert("has_heading_ref".to_string(), serde_json::json!(false));
@@ -478,10 +526,16 @@ impl<'a> NoteIngestor<'a> {
                 metadata.insert("block_ref_valid".to_string(), serde_json::json!(true));
 
                 // Extract block reference type (e.g., carrot hash, etc.)
-                metadata.insert("block_ref_type".to_string(), serde_json::json!(self.classify_block_reference(block_ref)));
+                metadata.insert(
+                    "block_ref_type".to_string(),
+                    serde_json::json!(self.classify_block_reference(block_ref)),
+                );
             } else {
                 metadata.insert("block_ref_valid".to_string(), serde_json::json!(false));
-                metadata.insert("block_ref_error".to_string(), serde_json::json!("Invalid block reference format"));
+                metadata.insert(
+                    "block_ref_error".to_string(),
+                    serde_json::json!("Invalid block reference format"),
+                );
             }
         } else {
             metadata.insert("has_block_ref".to_string(), serde_json::json!(false));
@@ -489,7 +543,10 @@ impl<'a> NoteIngestor<'a> {
 
         // Wikilink complexity analysis
         let complexity_score = self.calculate_wikilink_complexity(wikilink);
-        metadata.insert("complexity_score".to_string(), serde_json::json!(complexity_score));
+        metadata.insert(
+            "complexity_score".to_string(),
+            serde_json::json!(complexity_score),
+        );
 
         // Variant classification
         let variant_type = self.classify_wikilink_variant(wikilink);
@@ -502,7 +559,11 @@ impl<'a> NoteIngestor<'a> {
     ///
     /// Processes embed variants like `![[Note#Section|Alias]]`, `![[Note^block-id|Alias]]`,
     /// and `![[Note#Section^block-id|Alias]]` combinations.
-    fn add_embed_variant_metadata(&self, metadata: &mut serde_json::Map<String, serde_json::Value>, wikilink: &crucible_core::parser::Wikilink) {
+    fn add_embed_variant_metadata(
+        &self,
+        metadata: &mut serde_json::Map<String, serde_json::Value>,
+        wikilink: &crucible_core::parser::Wikilink,
+    ) {
         // Identify embed variant patterns
         let has_heading = wikilink.heading_ref.is_some();
         let has_block = wikilink.block_ref.is_some();
@@ -519,25 +580,43 @@ impl<'a> NoteIngestor<'a> {
             (false, false, true) => "alias_only",
             (false, false, false) => "simple",
         };
-        metadata.insert("embed_variant".to_string(), serde_json::json!(embed_variant));
+        metadata.insert(
+            "embed_variant".to_string(),
+            serde_json::json!(embed_variant),
+        );
 
         // Add embed processing hints
         if has_heading && has_block {
-            metadata.insert("requires_dual_resolution".to_string(), serde_json::json!(true));
-            metadata.insert("resolution_priority".to_string(), serde_json::json!("heading_first"));
+            metadata.insert(
+                "requires_dual_resolution".to_string(),
+                serde_json::json!(true),
+            );
+            metadata.insert(
+                "resolution_priority".to_string(),
+                serde_json::json!("heading_first"),
+            );
         }
 
         // Add display preference hints
         if has_alias {
             metadata.insert("display_preference".to_string(), serde_json::json!("alias"));
         } else if has_heading {
-            metadata.insert("display_preference".to_string(), serde_json::json!("heading"));
+            metadata.insert(
+                "display_preference".to_string(),
+                serde_json::json!("heading"),
+            );
         } else {
-            metadata.insert("display_preference".to_string(), serde_json::json!("target"));
+            metadata.insert(
+                "display_preference".to_string(),
+                serde_json::json!("target"),
+            );
         }
 
         // Add content type hints for rendering
-        metadata.insert("render_hints".to_string(), serde_json::json!(self.get_render_hints(wikilink)));
+        metadata.insert(
+            "render_hints".to_string(),
+            serde_json::json!(self.get_render_hints(wikilink)),
+        );
     }
 
     /// Validate heading reference format
@@ -549,10 +628,10 @@ impl<'a> NoteIngestor<'a> {
         }
 
         // Basic validation - should not contain invalid characters
-        !heading_ref.contains('\n') &&
-        !heading_ref.contains('\r') &&
-        !heading_ref.contains('\t') &&
-        !heading_ref.chars().any(|c| c.is_control())
+        !heading_ref.contains('\n')
+            && !heading_ref.contains('\r')
+            && !heading_ref.contains('\t')
+            && !heading_ref.chars().any(|c| c.is_control())
     }
 
     /// Extract heading level from heading reference if detectable
@@ -593,8 +672,10 @@ impl<'a> NoteIngestor<'a> {
         }
 
         // Allow common block reference patterns
-        trimmed.starts_with('^') ||
-        trimmed.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        trimmed.starts_with('^')
+            || trimmed
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
     }
 
     /// Classify block reference type
@@ -646,7 +727,10 @@ impl<'a> NoteIngestor<'a> {
     /// Classify wikilink variant type
     ///
     /// Categorizes the wikilink based on its structure and purpose.
-    fn classify_wikilink_variant(&self, wikilink: &crucible_core::parser::Wikilink) -> &'static str {
+    fn classify_wikilink_variant(
+        &self,
+        wikilink: &crucible_core::parser::Wikilink,
+    ) -> &'static str {
         if wikilink.is_embed {
             if self.is_external_url(&wikilink.target) {
                 "external_embed"
@@ -715,11 +799,7 @@ impl<'a> NoteIngestor<'a> {
     ///
     /// Extracts tags from ParsedNote, ensures hierarchical structure exists,
     /// and creates entity_tag associations.
-    async fn store_tags(
-        &self,
-        doc: &ParsedNote,
-        entity_id: &RecordId<EntityRecord>,
-    ) -> Result<()> {
+    async fn store_tags(&self, doc: &ParsedNote, entity_id: &RecordId<EntityRecord>) -> Result<()> {
         // Collect unique tags
         let unique_tags: std::collections::HashSet<String> = doc
             .all_tags()
@@ -761,10 +841,7 @@ impl<'a> NoteIngestor<'a> {
     /// Ensure tag hierarchy exists in database
     ///
     /// Creates parent tags if they don't exist (e.g., #project/ai/nlp creates project, project/ai, project/ai/nlp)
-    async fn ensure_tag_hierarchy(
-        &self,
-        tag_path: &str,
-    ) -> Result<Option<RecordId<TagRecord>>> {
+    async fn ensure_tag_hierarchy(&self, tag_path: &str) -> Result<Option<RecordId<TagRecord>>> {
         let segments: Vec<String> = tag_path
             .trim()
             .trim_start_matches('#')
@@ -916,12 +993,18 @@ impl<'a> NoteIngestor<'a> {
             // Store section metadata as JSON
             let metadata_key = format!("section_{}_metadata", index);
             let mut metadata = serde_json::Map::new();
-            metadata.insert("block_count".to_string(), serde_json::json!(section.block_count));
+            metadata.insert(
+                "block_count".to_string(),
+                serde_json::json!(section.block_count),
+            );
             metadata.insert("depth".to_string(), serde_json::json!(section.depth));
 
             if let Some(heading) = &section.heading {
                 metadata.insert("heading_text".to_string(), serde_json::json!(heading.text));
-                metadata.insert("heading_level".to_string(), serde_json::json!(heading.level));
+                metadata.insert(
+                    "heading_level".to_string(),
+                    serde_json::json!(heading.level),
+                );
             }
 
             props.push(Property::new(
@@ -1075,7 +1158,11 @@ impl<'a> NoteIngestor<'a> {
     }
 
     /// Extract inline link relations from the note
-    fn extract_inline_link_relations(&self, entity_id: &RecordId<EntityRecord>, doc: &ParsedNote) -> Vec<CoreRelation> {
+    fn extract_inline_link_relations(
+        &self,
+        entity_id: &RecordId<EntityRecord>,
+        doc: &ParsedNote,
+    ) -> Vec<CoreRelation> {
         let capacity = doc.inline_links.len();
         let mut relations = Vec::with_capacity(capacity);
         let from_entity_id = format!("{}:{}", entity_id.table, entity_id.id);
@@ -1092,11 +1179,7 @@ impl<'a> NoteIngestor<'a> {
                 None // External URLs don't have entity IDs
             };
 
-            let mut relation = CoreRelation::new(
-                from_entity_id.clone(),
-                to_entity_id,
-                "link",
-            );
+            let mut relation = CoreRelation::new(from_entity_id.clone(), to_entity_id, "link");
 
             // Add metadata about the inline link
             let mut metadata = serde_json::Map::new();
@@ -1106,11 +1189,17 @@ impl<'a> NoteIngestor<'a> {
                 metadata.insert("title".to_string(), serde_json::json!(title));
             }
             metadata.insert("offset".to_string(), serde_json::json!(inline_link.offset));
-            metadata.insert("is_external".to_string(), serde_json::json!(inline_link.is_external()));
+            metadata.insert(
+                "is_external".to_string(),
+                serde_json::json!(inline_link.is_external()),
+            );
 
             // Universal content classification for inline links
             let content_category = classify_content(&inline_link.url);
-            metadata.insert("content_category".to_string(), serde_json::json!(content_category.as_str()));
+            metadata.insert(
+                "content_category".to_string(),
+                serde_json::json!(content_category.as_str()),
+            );
 
             relation.metadata = serde_json::Value::Object(metadata);
 
@@ -1183,19 +1272,13 @@ impl<'a> NoteIngestor<'a> {
 
         // List of supported URL schemes
         const VALID_SCHEMES: &[&str] = &[
-            "http://",
-            "https://",
-            "ftp://",
-            "ftps://",
-            "git://",
-            "ssh://",
-            "mailto:",
-            "tel:",
-            "data:",
-            "file://",
+            "http://", "https://", "ftp://", "ftps://", "git://", "ssh://", "mailto:", "tel:",
+            "data:", "file://",
         ];
 
-        VALID_SCHEMES.iter().any(|scheme| target_lower.starts_with(scheme))
+        VALID_SCHEMES
+            .iter()
+            .any(|scheme| target_lower.starts_with(scheme))
     }
 
     /// Classify external URL embed types with enhanced content detection
@@ -1215,10 +1298,11 @@ impl<'a> NoteIngestor<'a> {
         }
 
         // Check for known external content platforms first (most common first)
-        if target_lower.contains("youtube.com/watch") ||
-           target_lower.contains("youtu.be/") ||
-           target_lower.contains("youtube.com/embed/") ||
-           target_lower.contains("youtube.com/shorts/") {
+        if target_lower.contains("youtube.com/watch")
+            || target_lower.contains("youtu.be/")
+            || target_lower.contains("youtube.com/embed/")
+            || target_lower.contains("youtube.com/shorts/")
+        {
             return "youtube";
         }
 
@@ -1234,15 +1318,18 @@ impl<'a> NoteIngestor<'a> {
             return "soundcloud";
         }
 
-        if target_lower.contains("spotify.com/") && (
-           target_lower.contains("/track/") ||
-           target_lower.contains("/album/") ||
-           target_lower.contains("/playlist/")
-        ) {
+        if target_lower.contains("spotify.com/")
+            && (target_lower.contains("/track/")
+                || target_lower.contains("/album/")
+                || target_lower.contains("/playlist/"))
+        {
             return "spotify";
         }
 
-        if target_lower.contains("twitter.com/") || target_lower.contains("x.com/") || target_lower.contains("t.co/") {
+        if target_lower.contains("twitter.com/")
+            || target_lower.contains("x.com/")
+            || target_lower.contains("t.co/")
+        {
             return "twitter";
         }
 
@@ -1259,23 +1346,27 @@ impl<'a> NoteIngestor<'a> {
         if let Some(extension) = target_lower.split('.').last() {
             match extension {
                 // Image formats
-                "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" | "bmp" | "ico" | "avif" | "tiff" => "image",
+                "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" | "bmp" | "ico" | "avif"
+                | "tiff" => "image",
 
                 // Note formats
                 "pdf" => "pdf",
-                "doc" | "docx" | "odt" | "rtf" => "external",  // Note types
+                "doc" | "docx" | "odt" | "rtf" => "external", // Note types
 
                 // Audio formats
                 "mp3" | "wav" | "m4a" | "ogg" | "flac" | "aac" | "wma" | "opus" => "audio",
 
                 // Video formats
-                "mp4" | "avi" | "mov" | "mkv" | "webm" | "m4v" | "wmv" | "flv" | "ogv" | "3gp" => "video",
+                "mp4" | "avi" | "mov" | "mkv" | "webm" | "m4v" | "wmv" | "flv" | "ogv" | "3gp" => {
+                    "video"
+                }
 
                 // Archive formats
                 "zip" | "rar" | "7z" | "tar" | "gz" => "external",
 
                 // Code formats
-                "js" | "ts" | "py" | "java" | "cpp" | "c" | "go" | "rs" | "php" | "rb" | "swift" | "kt" => "note",
+                "js" | "ts" | "py" | "java" | "cpp" | "c" | "go" | "rs" | "php" | "rb"
+                | "swift" | "kt" => "note",
 
                 // Data formats
                 "json" | "xml" | "yaml" | "yml" | "csv" => "note",
@@ -1308,17 +1399,21 @@ impl<'a> NoteIngestor<'a> {
                 // Handle common file extensions with case-insensitive matching
                 match extension {
                     // Image formats
-                    "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" | "bmp" | "ico" | "avif" | "tiff" | "psd" => "image",
+                    "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" | "bmp" | "ico" | "avif"
+                    | "tiff" | "psd" => "image",
 
                     // Note formats
                     "pdf" => "pdf",
                     "doc" | "docx" | "odt" | "rtf" | "pages" => "external",
 
                     // Audio formats
-                    "mp3" | "wav" | "m4a" | "ogg" | "flac" | "aac" | "wma" | "opus" | "aiff" => "audio",
+                    "mp3" | "wav" | "m4a" | "ogg" | "flac" | "aac" | "wma" | "opus" | "aiff" => {
+                        "audio"
+                    }
 
                     // Video formats
-                    "mp4" | "avi" | "mov" | "mkv" | "webm" | "m4v" | "wmv" | "flv" | "ogv" | "3gp" => "video",
+                    "mp4" | "avi" | "mov" | "mkv" | "webm" | "m4v" | "wmv" | "flv" | "ogv"
+                    | "3gp" => "video",
 
                     // Text and note formats
                     "md" | "markdown" | "txt" | "rst" | "adoc" => "note",
@@ -1339,7 +1434,8 @@ impl<'a> NoteIngestor<'a> {
                     "zip" | "rar" | "7z" | "tar" | "gz" => "external",
 
                     // Code formats (often embedded as documentation)
-                    "js" | "ts" | "py" | "java" | "cpp" | "c" | "go" | "rs" | "php" | "rb" | "swift" | "kt" | "html" | "css" => "note",
+                    "js" | "ts" | "py" | "java" | "cpp" | "c" | "go" | "rs" | "php" | "rb"
+                    | "swift" | "kt" | "html" | "css" => "note",
 
                     _ => "external",
                 }
@@ -1403,7 +1499,10 @@ impl<'a> NoteIngestor<'a> {
         }
 
         // Check for control characters and other invalid content
-        if target.chars().any(|c| c.is_control() && c != '\t' && c != '\n' && c != '\r') {
+        if target
+            .chars()
+            .any(|c| c.is_control() && c != '\t' && c != '\n' && c != '\r')
+        {
             return Err("Embed target contains invalid control characters".to_string());
         }
 
@@ -1437,10 +1536,11 @@ impl<'a> NoteIngestor<'a> {
         }
 
         // Security checks for dangerous schemes
-        if target_lower.starts_with("javascript:") ||
-           target_lower.starts_with("data:text/html") ||
-           target_lower.starts_with("vbscript:") ||
-           target_lower.starts_with("file://") {
+        if target_lower.starts_with("javascript:")
+            || target_lower.starts_with("data:text/html")
+            || target_lower.starts_with("vbscript:")
+            || target_lower.starts_with("file://")
+        {
             return Err("Unsupported or potentially dangerous URL scheme".to_string());
         }
 
@@ -1472,7 +1572,14 @@ impl<'a> NoteIngestor<'a> {
         }
 
         // Check for absolute paths that might be problematic
-        if target.starts_with('/') || (target.chars().nth(1).is_some() && target.chars().skip(1).collect::<String>().starts_with(":\\")) {
+        if target.starts_with('/')
+            || (target.chars().nth(1).is_some()
+                && target
+                    .chars()
+                    .skip(1)
+                    .collect::<String>()
+                    .starts_with(":\\"))
+        {
             return Err("Absolute paths not allowed for local file embeds".to_string());
         }
 
@@ -1493,7 +1600,10 @@ impl<'a> NoteIngestor<'a> {
 
     /// Check if URL scheme is supported
     fn is_supported_url_scheme(&self, scheme: &str) -> bool {
-        matches!(scheme, "http" | "https" | "ftp" | "ftps" | "git" | "ssh" | "mailto" | "tel" | "data")
+        matches!(
+            scheme,
+            "http" | "https" | "ftp" | "ftps" | "git" | "ssh" | "mailto" | "tel" | "data"
+        )
     }
 
     /// Check for suspicious URL patterns
@@ -1521,13 +1631,14 @@ impl<'a> NoteIngestor<'a> {
         let url_lower = url.to_lowercase();
 
         // Check for localhost/private network access (if this should be restricted)
-        if url_lower.contains("localhost") ||
-           url_lower.contains("127.0.0.1") ||
-           url_lower.contains("0.0.0.0") ||
-           url_lower.contains("::1") ||
-           url_lower.starts_with("http://192.168.") ||
-           url_lower.starts_with("http://10.") ||
-           url_lower.starts_with("http://172.16.") {
+        if url_lower.contains("localhost")
+            || url_lower.contains("127.0.0.1")
+            || url_lower.contains("0.0.0.0")
+            || url_lower.contains("::1")
+            || url_lower.starts_with("http://192.168.")
+            || url_lower.starts_with("http://10.")
+            || url_lower.starts_with("http://172.16.")
+        {
             // Note: This might be too restrictive for some use cases
             // Consider making this configurable
             return Err("Access to localhost/private networks not allowed".to_string());
@@ -1582,16 +1693,28 @@ impl<'a> NoteIngestor<'a> {
     /// Enhanced error handling for embed processing with detailed error reporting
     ///
     /// Provides comprehensive error context and recovery suggestions.
-    fn handle_embed_processing_error(&self, error: &str, wikilink: &crucible_core::parser::Wikilink) -> serde_json::Map<String, serde_json::Value> {
+    fn handle_embed_processing_error(
+        &self,
+        error: &str,
+        wikilink: &crucible_core::parser::Wikilink,
+    ) -> serde_json::Map<String, serde_json::Value> {
         let mut error_metadata = serde_json::Map::new();
 
         // Basic error information
-        error_metadata.insert("error_type".to_string(), serde_json::json!("embed_validation_error"));
+        error_metadata.insert(
+            "error_type".to_string(),
+            serde_json::json!("embed_validation_error"),
+        );
         error_metadata.insert("error_message".to_string(), serde_json::json!(error));
-        error_metadata.insert("error_timestamp".to_string(), serde_json::json!(chrono::Utc::now().to_rfc3339()));
+        error_metadata.insert(
+            "error_timestamp".to_string(),
+            serde_json::json!(chrono::Utc::now().to_rfc3339()),
+        );
 
         // Context information - sanitize target to remove problematic characters
-        let sanitized_target = wikilink.target.replace('\x00', "[NULL]")
+        let sanitized_target = wikilink
+            .target
+            .replace('\x00', "[NULL]")
             .replace('\x01', "[SOH]")
             .replace('\x1f', "[US]");
         error_metadata.insert("target".to_string(), serde_json::json!(sanitized_target));
@@ -1600,11 +1723,17 @@ impl<'a> NoteIngestor<'a> {
 
         // Error classification for better handling
         let error_category = self.classify_embed_error(error);
-        error_metadata.insert("error_category".to_string(), serde_json::json!(error_category));
+        error_metadata.insert(
+            "error_category".to_string(),
+            serde_json::json!(error_category),
+        );
 
         // Recovery suggestions
         let suggestions = self.get_embed_error_recovery_suggestions(error, wikilink);
-        error_metadata.insert("recovery_suggestions".to_string(), serde_json::json!(suggestions));
+        error_metadata.insert(
+            "recovery_suggestions".to_string(),
+            serde_json::json!(suggestions),
+        );
 
         // Severity assessment
         let severity = self.assess_embed_error_severity(error, wikilink);
@@ -1626,7 +1755,9 @@ impl<'a> NoteIngestor<'a> {
             "security_private_network"
         } else if error_lower.contains("empty") {
             "validation_empty_target"
-        } else if error_lower.contains("scheme") && (error_lower.contains("unsupported") || error_lower.contains("dangerous")) {
+        } else if error_lower.contains("scheme")
+            && (error_lower.contains("unsupported") || error_lower.contains("dangerous"))
+        {
             "security_risk"
         } else if error_lower.contains("scheme") {
             "validation_invalid_scheme"
@@ -1642,7 +1773,11 @@ impl<'a> NoteIngestor<'a> {
     }
 
     /// Get recovery suggestions for embed errors
-    fn get_embed_error_recovery_suggestions(&self, error: &str, _wikilink: &crucible_core::parser::Wikilink) -> Vec<String> {
+    fn get_embed_error_recovery_suggestions(
+        &self,
+        error: &str,
+        _wikilink: &crucible_core::parser::Wikilink,
+    ) -> Vec<String> {
         let error_lower = error.to_lowercase();
         let mut suggestions = Vec::new();
 
@@ -1677,10 +1812,17 @@ impl<'a> NoteIngestor<'a> {
     }
 
     /// Assess error severity for prioritization
-    fn assess_embed_error_severity(&self, error: &str, _wikilink: &crucible_core::parser::Wikilink) -> &'static str {
+    fn assess_embed_error_severity(
+        &self,
+        error: &str,
+        _wikilink: &crucible_core::parser::Wikilink,
+    ) -> &'static str {
         let error_lower = error.to_lowercase();
 
-        if error_lower.contains("dangerous") || error_lower.contains("suspicious") || error_lower.contains("traversal") {
+        if error_lower.contains("dangerous")
+            || error_lower.contains("suspicious")
+            || error_lower.contains("traversal")
+        {
             "critical"
         } else if error_lower.contains("scheme") || error_lower.contains("malformed") {
             "high"
@@ -1695,7 +1837,10 @@ impl<'a> NoteIngestor<'a> {
     ///
     /// Attempts to extract useful metadata from external URLs without
     /// making network requests. Uses pattern matching on known services.
-    fn extract_external_url_metadata(&self, target: &str) -> serde_json::Map<String, serde_json::Value> {
+    fn extract_external_url_metadata(
+        &self,
+        target: &str,
+    ) -> serde_json::Map<String, serde_json::Value> {
         let mut metadata = serde_json::Map::new();
         let target_lower = target.to_lowercase();
 
@@ -1707,23 +1852,26 @@ impl<'a> NoteIngestor<'a> {
         }
 
         // Detect specific services and add service-specific metadata
-        if target_lower.contains("youtube.com/watch") ||
-           target_lower.contains("youtu.be/") ||
-           target_lower.contains("youtube.com/embed/") ||
-           target_lower.contains("youtube.com/shorts/") {
+        if target_lower.contains("youtube.com/watch")
+            || target_lower.contains("youtu.be/")
+            || target_lower.contains("youtube.com/embed/")
+            || target_lower.contains("youtube.com/shorts/")
+        {
             metadata.insert("service".to_string(), serde_json::json!("youtube"));
             if let Some(video_id) = self.extract_youtube_video_id(target) {
                 metadata.insert("video_id".to_string(), serde_json::json!(video_id));
             }
-        } else if target_lower.contains("vimeo.com/") && !target_lower.contains("vimeo.com/channels/") {
+        } else if target_lower.contains("vimeo.com/")
+            && !target_lower.contains("vimeo.com/channels/")
+        {
             metadata.insert("service".to_string(), serde_json::json!("vimeo"));
         } else if target_lower.contains("soundcloud.com/") {
             metadata.insert("service".to_string(), serde_json::json!("soundcloud"));
-        } else if target_lower.contains("spotify.com/") && (
-           target_lower.contains("/track/") ||
-           target_lower.contains("/album/") ||
-           target_lower.contains("/playlist/")
-        ) {
+        } else if target_lower.contains("spotify.com/")
+            && (target_lower.contains("/track/")
+                || target_lower.contains("/album/")
+                || target_lower.contains("/playlist/"))
+        {
             metadata.insert("service".to_string(), serde_json::json!("spotify"));
         } else if target_lower.contains("drive.google.com/") {
             metadata.insert("service".to_string(), serde_json::json!("google_drive"));
@@ -1745,13 +1893,19 @@ impl<'a> NoteIngestor<'a> {
             metadata.insert("service".to_string(), serde_json::json!("twitch"));
         } else if target_lower.contains("imgur.com/") {
             metadata.insert("service".to_string(), serde_json::json!("imgur"));
-        } else if target_lower.contains("news.") || target_lower.contains("ycombinator.com/") || target_lower.contains("bbc.com/news") {
+        } else if target_lower.contains("news.")
+            || target_lower.contains("ycombinator.com/")
+            || target_lower.contains("bbc.com/news")
+        {
             metadata.insert("service".to_string(), serde_json::json!("news"));
         } else if target_lower.contains("medium.com/") {
             metadata.insert("service".to_string(), serde_json::json!("medium"));
         } else if target_lower.contains("twitter.com/") || target_lower.contains("x.com/") {
             metadata.insert("service".to_string(), serde_json::json!("twitter"));
-        } else if target_lower.contains("docs.") || target_lower.contains("documentation") || target_lower.contains("/docs/") {
+        } else if target_lower.contains("docs.")
+            || target_lower.contains("documentation")
+            || target_lower.contains("/docs/")
+        {
             metadata.insert("service".to_string(), serde_json::json!("documentation"));
         }
 
@@ -1819,7 +1973,11 @@ impl<'a> NoteIngestor<'a> {
     ///
     /// Adds specialized processing rules and metadata enrichment for different
     /// content types based on their unique characteristics and requirements.
-    fn process_content_specific_embed(&self, metadata: &mut serde_json::Map<String, serde_json::Value>, wikilink: &crucible_core::parser::Wikilink) {
+    fn process_content_specific_embed(
+        &self,
+        metadata: &mut serde_json::Map<String, serde_json::Value>,
+        wikilink: &crucible_core::parser::Wikilink,
+    ) {
         let embed_type = self.classify_embed_type(&wikilink.target);
 
         match embed_type {
@@ -1836,8 +1994,15 @@ impl<'a> NoteIngestor<'a> {
     /// Process image-specific embed logic
     ///
     /// Adds image-specific metadata like dimensions, format information, and display hints.
-    fn process_image_embed(&self, metadata: &mut serde_json::Map<String, serde_json::Value>, target: &str) {
-        metadata.insert("content_category".to_string(), serde_json::json!(ContentCategory::Image.as_str()));
+    fn process_image_embed(
+        &self,
+        metadata: &mut serde_json::Map<String, serde_json::Value>,
+        target: &str,
+    ) {
+        metadata.insert(
+            "content_category".to_string(),
+            serde_json::json!(ContentCategory::Image.as_str()),
+        );
         metadata.insert("media_type".to_string(), serde_json::json!("image"));
 
         // Extract image format information
@@ -1849,7 +2014,10 @@ impl<'a> NoteIngestor<'a> {
                 "svg" => {
                     metadata.insert("is_vector".to_string(), serde_json::json!(true));
                     metadata.insert("scalable".to_string(), serde_json::json!(true));
-                    metadata.insert("background_transparent".to_string(), serde_json::json!(true));
+                    metadata.insert(
+                        "background_transparent".to_string(),
+                        serde_json::json!(true),
+                    );
                 }
                 "png" => {
                     metadata.insert("is_vector".to_string(), serde_json::json!(false));
@@ -1858,7 +2026,10 @@ impl<'a> NoteIngestor<'a> {
                 }
                 "jpg" | "jpeg" => {
                     metadata.insert("is_vector".to_string(), serde_json::json!(false));
-                    metadata.insert("supports_transparency".to_string(), serde_json::json!(false));
+                    metadata.insert(
+                        "supports_transparency".to_string(),
+                        serde_json::json!(false),
+                    );
                     metadata.insert("lossy".to_string(), serde_json::json!(true));
                     metadata.insert("good_for_photos".to_string(), serde_json::json!(true));
                 }
@@ -1880,7 +2051,10 @@ impl<'a> NoteIngestor<'a> {
         }
 
         // Add display and processing hints
-        metadata.insert("display_hint".to_string(), serde_json::json!("inline_block"));
+        metadata.insert(
+            "display_hint".to_string(),
+            serde_json::json!("inline_block"),
+        );
         metadata.insert("loading_hint".to_string(), serde_json::json!("lazy"));
         metadata.insert("alt_text_required".to_string(), serde_json::json!(true));
     }
@@ -1888,20 +2062,33 @@ impl<'a> NoteIngestor<'a> {
     /// Process video-specific embed logic
     ///
     /// Adds video-specific metadata like service information, quality hints, and playback controls.
-    fn process_video_embed(&self, metadata: &mut serde_json::Map<String, serde_json::Value>, target: &str) {
-        metadata.insert("content_category".to_string(), serde_json::json!(ContentCategory::Video.as_str()));
+    fn process_video_embed(
+        &self,
+        metadata: &mut serde_json::Map<String, serde_json::Value>,
+        target: &str,
+    ) {
+        metadata.insert(
+            "content_category".to_string(),
+            serde_json::json!(ContentCategory::Video.as_str()),
+        );
         metadata.insert("media_type".to_string(), serde_json::json!("video"));
 
         // Check for specific video services
         let target_lower = target.to_lowercase();
-        if target_lower.contains("youtube.com/watch") ||
-           target_lower.contains("youtu.be/") ||
-           target_lower.contains("youtube.com/embed/") ||
-           target_lower.contains("youtube.com/shorts/") {
+        if target_lower.contains("youtube.com/watch")
+            || target_lower.contains("youtu.be/")
+            || target_lower.contains("youtube.com/embed/")
+            || target_lower.contains("youtube.com/shorts/")
+        {
             metadata.insert("service".to_string(), serde_json::json!("youtube"));
             metadata.insert("requires_embed_player".to_string(), serde_json::json!(true));
-            metadata.insert("auto_play_policy".to_string(), serde_json::json!("user_gesture_required"));
-        } else if target_lower.contains("vimeo.com/") && !target_lower.contains("vimeo.com/channels/") {
+            metadata.insert(
+                "auto_play_policy".to_string(),
+                serde_json::json!("user_gesture_required"),
+            );
+        } else if target_lower.contains("vimeo.com/")
+            && !target_lower.contains("vimeo.com/channels/")
+        {
             metadata.insert("service".to_string(), serde_json::json!("vimeo"));
             metadata.insert("requires_embed_player".to_string(), serde_json::json!(true));
         } else {
@@ -1909,7 +2096,10 @@ impl<'a> NoteIngestor<'a> {
             if !metadata.contains_key("service") {
                 metadata.insert("service".to_string(), serde_json::json!("direct"));
             }
-            metadata.insert("requires_embed_player".to_string(), serde_json::json!(false));
+            metadata.insert(
+                "requires_embed_player".to_string(),
+                serde_json::json!(false),
+            );
 
             // Extract video format information
             if let Some(extension) = target_lower.split('.').last() {
@@ -1917,7 +2107,8 @@ impl<'a> NoteIngestor<'a> {
 
                 match extension {
                     "mp4" => {
-                        metadata.insert("container_format".to_string(), serde_json::json!("MPEG-4"));
+                        metadata
+                            .insert("container_format".to_string(), serde_json::json!("MPEG-4"));
                         metadata.insert("widely_supported".to_string(), serde_json::json!(true));
                     }
                     "webm" => {
@@ -1925,7 +2116,10 @@ impl<'a> NoteIngestor<'a> {
                         metadata.insert("browser_optimized".to_string(), serde_json::json!(true));
                     }
                     "mov" => {
-                        metadata.insert("container_format".to_string(), serde_json::json!("QuickTime"));
+                        metadata.insert(
+                            "container_format".to_string(),
+                            serde_json::json!("QuickTime"),
+                        );
                         metadata.insert("apple_optimized".to_string(), serde_json::json!(true));
                     }
                     _ => {}
@@ -1943,8 +2137,15 @@ impl<'a> NoteIngestor<'a> {
     /// Process audio-specific embed logic
     ///
     /// Adds audio-specific metadata like format information, playback controls, and service details.
-    fn process_audio_embed(&self, metadata: &mut serde_json::Map<String, serde_json::Value>, target: &str) {
-        metadata.insert("content_category".to_string(), serde_json::json!(ContentCategory::Audio.as_str()));
+    fn process_audio_embed(
+        &self,
+        metadata: &mut serde_json::Map<String, serde_json::Value>,
+        target: &str,
+    ) {
+        metadata.insert(
+            "content_category".to_string(),
+            serde_json::json!(ContentCategory::Audio.as_str()),
+        );
         metadata.insert("media_type".to_string(), serde_json::json!("audio"));
 
         // Check for specific audio services
@@ -1952,11 +2153,11 @@ impl<'a> NoteIngestor<'a> {
         if target_lower.contains("soundcloud.com/") {
             metadata.insert("service".to_string(), serde_json::json!("soundcloud"));
             metadata.insert("requires_embed_player".to_string(), serde_json::json!(true));
-        } else if target_lower.contains("spotify.com/") && (
-           target_lower.contains("/track/") ||
-           target_lower.contains("/album/") ||
-           target_lower.contains("/playlist/")
-        ) {
+        } else if target_lower.contains("spotify.com/")
+            && (target_lower.contains("/track/")
+                || target_lower.contains("/album/")
+                || target_lower.contains("/playlist/"))
+        {
             metadata.insert("service".to_string(), serde_json::json!("spotify"));
             metadata.insert("requires_embed_player".to_string(), serde_json::json!(true));
             metadata.insert("account_required".to_string(), serde_json::json!(true));
@@ -1965,7 +2166,10 @@ impl<'a> NoteIngestor<'a> {
             if !metadata.contains_key("service") {
                 metadata.insert("service".to_string(), serde_json::json!("direct"));
             }
-            metadata.insert("requires_embed_player".to_string(), serde_json::json!(false));
+            metadata.insert(
+                "requires_embed_player".to_string(),
+                serde_json::json!(false),
+            );
 
             // Extract audio format information
             if let Some(extension) = target_lower.split('.').last() {
@@ -1973,7 +2177,10 @@ impl<'a> NoteIngestor<'a> {
 
                 match extension {
                     "mp3" => {
-                        metadata.insert("codec".to_string(), serde_json::json!("MPEG-1/2/2.5 Layer 3"));
+                        metadata.insert(
+                            "codec".to_string(),
+                            serde_json::json!("MPEG-1/2/2.5 Layer 3"),
+                        );
                         metadata.insert("widely_supported".to_string(), serde_json::json!(true));
                         metadata.insert("lossy".to_string(), serde_json::json!(true));
                     }
@@ -1997,16 +2204,29 @@ impl<'a> NoteIngestor<'a> {
         }
 
         // Add playback and display hints
-        metadata.insert("display_hint".to_string(), serde_json::json!("inline_block"));
+        metadata.insert(
+            "display_hint".to_string(),
+            serde_json::json!("inline_block"),
+        );
         metadata.insert("default_controls".to_string(), serde_json::json!(true));
-        metadata.insert("auto_play_policy".to_string(), serde_json::json!("user_gesture_required"));
+        metadata.insert(
+            "auto_play_policy".to_string(),
+            serde_json::json!("user_gesture_required"),
+        );
     }
 
     /// Process PDF-specific embed logic
     ///
     /// Adds PDF-specific metadata like viewer requirements, display options, and interaction hints.
-    fn process_pdf_embed(&self, metadata: &mut serde_json::Map<String, serde_json::Value>, target: &str) {
-        metadata.insert("content_category".to_string(), serde_json::json!(ContentCategory::PDF.as_str()));
+    fn process_pdf_embed(
+        &self,
+        metadata: &mut serde_json::Map<String, serde_json::Value>,
+        target: &str,
+    ) {
+        metadata.insert(
+            "content_category".to_string(),
+            serde_json::json!(ContentCategory::PDF.as_str()),
+        );
         metadata.insert("media_type".to_string(), serde_json::json!("pdf"));
 
         // PDF-specific processing
@@ -2023,9 +2243,14 @@ impl<'a> NoteIngestor<'a> {
 
         // Extract potential metadata from filename
         if let Some(filename) = target.split('/').last() {
-            if filename.to_lowercase().contains("slide") || filename.to_lowercase().contains("presentation") {
+            if filename.to_lowercase().contains("slide")
+                || filename.to_lowercase().contains("presentation")
+            {
                 metadata.insert("likely_presentation".to_string(), serde_json::json!(true));
-                metadata.insert("display_mode_hint".to_string(), serde_json::json!("presentation"));
+                metadata.insert(
+                    "display_mode_hint".to_string(),
+                    serde_json::json!("presentation"),
+                );
             } else if filename.to_lowercase().contains("form") {
                 metadata.insert("likely_form".to_string(), serde_json::json!(true));
                 metadata.insert("interactive".to_string(), serde_json::json!(true));
@@ -2033,33 +2258,55 @@ impl<'a> NoteIngestor<'a> {
         }
 
         // Add security and accessibility hints
-        metadata.insert("accessibility_features".to_string(), serde_json::json!(vec!["text_to_speech", "screen_reader", "high_contrast"]));
-        metadata.insert("security_considerations".to_string(), serde_json::json!(vec!["external_links", "javascript", "embedded_content"]));
+        metadata.insert(
+            "accessibility_features".to_string(),
+            serde_json::json!(vec!["text_to_speech", "screen_reader", "high_contrast"]),
+        );
+        metadata.insert(
+            "security_considerations".to_string(),
+            serde_json::json!(vec!["external_links", "javascript", "embedded_content"]),
+        );
     }
 
     /// Process external embed logic (non-media external content)
     ///
     /// Handles external URLs that don't fit into specific media categories.
-    fn process_external_embed(&self, metadata: &mut serde_json::Map<String, serde_json::Value>, target: &str) {
+    fn process_external_embed(
+        &self,
+        metadata: &mut serde_json::Map<String, serde_json::Value>,
+        target: &str,
+    ) {
         metadata.insert("media_type".to_string(), serde_json::json!("external"));
 
         let target_lower = target.to_lowercase();
 
         // Categorize external content types
         if target_lower.contains("twitter.com/") || target_lower.contains("x.com/") {
-            metadata.insert("external_type".to_string(), serde_json::json!("social_media_post"));
+            metadata.insert(
+                "external_type".to_string(),
+                serde_json::json!("social_media_post"),
+            );
             metadata.insert("service".to_string(), serde_json::json!("twitter"));
             metadata.insert("requires_javascript".to_string(), serde_json::json!(true));
         } else if target_lower.contains("github.com/") {
-            metadata.insert("external_type".to_string(), serde_json::json!("code_repository"));
+            metadata.insert(
+                "external_type".to_string(),
+                serde_json::json!("code_repository"),
+            );
             metadata.insert("service".to_string(), serde_json::json!("github"));
             metadata.insert("interactive".to_string(), serde_json::json!(true));
         } else if target_lower.contains("wikipedia.org") {
-            metadata.insert("external_type".to_string(), serde_json::json!("encyclopedia_article"));
+            metadata.insert(
+                "external_type".to_string(),
+                serde_json::json!("encyclopedia_article"),
+            );
             metadata.insert("service".to_string(), serde_json::json!("wikipedia"));
             metadata.insert("educational".to_string(), serde_json::json!(true));
         } else if target_lower.contains("news") || target_lower.contains("article") {
-            metadata.insert("external_type".to_string(), serde_json::json!("news_article"));
+            metadata.insert(
+                "external_type".to_string(),
+                serde_json::json!("news_article"),
+            );
             metadata.insert("informational".to_string(), serde_json::json!(true));
         } else {
             metadata.insert("external_type".to_string(), serde_json::json!("webpage"));
@@ -2069,26 +2316,48 @@ impl<'a> NoteIngestor<'a> {
         // Add external content handling hints
         metadata.insert("requires_internet".to_string(), serde_json::json!(true));
         metadata.insert("may_change_over_time".to_string(), serde_json::json!(true));
-        metadata.insert("potentially_unavailable".to_string(), serde_json::json!(true));
-        metadata.insert("display_hint".to_string(), serde_json::json!("iframe_or_link"));
+        metadata.insert(
+            "potentially_unavailable".to_string(),
+            serde_json::json!(true),
+        );
+        metadata.insert(
+            "display_hint".to_string(),
+            serde_json::json!("iframe_or_link"),
+        );
 
         // Add privacy and security considerations
-        metadata.insert("privacy_considerations".to_string(), serde_json::json!(vec!["cookies", "tracking", "third_party_content"]));
-        metadata.insert("security_considerations".to_string(), serde_json::json!(vec!["external_scripts", "mixed_content"]));
+        metadata.insert(
+            "privacy_considerations".to_string(),
+            serde_json::json!(vec!["cookies", "tracking", "third_party_content"]),
+        );
+        metadata.insert(
+            "security_considerations".to_string(),
+            serde_json::json!(vec!["external_scripts", "mixed_content"]),
+        );
     }
 
     /// Process note embed logic (markdown files)
     ///
     /// Handles embedded markdown files and notes with note-specific metadata.
-    fn process_note_embed(&self, metadata: &mut serde_json::Map<String, serde_json::Value>, target: &str) {
-        metadata.insert("content_category".to_string(), serde_json::json!(ContentCategory::Note.as_str()));
+    fn process_note_embed(
+        &self,
+        metadata: &mut serde_json::Map<String, serde_json::Value>,
+        target: &str,
+    ) {
+        metadata.insert(
+            "content_category".to_string(),
+            serde_json::json!(ContentCategory::Note.as_str()),
+        );
         metadata.insert("media_type".to_string(), serde_json::json!("note"));
 
         // Note-specific processing
         metadata.insert("text_based".to_string(), serde_json::json!(true));
         metadata.insert("searchable".to_string(), serde_json::json!(true));
         metadata.insert("editable".to_string(), serde_json::json!(true));
-        metadata.insert("version_control_friendly".to_string(), serde_json::json!(true));
+        metadata.insert(
+            "version_control_friendly".to_string(),
+            serde_json::json!(true),
+        );
 
         // Extract format information
         if let Some(extension) = target.to_lowercase().split('.').last() {
@@ -2121,7 +2390,10 @@ impl<'a> NoteIngestor<'a> {
         }
 
         // Add display and processing hints
-        metadata.insert("display_hint".to_string(), serde_json::json!("inline_or_block"));
+        metadata.insert(
+            "display_hint".to_string(),
+            serde_json::json!("inline_or_block"),
+        );
         metadata.insert("renderable".to_string(), serde_json::json!(true));
         metadata.insert("syntax_highlighting".to_string(), serde_json::json!(true));
 
@@ -2139,11 +2411,18 @@ impl<'a> NoteIngestor<'a> {
         }
 
         // Add accessibility features
-        metadata.insert("accessibility_features".to_string(), serde_json::json!(vec!["screen_reader", "high_contrast", "text_sizing"]));
+        metadata.insert(
+            "accessibility_features".to_string(),
+            serde_json::json!(vec!["screen_reader", "high_contrast", "text_sizing"]),
+        );
     }
 
     /// Extract footnote relations from the note
-    fn extract_footnote_relations(&self, entity_id: &RecordId<EntityRecord>, doc: &ParsedNote) -> Vec<CoreRelation> {
+    fn extract_footnote_relations(
+        &self,
+        entity_id: &RecordId<EntityRecord>,
+        doc: &ParsedNote,
+    ) -> Vec<CoreRelation> {
         let capacity = doc.footnotes.references.len();
         let mut relations = Vec::with_capacity(capacity);
         let from_entity_id = format!("{}:{}", entity_id.table, entity_id.id);
@@ -2159,10 +2438,19 @@ impl<'a> NoteIngestor<'a> {
 
                 // Add metadata about the footnote
                 let mut metadata = serde_json::Map::new();
-                metadata.insert("label".to_string(), serde_json::json!(footnote_ref.identifier));
+                metadata.insert(
+                    "label".to_string(),
+                    serde_json::json!(footnote_ref.identifier),
+                );
                 metadata.insert("content".to_string(), serde_json::json!(definition.content));
-                metadata.insert("ref_offset".to_string(), serde_json::json!(footnote_ref.offset));
-                metadata.insert("def_offset".to_string(), serde_json::json!(definition.offset));
+                metadata.insert(
+                    "ref_offset".to_string(),
+                    serde_json::json!(footnote_ref.offset),
+                );
+                metadata.insert(
+                    "def_offset".to_string(),
+                    serde_json::json!(definition.offset),
+                );
                 if let Some(order) = footnote_ref.order_number {
                     metadata.insert("order".to_string(), serde_json::json!(order));
                 }
@@ -2277,7 +2565,9 @@ impl<'a> NoteIngestor<'a> {
             });
 
             // Serialize list as text (simple approach for now)
-            let list_text = list.items.iter()
+            let list_text = list
+                .items
+                .iter()
                 .map(|item| {
                     if let Some(task_status) = &item.task_status {
                         let check = match task_status {
@@ -2347,7 +2637,7 @@ mod tests {
     use crate::eav_graph::apply_eav_graph_schema;
     use crate::SurrealClient;
     use crucible_core::parser::{
-        NoteContent, Frontmatter, FrontmatterFormat, Heading, Paragraph, Tag,
+        Frontmatter, FrontmatterFormat, Heading, NoteContent, Paragraph, Tag,
     };
     use crucible_core::storage::{RelationStorage, TagStorage};
     use serde_json::json;
@@ -2414,12 +2704,18 @@ mod tests {
         let mut target_doc1 = sample_document();
         target_doc1.path = PathBuf::from("other-note.md");
         target_doc1.tags.clear();
-        ingestor.ingest(&target_doc1, "other-note.md").await.unwrap();
+        ingestor
+            .ingest(&target_doc1, "other-note.md")
+            .await
+            .unwrap();
 
         let mut target_doc2 = sample_document();
         target_doc2.path = PathBuf::from("embedded-note.md");
         target_doc2.tags.clear();
-        ingestor.ingest(&target_doc2, "embedded-note.md").await.unwrap();
+        ingestor
+            .ingest(&target_doc2, "embedded-note.md")
+            .await
+            .unwrap();
 
         // Now create note with wikilinks
         let mut doc = sample_document();
@@ -2440,7 +2736,10 @@ mod tests {
             offset: 20,
         });
 
-        let entity_id = ingestor.ingest(&doc, "notes/wikilink-test.md").await.unwrap();
+        let entity_id = ingestor
+            .ingest(&doc, "notes/wikilink-test.md")
+            .await
+            .unwrap();
 
         // Get all relations for this entity (use just the ID part, not the full "entities:..." string)
         let relations = store.get_relations(&entity_id.id, None).await.unwrap();
@@ -2452,9 +2751,16 @@ mod tests {
             .find(|r| r.relation_type == "wikilink")
             .unwrap();
         // Should be resolved to the actual target entity
-        assert!(wikilink_rel.to_entity_id.is_some(), "Wikilink should be resolved");
         assert!(
-            wikilink_rel.to_entity_id.as_ref().unwrap().contains("other-note"),
+            wikilink_rel.to_entity_id.is_some(),
+            "Wikilink should be resolved"
+        );
+        assert!(
+            wikilink_rel
+                .to_entity_id
+                .as_ref()
+                .unwrap()
+                .contains("other-note"),
             "Should link to other-note"
         );
         assert_eq!(
@@ -2476,14 +2782,15 @@ mod tests {
             .unwrap();
         assert!(embed_rel.to_entity_id.is_some(), "Embed should be resolved");
         assert!(
-            embed_rel.to_entity_id.as_ref().unwrap().contains("embedded-note"),
+            embed_rel
+                .to_entity_id
+                .as_ref()
+                .unwrap()
+                .contains("embedded-note"),
             "Should link to embedded-note"
         );
         assert_eq!(
-            embed_rel
-                .metadata
-                .get("block_ref")
-                .and_then(|v| v.as_str()),
+            embed_rel.metadata.get("block_ref").and_then(|v| v.as_str()),
             Some("block-id")
         );
     }
@@ -2554,7 +2861,10 @@ mod tests {
             offset: 42,
         });
 
-        let entity_id = ingestor.ingest(&doc, "notes/metadata-test.md").await.unwrap();
+        let entity_id = ingestor
+            .ingest(&doc, "notes/metadata-test.md")
+            .await
+            .unwrap();
 
         let relations = store.get_relations(&entity_id.id, None).await.unwrap();
         assert_eq!(relations.len(), 1);
@@ -2567,7 +2877,10 @@ mod tests {
             Some("Custom Display Text")
         );
         assert_eq!(
-            relation.metadata.get("heading_ref").and_then(|v| v.as_str()),
+            relation
+                .metadata
+                .get("heading_ref")
+                .and_then(|v| v.as_str()),
             Some("Introduction")
         );
         assert_eq!(
@@ -2595,7 +2908,7 @@ mod tests {
         doc1.path = PathBuf::from("notes/backlink1.md");
         doc1.tags.clear(); // Clear tags to avoid conflicts with other tests
         doc1.wikilinks.push(Wikilink {
-            target: "notes/backlink2.md".to_string(),  // Full path relative to vault root
+            target: "notes/backlink2.md".to_string(), // Full path relative to vault root
             alias: None,
             heading_ref: None,
             block_ref: None,
@@ -2607,7 +2920,7 @@ mod tests {
         doc2.path = PathBuf::from("notes/backlink2.md");
         doc2.tags.clear(); // Clear tags to avoid conflicts with other tests
         doc2.wikilinks.push(Wikilink {
-            target: "notes/backlink1.md".to_string(),  // Full path relative to vault root
+            target: "notes/backlink1.md".to_string(), // Full path relative to vault root
             alias: None,
             heading_ref: None,
             block_ref: None,
@@ -2620,10 +2933,7 @@ mod tests {
 
         // Get backlinks for doc1 (should find link from doc2)
         // Use the ID part only, which is what note_entity_id() generates
-        let backlinks = store
-            .get_backlinks(&entity1_id.id, None)
-            .await
-            .unwrap();
+        let backlinks = store.get_backlinks(&entity1_id.id, None).await.unwrap();
 
         assert!(
             !backlinks.is_empty(),
@@ -2632,7 +2942,10 @@ mod tests {
 
         let backlink = &backlinks[0];
         // The from_entity_id will be in "entities:note:backlink2.md" format due to adapter conversion
-        assert_eq!(backlink.from_entity_id, format!("entities:{}", entity2_id.id));
+        assert_eq!(
+            backlink.from_entity_id,
+            format!("entities:{}", entity2_id.id)
+        );
     }
 
     #[tokio::test]
@@ -2648,16 +2961,29 @@ mod tests {
         doc.content.paragraphs.clear();
 
         // Add headings to create sections
-        doc.content.headings.push(Heading::new(1, "Introduction", 0));
+        doc.content
+            .headings
+            .push(Heading::new(1, "Introduction", 0));
         doc.content.headings.push(Heading::new(2, "Details", 50));
-        doc.content.headings.push(Heading::new(2, "Conclusion", 100));
+        doc.content
+            .headings
+            .push(Heading::new(2, "Conclusion", 100));
 
         // Add paragraphs for content
-        doc.content.paragraphs.push(Paragraph::new("Intro content".to_string(), 10));
-        doc.content.paragraphs.push(Paragraph::new("Detail content".to_string(), 60));
-        doc.content.paragraphs.push(Paragraph::new("Final thoughts".to_string(), 110));
+        doc.content
+            .paragraphs
+            .push(Paragraph::new("Intro content".to_string(), 10));
+        doc.content
+            .paragraphs
+            .push(Paragraph::new("Detail content".to_string(), 60));
+        doc.content
+            .paragraphs
+            .push(Paragraph::new("Final thoughts".to_string(), 110));
 
-        let entity_id = ingestor.ingest(&doc, "notes/sections-test.md").await.unwrap();
+        let entity_id = ingestor
+            .ingest(&doc, "notes/sections-test.md")
+            .await
+            .unwrap();
 
         // Query section properties
         let result = client
@@ -2675,11 +3001,15 @@ mod tests {
 
         // Should have: tree_root_hash, total_sections, and for each section: hash + metadata
         // With 4 sections (root + 3 headings), we expect: 2 + (4 * 2) = 10 properties
-        assert!(props.len() >= 2, "Should have at least root hash and total sections");
+        assert!(
+            props.len() >= 2,
+            "Should have at least root hash and total sections"
+        );
 
         // Check for tree_root_hash
         let has_root_hash = props.iter().any(|p| {
-            p.data.get("key")
+            p.data
+                .get("key")
                 .and_then(|k| k.as_str())
                 .map(|k| k == "tree_root_hash")
                 .unwrap_or(false)
@@ -2695,8 +3025,14 @@ mod tests {
                 None
             }
         });
-        assert!(total_sections.is_some(), "Should have total_sections property");
-        assert!(total_sections.unwrap() > 0.0, "Should have at least one section");
+        assert!(
+            total_sections.is_some(),
+            "Should have total_sections property"
+        );
+        assert!(
+            total_sections.unwrap() > 0.0,
+            "Should have at least one section"
+        );
     }
 
     #[tokio::test]
@@ -2709,8 +3045,12 @@ mod tests {
         let mut doc = sample_document();
         doc.content.headings.clear();
         doc.content.paragraphs.clear();
-        doc.content.headings.push(Heading::new(1, "Test Section", 0));
-        doc.content.paragraphs.push(Paragraph::new("Test content".to_string(), 10));
+        doc.content
+            .headings
+            .push(Heading::new(1, "Test Section", 0));
+        doc.content
+            .paragraphs
+            .push(Paragraph::new("Test content".to_string(), 10));
 
         let entity_id = ingestor.ingest(&doc, "notes/hash-test.md").await.unwrap();
 
@@ -2727,7 +3067,9 @@ mod tests {
 
         let hash_prop = &result.records[0];
         // Value is stored as {"type": "text", "value": "hash_string"}
-        let hash_value = hash_prop.data.get("value")
+        let hash_value = hash_prop
+            .data
+            .get("value")
             .and_then(|v| v.get("value"))
             .and_then(|v| v.as_str());
         assert!(hash_value.is_some(), "Hash should be a string");
@@ -2761,10 +3103,16 @@ mod tests {
             80,
         ));
 
-        let entity_id = ingestor.ingest(&doc, "notes/inline-links-test.md").await.unwrap();
+        let entity_id = ingestor
+            .ingest(&doc, "notes/inline-links-test.md")
+            .await
+            .unwrap();
 
         // Get all relations for this entity
-        let relations = store.get_relations(&entity_id.id, Some("link")).await.unwrap();
+        let relations = store
+            .get_relations(&entity_id.id, Some("link"))
+            .await
+            .unwrap();
         assert_eq!(relations.len(), 3, "Should have 3 inline link relations");
 
         // Check first link (external)
@@ -2778,7 +3126,10 @@ mod tests {
             Some("https://rust-lang.org")
         );
         assert_eq!(
-            rust_link.metadata.get("is_external").and_then(|v| v.as_bool()),
+            rust_link
+                .metadata
+                .get("is_external")
+                .and_then(|v| v.as_bool()),
             Some(true)
         );
         assert_eq!(rust_link.metadata.get("title"), None);
@@ -2799,7 +3150,10 @@ mod tests {
             .find(|r| r.metadata.get("url").and_then(|v| v.as_str()) == Some("./notes/other.md"))
             .unwrap();
         assert_eq!(
-            relative_link.metadata.get("is_external").and_then(|v| v.as_bool()),
+            relative_link
+                .metadata
+                .get("is_external")
+                .and_then(|v| v.as_bool()),
             Some(false)
         );
     }
@@ -2816,23 +3170,41 @@ mod tests {
         let mut doc = sample_document();
 
         // Add footnote references
-        doc.footnotes.add_reference(FootnoteReference::with_order("1".to_string(), 20, 1));
-        doc.footnotes.add_reference(FootnoteReference::with_order("note".to_string(), 50, 2));
+        doc.footnotes
+            .add_reference(FootnoteReference::with_order("1".to_string(), 20, 1));
+        doc.footnotes
+            .add_reference(FootnoteReference::with_order("note".to_string(), 50, 2));
 
         // Add footnote definitions
         doc.footnotes.add_definition(
             "1".to_string(),
-            FootnoteDefinition::new("1".to_string(), "First footnote definition".to_string(), 100, 5)
+            FootnoteDefinition::new(
+                "1".to_string(),
+                "First footnote definition".to_string(),
+                100,
+                5,
+            ),
         );
         doc.footnotes.add_definition(
             "note".to_string(),
-            FootnoteDefinition::new("note".to_string(), "Second footnote with custom label".to_string(), 150, 6)
+            FootnoteDefinition::new(
+                "note".to_string(),
+                "Second footnote with custom label".to_string(),
+                150,
+                6,
+            ),
         );
 
-        let entity_id = ingestor.ingest(&doc, "notes/footnote-test.md").await.unwrap();
+        let entity_id = ingestor
+            .ingest(&doc, "notes/footnote-test.md")
+            .await
+            .unwrap();
 
         // Get all footnote relations
-        let relations = store.get_relations(&entity_id.id, Some("footnote")).await.unwrap();
+        let relations = store
+            .get_relations(&entity_id.id, Some("footnote"))
+            .await
+            .unwrap();
         assert_eq!(relations.len(), 2, "Should have 2 footnote relations");
 
         // Check first footnote
@@ -2850,11 +3222,17 @@ mod tests {
             Some(1)
         );
         assert_eq!(
-            footnote1.metadata.get("ref_offset").and_then(|v| v.as_u64()),
+            footnote1
+                .metadata
+                .get("ref_offset")
+                .and_then(|v| v.as_u64()),
             Some(20)
         );
         assert_eq!(
-            footnote1.metadata.get("def_offset").and_then(|v| v.as_u64()),
+            footnote1
+                .metadata
+                .get("def_offset")
+                .and_then(|v| v.as_u64()),
             Some(100)
         );
 
@@ -2884,9 +3262,14 @@ mod tests {
         doc.content.headings.clear();
         doc.content.paragraphs.clear();
         doc.content.headings.push(Heading::new(2, "My Heading", 0));
-        doc.content.paragraphs.push(Paragraph::new("Content here".to_string(), 10));
+        doc.content
+            .paragraphs
+            .push(Paragraph::new("Content here".to_string(), 10));
 
-        let entity_id = ingestor.ingest(&doc, "notes/metadata-test.md").await.unwrap();
+        let entity_id = ingestor
+            .ingest(&doc, "notes/metadata-test.md")
+            .await
+            .unwrap();
 
         // Query for section metadata - just get all section properties and filter in code
         let result = client
@@ -2917,7 +3300,10 @@ mod tests {
             false
         });
 
-        assert!(has_heading_metadata, "Should have heading metadata in at least one section");
+        assert!(
+            has_heading_metadata,
+            "Should have heading metadata in at least one section"
+        );
     }
 
     #[tokio::test]
@@ -2957,10 +3343,16 @@ mod tests {
         let entity_id = ingestor.ingest(&doc3, "Index.md").await.unwrap();
 
         // Verify relation created with candidates in metadata
-        let relations = store.get_relations(&entity_id.id, Some("wikilink")).await.unwrap();
+        let relations = store
+            .get_relations(&entity_id.id, Some("wikilink"))
+            .await
+            .unwrap();
 
         assert_eq!(relations.len(), 1, "Should have one wikilink relation");
-        assert!(relations[0].to_entity_id.is_none(), "Ambiguous link should have no single target");
+        assert!(
+            relations[0].to_entity_id.is_none(),
+            "Ambiguous link should have no single target"
+        );
 
         let metadata = relations[0].metadata.as_object().unwrap();
         assert_eq!(
@@ -2973,11 +3365,15 @@ mod tests {
         let candidates = metadata.get("candidates").unwrap().as_array().unwrap();
         assert_eq!(candidates.len(), 2, "Should have 2 candidates");
         assert!(
-            candidates.iter().any(|c| c.as_str().unwrap().contains("Project A")),
+            candidates
+                .iter()
+                .any(|c| c.as_str().unwrap().contains("Project A")),
             "Should have Project A candidate"
         );
         assert!(
-            candidates.iter().any(|c| c.as_str().unwrap().contains("Project B")),
+            candidates
+                .iter()
+                .any(|c| c.as_str().unwrap().contains("Project B")),
             "Should have Project B candidate"
         );
     }
@@ -3061,21 +3457,40 @@ mod tests {
         assert_eq!(relations.len(), 6, "Should have 6 relations");
 
         // Check embed types by looking for each expected type
-        let embed_relations: Vec<_> = relations.iter()
+        let embed_relations: Vec<_> = relations
+            .iter()
             .filter(|r| r.relation_type == "embed")
             .collect();
         assert_eq!(embed_relations.len(), 5, "Should have 5 embed relations");
 
         // Collect all content categories found
-        let content_categories: Vec<_> = embed_relations.iter()
-            .map(|r| r.metadata.get("content_category").and_then(|v| v.as_str()).unwrap_or("unknown"))
+        let content_categories: Vec<_> = embed_relations
+            .iter()
+            .map(|r| {
+                r.metadata
+                    .get("content_category")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+            })
             .collect();
 
         // Should have the expected content types
-        assert!(content_categories.contains(&"image"), "Should have image content type");
-        assert!(content_categories.contains(&"pdf"), "Should have pdf content type");
-        assert!(content_categories.contains(&"audio"), "Should have audio content type");
-        assert!(content_categories.contains(&"video"), "Should have video content type");
+        assert!(
+            content_categories.contains(&"image"),
+            "Should have image content type"
+        );
+        assert!(
+            content_categories.contains(&"pdf"),
+            "Should have pdf content type"
+        );
+        assert!(
+            content_categories.contains(&"audio"),
+            "Should have audio content type"
+        );
+        assert!(
+            content_categories.contains(&"video"),
+            "Should have video content type"
+        );
 
         // Check regular wikilink (should not have embed_type)
         let wikilink = relations
@@ -3089,27 +3504,40 @@ mod tests {
         );
 
         // Verify specific embed relations have correct metadata
-        let image_embed = embed_relations.iter()
+        let image_embed = embed_relations
+            .iter()
             .find(|r| r.metadata.get("embed_type").and_then(|v| v.as_str()) == Some("image"))
             .unwrap();
         assert_eq!(image_embed.relation_type, "embed");
 
-        let pdf_embed = embed_relations.iter()
+        let pdf_embed = embed_relations
+            .iter()
             .find(|r| r.metadata.get("embed_type").and_then(|v| v.as_str()) == Some("pdf"))
             .unwrap();
-        assert_eq!(pdf_embed.metadata.get("offset").and_then(|v| v.as_u64()), Some(20));
+        assert_eq!(
+            pdf_embed.metadata.get("offset").and_then(|v| v.as_u64()),
+            Some(20)
+        );
         assert_eq!(pdf_embed.relation_type, "embed");
 
-        let audio_embed = embed_relations.iter()
+        let audio_embed = embed_relations
+            .iter()
             .find(|r| r.metadata.get("embed_type").and_then(|v| v.as_str()) == Some("audio"))
             .unwrap();
-        assert_eq!(audio_embed.metadata.get("offset").and_then(|v| v.as_u64()), Some(30));
+        assert_eq!(
+            audio_embed.metadata.get("offset").and_then(|v| v.as_u64()),
+            Some(30)
+        );
         assert_eq!(audio_embed.relation_type, "embed");
 
-        let video_embed = embed_relations.iter()
+        let video_embed = embed_relations
+            .iter()
             .find(|r| r.metadata.get("embed_type").and_then(|v| v.as_str()) == Some("video"))
             .unwrap();
-        assert_eq!(video_embed.metadata.get("offset").and_then(|v| v.as_u64()), Some(50));
+        assert_eq!(
+            video_embed.metadata.get("offset").and_then(|v| v.as_u64()),
+            Some(50)
+        );
         assert_eq!(video_embed.relation_type, "embed");
     }
 
@@ -3169,7 +3597,10 @@ mod tests {
 
         let entity_id = ingestor.ingest(&doc, "edge-cases.md").await.unwrap();
 
-        let relations = store.get_relations(&entity_id.id, Some("embed")).await.unwrap();
+        let relations = store
+            .get_relations(&entity_id.id, Some("embed"))
+            .await
+            .unwrap();
         assert_eq!(relations.len(), 4, "Should have 4 embed relations");
 
         // Check that all embed relations have basic embed functionality
@@ -3179,41 +3610,123 @@ mod tests {
                 relation.metadata.get("is_embed").and_then(|v| v.as_bool()),
                 Some(true)
             );
-            assert!(relation.metadata.get("embed_type").is_some(), "Should have embed_type metadata");
-            assert!(relation.metadata.get("content_category").is_some(), "Should have content_category metadata");
+            assert!(
+                relation.metadata.get("embed_type").is_some(),
+                "Should have embed_type metadata"
+            );
+            assert!(
+                relation.metadata.get("content_category").is_some(),
+                "Should have content_category metadata"
+            );
         }
 
         // Check case-insensitive image detection
-        let image_embed = relations.iter()
+        let image_embed = relations
+            .iter()
             .find(|r| r.metadata.get("offset").and_then(|v| v.as_u64()) == Some(10))
             .unwrap();
-        assert_eq!(image_embed.metadata.get("embed_type").and_then(|v| v.as_str()), Some("image"));
-        assert_eq!(image_embed.metadata.get("content_category").and_then(|v| v.as_str()), Some("image"));
-        assert_eq!(image_embed.metadata.get("is_external").and_then(|v| v.as_bool()), None); // Local files don't have is_external flag
+        assert_eq!(
+            image_embed
+                .metadata
+                .get("embed_type")
+                .and_then(|v| v.as_str()),
+            Some("image")
+        );
+        assert_eq!(
+            image_embed
+                .metadata
+                .get("content_category")
+                .and_then(|v| v.as_str()),
+            Some("image")
+        );
+        assert_eq!(
+            image_embed
+                .metadata
+                .get("is_external")
+                .and_then(|v| v.as_bool()),
+            None
+        ); // Local files don't have is_external flag
 
         // Check no extension defaults to note
-        let note_embed = relations.iter()
+        let note_embed = relations
+            .iter()
             .find(|r| r.metadata.get("offset").and_then(|v| v.as_u64()) == Some(20))
             .unwrap();
-        assert_eq!(note_embed.metadata.get("embed_type").and_then(|v| v.as_str()), Some("note"));
-        assert_eq!(note_embed.metadata.get("content_category").and_then(|v| v.as_str()), Some("note"));
-        assert_eq!(note_embed.metadata.get("is_external").and_then(|v| v.as_bool()), None); // Local files don't have is_external flag
+        assert_eq!(
+            note_embed
+                .metadata
+                .get("embed_type")
+                .and_then(|v| v.as_str()),
+            Some("note")
+        );
+        assert_eq!(
+            note_embed
+                .metadata
+                .get("content_category")
+                .and_then(|v| v.as_str()),
+            Some("note")
+        );
+        assert_eq!(
+            note_embed
+                .metadata
+                .get("is_external")
+                .and_then(|v| v.as_bool()),
+            None
+        ); // Local files don't have is_external flag
 
         // Check URL without extension (basic external handling)
-        let external_url_embed = relations.iter()
+        let external_url_embed = relations
+            .iter()
             .find(|r| r.metadata.get("offset").and_then(|v| v.as_u64()) == Some(30))
             .unwrap();
-        assert_eq!(external_url_embed.metadata.get("embed_type").and_then(|v| v.as_str()), Some("external"));
-        assert_eq!(external_url_embed.metadata.get("content_category").and_then(|v| v.as_str()), Some("external"));
-        assert_eq!(external_url_embed.metadata.get("is_external").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            external_url_embed
+                .metadata
+                .get("embed_type")
+                .and_then(|v| v.as_str()),
+            Some("external")
+        );
+        assert_eq!(
+            external_url_embed
+                .metadata
+                .get("content_category")
+                .and_then(|v| v.as_str()),
+            Some("external")
+        );
+        assert_eq!(
+            external_url_embed
+                .metadata
+                .get("is_external")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
 
         // Check unknown extension (basic external handling for unknown local file types)
-        let unknown_file_embed = relations.iter()
+        let unknown_file_embed = relations
+            .iter()
             .find(|r| r.metadata.get("offset").and_then(|v| v.as_u64()) == Some(40))
             .unwrap();
-        assert_eq!(unknown_file_embed.metadata.get("embed_type").and_then(|v| v.as_str()), Some("external"));
-        assert_eq!(unknown_file_embed.metadata.get("content_category").and_then(|v| v.as_str()), Some("external"));
-        assert_eq!(unknown_file_embed.metadata.get("is_external").and_then(|v| v.as_bool()), None); // Local files don't have is_external flag
+        assert_eq!(
+            unknown_file_embed
+                .metadata
+                .get("embed_type")
+                .and_then(|v| v.as_str()),
+            Some("external")
+        );
+        assert_eq!(
+            unknown_file_embed
+                .metadata
+                .get("content_category")
+                .and_then(|v| v.as_str()),
+            Some("external")
+        );
+        assert_eq!(
+            unknown_file_embed
+                .metadata
+                .get("is_external")
+                .and_then(|v| v.as_bool()),
+            None
+        ); // Local files don't have is_external flag
     }
 
     #[tokio::test]
@@ -3242,14 +3755,25 @@ mod tests {
         let entity_id = ingestor.ingest(&doc, "Index.md").await.unwrap();
 
         // Verify relation created with no target and no candidates
-        let relations = store.get_relations(&entity_id.id, Some("wikilink")).await.unwrap();
+        let relations = store
+            .get_relations(&entity_id.id, Some("wikilink"))
+            .await
+            .unwrap();
         assert_eq!(relations.len(), 1, "Should have one wikilink relation");
-        assert!(relations[0].to_entity_id.is_none(), "Unresolved link should have no target");
+        assert!(
+            relations[0].to_entity_id.is_none(),
+            "Unresolved link should have no target"
+        );
 
         let metadata = relations[0].metadata.as_object().unwrap();
         // Check that candidates is either missing or empty
         let has_no_candidates = metadata.get("candidates").is_none()
-            || metadata.get("candidates").unwrap().as_array().unwrap().is_empty();
+            || metadata
+                .get("candidates")
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .is_empty();
         assert!(has_no_candidates, "Should have no candidates");
     }
 
@@ -3285,7 +3809,10 @@ mod tests {
         let source_entity_id = ingestor.ingest(&source_doc, "Source.md").await.unwrap();
 
         // Verify relation created with resolved target
-        let relations = store.get_relations(&source_entity_id.id, Some("wikilink")).await.unwrap();
+        let relations = store
+            .get_relations(&source_entity_id.id, Some("wikilink"))
+            .await
+            .unwrap();
         assert_eq!(relations.len(), 1, "Should have one wikilink relation");
 
         // The adapter prefixes entity IDs with "entities:"
@@ -3324,7 +3851,10 @@ mod tests {
         let mut target_doc = sample_document();
         target_doc.path = PathBuf::from("AdvancedNote.md");
         target_doc.tags.clear();
-        ingestor.ingest(&target_doc, "AdvancedNote.md").await.unwrap();
+        ingestor
+            .ingest(&target_doc, "AdvancedNote.md")
+            .await
+            .unwrap();
 
         // Test complex embed variants
         let mut doc = sample_document();
@@ -3361,73 +3891,115 @@ mod tests {
             offset: 30,
         });
 
-        let entity_id = ingestor.ingest(&doc, "embed-variants-test.md").await.unwrap();
+        let entity_id = ingestor
+            .ingest(&doc, "embed-variants-test.md")
+            .await
+            .unwrap();
 
         // Get all embed relations
-        let relations = store.get_relations(&entity_id.id, Some("embed")).await.unwrap();
+        let relations = store
+            .get_relations(&entity_id.id, Some("embed"))
+            .await
+            .unwrap();
         assert_eq!(relations.len(), 3, "Should have 3 embed relations");
 
         // Test first embed: heading and alias
-        let heading_alias_embed = relations.iter()
+        let heading_alias_embed = relations
+            .iter()
             .find(|r| r.metadata.get("alias").and_then(|v| v.as_str()) == Some("Custom Display"))
             .unwrap();
         assert_eq!(heading_alias_embed.relation_type, "embed");
 
         // Test basic embed functionality that actually exists
         assert_eq!(
-            heading_alias_embed.metadata.get("is_embed").and_then(|v| v.as_bool()),
+            heading_alias_embed
+                .metadata
+                .get("is_embed")
+                .and_then(|v| v.as_bool()),
             Some(true)
         );
         assert_eq!(
-            heading_alias_embed.metadata.get("embed_type").and_then(|v| v.as_str()),
+            heading_alias_embed
+                .metadata
+                .get("embed_type")
+                .and_then(|v| v.as_str()),
             Some("note")
         );
         assert_eq!(
-            heading_alias_embed.metadata.get("content_category").and_then(|v| v.as_str()),
+            heading_alias_embed
+                .metadata
+                .get("content_category")
+                .and_then(|v| v.as_str()),
             Some("note")
         );
         assert_eq!(
-            heading_alias_embed.metadata.get("alias").and_then(|v| v.as_str()),
+            heading_alias_embed
+                .metadata
+                .get("alias")
+                .and_then(|v| v.as_str()),
             Some("Custom Display")
         );
         assert_eq!(
-            heading_alias_embed.metadata.get("heading_ref").and_then(|v| v.as_str()),
+            heading_alias_embed
+                .metadata
+                .get("heading_ref")
+                .and_then(|v| v.as_str()),
             Some("Introduction")
         );
 
         // Test second embed: block reference and alias
-        let block_alias_embed = relations.iter()
+        let block_alias_embed = relations
+            .iter()
             .find(|r| r.metadata.get("alias").and_then(|v| v.as_str()) == Some("Block Display"))
             .unwrap();
         assert_eq!(block_alias_embed.relation_type, "embed");
         assert_eq!(
-            block_alias_embed.metadata.get("is_embed").and_then(|v| v.as_bool()),
+            block_alias_embed
+                .metadata
+                .get("is_embed")
+                .and_then(|v| v.as_bool()),
             Some(true)
         );
         assert_eq!(
-            block_alias_embed.metadata.get("embed_type").and_then(|v| v.as_str()),
+            block_alias_embed
+                .metadata
+                .get("embed_type")
+                .and_then(|v| v.as_str()),
             Some("note")
         );
         assert_eq!(
-            block_alias_embed.metadata.get("alias").and_then(|v| v.as_str()),
+            block_alias_embed
+                .metadata
+                .get("alias")
+                .and_then(|v| v.as_str()),
             Some("Block Display")
         );
         assert_eq!(
-            block_alias_embed.metadata.get("block_ref").and_then(|v| v.as_str()),
+            block_alias_embed
+                .metadata
+                .get("block_ref")
+                .and_then(|v| v.as_str()),
             Some("^abc123")
         );
 
         // Test third embed: heading, block reference, and alias
-        let complex_embed = relations.iter()
+        let complex_embed = relations
+            .iter()
             .find(|r| r.metadata.get("alias").and_then(|v| v.as_str()) == Some("Complex Display"))
             .unwrap();
         assert_eq!(complex_embed.relation_type, "embed");
         assert_eq!(
-            complex_embed.metadata.get("is_embed").and_then(|v| v.as_bool()),
+            complex_embed
+                .metadata
+                .get("is_embed")
+                .and_then(|v| v.as_bool()),
             Some(true)
         );
         assert_eq!(
-            complex_embed.metadata.get("embed_type").and_then(|v| v.as_str()),
+            complex_embed
+                .metadata
+                .get("embed_type")
+                .and_then(|v| v.as_str()),
             Some("note")
         );
         assert_eq!(
@@ -3435,19 +4007,32 @@ mod tests {
             Some("Complex Display")
         );
         assert_eq!(
-            complex_embed.metadata.get("heading_ref").and_then(|v| v.as_str()),
+            complex_embed
+                .metadata
+                .get("heading_ref")
+                .and_then(|v| v.as_str()),
             Some("Details")
         );
         assert_eq!(
-            complex_embed.metadata.get("block_ref").and_then(|v| v.as_str()),
+            complex_embed
+                .metadata
+                .get("block_ref")
+                .and_then(|v| v.as_str()),
             Some("^def456")
         );
 
         // Verify all embeds are resolved to the target entity
         for relation in &relations {
-            assert!(relation.to_entity_id.is_some(), "Embed should be resolved to target entity");
             assert!(
-                relation.to_entity_id.as_ref().unwrap().contains("AdvancedNote"),
+                relation.to_entity_id.is_some(),
+                "Embed should be resolved to target entity"
+            );
+            assert!(
+                relation
+                    .to_entity_id
+                    .as_ref()
+                    .unwrap()
+                    .contains("AdvancedNote"),
                 "Should link to AdvancedNote entity"
             );
         }
@@ -3504,9 +4089,15 @@ mod tests {
             offset: 40,
         });
 
-        let entity_id = ingestor.ingest(&doc, "content-specific-test.md").await.unwrap();
+        let entity_id = ingestor
+            .ingest(&doc, "content-specific-test.md")
+            .await
+            .unwrap();
 
-        let relations = store.get_relations(&entity_id.id, Some("embed")).await.unwrap();
+        let relations = store
+            .get_relations(&entity_id.id, Some("embed"))
+            .await
+            .unwrap();
         assert_eq!(relations.len(), 4, "Should have 4 embed relations");
 
         // Test basic embed functionality for all embed types
@@ -3519,58 +4110,89 @@ mod tests {
         }
 
         // Test YouTube embed - check basic functionality that actually exists
-        let youtube_embed = relations.iter()
+        let youtube_embed = relations
+            .iter()
             .find(|r| r.metadata.get("is_external").and_then(|v| v.as_bool()) == Some(true))
             .expect("Should find an external embed");
         assert_eq!(
-            youtube_embed.metadata.get("embed_type").and_then(|v| v.as_str()),
+            youtube_embed
+                .metadata
+                .get("embed_type")
+                .and_then(|v| v.as_str()),
             Some("youtube")
         );
         assert_eq!(
-            youtube_embed.metadata.get("content_category").and_then(|v| v.as_str()),
+            youtube_embed
+                .metadata
+                .get("content_category")
+                .and_then(|v| v.as_str()),
             Some("youtube")
         );
         assert_eq!(
-            youtube_embed.metadata.get("is_external").and_then(|v| v.as_bool()),
+            youtube_embed
+                .metadata
+                .get("is_external")
+                .and_then(|v| v.as_bool()),
             Some(true)
         );
 
         // Test SVG image embed - check basic functionality
-        let svg_embed = relations.iter()
+        let svg_embed = relations
+            .iter()
             .find(|r| r.metadata.get("embed_type").and_then(|v| v.as_str()) == Some("image"))
             .expect("Should find an image embed");
         assert_eq!(
-            svg_embed.metadata.get("content_category").and_then(|v| v.as_str()),
+            svg_embed
+                .metadata
+                .get("content_category")
+                .and_then(|v| v.as_str()),
             Some("image")
         );
         assert_eq!(
-            svg_embed.metadata.get("embed_type").and_then(|v| v.as_str()),
+            svg_embed
+                .metadata
+                .get("embed_type")
+                .and_then(|v| v.as_str()),
             Some("image")
         );
 
         // Test PDF embed - check basic functionality
-        let pdf_embed = relations.iter()
+        let pdf_embed = relations
+            .iter()
             .find(|r| r.metadata.get("embed_type").and_then(|v| v.as_str()) == Some("pdf"))
             .expect("Should find a PDF embed");
         assert_eq!(
-            pdf_embed.metadata.get("content_category").and_then(|v| v.as_str()),
+            pdf_embed
+                .metadata
+                .get("content_category")
+                .and_then(|v| v.as_str()),
             Some("pdf")
         );
         assert_eq!(
-            pdf_embed.metadata.get("embed_type").and_then(|v| v.as_str()),
+            pdf_embed
+                .metadata
+                .get("embed_type")
+                .and_then(|v| v.as_str()),
             Some("pdf")
         );
 
         // Test README note embed - check basic functionality
-        let readme_embed = relations.iter()
+        let readme_embed = relations
+            .iter()
             .find(|r| r.metadata.get("embed_type").and_then(|v| v.as_str()) == Some("note"))
             .expect("Should find a note embed");
         assert_eq!(
-            readme_embed.metadata.get("content_category").and_then(|v| v.as_str()),
+            readme_embed
+                .metadata
+                .get("content_category")
+                .and_then(|v| v.as_str()),
             Some("note")
         );
         assert_eq!(
-            readme_embed.metadata.get("embed_type").and_then(|v| v.as_str()),
+            readme_embed
+                .metadata
+                .get("embed_type")
+                .and_then(|v| v.as_str()),
             Some("note")
         );
     }
@@ -3619,7 +4241,10 @@ mod tests {
 
         let entity_id = ingestor.ingest(&doc, "validation-test.md").await.unwrap();
 
-        let relations = store.get_relations(&entity_id.id, Some("embed")).await.unwrap();
+        let relations = store
+            .get_relations(&entity_id.id, Some("embed"))
+            .await
+            .unwrap();
         assert_eq!(relations.len(), 3, "Should have 3 embed relations");
 
         // Test basic relation structure and metadata
@@ -3642,20 +4267,44 @@ mod tests {
         }
 
         // Test specific targets are preserved
-        let targets: Vec<String> = relations.iter()
-            .filter_map(|r| r.metadata.get("target").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        let targets: Vec<String> = relations
+            .iter()
+            .filter_map(|r| {
+                r.metadata
+                    .get("target")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            })
             .collect();
 
-        assert!(targets.contains(&"".to_string()), "Should contain empty target");
-        assert!(targets.contains(&"simple-file.txt".to_string()), "Should contain simple file target");
-        assert!(targets.contains(&"https://example.com/image.png".to_string()), "Should contain external URL target");
+        assert!(
+            targets.contains(&"".to_string()),
+            "Should contain empty target"
+        );
+        assert!(
+            targets.contains(&"simple-file.txt".to_string()),
+            "Should contain simple file target"
+        );
+        assert!(
+            targets.contains(&"https://example.com/image.png".to_string()),
+            "Should contain external URL target"
+        );
 
         // Test that embed types are classified
-        let embed_types: Vec<String> = relations.iter()
-            .filter_map(|r| r.metadata.get("embed_type").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        let embed_types: Vec<String> = relations
+            .iter()
+            .filter_map(|r| {
+                r.metadata
+                    .get("embed_type")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            })
             .collect();
 
-        assert!(!embed_types.is_empty(), "Should have embed type classifications");
+        assert!(
+            !embed_types.is_empty(),
+            "Should have embed type classifications"
+        );
     }
 
     #[tokio::test]
@@ -3718,35 +4367,58 @@ mod tests {
         assert_eq!(relations.len(), 4, "Should have 4 relations");
 
         // Check complexity scores
-        let simple_wikilink = relations.iter()
-            .find(|r| r.metadata.get("variant_type").and_then(|v| v.as_str()) == Some("internal_link"))
+        let simple_wikilink = relations
+            .iter()
+            .find(|r| {
+                r.metadata.get("variant_type").and_then(|v| v.as_str()) == Some("internal_link")
+            })
             .unwrap();
         assert_eq!(
-            simple_wikilink.metadata.get("complexity_score").and_then(|v| v.as_i64()),
+            simple_wikilink
+                .metadata
+                .get("complexity_score")
+                .and_then(|v| v.as_i64()),
             Some(1)
         );
 
-        let simple_embed = relations.iter()
-            .find(|r| r.relation_type == "embed" && r.metadata.get("embed_type").and_then(|v| v.as_str()) == Some("image"))
+        let simple_embed = relations
+            .iter()
+            .find(|r| {
+                r.relation_type == "embed"
+                    && r.metadata.get("embed_type").and_then(|v| v.as_str()) == Some("image")
+            })
             .unwrap();
         assert_eq!(
-            simple_embed.metadata.get("complexity_score").and_then(|v| v.as_i64()),
+            simple_embed
+                .metadata
+                .get("complexity_score")
+                .and_then(|v| v.as_i64()),
             Some(3)
         );
 
-        let complex_embed = relations.iter()
+        let complex_embed = relations
+            .iter()
             .find(|r| r.metadata.get("alias").and_then(|v| v.as_str()) == Some("My Video"))
             .unwrap();
         assert_eq!(
-            complex_embed.metadata.get("complexity_score").and_then(|v| v.as_i64()),
+            complex_embed
+                .metadata
+                .get("complexity_score")
+                .and_then(|v| v.as_i64()),
             Some(5)
         );
 
-        let very_complex_embed = relations.iter()
-            .find(|r| r.metadata.get("variant_type").and_then(|v| v.as_str()) == Some("external_embed"))
+        let very_complex_embed = relations
+            .iter()
+            .find(|r| {
+                r.metadata.get("variant_type").and_then(|v| v.as_str()) == Some("external_embed")
+            })
             .unwrap();
         assert_eq!(
-            very_complex_embed.metadata.get("complexity_score").and_then(|v| v.as_i64()),
+            very_complex_embed
+                .metadata
+                .get("complexity_score")
+                .and_then(|v| v.as_i64()),
             Some(12)
         );
     }
@@ -3795,9 +4467,15 @@ mod tests {
             offset: 30,
         });
 
-        let entity_id = ingestor.ingest(&doc, "external-metadata-test.md").await.unwrap();
+        let entity_id = ingestor
+            .ingest(&doc, "external-metadata-test.md")
+            .await
+            .unwrap();
 
-        let relations = store.get_relations(&entity_id.id, Some("embed")).await.unwrap();
+        let relations = store
+            .get_relations(&entity_id.id, Some("embed"))
+            .await
+            .unwrap();
         assert_eq!(relations.len(), 3, "Should have 3 embed relations");
 
         // Test that all external URL embeds have basic classification metadata
@@ -3823,38 +4501,53 @@ mod tests {
 
             // All external URLs should have is_external flag
             assert_eq!(
-                relation.metadata.get("is_external").and_then(|v| v.as_bool()),
+                relation
+                    .metadata
+                    .get("is_external")
+                    .and_then(|v| v.as_bool()),
                 Some(true),
                 "External URL embed should have is_external: true"
             );
         }
 
         // Test YouTube-specific classification
-        let youtube_relation = relations.iter()
+        let youtube_relation = relations
+            .iter()
             .find(|r| r.metadata.get("embed_type").and_then(|v| v.as_str()) == Some("youtube"))
             .expect("Should have YouTube embed relation");
         assert_eq!(
-            youtube_relation.metadata.get("content_category").and_then(|v| v.as_str()),
+            youtube_relation
+                .metadata
+                .get("content_category")
+                .and_then(|v| v.as_str()),
             Some("youtube"),
             "YouTube embed should have content_category 'youtube'"
         );
 
         // Test GitHub-specific classification
-        let github_relation = relations.iter()
+        let github_relation = relations
+            .iter()
             .find(|r| r.metadata.get("embed_type").and_then(|v| v.as_str()) == Some("github"))
             .expect("Should have GitHub embed relation");
         assert_eq!(
-            github_relation.metadata.get("content_category").and_then(|v| v.as_str()),
+            github_relation
+                .metadata
+                .get("content_category")
+                .and_then(|v| v.as_str()),
             Some("github"),
             "GitHub embed should have content_category 'github'"
         );
 
         // Test Twitter-specific classification
-        let twitter_relation = relations.iter()
+        let twitter_relation = relations
+            .iter()
             .find(|r| r.metadata.get("embed_type").and_then(|v| v.as_str()) == Some("twitter"))
             .expect("Should have Twitter embed relation");
         assert_eq!(
-            twitter_relation.metadata.get("content_category").and_then(|v| v.as_str()),
+            twitter_relation
+                .metadata
+                .get("content_category")
+                .and_then(|v| v.as_str()),
             Some("other"),
             "Twitter embed should have content_category 'other'"
         );
@@ -3893,7 +4586,6 @@ mod tests {
                 is_embed: true,
                 offset: 10,
             },
-
             // Heading only
             Wikilink {
                 target: "TargetNote".to_string(),
@@ -3903,7 +4595,6 @@ mod tests {
                 is_embed: true,
                 offset: 20,
             },
-
             // Block only (carrot style)
             Wikilink {
                 target: "TargetNote".to_string(),
@@ -3913,7 +4604,6 @@ mod tests {
                 is_embed: true,
                 offset: 30,
             },
-
             // Block only (parentheses style)
             Wikilink {
                 target: "TargetNote".to_string(),
@@ -3923,7 +4613,6 @@ mod tests {
                 is_embed: true,
                 offset: 40,
             },
-
             // Alias only
             Wikilink {
                 target: "TargetNote".to_string(),
@@ -3933,7 +4622,6 @@ mod tests {
                 is_embed: true,
                 offset: 50,
             },
-
             // Heading + Block + Alias (maximum complexity)
             Wikilink {
                 target: "TargetNote".to_string(),
@@ -3949,8 +4637,14 @@ mod tests {
             doc.wikilinks.push(wikilink.clone());
         }
 
-        let entity_id = ingestor.ingest(&doc, "variant-metadata-comprehensive.md").await.unwrap();
-        let relations = store.get_relations(&entity_id.id, Some("embed")).await.unwrap();
+        let entity_id = ingestor
+            .ingest(&doc, "variant-metadata-comprehensive.md")
+            .await
+            .unwrap();
+        let relations = store
+            .get_relations(&entity_id.id, Some("embed"))
+            .await
+            .unwrap();
         assert_eq!(relations.len(), 6, "Should have 6 embed relations");
 
         // Test basic embed processing functionality that actually exists
@@ -3966,7 +4660,10 @@ mod tests {
 
             // Check content category (should be "note" for TargetNote)
             assert_eq!(
-                relation.metadata.get("content_category").and_then(|v| v.as_str()),
+                relation
+                    .metadata
+                    .get("content_category")
+                    .and_then(|v| v.as_str()),
                 Some("note"),
                 "Embed should have content_category 'note'"
             );
@@ -3980,7 +4677,10 @@ mod tests {
 
             // Check that internal embeds don't have is_external flag
             assert_eq!(
-                relation.metadata.get("is_external").and_then(|v| v.as_bool()),
+                relation
+                    .metadata
+                    .get("is_external")
+                    .and_then(|v| v.as_bool()),
                 None,
                 "Internal embed should not have is_external flag"
             );
@@ -4000,8 +4700,7 @@ mod tests {
 
             // Check relation type is "embed"
             assert_eq!(
-                relation.relation_type,
-                "embed",
+                relation.relation_type, "embed",
                 "Relation should be of type 'embed'"
             );
         }
@@ -4033,7 +4732,6 @@ mod tests {
             ("image.bmp", "image", "bmp"),
             ("image.tiff", "image", "tiff"),
             ("image.ico", "image", "ico"),
-
             // Video types
             ("video.mp4", "video", "mp4"),
             ("video.webm", "video", "webm"),
@@ -4042,7 +4740,6 @@ mod tests {
             ("video.mkv", "video", "mkv"),
             ("video.flv", "video", "flv"),
             ("video.wmv", "video", "wmv"),
-
             // Audio types
             ("audio.mp3", "audio", "mp3"),
             ("audio.wav", "audio", "wav"),
@@ -4051,32 +4748,27 @@ mod tests {
             ("audio.aac", "audio", "aac"),
             ("audio.m4a", "audio", "m4a"),
             ("audio.webm", "audio", "webm"),
-
             // Note types
             ("note.pdf", "pdf", "pdf"),
             ("note.doc", "external", "doc"), // Not specifically handled
             ("note.docx", "external", "docx"), // Not specifically handled
-
             // Code files
             ("code.js", "note", "js"),
             ("code.py", "note", "py"),
             ("code.rs", "note", "rs"),
             ("code.html", "note", "html"),
             ("code.css", "note", "css"),
-
             // Data files
             ("data.json", "note", "json"),
             ("data.xml", "note", "xml"),
             ("data.csv", "note", "csv"),
             ("data.yaml", "note", "yaml"),
             ("data.yml", "note", "yml"),
-
             // Note files (markdown and text)
             ("note.md", "note", "md"),
             ("note.markdown", "note", "markdown"),
             ("note.txt", "note", "txt"),
             ("note.rst", "note", "rst"),
-
             // Configuration files
             ("config.toml", "note", "toml"),
             ("config.ini", "note", "ini"),
@@ -4094,13 +4786,25 @@ mod tests {
             });
         }
 
-        let entity_id = ingestor.ingest(&doc, "embed-types-comprehensive.md").await.unwrap();
-        let relations = store.get_relations(&entity_id.id, Some("embed")).await.unwrap();
-        assert_eq!(relations.len(), embed_types.len(), "Should have {} embed relations", embed_types.len());
+        let entity_id = ingestor
+            .ingest(&doc, "embed-types-comprehensive.md")
+            .await
+            .unwrap();
+        let relations = store
+            .get_relations(&entity_id.id, Some("embed"))
+            .await
+            .unwrap();
+        assert_eq!(
+            relations.len(),
+            embed_types.len(),
+            "Should have {} embed relations",
+            embed_types.len()
+        );
 
         // Verify each embed type is correctly classified
         for (target, expected_type, ext) in embed_types {
-            let relation = relations.iter()
+            let relation = relations
+                .iter()
                 .find(|r| r.metadata.get("target").and_then(|v| v.as_str()) == Some(target))
                 .unwrap_or_else(|| panic!("Should find relation for target: {}", target));
 
@@ -4108,14 +4812,18 @@ mod tests {
                 relation.metadata.get("embed_type").and_then(|v| v.as_str()),
                 Some(expected_type),
                 "Target {} should be classified as {}",
-                target, expected_type
+                target,
+                expected_type
             );
 
             // Check type-specific metadata
             match expected_type {
                 "image" => {
                     assert_eq!(
-                        relation.metadata.get("content_category").and_then(|v| v.as_str()),
+                        relation
+                            .metadata
+                            .get("content_category")
+                            .and_then(|v| v.as_str()),
                         Some("image")
                     );
                     assert_eq!(
@@ -4130,58 +4838,76 @@ mod tests {
                             Some(true)
                         );
                         assert_eq!(
-                            relation.metadata.get("image_format").and_then(|v| v.as_str()),
+                            relation
+                                .metadata
+                                .get("image_format")
+                                .and_then(|v| v.as_str()),
                             Some("svg")
                         );
                     }
-                },
+                }
                 "video" => {
                     assert_eq!(
-                        relation.metadata.get("content_category").and_then(|v| v.as_str()),
+                        relation
+                            .metadata
+                            .get("content_category")
+                            .and_then(|v| v.as_str()),
                         Some("video")
                     );
                     assert_eq!(
                         relation.metadata.get("media_type").and_then(|v| v.as_str()),
                         Some("video")
                     );
-                },
+                }
                 "audio" => {
                     assert_eq!(
-                        relation.metadata.get("content_category").and_then(|v| v.as_str()),
+                        relation
+                            .metadata
+                            .get("content_category")
+                            .and_then(|v| v.as_str()),
                         Some("audio")
                     );
                     assert_eq!(
                         relation.metadata.get("media_type").and_then(|v| v.as_str()),
                         Some("audio")
                     );
-                },
+                }
                 "pdf" => {
                     assert_eq!(
-                        relation.metadata.get("requires_pdf_viewer").and_then(|v| v.as_bool()),
+                        relation
+                            .metadata
+                            .get("requires_pdf_viewer")
+                            .and_then(|v| v.as_bool()),
                         Some(true)
                     );
                     assert_eq!(
                         relation.metadata.get("paginated").and_then(|v| v.as_bool()),
                         Some(true)
                     );
-                },
+                }
                 "note" => {
                     assert_eq!(
-                        relation.metadata.get("content_category").and_then(|v| v.as_str()),
+                        relation
+                            .metadata
+                            .get("content_category")
+                            .and_then(|v| v.as_str()),
                         Some("note")
                     );
                     assert_eq!(
                         relation.metadata.get("media_type").and_then(|v| v.as_str()),
                         Some("note")
                     );
-                },
+                }
                 "external" => {
                     // Should fall back to external type for unknown extensions
                     assert_eq!(
-                        relation.metadata.get("content_category").and_then(|v| v.as_str()),
+                        relation
+                            .metadata
+                            .get("content_category")
+                            .and_then(|v| v.as_str()),
                         Some("external")
                     );
-                },
+                }
                 _ => {}
             }
         }
@@ -4206,20 +4932,16 @@ mod tests {
             // YouTube URLs - these get service-specific classification
             "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
             "https://youtu.be/dQw4w9WgXcQ",
-
             // GitHub URLs - these get service classification
             "https://github.com/user/repo",
             "https://github.com/user/repo/blob/main/README.md",
-
             // Social media
             "https://twitter.com/user/status/123456",
             "https://x.com/user/status/123456",
-
             // Documentation and reference
             "https://docs.rust-lang.org/std/index.html",
             "https://developer.mozilla.org/en-US/docs/Web/JavaScript",
             "https://en.wikipedia.org/wiki/Rust_(programming_language)",
-
             // Generic external URLs - these get basic external classification
             "https://example.com/page",
             "https://news.ycombinator.com/item?id=123456",
@@ -4237,26 +4959,57 @@ mod tests {
             });
         }
 
-        let entity_id = ingestor.ingest(&doc, "external-url-basic.md").await.unwrap();
-        let relations = store.get_relations(&entity_id.id, Some("embed")).await.unwrap();
-        assert_eq!(relations.len(), external_urls.len(), "Should have {} embed relations", external_urls.len());
+        let entity_id = ingestor
+            .ingest(&doc, "external-url-basic.md")
+            .await
+            .unwrap();
+        let relations = store
+            .get_relations(&entity_id.id, Some("embed"))
+            .await
+            .unwrap();
+        assert_eq!(
+            relations.len(),
+            external_urls.len(),
+            "Should have {} embed relations",
+            external_urls.len()
+        );
 
         // Verify each external URL has basic external metadata
         for url in &external_urls {
-            let relation = relations.iter()
+            let relation = relations
+                .iter()
                 .find(|r| r.metadata.get("target").and_then(|v| v.as_str()) == Some(*url))
                 .unwrap_or_else(|| panic!("Should find relation for URL: {}", url));
 
             // Check embed detection - all external URLs should have embed_type that reflects their actual classification
-            let embed_type = relation.metadata.get("embed_type").and_then(|v| v.as_str()).unwrap();
-            assert!(!embed_type.is_empty(), "URL {} should have a non-empty embed_type", url);
+            let embed_type = relation
+                .metadata
+                .get("embed_type")
+                .and_then(|v| v.as_str())
+                .unwrap();
+            assert!(
+                !embed_type.is_empty(),
+                "URL {} should have a non-empty embed_type",
+                url
+            );
 
             // Check content category - should be "external" for general external URLs, but can be service-specific
-            let content_category = relation.metadata.get("content_category").and_then(|v| v.as_str()).unwrap();
-            assert!(!content_category.is_empty(), "URL {} should have a non-empty content_category", url);
+            let content_category = relation
+                .metadata
+                .get("content_category")
+                .and_then(|v| v.as_str())
+                .unwrap();
+            assert!(
+                !content_category.is_empty(),
+                "URL {} should have a non-empty content_category",
+                url
+            );
 
             assert_eq!(
-                relation.metadata.get("is_external").and_then(|v| v.as_bool()),
+                relation
+                    .metadata
+                    .get("is_external")
+                    .and_then(|v| v.as_bool()),
                 Some(true),
                 "URL {} should be marked as external",
                 url
@@ -4270,20 +5023,33 @@ mod tests {
         }
 
         // Test that service-specific URLs get correct embed types and metadata
-        let youtube_relation = relations.iter()
-            .find(|r| r.metadata.get("target").and_then(|v| v.as_str()).unwrap_or_default().contains("youtube.com"))
+        let youtube_relation = relations
+            .iter()
+            .find(|r| {
+                r.metadata
+                    .get("target")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .contains("youtube.com")
+            })
             .unwrap();
 
         // YouTube URLs should have youtube embed type
         assert_eq!(
-            youtube_relation.metadata.get("embed_type").and_then(|v| v.as_str()),
+            youtube_relation
+                .metadata
+                .get("embed_type")
+                .and_then(|v| v.as_str()),
             Some("youtube"),
             "YouTube URL should have youtube embed type"
         );
 
         // YouTube URLs should have youtube content category (service-specific)
         assert_eq!(
-            youtube_relation.metadata.get("content_category").and_then(|v| v.as_str()),
+            youtube_relation
+                .metadata
+                .get("content_category")
+                .and_then(|v| v.as_str()),
             Some("youtube"),
             "YouTube URL should have youtube content category"
         );
@@ -4291,13 +5057,23 @@ mod tests {
         // Note: Service classification may be set by different functions, we focus on core metadata
         // The key is that YouTube URLs get special handling (youtube embed type and content category)
 
-        let github_relation = relations.iter()
-            .find(|r| r.metadata.get("target").and_then(|v| v.as_str()).unwrap_or_default().contains("github.com"))
+        let github_relation = relations
+            .iter()
+            .find(|r| {
+                r.metadata
+                    .get("target")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .contains("github.com")
+            })
             .unwrap();
 
         // GitHub URLs should have github embed type (they are special-cased)
         assert_eq!(
-            github_relation.metadata.get("embed_type").and_then(|v| v.as_str()),
+            github_relation
+                .metadata
+                .get("embed_type")
+                .and_then(|v| v.as_str()),
             Some("github"),
             "GitHub URL should have github embed type"
         );
@@ -4305,27 +5081,37 @@ mod tests {
         // Note: Content category for service-specific embed types may vary
 
         // Test that generic external URLs get external content category
-        let generic_external_relation = relations.iter()
+        let generic_external_relation = relations
+            .iter()
             .find(|r| {
-                let target = r.metadata.get("target").and_then(|v| v.as_str()).unwrap_or_default();
+                let target = r
+                    .metadata
+                    .get("target")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
                 target.contains("example.com") || target.contains("docs.rust-lang.org")
             })
             .unwrap();
 
         assert_eq!(
-            generic_external_relation.metadata.get("embed_type").and_then(|v| v.as_str()),
+            generic_external_relation
+                .metadata
+                .get("embed_type")
+                .and_then(|v| v.as_str()),
             Some("external"),
             "Generic external URL should have external embed type"
         );
 
         assert_eq!(
-            generic_external_relation.metadata.get("content_category").and_then(|v| v.as_str()),
+            generic_external_relation
+                .metadata
+                .get("content_category")
+                .and_then(|v| v.as_str()),
             Some("external"),
             "Generic external URL should have external content category"
         );
     }
 
-    
     #[tokio::test]
     async fn test_embed_content_specific_processing_comprehensive() {
         use crucible_core::parser::Wikilink;
@@ -4343,43 +5129,92 @@ mod tests {
         // Test comprehensive content-specific processing
         let content_cases = vec![
             // Various image formats with specific processing
-            ("image.svg", "image", vec![("is_vector", "true"), ("image_format", "svg")]),
-            ("image.png", "image", vec![("is_vector", "false"), ("image_format", "png")]),
-            ("image.jpg", "image", vec![("is_vector", "false"), ("image_format", "jpg")]),
-            ("image.gif", "image", vec![("is_vector", "false"), ("image_format", "gif"), ("animated", "true")]),
-
+            (
+                "image.svg",
+                "image",
+                vec![("is_vector", "true"), ("image_format", "svg")],
+            ),
+            (
+                "image.png",
+                "image",
+                vec![("is_vector", "false"), ("image_format", "png")],
+            ),
+            (
+                "image.jpg",
+                "image",
+                vec![("is_vector", "false"), ("image_format", "jpg")],
+            ),
+            (
+                "image.gif",
+                "image",
+                vec![
+                    ("is_vector", "false"),
+                    ("image_format", "gif"),
+                    ("animated", "true"),
+                ],
+            ),
             // Video formats
-            ("video.mp4", "video", vec![("requires_embed_player", "false")]),
-            ("video.webm", "video", vec![("requires_embed_player", "false")]),
-            ("video.avi", "video", vec![("requires_embed_player", "false")]),
-
+            (
+                "video.mp4",
+                "video",
+                vec![("requires_embed_player", "false")],
+            ),
+            (
+                "video.webm",
+                "video",
+                vec![("requires_embed_player", "false")],
+            ),
+            (
+                "video.avi",
+                "video",
+                vec![("requires_embed_player", "false")],
+            ),
             // Audio formats
-            ("audio.mp3", "audio", vec![("requires_embed_player", "false")]),
-            ("audio.wav", "audio", vec![("requires_embed_player", "false")]),
-            ("audio.ogg", "audio", vec![("requires_embed_player", "false")]),
-            ("audio.flac", "audio", vec![("requires_embed_player", "false")]),
-
+            (
+                "audio.mp3",
+                "audio",
+                vec![("requires_embed_player", "false")],
+            ),
+            (
+                "audio.wav",
+                "audio",
+                vec![("requires_embed_player", "false")],
+            ),
+            (
+                "audio.ogg",
+                "audio",
+                vec![("requires_embed_player", "false")],
+            ),
+            (
+                "audio.flac",
+                "audio",
+                vec![("requires_embed_player", "false")],
+            ),
             // PDF with specific processing
-            ("note.pdf", "pdf", vec![
-                ("requires_pdf_viewer", "true"),
-                ("paginated", "true"),
-                ("text_searchable", "true"),
-                ("security_considerations", "external_links,javascript,embedded_content")
-            ]),
-
+            (
+                "note.pdf",
+                "pdf",
+                vec![
+                    ("requires_pdf_viewer", "true"),
+                    ("paginated", "true"),
+                    ("text_searchable", "true"),
+                    (
+                        "security_considerations",
+                        "external_links,javascript,embedded_content",
+                    ),
+                ],
+            ),
             // Various note types with special handling
-            ("README.md", "note", vec![
-                ("likely_readme", "true"),
-                ("project_documentation", "true")
-            ]),
-            ("CHANGELOG.md", "note", vec![
-                ("likely_changelog", "true")
-            ]),
+            (
+                "README.md",
+                "note",
+                vec![("likely_readme", "true"), ("project_documentation", "true")],
+            ),
+            ("CHANGELOG.md", "note", vec![("likely_changelog", "true")]),
             ("LICENSE.md", "note", vec![]),
             ("CONTRIBUTING.md", "note", vec![]),
             ("CODE_OF_CONDUCT.md", "note", vec![]),
             ("SECURITY.md", "note", vec![]),
-
             // Various file types
             ("config.toml", "note", vec![]),
             ("config.yaml", "note", vec![]),
@@ -4387,20 +5222,17 @@ mod tests {
             ("requirements.txt", "note", vec![]),
             ("Cargo.toml", "note", vec![]),
             ("pyproject.toml", "note", vec![]),
-
             // Code files
             ("main.js", "note", vec![]),
             ("style.css", "note", vec![]),
             ("script.py", "note", vec![]),
             ("app.rs", "note", vec![]),
             ("index.html", "note", vec![]),
-
             // Data files
             ("data.json", "note", vec![]),
             ("data.xml", "note", vec![]),
             ("data.csv", "note", vec![]),
             ("data.sql", "external", vec![]),
-
             // Documentation files
             ("docs/api.md", "note", vec![]),
             ("reference.md", "note", vec![]),
@@ -4419,13 +5251,25 @@ mod tests {
             });
         }
 
-        let entity_id = ingestor.ingest(&doc, "content-specific-comprehensive.md").await.unwrap();
-        let relations = store.get_relations(&entity_id.id, Some("embed")).await.unwrap();
-        assert_eq!(relations.len(), content_cases.len(), "Should have {} embed relations", content_cases.len());
+        let entity_id = ingestor
+            .ingest(&doc, "content-specific-comprehensive.md")
+            .await
+            .unwrap();
+        let relations = store
+            .get_relations(&entity_id.id, Some("embed"))
+            .await
+            .unwrap();
+        assert_eq!(
+            relations.len(),
+            content_cases.len(),
+            "Should have {} embed relations",
+            content_cases.len()
+        );
 
         // Verify each content case has correct metadata
         for (target, expected_type, expected_metadata) in content_cases {
-            let relation = relations.iter()
+            let relation = relations
+                .iter()
                 .find(|r| r.metadata.get("target").and_then(|v| v.as_str()) == Some(target))
                 .unwrap_or_else(|| panic!("Should find relation for target: {}", target));
 
@@ -4433,13 +5277,15 @@ mod tests {
                 relation.metadata.get("embed_type").and_then(|v| v.as_str()),
                 Some(expected_type),
                 "Target {} should have embed type {}",
-                target, expected_type
+                target,
+                expected_type
             );
 
             // Check expected metadata
             for (key, expected_value) in expected_metadata {
-                let json_value = relation.metadata.get(key)
-                    .unwrap_or_else(|| panic!("Missing metadata key '{}' for target {}", key, target));
+                let json_value = relation.metadata.get(key).unwrap_or_else(|| {
+                    panic!("Missing metadata key '{}' for target {}", key, target)
+                });
 
                 // Handle different JSON value types properly
                 let actual_value = match json_value {
@@ -4451,33 +5297,39 @@ mod tests {
 
                 if expected_value.contains(',') {
                     // Handle array values - the implementation returns actual JSON arrays
-                    let expected_array: Vec<&str> = expected_value.split(',').map(|s| s.trim()).collect();
+                    let expected_array: Vec<&str> =
+                        expected_value.split(',').map(|s| s.trim()).collect();
 
                     if let serde_json::Value::Array(actual_array) = json_value {
-                        let actual_strings: Vec<String> = actual_array.iter()
+                        let actual_strings: Vec<String> = actual_array
+                            .iter()
                             .filter_map(|v| v.as_str())
                             .map(|s| s.to_string())
                             .collect();
-                        let expected_strings: Vec<String> = expected_array.iter().map(|s| s.to_string()).collect();
-                        assert_eq!(actual_strings, expected_strings,
+                        let expected_strings: Vec<String> =
+                            expected_array.iter().map(|s| s.to_string()).collect();
+                        assert_eq!(
+                            actual_strings, expected_strings,
                             "Target {} should have {} = {:?} (actual JSON: {})",
-                            target, key, expected_array, json_value);
+                            target, key, expected_array, json_value
+                        );
                     } else {
                         panic!("Expected array value for {} but got: {}", key, json_value);
                     }
                 } else {
-                    assert_eq!(actual_value, expected_value,
+                    assert_eq!(
+                        actual_value, expected_value,
                         "Target {} should have {} = {}",
-                        target, key, expected_value);
+                        target, key, expected_value
+                    );
                 }
             }
         }
     }
 
-    
     #[tokio::test]
     async fn test_embed_integration_with_existing_functionality() {
-        use crucible_core::parser::{Wikilink, Tag};
+        use crucible_core::parser::{Tag, Wikilink};
         use crucible_core::storage::{RelationStorage, TagStorage};
 
         let client = SurrealClient::new_isolated_memory().await.unwrap();
@@ -4547,25 +5399,37 @@ mod tests {
 
         // 2. Check relations are created with correct types
         let relations = store.get_relations(&entity_id.id, None).await.unwrap();
-        assert_eq!(relations.len(), 3, "Should have 3 relations (1 wikilink + 2 embeds)");
+        assert_eq!(
+            relations.len(),
+            3,
+            "Should have 3 relations (1 wikilink + 2 embeds)"
+        );
 
         // Check regular wikilink still works
-        let wikilink_rel = relations.iter()
+        let wikilink_rel = relations
+            .iter()
             .find(|r| r.relation_type == "wikilink")
             .unwrap();
-        assert!(wikilink_rel.to_entity_id.is_some(), "Regular wikilink should be resolved");
+        assert!(
+            wikilink_rel.to_entity_id.is_some(),
+            "Regular wikilink should be resolved"
+        );
         assert_eq!(
             wikilink_rel.metadata.get("alias").and_then(|v| v.as_str()),
             Some("Target One")
         );
         // Regular wikilinks should not have embed metadata
         assert_eq!(
-            wikilink_rel.metadata.get("is_embed").and_then(|v| v.as_bool()),
+            wikilink_rel
+                .metadata
+                .get("is_embed")
+                .and_then(|v| v.as_bool()),
             None
         );
 
         // Check basic embed functionality
-        let embed_relations: Vec<_> = relations.iter()
+        let embed_relations: Vec<_> = relations
+            .iter()
             .filter(|r| r.relation_type == "embed")
             .collect();
         assert_eq!(embed_relations.len(), 2, "Should have 2 embed relations");
@@ -4588,37 +5452,60 @@ mod tests {
         }
 
         // Check internal embed
-        let internal_embed = embed_relations.iter()
+        let internal_embed = embed_relations
+            .iter()
             .find(|r| r.metadata.get("is_external").is_none())
             .unwrap();
-        assert!(internal_embed.to_entity_id.is_some(), "Internal embed should be resolved");
+        assert!(
+            internal_embed.to_entity_id.is_some(),
+            "Internal embed should be resolved"
+        );
         assert_eq!(
-            internal_embed.metadata.get("embed_type").and_then(|v| v.as_str()),
+            internal_embed
+                .metadata
+                .get("embed_type")
+                .and_then(|v| v.as_str()),
             Some("note")
         );
         assert_eq!(
-            internal_embed.metadata.get("content_category").and_then(|v| v.as_str()),
+            internal_embed
+                .metadata
+                .get("content_category")
+                .and_then(|v| v.as_str()),
             Some("note")
         );
         assert_eq!(
-            internal_embed.metadata.get("alias").and_then(|v| v.as_str()),
+            internal_embed
+                .metadata
+                .get("alias")
+                .and_then(|v| v.as_str()),
             Some("Target Two Embedded")
         );
 
         // Check external embed
-        let external_embed = embed_relations.iter()
+        let external_embed = embed_relations
+            .iter()
             .find(|r| r.metadata.get("is_external").and_then(|v| v.as_bool()) == Some(true))
             .unwrap();
         assert_eq!(
-            external_embed.metadata.get("embed_type").and_then(|v| v.as_str()),
+            external_embed
+                .metadata
+                .get("embed_type")
+                .and_then(|v| v.as_str()),
             Some("image")
         );
         assert_eq!(
-            external_embed.metadata.get("content_category").and_then(|v| v.as_str()),
+            external_embed
+                .metadata
+                .get("content_category")
+                .and_then(|v| v.as_str()),
             Some("image")
         );
         assert_eq!(
-            external_embed.metadata.get("is_external").and_then(|v| v.as_bool()),
+            external_embed
+                .metadata
+                .get("is_external")
+                .and_then(|v| v.as_bool()),
             Some(true)
         );
 
@@ -4628,15 +5515,19 @@ mod tests {
 
         // 4. Check entities and blocks are created normally
         let entities = client
-            .query("SELECT * FROM entities WHERE id = type::thing('entities', $id)",
-                   &[json!({ "id": entity_id.id })])
+            .query(
+                "SELECT * FROM entities WHERE id = type::thing('entities', $id)",
+                &[json!({ "id": entity_id.id })],
+            )
             .await
             .unwrap();
         assert_eq!(entities.records.len(), 1, "Should have created entity");
 
         let blocks = client
-            .query("SELECT * FROM blocks WHERE entity_id = type::thing('entities', $id)",
-                   &[json!({ "id": entity_id.id })])
+            .query(
+                "SELECT * FROM blocks WHERE entity_id = type::thing('entities', $id)",
+                &[json!({ "id": entity_id.id })],
+            )
             .await
             .unwrap();
         assert!(!blocks.records.is_empty(), "Should have created blocks");
@@ -4662,8 +5553,16 @@ mod tests {
             doc.wikilinks.push(Wikilink {
                 target: format!("target{}.md", i),
                 alias: Some(format!("Target {}", i)),
-                heading_ref: if i % 3 == 0 { Some(format!("Section {}", i)) } else { None },
-                block_ref: if i % 5 == 0 { Some(format!("^block{}", i)) } else { None },
+                heading_ref: if i % 3 == 0 {
+                    Some(format!("Section {}", i))
+                } else {
+                    None
+                },
+                block_ref: if i % 5 == 0 {
+                    Some(format!("^block{}", i))
+                } else {
+                    None
+                },
                 is_embed: true,
                 offset: i * 10,
             });
@@ -4671,29 +5570,48 @@ mod tests {
 
         // Measure ingestion time
         let start_time = std::time::Instant::now();
-        let entity_id = ingestor.ingest(&doc, "performance-edge-cases.md").await.unwrap();
+        let entity_id = ingestor
+            .ingest(&doc, "performance-edge-cases.md")
+            .await
+            .unwrap();
         let ingestion_time = start_time.elapsed();
 
         // Should complete within reasonable time (adjust threshold as needed)
-        assert!(ingestion_time.as_millis() < 5000,
-                "Ingestion should complete within 5 seconds, took {:?}", ingestion_time);
+        assert!(
+            ingestion_time.as_millis() < 5000,
+            "Ingestion should complete within 5 seconds, took {:?}",
+            ingestion_time
+        );
 
         // Verify all relations were created
-        let relations = store.get_relations(&entity_id.id, Some("embed")).await.unwrap();
-        assert_eq!(relations.len(), large_number_of_embeds,
-                  "Should create {} embed relations", large_number_of_embeds);
+        let relations = store
+            .get_relations(&entity_id.id, Some("embed"))
+            .await
+            .unwrap();
+        assert_eq!(
+            relations.len(),
+            large_number_of_embeds,
+            "Should create {} embed relations",
+            large_number_of_embeds
+        );
 
         // Test that complexity scoring is efficient
-        for relation in relations.iter().take(10) { // Check first 10 for efficiency
+        for relation in relations.iter().take(10) {
+            // Check first 10 for efficiency
             assert!(
                 relation.metadata.get("complexity_score").is_some(),
                 "Each relation should have complexity score"
             );
-            let complexity = relation.metadata.get("complexity_score")
+            let complexity = relation
+                .metadata
+                .get("complexity_score")
                 .and_then(|v| v.as_i64())
                 .unwrap();
-            assert!(complexity >= 3 && complexity <= 11,
-                   "Complexity should be reasonable: {}", complexity);
+            assert!(
+                complexity >= 3 && complexity <= 11,
+                "Complexity should be reasonable: {}",
+                complexity
+            );
         }
     }
 
@@ -4726,12 +5644,10 @@ mod tests {
             ("https://twitter.com/user/status/123456", "twitter", true),
             ("https://x.com/user/status/123456", "twitter", true),
             ("https://github.com/user/repo", "github", true),
-
             // External URLs without specific service detection
             ("https://example.com/page", "external", true),
             ("https://blog.example.org/article", "external", true),
             ("https://example.com/no-ext", "external", true),
-
             // Internal files (should be classified by their extension)
             ("test.png", "image", false),
             ("note.pdf", "pdf", false),
@@ -4751,26 +5667,44 @@ mod tests {
             });
         }
 
-        let entity_id = ingestor.ingest(&doc, "url-classification.md").await.unwrap();
-        let relations = store.get_relations(&entity_id.id, Some("embed")).await.unwrap();
-        assert_eq!(relations.len(), test_cases.len(), "Should have {} embed relations", test_cases.len());
+        let entity_id = ingestor
+            .ingest(&doc, "url-classification.md")
+            .await
+            .unwrap();
+        let relations = store
+            .get_relations(&entity_id.id, Some("embed"))
+            .await
+            .unwrap();
+        assert_eq!(
+            relations.len(),
+            test_cases.len(),
+            "Should have {} embed relations",
+            test_cases.len()
+        );
 
         // Verify basic URL classification capabilities
         // Create a mapping from URL to expected values for easier lookup
-        let test_map: std::collections::HashMap<_, _> = test_cases.iter()
+        let test_map: std::collections::HashMap<_, _> = test_cases
+            .iter()
             .map(|(url, embed_type, is_external)| (url.clone(), (*embed_type, *is_external)))
             .collect();
 
         for relation in &relations {
             // Get the target URL from metadata
-            let target_url = relation.metadata.get("target")
+            let target_url = relation
+                .metadata
+                .get("target")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
 
             // Find expected values for this URL
             if let Some((expected_embed_type, expected_is_external)) = test_map.get(target_url) {
                 // All relations should be embed type
-                assert_eq!(relation.relation_type, "embed", "URL {} should create embed relation", target_url);
+                assert_eq!(
+                    relation.relation_type, "embed",
+                    "URL {} should create embed relation",
+                    target_url
+                );
 
                 // All should have embed detection
                 assert_eq!(
@@ -4797,7 +5731,10 @@ mod tests {
                 // Check external URL classification
                 if *expected_is_external {
                     assert_eq!(
-                        relation.metadata.get("is_external").and_then(|v| v.as_bool()),
+                        relation
+                            .metadata
+                            .get("is_external")
+                            .and_then(|v| v.as_bool()),
                         Some(true),
                         "External URL {} should be marked as external",
                         target_url
@@ -4805,7 +5742,10 @@ mod tests {
                 } else {
                     // Internal files should not have is_external flag
                     assert_eq!(
-                        relation.metadata.get("is_external").and_then(|v| v.as_bool()),
+                        relation
+                            .metadata
+                            .get("is_external")
+                            .and_then(|v| v.as_bool()),
                         None,
                         "Internal file {} should not have is_external flag",
                         target_url
@@ -4817,7 +5757,8 @@ mod tests {
                     relation.metadata.get("embed_type").and_then(|v| v.as_str()),
                     Some(*expected_embed_type),
                     "URL {} should have embed_type: {}",
-                    target_url, expected_embed_type
+                    target_url,
+                    expected_embed_type
                 );
             } else {
                 // Skip URLs not in our test map (shouldn't happen, but handle gracefully)
@@ -4846,19 +5787,15 @@ mod tests {
             ("image.svg", "image"),
             ("photo.jpeg", "image"),
             ("graphic.webp", "image"),
-
             // Video with service detection
             ("https://www.youtube.com/watch?v=test123", "youtube"),
             ("https://vimeo.com/456789", "vimeo"),
             ("movie.mp4", "video"),
-
             // Audio with service detection
             ("https://soundcloud.com/artist/track", "soundcloud"),
             ("song.mp3", "audio"),
-
             // PDF with specific properties
             ("note.pdf", "pdf"),
-
             // Notes with documentation detection
             ("README.md", "note"),
             ("CHANGELOG.md", "note"),
@@ -4876,13 +5813,25 @@ mod tests {
             });
         }
 
-        let entity_id = ingestor.ingest(&doc, "metadata-extraction-comprehensive.md").await.unwrap();
-        let relations = store.get_relations(&entity_id.id, Some("embed")).await.unwrap();
-        assert_eq!(relations.len(), metadata_test_cases.len(), "Should have {} embed relations", metadata_test_cases.len());
+        let entity_id = ingestor
+            .ingest(&doc, "metadata-extraction-comprehensive.md")
+            .await
+            .unwrap();
+        let relations = store
+            .get_relations(&entity_id.id, Some("embed"))
+            .await
+            .unwrap();
+        assert_eq!(
+            relations.len(),
+            metadata_test_cases.len(),
+            "Should have {} embed relations",
+            metadata_test_cases.len()
+        );
 
         // Verify basic metadata extraction works for all embed types
         for (target, expected_embed_type) in metadata_test_cases {
-            let relation = relations.iter()
+            let relation = relations
+                .iter()
                 .find(|r| r.metadata.get("target").and_then(|v| v.as_str()) == Some(target))
                 .unwrap_or_else(|| panic!("Should find relation for target: {}", target));
 
@@ -4906,13 +5855,17 @@ mod tests {
                 relation.metadata.get("embed_type").and_then(|v| v.as_str()),
                 Some(expected_embed_type),
                 "Target {} should have embed type: {}",
-                target, expected_embed_type
+                target,
+                expected_embed_type
             );
 
             // External vs internal classification
             let is_external = target.starts_with("http://") || target.starts_with("https://");
             assert_eq!(
-                relation.metadata.get("is_external").and_then(|v| v.as_bool()),
+                relation
+                    .metadata
+                    .get("is_external")
+                    .and_then(|v| v.as_bool()),
                 if is_external { Some(true) } else { None },
                 "Target {} should have correct is_external classification",
                 target
@@ -4920,8 +5873,6 @@ mod tests {
         }
     }
 
-  
-    
     #[tokio::test]
     async fn test_embed_file_extension_case_insensitivity() {
         use crucible_core::parser::Wikilink;
@@ -4945,27 +5896,23 @@ mod tests {
             ("picture.GIF", "image"),
             ("vector.SVG", "image"),
             ("bitmap.WebP", "image"),
-
             // Videos - various cases
             ("movie.MP4", "video"),
             ("clip.MOV", "video"),
             ("animation.AVI", "video"),
             ("stream.WebM", "video"),
             ("recording.MKV", "video"),
-
             // Audio - various cases
             ("song.MP3", "audio"),
             ("track.WAV", "audio"),
             ("podcast.OGG", "audio"),
             ("music.FLAC", "audio"),
             ("audio.M4A", "audio"),
-
             // Documents - various cases
             ("note.PDF", "pdf"),
             ("slides.PPTX", "external"),
             ("spreadsheet.XLSX", "external"),
             ("archive.ZIP", "external"),
-
             // Code - various cases
             ("script.RS", "note"),
             ("program.PY", "note"),
@@ -4984,13 +5931,25 @@ mod tests {
             });
         }
 
-        let entity_id = ingestor.ingest(&doc, "file-extension-case-sensitivity.md").await.unwrap();
-        let relations = store.get_relations(&entity_id.id, Some("embed")).await.unwrap();
-        assert_eq!(relations.len(), case_test_cases.len(), "Should have {} embed relations", case_test_cases.len());
+        let entity_id = ingestor
+            .ingest(&doc, "file-extension-case-sensitivity.md")
+            .await
+            .unwrap();
+        let relations = store
+            .get_relations(&entity_id.id, Some("embed"))
+            .await
+            .unwrap();
+        assert_eq!(
+            relations.len(),
+            case_test_cases.len(),
+            "Should have {} embed relations",
+            case_test_cases.len()
+        );
 
         // Verify case insensitive extension detection
         for (filename, expected_embed_type) in case_test_cases {
-            let relation = relations.iter()
+            let relation = relations
+                .iter()
                 .find(|r| r.metadata.get("target").and_then(|v| v.as_str()) == Some(filename))
                 .unwrap_or_else(|| panic!("Should find relation for filename: {}", filename));
 
@@ -4998,7 +5957,8 @@ mod tests {
                 relation.metadata.get("embed_type").and_then(|v| v.as_str()),
                 Some(expected_embed_type),
                 "Filename {} should be detected as {}",
-                filename, expected_embed_type
+                filename,
+                expected_embed_type
             );
         }
     }
@@ -5023,9 +5983,15 @@ mod tests {
         doc.tags.push(Tag::new("phase4/task4.2", 20));
 
         // Add multiple blocks with embeds in different contexts
-        doc.content.headings.push(Heading::new(1, "Embed Testing", 0));
-        doc.content.headings.push(Heading::new(2, "Image Embeds", 50));
-        doc.content.headings.push(Heading::new(2, "Video Embeds", 100));
+        doc.content
+            .headings
+            .push(Heading::new(1, "Embed Testing", 0));
+        doc.content
+            .headings
+            .push(Heading::new(2, "Image Embeds", 50));
+        doc.content
+            .headings
+            .push(Heading::new(2, "Video Embeds", 100));
 
         // Add embeds at different positions
         doc.wikilinks.push(Wikilink {
@@ -5056,12 +6022,17 @@ mod tests {
             offset: 150,
         });
 
-        let entity_id = ingestor.ingest(&doc, "embed-tag-block-interaction.md").await.unwrap();
+        let entity_id = ingestor
+            .ingest(&doc, "embed-tag-block-interaction.md")
+            .await
+            .unwrap();
 
         // Verify entity creation
         let entities = client
-            .query("SELECT * FROM entities WHERE id = type::thing('entities', $id)",
-                   &[json!({ "id": entity_id.id })])
+            .query(
+                "SELECT * FROM entities WHERE id = type::thing('entities', $id)",
+                &[json!({ "id": entity_id.id })],
+            )
             .await
             .unwrap();
         assert_eq!(entities.records.len(), 1, "Should have created entity");
@@ -5069,75 +6040,131 @@ mod tests {
         // Verify tag relationships - test basic coexistence
         let tags = store.get_entity_tags(&entity_id.id).await.unwrap();
         assert_eq!(tags.len(), 3, "Should have 3 test tags");
-        assert!(tags.iter().any(|t| t.name == "project/crucible/embed-testing"));
+        assert!(tags
+            .iter()
+            .any(|t| t.name == "project/crucible/embed-testing"));
         assert!(tags.iter().any(|t| t.name == "test/comprehensive"));
         assert!(tags.iter().any(|t| t.name == "phase4/task4.2"));
 
         // Verify block creation - test basic coexistence
         let blocks = client
-            .query("SELECT * FROM blocks WHERE entity_id = type::thing('entities', $id)",
-                   &[json!({ "id": entity_id.id })])
+            .query(
+                "SELECT * FROM blocks WHERE entity_id = type::thing('entities', $id)",
+                &[json!({ "id": entity_id.id })],
+            )
             .await
             .unwrap();
         assert!(!blocks.records.is_empty(), "Should have created blocks");
 
         // Verify relations (embeds + wikilink) - test basic coexistence
         let relations = store.get_relations(&entity_id.id, None).await.unwrap();
-        assert_eq!(relations.len(), 3, "Should have 3 relations (2 embeds + 1 wikilink)");
+        assert_eq!(
+            relations.len(),
+            3,
+            "Should have 3 relations (2 embeds + 1 wikilink)"
+        );
 
         // Check embed relations specifically
-        let embed_relations: Vec<_> = relations.iter()
+        let embed_relations: Vec<_> = relations
+            .iter()
             .filter(|r| r.relation_type == "embed")
             .collect();
         assert_eq!(embed_relations.len(), 2, "Should have 2 embed relations");
 
         // Check wikilink relations
-        let wikilink_relations: Vec<_> = relations.iter()
+        let wikilink_relations: Vec<_> = relations
+            .iter()
             .filter(|r| r.relation_type == "wikilink")
             .collect();
-        assert_eq!(wikilink_relations.len(), 1, "Should have 1 wikilink relation");
+        assert_eq!(
+            wikilink_relations.len(),
+            1,
+            "Should have 1 wikilink relation"
+        );
 
         // Test basic embed functionality without complex integration metadata
         for embed_relation in embed_relations.iter() {
             // Basic embed detection
-            assert_eq!(embed_relation.metadata.get("is_embed").and_then(|v| v.as_bool()), Some(true),
-                      "Embed should have is_embed: true");
+            assert_eq!(
+                embed_relation
+                    .metadata
+                    .get("is_embed")
+                    .and_then(|v| v.as_bool()),
+                Some(true),
+                "Embed should have is_embed: true"
+            );
 
             // Content category classification - basic functionality
-            assert!(embed_relation.metadata.get("content_category").is_some(),
-                    "Embed should have content_category metadata");
+            assert!(
+                embed_relation.metadata.get("content_category").is_some(),
+                "Embed should have content_category metadata"
+            );
 
             // Embed type classification - basic functionality
-            assert!(embed_relation.metadata.get("embed_type").is_some(),
-                    "Embed should have embed_type metadata");
+            assert!(
+                embed_relation.metadata.get("embed_type").is_some(),
+                "Embed should have embed_type metadata"
+            );
 
             // Offset tracking - basic functionality
-            assert!(embed_relation.metadata.get("offset").is_some(),
-                    "Embed should have offset metadata");
+            assert!(
+                embed_relation.metadata.get("offset").is_some(),
+                "Embed should have offset metadata"
+            );
         }
 
         // Test basic wikilink functionality without embed-specific metadata
-        assert_eq!(wikilink_relations[0].metadata.get("is_embed").and_then(|v| v.as_bool()), None,
-                  "Regular wikilink should not have is_embed field (only embeds have it)");
-        assert!(wikilink_relations[0].metadata.get("embed_type").is_none(),
-                "Regular wikilink should not have embed_type metadata");
-        assert!(wikilink_relations[0].metadata.get("content_category").is_some(),
-                "Regular wikilink should have content_category metadata");
+        assert_eq!(
+            wikilink_relations[0]
+                .metadata
+                .get("is_embed")
+                .and_then(|v| v.as_bool()),
+            None,
+            "Regular wikilink should not have is_embed field (only embeds have it)"
+        );
+        assert!(
+            wikilink_relations[0].metadata.get("embed_type").is_none(),
+            "Regular wikilink should not have embed_type metadata"
+        );
+        assert!(
+            wikilink_relations[0]
+                .metadata
+                .get("content_category")
+                .is_some(),
+            "Regular wikilink should have content_category metadata"
+        );
 
         // Test that we have the expected embed types
-        let embed_targets: Vec<_> = embed_relations.iter()
-            .map(|r| (r.metadata.get("target").and_then(|v| v.as_str()).unwrap_or(""),
-                      r.metadata.get("embed_type").and_then(|v| v.as_str()).unwrap_or("")))
+        let embed_targets: Vec<_> = embed_relations
+            .iter()
+            .map(|r| {
+                (
+                    r.metadata
+                        .get("target")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(""),
+                    r.metadata
+                        .get("embed_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(""),
+                )
+            })
             .collect();
 
         // Should have both the local image and external video embeds
-        assert!(embed_targets.iter().any(|(target, embed_type)| {
-            *target == "test-image.jpg" && *embed_type == "image"
-        }), "Should have local image embed");
+        assert!(
+            embed_targets.iter().any(|(target, embed_type)| {
+                *target == "test-image.jpg" && *embed_type == "image"
+            }),
+            "Should have local image embed"
+        );
 
-        assert!(embed_targets.iter().any(|(target, embed_type)| {
-            *target == "https://youtube.com/watch?v=test123" && *embed_type == "youtube"
-        }), "Should have external YouTube embed");
+        assert!(
+            embed_targets.iter().any(|(target, embed_type)| {
+                *target == "https://youtube.com/watch?v=test123" && *embed_type == "youtube"
+            }),
+            "Should have external YouTube embed"
+        );
     }
 
     #[tokio::test]
@@ -5178,47 +6205,77 @@ mod tests {
         let mut target_doc1 = sample_document();
         target_doc1.path = PathBuf::from("existing-note.md");
         target_doc1.tags.clear();
-        ingestor.ingest(&target_doc1, "existing-note.md").await.unwrap();
+        ingestor
+            .ingest(&target_doc1, "existing-note.md")
+            .await
+            .unwrap();
 
         let mut target_doc2 = sample_document();
         target_doc2.path = PathBuf::from("embedded-note.md");
         target_doc2.tags.clear();
-        ingestor.ingest(&target_doc2, "embedded-note.md").await.unwrap();
+        ingestor
+            .ingest(&target_doc2, "embedded-note.md")
+            .await
+            .unwrap();
 
-        let entity_id = ingestor.ingest(&doc, "backward-compatibility.md").await.unwrap();
+        let entity_id = ingestor
+            .ingest(&doc, "backward-compatibility.md")
+            .await
+            .unwrap();
         let relations = store.get_relations(&entity_id.id, None).await.unwrap();
         assert_eq!(relations.len(), 2, "Should have 2 relations");
 
         // Check regular wikilink (backward compatibility)
-        let wikilink_relation = relations.iter()
+        let wikilink_relation = relations
+            .iter()
             .find(|r| r.relation_type == "wikilink")
             .expect("Should have wikilink relation");
 
-        assert_eq!(wikilink_relation.metadata.get("target").and_then(|v| v.as_str()),
-                  Some("existing-note"));
-        assert!(!wikilink_relation.metadata.get("embed_type").is_some(),
-                "Regular wikilink should not have embed metadata");
-        assert!(wikilink_relation.to_entity_id.is_some(),
-                "Regular wikilink should be resolved");
+        assert_eq!(
+            wikilink_relation
+                .metadata
+                .get("target")
+                .and_then(|v| v.as_str()),
+            Some("existing-note")
+        );
+        assert!(
+            !wikilink_relation.metadata.get("embed_type").is_some(),
+            "Regular wikilink should not have embed metadata"
+        );
+        assert!(
+            wikilink_relation.to_entity_id.is_some(),
+            "Regular wikilink should be resolved"
+        );
 
         // Check embed relation (new functionality)
-        let embed_relation = relations.iter()
+        let embed_relation = relations
+            .iter()
             .find(|r| r.relation_type == "embed")
             .expect("Should have embed relation");
 
-        assert_eq!(embed_relation.metadata.get("target").and_then(|v| v.as_str()),
-                  Some("embedded-note"));
-        assert!(embed_relation.metadata.get("embed_type").is_some(),
-                "Embed should have embed metadata");
-        assert!(embed_relation.to_entity_id.is_some(),
-                "Embed should be resolved");
+        assert_eq!(
+            embed_relation
+                .metadata
+                .get("target")
+                .and_then(|v| v.as_str()),
+            Some("embedded-note")
+        );
+        assert!(
+            embed_relation.metadata.get("embed_type").is_some(),
+            "Embed should have embed metadata"
+        );
+        assert!(
+            embed_relation.to_entity_id.is_some(),
+            "Embed should be resolved"
+        );
 
         // Verify both work as expected
-        assert_ne!(wikilink_relation.relation_type, embed_relation.relation_type,
-                  "Wikilink and embed should have different relation types");
+        assert_ne!(
+            wikilink_relation.relation_type, embed_relation.relation_type,
+            "Wikilink and embed should have different relation types"
+        );
     }
 
-  
     #[tokio::test]
     async fn test_embed_performance_with_large_documents() {
         use crucible_core::parser::Wikilink;
@@ -5252,8 +6309,16 @@ mod tests {
             let (heading_ref, block_ref, alias) = match complexity {
                 0 => (None, None, None),
                 1 => (Some(format!("Section {}", i)), None, None),
-                2 => (Some(format!("Section {}", i)), Some(format!("block{}", i)), None),
-                _ => (Some(format!("Section {}", i)), Some(format!("block{}", i)), Some(format!("Alias {}", i))),
+                2 => (
+                    Some(format!("Section {}", i)),
+                    Some(format!("block{}", i)),
+                    None,
+                ),
+                _ => (
+                    Some(format!("Section {}", i)),
+                    Some(format!("block{}", i)),
+                    Some(format!("Alias {}", i)),
+                ),
             };
 
             doc.wikilinks.push(Wikilink {
@@ -5268,32 +6333,53 @@ mod tests {
 
         // Measure ingestion performance
         let start_time = std::time::Instant::now();
-        let entity_id = ingestor.ingest(&doc, "large-note-performance.md").await.unwrap();
+        let entity_id = ingestor
+            .ingest(&doc, "large-note-performance.md")
+            .await
+            .unwrap();
         let ingestion_time = start_time.elapsed();
 
         // Should complete within reasonable time for large note
-        assert!(ingestion_time.as_millis() < 10000,
-                "Large note ingestion should complete within 10 seconds, took {:?}", ingestion_time);
+        assert!(
+            ingestion_time.as_millis() < 10000,
+            "Large note ingestion should complete within 10 seconds, took {:?}",
+            ingestion_time
+        );
 
         // Verify all relations were created efficiently
-        let relations = store.get_relations(&entity_id.id, Some("embed")).await.unwrap();
-        assert_eq!(relations.len(), num_embeds,
-                  "Should create {} embed relations", num_embeds);
+        let relations = store
+            .get_relations(&entity_id.id, Some("embed"))
+            .await
+            .unwrap();
+        assert_eq!(
+            relations.len(),
+            num_embeds,
+            "Should create {} embed relations",
+            num_embeds
+        );
 
         // Spot check some relations for proper metadata
         for relation in relations.iter().take(20) {
-            assert!(relation.metadata.get("embed_type").is_some(),
-                    "Each embed should have embed_type");
-            assert!(relation.metadata.get("complexity_score").is_some(),
-                    "Each embed should have complexity_score");
-            assert!(relation.metadata.get("offset").is_some(),
-                    "Each embed should have offset");
+            assert!(
+                relation.metadata.get("embed_type").is_some(),
+                "Each embed should have embed_type"
+            );
+            assert!(
+                relation.metadata.get("complexity_score").is_some(),
+                "Each embed should have complexity_score"
+            );
+            assert!(
+                relation.metadata.get("offset").is_some(),
+                "Each embed should have offset"
+            );
         }
 
         // Verify blocks were created
         let blocks = client
-            .query("SELECT * FROM blocks WHERE entity_id = type::thing('entities', $id)",
-                   &[json!({ "id": entity_id.id })])
+            .query(
+                "SELECT * FROM blocks WHERE entity_id = type::thing('entities', $id)",
+                &[json!({ "id": entity_id.id })],
+            )
             .await
             .unwrap();
         assert!(!blocks.records.is_empty(), "Should have created blocks");
@@ -5316,23 +6402,20 @@ mod tests {
         // Test embed handling with Unicode and special characters
         let unicode_test_cases = vec![
             // Unicode in filenames
-            ("файл.jpg", "image"), // Cyrillic
-            ("画像.png", "image"), // Japanese
-            ("图片.gif", "image"), // Chinese
+            ("файл.jpg", "image"),   // Cyrillic
+            ("画像.png", "image"),   // Japanese
+            ("图片.gif", "image"),   // Chinese
             ("imagen.svg", "image"), // Spanish
-            ("صورة.webp", "image"), // Arabic
-
+            ("صورة.webp", "image"),  // Arabic
             // Unicode in aliases
             ("photo.jpg", "Photo de Famille"), // French alias
-            ("video.mp4", "ビデオ"), // Japanese alias
-            ("note.pdf", "مستند"), // Arabic alias
-
+            ("video.mp4", "ビデオ"),           // Japanese alias
+            ("note.pdf", "مستند"),             // Arabic alias
             // Special characters in headings
             ("note.md", "Section & Subsection"),
             ("file.txt", "Heading with <brackets>"),
             ("page.md", "Title with \"quotes\""),
             ("article.md", "Header with 'apostrophes'"),
-
             // Mixed Unicode and special characters
             ("файл.mp3", "audio"), // Cyrillic filename
             ("画像.mov", "video"), // Japanese filename
@@ -5344,7 +6427,11 @@ mod tests {
                 (None, None, *expected_embed_type_or_alias)
             } else if i < 8 {
                 // Next 3 are Unicode aliases
-                (Some(expected_embed_type_or_alias.to_string()), None, "image")
+                (
+                    Some(expected_embed_type_or_alias.to_string()),
+                    None,
+                    "image",
+                )
             } else if i < 12 {
                 // Next 4 are special character headings
                 (None, Some(expected_embed_type_or_alias.to_string()), "note")
@@ -5363,13 +6450,25 @@ mod tests {
             });
         }
 
-        let entity_id = ingestor.ingest(&doc, "unicode-special-characters.md").await.unwrap();
-        let relations = store.get_relations(&entity_id.id, Some("embed")).await.unwrap();
-        assert_eq!(relations.len(), unicode_test_cases.len(), "Should have {} embed relations", unicode_test_cases.len());
+        let entity_id = ingestor
+            .ingest(&doc, "unicode-special-characters.md")
+            .await
+            .unwrap();
+        let relations = store
+            .get_relations(&entity_id.id, Some("embed"))
+            .await
+            .unwrap();
+        assert_eq!(
+            relations.len(),
+            unicode_test_cases.len(),
+            "Should have {} embed relations",
+            unicode_test_cases.len()
+        );
 
         // Verify Unicode and special characters don't break basic embed processing
         for (i, (target, expected_embed_type_or_alias)) in unicode_test_cases.iter().enumerate() {
-            let relation = relations.iter()
+            let relation = relations
+                .iter()
                 .find(|r| r.metadata.get("target").and_then(|v| v.as_str()) == Some(target))
                 .unwrap_or_else(|| panic!("Should find relation for target: {}", target));
 
@@ -5383,28 +6482,29 @@ mod tests {
 
             // Check embed type detection works with Unicode characters
             let expected_embed_type = match i {
-                0 => "image",   // файл.jpg
-                1 => "image",   // 画像.png
-                2 => "image",   // 图片.gif
-                3 => "image",   // imagen.svg
-                4 => "image",   // صورة.webp
-                5 => "image",   // photo.jpg
-                6 => "video",   // video.mp4
-                7 => "pdf",     // note.pdf
-                8 => "note",    // note.md
-                9 => "note",    // file.txt
-                10 => "note",   // page.md
-                11 => "note",   // article.md
-                12 => "audio",  // файл.mp3
-                13 => "video",  // 画像.mov
-                _ => "note",    // fallback
+                0 => "image",  // файл.jpg
+                1 => "image",  // 画像.png
+                2 => "image",  // 图片.gif
+                3 => "image",  // imagen.svg
+                4 => "image",  // صورة.webp
+                5 => "image",  // photo.jpg
+                6 => "video",  // video.mp4
+                7 => "pdf",    // note.pdf
+                8 => "note",   // note.md
+                9 => "note",   // file.txt
+                10 => "note",  // page.md
+                11 => "note",  // article.md
+                12 => "audio", // файл.mp3
+                13 => "video", // 画像.mov
+                _ => "note",   // fallback
             };
 
             assert_eq!(
                 relation.metadata.get("embed_type").and_then(|v| v.as_str()),
                 Some(expected_embed_type),
                 "Target {} should be detected as {} embed type",
-                target, expected_embed_type
+                target,
+                expected_embed_type
             );
 
             // Check content category is present
@@ -5426,7 +6526,7 @@ mod tests {
         // Verify external URL handling with Unicode
         let unicode_external_urls = vec![
             "https://example.com/image.jpg", // Simple ASCII external URL
-            "https://例子.网络/图片.jpg", // Chinese domain with image
+            "https://例子.网络/图片.jpg",    // Chinese domain with image
         ];
 
         let mut external_doc = sample_document();
@@ -5443,9 +6543,20 @@ mod tests {
             });
         }
 
-        let external_entity_id = ingestor.ingest(&external_doc, "unicode-external-test.md").await.unwrap();
-        let external_relations = store.get_relations(&external_entity_id.id, Some("embed")).await.unwrap();
-        assert_eq!(external_relations.len(), unicode_external_urls.len(), "Should have {} external embed relations", unicode_external_urls.len());
+        let external_entity_id = ingestor
+            .ingest(&external_doc, "unicode-external-test.md")
+            .await
+            .unwrap();
+        let external_relations = store
+            .get_relations(&external_entity_id.id, Some("embed"))
+            .await
+            .unwrap();
+        assert_eq!(
+            external_relations.len(),
+            unicode_external_urls.len(),
+            "Should have {} external embed relations",
+            unicode_external_urls.len()
+        );
 
         // Verify external URLs with Unicode are handled correctly
         for (i, relation) in external_relations.iter().enumerate() {
@@ -5459,7 +6570,10 @@ mod tests {
             );
 
             assert_eq!(
-                relation.metadata.get("is_external").and_then(|v| v.as_bool()),
+                relation
+                    .metadata
+                    .get("is_external")
+                    .and_then(|v| v.as_bool()),
                 Some(true),
                 "External URL {} should be marked as external",
                 url
@@ -5494,34 +6608,37 @@ mod tests {
         // Test edge case URLs and paths
         let edge_case_test_cases = vec![
             // URLs with query parameters and fragments
-            ("https://example.com/image.jpg?width=300&height=200", "image"),
+            (
+                "https://example.com/image.jpg?width=300&height=200",
+                "image",
+            ),
             ("https://example.com/video.mp4?t=30", "video"),
             ("https://example.com/page#section", "external"),
-
             // URLs with authentication (should be flagged as security risk)
             ("https://user:pass@example.com/file.pdf", "pdf"), // Will be caught by validation
-
             // URLs with unusual but valid schemes
             ("ftp://example.com/file.txt", "external"),
             ("mailto:test@example.com", "external"), // Will be caught by validation
-
             // Relative paths with special patterns
             ("./image.jpg", "image"),
             ("../video.mp4", "video"),
             ("folder/nested/file.pdf", "pdf"),
-
             // Paths with Unicode characters
             ("файлы/изображение.png", "image"),
             ("フォルダ/動画.mp4", "video"),
-
             // Mixed content URLs
-            ("https://cdn.example.com/content/image.svg?version=2#view", "image"),
-            ("https://stream.example.com/video.webm?quality=hd&subtitles=en", "video"),
-
+            (
+                "https://cdn.example.com/content/image.svg?version=2#view",
+                "image",
+            ),
+            (
+                "https://stream.example.com/video.webm?quality=hd&subtitles=en",
+                "video",
+            ),
             // Edge case extensions
             ("file.jpeg2000", "external"), // Unknown image format - should be external
-            ("video.mp4v", "external"), // Variant of mp4 - should be external
-            ("audio.mp3a", "external"), // Variant of mp3 - should be external
+            ("video.mp4v", "external"),    // Variant of mp4 - should be external
+            ("audio.mp3a", "external"),    // Variant of mp3 - should be external
         ];
 
         for (i, (target, expected_embed_type)) in edge_case_test_cases.iter().enumerate() {
@@ -5535,26 +6652,44 @@ mod tests {
             });
         }
 
-        let entity_id = ingestor.ingest(&doc, "edge-case-urls-paths.md").await.unwrap();
+        let entity_id = ingestor
+            .ingest(&doc, "edge-case-urls-paths.md")
+            .await
+            .unwrap();
 
         // Some edge cases might be validation errors, so we check both successful and error cases
-        let relations = store.get_relations(&entity_id.id, Some("embed")).await.unwrap();
-        assert_eq!(relations.len(), edge_case_test_cases.len(), "Should have {} embed relations (including errors)", edge_case_test_cases.len());
+        let relations = store
+            .get_relations(&entity_id.id, Some("embed"))
+            .await
+            .unwrap();
+        assert_eq!(
+            relations.len(),
+            edge_case_test_cases.len(),
+            "Should have {} embed relations (including errors)",
+            edge_case_test_cases.len()
+        );
 
         // Verify edge case handling
         for (target, expected_embed_type) in edge_case_test_cases {
-            let relation = relations.iter()
+            let relation = relations
+                .iter()
                 .find(|r| r.metadata.get("target").and_then(|v| v.as_str()) == Some(target))
                 .unwrap_or_else(|| panic!("Should find relation for target: {}", target));
 
             // Check if it's a validation error or successful classification
             if let Some(error_type) = relation.metadata.get("error_type").and_then(|v| v.as_str()) {
                 // Should be a validation error for problematic URLs
-                assert_eq!(error_type, "embed_validation_error",
-                          "Problematic URL {} should have validation error", target);
+                assert_eq!(
+                    error_type, "embed_validation_error",
+                    "Problematic URL {} should have validation error",
+                    target
+                );
             } else {
                 // Should be successfully classified
-                let actual_embed_type = relation.metadata.get("embed_type").and_then(|v| v.as_str())
+                let actual_embed_type = relation
+                    .metadata
+                    .get("embed_type")
+                    .and_then(|v| v.as_str())
                     .unwrap_or("external");
 
                 // For external URLs with query parameters, we expect "external" regardless of extension
@@ -5564,12 +6699,12 @@ mod tests {
                     expected_embed_type
                 };
 
-                assert_eq!(actual_embed_type, expected_type,
-                          "Edge case {} should be classified as {}", target, expected_type);
+                assert_eq!(
+                    actual_embed_type, expected_type,
+                    "Edge case {} should be classified as {}",
+                    target, expected_type
+                );
             }
         }
     }
 }
-
-
-

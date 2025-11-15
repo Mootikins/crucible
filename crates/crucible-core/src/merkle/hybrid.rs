@@ -54,10 +54,7 @@ pub struct BinaryMerkleTree {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum MerkleNode {
     /// Leaf node storing content hash (32 bytes for integrity)
-    Leaf {
-        hash: BlockHash,
-        block_index: usize,
-    },
+    Leaf { hash: BlockHash, block_index: usize },
     /// Internal node with compact hash (16 bytes for efficiency)
     Internal {
         hash: NodeHash,
@@ -120,10 +117,7 @@ impl HybridMerkleTree {
             let virtual_sections = VirtualSection::virtualize(&sections, config);
 
             // Compute root hash from virtual section hashes
-            let virtual_hashes: Vec<NodeHash> = virtual_sections
-                .iter()
-                .map(|vs| vs.hash)
-                .collect();
+            let virtual_hashes: Vec<NodeHash> = virtual_sections.iter().map(|vs| vs.hash).collect();
             let root_hash = NodeHash::combine_many(&virtual_hashes);
 
             Self {
@@ -282,17 +276,24 @@ impl BinaryMerkleTree {
                         let right_node = NodeHash::from_content(right.as_bytes());
                         NodeHash::combine(&left_node, &right_node)
                     }
-                    (MerkleNode::Leaf { hash: left, .. }, MerkleNode::Internal { hash: right, .. }) => {
+                    (
+                        MerkleNode::Leaf { hash: left, .. },
+                        MerkleNode::Internal { hash: right, .. },
+                    ) => {
                         let left_node = NodeHash::from_content(left.as_bytes());
                         NodeHash::combine(&left_node, right)
                     }
-                    (MerkleNode::Internal { hash: left, .. }, MerkleNode::Leaf { hash: right, .. }) => {
+                    (
+                        MerkleNode::Internal { hash: left, .. },
+                        MerkleNode::Leaf { hash: right, .. },
+                    ) => {
                         let right_node = NodeHash::from_content(right.as_bytes());
                         NodeHash::combine(left, &right_node)
                     }
-                    (MerkleNode::Internal { hash: left, .. }, MerkleNode::Internal { hash: right, .. }) => {
-                        NodeHash::combine(left, right)
-                    }
+                    (
+                        MerkleNode::Internal { hash: left, .. },
+                        MerkleNode::Internal { hash: right, .. },
+                    ) => NodeHash::combine(left, right),
                 };
 
                 let node_index = nodes.len();
@@ -455,7 +456,7 @@ impl SectionBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_parser::types::{NoteContent, Heading, Paragraph};
+    use crucible_parser::types::{Heading, NoteContent, Paragraph};
     use std::path::PathBuf;
 
     fn build_document() -> ParsedNote {
@@ -516,24 +517,34 @@ mod tests {
         let tree = HybridMerkleTree::from_document(&doc);
 
         // Verify tree structure: root -> sections -> blocks
-        assert_eq!(tree.sections.len(), 3, "Should have root + 2 heading sections");
+        assert_eq!(
+            tree.sections.len(),
+            3,
+            "Should have root + 2 heading sections"
+        );
 
         // Verify root hash is computed from section hashes
-        let section_hashes: Vec<NodeHash> = tree.sections
+        let section_hashes: Vec<NodeHash> = tree
+            .sections
             .iter()
             .map(|s| s.binary_tree.root_hash)
             .collect();
         let expected_root = NodeHash::combine_many(&section_hashes);
-        assert_eq!(tree.root_hash, expected_root,
-                   "Root hash should be aggregation of section hashes");
+        assert_eq!(
+            tree.root_hash, expected_root,
+            "Root hash should be aggregation of section hashes"
+        );
 
         // Verify sections with content have non-zero hashes
         // Section 0 is root (may be empty), sections 1 and 2 have content
         for (i, section) in tree.sections.iter().enumerate() {
             if section.block_count > 0 {
-                assert!(!section.binary_tree.root_hash.is_zero(),
-                        "Section {} with {} blocks should have non-zero hash",
-                        i, section.block_count);
+                assert!(
+                    !section.binary_tree.root_hash.is_zero(),
+                    "Section {} with {} blocks should have non-zero hash",
+                    i,
+                    section.block_count
+                );
             }
         }
     }
@@ -550,22 +561,30 @@ mod tests {
         let tree_modified = HybridMerkleTree::from_document(&doc_modified);
 
         // Root hash should change
-        assert_ne!(tree_modified.root_hash, original_root_hash,
-                   "Root hash must change when section content changes");
+        assert_ne!(
+            tree_modified.root_hash, original_root_hash,
+            "Root hash must change when section content changes"
+        );
 
         // The modified section's hash should change
-        assert_ne!(tree_modified.sections[2].binary_tree.root_hash,
-                   tree_original.sections[2].binary_tree.root_hash,
-                   "Modified section hash must change");
+        assert_ne!(
+            tree_modified.sections[2].binary_tree.root_hash,
+            tree_original.sections[2].binary_tree.root_hash,
+            "Modified section hash must change"
+        );
 
         // Unmodified sections should have same hash
-        assert_eq!(tree_modified.sections[0].binary_tree.root_hash,
-                   tree_original.sections[0].binary_tree.root_hash,
-                   "Unmodified root section hash should remain stable");
+        assert_eq!(
+            tree_modified.sections[0].binary_tree.root_hash,
+            tree_original.sections[0].binary_tree.root_hash,
+            "Unmodified root section hash should remain stable"
+        );
 
-        assert_eq!(tree_modified.sections[1].binary_tree.root_hash,
-                   tree_original.sections[1].binary_tree.root_hash,
-                   "Unmodified intro section hash should remain stable");
+        assert_eq!(
+            tree_modified.sections[1].binary_tree.root_hash,
+            tree_original.sections[1].binary_tree.root_hash,
+            "Unmodified intro section hash should remain stable"
+        );
     }
 
     #[test]
@@ -579,19 +598,25 @@ mod tests {
         let tree_modified = HybridMerkleTree::from_document(&doc_modified);
 
         // The first section should change
-        assert_ne!(tree_modified.sections[1].binary_tree.root_hash,
-                   tree_original.sections[1].binary_tree.root_hash,
-                   "Modified Intro section hash should change");
+        assert_ne!(
+            tree_modified.sections[1].binary_tree.root_hash,
+            tree_original.sections[1].binary_tree.root_hash,
+            "Modified Intro section hash should change"
+        );
 
         // The second section (Details) should remain unchanged
-        assert_eq!(tree_modified.sections[2].binary_tree.root_hash,
-                   tree_original.sections[2].binary_tree.root_hash,
-                   "Unrelated Details section hash must remain stable");
+        assert_eq!(
+            tree_modified.sections[2].binary_tree.root_hash,
+            tree_original.sections[2].binary_tree.root_hash,
+            "Unrelated Details section hash must remain stable"
+        );
 
         // Root section should remain unchanged (has no content)
-        assert_eq!(tree_modified.sections[0].binary_tree.root_hash,
-                   tree_original.sections[0].binary_tree.root_hash,
-                   "Root section hash should remain stable");
+        assert_eq!(
+            tree_modified.sections[0].binary_tree.root_hash,
+            tree_original.sections[0].binary_tree.root_hash,
+            "Root section hash should remain stable"
+        );
     }
 
     #[test]
@@ -654,13 +679,14 @@ mod tests {
 
         // Find sections by their heading text instead of assuming order
         let find_section = |heading_text: Option<&str>| -> usize {
-            tree.sections.iter().position(|s| {
-                match (&s.heading, heading_text) {
+            tree.sections
+                .iter()
+                .position(|s| match (&s.heading, heading_text) {
                     (Some(h), Some(text)) => h.text == text,
                     (None, None) => true,
                     _ => false,
-                }
-            }).expect(&format!("Section {:?} not found", heading_text))
+                })
+                .expect(&format!("Section {:?} not found", heading_text))
         };
 
         let root_idx = find_section(None);
@@ -682,21 +708,31 @@ mod tests {
         let tree_modified = HybridMerkleTree::from_document(&doc_modified);
 
         // Only Section 1.2's hash should change
-        assert_eq!(tree_modified.sections[root_idx].binary_tree.root_hash,
-                   tree.sections[root_idx].binary_tree.root_hash,
-                   "Root unchanged");
-        assert_eq!(tree_modified.sections[ch1_idx].binary_tree.root_hash,
-                   tree.sections[ch1_idx].binary_tree.root_hash,
-                   "Chapter 1 unchanged");
-        assert_eq!(tree_modified.sections[s11_idx].binary_tree.root_hash,
-                   tree.sections[s11_idx].binary_tree.root_hash,
-                   "Section 1.1 unchanged");
-        assert_ne!(tree_modified.sections[s12_idx].binary_tree.root_hash,
-                   tree.sections[s12_idx].binary_tree.root_hash,
-                   "Section 1.2 changed");
-        assert_eq!(tree_modified.sections[ch2_idx].binary_tree.root_hash,
-                   tree.sections[ch2_idx].binary_tree.root_hash,
-                   "Chapter 2 unchanged");
+        assert_eq!(
+            tree_modified.sections[root_idx].binary_tree.root_hash,
+            tree.sections[root_idx].binary_tree.root_hash,
+            "Root unchanged"
+        );
+        assert_eq!(
+            tree_modified.sections[ch1_idx].binary_tree.root_hash,
+            tree.sections[ch1_idx].binary_tree.root_hash,
+            "Chapter 1 unchanged"
+        );
+        assert_eq!(
+            tree_modified.sections[s11_idx].binary_tree.root_hash,
+            tree.sections[s11_idx].binary_tree.root_hash,
+            "Section 1.1 unchanged"
+        );
+        assert_ne!(
+            tree_modified.sections[s12_idx].binary_tree.root_hash,
+            tree.sections[s12_idx].binary_tree.root_hash,
+            "Section 1.2 changed"
+        );
+        assert_eq!(
+            tree_modified.sections[ch2_idx].binary_tree.root_hash,
+            tree.sections[ch2_idx].binary_tree.root_hash,
+            "Chapter 2 unchanged"
+        );
     }
 
     #[test]
@@ -706,14 +742,12 @@ mod tests {
         doc.content = NoteContent::default();
 
         // Heading with no content
-        doc.content.headings = vec![
-            Heading {
-                level: 1,
-                text: "Empty Section".to_string(),
-                offset: 0,
-                id: Some("empty".to_string()),
-            },
-        ];
+        doc.content.headings = vec![Heading {
+            level: 1,
+            text: "Empty Section".to_string(),
+            offset: 0,
+            id: Some("empty".to_string()),
+        }];
         // No paragraphs
 
         let tree = HybridMerkleTree::from_document(&doc);
@@ -723,10 +757,14 @@ mod tests {
         assert_eq!(tree.total_blocks, 0);
 
         // Empty sections should have zero hash
-        assert!(tree.sections[0].binary_tree.root_hash.is_zero(),
-                "Empty root section should have zero hash");
-        assert!(tree.sections[1].binary_tree.root_hash.is_zero(),
-                "Empty heading section should have zero hash");
+        assert!(
+            tree.sections[0].binary_tree.root_hash.is_zero(),
+            "Empty root section should have zero hash"
+        );
+        assert!(
+            tree.sections[1].binary_tree.root_hash.is_zero(),
+            "Empty heading section should have zero hash"
+        );
     }
 
     #[test]
@@ -737,22 +775,32 @@ mod tests {
         // Check that each section's binary tree has correct structure
         for section in &tree.sections {
             if section.block_count > 0 {
-                assert!(!section.binary_tree.nodes.is_empty(),
-                        "Non-empty section should have nodes");
-                assert_eq!(section.binary_tree.leaf_count, section.block_count,
-                          "Leaf count should match block count");
+                assert!(
+                    !section.binary_tree.nodes.is_empty(),
+                    "Non-empty section should have nodes"
+                );
+                assert_eq!(
+                    section.binary_tree.leaf_count, section.block_count,
+                    "Leaf count should match block count"
+                );
 
                 // Verify root node exists and is either a leaf (1 block) or internal (>1 blocks)
                 if section.block_count == 1 {
-                    assert_eq!(section.binary_tree.height, 0,
-                              "Single block should have height 0");
+                    assert_eq!(
+                        section.binary_tree.height, 0,
+                        "Single block should have height 0"
+                    );
                 } else {
-                    assert!(section.binary_tree.height > 0,
-                           "Multiple blocks should have height > 0");
+                    assert!(
+                        section.binary_tree.height > 0,
+                        "Multiple blocks should have height > 0"
+                    );
                 }
             } else {
-                assert!(section.binary_tree.nodes.is_empty(),
-                       "Empty section should have no nodes");
+                assert!(
+                    section.binary_tree.nodes.is_empty(),
+                    "Empty section should have no nodes"
+                );
                 assert_eq!(section.binary_tree.height, 0);
             }
         }
@@ -836,10 +884,9 @@ mod tests {
                 offset: i * 100,
                 id: Some(format!("s{}", i)),
             });
-            doc.content.paragraphs.push(Paragraph::new(
-                format!("Content {}", i),
-                i * 100 + 10,
-            ));
+            doc.content
+                .paragraphs
+                .push(Paragraph::new(format!("Content {}", i), i * 100 + 10));
         }
 
         let tree = HybridMerkleTree::from_document_auto(&doc);
@@ -863,10 +910,9 @@ mod tests {
                 offset: i * 100,
                 id: Some(format!("s{}", i)),
             });
-            doc.content.paragraphs.push(Paragraph::new(
-                format!("Content {}", i),
-                i * 100 + 10,
-            ));
+            doc.content
+                .paragraphs
+                .push(Paragraph::new(format!("Content {}", i), i * 100 + 10));
         }
 
         let config = VirtualizationConfig::default();
@@ -874,14 +920,13 @@ mod tests {
 
         // Verify root hash is computed from virtual sections
         if let Some(ref virtual_sections) = tree.virtual_sections {
-            let virtual_hashes: Vec<NodeHash> = virtual_sections
-                .iter()
-                .map(|vs| vs.hash)
-                .collect();
+            let virtual_hashes: Vec<NodeHash> = virtual_sections.iter().map(|vs| vs.hash).collect();
             let expected_root = NodeHash::combine_many(&virtual_hashes);
 
-            assert_eq!(tree.root_hash, expected_root,
-                      "Root hash should be aggregation of virtual section hashes");
+            assert_eq!(
+                tree.root_hash, expected_root,
+                "Root hash should be aggregation of virtual section hashes"
+            );
         }
     }
 
@@ -903,11 +948,16 @@ mod tests {
                 offset: i * 100,
                 id: Some(format!("s{}", i)),
             });
-            doc.content.paragraphs.push(Paragraph::new("Content".to_string(), i * 100 + 10));
+            doc.content
+                .paragraphs
+                .push(Paragraph::new("Content".to_string(), i * 100 + 10));
         }
 
         let tree_at_threshold = HybridMerkleTree::from_document_with_config(&doc, &config);
-        assert!(!tree_at_threshold.is_virtualized, "Should not virtualize at threshold (100 sections)");
+        assert!(
+            !tree_at_threshold.is_virtualized,
+            "Should not virtualize at threshold (100 sections)"
+        );
 
         // Add two more sections to go above threshold
         doc.content.headings.push(Heading {
@@ -916,7 +966,9 @@ mod tests {
             offset: 9900,
             id: Some("s99".to_string()),
         });
-        doc.content.paragraphs.push(Paragraph::new("Content".to_string(), 9910));
+        doc.content
+            .paragraphs
+            .push(Paragraph::new("Content".to_string(), 9910));
 
         doc.content.headings.push(Heading {
             level: 1,
@@ -924,10 +976,15 @@ mod tests {
             offset: 10000,
             id: Some("s100".to_string()),
         });
-        doc.content.paragraphs.push(Paragraph::new("Content".to_string(), 10010));
+        doc.content
+            .paragraphs
+            .push(Paragraph::new("Content".to_string(), 10010));
 
         let tree_above_threshold = HybridMerkleTree::from_document_with_config(&doc, &config);
-        assert!(tree_above_threshold.is_virtualized, "Should virtualize above threshold (102 sections)");
+        assert!(
+            tree_above_threshold.is_virtualized,
+            "Should virtualize above threshold (102 sections)"
+        );
     }
 
     #[test]
@@ -961,10 +1018,9 @@ mod tests {
                 offset: i * 100,
                 id: Some(format!("s{}", i)),
             });
-            doc.content.paragraphs.push(Paragraph::new(
-                format!("Content {}", i),
-                i * 100 + 10,
-            ));
+            doc.content
+                .paragraphs
+                .push(Paragraph::new(format!("Content {}", i), i * 100 + 10));
         }
 
         let tree = HybridMerkleTree::from_document_auto(&doc);
@@ -974,7 +1030,10 @@ mod tests {
 
         // Virtual section count should be much smaller than real section count
         let reduction_ratio = tree.section_count() as f64 / tree.real_section_count() as f64;
-        assert!(reduction_ratio < 0.2, "Should have significant reduction in active sections");
+        assert!(
+            reduction_ratio < 0.2,
+            "Should have significant reduction in active sections"
+        );
 
         // Should have ~100 virtual sections (1000 / 10)
         assert!(tree.section_count() > 90 && tree.section_count() < 110);
@@ -996,7 +1055,9 @@ mod tests {
                 offset: i * 100,
                 id: Some(format!("s{}", i)),
             });
-            doc.content.paragraphs.push(Paragraph::new("Content".to_string(), i * 100 + 10));
+            doc.content
+                .paragraphs
+                .push(Paragraph::new("Content".to_string(), i * 100 + 10));
         }
 
         let tree = HybridMerkleTree::from_document(&doc);
@@ -1081,10 +1142,9 @@ mod tests {
                 offset: i * 100,
                 id: Some(format!("s{}", i)),
             });
-            doc1.content.paragraphs.push(Paragraph::new(
-                format!("Content {}", i),
-                i * 100 + 10,
-            ));
+            doc1.content
+                .paragraphs
+                .push(Paragraph::new(format!("Content {}", i), i * 100 + 10));
         }
 
         let tree1 = HybridMerkleTree::from_document(&doc1);

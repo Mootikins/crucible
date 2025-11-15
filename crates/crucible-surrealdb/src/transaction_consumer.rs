@@ -191,21 +191,15 @@ impl BatchCollector {
         match (&self.pending_transactions[0].transaction, new_transaction) {
             (
                 DatabaseTransaction::Create {
-                    note: existing_doc,
-                    ..
+                    note: existing_doc, ..
                 },
-                DatabaseTransaction::Create {
-                    note: new_doc, ..
-                },
+                DatabaseTransaction::Create { note: new_doc, .. },
             ) => existing_doc.path.parent() == new_doc.path.parent(),
             (
                 DatabaseTransaction::Update {
-                    note: existing_doc,
-                    ..
+                    note: existing_doc, ..
                 },
-                DatabaseTransaction::Update {
-                    note: new_doc, ..
-                },
+                DatabaseTransaction::Update { note: new_doc, .. },
             ) => existing_doc.path.parent() == new_doc.path.parent(),
             _ => false,
         }
@@ -634,19 +628,14 @@ impl DatabaseTransactionConsumer {
     async fn execute_transaction(&self, transaction: &DatabaseTransaction) -> Result<()> {
         match transaction {
             DatabaseTransaction::Create {
-                note,
-                kiln_root,
-                ..
+                note, kiln_root, ..
             } => {
                 debug!("Creating note: {}", note.path.display());
 
                 // Store the note and all its relationships in one operation
-                let document_id = crate::kiln_integration::store_parsed_document(
-                    &self.client,
-                    note,
-                    kiln_root,
-                )
-                .await?;
+                let document_id =
+                    crate::kiln_integration::store_parsed_document(&self.client, note, kiln_root)
+                        .await?;
 
                 // Create all related entities (links, embeds, tags) automatically
                 self.create_document_relationships(&document_id, note, kiln_root)
@@ -654,9 +643,7 @@ impl DatabaseTransactionConsumer {
             }
 
             DatabaseTransaction::Update {
-                note,
-                kiln_root,
-                ..
+                note, kiln_root, ..
             } => {
                 debug!("Updating note: {}", note.path.display());
 
@@ -1141,9 +1128,7 @@ impl DatabaseTransactionConsumer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transaction_queue::{
-        DatabaseTransaction, TransactionTimestamp,
-    };
+    use crate::transaction_queue::{DatabaseTransaction, TransactionTimestamp};
     use std::path::PathBuf;
 
     #[tokio::test]

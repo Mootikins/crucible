@@ -53,10 +53,7 @@ impl FrontmatterPropertyMapper {
     /// # Returns
     ///
     /// Vector of Property objects ready for storage
-    pub fn map_to_properties(
-        &self,
-        frontmatter: HashMap<String, Value>,
-    ) -> Vec<Property> {
+    pub fn map_to_properties(&self, frontmatter: HashMap<String, Value>) -> Vec<Property> {
         let now = Utc::now();
         let mut properties = Vec::with_capacity(frontmatter.len());
 

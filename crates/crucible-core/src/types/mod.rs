@@ -18,8 +18,8 @@ pub mod hashing;
 
 // Re-export parser domain types
 pub use crucible_parser::types::{
-    CodeBlock, NoteContent, Frontmatter, FrontmatterFormat, Heading, ListBlock, ListItem,
-    ListType, Paragraph, ParsedNote, Tag, TaskStatus, Wikilink,
+    CodeBlock, Frontmatter, FrontmatterFormat, Heading, ListBlock, ListItem, ListType, NoteContent,
+    Paragraph, ParsedNote, Tag, TaskStatus, Wikilink,
 };
 
 // Re-export database domain types
@@ -32,14 +32,14 @@ pub use crate::database::{
     DbResult,
     // Graph types
     Direction,
-    // Note types
-    Note,
     DocumentId,
     DocumentMetadata,
     Edge,
     EdgeId,
     Node,
     NodeId,
+    // Note types
+    Note,
     QueryResult,
     Record,
     RecordId,
