@@ -143,6 +143,12 @@ impl CacheStats {
 /// concurrent access from multiple threads. Read and write operations acquire
 /// locks, but the fast mutex implementation minimizes contention.
 ///
+/// When sharing across threads, wrap the entire cache in `Arc`:
+/// ```rust,ignore
+/// let cache = Arc::new(MerkleCache::new(1000));
+/// let cache_clone = Arc::clone(&cache);
+/// ```
+///
 /// ## Memory Management
 ///
 /// - **Bounded capacity**: Configured at creation, prevents unlimited growth
@@ -150,11 +156,11 @@ impl CacheStats {
 /// - **Separate node and section caches**: Different access patterns optimized separately
 pub struct MerkleCache {
     /// Cache for tree nodes
-    nodes: Arc<Mutex<LruCache<NodeHash, CachedNode>>>,
+    nodes: Mutex<LruCache<NodeHash, CachedNode>>,
     /// Cache for sections
-    sections: Arc<Mutex<LruCache<NodeHash, SectionNode>>>,
+    sections: Mutex<LruCache<NodeHash, SectionNode>>,
     /// Cache statistics
-    stats: Arc<Mutex<CacheStats>>,
+    stats: Mutex<CacheStats>,
     /// Cache configuration
     config: CacheConfig,
 }
@@ -189,9 +195,9 @@ impl MerkleCache {
             .unwrap_or(NonZeroUsize::new(500).unwrap());
 
         Self {
-            nodes: Arc::new(Mutex::new(LruCache::new(node_capacity))),
-            sections: Arc::new(Mutex::new(LruCache::new(section_capacity))),
-            stats: Arc::new(Mutex::new(CacheStats::default())),
+            nodes: Mutex::new(LruCache::new(node_capacity)),
+            sections: Mutex::new(LruCache::new(section_capacity)),
+            stats: Mutex::new(CacheStats::default()),
             config,
         }
     }
@@ -319,27 +325,19 @@ impl MerkleCache {
         self.node_count() == 0 && self.section_count() == 0
     }
 
-    /// Clone the cache with independent statistics
+    /// Create a new cache with the same configuration but independent state
     ///
     /// This creates a new cache with the same configuration but independent
     /// LRU state and statistics. Useful for creating per-thread caches.
-    pub fn clone_config(&self) -> Self {
-        Self::with_config(self.config.clone())
-    }
-}
-
-impl Clone for MerkleCache {
-    /// Clone the cache
     ///
-    /// Note: This creates a new cache with shared backing storage.
-    /// Both caches will share the same LRU state and statistics.
-    fn clone(&self) -> Self {
-        Self {
-            nodes: Arc::clone(&self.nodes),
-            sections: Arc::clone(&self.sections),
-            stats: Arc::clone(&self.stats),
-            config: self.config.clone(),
-        }
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let cache1 = Arc::new(MerkleCache::new(1000));
+    /// let cache2 = Arc::new(cache1.new_with_same_config()); // Independent cache
+    /// ```
+    pub fn new_with_same_config(&self) -> Self {
+        Self::with_config(self.config.clone())
     }
 }
 
@@ -578,8 +576,10 @@ mod tests {
     }
 
     #[test]
-    fn test_clone_cache() {
-        let cache1 = MerkleCache::new(10);
+    fn test_shared_vs_independent_cache() {
+        use std::sync::Arc;
+
+        let cache1 = Arc::new(MerkleCache::new(10));
 
         let hash = NodeHash::from_content(b"test");
         let node = CachedNode {
@@ -591,12 +591,12 @@ mod tests {
 
         cache1.put_node(hash, node);
 
-        // Clone shares storage
-        let cache2 = cache1.clone();
+        // Arc::clone shares storage
+        let cache2 = Arc::clone(&cache1);
         assert!(cache2.get_node(&hash).is_some());
 
-        // Clone config creates independent cache
-        let cache3 = cache1.clone_config();
+        // new_with_same_config creates independent cache
+        let cache3 = cache1.new_with_same_config();
         assert!(cache3.get_node(&hash).is_none());
     }
 
