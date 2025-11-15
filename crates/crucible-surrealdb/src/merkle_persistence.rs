@@ -255,31 +255,42 @@ impl MerklePersistence {
     /// The reconstructed Hybrid Merkle tree or an error
     pub async fn retrieve_tree(&self, tree_id: &str) -> DbResult<HybridMerkleTree> {
         // 1. Retrieve tree metadata
-        let tree_record: Option<HybridTreeRecord> = self
+        let query_result = self
             .client
             .query(
                 &format!("SELECT * FROM hybrid_tree:{}", sanitize_id(tree_id)),
                 &[],
             )
             .await
-            .map_err(|e| DbError::Query(format!("Failed to retrieve tree metadata: {}", e)))?
-            .take(0)
-            .map_err(|e| DbError::Query(format!("Failed to parse tree metadata: {}", e)))?;
+            .map_err(|e| DbError::Query(format!("Failed to retrieve tree metadata: {}", e)))?;
 
-        let tree_record =
-            tree_record.ok_or_else(|| DbError::NotFound(format!("Tree not found: {}", tree_id)))?;
+        let tree_record: HybridTreeRecord = query_result
+            .records
+            .first()
+            .ok_or_else(|| DbError::NotFound(format!("Tree not found: {}", tree_id)))
+            .and_then(|record| {
+                serde_json::from_value(serde_json::to_value(&record.data).unwrap())
+                    .map_err(|e| DbError::Query(format!("Failed to parse tree metadata: {}", e)))
+            })?;
 
         // 2. Retrieve sections
-        let section_records: Vec<SectionRecord> = self
+        let query_result = self
             .client
             .query(
                 "SELECT * FROM section WHERE tree_id = $tree_id ORDER BY section_index",
                 &[serde_json::json!({"tree_id": tree_id})],
             )
             .await
-            .map_err(|e| DbError::Query(format!("Failed to retrieve sections: {}", e)))?
-            .take(0)
-            .map_err(|e| DbError::Query(format!("Failed to parse sections: {}", e)))?;
+            .map_err(|e| DbError::Query(format!("Failed to retrieve sections: {}", e)))?;
+
+        let section_records: Vec<SectionRecord> = query_result
+            .records
+            .iter()
+            .map(|record| {
+                serde_json::from_value(serde_json::to_value(&record.data).unwrap())
+                    .map_err(|e| DbError::Query(format!("Failed to parse section: {}", e)))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         // Deserialize sections from binary data with version checking
         let sections: Result<Vec<SectionNode>, _> = section_records
@@ -307,16 +318,26 @@ impl MerklePersistence {
 
         // 3. Retrieve virtual sections if present
         let virtual_sections = if tree_record.is_virtualized {
-            let virtual_records: Vec<VirtualSectionRecord> = self
+            let query_result = self
                 .client
                 .query(
                     "SELECT * FROM virtual_section WHERE tree_id = $tree_id ORDER BY virtual_index",
                     &[serde_json::json!({"tree_id": tree_id})],
                 )
                 .await
-                .map_err(|e| DbError::Query(format!("Failed to retrieve virtual sections: {}", e)))?
-                .take(0)
-                .map_err(|e| DbError::Query(format!("Failed to parse virtual sections: {}", e)))?;
+                .map_err(|e| {
+                    DbError::Query(format!("Failed to retrieve virtual sections: {}", e))
+                })?;
+
+            let virtual_records: Vec<VirtualSectionRecord> = query_result
+                .records
+                .iter()
+                .map(|record| {
+                    serde_json::from_value(serde_json::to_value(&record.data).unwrap()).map_err(
+                        |e| DbError::Query(format!("Failed to parse virtual section: {}", e)),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
 
             Some(
                 virtual_records
@@ -504,15 +525,23 @@ impl MerklePersistence {
     ///
     /// Tree metadata or None if not found
     pub async fn get_tree_metadata(&self, tree_id: &str) -> DbResult<Option<HybridTreeRecord>> {
-        self.client
+        let query_result = self
+            .client
             .query(
                 &format!("SELECT * FROM hybrid_tree:{}", sanitize_id(tree_id)),
                 &[],
             )
             .await
-            .map_err(|e| DbError::Query(format!("Failed to retrieve tree metadata: {}", e)))?
-            .take(0)
-            .map_err(|e| DbError::Query(format!("Failed to parse tree metadata: {}", e)))
+            .map_err(|e| DbError::Query(format!("Failed to retrieve tree metadata: {}", e)))?;
+
+        query_result
+            .records
+            .first()
+            .map(|record| {
+                serde_json::from_value(serde_json::to_value(&record.data).unwrap())
+                    .map_err(|e| DbError::Query(format!("Failed to parse tree metadata: {}", e)))
+            })
+            .transpose()
     }
 
     /// List all stored trees
@@ -521,12 +550,20 @@ impl MerklePersistence {
     ///
     /// List of tree metadata records
     pub async fn list_trees(&self) -> DbResult<Vec<HybridTreeRecord>> {
-        self.client
+        let query_result = self
+            .client
             .query("SELECT * FROM hybrid_tree ORDER BY updated_at DESC", &[])
             .await
-            .map_err(|e| DbError::Query(format!("Failed to list trees: {}", e)))?
-            .take(0)
-            .map_err(|e| DbError::Query(format!("Failed to parse tree list: {}", e)))
+            .map_err(|e| DbError::Query(format!("Failed to list trees: {}", e)))?;
+
+        query_result
+            .records
+            .iter()
+            .map(|record| {
+                serde_json::from_value(serde_json::to_value(&record.data).unwrap())
+                    .map_err(|e| DbError::Query(format!("Failed to parse tree record: {}", e)))
+            })
+            .collect::<Result<Vec<_>, _>>()
     }
 }
 

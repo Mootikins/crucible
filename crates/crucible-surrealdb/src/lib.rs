@@ -35,8 +35,11 @@ pub mod eav_graph;
 pub mod hash_lookup;
 #[cfg(feature = "embeddings")]
 pub mod kiln_integration;
+#[cfg(feature = "embeddings")]
 pub mod kiln_pipeline_connector;
+#[cfg(feature = "embeddings")]
 pub mod kiln_processor;
+#[cfg(feature = "embeddings")]
 pub mod kiln_scanner;
 pub mod kiln_store;
 pub mod merkle_persistence;
@@ -44,15 +47,19 @@ pub mod metrics;
 pub mod migration;
 pub mod query;
 pub mod schema_types;
+#[cfg(feature = "embeddings")]
 pub mod simple_integration;
 pub mod surreal_client;
+#[cfg(feature = "embeddings")]
 pub mod transaction_consumer;
 pub mod transaction_queue;
 pub mod types;
 
 // Embedding modules
+#[cfg(feature = "embeddings")]
 pub mod embedding;
 pub mod embedding_config;
+#[cfg(feature = "embeddings")]
 pub mod embedding_pipeline;
 #[cfg(feature = "embeddings")]
 pub mod embedding_pool;
@@ -62,6 +69,7 @@ pub use database::SurrealEmbeddingDatabase;
 pub use kiln_store::{InMemoryKilnStore, KilnStore};
 pub use schema_types::*;
 pub use surreal_client::SurrealClient;
+#[cfg(feature = "embeddings")]
 pub use transaction_consumer::{
     ConsumerConfig, ConsumerStats, DatabaseTransactionConsumer, ShutdownReceiver, ShutdownSender,
 };
@@ -98,15 +106,18 @@ pub use embedding_config::{
     DocumentEmbedding, EmbeddingConfig, EmbeddingError, EmbeddingModel, EmbeddingProcessingResult,
     PrivacyMode, ThreadPoolMetrics,
 };
+#[cfg(feature = "embeddings")]
 pub use embedding_pipeline::EmbeddingPipeline;
 #[cfg(feature = "embeddings")]
 pub use embedding_pool::{EmbeddingSignature, EmbeddingThreadPool};
 
-// Kiln scanner exports
+// Kiln scanner exports (requires embeddings feature)
+#[cfg(feature = "embeddings")]
 pub use kiln_processor::{
     process_document_embeddings, process_incremental_changes, process_kiln_delta,
     process_kiln_files, process_kiln_files_with_error_handling, scan_kiln_directory,
 };
+#[cfg(feature = "embeddings")]
 pub use kiln_scanner::{
     create_kiln_scanner, create_kiln_scanner_with_embeddings, parse_file_to_document,
     validate_kiln_scanner_config, ChangeDetectionMethod, ChangeDetectionSummary, ErrorHandlingMode,
@@ -114,7 +125,8 @@ pub use kiln_scanner::{
     KilnScannerConfig, KilnScannerErrorType, KilnScannerMetrics, KilnScannerState,
 };
 
-// Kiln pipeline connector exports
+// Kiln pipeline connector exports (requires embeddings feature)
+#[cfg(feature = "embeddings")]
 pub use kiln_pipeline_connector::{
     generate_document_id_from_path, get_parsed_documents_from_scan,
     transform_parsed_document_to_embedding_inputs, BatchProcessingResult, KilnPipelineConfig,
@@ -122,6 +134,7 @@ pub use kiln_pipeline_connector::{
 };
 
 // Simple integration exports (replaces complex QueueBasedProcessor)
+#[cfg(feature = "embeddings")]
 pub use simple_integration::{
     enqueue_document, enqueue_document_deletion, enqueue_documents, get_queue_status,
 };
