@@ -1,6 +1,6 @@
 # Crucible Architecture
 
-> **Version**: 2025-11-08
+> **Version**: 2025-11-15
 > **Status**: Living document - reflects short-term implementation, mid-term roadmap, and long-term vision
 
 This document defines Crucible's architecture across three time horizons: **short-term** (ACP MVP), **mid-term** (desktop & tooling), and **long-term** (speculative future). It serves as the authoritative reference for architectural decisions.
@@ -26,7 +26,7 @@ This document defines Crucible's architecture across three time horizons: **shor
 - ✅ EPR schema in SurrealDB (entities/properties/relations)
 - ✅ Hash-based change detection using hybrid Merkle trees
 - ✅ Block-aligned chunks for embeddings
-- 🔄 Hybrid Merkle tree persistence for section-level diffs
+- ✅ Hybrid Merkle tree persistence for section-level diffs (completed 2025-11-15)
 - 🔄 ACP integration (Zed's implementation)
 - 🔄 CLI chat shell (natural language queries, not SQL REPL)
 
@@ -133,15 +133,27 @@ Note: ACP is NOT a layer - it's how CLI spawns/communicates with external agents
 
 ### Data Flow
 
-**File → Database**:
+**File → Database** (Enrichment Pipeline Architecture):
 ```
 1. File watcher detects change (notify-rs)
 2. Merkle tree diff identifies changed sections
 3. Parser converts Markdown → AST → EPR entities
-4. Storage layer persists entities/properties/relations
-5. Embedding service generates vectors for blocks (>5 words)
-6. Database stores graph + metadata + embeddings
+4. Enrichment layer (business logic):
+   a. Embedding generation (>5 words per block)
+   b. Merkle tree computation (content hashes, structure)
+   c. Metadata extraction and enhancement
+   d. Relationship inference
+5. Storage layer persists enriched data:
+   - EPR entities/properties/relations
+   - Vector embeddings
+   - Merkle tree structure
 ```
+
+**Clean Architecture Principles**:
+- **Parser**: Pure transformation (Markdown → AST → EPR) - no side effects
+- **Enrichment**: Business logic layer - adds embeddings, computes Merkle hashes, infers relationships
+- **Storage**: Pure I/O layer - no knowledge of embedding generation or tree computation
+- **Current State**: Some mixing exists (storage doing enrichment) - future refactor will separate concerns
 
 **Query → Response**:
 ```
@@ -363,6 +375,8 @@ author: username
 
 ### 3. Merkle Trees (Change Detection)
 
+**Status**: ✅ **Production Ready** (as of 2025-11-15)
+
 **Responsibility**: Efficient **knowledge base-wide** detection of changes for incremental re-parsing and re-embedding.
 
 **Implementation** (based on [Oxen AI's Merkle Tree](https://github.com/Oxen-AI/Oxen/tree/2eaf17867152e9fdfba4ef9813ba5f6289a210ef/oxen-rust/src/lib/src/model/merkle_tree)):
@@ -450,6 +464,42 @@ Knowledge Base-Wide Hybrid Structure:
 - Large KB (10,000+ docs): 2-5s full build, 10-20ms change detection
 
 **CRDT Alternative**: Merkle trees sufficient for single-user multi-device sync. CRDT only needed for **multiplayer editing** (enterprise use case, very long-term).
+
+**Implementation Status** (Completed 2025-11-15):
+
+*Phase 1 - Hash Infrastructure*:
+- ✅ Dual-hash strategy: `BlockHash` (32-byte content), `NodeHash` (16-byte structure)
+- ✅ Efficient hash combining using `blake3::hash()` for structural hashes
+- ✅ Type safety with dedicated hash types (prevents mixing content/structure hashes)
+
+*Phase 2 - Storage Abstraction*:
+- ✅ `MerkleStore` trait in `crucible-core` for swappable backends
+- ✅ `InMemoryMerkleStore` implementation for testing
+- ✅ SurrealDB persistence layer (`MerklePersistence`) for production
+
+*Phase 3 - Production Features*:
+- ✅ Thread safety with `Arc<RwLock<HybridMerkleTree>>` wrapper
+- ✅ Binary serialization with versioning (`VersionedSection`, format v1)
+- ✅ Complete CRUD operations (store, retrieve, update, delete trees)
+- ✅ Section virtualization for large documents (>100 sections)
+
+*Phase 4 - Verification*:
+- ✅ Comprehensive integration tests (10 test cases)
+- ✅ SurrealDB persistence verification
+- ✅ Expert code review (⭐⭐⭐⭐ 4.4/5 rating)
+- ✅ QueryResult API fixes for SurrealDB compatibility
+- ✅ Feature gating for optional embedding dependencies
+
+*Key Design Patterns from Oxen AI*:
+- Virtual sections for memory-efficient large document handling
+- Path-based tree organization (workspace → directory → file → section → block)
+- Bottom-up hash computation for efficient change detection
+- Separate storage trait for backend flexibility
+
+**Storage Backend**:
+- `crates/crucible-surrealdb/src/merkle_persistence.rs` - Full persistence layer
+- Tables: `hybrid_tree`, `section`, `virtual_section`
+- Thread-safe concurrent access via SurrealDB connection pooling
 
 ---
 
