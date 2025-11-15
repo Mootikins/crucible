@@ -354,9 +354,10 @@ impl ContentAddressedStorageSurrealDB {
                 now.to_rfc3339()
             );
 
-            self.client.query(&query, &[]).await.map_err(|e| {
-                StorageError::backend(format!("Failed to store note block: {}", e))
-            })?;
+            self.client
+                .query(&query, &[])
+                .await
+                .map_err(|e| StorageError::backend(format!("Failed to store note block: {}", e)))?;
         }
 
         Ok(())
@@ -860,9 +861,10 @@ impl ContentAddressedStorageSurrealDB {
             document_id.replace("'", "''")
         );
 
-        let result = self.client.query(&query, &[]).await.map_err(|e| {
-            StorageError::backend(format!("Failed to retrieve note blocks: {}", e))
-        })?;
+        let result =
+            self.client.query(&query, &[]).await.map_err(|e| {
+                StorageError::backend(format!("Failed to retrieve note blocks: {}", e))
+            })?;
 
         let mut blocks = Vec::new();
         for record in result.records {
@@ -1247,9 +1249,10 @@ impl ContentAddressedStorageSurrealDB {
             document_id.replace("'", "''")
         );
 
-        let result = self.client.query(&query, &[]).await.map_err(|e| {
-            StorageError::backend(format!("Failed to delete note blocks: {}", e))
-        })?;
+        let result =
+            self.client.query(&query, &[]).await.map_err(|e| {
+                StorageError::backend(format!("Failed to delete note blocks: {}", e))
+            })?;
 
         // Count how many were deleted (approximate)
         Ok(result.records.len())
@@ -1670,7 +1673,6 @@ mod tests {
         // Store empty data should fail
         assert!(storage.store_block("test_hash", &[]).await.is_err());
     }
-
 
     #[tokio::test]
     async fn test_concurrent_operations() {

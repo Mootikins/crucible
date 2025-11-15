@@ -554,9 +554,7 @@ impl KilnStore for InMemoryKilnStore {
                     .update_metadata(&note.file_path, &embedding_data.metadata)
                     .await
                     .map(|_| ()),
-                BatchOperationType::Delete => {
-                    self.delete_file(&note.file_path).await.map(|_| ())
-                }
+                BatchOperationType::Delete => self.delete_file(&note.file_path).await.map(|_| ()),
             };
 
             match result {

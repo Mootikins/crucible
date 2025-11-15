@@ -5,8 +5,8 @@
 
 use super::error::{ParseError, ParseErrorType};
 use super::extensions::SyntaxExtension;
-use crucible_parser::types::{CodeBlock, NoteContent};
 use async_trait::async_trait;
+use crucible_parser::types::{CodeBlock, NoteContent};
 use regex::Regex;
 use std::sync::Arc;
 
