@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
-use serde::{Deserialize, Serialize};
 
 /// Universal content categories for all link types
 ///
@@ -234,16 +234,28 @@ mod tests {
 
     #[test]
     fn test_content_category_from_str() {
-        assert_eq!(ContentCategory::from_str("note").unwrap(), ContentCategory::Note);
-        assert_eq!(ContentCategory::from_str("YouTube").unwrap(), ContentCategory::YouTube);
-        assert_eq!(ContentCategory::from_str("STACKOVERFLOW").unwrap(), ContentCategory::StackOverflow);
+        assert_eq!(
+            ContentCategory::from_str("note").unwrap(),
+            ContentCategory::Note
+        );
+        assert_eq!(
+            ContentCategory::from_str("YouTube").unwrap(),
+            ContentCategory::YouTube
+        );
+        assert_eq!(
+            ContentCategory::from_str("STACKOVERFLOW").unwrap(),
+            ContentCategory::StackOverflow
+        );
     }
 
     #[test]
     fn test_content_category_from_str_invalid() {
         let result = ContentCategory::from_str("invalid");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ContentCategoryError::UnknownCategory(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ContentCategoryError::UnknownCategory(_)
+        ));
     }
 
     #[test]
@@ -287,7 +299,10 @@ mod tests {
     fn test_constants() {
         assert_eq!(ContentCategory::NOTE, ContentCategory::Note);
         assert_eq!(ContentCategory::GITHUB, ContentCategory::GitHub);
-        assert_eq!(ContentCategory::STACK_OVERFLOW, ContentCategory::StackOverflow);
+        assert_eq!(
+            ContentCategory::STACK_OVERFLOW,
+            ContentCategory::StackOverflow
+        );
     }
 
     #[test]
@@ -308,13 +323,19 @@ mod tests {
 
     #[test]
     fn test_try_from_string() {
-        assert_eq!(ContentCategory::try_from("pdf".to_string()).unwrap(), ContentCategory::PDF);
+        assert_eq!(
+            ContentCategory::try_from("pdf".to_string()).unwrap(),
+            ContentCategory::PDF
+        );
         assert!(ContentCategory::try_from("invalid".to_string()).is_err());
     }
 
     #[test]
     fn test_try_from_str() {
-        assert_eq!(ContentCategory::try_from("github").unwrap(), ContentCategory::GitHub);
+        assert_eq!(
+            ContentCategory::try_from("github").unwrap(),
+            ContentCategory::GitHub
+        );
         assert!(ContentCategory::try_from("invalid").is_err());
     }
 

@@ -151,23 +151,19 @@ impl MerklePersistence {
             section_count: tree.sections.len(),
             total_blocks: tree.total_blocks,
             is_virtualized: tree.is_virtualized,
-            virtual_section_count: tree
-                .virtual_sections
-                .as_ref()
-                .map(|vs| vs.len()),
+            virtual_section_count: tree.virtual_sections.as_ref().map(|vs| vs.len()),
             created_at: now,
             updated_at: now,
             metadata: None,
         };
 
         self.client
-            .execute_query(&format!(
-                "UPDATE hybrid_tree:{} CONTENT $tree",
-                sanitize_id(tree_id)
-            ))
-            .bind(("tree", tree_record))
+            .query(
+                &format!("UPDATE hybrid_tree:{} CONTENT $tree", sanitize_id(tree_id)),
+                &[serde_json::json!({"tree": tree_record})],
+            )
             .await
-            .map_err(|e| DbError::query(format!("Failed to store tree metadata: {}", e)))?;
+            .map_err(|e| DbError::Query(format!("Failed to store tree metadata: {}", e)))?;
 
         // 2. Store sections with binary encoding
         let mut cumulative_blocks = 0;
@@ -178,7 +174,7 @@ impl MerklePersistence {
                 data: section.clone(),
             };
             let section_data = bincode::serialize(&versioned)
-                .map_err(|e| DbError::serialization(format!("Failed to serialize section: {}", e)))?;
+                .map_err(|e| DbError::Internal(format!("Failed to serialize section: {}", e)))?;
 
             let start_block = cumulative_blocks;
             let end_block = cumulative_blocks + section.block_count;
@@ -198,14 +194,16 @@ impl MerklePersistence {
 
             // Use path sharding: section_{tree_id}_{index}
             self.client
-                .execute_query(&format!(
-                    "UPDATE section:{{tree_id: $tree_id, index: $index}} CONTENT $section"
-                ))
-                .bind(("tree_id", tree_id))
-                .bind(("index", index))
-                .bind(("section", section_record))
+                .query(
+                    "UPDATE section:{tree_id: $tree_id, index: $index} CONTENT $section",
+                    &[serde_json::json!({
+                        "tree_id": tree_id,
+                        "index": index,
+                        "section": section_record
+                    })],
+                )
                 .await
-                .map_err(|e| DbError::query(format!("Failed to store section {}: {}", index, e)))?;
+                .map_err(|e| DbError::Query(format!("Failed to store section {}: {}", index, e)))?;
         }
 
         // 3. Store virtual sections if present
@@ -226,15 +224,17 @@ impl MerklePersistence {
                 };
 
                 self.client
-                    .execute_query(&format!(
-                        "UPDATE virtual_section:{{tree_id: $tree_id, index: $index}} CONTENT $vsection"
-                    ))
-                    .bind(("tree_id", tree_id))
-                    .bind(("index", index))
-                    .bind(("vsection", virtual_record))
+                    .query(
+                        "UPDATE virtual_section:{tree_id: $tree_id, index: $index} CONTENT $vsection",
+                        &[serde_json::json!({
+                            "tree_id": tree_id,
+                            "index": index,
+                            "vsection": virtual_record
+                        })]
+                    )
                     .await
                     .map_err(|e| {
-                        DbError::query(format!("Failed to store virtual section {}: {}", index, e))
+                        DbError::Query(format!("Failed to store virtual section {}: {}", index, e))
                     })?;
             }
         }
@@ -257,38 +257,44 @@ impl MerklePersistence {
         // 1. Retrieve tree metadata
         let tree_record: Option<HybridTreeRecord> = self
             .client
-            .execute_query(&format!("SELECT * FROM hybrid_tree:{}", sanitize_id(tree_id)))
+            .query(
+                &format!("SELECT * FROM hybrid_tree:{}", sanitize_id(tree_id)),
+                &[],
+            )
             .await
-            .map_err(|e| DbError::query(format!("Failed to retrieve tree metadata: {}", e)))?
+            .map_err(|e| DbError::Query(format!("Failed to retrieve tree metadata: {}", e)))?
             .take(0)
-            .map_err(|e| DbError::query(format!("Failed to parse tree metadata: {}", e)))?;
+            .map_err(|e| DbError::Query(format!("Failed to parse tree metadata: {}", e)))?;
 
-        let tree_record = tree_record.ok_or_else(|| {
-            DbError::not_found(format!("Tree not found: {}", tree_id))
-        })?;
+        let tree_record =
+            tree_record.ok_or_else(|| DbError::NotFound(format!("Tree not found: {}", tree_id)))?;
 
         // 2. Retrieve sections
         let section_records: Vec<SectionRecord> = self
             .client
-            .execute_query("SELECT * FROM section WHERE tree_id = $tree_id ORDER BY section_index")
-            .bind(("tree_id", tree_id))
+            .query(
+                "SELECT * FROM section WHERE tree_id = $tree_id ORDER BY section_index",
+                &[serde_json::json!({"tree_id": tree_id})],
+            )
             .await
-            .map_err(|e| DbError::query(format!("Failed to retrieve sections: {}", e)))?
+            .map_err(|e| DbError::Query(format!("Failed to retrieve sections: {}", e)))?
             .take(0)
-            .map_err(|e| DbError::query(format!("Failed to parse sections: {}", e)))?;
+            .map_err(|e| DbError::Query(format!("Failed to parse sections: {}", e)))?;
 
         // Deserialize sections from binary data with version checking
         let sections: Result<Vec<SectionNode>, _> = section_records
             .iter()
             .map(|record| {
                 let versioned: VersionedSection = bincode::deserialize(&record.section_data)
-                    .map_err(|e| DbError::serialization(format!("Failed to deserialize section: {}", e)))?;
+                    .map_err(|e| {
+                        DbError::Internal(format!("Failed to deserialize section: {}", e))
+                    })?;
 
                 // Check version and migrate if needed
                 if versioned.version != SECTION_FORMAT_VERSION {
                     // For now, we only have version 1, so this is an error
                     // In the future, add migration logic here
-                    return Err(DbError::serialization(format!(
+                    return Err(DbError::Internal(format!(
                         "Unsupported section format version: expected {}, got {}",
                         SECTION_FORMAT_VERSION, versioned.version
                     )));
@@ -303,12 +309,14 @@ impl MerklePersistence {
         let virtual_sections = if tree_record.is_virtualized {
             let virtual_records: Vec<VirtualSectionRecord> = self
                 .client
-                .execute_query("SELECT * FROM virtual_section WHERE tree_id = $tree_id ORDER BY virtual_index")
-                .bind(("tree_id", tree_id))
+                .query(
+                    "SELECT * FROM virtual_section WHERE tree_id = $tree_id ORDER BY virtual_index",
+                    &[serde_json::json!({"tree_id": tree_id})],
+                )
                 .await
-                .map_err(|e| DbError::query(format!("Failed to retrieve virtual sections: {}", e)))?
+                .map_err(|e| DbError::Query(format!("Failed to retrieve virtual sections: {}", e)))?
                 .take(0)
-                .map_err(|e| DbError::query(format!("Failed to parse virtual sections: {}", e)))?;
+                .map_err(|e| DbError::Query(format!("Failed to parse virtual sections: {}", e)))?;
 
             Some(
                 virtual_records
@@ -316,7 +324,7 @@ impl MerklePersistence {
                     .map(|record| -> Result<VirtualSection, DbError> {
                         Ok(VirtualSection {
                             hash: NodeHash::from_hex(&record.hash)
-                                .map_err(|e| DbError::serialization(format!("Invalid hash: {}", e)))?,
+                                .map_err(|e| DbError::Internal(format!("Invalid hash: {}", e)))?,
                             primary_heading: record.primary_heading.map(|text| {
                                 crucible_core::merkle::HeadingSummary {
                                     text,
@@ -339,7 +347,7 @@ impl MerklePersistence {
 
         // 4. Reconstruct the tree
         let root_hash = NodeHash::from_hex(&tree_record.root_hash)
-            .map_err(|e| DbError::serialization(format!("Invalid root hash: {}", e)))?;
+            .map_err(|e| DbError::Internal(format!("Invalid root hash: {}", e)))?;
 
         Ok(HybridMerkleTree {
             root_hash,
@@ -360,21 +368,25 @@ impl MerklePersistence {
     pub async fn delete_tree(&self, tree_id: &str) -> DbResult<()> {
         // Delete in reverse order: virtual sections, sections, then tree
         self.client
-            .execute_query("DELETE FROM virtual_section WHERE tree_id = $tree_id")
-            .bind(("tree_id", tree_id))
+            .query(
+                "DELETE FROM virtual_section WHERE tree_id = $tree_id",
+                &[serde_json::json!({"tree_id": tree_id})],
+            )
             .await
-            .map_err(|e| DbError::query(format!("Failed to delete virtual sections: {}", e)))?;
+            .map_err(|e| DbError::Query(format!("Failed to delete virtual sections: {}", e)))?;
 
         self.client
-            .execute_query("DELETE FROM section WHERE tree_id = $tree_id")
-            .bind(("tree_id", tree_id))
+            .query(
+                "DELETE FROM section WHERE tree_id = $tree_id",
+                &[serde_json::json!({"tree_id": tree_id})],
+            )
             .await
-            .map_err(|e| DbError::query(format!("Failed to delete sections: {}", e)))?;
+            .map_err(|e| DbError::Query(format!("Failed to delete sections: {}", e)))?;
 
         self.client
-            .execute_query(&format!("DELETE hybrid_tree:{}", sanitize_id(tree_id)))
+            .query(&format!("DELETE hybrid_tree:{}", sanitize_id(tree_id)), &[])
             .await
-            .map_err(|e| DbError::query(format!("Failed to delete tree metadata: {}", e)))?;
+            .map_err(|e| DbError::Query(format!("Failed to delete tree metadata: {}", e)))?;
 
         Ok(())
     }
@@ -414,14 +426,18 @@ impl MerklePersistence {
 
         // 1. Update tree metadata
         self.client
-            .execute_query(&format!(
-                "UPDATE hybrid_tree:{} SET root_hash = $root_hash, updated_at = $updated_at",
-                sanitize_id(tree_id)
-            ))
-            .bind(("root_hash", tree.root_hash.to_hex()))
-            .bind(("updated_at", now))
+            .query(
+                &format!(
+                    "UPDATE hybrid_tree:{} SET root_hash = $root_hash, updated_at = $updated_at",
+                    sanitize_id(tree_id)
+                ),
+                &[serde_json::json!({
+                    "root_hash": tree.root_hash.to_hex(),
+                    "updated_at": now
+                })],
+            )
             .await
-            .map_err(|e| DbError::query(format!("Failed to update tree metadata: {}", e)))?;
+            .map_err(|e| DbError::Query(format!("Failed to update tree metadata: {}", e)))?;
 
         // 2. Update only changed sections
         // First compute cumulative block ranges
@@ -441,9 +457,8 @@ impl MerklePersistence {
                 version: SECTION_FORMAT_VERSION,
                 data: section.clone(),
             };
-            let section_data = bincode::serialize(&versioned).map_err(|e| {
-                DbError::serialization(format!("Failed to serialize section: {}", e))
-            })?;
+            let section_data = bincode::serialize(&versioned)
+                .map_err(|e| DbError::Internal(format!("Failed to serialize section: {}", e)))?;
 
             let (start_block, end_block) = block_ranges[index];
 
@@ -460,15 +475,17 @@ impl MerklePersistence {
             };
 
             self.client
-                .execute_query(&format!(
-                    "UPDATE section:{{tree_id: $tree_id, index: $index}} CONTENT $section"
-                ))
-                .bind(("tree_id", tree_id))
-                .bind(("index", index))
-                .bind(("section", section_record))
+                .query(
+                    "UPDATE section:{tree_id: $tree_id, index: $index} CONTENT $section",
+                    &[serde_json::json!({
+                        "tree_id": tree_id,
+                        "index": index,
+                        "section": section_record
+                    })],
+                )
                 .await
                 .map_err(|e| {
-                    DbError::query(format!("Failed to update section {}: {}", index, e))
+                    DbError::Query(format!("Failed to update section {}: {}", index, e))
                 })?;
         }
 
@@ -488,11 +505,14 @@ impl MerklePersistence {
     /// Tree metadata or None if not found
     pub async fn get_tree_metadata(&self, tree_id: &str) -> DbResult<Option<HybridTreeRecord>> {
         self.client
-            .execute_query(&format!("SELECT * FROM hybrid_tree:{}", sanitize_id(tree_id)))
+            .query(
+                &format!("SELECT * FROM hybrid_tree:{}", sanitize_id(tree_id)),
+                &[],
+            )
             .await
-            .map_err(|e| DbError::query(format!("Failed to retrieve tree metadata: {}", e)))?
+            .map_err(|e| DbError::Query(format!("Failed to retrieve tree metadata: {}", e)))?
             .take(0)
-            .map_err(|e| DbError::query(format!("Failed to parse tree metadata: {}", e)))
+            .map_err(|e| DbError::Query(format!("Failed to parse tree metadata: {}", e)))
     }
 
     /// List all stored trees
@@ -502,11 +522,11 @@ impl MerklePersistence {
     /// List of tree metadata records
     pub async fn list_trees(&self) -> DbResult<Vec<HybridTreeRecord>> {
         self.client
-            .execute_query("SELECT * FROM hybrid_tree ORDER BY updated_at DESC")
+            .query("SELECT * FROM hybrid_tree ORDER BY updated_at DESC", &[])
             .await
-            .map_err(|e| DbError::query(format!("Failed to list trees: {}", e)))?
+            .map_err(|e| DbError::Query(format!("Failed to list trees: {}", e)))?
             .take(0)
-            .map_err(|e| DbError::query(format!("Failed to parse tree list: {}", e)))
+            .map_err(|e| DbError::Query(format!("Failed to parse tree list: {}", e)))
     }
 }
 
@@ -571,19 +591,21 @@ fn sanitize_id(id: &str) -> String {
 // Implement the MerkleStore trait for SurrealDB backend
 #[async_trait::async_trait]
 impl crucible_core::merkle::MerkleStore for MerklePersistence {
-    async fn store(&self, id: &str, tree: &HybridMerkleTree) -> crucible_core::merkle::StorageResult<()> {
+    async fn store(
+        &self,
+        id: &str,
+        tree: &HybridMerkleTree,
+    ) -> crucible_core::merkle::StorageResult<()> {
         self.store_tree(id, tree)
             .await
             .map_err(|e| crucible_core::merkle::StorageError::Storage(e.to_string()))
     }
 
     async fn retrieve(&self, id: &str) -> crucible_core::merkle::StorageResult<HybridMerkleTree> {
-        self.retrieve_tree(id)
-            .await
-            .map_err(|e| match e {
-                DbError::NotFound(_) => crucible_core::merkle::StorageError::NotFound(id.to_string()),
-                _ => crucible_core::merkle::StorageError::Storage(e.to_string()),
-            })
+        self.retrieve_tree(id).await.map_err(|e| match e {
+            DbError::NotFound(_) => crucible_core::merkle::StorageError::NotFound(id.to_string()),
+            _ => crucible_core::merkle::StorageError::Storage(e.to_string()),
+        })
     }
 
     async fn delete(&self, id: &str) -> crucible_core::merkle::StorageResult<()> {
@@ -592,8 +614,12 @@ impl crucible_core::merkle::MerkleStore for MerklePersistence {
             .map_err(|e| crucible_core::merkle::StorageError::Storage(e.to_string()))
     }
 
-    async fn get_metadata(&self, id: &str) -> crucible_core::merkle::StorageResult<Option<crucible_core::merkle::TreeMetadata>> {
-        let meta = self.get_tree_metadata(id)
+    async fn get_metadata(
+        &self,
+        id: &str,
+    ) -> crucible_core::merkle::StorageResult<Option<crucible_core::merkle::TreeMetadata>> {
+        let meta = self
+            .get_tree_metadata(id)
             .await
             .map_err(|e| crucible_core::merkle::StorageError::Storage(e.to_string()))?;
 
@@ -619,28 +645,38 @@ impl crucible_core::merkle::MerkleStore for MerklePersistence {
         self.update_tree_incremental(id, tree, changed_sections)
             .await
             .map_err(|e| match e {
-                DbError::InvalidOperation(_) => crucible_core::merkle::StorageError::InvalidOperation(e.to_string()),
-                DbError::NotFound(_) => crucible_core::merkle::StorageError::NotFound(id.to_string()),
+                DbError::InvalidOperation(_) => {
+                    crucible_core::merkle::StorageError::InvalidOperation(e.to_string())
+                }
+                DbError::NotFound(_) => {
+                    crucible_core::merkle::StorageError::NotFound(id.to_string())
+                }
                 _ => crucible_core::merkle::StorageError::Storage(e.to_string()),
             })
     }
 
-    async fn list_trees(&self) -> crucible_core::merkle::StorageResult<Vec<crucible_core::merkle::TreeMetadata>> {
-        let trees = self.list_trees()
+    async fn list_trees(
+        &self,
+    ) -> crucible_core::merkle::StorageResult<Vec<crucible_core::merkle::TreeMetadata>> {
+        let trees = self
+            .list_trees()
             .await
             .map_err(|e| crucible_core::merkle::StorageError::Storage(e.to_string()))?;
 
-        Ok(trees.into_iter().map(|m| crucible_core::merkle::TreeMetadata {
-            id: m.id,
-            root_hash: m.root_hash,
-            section_count: m.section_count,
-            total_blocks: m.total_blocks,
-            is_virtualized: m.is_virtualized,
-            virtual_section_count: m.virtual_section_count.unwrap_or(0),
-            created_at: m.created_at.to_rfc3339(),
-            updated_at: m.updated_at.to_rfc3339(),
-            metadata: m.metadata,
-        }).collect())
+        Ok(trees
+            .into_iter()
+            .map(|m| crucible_core::merkle::TreeMetadata {
+                id: m.id,
+                root_hash: m.root_hash,
+                section_count: m.section_count,
+                total_blocks: m.total_blocks,
+                is_virtualized: m.is_virtualized,
+                virtual_section_count: m.virtual_section_count.unwrap_or(0),
+                created_at: m.created_at.to_rfc3339(),
+                updated_at: m.updated_at.to_rfc3339(),
+                metadata: m.metadata,
+            })
+            .collect())
     }
 }
 
@@ -670,7 +706,9 @@ mod tests {
                     id: Some(line[2..].to_lowercase().replace(' ', "-")),
                 });
             } else if !line.is_empty() {
-                doc.content.paragraphs.push(Paragraph::new(line.to_string(), offset));
+                doc.content
+                    .paragraphs
+                    .push(Paragraph::new(line.to_string(), offset));
             }
             offset += line.len() + 1;
         }
@@ -791,11 +829,17 @@ mod tests {
         assert_eq!(sanitize_id("tab\tseparated"), "tab_separated");
 
         // Special characters
-        assert_eq!(sanitize_id("test<script>alert()</script>"), "test_script_alert___script_");
+        assert_eq!(
+            sanitize_id("test<script>alert()</script>"),
+            "test_script_alert___script_"
+        );
         assert_eq!(sanitize_id("wildcards*?.txt"), "wildcards___.txt");
 
         // Valid characters preserved
-        assert_eq!(sanitize_id("valid-file_name.123.md"), "valid-file_name.123.md");
+        assert_eq!(
+            sanitize_id("valid-file_name.123.md"),
+            "valid-file_name.123.md"
+        );
         assert_eq!(sanitize_id("UPPERCASE"), "UPPERCASE");
     }
 

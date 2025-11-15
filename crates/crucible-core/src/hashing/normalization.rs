@@ -153,10 +153,12 @@ fn remove_leading_markers(text: &str) -> String {
 
     // Numbered lists (e.g., "1. ", "12. ")
     if let Some(dot_pos) = remaining.find('.') {
-        if dot_pos > 0 && remaining[..dot_pos].chars().all(|c| c.is_ascii_digit()) {
-            if remaining.len() > dot_pos + 1 && remaining.chars().nth(dot_pos + 1) == Some(' ') {
-                return remaining[dot_pos + 2..].to_string();
-            }
+        if dot_pos > 0
+            && remaining[..dot_pos].chars().all(|c| c.is_ascii_digit())
+            && remaining.len() > dot_pos + 1
+            && remaining.chars().nth(dot_pos + 1) == Some(' ')
+        {
+            return remaining[dot_pos + 2..].to_string();
         }
     }
 
@@ -200,7 +202,10 @@ mod tests {
         assert_eq!(normalize_block_text("*italic* text"), "*italic* text");
         assert_eq!(normalize_block_text("==highlighted=="), "==highlighted==");
         assert_eq!(normalize_block_text("`code`"), "`code`");
-        assert_eq!(normalize_block_text("~~strikethrough~~"), "~~strikethrough~~");
+        assert_eq!(
+            normalize_block_text("~~strikethrough~~"),
+            "~~strikethrough~~"
+        );
 
         // Mixed formatting
         assert_eq!(
@@ -259,14 +264,19 @@ mod tests {
     #[test]
     fn test_space_collapsing() {
         assert_eq!(normalize_block_text("hello    world"), "hello world");
-        assert_eq!(normalize_block_text("too   many   spaces"), "too many spaces");
+        assert_eq!(
+            normalize_block_text("too   many   spaces"),
+            "too many spaces"
+        );
     }
 
     #[test]
     fn test_real_world_examples() {
         // Typical paragraph from note
-        let input = "  This concept relates to [[Other Note]] and ==highlights== the **key insight**.  ";
-        let expected = "This concept relates to [[Other Note]] and ==highlights== the **key insight**.";
+        let input =
+            "  This concept relates to [[Other Note]] and ==highlights== the **key insight**.  ";
+        let expected =
+            "This concept relates to [[Other Note]] and ==highlights== the **key insight**.";
         assert_eq!(normalize_block_text(input), expected);
 
         // List item with formatting

@@ -408,9 +408,7 @@ impl SurrealEmbeddingDatabase {
                         .await
                         .map(|_| ())
                 }
-                BatchOperationType::Delete => {
-                    self.delete_file(&note.file_path).await.map(|_| ())
-                }
+                BatchOperationType::Delete => self.delete_file(&note.file_path).await.map(|_| ()),
             };
 
             match result {

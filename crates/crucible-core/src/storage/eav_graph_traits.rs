@@ -558,7 +558,11 @@ impl Default for Relation {
 
 impl Relation {
     /// Create a new relation
-    pub fn new(from: impl Into<String>, to: Option<String>, relation_type: impl Into<String>) -> Self {
+    pub fn new(
+        from: impl Into<String>,
+        to: Option<String>,
+        relation_type: impl Into<String>,
+    ) -> Self {
         Self {
             from_entity_id: from.into(),
             to_entity_id: to,
@@ -584,7 +588,12 @@ impl Relation {
     }
 
     /// Add block link fields (offset, hash, heading occurrence)
-    pub fn with_block_link(mut self, offset: u32, hash: [u8; 32], heading_occurrence: Option<u32>) -> Self {
+    pub fn with_block_link(
+        mut self,
+        offset: u32,
+        hash: [u8; 32],
+        heading_occurrence: Option<u32>,
+    ) -> Self {
         self.block_offset = Some(offset);
         self.block_hash = Some(hash);
         self.heading_occurrence = heading_occurrence;
@@ -865,8 +874,16 @@ mod tests {
             }
         }
 
-        fn make_key(entity_id: &str, namespace: &PropertyNamespace, key: &str) -> (String, String, String) {
-            (entity_id.to_string(), namespace.0.to_string(), key.to_string())
+        fn make_key(
+            entity_id: &str,
+            namespace: &PropertyNamespace,
+            key: &str,
+        ) -> (String, String, String) {
+            (
+                entity_id.to_string(),
+                namespace.0.to_string(),
+                key.to_string(),
+            )
         }
     }
 
@@ -992,7 +1009,10 @@ mod tests {
         ];
 
         // Test batch upsert
-        let count = storage.batch_upsert_properties(properties.clone()).await.unwrap();
+        let count = storage
+            .batch_upsert_properties(properties.clone())
+            .await
+            .unwrap();
         assert_eq!(count, 3);
 
         // Verify properties were stored
@@ -1009,7 +1029,10 @@ mod tests {
             updated_at: Utc::now(),
         };
 
-        storage.batch_upsert_properties(vec![updated_property]).await.unwrap();
+        storage
+            .batch_upsert_properties(vec![updated_property])
+            .await
+            .unwrap();
 
         // Should still have 3 properties (upsert, not insert)
         let retrieved = storage.get_properties("note:test").await.unwrap();
@@ -1224,12 +1247,18 @@ mod tests {
         // Date variant
         let date_json = serde_json::json!({"type": "date", "value": "2024-11-08"});
         let date_val: PropertyValue = serde_json::from_value(date_json).unwrap();
-        assert_eq!(date_val, PropertyValue::Date(NaiveDate::from_ymd_opt(2024, 11, 8).unwrap()));
+        assert_eq!(
+            date_val,
+            PropertyValue::Date(NaiveDate::from_ymd_opt(2024, 11, 8).unwrap())
+        );
 
         // Json variant
         let json_json = serde_json::json!({"type": "json", "value": {"key": "value"}});
         let json_val: PropertyValue = serde_json::from_value(json_json).unwrap();
-        assert_eq!(json_val, PropertyValue::Json(serde_json::json!({"key": "value"})));
+        assert_eq!(
+            json_val,
+            PropertyValue::Json(serde_json::json!({"key": "value"}))
+        );
     }
 
     #[tokio::test]
@@ -1384,7 +1413,8 @@ mod tests {
                 })
                 .and_then(|r| {
                     // Return a block ID constructed from entity + offset
-                    r.block_offset.map(|offset| format!("{}#block_{}", entity_id, offset))
+                    r.block_offset
+                        .map(|offset| format!("{}#block_{}", entity_id, offset))
                 }))
         }
     }
@@ -1406,7 +1436,10 @@ mod tests {
         assert_eq!(retrieved.from_entity_id, "note:source");
         assert_eq!(retrieved.to_entity_id, Some("note:target".to_string()));
         assert_eq!(retrieved.relation_type, "wikilink");
-        assert_eq!(retrieved.context, Some("See [[Target Note]] for details".to_string()));
+        assert_eq!(
+            retrieved.context,
+            Some("See [[Target Note]] for details".to_string())
+        );
 
         // Test get_relations
         let relations = storage

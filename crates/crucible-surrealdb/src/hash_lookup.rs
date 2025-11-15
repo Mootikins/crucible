@@ -527,7 +527,12 @@ fn convert_record_to_stored_hash(record: &Record) -> Result<StoredFileHash> {
         .or_else(|| record.data.get("modified_at"))
         .or_else(|| record.data.get("parsed_at"))
         .or_else(|| record.data.get("updated_at"))
-        .or_else(|| record.data.get("data").and_then(|v| v.get("source_modified_at")))
+        .or_else(|| {
+            record
+                .data
+                .get("data")
+                .and_then(|v| v.get("source_modified_at"))
+        })
         .or_else(|| record.data.get("data").and_then(|v| v.get("parsed_at")))
         .and_then(|v| v.as_str())
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
@@ -1039,7 +1044,7 @@ mod tests {
     use crate::kiln_integration::initialize_kiln_schema;
     use crate::types::RecordId;
     use crate::SurrealClient;
-    
+
     async fn setup_client() -> SurrealClient {
         let client = SurrealClient::new_isolated_memory().await.unwrap();
         initialize_kiln_schema(&client).await.unwrap();
