@@ -1838,6 +1838,7 @@ dependencies = [
  "crucible-parser",
  "futures",
  "hex",
+ "lru",
  "notify",
  "parking_lot",
  "pulldown-cmark",
