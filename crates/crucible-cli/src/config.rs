@@ -1467,7 +1467,7 @@ timeout_secs = 60
 
         let embedding_config = config.to_embedding_config().unwrap();
         assert_eq!(embedding_config.model_name(), "nomic-embed-text-v1.5");
-        assert_eq!(embedding_config.provider_type, ProviderType::FastEmbed);
+        assert_eq!(embedding_config.provider_type(), ProviderType::FastEmbed);
     }
 
     #[test]
@@ -1489,7 +1489,7 @@ timeout_secs = 60
 
         let embedding_config = config.to_embedding_config().unwrap();
         assert_eq!(embedding_config.model_name(), "nomic-embed-text");
-        assert_eq!(embedding_config.provider_type, ProviderType::Ollama);
+        assert_eq!(embedding_config.provider_type(), ProviderType::Ollama);
         assert_eq!(
             embedding_config.endpoint(),
             "https://llama.terminal.krohnos.io"
@@ -1517,7 +1517,7 @@ timeout_secs = 60
 
         let embedding_config = config.to_embedding_config().unwrap();
         assert_eq!(embedding_config.model_name(), "text-embedding-3-small");
-        assert_eq!(embedding_config.provider_type, ProviderType::OpenAI);
+        assert_eq!(embedding_config.provider_type(), ProviderType::OpenAI);
     }
 
     #[test]
@@ -1528,7 +1528,7 @@ timeout_secs = 60
 
         let embedding_config = config.to_embedding_config().unwrap();
         assert_eq!(embedding_config.model_name(), "nomic-embed-text-v1.5");
-        assert_eq!(embedding_config.provider_type, ProviderType::FastEmbed);
+        assert_eq!(embedding_config.provider_type(), ProviderType::FastEmbed);
     }
 
     #[test]
@@ -1539,7 +1539,7 @@ timeout_secs = 60
 
         let embedding_config = config.to_embedding_config().unwrap();
         assert_eq!(embedding_config.model_name(), "nomic-embed-text");
-        assert_eq!(embedding_config.provider_type, ProviderType::Ollama);
+        assert_eq!(embedding_config.provider_type(), ProviderType::Ollama);
     }
 
     #[test]
@@ -1557,7 +1557,7 @@ timeout_secs = 60
         });
 
         let embedding_config = config.to_embedding_config().unwrap();
-        assert_eq!(embedding_config.provider_type, ProviderType::FastEmbed);
+        assert_eq!(embedding_config.provider_type(), ProviderType::FastEmbed);
         assert_eq!(embedding_config.model_name(), "bge-small-en-v1.5");
     }
 

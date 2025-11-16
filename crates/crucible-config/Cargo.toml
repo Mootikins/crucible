@@ -6,7 +6,8 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
-crucible-core = { path = "../crucible-core" }
+# Note: Removed crucible-core dependency to avoid circular dependency
+# Config should be the foundation, not depend on core
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true, optional = true }
@@ -18,6 +19,7 @@ tracing = { workspace = true }
 tokio = { workspace = true, features = ["fs"] }
 tempfile = { workspace = true, optional = true }
 schemars = { workspace = true }
+num_cpus = "1.16"
 
 [features]
 default = ["yaml"]
