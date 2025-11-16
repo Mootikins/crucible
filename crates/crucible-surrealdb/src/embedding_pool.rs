@@ -109,7 +109,7 @@ impl EmbeddingSignature {
             EmbeddingProviderType::Mock => "mock",
             EmbeddingProviderType::Cohere => "cohere",
             EmbeddingProviderType::VertexAI => "vertexai",
-            EmbeddingProviderType::Custom(name) => name.as_str(),
+            EmbeddingProviderType::Custom => "custom",
         }
         .to_string()
     }
@@ -222,13 +222,13 @@ impl EmbeddingThreadPool {
         let provider_type = provider_integration
             .config
             .as_ref()
-            .map(|c| c.provider_type.clone())
+            .map(|c| c.provider_type())
             .unwrap_or(EmbeddingProviderType::Mock);
 
         let model_name = provider_integration
             .config
             .as_ref()
-            .map(|c| c.model.name.clone())
+            .map(|c| c.model().to_string())
             .unwrap_or_else(|| provider_integration.mock_model.clone());
 
         // Create embedding provider based on configuration
@@ -251,7 +251,7 @@ impl EmbeddingThreadPool {
             if let Some(provider_config) = provider_integration.config {
                 info!(
                     "Creating embedding provider from crucible-config: {:?}",
-                    provider_config.provider_type
+                    provider_config.provider_type()
                 );
                 match Self::create_provider_from_crucible_config(provider_config).await {
                     Ok(provider) => {
@@ -284,7 +284,7 @@ impl EmbeddingThreadPool {
                 EmbeddingProviderType::Mock => "Mock".to_string(),
                 EmbeddingProviderType::Cohere => "Cohere".to_string(),
                 EmbeddingProviderType::VertexAI => "VertexAI".to_string(),
-                EmbeddingProviderType::Custom(name) => name.clone(),
+                EmbeddingProviderType::Custom => "CustomProvider".to_string(),
             });
 
         let dimensions = embedding_provider
@@ -871,78 +871,41 @@ impl EmbeddingThreadPool {
     async fn create_provider_from_crucible_config(
         config: ConfigEmbeddingProvider,
     ) -> Result<Arc<dyn EmbeddingProvider>> {
-        // Convert crucible-config to LLM embedding config
-        let llm_config = match config.provider_type {
-            EmbeddingProviderType::OpenAI => {
-                let api_key = config
-                    .api
-                    .key
-                    .ok_or_else(|| anyhow!("OpenAI provider requires API key"))?;
-
-                LlmEmbeddingConfig::openai(api_key, Some(config.model.name.clone()))
+        // Convert crucible-config to LLM embedding config using proper enum pattern matching
+        let llm_config = match config {
+            ConfigEmbeddingProvider::OpenAI(openai_config) => {
+                LlmEmbeddingConfig::openai(openai_config.api_key, Some(openai_config.model))
             }
-            EmbeddingProviderType::Ollama => {
-                let base_url = config
-                    .api
-                    .base_url
-                    .clone()
-                    .or_else(|| EmbeddingProviderType::Ollama.default_base_url())
-                    .unwrap_or_else(|| "http://localhost:11434".to_string());
-
-                LlmEmbeddingConfig::ollama(Some(base_url), Some(config.model.name.clone()))
+            ConfigEmbeddingProvider::Ollama(ollama_config) => {
+                LlmEmbeddingConfig::ollama(Some(ollama_config.base_url), Some(ollama_config.model))
             }
-            EmbeddingProviderType::Mock => {
-                // Mock provider for testing
-                LlmEmbeddingConfig::mock()
-            }
-            EmbeddingProviderType::Cohere => {
-                // For Cohere, we'd need to extend the LLM config to support it
-                // For now, map to OpenAI-like config
-                let api_key = config
-                    .api
-                    .key
-                    .ok_or_else(|| anyhow!("Cohere provider requires API key"))?;
-
-                LlmEmbeddingConfig::openai(api_key, Some(config.model.name.clone()))
-            }
-            EmbeddingProviderType::VertexAI => {
-                // For Vertex AI, we'd need to extend the LLM config to support it
-                // For now, map to OpenAI-like config
-                let api_key = config
-                    .api
-                    .key
-                    .ok_or_else(|| anyhow!("Vertex AI provider requires API key"))?;
-
-                LlmEmbeddingConfig::openai(api_key, Some(config.model.name.clone()))
-            }
-            EmbeddingProviderType::FastEmbed => {
-                // For FastEmbed, use fastembed config
+            ConfigEmbeddingProvider::FastEmbed(fastembed_config) => {
                 LlmEmbeddingConfig::fastembed(
-                    Some(config.model.name.clone()),
-                    None, // cache_dir
+                    Some(fastembed_config.model),
+                    fastembed_config.cache_dir,
                     None, // batch_size
                 )
             }
-            EmbeddingProviderType::Custom(_) => {
+            ConfigEmbeddingProvider::Mock(mock_config) => {
+                LlmEmbeddingConfig::mock(Some(mock_config.dimensions))
+            }
+            ConfigEmbeddingProvider::Cohere(cohere_config) => {
+                // For Cohere, we'd need to extend the LLM config to support it
+                // For now, map to OpenAI-like config
+                LlmEmbeddingConfig::openai(cohere_config.api_key, Some(cohere_config.model))
+            }
+            ConfigEmbeddingProvider::VertexAI(vertex_config) => {
+                // For Vertex AI, we'd need to extend the LLM config to support it
+                // For now, map to OpenAI-like config using project_id as placeholder
+                LlmEmbeddingConfig::openai(vertex_config.project_id, Some(vertex_config.model))
+            }
+            ConfigEmbeddingProvider::Custom(_) => {
                 return Err(anyhow!("Custom embedding providers are not yet supported"));
             }
         };
 
-        // Apply additional configuration from crucible-config
-        let mut final_config = llm_config;
-
-        // Apply timeout if specified
-        if let Some(timeout_seconds) = config.api.timeout_seconds {
-            final_config.api.timeout_seconds = Some(timeout_seconds);
-        }
-
-        // Apply retry attempts if specified
-        if let Some(retry_attempts) = config.api.retry_attempts {
-            final_config.api.retry_attempts = Some(retry_attempts);
-        }
-
         // Create the provider
-        create_provider(final_config)
+        create_provider(llm_config)
             .await
             .map_err(|e| anyhow!("Failed to create embedding provider: {}", e))
     }
@@ -1071,7 +1034,17 @@ pub async fn create_embedding_thread_pool_with_fixture(
 
 /// Validate embedding configuration
 pub async fn validate_embedding_config(config: &EmbeddingConfig) -> Result<()> {
-    crate::embedding_config::validate_embedding_config(config).await
+    // Basic validation - the main validation happens in the LLM layer
+    if config.timeout_ms == 0 {
+        return Err(anyhow!("Timeout cannot be zero"));
+    }
+    if config.batch_size == 0 {
+        return Err(anyhow!("Batch size cannot be zero"));
+    }
+    if config.worker_count == 0 {
+        return Err(anyhow!("Worker count cannot be zero"));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -43,10 +43,10 @@ use std::sync::Arc;
 pub async fn create_provider(
     config: EmbeddingConfig,
 ) -> EmbeddingResult<Arc<dyn EmbeddingProvider>> {
-    // Validate configuration before creating provider
+    // Validate configuration before creating provider (From impl handles error conversion)
     config.validate()?;
 
-    match config.provider_type {
+    match config.provider_type() {
         EmbeddingProviderType::Ollama => {
             let provider = ollama::OllamaProvider::new(config)?;
             Ok(Arc::new(provider))
@@ -60,13 +60,13 @@ pub async fn create_provider(
             Ok(Arc::new(provider))
         }
         EmbeddingProviderType::Mock => {
-            let dimensions = config.model.dimensions.unwrap_or(768) as usize;
+            let dimensions = config.dimensions().unwrap_or(768) as usize;
             let provider = mock::MockEmbeddingProvider::with_dimensions(dimensions);
             Ok(Arc::new(provider))
         }
         _ => Err(EmbeddingError::ConfigError(format!(
             "Unsupported provider type: {:?}",
-            config.provider_type
+            config.provider_type()
         ))),
     }
 }
@@ -89,7 +89,7 @@ mod tests {
             Some("nomic-embed-text".to_string()),
         );
 
-        assert_eq!(config.provider_type, EmbeddingProviderType::Ollama);
+        assert_eq!(config.provider_type(), EmbeddingProviderType::Ollama);
         assert_eq!(config.model_name(), "nomic-embed-text");
     }
 }

@@ -76,7 +76,7 @@ pub struct OllamaProvider {
 impl OllamaProvider {
     /// Create a new Ollama provider from configuration
     pub fn new(config: EmbeddingConfig) -> EmbeddingResult<Self> {
-        // Validate configuration
+        // Validate configuration (From impl handles error conversion)
         config.validate()?;
 
         let timeout_secs = config.timeout_secs();
@@ -100,16 +100,12 @@ impl OllamaProvider {
 
         // Get expected dimensions based on provider and model
         let expected_dimensions = super::config::expected_dimensions_for_model(
-            &config.provider_type,
+            &config.provider_type(),
             config.model_name(),
         );
 
-        // Get batch_size from options or use default of 1
-        let batch_size = config
-            .options
-            .get("batch_size")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(1) as usize;
+        // Default batch size - can be configured via provider-specific config in the future
+        let batch_size = 1;
 
         Ok(Self {
             client,
@@ -117,7 +113,7 @@ impl OllamaProvider {
             model: config.model_name().to_string(),
             expected_dimensions,
             timeout_secs,
-            max_retries: config.max_retries(),
+            max_retries: config.retry_attempts(),
             batch_size,
         })
     }
