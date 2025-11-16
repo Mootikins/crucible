@@ -544,7 +544,6 @@ impl crucible_core::enrichment::EnrichmentService for DefaultEnrichmentService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_core::enrichment::EnrichmentService as _;
     use std::path::PathBuf;
 
     /// Mock embedding provider for testing
