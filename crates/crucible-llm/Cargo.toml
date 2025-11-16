@@ -16,6 +16,9 @@ path = "src/lib.rs"
 test-utils = []
 
 [dependencies]
+# Core types and traits
+crucible-core = { path = "../crucible-core" }
+
 # Config
 crucible-config = { path = "../crucible-config" }
 
