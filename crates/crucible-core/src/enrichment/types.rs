@@ -307,8 +307,8 @@ mod tests {
     #[test]
     fn test_note_metadata_default() {
         let metadata = NoteMetadata::default();
-        assert_eq!(metadata.word_count, 0);
-        assert_eq!(metadata.char_count, 0);
-        assert_eq!(metadata.reading_time_seconds, 0);
+        assert_eq!(metadata.reading_time_minutes, 0.0);
+        assert_eq!(metadata.complexity_score, 0.0);
+        assert_eq!(metadata.language, None);
     }
 }
