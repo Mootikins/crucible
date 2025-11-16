@@ -28,7 +28,7 @@ pub const DEFAULT_MAX_BATCH_SIZE: usize = 10;
 /// - Relation inference (semantic similarity, clustering)
 ///
 /// Returns an EnrichedNote ready for storage.
-pub struct EnrichmentService {
+pub struct DefaultEnrichmentService {
     /// Embedding provider (dependency injected)
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
 
@@ -39,7 +39,7 @@ pub struct EnrichmentService {
     max_batch_size: usize,
 }
 
-impl Default for EnrichmentService {
+impl Default for DefaultEnrichmentService {
     fn default() -> Self {
         Self {
             embedding_provider: None,
@@ -49,7 +49,7 @@ impl Default for EnrichmentService {
     }
 }
 
-impl EnrichmentService {
+impl DefaultEnrichmentService {
     /// Create a new enrichment service with an embedding provider
     ///
     /// # Example
@@ -59,7 +59,7 @@ impl EnrichmentService {
     /// use crucible_core::enrichment::EnrichmentService;
     ///
     /// let provider = Arc::new(my_provider);
-    /// let service = EnrichmentService::new(provider);
+    /// let service = DefaultEnrichmentService::new(provider);
     /// ```
     pub fn new(embedding_provider: Arc<dyn EmbeddingProvider>) -> Self {
         Self {
@@ -70,14 +70,14 @@ impl EnrichmentService {
 
     /// Create an enrichment service without embeddings (metadata/relations only)
     ///
-    /// This is equivalent to `EnrichmentService::default()`.
+    /// This is equivalent to `DefaultEnrichmentService::default()`.
     ///
     /// # Example
     ///
     /// ```rust
     /// use crucible_enrichment::EnrichmentService;
     ///
-    /// let service = EnrichmentService::without_embeddings();
+    /// let service = DefaultEnrichmentService::without_embeddings();
     /// ```
     pub fn without_embeddings() -> Self {
         Self::default()
@@ -90,7 +90,7 @@ impl EnrichmentService {
     /// ```rust
     /// use crucible_enrichment::EnrichmentService;
     ///
-    /// let service = EnrichmentService::without_embeddings()
+    /// let service = DefaultEnrichmentService::without_embeddings()
     ///     .with_min_words(10);
     /// ```
     pub fn with_min_words(mut self, min_words: usize) -> Self {
@@ -105,7 +105,7 @@ impl EnrichmentService {
     /// ```rust
     /// use crucible_enrichment::EnrichmentService;
     ///
-    /// let service = EnrichmentService::without_embeddings()
+    /// let service = DefaultEnrichmentService::without_embeddings()
     ///     .with_max_batch_size(20);
     /// ```
     pub fn with_max_batch_size(mut self, max_batch_size: usize) -> Self {
@@ -533,7 +533,7 @@ mod tests {
     #[tokio::test]
     async fn test_enrichment_service_with_provider() {
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = EnrichmentService::new(provider);
+        let service = DefaultEnrichmentService::new(provider);
 
         assert!(service.embedding_provider.is_some());
         assert_eq!(service.min_words_for_embedding, 5);
@@ -541,7 +541,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_enrichment_service_without_provider() {
-        let service = EnrichmentService::without_embeddings();
+        let service = DefaultEnrichmentService::without_embeddings();
 
         assert!(service.embedding_provider.is_none());
     }
@@ -549,14 +549,14 @@ mod tests {
     #[tokio::test]
     async fn test_enrichment_service_with_custom_min_words() {
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = EnrichmentService::new(provider).with_min_words(10);
+        let service = DefaultEnrichmentService::new(provider).with_min_words(10);
 
         assert_eq!(service.min_words_for_embedding, 10);
     }
 
     #[tokio::test]
     async fn test_generate_embeddings_without_provider() {
-        let service = EnrichmentService::without_embeddings();
+        let service = DefaultEnrichmentService::without_embeddings();
 
         // Create a minimal ParsedNote for testing
         let parsed = create_test_parsed_note();
@@ -572,7 +572,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_extract_metadata() {
-        let service = EnrichmentService::without_embeddings();
+        let service = DefaultEnrichmentService::without_embeddings();
         let parsed = create_test_parsed_note();
 
         let metadata = service.extract_metadata(&parsed).await.unwrap();
@@ -588,7 +588,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_infer_relations() {
-        let service = EnrichmentService::without_embeddings();
+        let service = DefaultEnrichmentService::without_embeddings();
         let parsed = create_test_parsed_note();
 
         let relations = service.infer_relations(&parsed).await.unwrap();

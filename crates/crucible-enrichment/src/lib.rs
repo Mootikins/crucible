@@ -39,13 +39,16 @@ pub use config::{
     PrivacyMode, RetryProcessingResult, ThreadPoolMetrics, validate_embedding_config,
 };
 
-// Re-export enrichment types
+// Re-export enrichment types (now defined in crucible-core)
 pub use types::{
-    BlockEmbedding, EnrichedNote, InferredRelation, InferredRelationType, NoteMetadata,
+    BlockEmbedding, EnrichedNote, InferredRelation, NoteMetadata, RelationType,
 };
 
 // Re-export service
-pub use service::{EnrichmentService, DEFAULT_MAX_BATCH_SIZE, DEFAULT_MIN_WORDS_FOR_EMBEDDING};
+pub use service::{DefaultEnrichmentService, DEFAULT_MAX_BATCH_SIZE, DEFAULT_MIN_WORDS_FOR_EMBEDDING};
+
+// Backward compatibility alias
+pub type EnrichmentService = DefaultEnrichmentService;
 
 // Re-export document processor
 pub use document_processor::{
