@@ -590,7 +590,7 @@ pub async fn get_document_embeddings(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::embedding_config::EmbeddingConfig;
+    use crucible_enrichment::EmbeddingConfig;
 
     #[tokio::test]
     async fn test_pipeline_creation() {
