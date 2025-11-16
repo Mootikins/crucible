@@ -1869,6 +1869,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "crucible-config",
+ "crucible-core",
  "fastembed",
  "mockito",
  "reqwest",
