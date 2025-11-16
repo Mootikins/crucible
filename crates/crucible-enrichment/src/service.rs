@@ -4,11 +4,12 @@
 //! metadata extraction, and relation inference. Follows clean architecture
 //! principles with dependency injection.
 
-use crate::enrichment::{
-    BlockEmbedding, EmbeddingProvider, EnrichedNote, InferredRelation, NoteMetadata,
+use crate::types::{
+    BlockEmbedding, EnrichedNote, InferredRelation, NoteMetadata,
 };
-use crate::merkle::HybridMerkleTree;
-use crate::types::ParsedNote;
+use crucible_core::enrichment::EmbeddingProvider;
+use crucible_core::merkle::HybridMerkleTree;
+use crucible_parser::ParsedNote;
 use anyhow::Result;
 use std::sync::Arc;
 use tracing::{debug, info};
@@ -74,7 +75,7 @@ impl EnrichmentService {
     /// # Example
     ///
     /// ```rust
-    /// use crucible_core::enrichment::EnrichmentService;
+    /// use crucible_enrichment::EnrichmentService;
     ///
     /// let service = EnrichmentService::without_embeddings();
     /// ```
@@ -87,7 +88,7 @@ impl EnrichmentService {
     /// # Example
     ///
     /// ```rust
-    /// use crucible_core::enrichment::EnrichmentService;
+    /// use crucible_enrichment::EnrichmentService;
     ///
     /// let service = EnrichmentService::without_embeddings()
     ///     .with_min_words(10);
@@ -102,7 +103,7 @@ impl EnrichmentService {
     /// # Example
     ///
     /// ```rust
-    /// use crucible_core::enrichment::EnrichmentService;
+    /// use crucible_enrichment::EnrichmentService;
     ///
     /// let service = EnrichmentService::without_embeddings()
     ///     .with_max_batch_size(20);

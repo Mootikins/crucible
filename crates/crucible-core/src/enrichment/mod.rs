@@ -1,43 +1,16 @@
-//! Enrichment Layer
+//! Enrichment Trait Definitions
 //!
-//! This module provides the enrichment orchestration layer for the Crucible knowledge management system.
-//! It coordinates embedding generation, metadata extraction, and relation inference following clean
-//! architecture principles with proper separation of concerns.
+//! This module defines the core traits for the enrichment layer.
+//! Actual implementations live in the `crucible-enrichment` crate.
 //!
-//! ## Architecture
+//! ## Dependency Inversion Principle
 //!
-//! The enrichment layer sits between parsing and storage:
-//! - **Input**: ParsedNote (from parser) + changed block IDs (from Merkle diff)
-//! - **Processing**: Parallel enrichment operations (embeddings, metadata, relations)
-//! - **Output**: EnrichedNote (ready for storage)
-//!
-//! ## Components
-//!
-//! - **config**: Configuration types for embedding enrichment operations
-//! - **types**: EnrichedNote and related types
-//! - **service**: EnrichmentService orchestrator
-//! - **metadata**: Metadata extraction (future - integrated in service)
-//! - **relations**: Relation inference (future - integrated in service)
+//! By defining traits in the core layer and implementations in infrastructure:
+//! - Core remains pure with no dependencies on concrete implementations
+//! - Infrastructure depends on core, not vice versa
+//! - Easy to swap implementations or add new providers
 
-pub mod config;
 pub mod embedding;
-pub mod service;
-pub mod types;
 
-// Re-export commonly used configuration types
-pub use config::{
-    BatchIncrementalResult, DocumentEmbedding, EmbeddingConfig, EmbeddingError,
-    EmbeddingErrorType, EmbeddingModel, EmbeddingProcessingResult, IncrementalProcessingResult,
-    PrivacyMode, RetryProcessingResult, ThreadPoolMetrics, validate_embedding_config,
-};
-
-// Re-export embedding provider trait
+// Re-export the embedding provider trait
 pub use embedding::EmbeddingProvider;
-
-// Re-export enrichment types
-pub use types::{
-    BlockEmbedding, EnrichedNote, InferredRelation, InferredRelationType, NoteMetadata,
-};
-
-// Re-export service
-pub use service::EnrichmentService;

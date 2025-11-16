@@ -3,8 +3,8 @@
 //! Core types for the enrichment layer including EnrichedNote, BlockEmbedding,
 //! and metadata structures.
 
-use crate::types::ParsedNote;
-use crate::merkle::HybridMerkleTree;
+use crucible_parser::ParsedNote;
+use crucible_core::merkle::HybridMerkleTree;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
