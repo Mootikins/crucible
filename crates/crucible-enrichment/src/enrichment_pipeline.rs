@@ -388,7 +388,6 @@ impl EnrichmentPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_parser::ParsedNote;
     use std::fs;
     use tempfile::TempDir;
 
@@ -405,7 +404,6 @@ mod tests {
         let processor = EnrichmentPipeline::new(service);
 
         assert!(processor.config.enable_quick_filter);
-        assert!(!processor.config.skip_enrichment);
     }
 
     #[tokio::test]
@@ -425,22 +423,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_process_with_skip_enrichment() {
+    async fn test_process_without_embedding_provider() {
+        // When service has no embedding provider, should still enrich with metadata
         let service = Arc::new(crate::DefaultEnrichmentService::without_embeddings());
-        let config = EnrichmentPipelineConfig {
-            skip_enrichment: true,
-            ..Default::default()
-        };
-        let processor = EnrichmentPipeline::with_config(service, config);
+        let processor = EnrichmentPipeline::new(service);
 
-        let content = "# Heading\n\nParagraph text here.";
+        let content = "# Heading\n\nParagraph text here with enough words to meet minimum.";
         let (_temp, path) = create_test_markdown_file(content);
 
         let result = processor.process(&path).await.unwrap();
 
-        // Should have no embeddings when enrichment is skipped
+        // Should have no embeddings when no provider configured
         assert_eq!(result.enriched.embeddings.len(), 0);
         assert_eq!(result.metrics.blocks_enriched, 0);
+
+        // But should still have metadata
+        assert!(result.enriched.metadata.reading_time_minutes >= 0.0);
     }
 
     #[tokio::test]
