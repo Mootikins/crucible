@@ -15,8 +15,7 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use crucible_core::processing::DocumentProcessor;
-//! use crucible_enrichment::EnrichmentService;
+//! use crucible_enrichment::{DocumentProcessor, EnrichmentService};
 //! use std::path::Path;
 //! use std::sync::Arc;
 //!
