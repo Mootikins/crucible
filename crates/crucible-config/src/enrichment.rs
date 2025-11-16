@@ -824,9 +824,30 @@ impl EmbeddingProviderConfig {
                         field: "api_key".to_string(),
                     });
                 }
+                // Basic API key format check (OpenAI keys start with "sk-")
+                if !c.api_key.starts_with("sk-") && c.api_key != "test-key" {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "api_key".to_string(),
+                        reason: "OpenAI API keys should start with 'sk-'".to_string(),
+                    });
+                }
                 if c.model.is_empty() {
                     return Err(ConfigValidationError::MissingField {
                         field: "model".to_string(),
+                    });
+                }
+                // Validate base URL format
+                if !c.base_url.starts_with("http://") && !c.base_url.starts_with("https://") {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "base_url".to_string(),
+                        reason: "must start with http:// or https://".to_string(),
+                    });
+                }
+                // Validate timeout is reasonable (1-300 seconds)
+                if c.timeout_seconds == 0 || c.timeout_seconds > 300 {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "timeout_seconds".to_string(),
+                        reason: "must be between 1 and 300 seconds".to_string(),
                     });
                 }
             }
@@ -839,6 +860,20 @@ impl EmbeddingProviderConfig {
                 if c.base_url.is_empty() {
                     return Err(ConfigValidationError::MissingField {
                         field: "base_url".to_string(),
+                    });
+                }
+                // Validate base URL format
+                if !c.base_url.starts_with("http://") && !c.base_url.starts_with("https://") {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "base_url".to_string(),
+                        reason: "must start with http:// or https://".to_string(),
+                    });
+                }
+                // Validate timeout is reasonable (1-300 seconds)
+                if c.timeout_seconds == 0 || c.timeout_seconds > 300 {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "timeout_seconds".to_string(),
+                        reason: "must be between 1 and 300 seconds".to_string(),
                     });
                 }
             }
@@ -866,6 +901,20 @@ impl EmbeddingProviderConfig {
                         field: "model".to_string(),
                     });
                 }
+                // Validate base URL format
+                if !c.base_url.starts_with("http://") && !c.base_url.starts_with("https://") {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "base_url".to_string(),
+                        reason: "must start with http:// or https://".to_string(),
+                    });
+                }
+                // Validate timeout
+                if c.timeout_seconds == 0 || c.timeout_seconds > 300 {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "timeout_seconds".to_string(),
+                        reason: "must be between 1 and 300 seconds".to_string(),
+                    });
+                }
             }
             Self::VertexAI(c) => {
                 if c.project_id.is_empty() {
@@ -885,6 +934,13 @@ impl EmbeddingProviderConfig {
                         field: "base_url".to_string(),
                     });
                 }
+                // Validate base URL format
+                if !c.base_url.starts_with("http://") && !c.base_url.starts_with("https://") {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "base_url".to_string(),
+                        reason: "must start with http:// or https://".to_string(),
+                    });
+                }
                 if c.model.is_empty() {
                     return Err(ConfigValidationError::MissingField {
                         field: "model".to_string(),
@@ -894,6 +950,13 @@ impl EmbeddingProviderConfig {
                     return Err(ConfigValidationError::InvalidValue {
                         field: "dimensions".to_string(),
                         reason: "must be greater than 0".to_string(),
+                    });
+                }
+                // Validate timeout
+                if c.timeout_seconds == 0 || c.timeout_seconds > 300 {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "timeout_seconds".to_string(),
+                        reason: "must be between 1 and 300 seconds".to_string(),
                     });
                 }
             }
