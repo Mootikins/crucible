@@ -10,7 +10,14 @@
 //! - Infrastructure depends on core, not vice versa
 //! - Easy to swap implementations or add new providers
 
+pub mod config;
 pub mod embedding;
 
 // Re-export the embedding provider trait
 pub use embedding::EmbeddingProvider;
+
+// Re-export configuration types
+pub use config::{
+    CohereConfig, CustomConfig, EmbeddingProviderConfig, EnrichmentConfig, FastEmbedConfig,
+    MockConfig, OllamaConfig, OpenAIConfig, PipelineConfig, VertexAIConfig,
+};
