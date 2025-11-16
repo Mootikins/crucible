@@ -1,4 +1,42 @@
 //! Provider configuration for embedding and AI services.
+//!
+//! ## Deprecation Notice
+//!
+//! **The types in this module are deprecated in favor of the new configuration
+//! structure in `crucible-core::enrichment::EnrichmentConfig`.**
+//!
+//! The new structure provides:
+//! - Type-safe provider-specific configuration with enums
+//! - Clearer default values
+//! - Better validation
+//! - Separation of concerns (provider config + pipeline config)
+//!
+//! ### Migration Path
+//!
+//! Old code:
+//! ```rust,ignore
+//! use crucible_config::EmbeddingProviderConfig;
+//! let config = EmbeddingProviderConfig::openai("key".to_string(), None);
+//! ```
+//!
+//! New code:
+//! ```rust,ignore
+//! use crucible_core::enrichment::{EnrichmentConfig, EmbeddingProviderConfig, OpenAIConfig};
+//! let config = EnrichmentConfig {
+//!     provider: EmbeddingProviderConfig::OpenAI(OpenAIConfig {
+//!         api_key: "key".to_string(),
+//!         ..Default::default()
+//!     }),
+//!     pipeline: Default::default(),
+//! };
+//! ```
+//!
+//! Or use conversion utilities from `crucible-llm`:
+//! ```rust,ignore
+//! use crucible_llm::convert_to_enrichment_config;
+//! let old_config = EmbeddingProviderConfig::openai("key".to_string(), None);
+//! let new_config = convert_to_enrichment_config(&old_config);
+//! ```
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -34,6 +72,13 @@ pub enum ProviderError {
 }
 
 /// Configuration for embedding providers.
+///
+/// **DEPRECATED**: Use `crucible_core::enrichment::EnrichmentConfig` instead.
+/// See module-level documentation for migration path.
+#[deprecated(
+    since = "0.2.0",
+    note = "Use crucible_core::enrichment::EnrichmentConfig instead. See module docs for migration."
+)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EmbeddingProviderConfig {
     /// Provider type.
