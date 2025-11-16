@@ -15,11 +15,12 @@
 //!
 //! - **config**: Configuration types for embedding enrichment operations
 //! - **types**: EnrichedNote and related types
-//! - **service**: EnrichmentService orchestrator (future)
-//! - **metadata**: Metadata extraction (future)
-//! - **relations**: Relation inference (future)
+//! - **service**: EnrichmentService orchestrator
+//! - **metadata**: Metadata extraction (future - integrated in service)
+//! - **relations**: Relation inference (future - integrated in service)
 
 pub mod config;
+pub mod service;
 pub mod types;
 
 // Re-export commonly used configuration types
@@ -33,3 +34,6 @@ pub use config::{
 pub use types::{
     BlockEmbedding, EnrichedNote, InferredRelation, InferredRelationType, NoteMetadata,
 };
+
+// Re-export service types
+pub use service::{EmbeddingProvider, EnrichmentService};
