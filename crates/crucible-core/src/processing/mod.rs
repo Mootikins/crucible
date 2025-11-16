@@ -401,6 +401,7 @@ mod tests {
             parse_errors: Vec::new(),
             block_hashes: vec![],
             merkle_root: None,
+            metadata: Default::default(),
         }
     }
 
