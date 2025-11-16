@@ -351,91 +351,30 @@ impl EnrichmentService {
 
     /// Extract metadata from the parsed note
     async fn extract_metadata(&self, parsed: &ParsedNote) -> Result<NoteMetadata> {
-        debug!("Extracting metadata from {}", parsed.path.display());
+        debug!("Computing enrichment metadata for {}", parsed.path.display());
 
         let mut metadata = NoteMetadata::new();
-        let mut block_word_counts = Vec::new();
-        let mut total_words = 0;
 
-        // Count words in headings
-        for (idx, heading) in parsed.content.headings.iter().enumerate() {
-            let block_id = format!("heading_{}", idx);
-            let word_count = heading.text.split_whitespace().count();
-            total_words += word_count;
-            block_word_counts.push((block_id, word_count));
-        }
+        // Use structural metadata from parser
+        let parser_meta = &parsed.metadata;
 
-        // Count words in paragraphs
-        for (idx, paragraph) in parsed.content.paragraphs.iter().enumerate() {
-            let block_id = format!("paragraph_{}", idx);
-            total_words += paragraph.word_count;
-            block_word_counts.push((block_id, paragraph.word_count));
-        }
+        // Compute reading time from word count (parser provides this)
+        metadata.reading_time_minutes = NoteMetadata::compute_reading_time(parser_meta.word_count);
 
-        // Count words in code blocks
-        for (idx, code_block) in parsed.content.code_blocks.iter().enumerate() {
-            let block_id = format!("code_{}", idx);
-            let word_count = code_block.content.split_whitespace().count();
-            total_words += word_count;
-            block_word_counts.push((block_id, word_count));
-        }
-
-        // Count words in lists
-        for (idx, list) in parsed.content.lists.iter().enumerate() {
-            let block_id = format!("list_{}", idx);
-            let list_words: usize = list.items.iter()
-                .map(|item| item.content.split_whitespace().count())
-                .sum();
-            total_words += list_words;
-            block_word_counts.push((block_id, list_words));
-        }
-
-        // Count words in blockquotes
-        for (idx, blockquote) in parsed.content.blockquotes.iter().enumerate() {
-            let block_id = format!("blockquote_{}", idx);
-            let word_count = blockquote.content.split_whitespace().count();
-            total_words += word_count;
-            block_word_counts.push((block_id, word_count));
-        }
-
-        metadata.total_word_count = total_words;
-        metadata.block_word_counts = block_word_counts;
-
-        // Estimate reading time (assuming 200 words per minute)
-        metadata.reading_time_minutes = (total_words as f32) / 200.0;
+        // Compute complexity score from element counts (parser provides these)
+        metadata.complexity_score = NoteMetadata::compute_complexity(
+            parser_meta.heading_count,
+            parser_meta.code_block_count,
+            parser_meta.list_count,
+            parser_meta.latex_count,
+        );
 
         // Language detection: default to English
         // TODO: Could use actual language detection library if needed
         metadata.language = Some("en".to_string());
 
-        // Calculate complexity score based on:
-        // - Number of headings (structure)
-        // - Number of code blocks (technical content)
-        // - Average words per block
-        // - Number of links (connectivity)
-        let heading_count = parsed.content.headings.len() as f32;
-        let code_count = parsed.content.code_blocks.len() as f32;
-        let link_count = (parsed.wikilinks.len() + parsed.inline_links.len()) as f32;
-        let avg_words_per_block = if !metadata.block_word_counts.is_empty() {
-            total_words as f32 / metadata.block_word_counts.len() as f32
-        } else {
-            0.0
-        };
-
-        // Normalize and combine factors (0.0-1.0 scale)
-        let structure_score = (heading_count / 10.0).min(1.0);
-        let technical_score = (code_count / 5.0).min(1.0);
-        let connectivity_score = (link_count / 10.0).min(1.0);
-        let verbosity_score = (avg_words_per_block / 100.0).min(1.0);
-
-        metadata.complexity_score =
-            (structure_score * 0.3 + technical_score * 0.2 +
-             connectivity_score * 0.2 + verbosity_score * 0.3)
-            .clamp(0.0, 1.0);
-
         debug!(
-            "Metadata extracted: {} words, {:.1} min read, complexity {:.2}",
-            metadata.total_word_count,
+            "Enrichment metadata computed: {:.1} min read, complexity {:.2}",
             metadata.reading_time_minutes,
             metadata.complexity_score
         );
@@ -638,12 +577,13 @@ mod tests {
 
         let metadata = service.extract_metadata(&parsed).await.unwrap();
 
-        // Empty note should have zero word count and complexity
+        // Empty note should have zero reading time and complexity (computed from parser metadata)
         assert_eq!(metadata.language, Some("en".to_string()));
-        assert_eq!(metadata.total_word_count, 0);
         assert_eq!(metadata.reading_time_minutes, 0.0);
         assert_eq!(metadata.complexity_score, 0.0);
-        assert_eq!(metadata.block_word_counts.len(), 0);
+
+        // Verify parser provided structural metadata
+        assert_eq!(parsed.metadata.word_count, 0);
     }
 
     #[tokio::test]
