@@ -1,7 +1,6 @@
 //! Core configuration types and structures.
 
-use crate::ProfileConfig;
-use crucible_core::enrichment::EnrichmentConfig;
+use crate::{EnrichmentConfig, ProfileConfig};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
