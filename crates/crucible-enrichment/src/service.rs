@@ -544,7 +544,7 @@ impl crucible_core::enrichment::EnrichmentService for DefaultEnrichmentService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::EnrichmentService;
+    use crucible_core::enrichment::EnrichmentService as _;
     use std::path::PathBuf;
 
     /// Mock embedding provider for testing
@@ -584,7 +584,7 @@ mod tests {
     #[tokio::test]
     async fn test_enrichment_service_with_provider() {
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = EnrichmentService::new(provider);
+        let service = DefaultEnrichmentService::new(provider);
 
         assert!(service.embedding_provider.is_some());
         assert_eq!(service.min_words_for_embedding, 5);
@@ -592,7 +592,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_enrichment_service_without_provider() {
-        let service = EnrichmentService::without_embeddings();
+        let service = DefaultEnrichmentService::without_embeddings();
 
         assert!(service.embedding_provider.is_none());
     }
@@ -600,14 +600,14 @@ mod tests {
     #[tokio::test]
     async fn test_enrichment_service_with_custom_min_words() {
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = EnrichmentService::new(provider).with_min_words(10);
+        let service = DefaultEnrichmentService::new(provider).with_min_words(10);
 
         assert_eq!(service.min_words_for_embedding, 10);
     }
 
     #[tokio::test]
     async fn test_generate_embeddings_without_provider() {
-        let service = EnrichmentService::without_embeddings();
+        let service = DefaultEnrichmentService::without_embeddings();
 
         // Create a minimal ParsedNote for testing
         let parsed = create_test_parsed_note();
@@ -623,7 +623,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_extract_metadata() {
-        let service = EnrichmentService::without_embeddings();
+        let service = DefaultEnrichmentService::without_embeddings();
         let parsed = create_test_parsed_note();
 
         let metadata = service.extract_metadata(&parsed).await.unwrap();
@@ -639,7 +639,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_infer_relations() {
-        let service = EnrichmentService::without_embeddings();
+        let service = DefaultEnrichmentService::without_embeddings();
         let parsed = create_test_parsed_note();
 
         let relations = service.infer_relations(&parsed).await.unwrap();
