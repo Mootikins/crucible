@@ -1,20 +1,21 @@
-//! Vector Embedding Module
+//! Embedding Storage Module
 //!
-//! This module provides comprehensive vector embedding functionality for the Crucible
-//! knowledge management system. It includes thread pool management, note processing
-//! pipelines, and database integration for semantic search and retrieval.
+//! Pure storage operations for vector embeddings. This module is intentionally
+//! minimal - all embedding generation and enrichment logic lives in the
+//! crucible-enrichment crate.
+//!
+//! ## Architecture
+//!
+//! Following clean architecture principles:
+//! - This module: Pure I/O (store, retrieve, delete, search)
+//! - crucible-enrichment: Business logic (generation, orchestration)
+//! - Clear separation of concerns
 
-// Re-export key types and functions from crucible-enrichment
-pub use crucible_enrichment::{
-    DocumentEmbedding, EmbeddingConfig, EmbeddingError, EmbeddingModel, EmbeddingProcessingResult,
-    PrivacyMode, ThreadPoolMetrics,
-};
-pub use crate::embedding_pipeline::EmbeddingPipeline;
-pub use crate::embedding_pool::EmbeddingThreadPool;
-
-// Re-export from kiln_integration for embedding-specific functions
+// Re-export storage functions from kiln_integration
 pub use crate::kiln_integration::{
-    clear_document_embeddings, get_database_stats, get_document_embeddings, semantic_search,
+    clear_document_embeddings,
+    get_database_stats,
+    get_document_embeddings,
+    semantic_search,
     store_document_embedding,
 };
-pub use crate::types::DatabaseStats;
