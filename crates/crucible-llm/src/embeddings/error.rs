@@ -81,6 +81,29 @@ pub enum EmbeddingError {
     Other(String),
 }
 
+/// Convert configuration validation errors to embedding errors
+/// Preserves error structure instead of losing information
+impl From<crucible_config::ConfigValidationError> for EmbeddingError {
+    fn from(err: crucible_config::ConfigValidationError) -> Self {
+        use crucible_config::ConfigValidationError;
+
+        match err {
+            ConfigValidationError::MissingField { field } => {
+                EmbeddingError::ConfigError(format!("Missing required field: {}", field))
+            }
+            ConfigValidationError::InvalidValue { field, reason } => {
+                EmbeddingError::ConfigError(format!("Invalid {}: {}", field, reason))
+            }
+            ConfigValidationError::Multiple { errors } => {
+                EmbeddingError::ConfigError(format!(
+                    "Multiple validation errors: {}",
+                    errors.join(", ")
+                ))
+            }
+        }
+    }
+}
+
 impl EmbeddingError {
     /// Check if the error is retryable
     pub fn is_retryable(&self) -> bool {

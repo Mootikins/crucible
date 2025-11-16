@@ -90,9 +90,8 @@ pub struct OpenAIProvider {
 impl OpenAIProvider {
     /// Create a new OpenAI provider from configuration
     pub fn new(config: EmbeddingConfig) -> EmbeddingResult<Self> {
-        // Validate configuration
-        config.validate()
-            .map_err(|e| EmbeddingError::ConfigError(e.to_string()))?;
+        // Validate configuration (From impl handles error conversion)
+        config.validate()?;
 
         // Get API key using helper method
         let api_key = config
@@ -239,7 +238,7 @@ impl EmbeddingProvider for OpenAIProvider {
 
     fn dimensions(&self) -> usize {
         super::config::expected_dimensions_for_model(
-            &self.config.provider_type,
+            &self.config.provider_type(),
             self.config.model_name(),
         )
     }
