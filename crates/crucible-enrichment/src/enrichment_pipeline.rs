@@ -1,6 +1,6 @@
-//! Five-Phase Document Processing Pipeline
+//! Enrichment Pipeline
 //!
-//! This module implements the document processing pipeline as defined in
+//! This module implements the enrichment pipeline as defined in
 //! ARCHITECTURE.md, following clean architecture principles with proper
 //! separation of concerns.
 //!
@@ -15,19 +15,19 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use crucible_enrichment::{DocumentProcessor, EnrichmentService};
+//! use crucible_enrichment::{EnrichmentPipeline, DefaultEnrichmentService};
 //! use std::path::Path;
 //! use std::sync::Arc;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     // Create enrichment service with provider
-//!     let enrichment_service = Arc::new(EnrichmentService::without_embeddings());
+//!     let enrichment_service = Arc::new(DefaultEnrichmentService::without_embeddings());
 //!
 //!     // Create processor
-//!     let processor = DocumentProcessor::new(enrichment_service);
+//!     let processor = EnrichmentPipeline::new(enrichment_service);
 //!
-//!     // Process a document
+//!     // Process a note
 //!     let note_path = Path::new("notes/example.md");
 //!     let result = processor.process(note_path).await?;
 //!
@@ -37,17 +37,20 @@
 //! ```
 
 use crate::EnrichedNote;
+use crucible_core::hashing::BLAKE3_HASHER;
 use crucible_core::merkle::HybridMerkleTree;
+use crucible_core::traits::ContentHasher;
 use anyhow::{Context, Result};
 use crucible_parser::{CrucibleParser, ParsedNote, traits::MarkdownParserImplementation};
+use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{debug, info};
 
-/// Result of document processing through all five phases
+/// Result of note processing through all five phases
 #[derive(Debug)]
-pub struct DocumentProcessingResult {
+pub struct EnrichmentResult {
     /// The enriched note ready for storage
     pub enriched: EnrichedNote,
 
@@ -61,7 +64,7 @@ pub struct DocumentProcessingResult {
     pub was_incremental: bool,
 }
 
-/// Metrics collected during document processing
+/// Metrics collected during note processing
 #[derive(Debug, Clone, Default)]
 pub struct ProcessingMetrics {
     /// Phase 1: Quick filter time
@@ -92,34 +95,27 @@ pub struct ProcessingMetrics {
     pub changed_blocks_count: usize,
 }
 
-/// Configuration for the document processor
+/// Configuration for the enrichment pipeline
 #[derive(Debug, Clone)]
-pub struct ProcessorConfig {
+pub struct EnrichmentPipelineConfig {
     /// Whether to enable Phase 1 quick filter optimization
+    /// (file date + BLAKE3 hash check to skip unchanged files)
     pub enable_quick_filter: bool,
-
-    /// Whether to skip enrichment (for testing/debugging)
-    pub skip_enrichment: bool,
-
-    /// Minimum word count for embedding generation
-    pub min_words_for_embedding: usize,
 }
 
-impl Default for ProcessorConfig {
+impl Default for EnrichmentPipelineConfig {
     fn default() -> Self {
         Self {
             enable_quick_filter: true,
-            skip_enrichment: false,
-            min_words_for_embedding: 3,
         }
     }
 }
 
-/// Five-phase document processor
+/// Five-phase note processor
 ///
-/// Orchestrates the complete document processing pipeline from file input
+/// Orchestrates the complete enrichment pipeline from file input
 /// to enriched note output ready for storage.
-pub struct DocumentProcessor {
+pub struct EnrichmentPipeline {
     /// Enrichment service for Phase 4
     enrichment_service: Arc<dyn crucible_core::enrichment::EnrichmentService>,
 
@@ -127,11 +123,11 @@ pub struct DocumentProcessor {
     parser: CrucibleParser,
 
     /// Processor configuration
-    config: ProcessorConfig,
+    config: EnrichmentPipelineConfig,
 }
 
-impl DocumentProcessor {
-    /// Create a new document processor with the given enrichment service
+impl EnrichmentPipeline {
+    /// Create a new note processor with the given enrichment service
     ///
     /// # Arguments
     ///
@@ -140,22 +136,22 @@ impl DocumentProcessor {
     /// # Example
     ///
     /// ```rust
-    /// use crucible_enrichment::{DocumentProcessor, EnrichmentService};
+    /// use crucible_enrichment::{EnrichmentPipeline, DefaultEnrichmentService};
     /// use std::sync::Arc;
     ///
-    /// let service = Arc::new(EnrichmentService::without_embeddings());
-    /// let processor = DocumentProcessor::new(service);
+    /// let service = Arc::new(DefaultEnrichmentService::without_embeddings());
+    /// let processor = EnrichmentPipeline::new(service);
     /// ```
     pub fn new(enrichment_service: Arc<dyn crucible_core::enrichment::EnrichmentService>) -> Self {
         Self {
             enrichment_service,
             parser: CrucibleParser::new(),
-            config: ProcessorConfig::default(),
+            config: EnrichmentPipelineConfig::default(),
         }
     }
 
     /// Create a processor with custom configuration
-    pub fn with_config(enrichment_service: Arc<dyn crucible_core::enrichment::EnrichmentService>, config: ProcessorConfig) -> Self {
+    pub fn with_config(enrichment_service: Arc<dyn crucible_core::enrichment::EnrichmentService>, config: EnrichmentPipelineConfig) -> Self {
         Self {
             enrichment_service,
             parser: CrucibleParser::new(),
@@ -163,7 +159,7 @@ impl DocumentProcessor {
         }
     }
 
-    /// Process a document through all five phases
+    /// Process a note through all five phases
     ///
     /// # Arguments
     ///
@@ -171,16 +167,16 @@ impl DocumentProcessor {
     ///
     /// # Returns
     ///
-    /// DocumentProcessingResult with enriched note and metrics
+    /// EnrichmentResult with enriched note and metrics
     ///
     /// # Errors
     ///
     /// Returns an error if any phase fails (file not found, parse error, etc.)
-    pub async fn process(&self, path: &Path) -> Result<DocumentProcessingResult> {
+    pub async fn process(&self, path: &Path) -> Result<EnrichmentResult> {
         let start_time = Instant::now();
         let mut metrics = ProcessingMetrics::default();
 
-        info!("Starting document processing for: {}", path.display());
+        info!("Starting note processing for: {}", path.display());
 
         // Phase 1: Quick Filter (file date + BLAKE3 hash check)
         let (file_changed, file_hash) = if self.config.enable_quick_filter {
@@ -212,13 +208,13 @@ impl DocumentProcessor {
         let was_incremental = self.config.enable_quick_filter && !changed_blocks.is_empty();
 
         info!(
-            "Document processing complete in {:?} ({} changed blocks, {} embeddings)",
+            "Note processing complete in {:?} ({} changed blocks, {} embeddings)",
             metrics.total_duration,
             metrics.changed_blocks_count,
             metrics.blocks_enriched
         );
 
-        Ok(DocumentProcessingResult {
+        Ok(EnrichmentResult {
             enriched,
             metrics,
             changed_blocks,
@@ -231,25 +227,43 @@ impl DocumentProcessor {
     /// Returns (file_changed: bool, file_hash: Option<String>)
     async fn phase1_quick_filter(
         &self,
-        _path: &Path,
+        path: &Path,
         metrics: &mut ProcessingMetrics,
     ) -> Result<(bool, Option<String>)> {
         let start = Instant::now();
 
-        debug!("Phase 1: Quick filter (placeholder - always returns file changed)");
+        debug!("Phase 1: Quick filter for {}", path.display());
 
-        // TODO: Implement file hash check
-        // - Compute BLAKE3 hash of entire file
-        // - Check against stored hash in database
-        // - Return early if unchanged
-        // For now, always return true (file changed) until we integrate with storage
+        // Get file metadata (modified time)
+        let metadata = fs::metadata(path)
+            .with_context(|| format!("Failed to read file metadata: {}", path.display()))?;
+
+        let modified_time = metadata.modified()
+            .context("Failed to get file modified time")?;
+
+        debug!("File modified: {:?}", modified_time);
+
+        // Compute BLAKE3 hash of file
+        let file_hash = BLAKE3_HASHER.hash_file(path).await
+            .with_context(|| format!("Failed to compute file hash: {}", path.display()))?;
+
+        let hash_hex = file_hash.to_string();
+        debug!("File BLAKE3 hash: {}", hash_hex);
+
+        // TODO: Storage integration for Phase 3
+        // - Query storage for last processed modified time and hash
+        // - If modified time and hash match, return (false, Some(hash)) to skip processing
+        // - If different, return (true, Some(hash)) to trigger processing
+        // - Store new modified time and hash after successful processing in Phase 5
+        //
+        // For now, always return true (file changed) until storage integration is complete.
+        // This ensures correctness while maintaining Phase 1 infrastructure.
         let file_changed = true;
-        let file_hash = None;
 
         metrics.phase1_filter_duration = start.elapsed();
-        debug!("Phase 1 complete in {:?}", metrics.phase1_filter_duration);
+        debug!("Phase 1 complete in {:?} (hash: {})", metrics.phase1_filter_duration, hash_hex);
 
-        Ok((file_changed, file_hash))
+        Ok((file_changed, Some(hash_hex)))
     }
 
     /// Phase 2: Parse markdown file to AST
@@ -388,7 +402,7 @@ mod tests {
     #[tokio::test]
     async fn test_document_processor_creation() {
         let service = Arc::new(crate::DefaultEnrichmentService::without_embeddings());
-        let processor = DocumentProcessor::new(service);
+        let processor = EnrichmentPipeline::new(service);
 
         assert!(processor.config.enable_quick_filter);
         assert!(!processor.config.skip_enrichment);
@@ -397,7 +411,7 @@ mod tests {
     #[tokio::test]
     async fn test_process_simple_document() {
         let service = Arc::new(crate::DefaultEnrichmentService::without_embeddings());
-        let processor = DocumentProcessor::new(service);
+        let processor = EnrichmentPipeline::new(service);
 
         let content = "# Test Heading\n\nThis is a test paragraph with more than three words.";
         let (_temp, path) = create_test_markdown_file(content);
@@ -413,11 +427,11 @@ mod tests {
     #[tokio::test]
     async fn test_process_with_skip_enrichment() {
         let service = Arc::new(crate::DefaultEnrichmentService::without_embeddings());
-        let config = ProcessorConfig {
+        let config = EnrichmentPipelineConfig {
             skip_enrichment: true,
             ..Default::default()
         };
-        let processor = DocumentProcessor::with_config(service, config);
+        let processor = EnrichmentPipeline::with_config(service, config);
 
         let content = "# Heading\n\nParagraph text here.";
         let (_temp, path) = create_test_markdown_file(content);
@@ -434,7 +448,7 @@ mod tests {
         use crucible_parser::types::*;
 
         let service = Arc::new(crate::DefaultEnrichmentService::without_embeddings());
-        let processor = DocumentProcessor::new(service);
+        let processor = EnrichmentPipeline::new(service);
 
         let mut parsed = ParsedNote {
             path: std::path::PathBuf::from("test.md"),
