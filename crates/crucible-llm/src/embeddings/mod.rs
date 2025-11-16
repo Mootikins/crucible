@@ -60,13 +60,13 @@ pub async fn create_provider(
             Ok(Arc::new(provider))
         }
         EmbeddingProviderType::Mock => {
-            let dimensions = config.model.dimensions.unwrap_or(768) as usize;
+            let dimensions = config.dimensions().unwrap_or(768) as usize;
             let provider = mock::MockEmbeddingProvider::with_dimensions(dimensions);
             Ok(Arc::new(provider))
         }
         _ => Err(EmbeddingError::ConfigError(format!(
             "Unsupported provider type: {:?}",
-            config.provider_type
+            config.provider_type()
         ))),
     }
 }
