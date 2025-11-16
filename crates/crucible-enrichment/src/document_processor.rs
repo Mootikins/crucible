@@ -16,7 +16,7 @@
 //!
 //! ```rust,ignore
 //! use crucible_core::processing::DocumentProcessor;
-//! use crucible_core::enrichment::EnrichmentService;
+//! use crucible_enrichment::EnrichmentService;
 //! use std::path::Path;
 //! use std::sync::Arc;
 //!
@@ -37,8 +37,8 @@
 //! }
 //! ```
 
-use crate::enrichment::{EnrichedNote, EnrichmentService};
-use crate::merkle::HybridMerkleTree;
+use crate::{EnrichedNote, EnrichmentService};
+use crucible_core::merkle::HybridMerkleTree;
 use anyhow::{Context, Result};
 use crucible_parser::{CrucibleParser, ParsedNote, traits::MarkdownParserImplementation};
 use std::path::Path;
@@ -141,8 +141,7 @@ impl DocumentProcessor {
     /// # Example
     ///
     /// ```rust
-    /// use crucible_core::processing::DocumentProcessor;
-    /// use crucible_core::enrichment::EnrichmentService;
+    /// use crucible_enrichment::{DocumentProcessor, EnrichmentService};
     /// use std::sync::Arc;
     ///
     /// let service = Arc::new(EnrichmentService::without_embeddings());

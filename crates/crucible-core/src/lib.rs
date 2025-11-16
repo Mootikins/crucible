@@ -29,12 +29,8 @@ pub use config::{
 pub use content_category::{ContentCategory, ContentCategoryError};
 pub use crucible_core::CrucibleCore;
 
-// Re-export enrichment configuration types
-pub use enrichment::{
-    BatchIncrementalResult, DocumentEmbedding, EmbeddingConfig, EmbeddingError,
-    EmbeddingErrorType, EmbeddingModel, EmbeddingProcessingResult, IncrementalProcessingResult,
-    PrivacyMode, RetryProcessingResult, ThreadPoolMetrics, validate_embedding_config,
-};
+// Re-export enrichment trait (implementation in crucible-enrichment crate)
+pub use enrichment::EmbeddingProvider;
 
 // Re-export processing handoff types
 pub use processing::{
