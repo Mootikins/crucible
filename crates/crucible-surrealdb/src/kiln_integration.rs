@@ -8,7 +8,9 @@ use crate::eav_graph::{
     apply_eav_graph_schema, EAVGraphStore, EntityRecord as EAVGraphEntityRecord, NoteIngestor,
     RecordId as EAVGraphRecordId, Relation, RelationRecord,
 };
-use crucible_enrichment::{DocumentEmbedding, EmbeddingConfig, EmbeddingError, EmbeddingModel, EmbeddingProcessingResult, PrivacyMode, ThreadPoolMetrics};
+// TODO: Update to use new enrichment architecture (EnrichedNote, EnrichmentPipeline)
+// These types were part of the old embedding_pool architecture that has been replaced
+// use crucible_enrichment::{DocumentEmbedding, EmbeddingConfig, EmbeddingError, EmbeddingModel, EmbeddingProcessingResult, PrivacyMode, ThreadPoolMetrics};
 use crate::types::{DatabaseStats, Record};
 use crate::SurrealClient;
 use anyhow::{anyhow, Result};
