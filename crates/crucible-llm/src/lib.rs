@@ -63,3 +63,11 @@ pub use text_generation::{
 // Re-export mock implementations for testing
 #[cfg(any(test, feature = "test-utils"))]
 pub use text_generation_mock::MockTextProvider;
+
+// Re-export core enrichment config types for convenience
+pub use crucible_core::enrichment::{
+    CohereConfig, CustomConfig, EmbeddingProviderConfig as NewEmbeddingProviderConfig,
+    EnrichmentConfig, FastEmbedConfig as NewFastEmbedConfig, MockConfig as NewMockConfig,
+    OllamaConfig as NewOllamaConfig, OpenAIConfig as NewOpenAIConfig, PipelineConfig,
+    VertexAIConfig,
+};

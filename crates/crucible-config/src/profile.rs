@@ -1,6 +1,7 @@
 //! Profile configuration for environment-specific settings.
 
-use crate::{ConfigError, DatabaseConfig, EmbeddingProviderConfig, LoggingConfig, ServerConfig};
+use crate::{ConfigError, DatabaseConfig, LoggingConfig, ServerConfig};
+use crucible_core::enrichment::EnrichmentConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -16,8 +17,8 @@ pub struct ProfileConfig {
     /// Environment type.
     pub environment: Environment,
 
-    /// Embedding provider configuration for this profile.
-    pub embedding_provider: Option<EmbeddingProviderConfig>,
+    /// Enrichment configuration (includes embedding provider) for this profile.
+    pub enrichment: Option<EnrichmentConfig>,
 
     /// Database configuration for this profile.
     pub database: Option<DatabaseConfig>,
@@ -44,7 +45,7 @@ impl ProfileConfig {
             name,
             description: None,
             environment,
-            embedding_provider: None,
+            enrichment: None,
             database: None,
             server: None,
             logging: None,
@@ -155,8 +156,8 @@ impl ProfileConfig {
         }
 
         // Override configurations if present in other
-        if other.embedding_provider.is_some() {
-            merged.embedding_provider = other.embedding_provider;
+        if other.enrichment.is_some() {
+            merged.enrichment = other.enrichment;
         }
         if other.database.is_some() {
             merged.database = other.database;

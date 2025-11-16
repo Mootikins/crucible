@@ -1,9 +1,10 @@
 //! Test utilities for configuration testing.
 
 use crate::{
-    Config, ConfigLoader, DatabaseConfig, EmbeddingProviderConfig, Environment, LoggingConfig,
+    Config, ConfigLoader, DatabaseConfig, Environment, LoggingConfig,
     ProfileConfig, ServerConfig,
 };
+use crucible_core::enrichment::{EnrichmentConfig, EmbeddingProviderConfig, OpenAIConfig, OllamaConfig, PipelineConfig};
 use std::collections::HashMap;
 use std::io::Write;
 use tempfile::{NamedTempFile, TempDir};
@@ -41,26 +42,39 @@ impl TestConfigBuilder {
         self
     }
 
-    /// Add an embedding provider configuration.
-    pub fn embedding_provider(mut self, provider: EmbeddingProviderConfig) -> Self {
-        self.config.embedding = Some(provider);
+    /// Add an enrichment configuration.
+    pub fn enrichment_config(mut self, enrichment: EnrichmentConfig) -> Self {
+        self.config.enrichment = Some(enrichment);
         self
     }
 
     /// Add a mock OpenAI embedding provider.
     pub fn mock_openai_embedding(self) -> Self {
-        self.embedding_provider(EmbeddingProviderConfig::openai(
-            "test-api-key".to_string(),
-            Some("text-embedding-3-small".to_string()),
-        ))
+        self.enrichment_config(EnrichmentConfig {
+            provider: EmbeddingProviderConfig::OpenAI(OpenAIConfig {
+                api_key: "test-api-key".to_string(),
+                model: "text-embedding-3-small".to_string(),
+                base_url: "https://api.openai.com/v1".to_string(),
+                timeout_seconds: 30,
+                retry_attempts: 3,
+                dimensions: 1536,
+                headers: Default::default(),
+            }),
+            pipeline: PipelineConfig::default(),
+        })
     }
 
     /// Add a mock Ollama embedding provider.
     pub fn mock_ollama_embedding(self) -> Self {
-        self.embedding_provider(EmbeddingProviderConfig::ollama(
-            Some("http://localhost:11434".to_string()),
-            Some("nomic-embed-text".to_string()),
-        ))
+        self.enrichment_config(EnrichmentConfig {
+            provider: EmbeddingProviderConfig::Ollama(OllamaConfig {
+                base_url: "http://localhost:11434".to_string(),
+                model: "nomic-embed-text".to_string(),
+                timeout_seconds: 30,
+                dimensions: 768,
+            }),
+            pipeline: PipelineConfig::default(),
+        })
     }
 
     /// Add a custom Ollama embedding provider with specific endpoint and model.
@@ -69,10 +83,15 @@ impl TestConfigBuilder {
         endpoint: S1,
         model: S2,
     ) -> Self {
-        self.embedding_provider(EmbeddingProviderConfig::ollama(
-            Some(endpoint.into()),
-            Some(model.into()),
-        ))
+        self.enrichment_config(EnrichmentConfig {
+            provider: EmbeddingProviderConfig::Ollama(OllamaConfig {
+                base_url: endpoint.into(),
+                model: model.into(),
+                timeout_seconds: 30,
+                dimensions: 768,
+            }),
+            pipeline: PipelineConfig::default(),
+        })
     }
 
     /// Add a kiln path to the configuration.
@@ -215,10 +234,18 @@ impl TestConfig {
     pub fn production_like() -> Config {
         TestConfigBuilder::new()
             .profile("production")
-            .embedding_provider(EmbeddingProviderConfig::openai(
-                "prod-api-key".to_string(),
-                Some("text-embedding-3-large".to_string()),
-            ))
+            .enrichment_config(EnrichmentConfig {
+                provider: EmbeddingProviderConfig::OpenAI(OpenAIConfig {
+                    api_key: "prod-api-key".to_string(),
+                    model: "text-embedding-3-large".to_string(),
+                    base_url: "https://api.openai.com/v1".to_string(),
+                    timeout_seconds: 30,
+                    retry_attempts: 3,
+                    dimensions: 3072,
+                    headers: Default::default(),
+                }),
+                pipeline: PipelineConfig::default(),
+            })
             .file_database("test.db")
             .server(ServerConfig {
                 host: "0.0.0.0".to_string(),
@@ -418,14 +445,14 @@ impl ConfigValidation {
         // Verify key configurations match
         assert_eq!(config.profile, loaded_config.profile);
 
-        // Compare embedding providers if they exist
+        // Compare enrichment configs if they exist
         match (
-            config.embedding_provider(),
-            loaded_config.embedding_provider(),
+            config.enrichment_config(),
+            loaded_config.enrichment_config(),
         ) {
-            (Ok(provider1), Ok(provider2)) => assert_eq!(provider1, provider2),
+            (Ok(config1), Ok(config2)) => assert_eq!(config1, config2),
             (Err(_), Err(_)) => {} // Both errors - that's fine for comparison
-            _ => panic!("Embedding provider comparison failed"),
+            _ => panic!("Enrichment config comparison failed"),
         }
 
         // Compare databases if they exist
@@ -444,10 +471,12 @@ impl ConfigValidation {
             ConfigLoader::apply_env_overrides(&mut config);
 
             assert_eq!(config.profile, Some("test".to_string()));
-            assert_eq!(
-                config.embedding_provider().unwrap().api.key,
-                Some("test-key".to_string())
-            );
+            // Check enrichment config exists and has OpenAI provider with test key
+            if let Ok(enrichment) = config.enrichment_config() {
+                if let EmbeddingProviderConfig::OpenAI(openai_config) = enrichment.provider {
+                    assert_eq!(openai_config.api_key, "test-key".to_string());
+                }
+            }
             assert_eq!(config.database().unwrap().url, ":memory:".to_string());
             assert_eq!(config.server().unwrap().host, "127.0.0.1".to_string());
             assert_eq!(config.server().unwrap().port, 3000);
@@ -465,7 +494,7 @@ mod tests {
     #[test]
     fn test_minimal_config() {
         let config = TestConfig::minimal();
-        assert!(config.embedding_provider().is_ok());
+        assert!(config.enrichment_config().is_ok());
         assert!(config.database().is_ok());
         assert_eq!(config.profile, Some("test".to_string()));
     }
@@ -473,7 +502,7 @@ mod tests {
     #[test]
     fn test_comprehensive_config() {
         let config = TestConfig::comprehensive();
-        assert!(config.embedding_provider().is_ok());
+        assert!(config.enrichment_config().is_ok());
         assert!(config.database().is_ok());
         assert!(config.server().is_ok());
         assert_eq!(config.profiles.len(), 4); // default + test + development + testing

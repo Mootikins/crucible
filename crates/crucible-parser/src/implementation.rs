@@ -10,7 +10,7 @@ use crate::block_hasher::SimpleBlockHasher;
 use crate::error::{ParserError, ParserResult};
 use crate::extensions::ExtensionRegistry;
 use crate::traits::{MarkdownParserImplementation, ParserCapabilities};
-use crate::types::{NoteContent, ParsedNote};
+use crate::types::{Callout, FootnoteMap, LatexExpression, NoteContent, ParsedNote, ParsedNoteMetadata};
 
 /// Default implementation of the MarkdownParserImplementation trait
 ///
@@ -369,6 +369,9 @@ impl MarkdownParserImplementation for CrucibleParser {
         let latex_expressions = document_content.latex_expressions.clone();
         let footnotes = document_content.footnotes.clone();
 
+        // Extract structural metadata from parsed content
+        let metadata = Self::extract_metadata(&document_content, &callouts, &latex_expressions, &footnotes);
+
         // Create the initial parsed note using builder pattern
         let mut parsed_doc = ParsedNote::builder(source_path.to_path_buf())
             .with_frontmatter(frontmatter)
@@ -376,6 +379,7 @@ impl MarkdownParserImplementation for CrucibleParser {
             .with_callouts(callouts)
             .with_latex_expressions(latex_expressions)
             .with_footnotes(footnotes)
+            .with_metadata(metadata)
             .build();
 
         // Apply block-level processing if enabled (Phase 2 optimize-data-flow)
@@ -411,6 +415,37 @@ impl MarkdownParserImplementation for CrucibleParser {
             .and_then(|ext| ext.to_str())
             .map(|ext| matches!(ext, "md" | "markdown"))
             .unwrap_or(false)
+    }
+}
+
+// Helper methods for CrucibleParser (not part of trait)
+impl CrucibleParser {
+    /// Extract structural metadata from parsed content
+    ///
+    /// Computes deterministic counts from AST structure:
+    /// - Word/character counts
+    /// - Element counts (headings, code blocks, lists, etc.)
+    ///
+    /// This follows industry standard pattern (Unified/Remark, Pandoc, Elasticsearch)
+    /// where structural metadata is extracted during parsing, while computed metadata
+    /// (complexity, reading time) is added during enrichment.
+    fn extract_metadata(
+        content: &NoteContent,
+        callouts: &[Callout],
+        latex: &[LatexExpression],
+        footnotes: &FootnoteMap,
+    ) -> ParsedNoteMetadata {
+        ParsedNoteMetadata {
+            word_count: content.word_count,
+            char_count: content.char_count,
+            heading_count: content.headings.len(),
+            code_block_count: content.code_blocks.len(),
+            list_count: content.lists.len(),
+            paragraph_count: content.paragraphs.len(),
+            callout_count: callouts.len(),
+            latex_count: latex.len(),
+            footnote_count: footnotes.definitions.len(),
+        }
     }
 }
 

@@ -12,6 +12,7 @@ crucible-core = { path = "../crucible-core" }
 crucible-parser = { path = "../crucible-parser" }
 
 # Optional: Only needed for embedding functionality, not core database operations
+crucible-enrichment = { path = "../crucible-enrichment", optional = true }
 crucible-llm = { workspace = true, optional = true }
 crucible-config = { workspace = true, features = ["test-utils"] }
 serde = { workspace = true }
@@ -48,7 +49,7 @@ bincode = "1.3"
 # Users can disable with --no-default-features if they only need database functionality
 default = ["embeddings"]
 # Enable embedding functionality (brings in LLM dependencies including ort-sys)
-embeddings = ["crucible-llm"]
+embeddings = ["crucible-enrichment", "crucible-llm"]
 # Test utilities - optionally enables LLM test-utils if embeddings feature is enabled
 test-utils = ["crucible-llm?/test-utils", "crucible-config/test-utils"]
 

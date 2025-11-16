@@ -21,6 +21,7 @@ rand = { workspace = true }
 tracing = { workspace = true }
 async-trait = { workspace = true }
 pulldown-cmark = { workspace = true }
+num_cpus = "1.16"
 # Hashing dependencies
 blake3 = "1.0"
 hex = "0.4"
@@ -30,11 +31,12 @@ tempfile = { workspace = true }
 # Enhanced async runtime
 tokio = { workspace = true, features = ["full", "tracing"] }
 
-# Configuration dependencies
-crucible-config = { workspace = true }
-
 # Parser dependency (now separate crate with dependency inversion)
 crucible-parser = { workspace = true }
+
+# NOTE: crucible-enrichment dependency REMOVED to break circular dependency
+# Core only defines EmbeddingProvider trait; enrichment crate provides implementation
+# Higher-level crates (CLI, Tauri) use both as needed
 
 # NOTE: crucible-surrealdb dependency REMOVED to break circular dependency
 # With Dependency Inversion, Core defines Storage trait, surrealdb implements it
