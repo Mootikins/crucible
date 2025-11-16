@@ -96,6 +96,7 @@ impl MarkdownParser for PulldownParser {
             parse_errors: Vec::new(), // TODO: Implement error collection
             block_hashes: Vec::new(), // Phase 2 field
             merkle_root: None,        // Phase 2 field
+            metadata: Default::default(), // TODO: Implement metadata extraction in this parser
         })
     }
 

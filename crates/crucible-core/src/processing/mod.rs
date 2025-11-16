@@ -12,6 +12,11 @@
 //! - Core layer: Provide handoff types for clean communication
 //! - Processing layer: Coordinate processing without transaction structure knowledge
 //! - Database layer: Build and execute transaction sequences with dependency resolution
+//!
+//! ## Note
+//!
+//! DocumentProcessor has moved to `crucible-enrichment` crate, as it orchestrates
+//! the enrichment pipeline and depends on enrichment services.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -396,6 +401,7 @@ mod tests {
             parse_errors: Vec::new(),
             block_hashes: vec![],
             merkle_root: None,
+            metadata: Default::default(),
         }
     }
 

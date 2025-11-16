@@ -7,6 +7,9 @@
 /// Configuration structures for embedding providers.
 pub mod config;
 
+/// Core adapter for enrichment layer integration.
+pub mod core_adapter;
+
 /// Error types for embedding operations.
 pub mod error;
 
@@ -26,6 +29,7 @@ pub mod provider;
 pub mod mock;
 
 pub use config::{EmbeddingConfig, EmbeddingProviderType, ProviderType};
+pub use core_adapter::CoreProviderAdapter;
 pub use error::{EmbeddingError, EmbeddingResult};
 pub use fastembed::FastEmbedProvider;
 pub use mock::MockEmbeddingProvider;

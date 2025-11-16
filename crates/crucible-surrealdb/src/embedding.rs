@@ -4,8 +4,8 @@
 //! knowledge management system. It includes thread pool management, note processing
 //! pipelines, and database integration for semantic search and retrieval.
 
-// Re-export key types and functions from other embedding modules
-pub use crate::embedding_config::{
+// Re-export key types and functions from crucible-enrichment
+pub use crucible_enrichment::{
     DocumentEmbedding, EmbeddingConfig, EmbeddingError, EmbeddingModel, EmbeddingProcessingResult,
     PrivacyMode, ThreadPoolMetrics,
 };

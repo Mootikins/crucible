@@ -1,29 +1,23 @@
 [package]
-name = "crucible-llm"
+name = "crucible-enrichment"
 version.workspace = true
 authors.workspace = true
 license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "LLM and AI integration for Crucible - embeddings, chat, completions"
+description = "Enrichment layer for Crucible - embeddings, metadata extraction, and relation inference"
 
 [lib]
-name = "crucible_llm"
+name = "crucible_enrichment"
 path = "src/lib.rs"
-
-[features]
-# Enable test utilities (MockEmbeddingProvider) for integration tests in other crates
-test-utils = []
 
 [dependencies]
 # Core types and traits
 crucible-core = { path = "../crucible-core" }
-
-# Config
-crucible-config = { path = "../crucible-config" }
+crucible-parser = { path = "../crucible-parser" }
 
 # Async
-tokio = { workspace = true, features = ["time"] }
+tokio = { workspace = true }
 async-trait = { workspace = true }
 
 # Error handling
@@ -32,21 +26,15 @@ thiserror = { workspace = true }
 
 # Serialization
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
 
-# HTTP client for API requests
-reqwest = { workspace = true }
-
-# Time handling
+# Time
 chrono = { workspace = true, features = ["serde"] }
 
 # Logging
 tracing = { workspace = true }
 
-# FastEmbed for local embeddings and reranking
-fastembed = "5.2"
+# System info
+num_cpus = { workspace = true }
 
 [dev-dependencies]
-tokio-test = "0.4"
-mockito = "1.0"
 tempfile = { workspace = true }
