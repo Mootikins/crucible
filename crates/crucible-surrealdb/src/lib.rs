@@ -40,7 +40,6 @@ pub mod kiln_integration;
 #[cfg(feature = "embeddings")]
 pub mod kiln_pipeline_connector;
 #[cfg(feature = "embeddings")]
-pub mod kiln_processor;
 #[cfg(feature = "embeddings")]
 pub mod kiln_scanner;
 pub mod kiln_store;
@@ -61,9 +60,7 @@ pub mod types;
 #[cfg(feature = "embeddings")]
 pub mod embedding;
 #[cfg(feature = "embeddings")]
-pub mod embedding_pipeline;
 #[cfg(feature = "embeddings")]
-pub mod embedding_pool;
 
 pub use content_addressed_storage::ContentAddressedStorageSurrealDB;
 pub use database::SurrealEmbeddingDatabase;
@@ -104,19 +101,11 @@ pub use types::{
 
 // Re-export embedding functionality from crucible-enrichment
 pub use crucible_enrichment::{
-    DocumentEmbedding, EmbeddingConfig, EmbeddingError, EmbeddingModel, EmbeddingProcessingResult,
-    PrivacyMode, ThreadPoolMetrics,
 };
-pub use embedding_pool::{EmbeddingThreadPool, EmbeddingSignature};
 #[cfg(feature = "embeddings")]
-pub use embedding_pipeline::EmbeddingPipeline;
 
 // Kiln scanner exports (requires embeddings feature)
 #[cfg(feature = "embeddings")]
-pub use kiln_processor::{
-    process_document_embeddings, process_incremental_changes, process_kiln_delta,
-    process_kiln_files, process_kiln_files_with_error_handling, scan_kiln_directory,
-};
 #[cfg(feature = "embeddings")]
 pub use kiln_scanner::{
     create_kiln_scanner, create_kiln_scanner_with_embeddings, parse_file_to_document,
