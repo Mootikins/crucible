@@ -27,6 +27,9 @@ pub struct EnrichmentService {
 
     /// Minimum word count for embedding generation
     min_words_for_embedding: usize,
+
+    /// Maximum blocks to embed in a single batch (prevents memory issues)
+    max_batch_size: usize,
 }
 
 impl EnrichmentService {
@@ -35,6 +38,7 @@ impl EnrichmentService {
         Self {
             embedding_provider: Some(embedding_provider),
             min_words_for_embedding: 5,
+            max_batch_size: 10,  // Process 10 blocks at a time
         }
     }
 
@@ -43,6 +47,7 @@ impl EnrichmentService {
         Self {
             embedding_provider: None,
             min_words_for_embedding: 5,
+            max_batch_size: 10,
         }
     }
 
@@ -110,42 +115,56 @@ impl EnrichmentService {
             return Ok(Vec::new());
         }
 
-        info!("Generating embeddings for {} blocks", block_texts.len());
+        info!("Generating embeddings for {} blocks (batches of {})",
+            block_texts.len(), self.max_batch_size);
 
-        // Prepare texts for batch embedding
-        let texts: Vec<&str> = block_texts.iter().map(|(_, text)| text.as_str()).collect();
+        let mut all_embeddings = Vec::new();
 
-        // Batch embed
-        let vectors = provider.embed_batch(&texts).await?;
+        // Process in chunks to limit memory usage
+        for (batch_idx, chunk) in block_texts.chunks(self.max_batch_size).enumerate() {
+            debug!("Processing batch {} ({} blocks)", batch_idx + 1, chunk.len());
 
-        // Package results as BlockEmbedding
-        let embeddings: Vec<BlockEmbedding> = block_texts
-            .iter()
-            .zip(vectors)
-            .map(|((block_id, _text), vector)| {
-                BlockEmbedding::new(
-                    block_id.clone(),
-                    vector,
-                    provider.model_name().to_string(),
-                )
-            })
-            .collect();
+            // Prepare texts for this batch
+            let texts: Vec<&str> = chunk.iter().map(|(_, text)| text.as_str()).collect();
 
-        info!("Generated {} embeddings using {}", embeddings.len(), provider.model_name());
+            // Batch embed
+            let vectors = provider.embed_batch(&texts).await?;
 
-        Ok(embeddings)
+            // Package results as BlockEmbedding
+            let batch_embeddings: Vec<BlockEmbedding> = chunk
+                .iter()
+                .zip(vectors)
+                .map(|((block_id, _text), vector)| {
+                    BlockEmbedding::new(
+                        block_id.clone(),
+                        vector,
+                        provider.model_name().to_string(),
+                    )
+                })
+                .collect();
+
+            all_embeddings.extend(batch_embeddings);
+        }
+
+        info!("Generated {} embeddings using {}", all_embeddings.len(), provider.model_name());
+
+        Ok(all_embeddings)
     }
 
     /// Extract block texts that meet embedding criteria
     ///
     /// Traverses the ParsedNote's content structure and extracts text from blocks
-    /// that meet the minimum word count threshold.
+    /// that meet the minimum word count threshold. Adds breadcrumbs (heading hierarchy)
+    /// to provide context without causing cascade re-embeddings.
     fn extract_block_texts(
         &self,
         parsed: &ParsedNote,
         changed_blocks: &[String],
     ) -> Vec<(String, String)> {
         let mut blocks = Vec::new();
+
+        // Build heading hierarchy for breadcrumbs
+        let breadcrumbs = self.build_breadcrumbs(parsed);
 
         // Extract from headings
         for (idx, heading) in parsed.content.headings.iter().enumerate() {
@@ -158,7 +177,14 @@ impl EnrichmentService {
 
             let word_count = heading.text.split_whitespace().count();
             if word_count >= self.min_words_for_embedding {
-                blocks.push((block_id, heading.text.clone()));
+                // Add breadcrumbs for context
+                let context = breadcrumbs.get(&heading.offset).cloned().unwrap_or_default();
+                let text_with_context = if context.is_empty() {
+                    heading.text.clone()
+                } else {
+                    format!("[{}] {}", context, heading.text)
+                };
+                blocks.push((block_id, text_with_context));
             }
         }
 
@@ -172,7 +198,14 @@ impl EnrichmentService {
             }
 
             if paragraph.word_count >= self.min_words_for_embedding {
-                blocks.push((block_id, paragraph.content.clone()));
+                // Add breadcrumbs for context
+                let context = breadcrumbs.get(&paragraph.offset).cloned().unwrap_or_default();
+                let text_with_context = if context.is_empty() {
+                    paragraph.content.clone()
+                } else {
+                    format!("[{}] {}", context, paragraph.content)
+                };
+                blocks.push((block_id, text_with_context));
             }
         }
 
@@ -187,7 +220,14 @@ impl EnrichmentService {
 
             let word_count = code_block.content.split_whitespace().count();
             if word_count >= self.min_words_for_embedding {
-                blocks.push((block_id, code_block.content.clone()));
+                // Add breadcrumbs for context
+                let context = breadcrumbs.get(&code_block.offset).cloned().unwrap_or_default();
+                let text_with_context = if context.is_empty() {
+                    code_block.content.clone()
+                } else {
+                    format!("[{}] {}", context, code_block.content)
+                };
+                blocks.push((block_id, text_with_context));
             }
         }
 
@@ -208,7 +248,14 @@ impl EnrichmentService {
 
             let word_count = list_text.split_whitespace().count();
             if word_count >= self.min_words_for_embedding {
-                blocks.push((block_id, list_text));
+                // Add breadcrumbs for context
+                let context = breadcrumbs.get(&list.offset).cloned().unwrap_or_default();
+                let text_with_context = if context.is_empty() {
+                    list_text
+                } else {
+                    format!("[{}] {}", context, list_text)
+                };
+                blocks.push((block_id, text_with_context));
             }
         }
 
@@ -223,7 +270,14 @@ impl EnrichmentService {
 
             let word_count = blockquote.content.split_whitespace().count();
             if word_count >= self.min_words_for_embedding {
-                blocks.push((block_id, blockquote.content.clone()));
+                // Add breadcrumbs for context
+                let context = breadcrumbs.get(&blockquote.offset).cloned().unwrap_or_default();
+                let text_with_context = if context.is_empty() {
+                    blockquote.content.clone()
+                } else {
+                    format!("[{}] {}", context, blockquote.content)
+                };
+                blocks.push((block_id, text_with_context));
             }
         }
 
@@ -350,6 +404,77 @@ impl EnrichmentService {
         debug!("Inferred {} relations", relations.len());
 
         Ok(relations)
+    }
+
+    /// Build breadcrumbs (heading hierarchy) for all content positions
+    ///
+    /// Creates a map from byte offsets to heading paths, allowing blocks to
+    /// include their hierarchical context in embeddings.
+    ///
+    /// Example: A paragraph under "# Introduction" > "## Background" would have
+    /// breadcrumbs "Introduction > Background"
+    fn build_breadcrumbs(&self, parsed: &ParsedNote) -> std::collections::HashMap<usize, String> {
+        use std::collections::HashMap;
+
+        let mut breadcrumbs = HashMap::new();
+        let mut heading_stack: Vec<(u8, &str, usize)> = Vec::new(); // (level, text, start_offset)
+
+        // Process all headings and build hierarchical paths
+        for heading in &parsed.content.headings {
+            // Pop headings at same or higher level (lower number)
+            while let Some(&(stack_level, _, _)) = heading_stack.last() {
+                if stack_level >= heading.level {
+                    heading_stack.pop();
+                } else {
+                    break;
+                }
+            }
+
+            // Add current heading to stack
+            heading_stack.push((heading.level, &heading.text, heading.offset));
+
+            // Build breadcrumb path for this position
+            let path: Vec<&str> = heading_stack.iter().map(|(_, text, _)| *text).collect();
+            let breadcrumb = path.join(" > ");
+
+            // Associate this breadcrumb with the heading's offset
+            breadcrumbs.insert(heading.offset, breadcrumb.clone());
+
+            // Find the next heading offset or use file end
+            let next_offset = parsed.content.headings
+                .iter()
+                .find(|h| h.offset > heading.offset)
+                .map(|h| h.offset)
+                .unwrap_or(usize::MAX);
+
+            // Apply this breadcrumb to all content in this section
+            // (paragraphs, code blocks, etc. between this heading and the next)
+            for para in &parsed.content.paragraphs {
+                if para.offset > heading.offset && para.offset < next_offset {
+                    breadcrumbs.insert(para.offset, breadcrumb.clone());
+                }
+            }
+
+            for code in &parsed.content.code_blocks {
+                if code.offset > heading.offset && code.offset < next_offset {
+                    breadcrumbs.insert(code.offset, breadcrumb.clone());
+                }
+            }
+
+            for list in &parsed.content.lists {
+                if list.offset > heading.offset && list.offset < next_offset {
+                    breadcrumbs.insert(list.offset, breadcrumb.clone());
+                }
+            }
+
+            for quote in &parsed.content.blockquotes {
+                if quote.offset > heading.offset && quote.offset < next_offset {
+                    breadcrumbs.insert(quote.offset, breadcrumb.clone());
+                }
+            }
+        }
+
+        breadcrumbs
     }
 }
 
