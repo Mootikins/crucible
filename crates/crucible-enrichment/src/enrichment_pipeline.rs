@@ -1,6 +1,6 @@
-//! Five-Phase Note Processing Pipeline
+//! Enrichment Pipeline
 //!
-//! This module implements the note processing pipeline as defined in
+//! This module implements the enrichment pipeline as defined in
 //! ARCHITECTURE.md, following clean architecture principles with proper
 //! separation of concerns.
 //!
@@ -15,7 +15,7 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use crucible_enrichment::{NoteProcessor, DefaultEnrichmentService};
+//! use crucible_enrichment::{EnrichmentPipeline, DefaultEnrichmentService};
 //! use std::path::Path;
 //! use std::sync::Arc;
 //!
@@ -25,7 +25,7 @@
 //!     let enrichment_service = Arc::new(DefaultEnrichmentService::without_embeddings());
 //!
 //!     // Create processor
-//!     let processor = NoteProcessor::new(enrichment_service);
+//!     let processor = EnrichmentPipeline::new(enrichment_service);
 //!
 //!     // Process a note
 //!     let note_path = Path::new("notes/example.md");
@@ -50,7 +50,7 @@ use tracing::{debug, info};
 
 /// Result of note processing through all five phases
 #[derive(Debug)]
-pub struct NoteProcessingResult {
+pub struct EnrichmentResult {
     /// The enriched note ready for storage
     pub enriched: EnrichedNote,
 
@@ -95,15 +95,15 @@ pub struct ProcessingMetrics {
     pub changed_blocks_count: usize,
 }
 
-/// Configuration for the note processor
+/// Configuration for the enrichment pipeline
 #[derive(Debug, Clone)]
-pub struct NoteProcessorConfig {
+pub struct EnrichmentPipelineConfig {
     /// Whether to enable Phase 1 quick filter optimization
     /// (file date + BLAKE3 hash check to skip unchanged files)
     pub enable_quick_filter: bool,
 }
 
-impl Default for NoteProcessorConfig {
+impl Default for EnrichmentPipelineConfig {
     fn default() -> Self {
         Self {
             enable_quick_filter: true,
@@ -113,9 +113,9 @@ impl Default for NoteProcessorConfig {
 
 /// Five-phase note processor
 ///
-/// Orchestrates the complete note processing pipeline from file input
+/// Orchestrates the complete enrichment pipeline from file input
 /// to enriched note output ready for storage.
-pub struct NoteProcessor {
+pub struct EnrichmentPipeline {
     /// Enrichment service for Phase 4
     enrichment_service: Arc<dyn crucible_core::enrichment::EnrichmentService>,
 
@@ -123,10 +123,10 @@ pub struct NoteProcessor {
     parser: CrucibleParser,
 
     /// Processor configuration
-    config: NoteProcessorConfig,
+    config: EnrichmentPipelineConfig,
 }
 
-impl NoteProcessor {
+impl EnrichmentPipeline {
     /// Create a new note processor with the given enrichment service
     ///
     /// # Arguments
@@ -136,22 +136,22 @@ impl NoteProcessor {
     /// # Example
     ///
     /// ```rust
-    /// use crucible_enrichment::{NoteProcessor, DefaultEnrichmentService};
+    /// use crucible_enrichment::{EnrichmentPipeline, DefaultEnrichmentService};
     /// use std::sync::Arc;
     ///
     /// let service = Arc::new(DefaultEnrichmentService::without_embeddings());
-    /// let processor = NoteProcessor::new(service);
+    /// let processor = EnrichmentPipeline::new(service);
     /// ```
     pub fn new(enrichment_service: Arc<dyn crucible_core::enrichment::EnrichmentService>) -> Self {
         Self {
             enrichment_service,
             parser: CrucibleParser::new(),
-            config: NoteProcessorConfig::default(),
+            config: EnrichmentPipelineConfig::default(),
         }
     }
 
     /// Create a processor with custom configuration
-    pub fn with_config(enrichment_service: Arc<dyn crucible_core::enrichment::EnrichmentService>, config: NoteProcessorConfig) -> Self {
+    pub fn with_config(enrichment_service: Arc<dyn crucible_core::enrichment::EnrichmentService>, config: EnrichmentPipelineConfig) -> Self {
         Self {
             enrichment_service,
             parser: CrucibleParser::new(),
@@ -167,12 +167,12 @@ impl NoteProcessor {
     ///
     /// # Returns
     ///
-    /// NoteProcessingResult with enriched note and metrics
+    /// EnrichmentResult with enriched note and metrics
     ///
     /// # Errors
     ///
     /// Returns an error if any phase fails (file not found, parse error, etc.)
-    pub async fn process(&self, path: &Path) -> Result<NoteProcessingResult> {
+    pub async fn process(&self, path: &Path) -> Result<EnrichmentResult> {
         let start_time = Instant::now();
         let mut metrics = ProcessingMetrics::default();
 
@@ -214,7 +214,7 @@ impl NoteProcessor {
             metrics.blocks_enriched
         );
 
-        Ok(NoteProcessingResult {
+        Ok(EnrichmentResult {
             enriched,
             metrics,
             changed_blocks,
@@ -402,7 +402,7 @@ mod tests {
     #[tokio::test]
     async fn test_document_processor_creation() {
         let service = Arc::new(crate::DefaultEnrichmentService::without_embeddings());
-        let processor = NoteProcessor::new(service);
+        let processor = EnrichmentPipeline::new(service);
 
         assert!(processor.config.enable_quick_filter);
         assert!(!processor.config.skip_enrichment);
@@ -411,7 +411,7 @@ mod tests {
     #[tokio::test]
     async fn test_process_simple_document() {
         let service = Arc::new(crate::DefaultEnrichmentService::without_embeddings());
-        let processor = NoteProcessor::new(service);
+        let processor = EnrichmentPipeline::new(service);
 
         let content = "# Test Heading\n\nThis is a test paragraph with more than three words.";
         let (_temp, path) = create_test_markdown_file(content);
@@ -427,11 +427,11 @@ mod tests {
     #[tokio::test]
     async fn test_process_with_skip_enrichment() {
         let service = Arc::new(crate::DefaultEnrichmentService::without_embeddings());
-        let config = NoteProcessorConfig {
+        let config = EnrichmentPipelineConfig {
             skip_enrichment: true,
             ..Default::default()
         };
-        let processor = NoteProcessor::with_config(service, config);
+        let processor = EnrichmentPipeline::with_config(service, config);
 
         let content = "# Heading\n\nParagraph text here.";
         let (_temp, path) = create_test_markdown_file(content);
@@ -448,7 +448,7 @@ mod tests {
         use crucible_parser::types::*;
 
         let service = Arc::new(crate::DefaultEnrichmentService::without_embeddings());
-        let processor = NoteProcessor::new(service);
+        let processor = EnrichmentPipeline::new(service);
 
         let mut parsed = ParsedNote {
             path: std::path::PathBuf::from("test.md"),
