@@ -14,6 +14,58 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
 
+/// Simple provider type enum for backward compatibility
+///
+/// This enum provides a simpler type-only identifier for embedding providers,
+/// without the full configuration details. Used by legacy code that hasn't
+/// migrated to the full `EmbeddingProviderConfig` structure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EmbeddingProviderType {
+    /// OpenAI embedding provider
+    OpenAI,
+    /// Ollama (local) embedding provider
+    Ollama,
+    /// FastEmbed (local) embedding provider
+    FastEmbed,
+    /// Cohere embedding provider
+    Cohere,
+    /// Google Vertex AI embedding provider
+    VertexAI,
+    /// Custom HTTP-based embedding provider
+    Custom,
+    /// Mock provider for testing
+    Mock,
+}
+
+impl EmbeddingProviderType {
+    /// Get the provider type from a full configuration
+    pub fn from_config(config: &EmbeddingProviderConfig) -> Self {
+        match config {
+            EmbeddingProviderConfig::OpenAI(_) => Self::OpenAI,
+            EmbeddingProviderConfig::Ollama(_) => Self::Ollama,
+            EmbeddingProviderConfig::FastEmbed(_) => Self::FastEmbed,
+            EmbeddingProviderConfig::Cohere(_) => Self::Cohere,
+            EmbeddingProviderConfig::VertexAI(_) => Self::VertexAI,
+            EmbeddingProviderConfig::Custom(_) => Self::Custom,
+            EmbeddingProviderConfig::Mock(_) => Self::Mock,
+        }
+    }
+
+    /// Get the type name as a string
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::OpenAI => "openai",
+            Self::Ollama => "ollama",
+            Self::FastEmbed => "fastembed",
+            Self::Cohere => "cohere",
+            Self::VertexAI => "vertexai",
+            Self::Custom => "custom",
+            Self::Mock => "mock",
+        }
+    }
+}
+
 /// Main enrichment configuration
 ///
 /// This configuration encompasses all settings related to document enrichment,
