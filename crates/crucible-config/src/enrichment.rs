@@ -779,6 +779,26 @@ impl EmbeddingProviderConfig {
         }
     }
 
+    /// Get the endpoint URL (alias for base_url for backward compatibility)
+    pub fn endpoint(&self) -> String {
+        self.base_url()
+            .unwrap_or("http://localhost:11434")
+            .to_string()
+    }
+
+    /// Get timeout in seconds
+    pub fn timeout_secs(&self) -> u64 {
+        match self {
+            Self::OpenAI(c) => c.timeout_seconds,
+            Self::Ollama(c) => c.timeout_seconds,
+            Self::FastEmbed(_) => 30,
+            Self::Cohere(c) => c.timeout_seconds,
+            Self::VertexAI(c) => c.timeout_seconds,
+            Self::Custom(c) => c.timeout_seconds,
+            Self::Mock(_) => 1,
+        }
+    }
+
     /// Get the expected embedding dimensions
     pub fn dimensions(&self) -> Option<u32> {
         match self {
