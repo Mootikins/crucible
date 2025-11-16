@@ -3,11 +3,22 @@
 **Change ID**: `2025-11-11-vector-embedding-integration`
 **Status**: Ready for Implementation (Revised Architecture)
 **Updated**: 2025-11-16
-**Timeline**: 2-3 weeks
+**Timeline**: 4 weeks (44 developer days)
+**Scope**: Major refactoring - 11,846 lines to move, 3,800 lines new code, 5 files deleted
 
 ## Overview
 
-This implementation corrects architectural violations and establishes the enrichment layer as documented in ARCHITECTURE.md. The work is divided into refactoring existing code and implementing new clean architecture components.
+This implementation corrects severe architectural violations and establishes the enrichment layer as documented in ARCHITECTURE.md. External review confirms this is HIGH EFFORT refactoring with significant layer violations requiring careful sequential execution.
+
+**Scale of Change**:
+- EmbeddingPipeline (7,751 lines) - Move from infrastructure to core
+- EmbeddingThreadPool (1,477 lines) - Move to provider implementation
+- Configuration (850 lines) - Migrate to core
+- Event system (1,036 lines) - Refactor for new architecture
+- New enrichment orchestration (estimated 3,800 lines)
+
+**Risk Level**: HIGH - Breaking changes, circular dependencies, data migration risks
+**Migration Strategy**: Clean refactor - no feature flags, direct replacement (solo developer, breaking changes acceptable)
 
 ## TDD Methodology
 
@@ -464,12 +475,14 @@ This implementation corrects architectural violations and establishes the enrich
 
 | Risk | Mitigation |
 |------|------------|
-| **Breaking changes during refactoring** | Maintain backward compatibility where possible; provide migration guide |
+| **Breaking changes during refactoring** | Direct replacement - tests ensure correctness; no backward compatibility needed |
+| **Circular dependencies** | Careful dependency ordering; core defines traits, infrastructure implements |
 | **Performance degradation** | Benchmark each phase; optimize bottlenecks; use parallel processing |
 | **Fastembed model loading overhead** | Load model once, cache in Arc, reuse across batches |
 | **Storage transaction size** | Batch large operations; provide streaming API for huge notes |
 | **Provider failures** | Graceful degradation; partial enrichment stored; retry mechanism |
 | **Merkle diff inaccuracy** | Comprehensive test suite; verify against known change scenarios |
+| **Data migration** | Existing embeddings can be regenerated; no complex migration needed |
 
 ---
 
