@@ -13,6 +13,7 @@ use crucible_parser::ParsedNote;
 use anyhow::Result;
 use std::sync::Arc;
 use tracing::{debug, info};
+use async_trait::async_trait;
 
 /// Default minimum word count for generating embeddings
 pub const DEFAULT_MIN_WORDS_FOR_EMBEDDING: usize = 5;
@@ -59,7 +60,7 @@ impl DefaultEnrichmentService {
     /// use crucible_core::enrichment::EnrichmentService;
     ///
     /// let provider = Arc::new(my_provider);
-    /// let service = DefaultEnrichmentService::new(provider);
+    /// let service = EnrichmentService::new(provider);
     /// ```
     pub fn new(embedding_provider: Arc<dyn EmbeddingProvider>) -> Self {
         Self {
@@ -70,14 +71,14 @@ impl DefaultEnrichmentService {
 
     /// Create an enrichment service without embeddings (metadata/relations only)
     ///
-    /// This is equivalent to `DefaultEnrichmentService::default()`.
+    /// This is equivalent to `EnrichmentService::default()`.
     ///
     /// # Example
     ///
     /// ```rust
     /// use crucible_enrichment::EnrichmentService;
     ///
-    /// let service = DefaultEnrichmentService::without_embeddings();
+    /// let service = EnrichmentService::without_embeddings();
     /// ```
     pub fn without_embeddings() -> Self {
         Self::default()
@@ -90,7 +91,7 @@ impl DefaultEnrichmentService {
     /// ```rust
     /// use crucible_enrichment::EnrichmentService;
     ///
-    /// let service = DefaultEnrichmentService::without_embeddings()
+    /// let service = EnrichmentService::without_embeddings()
     ///     .with_min_words(10);
     /// ```
     pub fn with_min_words(mut self, min_words: usize) -> Self {
@@ -105,7 +106,7 @@ impl DefaultEnrichmentService {
     /// ```rust
     /// use crucible_enrichment::EnrichmentService;
     ///
-    /// let service = DefaultEnrichmentService::without_embeddings()
+    /// let service = EnrichmentService::without_embeddings()
     ///     .with_max_batch_size(20);
     /// ```
     pub fn with_max_batch_size(mut self, max_batch_size: usize) -> Self {
@@ -122,7 +123,7 @@ impl DefaultEnrichmentService {
     ///
     /// # Returns
     /// An EnrichedNote with embeddings, metadata, and inferred relations
-    pub async fn enrich(
+    pub async fn enrich_internal(
         &self,
         parsed: ParsedNote,
         merkle_tree: HybridMerkleTree,
@@ -491,9 +492,59 @@ fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, St
     breadcrumbs
 }
 
+
+// Trait implementation for SOLID principles (Dependency Inversion)
+#[async_trait]
+impl crucible_core::enrichment::EnrichmentService for DefaultEnrichmentService {
+    async fn enrich(
+        &self,
+        parsed: ParsedNote,
+        changed_block_ids: Vec<String>,
+    ) -> Result<EnrichedNote> {
+        // Build Merkle tree from parsed note
+        let merkle_tree = HybridMerkleTree::from_document(&parsed);
+
+        // Delegate to enrich_with_tree
+        self.enrich_with_tree(parsed, merkle_tree, changed_block_ids).await
+    }
+
+    async fn enrich_with_tree(
+        &self,
+        parsed: ParsedNote,
+        merkle_tree: HybridMerkleTree,
+        changed_block_ids: Vec<String>,
+    ) -> Result<EnrichedNote> {
+        // Delegate to existing enrich method (which takes merkle_tree)
+        self.enrich_internal(parsed, merkle_tree, changed_block_ids).await
+    }
+
+    async fn infer_relations(
+        &self,
+        _enriched: &EnrichedNote,
+        _threshold: f64,
+    ) -> Result<Vec<InferredRelation>> {
+        // Delegate to existing infer_relations method
+        // Current implementation returns empty for now (placeholder)
+        Ok(Vec::new())
+    }
+
+    fn min_words_for_embedding(&self) -> usize {
+        self.min_words_for_embedding
+    }
+
+    fn max_batch_size(&self) -> usize {
+        self.max_batch_size
+    }
+
+    fn has_embedding_provider(&self) -> bool {
+        self.embedding_provider.is_some()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::EnrichmentService;
     use std::path::PathBuf;
 
     /// Mock embedding provider for testing
@@ -533,7 +584,7 @@ mod tests {
     #[tokio::test]
     async fn test_enrichment_service_with_provider() {
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = DefaultEnrichmentService::new(provider);
+        let service = EnrichmentService::new(provider);
 
         assert!(service.embedding_provider.is_some());
         assert_eq!(service.min_words_for_embedding, 5);
@@ -541,7 +592,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_enrichment_service_without_provider() {
-        let service = DefaultEnrichmentService::without_embeddings();
+        let service = EnrichmentService::without_embeddings();
 
         assert!(service.embedding_provider.is_none());
     }
@@ -549,14 +600,14 @@ mod tests {
     #[tokio::test]
     async fn test_enrichment_service_with_custom_min_words() {
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = DefaultEnrichmentService::new(provider).with_min_words(10);
+        let service = EnrichmentService::new(provider).with_min_words(10);
 
         assert_eq!(service.min_words_for_embedding, 10);
     }
 
     #[tokio::test]
     async fn test_generate_embeddings_without_provider() {
-        let service = DefaultEnrichmentService::without_embeddings();
+        let service = EnrichmentService::without_embeddings();
 
         // Create a minimal ParsedNote for testing
         let parsed = create_test_parsed_note();
@@ -572,7 +623,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_extract_metadata() {
-        let service = DefaultEnrichmentService::without_embeddings();
+        let service = EnrichmentService::without_embeddings();
         let parsed = create_test_parsed_note();
 
         let metadata = service.extract_metadata(&parsed).await.unwrap();
@@ -588,7 +639,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_infer_relations() {
-        let service = DefaultEnrichmentService::without_embeddings();
+        let service = EnrichmentService::without_embeddings();
         let parsed = create_test_parsed_note();
 
         let relations = service.infer_relations(&parsed).await.unwrap();

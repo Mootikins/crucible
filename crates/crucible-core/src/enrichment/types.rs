@@ -131,28 +131,23 @@ impl BlockEmbedding {
 }
 
 /// Metadata extracted or computed from a note
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// Contains only metadata computed during enrichment phase, not structural
+/// metadata extracted during parsing (which lives in `ParsedNoteMetadata`).
+///
+/// This follows industry standard separation:
+/// - Parser: Structural metrics (word count, element counts)
+/// - Enrichment: Computed metrics (complexity, reading time, analysis)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NoteMetadata {
-    /// Total word count across entire note
-    pub word_count: usize,
+    /// Estimated reading time in minutes (computed from word count)
+    pub reading_time_minutes: f32,
 
-    /// Total character count (excluding whitespace)
-    pub char_count: usize,
+    /// Content complexity score (0.0-1.0) computed from AST structure
+    pub complexity_score: f32,
 
-    /// Detected or specified language
+    /// Detected language (if applicable, computed from content)
     pub language: Option<String>,
-
-    /// Reading time estimate (in seconds)
-    pub reading_time_seconds: u32,
-
-    /// Complexity score (0.0 to 1.0, computed from AST structure)
-    pub complexity_score: Option<f64>,
-
-    /// Number of unique wikilinks
-    pub unique_wikilinks: usize,
-
-    /// Number of unique tags
-    pub unique_tags: usize,
 
     /// When this metadata was computed
     pub computed_at: DateTime<Utc>,
@@ -160,42 +155,46 @@ pub struct NoteMetadata {
 
 impl Default for NoteMetadata {
     fn default() -> Self {
-        Self {
-            word_count: 0,
-            char_count: 0,
-            language: None,
-            reading_time_seconds: 0,
-            complexity_score: None,
-            unique_wikilinks: 0,
-            unique_tags: 0,
-            computed_at: Utc::now(),
-        }
+        Self::new()
     }
 }
 
 impl NoteMetadata {
-    /// Create metadata from a parsed note
-    pub fn from_parsed_note(parsed: &crate::parser::ParsedNote) -> Self {
-        let word_count = parsed.metadata.word_count;
-        let char_count = parsed.metadata.char_count;
-
-        // Estimate reading time: average 200 words per minute
-        let reading_time_seconds = ((word_count as f64 / 200.0) * 60.0) as u32;
-
-        // Count unique wikilinks and tags
-        let unique_wikilinks = parsed.wikilinks.len();
-        let unique_tags = parsed.tags.len();
-
+    /// Create new metadata with defaults
+    pub fn new() -> Self {
         Self {
-            word_count,
-            char_count,
-            language: None, // TODO: detect language
-            reading_time_seconds,
-            complexity_score: None, // TODO: compute from AST
-            unique_wikilinks,
-            unique_tags,
+            reading_time_minutes: 0.0,
+            complexity_score: 0.0,
+            language: None,
             computed_at: Utc::now(),
         }
+    }
+
+    /// Compute reading time from word count (in minutes)
+    ///
+    /// Assumes average reading speed of 200 words per minute
+    pub fn compute_reading_time(word_count: usize) -> f32 {
+        const WORDS_PER_MINUTE: f32 = 200.0;
+        word_count as f32 / WORDS_PER_MINUTE
+    }
+
+    /// Compute complexity score from AST element counts
+    ///
+    /// Returns value between 0.0 (simple) and 1.0 (complex)
+    pub fn compute_complexity(
+        heading_count: usize,
+        code_block_count: usize,
+        list_count: usize,
+        latex_count: usize,
+    ) -> f32 {
+        // Simple heuristic: normalize by expected maximum counts
+        let heading_score = (heading_count as f32 / 20.0).min(1.0);
+        let code_score = (code_block_count as f32 / 10.0).min(1.0);
+        let list_score = (list_count as f32 / 15.0).min(1.0);
+        let latex_score = (latex_count as f32 / 5.0).min(1.0);
+
+        // Weighted average
+        (heading_score * 0.2 + code_score * 0.3 + list_score * 0.2 + latex_score * 0.3).min(1.0)
     }
 }
 
