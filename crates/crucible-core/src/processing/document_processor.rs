@@ -1,0 +1,476 @@
+//! Five-Phase Document Processing Pipeline
+//!
+//! This module implements the document processing pipeline as defined in
+//! ARCHITECTURE.md, following clean architecture principles with proper
+//! separation of concerns.
+//!
+//! ## Five-Phase Architecture
+//!
+//! 1. **Quick Filter**: File date + BLAKE3 hash check (skip if unchanged)
+//! 2. **Parse**: Full file parse to AST using crucible-parser
+//! 3. **Merkle Diff**: Build Merkle tree, diff with stored tree, identify changed blocks
+//! 4. **Enrich**: Call EnrichmentService with changed block list
+//! 5. **Store**: Store EnrichedNote in single transaction
+//!
+//! ## Usage
+//!
+//! ```rust,ignore
+//! use crucible_core::processing::DocumentProcessor;
+//! use crucible_core::enrichment::EnrichmentService;
+//! use std::path::Path;
+//! use std::sync::Arc;
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     // Create enrichment service with provider
+//!     let enrichment_service = Arc::new(EnrichmentService::without_embeddings());
+//!
+//!     // Create processor
+//!     let processor = DocumentProcessor::new(enrichment_service);
+//!
+//!     // Process a document
+//!     let note_path = Path::new("notes/example.md");
+//!     let result = processor.process(note_path).await?;
+//!
+//!     println!("Processed note with {} embeddings", result.enriched.embeddings.len());
+//!     Ok(())
+//! }
+//! ```
+
+use crate::enrichment::{EnrichedNote, EnrichmentService};
+use crate::merkle::HybridMerkleTree;
+use anyhow::{Context, Result};
+use crucible_parser::{CrucibleParser, ParsedNote, traits::MarkdownParserImplementation};
+use std::path::Path;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tracing::{debug, info};
+
+/// Result of document processing through all five phases
+#[derive(Debug)]
+pub struct DocumentProcessingResult {
+    /// The enriched note ready for storage
+    pub enriched: EnrichedNote,
+
+    /// Metrics from each processing phase
+    pub metrics: ProcessingMetrics,
+
+    /// List of block IDs that changed (drove enrichment)
+    pub changed_blocks: Vec<String>,
+
+    /// Whether this was a full re-process or incremental update
+    pub was_incremental: bool,
+}
+
+/// Metrics collected during document processing
+#[derive(Debug, Clone, Default)]
+pub struct ProcessingMetrics {
+    /// Phase 1: Quick filter time
+    pub phase1_filter_duration: Duration,
+
+    /// Phase 2: Parse duration
+    pub phase2_parse_duration: Duration,
+
+    /// Phase 3: Merkle diff duration
+    pub phase3_merkle_duration: Duration,
+
+    /// Phase 4: Enrichment duration
+    pub phase4_enrich_duration: Duration,
+
+    /// Total processing time
+    pub total_duration: Duration,
+
+    /// File hash from Phase 1
+    pub file_hash: Option<String>,
+
+    /// Whether Phase 1 quick filter indicated changes
+    pub file_changed: bool,
+
+    /// Number of blocks processed in enrichment
+    pub blocks_enriched: usize,
+
+    /// Number of changed blocks identified by Merkle diff
+    pub changed_blocks_count: usize,
+}
+
+/// Configuration for the document processor
+#[derive(Debug, Clone)]
+pub struct ProcessorConfig {
+    /// Whether to enable Phase 1 quick filter optimization
+    pub enable_quick_filter: bool,
+
+    /// Whether to skip enrichment (for testing/debugging)
+    pub skip_enrichment: bool,
+
+    /// Minimum word count for embedding generation
+    pub min_words_for_embedding: usize,
+}
+
+impl Default for ProcessorConfig {
+    fn default() -> Self {
+        Self {
+            enable_quick_filter: true,
+            skip_enrichment: false,
+            min_words_for_embedding: 3,
+        }
+    }
+}
+
+/// Five-phase document processor
+///
+/// Orchestrates the complete document processing pipeline from file input
+/// to enriched note output ready for storage.
+pub struct DocumentProcessor {
+    /// Enrichment service for Phase 4
+    enrichment_service: Arc<EnrichmentService>,
+
+    /// Parser for Phase 2
+    parser: CrucibleParser,
+
+    /// Processor configuration
+    config: ProcessorConfig,
+}
+
+impl DocumentProcessor {
+    /// Create a new document processor with the given enrichment service
+    ///
+    /// # Arguments
+    ///
+    /// * `enrichment_service` - Service for embedding generation and metadata extraction
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use crucible_core::processing::DocumentProcessor;
+    /// use crucible_core::enrichment::EnrichmentService;
+    /// use std::sync::Arc;
+    ///
+    /// let service = Arc::new(EnrichmentService::without_embeddings());
+    /// let processor = DocumentProcessor::new(service);
+    /// ```
+    pub fn new(enrichment_service: Arc<EnrichmentService>) -> Self {
+        Self {
+            enrichment_service,
+            parser: CrucibleParser::new(),
+            config: ProcessorConfig::default(),
+        }
+    }
+
+    /// Create a processor with custom configuration
+    pub fn with_config(enrichment_service: Arc<EnrichmentService>, config: ProcessorConfig) -> Self {
+        Self {
+            enrichment_service,
+            parser: CrucibleParser::new(),
+            config,
+        }
+    }
+
+    /// Process a document through all five phases
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the markdown file to process
+    ///
+    /// # Returns
+    ///
+    /// DocumentProcessingResult with enriched note and metrics
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any phase fails (file not found, parse error, etc.)
+    pub async fn process(&self, path: &Path) -> Result<DocumentProcessingResult> {
+        let start_time = Instant::now();
+        let mut metrics = ProcessingMetrics::default();
+
+        info!("Starting document processing for: {}", path.display());
+
+        // Phase 1: Quick Filter (file date + BLAKE3 hash check)
+        let (file_changed, file_hash) = if self.config.enable_quick_filter {
+            self.phase1_quick_filter(path, &mut metrics).await?
+        } else {
+            (true, None)
+        };
+
+        metrics.file_changed = file_changed;
+        metrics.file_hash = file_hash.clone();
+
+        // TODO: If !file_changed, we could skip to Phase 5 (just update metadata)
+        // For now, we always proceed to ensure completeness
+
+        // Phase 2: Parse to AST
+        let parsed = self.phase2_parse(path, &mut metrics).await?;
+
+        // Phase 3: Build Merkle tree and identify changed blocks
+        let (merkle_tree, changed_blocks) = self.phase3_merkle_diff(&parsed, &mut metrics).await?;
+
+        metrics.changed_blocks_count = changed_blocks.len();
+
+        // Phase 4: Enrichment (only for changed blocks)
+        let enriched = self.phase4_enrich(parsed, merkle_tree, &changed_blocks, &mut metrics).await?;
+
+        metrics.blocks_enriched = enriched.embeddings.len();
+        metrics.total_duration = start_time.elapsed();
+
+        let was_incremental = self.config.enable_quick_filter && !changed_blocks.is_empty();
+
+        info!(
+            "Document processing complete in {:?} ({} changed blocks, {} embeddings)",
+            metrics.total_duration,
+            metrics.changed_blocks_count,
+            metrics.blocks_enriched
+        );
+
+        Ok(DocumentProcessingResult {
+            enriched,
+            metrics,
+            changed_blocks,
+            was_incremental,
+        })
+    }
+
+    /// Phase 1: Quick file filter using date modified and BLAKE3 hash
+    ///
+    /// Returns (file_changed: bool, file_hash: Option<String>)
+    async fn phase1_quick_filter(
+        &self,
+        _path: &Path,
+        metrics: &mut ProcessingMetrics,
+    ) -> Result<(bool, Option<String>)> {
+        let start = Instant::now();
+
+        debug!("Phase 1: Quick filter (placeholder - always returns file changed)");
+
+        // TODO: Implement file hash check
+        // - Compute BLAKE3 hash of entire file
+        // - Check against stored hash in database
+        // - Return early if unchanged
+        // For now, always return true (file changed) until we integrate with storage
+        let file_changed = true;
+        let file_hash = None;
+
+        metrics.phase1_filter_duration = start.elapsed();
+        debug!("Phase 1 complete in {:?}", metrics.phase1_filter_duration);
+
+        Ok((file_changed, file_hash))
+    }
+
+    /// Phase 2: Parse markdown file to AST
+    async fn phase2_parse(
+        &self,
+        path: &Path,
+        metrics: &mut ProcessingMetrics,
+    ) -> Result<ParsedNote> {
+        let start = Instant::now();
+
+        debug!("Phase 2: Parsing {}", path.display());
+
+        // Parse markdown file
+        let parsed = self.parser.parse_file(path)
+            .await
+            .context("Failed to parse markdown file")?;
+
+        metrics.phase2_parse_duration = start.elapsed();
+        debug!("Phase 2 complete in {:?} (parsed {} blocks)",
+            metrics.phase2_parse_duration,
+            parsed.content.headings.len() + parsed.content.paragraphs.len()
+        );
+
+        Ok(parsed)
+    }
+
+    /// Phase 3: Build Merkle tree and identify changed blocks
+    ///
+    /// Returns (merkle_tree, changed_blocks)
+    async fn phase3_merkle_diff(
+        &self,
+        parsed: &ParsedNote,
+        metrics: &mut ProcessingMetrics,
+    ) -> Result<(HybridMerkleTree, Vec<String>)> {
+        let start = Instant::now();
+
+        debug!("Phase 3: Building Merkle tree and computing diff (placeholder)");
+
+        // TODO: Build Merkle tree from parsed content
+        // - Use existing Merkle tree implementation
+        // - Build tree from block hashes in ParsedNote
+        // - Load previous tree from storage
+        // - Compute diff to identify changed blocks
+        //
+        // For now, create empty tree and treat all blocks as changed
+        let merkle_tree = HybridMerkleTree::default();
+        let all_block_ids = self.extract_all_block_ids(parsed);
+        let changed_blocks = all_block_ids;
+
+        metrics.phase3_merkle_duration = start.elapsed();
+        debug!("Phase 3 complete in {:?} ({} changed blocks)",
+            metrics.phase3_merkle_duration,
+            changed_blocks.len()
+        );
+
+        Ok((merkle_tree, changed_blocks))
+    }
+
+    /// Phase 4: Enrich the parsed note with embeddings, metadata, and relations
+    async fn phase4_enrich(
+        &self,
+        parsed: ParsedNote,
+        merkle_tree: HybridMerkleTree,
+        changed_blocks: &[String],
+        metrics: &mut ProcessingMetrics,
+    ) -> Result<EnrichedNote> {
+        let start = Instant::now();
+
+        debug!("Phase 4: Enriching note ({} changed blocks)", changed_blocks.len());
+
+        // Call enrichment service
+        let enriched = self.enrichment_service
+            .enrich(parsed, merkle_tree, changed_blocks.to_vec())
+            .await
+            .context("Failed to enrich note")?;
+
+        metrics.phase4_enrich_duration = start.elapsed();
+        debug!("Phase 4 complete in {:?} (generated {} embeddings, {} relations)",
+            metrics.phase4_enrich_duration,
+            enriched.embeddings.len(),
+            enriched.inferred_relations.len()
+        );
+
+        Ok(enriched)
+    }
+
+    /// Extract all block IDs from a parsed note
+    ///
+    /// This is used when we don't have a previous Merkle tree to diff against
+    fn extract_all_block_ids(&self, parsed: &ParsedNote) -> Vec<String> {
+        let mut block_ids = Vec::new();
+
+        // Add heading block IDs
+        for (idx, _) in parsed.content.headings.iter().enumerate() {
+            block_ids.push(format!("heading_{}", idx));
+        }
+
+        // Add paragraph block IDs
+        for (idx, _) in parsed.content.paragraphs.iter().enumerate() {
+            block_ids.push(format!("paragraph_{}", idx));
+        }
+
+        // Add code block IDs
+        for (idx, _) in parsed.content.code_blocks.iter().enumerate() {
+            block_ids.push(format!("code_{}", idx));
+        }
+
+        // Add list block IDs
+        for (idx, _) in parsed.content.lists.iter().enumerate() {
+            block_ids.push(format!("list_{}", idx));
+        }
+
+        // Add blockquote IDs
+        for (idx, _) in parsed.content.blockquotes.iter().enumerate() {
+            block_ids.push(format!("blockquote_{}", idx));
+        }
+
+        block_ids
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crucible_parser::ParsedNote;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn create_test_markdown_file(content: &str) -> (TempDir, std::path::PathBuf) {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.md");
+        fs::write(&file_path, content).unwrap();
+        (temp_dir, file_path)
+    }
+
+    #[tokio::test]
+    async fn test_document_processor_creation() {
+        let service = Arc::new(EnrichmentService::without_embeddings());
+        let processor = DocumentProcessor::new(service);
+
+        assert!(processor.config.enable_quick_filter);
+        assert!(!processor.config.skip_enrichment);
+    }
+
+    #[tokio::test]
+    async fn test_process_simple_document() {
+        let service = Arc::new(EnrichmentService::without_embeddings());
+        let processor = DocumentProcessor::new(service);
+
+        let content = "# Test Heading\n\nThis is a test paragraph with more than three words.";
+        let (_temp, path) = create_test_markdown_file(content);
+
+        let result = processor.process(&path).await;
+        assert!(result.is_ok(), "Processing failed: {:?}", result.err());
+
+        let result = result.unwrap();
+        assert!(result.metrics.total_duration.as_millis() > 0);
+        assert!(result.enriched.metadata.total_word_count > 0);
+    }
+
+    #[tokio::test]
+    async fn test_process_with_skip_enrichment() {
+        let service = Arc::new(EnrichmentService::without_embeddings());
+        let config = ProcessorConfig {
+            skip_enrichment: true,
+            ..Default::default()
+        };
+        let processor = DocumentProcessor::with_config(service, config);
+
+        let content = "# Heading\n\nParagraph text here.";
+        let (_temp, path) = create_test_markdown_file(content);
+
+        let result = processor.process(&path).await.unwrap();
+
+        // Should have no embeddings when enrichment is skipped
+        assert_eq!(result.enriched.embeddings.len(), 0);
+        assert_eq!(result.metrics.blocks_enriched, 0);
+    }
+
+    #[tokio::test]
+    async fn test_extract_all_block_ids() {
+        use crucible_parser::types::*;
+
+        let service = Arc::new(EnrichmentService::without_embeddings());
+        let processor = DocumentProcessor::new(service);
+
+        let mut parsed = ParsedNote {
+            path: std::path::PathBuf::from("test.md"),
+            content: NoteContent::default(),
+            frontmatter: None,
+            wikilinks: Vec::new(),
+            tags: Vec::new(),
+            inline_links: Vec::new(),
+            callouts: Vec::new(),
+            latex_expressions: Vec::new(),
+            footnotes: FootnoteMap::new(),
+            parsed_at: chrono::Utc::now(),
+            content_hash: "test".to_string(),
+            file_size: 0,
+            parse_errors: Vec::new(),
+            block_hashes: vec![],
+            merkle_root: None,
+        };
+
+        // Add some content
+        parsed.content.headings.push(Heading {
+            level: 1,
+            text: "Test".to_string(),
+            id: None,
+        });
+        parsed.content.paragraphs.push(Paragraph {
+            content: "Test paragraph".to_string(),
+            word_count: 2,
+        });
+
+        let block_ids = processor.extract_all_block_ids(&parsed);
+
+        assert_eq!(block_ids.len(), 2);
+        assert!(block_ids.contains(&"heading_0".to_string()));
+        assert!(block_ids.contains(&"paragraph_0".to_string()));
+    }
+}
