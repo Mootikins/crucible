@@ -3,7 +3,7 @@
 //! Note processing pipeline for generating and storing vector embeddings.
 //! Supports bulk processing, incremental updates, and content chunking strategies.
 
-use crate::embedding_config::*;
+use crucible_enrichment::*;
 use crate::embedding_pool::EmbeddingThreadPool;
 use crate::SurrealClient;
 use anyhow::{anyhow, Result};

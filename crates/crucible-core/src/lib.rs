@@ -5,6 +5,7 @@ pub mod content_category;
 pub mod crdt;
 pub mod crucible_core;
 pub mod database;
+pub mod enrichment;
 pub mod hashing;
 pub mod merkle;
 pub mod note;
@@ -27,6 +28,12 @@ pub use config::{
 };
 pub use content_category::{ContentCategory, ContentCategoryError};
 pub use crucible_core::CrucibleCore;
+
+// Re-export enrichment traits and types (implementations in crucible-enrichment crate)
+pub use enrichment::{
+    BlockEmbedding, EmbeddingProvider, EnrichedNote, EnrichmentService, InferredRelation,
+    NoteMetadata, RelationType,
+};
 
 // Re-export processing handoff types
 pub use processing::{

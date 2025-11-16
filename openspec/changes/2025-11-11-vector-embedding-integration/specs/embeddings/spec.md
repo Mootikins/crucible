@@ -2,50 +2,117 @@
 
 ## ADDED Requirements
 
-### Requirement: Embedding Provider Abstraction
-The system SHALL provide a trait-based abstraction for multiple embedding providers to enable flexibility and local/cloud options.
+### Requirement: Embedding Provider Abstraction (SOLID/Dependency Inversion)
+The system SHALL define an `EmbeddingProvider` trait in the core domain layer with concrete implementations in the infrastructure layer, following SOLID principles.
 
-#### Scenario: Provider switching
-- **WHEN** user configures different embedding provider
-- **THEN** system uses the specified provider without code changes
+**Architecture**:
+- **Trait Definition**: `crucible-core/src/enrichment/embedding.rs` - Abstract interface
+- **Implementations**: `crucible-llm/src/providers/` - Fastembed, OpenAI, custom providers
+- **Dependency Flow**: Core defines contract, infrastructure provides implementation
 
-#### Scenario: Local embedding generation
-- **WHEN** offline operation is required
-- **THEN** Fastembed provider generates embeddings locally using ONNX models
+#### Scenario: Provider switching with dependency injection
+- **WHEN** user configures different embedding provider in configuration
+- **THEN** EnrichmentService receives appropriate implementation via dependency injection
+- **AND** no code changes are required in core domain logic
 
-#### Scenario: Cloud embedding generation
+#### Scenario: Local embedding generation (Fastembed)
+- **WHEN** offline operation is required or privacy mode is enabled
+- **THEN** FastembedProvider (crucible-llm) generates embeddings locally using ONNX models
+- **AND** no network calls are made
+- **AND** models are loaded once and reused across batches
+
+#### Scenario: Cloud embedding generation (OpenAI)
 - **WHEN** higher quality embeddings are needed
-- **THEN** OpenAI provider generates embeddings via API with error handling
+- **THEN** OpenAIProvider (crucible-llm) generates embeddings via API with error handling
+- **AND** appropriate rate limiting and retry logic is applied
+- **AND** API credentials are managed securely
 
-### Requirement: Block-Level Embedding Generation
-The system SHALL automatically generate vector embeddings for all content blocks meeting minimum content criteria.
+### Requirement: Enrichment Service Orchestration
+The system SHALL provide an `EnrichmentService` in crucible-core that orchestrates all enrichment operations including embedding generation, metadata extraction, and relation inference.
 
-#### Scenario: Automatic embedding on document ingest
-- **WHEN** new markdown document is parsed and stored
-- **THEN** all content blocks longer than 5 words receive embeddings
+**Architecture**:
+- **Location**: `crucible-core/src/enrichment/service.rs`
+- **Responsibilities**: Coordinate parallel enrichment operations using Merkle diff results
+- **Dependencies**: Receives `EmbeddingProvider` trait implementation via dependency injection
 
-#### Scenario: Incremental embedding updates
+#### Scenario: Enrichment orchestration for changed blocks only
+- **WHEN** EnrichmentService receives ParsedNote (full AST) and changed block IDs from Merkle diff
+- **THEN** service retrieves only changed blocks from AST
+- **AND** executes parallel operations on changed blocks:
+  - Embedding generation (filter >5 words, batch to provider)
+  - Relation extraction (wikilinks, tags from changed blocks)
+  - Metadata computation (word counts, language detection)
+- **AND** collects results into EnrichedNote (includes full AST + enrichment for changed blocks)
+- **AND** passes EnrichedNote to storage layer for transactional persistence
+
+**Efficiency**: Merkle diff ensures only changed blocks are processed, not entire document.
+
+### Requirement: Block-Level Embedding Generation (Incremental Only)
+The system SHALL generate vector embeddings ONLY for blocks identified as changed by Merkle tree diff, following the five-phase data flow.
+
+**Five-Phase Data Flow (Merkle-Driven Incremental Processing)**:
+1. **Quick Filter**: Check file modified date + BLAKE3 hash (skip if unchanged)
+2. **Parse to AST**: Build tree structure from pulldown-cmark event stream
+3. **Merkle Diff**: Single AST traversal to build Merkle tree + diff with stored tree → changed block IDs
+4. **Enrich Changed Blocks Only**: Process blocks identified by Merkle diff:
+   - Generate embeddings (blocks >5 words)
+   - Extract relations (wikilinks, tags from changed blocks)
+   - Compute metadata (word counts, language detection)
+5. **Storage**: Transactional persistence (delete old embeddings, insert new)
+
+**Efficiency**: Merkle diff identifies exactly which blocks changed, avoiding redundant processing. Only changed blocks flow through enrichment pipeline.
+
+#### Scenario: Initial document processing (all blocks new)
+- **WHEN** new markdown document is processed for first time
+- **THEN** Phase 1 detects no existing hash (proceed to parse)
+- **AND** Phase 3 Merkle diff identifies all blocks as "changed" (no existing tree)
+- **AND** Phase 4 generates embeddings for all blocks >5 words
+- **AND** Phase 5 stores all embeddings with new Merkle tree
+
+#### Scenario: Incremental embedding updates (only changed blocks)
 - **WHEN** existing document content is modified
-- **THEN** only changed blocks are re-embedded to maintain efficiency
+- **THEN** Phase 1 detects hash difference (proceed to parse)
+- **AND** Phase 2 parses full file to AST
+- **AND** Phase 3 builds new Merkle tree and diffs against stored tree
+- **AND** Merkle diff identifies specific changed block IDs
+- **AND** Phase 4 generates embeddings ONLY for changed blocks >5 words
+- **AND** Phase 5 deletes old embeddings for changed blocks, stores new embeddings
+
+#### Scenario: File unchanged (skip all processing)
+- **WHEN** file modified date matches DB and hash matches DB
+- **THEN** Phase 1 skips all further processing
+- **AND** no parsing, Merkle diffing, or embedding generation occurs
 
 #### Scenario: Embedding exclusion for short content
 - **WHEN** content block contains 5 or fewer words
-- **THEN** no embedding is generated to avoid noise in search results
+- **THEN** EnrichmentService filters out block from embedding batch
+- **AND** no embedding is generated to avoid noise in search results
 
-### Requirement: Embedding Storage and Retrieval
-The system SHALL store embeddings with metadata and provide efficient similarity search capabilities.
+### Requirement: Embedding Storage (Pure I/O Layer)
+The storage layer in crucible-surrealdb SHALL handle ONLY vector persistence and retrieval operations, with NO business logic for embedding generation.
+
+**Architecture**:
+- **Location**: `crucible-surrealdb/src/embedding.rs` (refactored to storage-only)
+- **Responsibilities**: Store vectors, search by similarity, delete embeddings
+- **NOT Responsible For**: Embedding generation, provider management, enrichment orchestration
+
+#### Scenario: Vector storage with metadata
+- **WHEN** EnrichedNote is passed to storage layer from EnrichmentService
+- **THEN** storage layer persists embeddings with metadata (model, dimensions, timestamp)
+- **AND** associates embeddings with block IDs
+- **AND** NO embedding generation occurs in storage layer
 
 #### Scenario: Vector similarity search
 - **WHEN** user performs semantic search query
-- **THEN** system returns blocks with most similar embeddings ranked by cosine similarity
+- **THEN** query embedding is generated by EnrichmentService (not storage)
+- **AND** storage layer performs vector similarity search using SurrealDB
+- **AND** returns blocks with most similar embeddings ranked by cosine similarity
 
-#### Scenario: Embedding metadata preservation
-- **WHEN** embeddings are stored
-- **THEN** model name, dimensions, and generation timestamp are preserved
-
-#### Scenario: Batch embedding operations
-- **WHEN** processing large knowledge base
-- **THEN** embeddings are stored in batches for optimal performance
+#### Scenario: Embedding deletion for changed blocks
+- **WHEN** Merkle diff identifies changed blocks during Phase 3
+- **THEN** Phase 5 storage deletes old embeddings for those block IDs
+- **AND** stores new embeddings generated in Phase 4
+- **AND** deletion and insertion occur in single transaction
 
 ### Requirement: Hybrid Search Integration
 The system SHALL combine semantic similarity with existing graph and text-based search methods.
@@ -79,20 +146,37 @@ The system SHALL provide configuration options for embedding models and search p
 
 ## MODIFIED Requirements
 
-### Requirement: Document Processing Pipeline
-The enhanced document processing pipeline SHALL integrate embedding generation into the existing parse-store workflow.
+### Requirement: Document Processing Pipeline (Five-Phase Architecture)
+The document processing pipeline SHALL be restructured into five distinct phases with clear separation of concerns, integrating the new EnrichmentService.
 
-#### Scenario: End-to-end document processing
-- **WHEN** markdown document is processed
-- **THEN** pipeline performs parsing → embedding generation → storage in single coordinated operation
+**Pipeline Architecture**:
+```
+Phase 1: Quick Filter → Phase 2: Parse → Phase 3: Merkle Diff →
+Phase 4: Enrichment → Phase 5: Storage
+```
 
-#### Scenario: Error handling in embedding pipeline
-- **WHEN** embedding service fails
-- **THEN** document processing continues with text-only storage and appropriate logging
+#### Scenario: End-to-end document processing with enrichment layer
+- **WHEN** file system detects markdown document change
+- **THEN** Phase 1 checks file modified date and BLAKE3 hash
+- **AND** Phase 2 parses full file to AST (if not skipped)
+- **AND** Phase 3 builds Merkle tree from AST and diffs against stored tree
+- **AND** Phase 4 EnrichmentService generates embeddings for changed blocks + metadata + relations
+- **AND** Phase 5 storage persists enriched data in single transaction
+- **AND** all phases execute with proper error handling and logging
 
-#### Scenario: Progress reporting for large operations
-- **WHEN** processing large knowledge base
-- **THEN** system provides progress indicators and estimated completion times
+#### Scenario: Error handling with graceful degradation
+- **WHEN** embedding provider fails during Phase 4
+- **THEN** EnrichmentService logs error with provider details
+- **AND** enrichment continues with metadata and relation extraction
+- **AND** storage persists partial enrichment (no embeddings for failed blocks)
+- **AND** system tracks failed blocks for retry
+- **AND** document remains queryable via graph/text search
+
+#### Scenario: Progress reporting for bulk processing
+- **WHEN** processing large knowledge base (many files)
+- **THEN** system reports progress for each phase per file
+- **AND** provides estimated completion time based on average phase durations
+- **AND** tracks and reports Merkle diff efficiency (blocks skipped vs processed)
 
 ## REMOVED Requirements
 

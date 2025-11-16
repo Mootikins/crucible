@@ -192,6 +192,48 @@ pub struct ParsedNote {
     /// Maintained for backward compatibility - existing documents will have None.
     #[serde(default)]
     pub merkle_root: Option<BlockHash>,
+
+    /// Structural metadata extracted during parsing
+    ///
+    /// These are deterministic counts computed from the AST structure,
+    /// available immediately after parsing without requiring enrichment.
+    /// Follows industry standard pattern (Unified/Remark, Pandoc, Elasticsearch).
+    #[serde(default)]
+    pub metadata: ParsedNoteMetadata,
+}
+
+/// Structural metadata extracted during parsing
+///
+/// Contains only deterministic metrics computed from AST structure.
+/// Computed metadata (complexity, reading time) lives in enrichment layer.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParsedNoteMetadata {
+    /// Total word count across entire document
+    pub word_count: usize,
+
+    /// Total character count (excluding whitespace)
+    pub char_count: usize,
+
+    /// Number of heading elements (all levels)
+    pub heading_count: usize,
+
+    /// Number of code block elements
+    pub code_block_count: usize,
+
+    /// Number of list elements (ordered + unordered)
+    pub list_count: usize,
+
+    /// Number of paragraphs
+    pub paragraph_count: usize,
+
+    /// Number of callouts (Obsidian-style)
+    pub callout_count: usize,
+
+    /// Number of LaTeX expressions
+    pub latex_count: usize,
+
+    /// Number of footnotes
+    pub footnote_count: usize,
 }
 
 impl ParsedNote {
@@ -232,6 +274,7 @@ impl ParsedNote {
             parse_errors: Vec::new(),
             block_hashes: Vec::new(), // Phase 2: empty by default for backward compatibility
             merkle_root: None,        // Phase 2: None by default for backward compatibility
+            metadata: ParsedNoteMetadata::default(), // Metadata extracted during parsing
         }
     }
 }
@@ -1673,6 +1716,7 @@ pub struct ParsedNoteBuilder {
     parse_errors: Vec<ParseError>,
     block_hashes: Vec<BlockHash>,
     merkle_root: Option<BlockHash>,
+    metadata: ParsedNoteMetadata,
 }
 
 impl ParsedNoteBuilder {
@@ -1694,6 +1738,7 @@ impl ParsedNoteBuilder {
             parse_errors: Vec::new(),
             block_hashes: Vec::new(),
             merkle_root: None,
+            metadata: ParsedNoteMetadata::default(),
         }
     }
 
@@ -1775,6 +1820,12 @@ impl ParsedNoteBuilder {
         self
     }
 
+    /// Set structural metadata
+    pub fn with_metadata(mut self, metadata: ParsedNoteMetadata) -> Self {
+        self.metadata = metadata;
+        self
+    }
+
     /// Build the ParsedNote
     pub fn build(self) -> ParsedNote {
         ParsedNote {
@@ -1793,6 +1844,7 @@ impl ParsedNoteBuilder {
             parse_errors: self.parse_errors,
             block_hashes: self.block_hashes,
             merkle_root: self.merkle_root,
+            metadata: self.metadata,
         }
     }
 }

@@ -3,7 +3,7 @@
 //! A privacy-focused thread pool for vector embedding generation with configurable
 //! performance settings, circuit breaker pattern, and comprehensive error handling.
 
-use crate::embedding_config::*;
+use crucible_enrichment::*;
 use anyhow::{anyhow, Result};
 use std::sync::Arc;
 use std::time::{Duration, Instant};

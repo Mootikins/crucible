@@ -23,6 +23,64 @@ pub struct ConfigChange {
     pub new_value: serde_json::Value,
 }
 
+/// Core logging configuration
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct LoggingConfig {
+    /// Log level (trace, debug, info, warn, error)
+    pub level: String,
+    /// Log format (json, text, compact)
+    pub format: String,
+    /// Component-specific log levels
+    #[serde(default)]
+    pub component_levels: HashMap<String, String>,
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            level: "info".to_string(),
+            format: "text".to_string(),
+            component_levels: HashMap::new(),
+        }
+    }
+}
+
+/// Core cache configuration
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CacheConfig {
+    /// Enable caching
+    #[serde(default = "default_cache_enabled")]
+    pub enabled: bool,
+    /// Maximum cache size in entries
+    #[serde(default = "default_cache_max_size")]
+    pub max_size: usize,
+    /// Time-to-live in seconds
+    #[serde(default = "default_cache_ttl")]
+    pub ttl_seconds: u64,
+}
+
+fn default_cache_enabled() -> bool {
+    true
+}
+
+fn default_cache_max_size() -> usize {
+    10000
+}
+
+fn default_cache_ttl() -> u64 {
+    300 // 5 minutes
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_cache_enabled(),
+            max_size: default_cache_max_size(),
+            ttl_seconds: default_cache_ttl(),
+        }
+    }
+}
+
 /// Configuration validation error
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -332,9 +390,6 @@ impl Default for WebSocketConfig {
     }
 }
 
-// LoggingConfig is now imported from crucible-config (canonical)
-pub use crucible_config::LoggingConfig;
-
 /// Feature configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct FeatureConfig {
@@ -408,21 +463,6 @@ impl Default for BufferSizes {
             commands: 100,
             responses: 100,
         }
-    }
-}
-
-// CacheConfig is now imported from crucible-config (canonical)
-pub use crucible_config::CacheConfig;
-
-// Helper extension trait for Duration conversion
-pub trait CacheConfigExt {
-    /// Get TTL as Duration
-    fn ttl(&self) -> Duration;
-}
-
-impl CacheConfigExt for CacheConfig {
-    fn ttl(&self) -> Duration {
-        Duration::from_secs(self.ttl_seconds)
     }
 }
 
