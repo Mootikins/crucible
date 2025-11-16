@@ -5,33 +5,13 @@
 //! principles with dependency injection.
 
 use crate::enrichment::{
-    BlockEmbedding, EnrichedNote, InferredRelation, NoteMetadata,
+    BlockEmbedding, EmbeddingProvider, EnrichedNote, InferredRelation, NoteMetadata,
 };
 use crate::merkle::HybridMerkleTree;
 use crate::types::ParsedNote;
 use anyhow::Result;
 use std::sync::Arc;
 use tracing::{debug, info};
-
-/// Trait for embedding providers (to be implemented by infrastructure)
-///
-/// This trait will be implemented by crucible-llm providers (Fastembed, OpenAI, etc.)
-/// For now, we define a simplified version here for the core layer.
-/// In production, this should reference the existing trait from crucible-llm.
-#[async_trait::async_trait]
-pub trait EmbeddingProvider: Send + Sync {
-    /// Embed a single text string
-    async fn embed_text(&self, text: &str) -> Result<Vec<f32>>;
-
-    /// Embed multiple texts in a batch (more efficient)
-    async fn embed_batch(&self, texts: Vec<&str>) -> Result<Vec<Vec<f32>>>;
-
-    /// Get the model name
-    fn model_name(&self) -> &str;
-
-    /// Get the embedding dimensions
-    fn dimensions(&self) -> usize;
-}
 
 /// Service that orchestrates all enrichment operations
 ///
@@ -136,7 +116,7 @@ impl EnrichmentService {
         let texts: Vec<&str> = block_texts.iter().map(|(_, text)| text.as_str()).collect();
 
         // Batch embed
-        let vectors = provider.embed_batch(texts).await?;
+        let vectors = provider.embed_batch(&texts).await?;
 
         // Package results as BlockEmbedding
         let embeddings: Vec<BlockEmbedding> = block_texts
@@ -395,11 +375,11 @@ mod tests {
 
     #[async_trait::async_trait]
     impl EmbeddingProvider for MockEmbeddingProvider {
-        async fn embed_text(&self, _text: &str) -> Result<Vec<f32>> {
+        async fn embed(&self, _text: &str) -> Result<Vec<f32>> {
             Ok(vec![0.1, 0.2, 0.3])
         }
 
-        async fn embed_batch(&self, texts: Vec<&str>) -> Result<Vec<Vec<f32>>> {
+        async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
             Ok(texts.iter().map(|_| vec![0.1, 0.2, 0.3]).collect())
         }
 

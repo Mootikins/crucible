@@ -20,6 +20,7 @@
 //! - **relations**: Relation inference (future - integrated in service)
 
 pub mod config;
+pub mod embedding;
 pub mod service;
 pub mod types;
 
@@ -30,10 +31,13 @@ pub use config::{
     PrivacyMode, RetryProcessingResult, ThreadPoolMetrics, validate_embedding_config,
 };
 
+// Re-export embedding provider trait
+pub use embedding::EmbeddingProvider;
+
 // Re-export enrichment types
 pub use types::{
     BlockEmbedding, EnrichedNote, InferredRelation, InferredRelationType, NoteMetadata,
 };
 
-// Re-export service types
-pub use service::{EmbeddingProvider, EnrichmentService};
+// Re-export service
+pub use service::EnrichmentService;
