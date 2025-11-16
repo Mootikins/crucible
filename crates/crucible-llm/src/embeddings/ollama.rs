@@ -77,7 +77,8 @@ impl OllamaProvider {
     /// Create a new Ollama provider from configuration
     pub fn new(config: EmbeddingConfig) -> EmbeddingResult<Self> {
         // Validate configuration
-        config.validate()?;
+        config.validate()
+            .map_err(|e| EmbeddingError::ConfigError(e.to_string()))?;
 
         let timeout_secs = config.timeout_secs();
 

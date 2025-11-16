@@ -81,13 +81,6 @@ pub enum EmbeddingError {
     Other(String),
 }
 
-// Convert crucible-config ProviderError to EmbeddingError
-impl From<crucible_config::ProviderError> for EmbeddingError {
-    fn from(err: crucible_config::ProviderError) -> Self {
-        EmbeddingError::ConfigError(err.to_string())
-    }
-}
-
 impl EmbeddingError {
     /// Check if the error is retryable
     pub fn is_retryable(&self) -> bool {
