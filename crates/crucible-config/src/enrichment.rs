@@ -14,6 +14,58 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
 
+/// Simple provider type enum for backward compatibility
+///
+/// This enum provides a simpler type-only identifier for embedding providers,
+/// without the full configuration details. Used by legacy code that hasn't
+/// migrated to the full `EmbeddingProviderConfig` structure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EmbeddingProviderType {
+    /// OpenAI embedding provider
+    OpenAI,
+    /// Ollama (local) embedding provider
+    Ollama,
+    /// FastEmbed (local) embedding provider
+    FastEmbed,
+    /// Cohere embedding provider
+    Cohere,
+    /// Google Vertex AI embedding provider
+    VertexAI,
+    /// Custom HTTP-based embedding provider
+    Custom,
+    /// Mock provider for testing
+    Mock,
+}
+
+impl EmbeddingProviderType {
+    /// Get the provider type from a full configuration
+    pub fn from_config(config: &EmbeddingProviderConfig) -> Self {
+        match config {
+            EmbeddingProviderConfig::OpenAI(_) => Self::OpenAI,
+            EmbeddingProviderConfig::Ollama(_) => Self::Ollama,
+            EmbeddingProviderConfig::FastEmbed(_) => Self::FastEmbed,
+            EmbeddingProviderConfig::Cohere(_) => Self::Cohere,
+            EmbeddingProviderConfig::VertexAI(_) => Self::VertexAI,
+            EmbeddingProviderConfig::Custom(_) => Self::Custom,
+            EmbeddingProviderConfig::Mock(_) => Self::Mock,
+        }
+    }
+
+    /// Get the type name as a string
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::OpenAI => "openai",
+            Self::Ollama => "ollama",
+            Self::FastEmbed => "fastembed",
+            Self::Cohere => "cohere",
+            Self::VertexAI => "vertexai",
+            Self::Custom => "custom",
+            Self::Mock => "mock",
+        }
+    }
+}
+
 /// Main enrichment configuration
 ///
 /// This configuration encompasses all settings related to document enrichment,
@@ -589,8 +641,72 @@ impl Default for PipelineConfig {
     }
 }
 
-/// Helper methods for EmbeddingProviderConfig
+/// Helper methods and constructors for EmbeddingProviderConfig
 impl EmbeddingProviderConfig {
+    /// Create an Ollama provider configuration with defaults
+    ///
+    /// # Arguments
+    /// * `endpoint` - Optional base URL (defaults to "http://localhost:11434")
+    /// * `model` - Optional model name (defaults to "nomic-embed-text")
+    pub fn ollama(endpoint: Option<String>, model: Option<String>) -> Self {
+        Self::Ollama(OllamaConfig {
+            model: model.unwrap_or_else(OllamaConfig::default_model),
+            base_url: endpoint.unwrap_or_else(OllamaConfig::default_base_url),
+            timeout_seconds: OllamaConfig::default_timeout(),
+            retry_attempts: OllamaConfig::default_retries(),
+            dimensions: OllamaConfig::default_dimensions(),
+        })
+    }
+
+    /// Create an OpenAI provider configuration
+    ///
+    /// # Arguments
+    /// * `api_key` - OpenAI API key (required)
+    /// * `model` - Optional model name (defaults to "text-embedding-3-small")
+    pub fn openai(api_key: String, model: Option<String>) -> Self {
+        Self::OpenAI(OpenAIConfig {
+            api_key,
+            model: model.unwrap_or_else(OpenAIConfig::default_model),
+            base_url: OpenAIConfig::default_base_url(),
+            timeout_seconds: OpenAIConfig::default_timeout(),
+            retry_attempts: OpenAIConfig::default_retries(),
+            dimensions: OpenAIConfig::default_dimensions(),
+            headers: HashMap::new(),
+        })
+    }
+
+    /// Create a FastEmbed provider configuration with defaults
+    ///
+    /// # Arguments
+    /// * `model` - Optional model name (defaults to "BAAI/bge-small-en-v1.5")
+    /// * `cache_dir` - Optional cache directory for model files
+    /// * `num_threads` - Optional number of threads (defaults to auto)
+    pub fn fastembed(
+        model: Option<String>,
+        cache_dir: Option<String>,
+        num_threads: Option<usize>,
+    ) -> Self {
+        Self::FastEmbed(FastEmbedConfig {
+            model: model.unwrap_or_else(FastEmbedConfig::default_model),
+            cache_dir,
+            batch_size: FastEmbedConfig::default_batch_size(),
+            dimensions: FastEmbedConfig::default_dimensions(),
+            num_threads,
+        })
+    }
+
+    /// Create a Mock provider configuration for testing
+    ///
+    /// # Arguments
+    /// * `dimensions` - Number of dimensions for mock embeddings (defaults to 768)
+    pub fn mock(dimensions: Option<u32>) -> Self {
+        Self::Mock(MockConfig {
+            model: MockConfig::default_model(),
+            dimensions: dimensions.unwrap_or_else(MockConfig::default_dimensions),
+            simulated_latency_ms: 0,
+        })
+    }
+
     /// Get the timeout as a Duration
     pub fn timeout(&self) -> Duration {
         let seconds = match self {
@@ -631,6 +747,58 @@ impl EmbeddingProviderConfig {
         }
     }
 
+    /// Get the model name (alias for model() for backward compatibility)
+    pub fn model_name(&self) -> &str {
+        self.model()
+    }
+
+    /// Get the provider type enum value
+    pub fn provider_type(&self) -> EmbeddingProviderType {
+        EmbeddingProviderType::from_config(self)
+    }
+
+    /// Get the API key if the provider supports it
+    pub fn api_key(&self) -> Option<&str> {
+        match self {
+            Self::OpenAI(c) => Some(&c.api_key),
+            Self::Cohere(c) => Some(&c.api_key),
+            Self::Custom(c) => c.api_key.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Get the base URL/endpoint
+    pub fn base_url(&self) -> Option<&str> {
+        match self {
+            Self::OpenAI(c) => Some(&c.base_url),
+            Self::Ollama(c) => Some(&c.base_url),
+            Self::Cohere(c) => Some(&c.base_url),
+            Self::VertexAI(c) => Some(&c.base_url),
+            Self::Custom(c) => Some(&c.base_url),
+            _ => None,
+        }
+    }
+
+    /// Get the endpoint URL (alias for base_url for backward compatibility)
+    pub fn endpoint(&self) -> String {
+        self.base_url()
+            .unwrap_or("http://localhost:11434")
+            .to_string()
+    }
+
+    /// Get timeout in seconds
+    pub fn timeout_secs(&self) -> u64 {
+        match self {
+            Self::OpenAI(c) => c.timeout_seconds,
+            Self::Ollama(c) => c.timeout_seconds,
+            Self::FastEmbed(_) => 30,
+            Self::Cohere(c) => c.timeout_seconds,
+            Self::VertexAI(c) => c.timeout_seconds,
+            Self::Custom(c) => c.timeout_seconds,
+            Self::Mock(_) => 1,
+        }
+    }
+
     /// Get the expected embedding dimensions
     pub fn dimensions(&self) -> Option<u32> {
         match self {
@@ -645,57 +813,151 @@ impl EmbeddingProviderConfig {
     }
 
     /// Validate the configuration
-    pub fn validate(&self) -> Result<(), String> {
+    #[must_use]
+    pub fn validate(&self) -> Result<(), crate::ConfigValidationError> {
+        use crate::ConfigValidationError;
+
         match self {
             Self::OpenAI(c) => {
                 if c.api_key.is_empty() {
-                    return Err("OpenAI API key is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "api_key".to_string(),
+                    });
+                }
+                // Basic API key format check (OpenAI keys start with "sk-")
+                if !c.api_key.starts_with("sk-") && c.api_key != "test-key" {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "api_key".to_string(),
+                        reason: "OpenAI API keys should start with 'sk-'".to_string(),
+                    });
                 }
                 if c.model.is_empty() {
-                    return Err("OpenAI model name is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "model".to_string(),
+                    });
+                }
+                // Validate base URL format
+                if !c.base_url.starts_with("http://") && !c.base_url.starts_with("https://") {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "base_url".to_string(),
+                        reason: "must start with http:// or https://".to_string(),
+                    });
+                }
+                // Validate timeout is reasonable (1-300 seconds)
+                if c.timeout_seconds == 0 || c.timeout_seconds > 300 {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "timeout_seconds".to_string(),
+                        reason: "must be between 1 and 300 seconds".to_string(),
+                    });
                 }
             }
             Self::Ollama(c) => {
                 if c.model.is_empty() {
-                    return Err("Ollama model name is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "model".to_string(),
+                    });
                 }
                 if c.base_url.is_empty() {
-                    return Err("Ollama base URL is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "base_url".to_string(),
+                    });
+                }
+                // Validate base URL format
+                if !c.base_url.starts_with("http://") && !c.base_url.starts_with("https://") {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "base_url".to_string(),
+                        reason: "must start with http:// or https://".to_string(),
+                    });
+                }
+                // Validate timeout is reasonable (1-300 seconds)
+                if c.timeout_seconds == 0 || c.timeout_seconds > 300 {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "timeout_seconds".to_string(),
+                        reason: "must be between 1 and 300 seconds".to_string(),
+                    });
                 }
             }
             Self::FastEmbed(c) => {
                 if c.model.is_empty() {
-                    return Err("FastEmbed model name is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "model".to_string(),
+                    });
                 }
                 if c.batch_size == 0 {
-                    return Err("FastEmbed batch size must be greater than 0".to_string());
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "batch_size".to_string(),
+                        reason: "must be greater than 0".to_string(),
+                    });
                 }
             }
             Self::Cohere(c) => {
                 if c.api_key.is_empty() {
-                    return Err("Cohere API key is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "api_key".to_string(),
+                    });
                 }
                 if c.model.is_empty() {
-                    return Err("Cohere model name is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "model".to_string(),
+                    });
+                }
+                // Validate base URL format
+                if !c.base_url.starts_with("http://") && !c.base_url.starts_with("https://") {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "base_url".to_string(),
+                        reason: "must start with http:// or https://".to_string(),
+                    });
+                }
+                // Validate timeout
+                if c.timeout_seconds == 0 || c.timeout_seconds > 300 {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "timeout_seconds".to_string(),
+                        reason: "must be between 1 and 300 seconds".to_string(),
+                    });
                 }
             }
             Self::VertexAI(c) => {
                 if c.project_id.is_empty() {
-                    return Err("VertexAI project ID is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "project_id".to_string(),
+                    });
                 }
                 if c.model.is_empty() {
-                    return Err("VertexAI model name is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "model".to_string(),
+                    });
                 }
             }
             Self::Custom(c) => {
                 if c.base_url.is_empty() {
-                    return Err("Custom provider base URL is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "base_url".to_string(),
+                    });
+                }
+                // Validate base URL format
+                if !c.base_url.starts_with("http://") && !c.base_url.starts_with("https://") {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "base_url".to_string(),
+                        reason: "must start with http:// or https://".to_string(),
+                    });
                 }
                 if c.model.is_empty() {
-                    return Err("Custom provider model name is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "model".to_string(),
+                    });
                 }
                 if c.dimensions == 0 {
-                    return Err("Custom provider dimensions must be greater than 0".to_string());
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "dimensions".to_string(),
+                        reason: "must be greater than 0".to_string(),
+                    });
+                }
+                // Validate timeout
+                if c.timeout_seconds == 0 || c.timeout_seconds > 300 {
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "timeout_seconds".to_string(),
+                        reason: "must be between 1 and 300 seconds".to_string(),
+                    });
                 }
             }
             Self::Mock(_) => {

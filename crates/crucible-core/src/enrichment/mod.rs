@@ -11,7 +11,6 @@
 //! - Easy to swap implementations or add new providers
 //! - High-level modules depend on abstractions, not concretions
 
-pub mod config;
 pub mod embedding;
 pub mod service;
 pub mod types;
@@ -27,8 +26,10 @@ pub use types::{
     BlockEmbedding, EnrichedNote, InferredRelation, NoteMetadata, RelationType,
 };
 
-// Re-export configuration types
-pub use config::{
-    CohereConfig, CustomConfig, EmbeddingProviderConfig, EnrichmentConfig, FastEmbedConfig,
-    MockConfig, OllamaConfig, OpenAIConfig, PipelineConfig, VertexAIConfig,
+// Re-export configuration types from crucible-config to maintain backward compatibility
+// Configuration lives in crucible-config to simplify dependency graph
+pub use crucible_config::{
+    CohereConfig, CustomConfig, EmbeddingProviderConfig, EmbeddingProviderType,
+    EnrichmentConfig, FastEmbedConfig, MockConfig, OllamaConfig, OpenAIConfig, PipelineConfig,
+    VertexAIConfig,
 };
