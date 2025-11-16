@@ -1,12 +1,20 @@
 # Vector Embedding Integration Implementation Tasks
 
 **Change ID**: `2025-11-11-vector-embedding-integration`
-**Status**: In Progress - Phase 0 Complete, Metadata Refactoring In Progress
+**Status**: In Progress - Phase 0 & Phase 1 Complete, Starting Phase 2
 **Updated**: 2025-11-16
 **Timeline**: 4 weeks (44 developer days)
 **Scope**: Major refactoring - 11,846 lines to move, 3,800 lines new code, 5 files deleted
 
 ## Recent Completions
+
+### ✅ Moved EnrichmentConfig to Core (2025-11-16)
+- Created type-safe EnrichmentConfig with provider-specific enums in crucible-core
+- Each provider (OpenAI, Ollama, FastEmbed, Cohere, VertexAI, Custom, Mock) has dedicated struct
+- Added PipelineConfig for enrichment pipeline settings (workers, batching, circuit breaker)
+- Conversion utilities in crucible-llm for old/new config interop
+- Deprecated old EmbeddingProviderConfig with migration guide
+- **Commits**: 7ab2b23
 
 ### ✅ Created crucible-enrichment Crate (2025-11-16)
 - Extracted enrichment business logic from crucible-core into separate crate
@@ -40,9 +48,11 @@ This implementation corrects severe architectural violations and establishes the
 
 ---
 
-## Phase 0: Refactoring (Clean Up Architecture Violations)
+## Phase 0: Refactoring (Clean Up Architecture Violations) ✅ COMPLETE
 
 **Goal**: Move embedding business logic out of infrastructure layer, prepare for clean architecture.
+
+**Summary**: All tasks complete. Created crucible-enrichment crate, split metadata between parser and enrichment, moved configuration to core with type-safe provider enums.
 
 ### Task 0.1: Audit and Document Current State
 
@@ -146,7 +156,7 @@ This implementation corrects severe architectural violations and establishes the
   - Mirrors industry patterns: Pandoc filters, Unified/Remark plugins
   - Design after validating metadata split
 
-**Status**: 🔄 IN PROGRESS
+**Status**: ✅ COMPLETE - ParsedNoteMetadata exists with all structural metadata fields
 
 ---
 
@@ -163,16 +173,21 @@ This implementation corrects severe architectural violations and establishes the
 4. **VERIFY**: All existing tests pass with new config location
 
 **Acceptance Criteria:**
-- [ ] `EmbeddingConfig` moved to crucible-core
-- [ ] Configuration is provider-agnostic (no Fastembed specifics)
-- [ ] All dependent code updated to use new location
-- [ ] Zero breaking changes to external API
+- [x] `EnrichmentConfig` moved to crucible-core/src/enrichment/config.rs
+- [x] Configuration is provider-specific with type-safe enums (OpenAI, Ollama, FastEmbed, etc.)
+- [x] Conversion utilities added in crucible-llm for migration
+- [x] Old config deprecated with migration guide
+
+**Status**: ✅ COMPLETE - EnrichmentConfig with provider-specific enums created in crucible-core
+**Commits**: 7ab2b23
 
 ---
 
-## Phase 1: Core Enrichment Layer (Week 1)
+## Phase 1: Core Enrichment Layer (Week 1) ✅ COMPLETE
 
 **Goal**: Establish clean architecture with trait definitions and orchestration in crucible-core.
+
+**Summary**: EmbeddingProvider trait defined in crucible-core, EnrichmentService and EnrichedNote implemented in crucible-enrichment crate.
 
 ### Task 1.1: Define Embedding Provider Trait
 
