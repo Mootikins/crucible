@@ -37,6 +37,7 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
+pub mod config_conversion;
 pub mod embeddings;
 pub mod reranking;
 pub mod text_generation;
@@ -63,3 +64,14 @@ pub use text_generation::{
 // Re-export mock implementations for testing
 #[cfg(any(test, feature = "test-utils"))]
 pub use text_generation_mock::MockTextProvider;
+
+// Re-export config conversion utilities
+pub use config_conversion::{convert_from_enrichment_config, convert_to_enrichment_config};
+
+// Re-export core enrichment config types for convenience
+pub use crucible_core::enrichment::{
+    CohereConfig, CustomConfig, EmbeddingProviderConfig as NewEmbeddingProviderConfig,
+    EnrichmentConfig, FastEmbedConfig as NewFastEmbedConfig, MockConfig as NewMockConfig,
+    OllamaConfig as NewOllamaConfig, OpenAIConfig as NewOpenAIConfig, PipelineConfig,
+    VertexAIConfig,
+};
