@@ -460,10 +460,12 @@ mod tests {
         parsed.content.headings.push(Heading {
             level: 1,
             text: "Test".to_string(),
+            offset: 0,
             id: None,
         });
         parsed.content.paragraphs.push(Paragraph {
             content: "Test paragraph".to_string(),
+            offset: 10,
             word_count: 2,
         });
 
