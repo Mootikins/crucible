@@ -12,7 +12,7 @@ use std::time::Duration;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
-use crate::embedding_config::EmbeddingProcessingResult;
+use crucible_enrichment::EmbeddingProcessingResult;
 use crate::embedding_pool::EmbeddingThreadPool;
 use crate::kiln_integration::*;
 use crate::kiln_scanner::{
@@ -1727,7 +1727,7 @@ pub async fn process_kiln_delta(
 #[cfg(test)]
 mod document_processor_tests {
     use super::*;
-    use crate::embedding_config::EmbeddingConfig;
+    use crucible_enrichment::{DocumentEmbedding, EmbeddingConfig};
     use crate::embedding_pool::EmbeddingThreadPool;
     use crate::kiln_integration;
     use crate::kiln_scanner::KilnFileInfo;

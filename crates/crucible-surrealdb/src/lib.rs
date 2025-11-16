@@ -27,6 +27,8 @@
 //! }
 //! ```
 
+use crucible_enrichment;
+
 pub mod batch_aware_client;
 pub mod consistency;
 pub mod content_addressed_storage;
@@ -100,15 +102,14 @@ pub use types::{
     TableSchema,
 };
 
-// Re-export embedding functionality with specific exports to avoid conflicts
-pub use embedding_config::{
+// Re-export embedding functionality from crucible-enrichment
+pub use crucible_enrichment::{
     DocumentEmbedding, EmbeddingConfig, EmbeddingError, EmbeddingModel, EmbeddingProcessingResult,
     PrivacyMode, ThreadPoolMetrics,
 };
+pub use embedding_pool::{EmbeddingThreadPool, EmbeddingSignature};
 #[cfg(feature = "embeddings")]
 pub use embedding_pipeline::EmbeddingPipeline;
-#[cfg(feature = "embeddings")]
-pub use embedding_pool::{EmbeddingSignature, EmbeddingThreadPool};
 
 // Kiln scanner exports (requires embeddings feature)
 #[cfg(feature = "embeddings")]

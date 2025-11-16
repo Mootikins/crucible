@@ -30,7 +30,7 @@ impl ProviderType {
     /// Get default endpoint for this provider
     pub fn default_endpoint(&self) -> &'static str {
         match self {
-            ProviderType::Ollama => "https://llama.terminal.krohnos.io",
+            ProviderType::Ollama => "http://localhost:11434",
             ProviderType::OpenAI => "https://api.openai.com/v1",
         }
     }
@@ -129,7 +129,7 @@ mod tests {
         let ollama = ProviderType::Ollama;
         assert_eq!(
             ollama.default_endpoint(),
-            "https://llama.terminal.krohnos.io"
+            "http://localhost:11434"
         );
         assert_eq!(ollama.default_model(), "nomic-embed-text");
         assert_eq!(ollama.default_dimensions(), 768);
@@ -156,8 +156,9 @@ mod tests {
 
     #[test]
     fn test_config_validation_requires_api_key_for_openai() {
-        let mut config = EmbeddingConfig::openai("test-key".to_string(), None);
-        config.api.key = None;
+        // Create a config with empty API key (which should fail validation)
+        use crucible_config::OpenAIConfig;
+        let config = EmbeddingConfig::OpenAI(OpenAIConfig::default());
 
         let result = config.validate();
         assert!(result.is_err());
@@ -165,8 +166,12 @@ mod tests {
 
     #[test]
     fn test_config_validation_empty_model() {
-        let mut config = EmbeddingConfig::ollama(None, None);
-        config.model.name = String::new();
+        // Create a config with empty model name (which should fail validation)
+        use crucible_config::OllamaConfig;
+        let config = EmbeddingConfig::Ollama(OllamaConfig {
+            model: String::new(),
+            ..Default::default()
+        });
 
         let result = config.validate();
         assert!(result.is_err());
@@ -176,13 +181,13 @@ mod tests {
     fn test_expected_dimensions_ollama() {
         let config = EmbeddingConfig::ollama(None, Some("nomic-embed-text".to_string()));
         assert_eq!(
-            expected_dimensions_for_model(&config.provider_type, config.model_name()),
+            expected_dimensions_for_model(&config.provider_type(), config.model_name()),
             768
         );
 
         let config = EmbeddingConfig::ollama(None, Some("unknown-model".to_string()));
         assert_eq!(
-            expected_dimensions_for_model(&config.provider_type, config.model_name()),
+            expected_dimensions_for_model(&config.provider_type(), config.model_name()),
             768
         );
     }
@@ -194,7 +199,7 @@ mod tests {
             Some("text-embedding-3-small".to_string()),
         );
         assert_eq!(
-            expected_dimensions_for_model(&config.provider_type, config.model_name()),
+            expected_dimensions_for_model(&config.provider_type(), config.model_name()),
             1536
         );
 
@@ -203,7 +208,7 @@ mod tests {
             Some("text-embedding-3-large".to_string()),
         );
         assert_eq!(
-            expected_dimensions_for_model(&config.provider_type, config.model_name()),
+            expected_dimensions_for_model(&config.provider_type(), config.model_name()),
             3072
         );
 
@@ -212,14 +217,14 @@ mod tests {
             Some("text-embedding-ada-002".to_string()),
         );
         assert_eq!(
-            expected_dimensions_for_model(&config.provider_type, config.model_name()),
+            expected_dimensions_for_model(&config.provider_type(), config.model_name()),
             1536
         );
 
         let config =
             EmbeddingConfig::openai("test-key".to_string(), Some("unknown-model".to_string()));
         assert_eq!(
-            expected_dimensions_for_model(&config.provider_type, config.model_name()),
+            expected_dimensions_for_model(&config.provider_type(), config.model_name()),
             1536
         );
     }

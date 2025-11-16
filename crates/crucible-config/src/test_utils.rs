@@ -4,7 +4,7 @@ use crate::{
     Config, ConfigLoader, DatabaseConfig, Environment, LoggingConfig,
     ProfileConfig, ServerConfig,
 };
-use crucible_core::enrichment::{EnrichmentConfig, EmbeddingProviderConfig, OpenAIConfig, OllamaConfig, PipelineConfig};
+use crate::{EnrichmentConfig, EmbeddingProviderConfig, OpenAIConfig, OllamaConfig, PipelineConfig};
 use std::collections::HashMap;
 use std::io::Write;
 use tempfile::{NamedTempFile, TempDir};
@@ -68,9 +68,10 @@ impl TestConfigBuilder {
     pub fn mock_ollama_embedding(self) -> Self {
         self.enrichment_config(EnrichmentConfig {
             provider: EmbeddingProviderConfig::Ollama(OllamaConfig {
-                base_url: "http://localhost:11434".to_string(),
                 model: "nomic-embed-text".to_string(),
+                base_url: "http://localhost:11434".to_string(),
                 timeout_seconds: 30,
+                retry_attempts: 3,
                 dimensions: 768,
             }),
             pipeline: PipelineConfig::default(),
@@ -85,9 +86,10 @@ impl TestConfigBuilder {
     ) -> Self {
         self.enrichment_config(EnrichmentConfig {
             provider: EmbeddingProviderConfig::Ollama(OllamaConfig {
-                base_url: endpoint.into(),
                 model: model.into(),
+                base_url: endpoint.into(),
                 timeout_seconds: 30,
+                retry_attempts: 3,
                 dimensions: 768,
             }),
             pipeline: PipelineConfig::default(),
