@@ -5,13 +5,13 @@
 //! principles with dependency injection.
 
 use crate::enrichment::{
-    BlockEmbedding, EnrichedNote, InferredRelation, InferredRelationType, NoteMetadata,
+    BlockEmbedding, EnrichedNote, InferredRelation, NoteMetadata,
 };
 use crate::merkle::HybridMerkleTree;
 use crate::types::ParsedNote;
 use anyhow::Result;
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Trait for embedding providers (to be implemented by infrastructure)
 ///
@@ -158,25 +158,105 @@ impl EnrichmentService {
 
     /// Extract block texts that meet embedding criteria
     ///
-    /// TODO: This is a placeholder. In production, this should traverse the
-    /// ParsedNote's content structure and extract actual block content.
+    /// Traverses the ParsedNote's content structure and extracts text from blocks
+    /// that meet the minimum word count threshold.
     fn extract_block_texts(
         &self,
-        _parsed: &ParsedNote,
+        parsed: &ParsedNote,
         changed_blocks: &[String],
     ) -> Vec<(String, String)> {
-        // Placeholder implementation
-        // In production: traverse parsed.content, extract text from each block
-        // Filter by word count (>= min_words_for_embedding)
-        // Return list of (block_id, text) tuples
+        let mut blocks = Vec::new();
+
+        // Extract from headings
+        for (idx, heading) in parsed.content.headings.iter().enumerate() {
+            let block_id = format!("heading_{}", idx);
+
+            // Check if this block changed (if we have change tracking)
+            if !changed_blocks.is_empty() && !changed_blocks.contains(&block_id) {
+                continue;
+            }
+
+            let word_count = heading.text.split_whitespace().count();
+            if word_count >= self.min_words_for_embedding {
+                blocks.push((block_id, heading.text.clone()));
+            }
+        }
+
+        // Extract from paragraphs
+        for (idx, paragraph) in parsed.content.paragraphs.iter().enumerate() {
+            let block_id = format!("paragraph_{}", idx);
+
+            // Check if this block changed
+            if !changed_blocks.is_empty() && !changed_blocks.contains(&block_id) {
+                continue;
+            }
+
+            if paragraph.word_count >= self.min_words_for_embedding {
+                blocks.push((block_id, paragraph.content.clone()));
+            }
+        }
+
+        // Extract from code blocks
+        for (idx, code_block) in parsed.content.code_blocks.iter().enumerate() {
+            let block_id = format!("code_{}", idx);
+
+            // Check if this block changed
+            if !changed_blocks.is_empty() && !changed_blocks.contains(&block_id) {
+                continue;
+            }
+
+            let word_count = code_block.content.split_whitespace().count();
+            if word_count >= self.min_words_for_embedding {
+                blocks.push((block_id, code_block.content.clone()));
+            }
+        }
+
+        // Extract from lists
+        for (idx, list) in parsed.content.lists.iter().enumerate() {
+            let block_id = format!("list_{}", idx);
+
+            // Check if this block changed
+            if !changed_blocks.is_empty() && !changed_blocks.contains(&block_id) {
+                continue;
+            }
+
+            // Concatenate all list items
+            let list_text: String = list.items.iter()
+                .map(|item| item.content.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            let word_count = list_text.split_whitespace().count();
+            if word_count >= self.min_words_for_embedding {
+                blocks.push((block_id, list_text));
+            }
+        }
+
+        // Extract from blockquotes
+        for (idx, blockquote) in parsed.content.blockquotes.iter().enumerate() {
+            let block_id = format!("blockquote_{}", idx);
+
+            // Check if this block changed
+            if !changed_blocks.is_empty() && !changed_blocks.contains(&block_id) {
+                continue;
+            }
+
+            let word_count = blockquote.content.split_whitespace().count();
+            if word_count >= self.min_words_for_embedding {
+                blocks.push((block_id, blockquote.content.clone()));
+            }
+        }
 
         debug!(
-            "Extracting texts from {} changed blocks (placeholder implementation)",
-            changed_blocks.len()
+            "Extracted {} blocks from {} ({} total blocks in note)",
+            blocks.len(),
+            parsed.path.display(),
+            parsed.content.headings.len() + parsed.content.paragraphs.len() +
+            parsed.content.code_blocks.len() + parsed.content.lists.len() +
+            parsed.content.blockquotes.len()
         );
 
-        // For now, return empty - will be implemented when integrating with parser
-        Vec::new()
+        blocks
     }
 
     /// Extract metadata from the parsed note
@@ -184,21 +264,91 @@ impl EnrichmentService {
         debug!("Extracting metadata from {}", parsed.path.display());
 
         let mut metadata = NoteMetadata::new();
+        let mut block_word_counts = Vec::new();
+        let mut total_words = 0;
 
-        // TODO: Implement actual metadata extraction
-        // This should:
-        // - Count words per block and total
-        // - Detect language
-        // - Estimate reading time
-        // - Calculate complexity score
+        // Count words in headings
+        for (idx, heading) in parsed.content.headings.iter().enumerate() {
+            let block_id = format!("heading_{}", idx);
+            let word_count = heading.text.split_whitespace().count();
+            total_words += word_count;
+            block_word_counts.push((block_id, word_count));
+        }
 
-        // Placeholder values
-        metadata.total_word_count = 0;
+        // Count words in paragraphs
+        for (idx, paragraph) in parsed.content.paragraphs.iter().enumerate() {
+            let block_id = format!("paragraph_{}", idx);
+            total_words += paragraph.word_count;
+            block_word_counts.push((block_id, paragraph.word_count));
+        }
+
+        // Count words in code blocks
+        for (idx, code_block) in parsed.content.code_blocks.iter().enumerate() {
+            let block_id = format!("code_{}", idx);
+            let word_count = code_block.content.split_whitespace().count();
+            total_words += word_count;
+            block_word_counts.push((block_id, word_count));
+        }
+
+        // Count words in lists
+        for (idx, list) in parsed.content.lists.iter().enumerate() {
+            let block_id = format!("list_{}", idx);
+            let list_words: usize = list.items.iter()
+                .map(|item| item.content.split_whitespace().count())
+                .sum();
+            total_words += list_words;
+            block_word_counts.push((block_id, list_words));
+        }
+
+        // Count words in blockquotes
+        for (idx, blockquote) in parsed.content.blockquotes.iter().enumerate() {
+            let block_id = format!("blockquote_{}", idx);
+            let word_count = blockquote.content.split_whitespace().count();
+            total_words += word_count;
+            block_word_counts.push((block_id, word_count));
+        }
+
+        metadata.total_word_count = total_words;
+        metadata.block_word_counts = block_word_counts;
+
+        // Estimate reading time (assuming 200 words per minute)
+        metadata.reading_time_minutes = (total_words as f32) / 200.0;
+
+        // Language detection: default to English
+        // TODO: Could use actual language detection library if needed
         metadata.language = Some("en".to_string());
-        metadata.reading_time_minutes = 0.0;
-        metadata.complexity_score = 0.5;
 
-        debug!("Metadata extracted: {} words", metadata.total_word_count);
+        // Calculate complexity score based on:
+        // - Number of headings (structure)
+        // - Number of code blocks (technical content)
+        // - Average words per block
+        // - Number of links (connectivity)
+        let heading_count = parsed.content.headings.len() as f32;
+        let code_count = parsed.content.code_blocks.len() as f32;
+        let link_count = (parsed.wikilinks.len() + parsed.inline_links.len()) as f32;
+        let avg_words_per_block = if !metadata.block_word_counts.is_empty() {
+            total_words as f32 / metadata.block_word_counts.len() as f32
+        } else {
+            0.0
+        };
+
+        // Normalize and combine factors (0.0-1.0 scale)
+        let structure_score = (heading_count / 10.0).min(1.0);
+        let technical_score = (code_count / 5.0).min(1.0);
+        let connectivity_score = (link_count / 10.0).min(1.0);
+        let verbosity_score = (avg_words_per_block / 100.0).min(1.0);
+
+        metadata.complexity_score =
+            (structure_score * 0.3 + technical_score * 0.2 +
+             connectivity_score * 0.2 + verbosity_score * 0.3)
+            .clamp(0.0, 1.0);
+
+        debug!(
+            "Metadata extracted: {} words, {:.1} min read, complexity {:.2}",
+            metadata.total_word_count,
+            metadata.reading_time_minutes,
+            metadata.complexity_score
+        );
 
         Ok(metadata)
     }
@@ -309,9 +459,12 @@ mod tests {
 
         let metadata = service.extract_metadata(&parsed).await.unwrap();
 
-        // Should create metadata with default values
+        // Empty note should have zero word count and complexity
         assert_eq!(metadata.language, Some("en".to_string()));
-        assert_eq!(metadata.complexity_score, 0.5);
+        assert_eq!(metadata.total_word_count, 0);
+        assert_eq!(metadata.reading_time_minutes, 0.0);
+        assert_eq!(metadata.complexity_score, 0.0);
+        assert_eq!(metadata.block_word_counts.len(), 0);
     }
 
     #[tokio::test]
