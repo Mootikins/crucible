@@ -1862,6 +1862,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "crucible-enrichment"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "crucible-core",
+ "crucible-parser",
+ "num_cpus",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "crucible-llm"
 version = "0.1.0"
 dependencies = [

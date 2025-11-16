@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/crucible-core",
     "crates/crucible-parser",
+    "crates/crucible-enrichment",
     "crates/crucible-tauri",
     "crates/crucible-cli",
     "crates/crucible-sync",

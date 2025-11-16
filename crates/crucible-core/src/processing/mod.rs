@@ -12,8 +12,11 @@
 //! - Core layer: Provide handoff types for clean communication
 //! - Processing layer: Coordinate processing without transaction structure knowledge
 //! - Database layer: Build and execute transaction sequences with dependency resolution
-
-pub mod document_processor;
+//!
+//! ## Note
+//!
+//! DocumentProcessor has moved to `crucible-enrichment` crate, as it orchestrates
+//! the enrichment pipeline and depends on enrichment services.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -21,11 +24,6 @@ use std::time::SystemTime;
 
 // Re-export ParsedNote from parser for convenience
 pub use crucible_parser::types::ParsedNote;
-
-// Re-export document processor types
-pub use document_processor::{
-    DocumentProcessor, DocumentProcessingResult, ProcessingMetrics, ProcessorConfig,
-};
 
 /// A processed note ready for database transaction building
 ///
