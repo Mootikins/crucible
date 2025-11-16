@@ -43,11 +43,10 @@ use std::sync::Arc;
 pub async fn create_provider(
     config: EmbeddingConfig,
 ) -> EmbeddingResult<Arc<dyn EmbeddingProvider>> {
-    // Validate configuration before creating provider
-    config.validate()
-        .map_err(|e| EmbeddingError::ConfigError(e.to_string()))?;
+    // Validate configuration before creating provider (From impl handles error conversion)
+    config.validate()?;
 
-    match config.provider_type {
+    match config.provider_type() {
         EmbeddingProviderType::Ollama => {
             let provider = ollama::OllamaProvider::new(config)?;
             Ok(Arc::new(provider))
@@ -90,7 +89,7 @@ mod tests {
             Some("nomic-embed-text".to_string()),
         );
 
-        assert_eq!(config.provider_type, EmbeddingProviderType::Ollama);
+        assert_eq!(config.provider_type(), EmbeddingProviderType::Ollama);
         assert_eq!(config.model_name(), "nomic-embed-text");
     }
 }
