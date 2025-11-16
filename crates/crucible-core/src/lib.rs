@@ -35,10 +35,12 @@ pub use enrichment::{
     NoteMetadata, RelationType,
 };
 
-// Re-export processing handoff types
+// Re-export processing handoff types and change detection
 pub use processing::{
-    JobConfiguration, JobStats, NoteProcessingJob, NoteProcessingResult, ProcessedNote,
-    ProcessingContext, ProcessingMetadata, ProcessingPriority, ProcessingSource,
+    ChangeDetectionError, ChangeDetectionResult, ChangeDetectionStore, FileState,
+    InMemoryChangeDetectionStore, JobConfiguration, JobStats, NoteProcessingJob,
+    NoteProcessingResult, ProcessedNote, ProcessingContext, ProcessingMetadata,
+    ProcessingPriority, ProcessingSource,
 };
 
 // Re-export core traits (abstractions for Dependency Inversion)

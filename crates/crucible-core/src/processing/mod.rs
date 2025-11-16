@@ -18,6 +18,13 @@
 //! DocumentProcessor has moved to `crucible-enrichment` crate, as it orchestrates
 //! the enrichment pipeline and depends on enrichment services.
 
+pub mod change_detection;
+
+pub use change_detection::{
+    ChangeDetectionError, ChangeDetectionResult, ChangeDetectionStore, FileState,
+    InMemoryChangeDetectionStore,
+};
+
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::SystemTime;
