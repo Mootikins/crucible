@@ -1933,6 +1933,7 @@ dependencies = [
  "criterion 0.7.0",
  "crucible-config",
  "crucible-core",
+ "crucible-enrichment",
  "crucible-llm",
  "crucible-parser",
  "futures",
