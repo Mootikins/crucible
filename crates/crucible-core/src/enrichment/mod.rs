@@ -14,17 +14,22 @@
 //! ## Components
 //!
 //! - **config**: Configuration types for embedding enrichment operations
+//! - **types**: EnrichedNote and related types
 //! - **service**: EnrichmentService orchestrator (future)
-//! - **embedding**: EmbeddingProvider trait abstraction (future)
 //! - **metadata**: Metadata extraction (future)
 //! - **relations**: Relation inference (future)
-//! - **types**: EnrichedNote and related types (future)
 
 pub mod config;
+pub mod types;
 
-// Re-export commonly used types
+// Re-export commonly used configuration types
 pub use config::{
     BatchIncrementalResult, DocumentEmbedding, EmbeddingConfig, EmbeddingError,
     EmbeddingErrorType, EmbeddingModel, EmbeddingProcessingResult, IncrementalProcessingResult,
     PrivacyMode, RetryProcessingResult, ThreadPoolMetrics, validate_embedding_config,
+};
+
+// Re-export enrichment types
+pub use types::{
+    BlockEmbedding, EnrichedNote, InferredRelation, InferredRelationType, NoteMetadata,
 };
