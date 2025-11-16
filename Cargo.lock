@@ -1839,6 +1839,7 @@ dependencies = [
  "futures",
  "hex",
  "notify",
+ "num_cpus",
  "parking_lot",
  "pulldown-cmark",
  "rand 0.9.2",

@@ -1,13 +1,13 @@
-//! Embedding Thread Pool Configuration
+//! Enrichment Configuration
 //!
-//! Configuration types and validation for the vector embedding thread pool system.
-//! Provides privacy-focused local processing with configurable performance settings.
+//! Configuration types for the vector embedding enrichment system.
+//! Provides provider-agnostic configuration with performance optimization presets.
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-/// Configuration for embedding thread pool operations
+/// Configuration for embedding enrichment operations
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EmbeddingConfig {
     /// Number of worker threads for parallel processing
@@ -245,7 +245,7 @@ impl PrivacyMode {
     }
 }
 
-/// Metrics for thread pool performance monitoring
+/// Metrics for enrichment performance monitoring
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThreadPoolMetrics {
     /// Total number of tasks processed
