@@ -813,57 +813,88 @@ impl EmbeddingProviderConfig {
     }
 
     /// Validate the configuration
-    pub fn validate(&self) -> Result<(), String> {
+    #[must_use]
+    pub fn validate(&self) -> Result<(), crate::ConfigValidationError> {
+        use crate::ConfigValidationError;
+
         match self {
             Self::OpenAI(c) => {
                 if c.api_key.is_empty() {
-                    return Err("OpenAI API key is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "api_key".to_string(),
+                    });
                 }
                 if c.model.is_empty() {
-                    return Err("OpenAI model name is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "model".to_string(),
+                    });
                 }
             }
             Self::Ollama(c) => {
                 if c.model.is_empty() {
-                    return Err("Ollama model name is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "model".to_string(),
+                    });
                 }
                 if c.base_url.is_empty() {
-                    return Err("Ollama base URL is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "base_url".to_string(),
+                    });
                 }
             }
             Self::FastEmbed(c) => {
                 if c.model.is_empty() {
-                    return Err("FastEmbed model name is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "model".to_string(),
+                    });
                 }
                 if c.batch_size == 0 {
-                    return Err("FastEmbed batch size must be greater than 0".to_string());
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "batch_size".to_string(),
+                        reason: "must be greater than 0".to_string(),
+                    });
                 }
             }
             Self::Cohere(c) => {
                 if c.api_key.is_empty() {
-                    return Err("Cohere API key is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "api_key".to_string(),
+                    });
                 }
                 if c.model.is_empty() {
-                    return Err("Cohere model name is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "model".to_string(),
+                    });
                 }
             }
             Self::VertexAI(c) => {
                 if c.project_id.is_empty() {
-                    return Err("VertexAI project ID is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "project_id".to_string(),
+                    });
                 }
                 if c.model.is_empty() {
-                    return Err("VertexAI model name is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "model".to_string(),
+                    });
                 }
             }
             Self::Custom(c) => {
                 if c.base_url.is_empty() {
-                    return Err("Custom provider base URL is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "base_url".to_string(),
+                    });
                 }
                 if c.model.is_empty() {
-                    return Err("Custom provider model name is required".to_string());
+                    return Err(ConfigValidationError::MissingField {
+                        field: "model".to_string(),
+                    });
                 }
                 if c.dimensions == 0 {
-                    return Err("Custom provider dimensions must be greater than 0".to_string());
+                    return Err(ConfigValidationError::InvalidValue {
+                        field: "dimensions".to_string(),
+                        reason: "must be greater than 0".to_string(),
+                    });
                 }
             }
             Self::Mock(_) => {

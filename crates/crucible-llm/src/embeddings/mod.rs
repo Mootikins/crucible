@@ -44,7 +44,8 @@ pub async fn create_provider(
     config: EmbeddingConfig,
 ) -> EmbeddingResult<Arc<dyn EmbeddingProvider>> {
     // Validate configuration before creating provider
-    config.validate()?;
+    config.validate()
+        .map_err(|e| EmbeddingError::ConfigError(e.to_string()))?;
 
     match config.provider_type {
         EmbeddingProviderType::Ollama => {

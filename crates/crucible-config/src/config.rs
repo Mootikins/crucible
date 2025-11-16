@@ -6,6 +6,33 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
 
+/// Errors that can occur during configuration validation.
+#[derive(Error, Debug, Clone, PartialEq)]
+pub enum ConfigValidationError {
+    /// A required field is missing or empty
+    #[error("Missing required field: {field}")]
+    MissingField {
+        /// Name of the missing field
+        field: String,
+    },
+
+    /// A field contains an invalid value
+    #[error("Invalid value for {field}: {reason}")]
+    InvalidValue {
+        /// Name of the field with invalid value
+        field: String,
+        /// Reason why the value is invalid
+        reason: String,
+    },
+
+    /// Multiple validation errors occurred
+    #[error("Multiple validation errors: {errors:?}")]
+    Multiple {
+        /// List of validation errors
+        errors: Vec<String>,
+    },
+}
+
 /// Errors that can occur during configuration operations.
 #[derive(Error, Debug)]
 pub enum ConfigError {
