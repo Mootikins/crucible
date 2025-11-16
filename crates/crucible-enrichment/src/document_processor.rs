@@ -36,7 +36,7 @@
 //! }
 //! ```
 
-use crate::{EnrichedNote, EnrichmentService};
+use crate::EnrichedNote;
 use crucible_core::merkle::HybridMerkleTree;
 use anyhow::{Context, Result};
 use crucible_parser::{CrucibleParser, ParsedNote, traits::MarkdownParserImplementation};
@@ -387,7 +387,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_document_processor_creation() {
-        let service = Arc::new(EnrichmentService::without_embeddings());
+        let service = Arc::new(crate::DefaultEnrichmentService::without_embeddings());
         let processor = DocumentProcessor::new(service);
 
         assert!(processor.config.enable_quick_filter);
@@ -396,7 +396,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_simple_document() {
-        let service = Arc::new(EnrichmentService::without_embeddings());
+        let service = Arc::new(crate::DefaultEnrichmentService::without_embeddings());
         let processor = DocumentProcessor::new(service);
 
         let content = "# Test Heading\n\nThis is a test paragraph with more than three words.";
@@ -412,7 +412,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_with_skip_enrichment() {
-        let service = Arc::new(EnrichmentService::without_embeddings());
+        let service = Arc::new(crate::DefaultEnrichmentService::without_embeddings());
         let config = ProcessorConfig {
             skip_enrichment: true,
             ..Default::default()
@@ -433,7 +433,7 @@ mod tests {
     async fn test_extract_all_block_ids() {
         use crucible_parser::types::*;
 
-        let service = Arc::new(EnrichmentService::without_embeddings());
+        let service = Arc::new(crate::DefaultEnrichmentService::without_embeddings());
         let processor = DocumentProcessor::new(service);
 
         let mut parsed = ParsedNote {
