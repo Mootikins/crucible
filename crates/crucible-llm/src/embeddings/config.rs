@@ -30,7 +30,7 @@ impl ProviderType {
     /// Get default endpoint for this provider
     pub fn default_endpoint(&self) -> &'static str {
         match self {
-            ProviderType::Ollama => "https://llama.terminal.krohnos.io",
+            ProviderType::Ollama => "http://localhost:11434",
             ProviderType::OpenAI => "https://api.openai.com/v1",
         }
     }
@@ -129,7 +129,7 @@ mod tests {
         let ollama = ProviderType::Ollama;
         assert_eq!(
             ollama.default_endpoint(),
-            "https://llama.terminal.krohnos.io"
+            "http://localhost:11434"
         );
         assert_eq!(ollama.default_model(), "nomic-embed-text");
         assert_eq!(ollama.default_dimensions(), 768);

@@ -91,7 +91,8 @@ impl OpenAIProvider {
     /// Create a new OpenAI provider from configuration
     pub fn new(config: EmbeddingConfig) -> EmbeddingResult<Self> {
         // Validate configuration
-        config.validate()?;
+        config.validate()
+            .map_err(|e| EmbeddingError::ConfigError(e.to_string()))?;
 
         // Get API key using helper method
         let api_key = config
