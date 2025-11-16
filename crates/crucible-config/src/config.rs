@@ -1,6 +1,7 @@
 //! Core configuration types and structures.
 
-use crate::{EmbeddingProviderConfig, ProfileConfig};
+use crate::ProfileConfig;
+use crucible_core::enrichment::EnrichmentConfig;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -64,8 +65,8 @@ pub struct Config {
     #[serde(default)]
     pub profiles: HashMap<String, ProfileConfig>,
 
-    /// Embedding configuration.
-    pub embedding: Option<EmbeddingProviderConfig>,
+    /// Enrichment configuration (includes embedding provider).
+    pub enrichment: Option<EnrichmentConfig>,
 
     /// Default database configuration.
     pub database: Option<DatabaseConfig>,
@@ -86,7 +87,7 @@ impl Default for Config {
         Self {
             profile: Some("default".to_string()),
             profiles: HashMap::from([("default".to_string(), ProfileConfig::default())]),
-            embedding: None,
+            enrichment: None,
             database: None,
             server: None,
             logging: None,
@@ -111,20 +112,20 @@ impl Config {
             })
     }
 
-    /// Get the effective embedding provider configuration.
-    pub fn embedding_provider(&self) -> Result<EmbeddingProviderConfig, ConfigError> {
-        if let Some(provider) = &self.embedding {
-            return Ok(provider.clone());
+    /// Get the effective enrichment configuration.
+    pub fn enrichment_config(&self) -> Result<EnrichmentConfig, ConfigError> {
+        if let Some(config) = &self.enrichment {
+            return Ok(config.clone());
         }
 
         // Fall back to profile configuration
         let profile = self.active_profile()?;
-        if let Some(provider) = &profile.embedding_provider {
-            return Ok(provider.clone());
+        if let Some(config) = &profile.enrichment {
+            return Ok(config.clone());
         }
 
         Err(ConfigError::MissingValue {
-            field: "embedding".to_string(),
+            field: "enrichment".to_string(),
         })
     }
 

@@ -47,9 +47,6 @@ pub use types::{
 // Re-export service
 pub use service::{DefaultEnrichmentService, DEFAULT_MAX_BATCH_SIZE, DEFAULT_MIN_WORDS_FOR_EMBEDDING};
 
-// Backward compatibility alias
-pub type EnrichmentService = DefaultEnrichmentService;
-
 // Re-export document processor
 pub use document_processor::{
     DocumentProcessor, DocumentProcessingResult, ProcessingMetrics, ProcessorConfig,

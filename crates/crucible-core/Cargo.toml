@@ -31,9 +31,6 @@ tempfile = { workspace = true }
 # Enhanced async runtime
 tokio = { workspace = true, features = ["full", "tracing"] }
 
-# Configuration dependencies
-crucible-config = { workspace = true }
-
 # Parser dependency (now separate crate with dependency inversion)
 crucible-parser = { workspace = true }
 
