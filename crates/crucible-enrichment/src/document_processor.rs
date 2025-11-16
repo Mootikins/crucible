@@ -407,7 +407,7 @@ mod tests {
 
         let result = result.unwrap();
         assert!(result.metrics.total_duration.as_millis() > 0);
-        assert!(result.enriched.metadata.total_word_count > 0);
+        assert!(result.enriched.parsed.metadata.word_count > 0);
     }
 
     #[tokio::test]
@@ -452,6 +452,7 @@ mod tests {
             parse_errors: Vec::new(),
             block_hashes: vec![],
             merkle_root: None,
+            metadata: Default::default(),
         };
 
         // Add some content

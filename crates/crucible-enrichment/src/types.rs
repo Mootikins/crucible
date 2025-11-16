@@ -73,9 +73,9 @@ impl EnrichedNote {
         self.embeddings.len()
     }
 
-    /// Get total word count from metadata
+    /// Get total word count from parsed note metadata
     pub fn word_count(&self) -> usize {
-        self.metadata.total_word_count
+        self.parsed.metadata.word_count
     }
 }
 
@@ -149,23 +149,24 @@ impl BlockEmbedding {
     }
 }
 
-/// Metadata extracted and computed during enrichment
+/// Computed metadata for enriched notes
+///
+/// Contains only metadata computed during enrichment phase, not structural
+/// metadata extracted during parsing (which lives in `ParsedNoteMetadata`).
+///
+/// This follows industry standard separation:
+/// - Parser: Structural metrics (word count, element counts)
+/// - Enrichment: Computed metrics (complexity, reading time, analysis)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NoteMetadata {
-    /// Total word count across all blocks
-    pub total_word_count: usize,
-
-    /// Word count per block
-    pub block_word_counts: Vec<(String, usize)>, // (block_id, count)
-
-    /// Detected language (if applicable)
-    pub language: Option<String>,
-
-    /// Estimated reading time in minutes
+    /// Estimated reading time in minutes (computed from word count)
     pub reading_time_minutes: f32,
 
-    /// Content complexity score (0.0-1.0)
+    /// Content complexity score (0.0-1.0) computed from AST structure
     pub complexity_score: f32,
+
+    /// Detected language (if applicable, computed from content)
+    pub language: Option<String>,
 
     /// When this metadata was computed
     pub computed_at: DateTime<Utc>,
@@ -175,22 +176,36 @@ impl NoteMetadata {
     /// Create new metadata with defaults
     pub fn new() -> Self {
         Self {
-            total_word_count: 0,
-            block_word_counts: Vec::new(),
-            language: None,
             reading_time_minutes: 0.0,
             complexity_score: 0.0,
+            language: None,
             computed_at: Utc::now(),
         }
     }
 
-    /// Calculate average words per block
-    pub fn avg_words_per_block(&self) -> f32 {
-        if self.block_word_counts.is_empty() {
-            0.0
-        } else {
-            self.total_word_count as f32 / self.block_word_counts.len() as f32
-        }
+    /// Compute reading time from word count
+    /// Assumes average reading speed of 200 words per minute
+    pub fn compute_reading_time(word_count: usize) -> f32 {
+        const WORDS_PER_MINUTE: f32 = 200.0;
+        word_count as f32 / WORDS_PER_MINUTE
+    }
+
+    /// Compute complexity score from AST element counts
+    /// Returns value between 0.0 (simple) and 1.0 (complex)
+    pub fn compute_complexity(
+        heading_count: usize,
+        code_block_count: usize,
+        list_count: usize,
+        latex_count: usize,
+    ) -> f32 {
+        // Simple heuristic: normalize by expected maximum counts
+        let heading_score = (heading_count as f32 / 20.0).min(1.0);
+        let code_score = (code_block_count as f32 / 10.0).min(1.0);
+        let list_score = (list_count as f32 / 15.0).min(1.0);
+        let latex_score = (latex_count as f32 / 5.0).min(1.0);
+
+        // Weighted average
+        (heading_score * 0.2 + code_score * 0.3 + list_score * 0.2 + latex_score * 0.3).min(1.0)
     }
 }
 
@@ -324,15 +339,32 @@ mod tests {
     }
 
     #[test]
-    fn test_note_metadata() {
-        let mut metadata = NoteMetadata::new();
-        metadata.total_word_count = 100;
-        metadata.block_word_counts = vec![
-            ("block_1".to_string(), 50),
-            ("block_2".to_string(), 50),
-        ];
+    fn test_note_metadata_reading_time() {
+        // Test reading time computation (200 words/minute)
+        let reading_time = NoteMetadata::compute_reading_time(1000);
+        assert_eq!(reading_time, 5.0); // 1000 words / 200 wpm = 5 minutes
+    }
 
-        assert_eq!(metadata.avg_words_per_block(), 50.0);
+    #[test]
+    fn test_note_metadata_complexity() {
+        // Test complexity computation
+        let complexity = NoteMetadata::compute_complexity(
+            10,  // headings
+            5,   // code blocks
+            8,   // lists
+            2,   // latex
+        );
+
+        // Should be between 0.0 and 1.0
+        assert!(complexity >= 0.0 && complexity <= 1.0);
+
+        // Test simple document (low counts)
+        let simple = NoteMetadata::compute_complexity(1, 0, 1, 0);
+        assert!(simple < 0.2); // Should be low complexity
+
+        // Test complex document (high counts)
+        let complex = NoteMetadata::compute_complexity(20, 15, 20, 10);
+        assert!(complex > 0.8); // Should be high complexity (close to max)
     }
 
     #[test]
