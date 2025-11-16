@@ -22,11 +22,18 @@ This change corrects the architecture to match the clean enrichment pipeline doc
 
 ### Architecture Corrections
 
-**NEW: Enrichment Layer in crucible-core**:
+**NEW: crucible-enrichment Crate** (Completed 2025-11-16):
+- Separate crate for enrichment business logic (follows clean architecture)
 - `EnrichmentService` orchestrator coordinates all enrichment operations
-- `EmbeddingProvider` trait abstraction (SOLID/Dependency Inversion)
+- `EmbeddingProvider` trait in crucible-core (SOLID/Dependency Inversion)
 - Parallel enrichment: embeddings, metadata extraction, relation inference
 - Clear separation: Parser (pure) → Enrichment (business logic) → Storage (pure I/O)
+
+**NEW: Metadata Split** (In Progress):
+- **Structural metadata** in parser: word count, char count, heading/block counts
+- **Computed metadata** in enrichment: complexity score, reading time, semantic analysis
+- Industry standard pattern (Unified/Remark, Pandoc, Elasticsearch, Apache Tika)
+- Enables metadata access without requiring enrichment
 
 **Refactored: Embedding Components**:
 - Trait definitions moved to `crucible-core/src/enrichment/embedding.rs`
@@ -56,25 +63,59 @@ This change corrects the architecture to match the clean enrichment pipeline doc
 ## Impact
 
 ### Files Created
-- `crucible-core/src/enrichment/mod.rs` - Module entry point
-- `crucible-core/src/enrichment/service.rs` - EnrichmentService orchestrator
-- `crucible-core/src/enrichment/embedding.rs` - EmbeddingProvider trait
-- `crucible-core/src/enrichment/metadata.rs` - MetadataExtractor
-- `crucible-core/src/enrichment/relations.rs` - RelationInferrer
-- `crucible-core/src/enrichment/types.rs` - EnrichedNote and related types
+
+**crucible-enrichment Crate** (✅ Complete):
+- `crates/crucible-enrichment/Cargo.toml` - Enrichment crate manifest
+- `crates/crucible-enrichment/src/lib.rs` - Module entry point
+- `crates/crucible-enrichment/src/service.rs` - EnrichmentService orchestrator (moved from core)
+- `crates/crucible-enrichment/src/types.rs` - EnrichedNote and related types (moved from core)
+- `crates/crucible-enrichment/src/config.rs` - Configuration types (moved from core)
+- `crates/crucible-enrichment/src/document_processor.rs` - Five-phase pipeline (moved from core)
+
+**crucible-parser Metadata** (🔄 In Progress):
+- `crates/crucible-parser/src/metadata.rs` - Structural metadata extraction
+
+**crucible-core Trait** (✅ Complete):
+- `crates/crucible-core/src/enrichment/mod.rs` - Only EmbeddingProvider trait export
+- `crates/crucible-core/src/enrichment/embedding.rs` - EmbeddingProvider trait
+
+**crucible-llm Providers** (Planned):
 - `crucible-llm/src/providers/mod.rs` - Provider module
 - `crucible-llm/src/providers/fastembed.rs` - Fastembed implementation
 - `crucible-llm/src/providers/openai.rs` - OpenAI implementation (future)
 
 ### Files Refactored
-- `crucible-surrealdb/src/embedding.rs` - Reduce to storage-only operations
-- `crucible-surrealdb/src/eav_graph/ingest.rs` - Integrate with EnrichmentService
-- `crucible-core/src/processing/mod.rs` - Add enrichment phase to pipeline
+
+**crucible-core** (✅ Complete):
+- `crates/crucible-core/src/enrichment/mod.rs` - Stripped to only export EmbeddingProvider trait
+- `crates/crucible-core/src/lib.rs` - Updated exports for trait-only enrichment module
+- `crates/crucible-core/Cargo.toml` - Removed circular dependencies
+
+**crucible-surrealdb** (✅ Import updates complete):
+- `crates/crucible-surrealdb/src/embedding.rs` - Updated imports to use crucible-enrichment
+- `crates/crucible-surrealdb/src/embedding_pipeline.rs` - Updated imports
+- `crates/crucible-surrealdb/src/embedding_pool.rs` - Updated imports
+- `crates/crucible-surrealdb/Cargo.toml` - Added crucible-enrichment dependency
+
+**crucible-parser** (🔄 In Progress):
+- `crates/crucible-parser/src/types.rs` - Add structural metadata to ParsedNote
+
+**Future**:
+- `crucible-surrealdb/src/eav_graph/ingest.rs` - Integrate with DocumentProcessor
+- Storage layer reduction to pure I/O
 
 ### Files Deleted
-- `crucible-surrealdb/src/embedding_pipeline.rs` - Business logic moves to core
+
+**Completed**:
+- `crates/crucible-core/src/enrichment/config.rs` - Moved to crucible-enrichment
+- `crates/crucible-core/src/enrichment/service.rs` - Moved to crucible-enrichment
+- `crates/crucible-core/src/enrichment/types.rs` - Moved to crucible-enrichment
+- `crates/crucible-core/src/processing/document_processor.rs` - Moved to crucible-enrichment
+
+**Future**:
+- `crucible-surrealdb/src/embedding_pipeline.rs` - Business logic moves to enrichment
 - `crucible-surrealdb/src/embedding_pool.rs` - Thread management moves to provider impl
-- `crucible-surrealdb/src/embedding_config.rs` - Config moves to core or provider
+- `crucible-surrealdb/src/embedding_config.rs` - Config already in crucible-enrichment
 
 ### Affected Specs
 - `embeddings` - Updated with correct architecture and data flow

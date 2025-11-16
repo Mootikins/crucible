@@ -1,10 +1,20 @@
 # Vector Embedding Integration Implementation Tasks
 
 **Change ID**: `2025-11-11-vector-embedding-integration`
-**Status**: Ready for Implementation (Revised Architecture)
+**Status**: In Progress - Phase 0 Complete, Metadata Refactoring In Progress
 **Updated**: 2025-11-16
 **Timeline**: 4 weeks (44 developer days)
 **Scope**: Major refactoring - 11,846 lines to move, 3,800 lines new code, 5 files deleted
+
+## Recent Completions
+
+### ✅ Created crucible-enrichment Crate (2025-11-16)
+- Extracted enrichment business logic from crucible-core into separate crate
+- Moved EnrichmentService, EnrichedNote, DocumentProcessor to crucible-enrichment
+- Kept only EmbeddingProvider trait in crucible-core (clean architecture)
+- Eliminated circular dependencies between core and enrichment
+- All tests passing (730 tests across refactored crates)
+- **Commits**: 02af23d, d248d71, 232c667
 
 ## Overview
 
@@ -50,12 +60,97 @@ This implementation corrects severe architectural violations and establishes the
 4. **Verify**: Document current test coverage and ensure it's maintained
 
 **Acceptance Criteria:**
-- [ ] Complete audit document listing all embedding-related code
-- [ ] Migration plan identifies destination for each component
-- [ ] Test coverage baseline established
-- [ ] No changes made yet (documentation only)
+- [x] Complete audit document listing all embedding-related code
+- [x] Migration plan identifies destination for each component
+- [x] Test coverage baseline established
+- [x] No changes made yet (documentation only)
 
-### Task 0.2: Extract Configuration to Core
+**Status**: ✅ COMPLETE - See PHASE0_AUDIT.md
+
+### Task 0.2: Create crucible-enrichment Crate
+
+**Files Created:**
+- `crates/crucible-enrichment/Cargo.toml`
+- `crates/crucible-enrichment/src/lib.rs`
+- `crates/crucible-enrichment/src/service.rs` (moved from core)
+- `crates/crucible-enrichment/src/types.rs` (moved from core)
+- `crates/crucible-enrichment/src/config.rs` (moved from core)
+- `crates/crucible-enrichment/src/document_processor.rs` (moved from core)
+
+**Files Modified:**
+- `Cargo.toml` (workspace members)
+- `crates/crucible-core/src/enrichment/mod.rs` (only exports trait)
+- `crates/crucible-core/src/lib.rs` (updated exports)
+- `crates/crucible-core/Cargo.toml` (removed circular dependency)
+- `crates/crucible-surrealdb/src/embedding*.rs` (updated imports)
+
+**TDD Steps:**
+1. ✅ Created new crate structure
+2. ✅ Moved enrichment business logic from core
+3. ✅ Updated all imports across codebase
+4. ✅ Verified all tests pass (730 tests)
+
+**Acceptance Criteria:**
+- [x] crucible-enrichment crate created with proper structure
+- [x] EnrichmentService, EnrichedNote, DocumentProcessor moved
+- [x] Only EmbeddingProvider trait remains in crucible-core
+- [x] No circular dependencies
+- [x] All tests passing
+- [x] crucible-surrealdb imports updated
+
+**Status**: ✅ COMPLETE
+
+---
+
+### Task 0.3: Split Metadata Between Parser and Enrichment
+
+**Research Basis**: Industry standard pattern from Unified/Remark, Pandoc, Elasticsearch, Apache Tika
+- **Parse phase**: Structural metadata (word count, char count, tags, links, headings)
+- **Enrich phase**: Computed metadata (complexity score, reading time, semantic analysis)
+
+**Files to Create:**
+- `crates/crucible-parser/src/metadata.rs` (new)
+
+**Files to Modify:**
+- `crates/crucible-parser/src/types.rs` (add ParsedNoteMetadata)
+- `crates/crucible-enrichment/src/types.rs` (update NoteMetadata)
+- `crates/crucible-enrichment/src/service.rs` (use parser metadata)
+
+**TDD Steps:**
+1. **RED**: Write tests for parser extracting structural metadata
+2. **GREEN**: Implement metadata extraction during parse
+3. **REFACTOR**: Update enrichment to use parser metadata + add computed fields
+4. **VERIFY**: All tests pass, metadata split is clean
+
+**Acceptance Criteria:**
+- [ ] `ParsedNote` includes structural metadata:
+  - `word_count: usize`
+  - `char_count: usize`
+  - `heading_count: usize`
+  - `code_block_count: usize`
+  - `list_count: usize`
+  - Available immediately after parsing, no enrichment needed
+- [ ] `EnrichedNote` metadata includes computed fields:
+  - `complexity_score: f64` (computed from AST structure)
+  - `reading_time: Duration` (computed from word count)
+  - `readability_score: Option<f64>` (future: Flesch-Kincaid)
+- [ ] Clear separation: parser = structure, enrichment = semantics
+- [ ] Performance: metadata extraction adds <5% to parse time
+- [ ] All existing tests pass with updated metadata structure
+
+**Future Work**:
+- **Phase 2**: Transform pattern (`ASTTransform` trait) for extensible pipeline
+  - Trait definition in crucible-core
+  - EnrichmentService becomes one transform in a pipeline
+  - Enables plugins/extensions to add custom transforms
+  - Mirrors industry patterns: Pandoc filters, Unified/Remark plugins
+  - Design after validating metadata split
+
+**Status**: 🔄 IN PROGRESS
+
+---
+
+### Task 0.4: Extract Configuration to Core
 
 **Files to Create/Modify:**
 - `crates/crucible-core/src/config/embedding.rs` (new)
