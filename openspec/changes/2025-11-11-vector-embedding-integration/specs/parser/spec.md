@@ -3,12 +3,13 @@
 ## MODIFIED Requirements
 
 ### Requirement: Block-Level Processing (Pure Transformation)
-The parser SHALL remain a pure transformation layer (Markdown → AST → EPR), with NO embedding generation or business logic. The parser provides structured blocks that are consumed by the EnrichmentService.
+The parser SHALL remain a pure transformation layer (Markdown → AST tree), with NO embedding generation or business logic. The parser builds a tree structure from pulldown-cmark's event stream and provides structured blocks for downstream processing.
 
 **Architecture Clarification**:
-- **Parser Responsibility**: Transform Markdown to structured AST blocks
-- **Enrichment Responsibility**: Use AST blocks for embedding, metadata, relations
-- **Clear Separation**: Parser is Phase 2, Enrichment is Phase 4
+- **Parser Responsibility**: Transform event stream → AST tree (unavoidable first pass)
+- **Pulldown-cmark Output**: Flat event stream (NOT a tree) - parser must build tree structure
+- **Enrichment Responsibility**: Use Merkle diff results to process only changed blocks
+- **Clear Separation**: Parser is Phase 2, Enrichment is Phase 4 (processes changed blocks only)
 
 #### Scenario: AST block creation for enrichment pipeline
 - **WHEN** parser processes markdown document
@@ -26,11 +27,13 @@ The parser SHALL remain a pure transformation layer (Markdown → AST → EPR), 
   - Block ID for referencing
 - **AND** metadata is purely structural, NOT derived (no word counts, language detection)
 
-#### Scenario: Parser output consumed by enrichment
-- **WHEN** parser completes and returns ParsedNote
-- **THEN** Phase 3 uses blocks to build Merkle tree
-- **AND** Phase 4 EnrichmentService uses blocks for embedding generation
-- **AND** EnrichmentService filters blocks (<5 words) during enrichment, not parsing
+#### Scenario: Parser output consumed by downstream phases
+- **WHEN** parser completes and returns ParsedNote (AST tree)
+- **THEN** Phase 3 performs single tree traversal to build Merkle tree
+- **AND** Phase 3 diffs Merkle tree with stored tree → identifies changed block IDs
+- **AND** Phase 4 EnrichmentService processes ONLY changed blocks (per Merkle diff)
+- **AND** EnrichmentService extracts relations, generates embeddings, computes metadata for changed blocks only
+- **AND** Unchanged blocks skip enrichment entirely (efficiency via Merkle diff)
 
 ### Requirement: Document Metadata (Extracted in Enrichment, NOT Parser)
 Document metadata derived from content analysis (word counts, language, complexity) SHALL be extracted in the EnrichmentService, NOT during parsing.

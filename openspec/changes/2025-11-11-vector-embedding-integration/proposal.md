@@ -33,12 +33,17 @@ This change corrects the architecture to match the clean enrichment pipeline doc
 - Provider implementations in `crucible-llm/src/providers/` (Fastembed, OpenAI)
 - Storage layer only handles vector persistence/search (stays in `crucible-surrealdb`)
 
-**NEW: Five-Phase Data Flow**:
-1. Quick Filter: Check file modified date + hash (skip unchanged files)
-2. Parsing: Markdown → AST (full file parse)
-3. Merkle Diff: Build tree from AST → compare to stored tree → identify changed blocks
-4. Enrichment: Generate embeddings (changed blocks only) + metadata + relations
-5. Storage: Transactional persistence of enriched data
+**NEW: Five-Phase Data Flow (Merkle-Driven Efficiency)**:
+1. **Quick Filter**: Check file modified date + BLAKE3 hash (skip if unchanged)
+2. **Parse to AST**: Build tree structure from pulldown-cmark event stream (unavoidable)
+3. **Merkle Diff**: Single tree traversal to build Merkle tree + diff with stored tree → identify changed blocks
+4. **Enrich Changed Blocks**: Process ONLY changed blocks (per Merkle diff):
+   - Generate embeddings (>5 words)
+   - Extract relations (wikilinks, tags)
+   - Compute metadata (word counts, language)
+5. **Storage**: Transactional persistence of enriched data
+
+**Efficiency Strategy**: Merkle diff identifies changed blocks, avoiding redundant processing of unchanged content. Multiple logical passes are acceptable - real efficiency comes from processing only what changed.
 
 ### Technical Changes
 
