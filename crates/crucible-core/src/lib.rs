@@ -5,6 +5,7 @@ pub mod content_category;
 pub mod crdt;
 pub mod crucible_core;
 pub mod database;
+pub mod enrichment;
 pub mod hashing;
 pub mod merkle;
 pub mod note;
@@ -27,6 +28,13 @@ pub use config::{
 };
 pub use content_category::{ContentCategory, ContentCategoryError};
 pub use crucible_core::CrucibleCore;
+
+// Re-export enrichment configuration types
+pub use enrichment::{
+    BatchIncrementalResult, DocumentEmbedding, EmbeddingConfig, EmbeddingError,
+    EmbeddingErrorType, EmbeddingModel, EmbeddingProcessingResult, IncrementalProcessingResult,
+    PrivacyMode, RetryProcessingResult, ThreadPoolMetrics, validate_embedding_config,
+};
 
 // Re-export processing handoff types
 pub use processing::{

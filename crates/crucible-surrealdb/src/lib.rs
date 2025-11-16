@@ -58,7 +58,6 @@ pub mod types;
 // Embedding modules
 #[cfg(feature = "embeddings")]
 pub mod embedding;
-pub mod embedding_config;
 #[cfg(feature = "embeddings")]
 pub mod embedding_pipeline;
 #[cfg(feature = "embeddings")]
