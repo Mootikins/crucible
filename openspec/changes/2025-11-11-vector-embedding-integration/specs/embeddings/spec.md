@@ -35,21 +35,32 @@ The system SHALL provide an `EnrichmentService` in crucible-core that orchestrat
 - **Responsibilities**: Coordinate parallel enrichment operations using Merkle diff results
 - **Dependencies**: Receives `EmbeddingProvider` trait implementation via dependency injection
 
-#### Scenario: Enrichment orchestration with parallel operations
-- **WHEN** EnrichmentService receives ParsedNote and changed block list from Merkle diff
-- **THEN** service executes embedding generation, metadata extraction, and relation inference in parallel
-- **AND** collects all results into EnrichedNote structure
-- **AND** passes EnrichedNote to storage layer for persistence
+#### Scenario: Enrichment orchestration for changed blocks only
+- **WHEN** EnrichmentService receives ParsedNote (full AST) and changed block IDs from Merkle diff
+- **THEN** service retrieves only changed blocks from AST
+- **AND** executes parallel operations on changed blocks:
+  - Embedding generation (filter >5 words, batch to provider)
+  - Relation extraction (wikilinks, tags from changed blocks)
+  - Metadata computation (word counts, language detection)
+- **AND** collects results into EnrichedNote (includes full AST + enrichment for changed blocks)
+- **AND** passes EnrichedNote to storage layer for transactional persistence
+
+**Efficiency**: Merkle diff ensures only changed blocks are processed, not entire document.
 
 ### Requirement: Block-Level Embedding Generation (Incremental Only)
 The system SHALL generate vector embeddings ONLY for blocks identified as changed by Merkle tree diff, following the five-phase data flow.
 
-**Five-Phase Data Flow**:
+**Five-Phase Data Flow (Merkle-Driven Incremental Processing)**:
 1. **Quick Filter**: Check file modified date + BLAKE3 hash (skip if unchanged)
-2. **Parsing**: Full file parse to AST
-3. **Merkle Diff**: Build tree from AST, compare to stored tree, identify changed blocks
-4. **Enrichment**: Generate embeddings for changed blocks only (>5 words)
-5. **Storage**: Transactional persistence
+2. **Parse to AST**: Build tree structure from pulldown-cmark event stream
+3. **Merkle Diff**: Single AST traversal to build Merkle tree + diff with stored tree → changed block IDs
+4. **Enrich Changed Blocks Only**: Process blocks identified by Merkle diff:
+   - Generate embeddings (blocks >5 words)
+   - Extract relations (wikilinks, tags from changed blocks)
+   - Compute metadata (word counts, language detection)
+5. **Storage**: Transactional persistence (delete old embeddings, insert new)
+
+**Efficiency**: Merkle diff identifies exactly which blocks changed, avoiding redundant processing. Only changed blocks flow through enrichment pipeline.
 
 #### Scenario: Initial document processing (all blocks new)
 - **WHEN** new markdown document is processed for first time
