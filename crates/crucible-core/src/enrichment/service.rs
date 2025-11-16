@@ -13,6 +13,12 @@ use anyhow::Result;
 use std::sync::Arc;
 use tracing::{debug, info};
 
+/// Default minimum word count for generating embeddings
+pub const DEFAULT_MIN_WORDS_FOR_EMBEDDING: usize = 5;
+
+/// Default maximum batch size for embedding generation
+pub const DEFAULT_MAX_BATCH_SIZE: usize = 10;
+
 /// Service that orchestrates all enrichment operations
 ///
 /// Receives a ParsedNote and list of changed blocks, then coordinates:
@@ -32,28 +38,77 @@ pub struct EnrichmentService {
     max_batch_size: usize,
 }
 
+impl Default for EnrichmentService {
+    fn default() -> Self {
+        Self {
+            embedding_provider: None,
+            min_words_for_embedding: DEFAULT_MIN_WORDS_FOR_EMBEDDING,
+            max_batch_size: DEFAULT_MAX_BATCH_SIZE,
+        }
+    }
+}
+
 impl EnrichmentService {
     /// Create a new enrichment service with an embedding provider
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use std::sync::Arc;
+    /// use crucible_core::enrichment::EnrichmentService;
+    ///
+    /// let provider = Arc::new(my_provider);
+    /// let service = EnrichmentService::new(provider);
+    /// ```
     pub fn new(embedding_provider: Arc<dyn EmbeddingProvider>) -> Self {
         Self {
             embedding_provider: Some(embedding_provider),
-            min_words_for_embedding: 5,
-            max_batch_size: 10,  // Process 10 blocks at a time
+            ..Default::default()
         }
     }
 
     /// Create an enrichment service without embeddings (metadata/relations only)
+    ///
+    /// This is equivalent to `EnrichmentService::default()`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use crucible_core::enrichment::EnrichmentService;
+    ///
+    /// let service = EnrichmentService::without_embeddings();
+    /// ```
     pub fn without_embeddings() -> Self {
-        Self {
-            embedding_provider: None,
-            min_words_for_embedding: 5,
-            max_batch_size: 10,
-        }
+        Self::default()
     }
 
-    /// Set the minimum word count for embedding generation
+    /// Set the minimum word count for embedding generation (builder pattern)
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use crucible_core::enrichment::EnrichmentService;
+    ///
+    /// let service = EnrichmentService::without_embeddings()
+    ///     .with_min_words(10);
+    /// ```
     pub fn with_min_words(mut self, min_words: usize) -> Self {
         self.min_words_for_embedding = min_words;
+        self
+    }
+
+    /// Set the maximum batch size for embedding generation (builder pattern)
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use crucible_core::enrichment::EnrichmentService;
+    ///
+    /// let service = EnrichmentService::without_embeddings()
+    ///     .with_max_batch_size(20);
+    /// ```
+    pub fn with_max_batch_size(mut self, max_batch_size: usize) -> Self {
+        self.max_batch_size = max_batch_size;
         self
     }
 
@@ -164,7 +219,7 @@ impl EnrichmentService {
         let mut blocks = Vec::new();
 
         // Build heading hierarchy for breadcrumbs
-        let breadcrumbs = self.build_breadcrumbs(parsed);
+        let breadcrumbs = build_breadcrumbs(parsed);
 
         // Extract from headings
         for (idx, heading) in parsed.content.headings.iter().enumerate() {
@@ -405,77 +460,95 @@ impl EnrichmentService {
 
         Ok(relations)
     }
+}
 
-    /// Build breadcrumbs (heading hierarchy) for all content positions
-    ///
-    /// Creates a map from byte offsets to heading paths, allowing blocks to
-    /// include their hierarchical context in embeddings.
-    ///
-    /// Example: A paragraph under "# Introduction" > "## Background" would have
-    /// breadcrumbs "Introduction > Background"
-    fn build_breadcrumbs(&self, parsed: &ParsedNote) -> std::collections::HashMap<usize, String> {
-        use std::collections::HashMap;
+/// Build breadcrumbs (heading hierarchy) for all content positions
+///
+/// Creates a map from byte offsets to heading paths, allowing blocks to
+/// include their hierarchical context in embeddings.
+///
+/// This is a pure function that operates on the AST structure of a parsed note.
+/// It doesn't depend on any service state, making it easier to test and reuse.
+///
+/// # Arguments
+///
+/// * `parsed` - The parsed note with heading structure
+///
+/// # Returns
+///
+/// A HashMap mapping byte offsets to breadcrumb strings
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use crucible_core::enrichment::build_breadcrumbs;
+///
+/// let breadcrumbs = build_breadcrumbs(&parsed_note);
+/// // For a paragraph under "# Introduction" > "## Background":
+/// // breadcrumbs[offset] == "Introduction > Background"
+/// ```
+fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, String> {
+    use std::collections::HashMap;
 
-        let mut breadcrumbs = HashMap::new();
-        let mut heading_stack: Vec<(u8, &str, usize)> = Vec::new(); // (level, text, start_offset)
+    let mut breadcrumbs = HashMap::new();
+    let mut heading_stack: Vec<(u8, &str, usize)> = Vec::new(); // (level, text, start_offset)
 
-        // Process all headings and build hierarchical paths
-        for heading in &parsed.content.headings {
-            // Pop headings at same or higher level (lower number)
-            while let Some(&(stack_level, _, _)) = heading_stack.last() {
-                if stack_level >= heading.level {
-                    heading_stack.pop();
-                } else {
-                    break;
-                }
-            }
-
-            // Add current heading to stack
-            heading_stack.push((heading.level, &heading.text, heading.offset));
-
-            // Build breadcrumb path for this position
-            let path: Vec<&str> = heading_stack.iter().map(|(_, text, _)| *text).collect();
-            let breadcrumb = path.join(" > ");
-
-            // Associate this breadcrumb with the heading's offset
-            breadcrumbs.insert(heading.offset, breadcrumb.clone());
-
-            // Find the next heading offset or use file end
-            let next_offset = parsed.content.headings
-                .iter()
-                .find(|h| h.offset > heading.offset)
-                .map(|h| h.offset)
-                .unwrap_or(usize::MAX);
-
-            // Apply this breadcrumb to all content in this section
-            // (paragraphs, code blocks, etc. between this heading and the next)
-            for para in &parsed.content.paragraphs {
-                if para.offset > heading.offset && para.offset < next_offset {
-                    breadcrumbs.insert(para.offset, breadcrumb.clone());
-                }
-            }
-
-            for code in &parsed.content.code_blocks {
-                if code.offset > heading.offset && code.offset < next_offset {
-                    breadcrumbs.insert(code.offset, breadcrumb.clone());
-                }
-            }
-
-            for list in &parsed.content.lists {
-                if list.offset > heading.offset && list.offset < next_offset {
-                    breadcrumbs.insert(list.offset, breadcrumb.clone());
-                }
-            }
-
-            for quote in &parsed.content.blockquotes {
-                if quote.offset > heading.offset && quote.offset < next_offset {
-                    breadcrumbs.insert(quote.offset, breadcrumb.clone());
-                }
+    // Process all headings and build hierarchical paths
+    for heading in &parsed.content.headings {
+        // Pop headings at same or higher level (lower number)
+        while let Some(&(stack_level, _, _)) = heading_stack.last() {
+            if stack_level >= heading.level {
+                heading_stack.pop();
+            } else {
+                break;
             }
         }
 
-        breadcrumbs
+        // Add current heading to stack
+        heading_stack.push((heading.level, &heading.text, heading.offset));
+
+        // Build breadcrumb path for this position
+        let path: Vec<&str> = heading_stack.iter().map(|(_, text, _)| *text).collect();
+        let breadcrumb = path.join(" > ");
+
+        // Associate this breadcrumb with the heading's offset
+        breadcrumbs.insert(heading.offset, breadcrumb.clone());
+
+        // Find the next heading offset or use file end
+        let next_offset = parsed.content.headings
+            .iter()
+            .find(|h| h.offset > heading.offset)
+            .map(|h| h.offset)
+            .unwrap_or(usize::MAX);
+
+        // Apply this breadcrumb to all content in this section
+        // (paragraphs, code blocks, etc. between this heading and the next)
+        for para in &parsed.content.paragraphs {
+            if para.offset > heading.offset && para.offset < next_offset {
+                breadcrumbs.insert(para.offset, breadcrumb.clone());
+            }
+        }
+
+        for code in &parsed.content.code_blocks {
+            if code.offset > heading.offset && code.offset < next_offset {
+                breadcrumbs.insert(code.offset, breadcrumb.clone());
+            }
+        }
+
+        for list in &parsed.content.lists {
+            if list.offset > heading.offset && list.offset < next_offset {
+                breadcrumbs.insert(list.offset, breadcrumb.clone());
+            }
+        }
+
+        for quote in &parsed.content.blockquotes {
+            if quote.offset > heading.offset && quote.offset < next_offset {
+                breadcrumbs.insert(quote.offset, breadcrumb.clone());
+            }
+        }
     }
+
+    breadcrumbs
 }
 
 #[cfg(test)]
