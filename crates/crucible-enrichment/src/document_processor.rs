@@ -121,7 +121,7 @@ impl Default for ProcessorConfig {
 /// to enriched note output ready for storage.
 pub struct DocumentProcessor {
     /// Enrichment service for Phase 4
-    enrichment_service: Arc<EnrichmentService>,
+    enrichment_service: Arc<dyn crucible_core::enrichment::EnrichmentService>,
 
     /// Parser for Phase 2
     parser: CrucibleParser,
@@ -146,7 +146,7 @@ impl DocumentProcessor {
     /// let service = Arc::new(EnrichmentService::without_embeddings());
     /// let processor = DocumentProcessor::new(service);
     /// ```
-    pub fn new(enrichment_service: Arc<EnrichmentService>) -> Self {
+    pub fn new(enrichment_service: Arc<dyn crucible_core::enrichment::EnrichmentService>) -> Self {
         Self {
             enrichment_service,
             parser: CrucibleParser::new(),
@@ -155,7 +155,7 @@ impl DocumentProcessor {
     }
 
     /// Create a processor with custom configuration
-    pub fn with_config(enrichment_service: Arc<EnrichmentService>, config: ProcessorConfig) -> Self {
+    pub fn with_config(enrichment_service: Arc<dyn crucible_core::enrichment::EnrichmentService>, config: ProcessorConfig) -> Self {
         Self {
             enrichment_service,
             parser: CrucibleParser::new(),
@@ -322,7 +322,7 @@ impl DocumentProcessor {
 
         // Call enrichment service
         let enriched = self.enrichment_service
-            .enrich(parsed, merkle_tree, changed_blocks.to_vec())
+            .enrich_with_tree(parsed, merkle_tree, changed_blocks.to_vec())
             .await
             .context("Failed to enrich note")?;
 
