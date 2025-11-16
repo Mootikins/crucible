@@ -37,11 +37,13 @@ pub mod eav_graph;
 pub mod hash_lookup;
 #[cfg(feature = "embeddings")]
 pub mod kiln_integration;
-#[cfg(feature = "embeddings")]
-pub mod kiln_pipeline_connector;
-#[cfg(feature = "embeddings")]
-#[cfg(feature = "embeddings")]
-pub mod kiln_scanner;
+// TODO: These modules (kiln_pipeline_connector, kiln_scanner) are part of the old
+// embedding_pool polling architecture and need to be updated to use the new
+// EnrichmentPipeline + NoteIngestor pattern. Disabled for now.
+// #[cfg(feature = "embeddings")]
+// pub mod kiln_pipeline_connector;
+// #[cfg(feature = "embeddings")]
+// pub mod kiln_scanner;
 pub mod kiln_store;
 pub mod merkle_persistence;
 pub mod metrics;

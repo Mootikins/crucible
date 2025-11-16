@@ -19,7 +19,10 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
-use crate::embedding_pool::{EmbeddingSignature, EmbeddingThreadPool};
+// TODO: Update to use new enrichment architecture (EnrichmentPipeline)
+// This module was part of the old embedding_pool polling architecture.
+// The new architecture uses EnrichmentPipeline + NoteIngestor directly.
+// use crate::embedding_pool::{EmbeddingSignature, EmbeddingThreadPool};
 use crate::kiln_integration;
 use crate::kiln_scanner::KilnScanResult;
 use crate::SurrealClient;
