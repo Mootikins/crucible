@@ -1812,8 +1812,8 @@ name = "crucible-config"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "crucible-core",
  "futures",
+ "num_cpus",
  "schemars 1.0.4",
  "serde",
  "serde_json",
@@ -1835,6 +1835,7 @@ dependencies = [
  "blake3",
  "chrono",
  "config",
+ "crucible-config",
  "crucible-parser",
  "futures",
  "hex",

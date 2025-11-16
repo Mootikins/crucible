@@ -1,7 +1,6 @@
 //! Profile configuration for environment-specific settings.
 
-use crate::{ConfigError, DatabaseConfig, LoggingConfig, ServerConfig};
-use crucible_core::enrichment::EnrichmentConfig;
+use crate::{ConfigError, DatabaseConfig, EnrichmentConfig, LoggingConfig, ServerConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
