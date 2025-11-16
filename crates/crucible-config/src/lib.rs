@@ -19,7 +19,7 @@
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let config = ConfigLoader::load_from_file("config.yaml").await?;
-//!     let embedding_provider = config.embedding_provider()?;
+//!     let enrichment_config = config.enrichment_config()?;
 //!     Ok(())
 //! }
 //! ```
@@ -29,9 +29,7 @@
 
 mod config;
 mod loader;
-mod migration;
 mod profile;
-mod provider;
 
 // Include test_utils when test-utils feature is enabled
 #[cfg(feature = "test-utils")]
@@ -39,9 +37,7 @@ mod test_utils;
 
 pub use config::*;
 pub use loader::*;
-pub use migration::*;
 pub use profile::*;
-pub use provider::*;
 
 // Export test utilities when feature is enabled
 #[cfg(feature = "test-utils")]

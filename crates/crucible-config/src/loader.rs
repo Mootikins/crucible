@@ -198,14 +198,26 @@ impl ConfigLoader {
 
         // Override embedding provider API key
         if let Ok(api_key) = std::env::var("CRUCIBLE_EMBEDDING_API_KEY") {
-            if config.embedding.is_none() {
-                // Create a default OpenAI provider
-                config.embedding = Some(crate::EmbeddingProviderConfig::openai(
-                    api_key.clone(),
-                    None,
-                ));
-            } else if let Some(ref mut provider) = config.embedding {
-                provider.api.key = Some(api_key);
+            if config.enrichment.is_none() {
+                // Create a default OpenAI provider configuration
+                use crucible_core::enrichment::{EnrichmentConfig, EmbeddingProviderConfig, OpenAIConfig, PipelineConfig};
+                config.enrichment = Some(EnrichmentConfig {
+                    provider: EmbeddingProviderConfig::OpenAI(OpenAIConfig {
+                        api_key: api_key.clone(),
+                        model: "text-embedding-3-small".to_string(),
+                        base_url: "https://api.openai.com/v1".to_string(),
+                        timeout_seconds: 30,
+                        retry_attempts: 3,
+                        dimensions: 1536,
+                        headers: Default::default(),
+                    }),
+                    pipeline: PipelineConfig::default(),
+                });
+            } else if let Some(ref mut enrichment) = config.enrichment {
+                // Update API key if using OpenAI provider
+                if let crucible_core::enrichment::EmbeddingProviderConfig::OpenAI(ref mut openai_config) = enrichment.provider {
+                    openai_config.api_key = api_key;
+                }
             }
         }
 
