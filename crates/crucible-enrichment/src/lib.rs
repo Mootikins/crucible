@@ -23,21 +23,13 @@
 //!
 //! ## Modules
 //!
-//! - **config**: Configuration types for enrichment operations
 //! - **types**: EnrichedNote and related types
 //! - **service**: EnrichmentService orchestrator
+//! - **enrichment_pipeline**: Enrichment pipeline (five-phase)
 
-pub mod config;
-pub mod document_processor;
+pub mod enrichment_pipeline;
 pub mod service;
 pub mod types;
-
-// Re-export commonly used configuration types
-pub use config::{
-    BatchIncrementalResult, DocumentEmbedding, EmbeddingConfig, EmbeddingError,
-    EmbeddingErrorType, EmbeddingModel, EmbeddingProcessingResult, IncrementalProcessingResult,
-    PrivacyMode, RetryProcessingResult, ThreadPoolMetrics, validate_embedding_config,
-};
 
 // Re-export enrichment types (now defined in crucible-core)
 pub use types::{
@@ -47,7 +39,7 @@ pub use types::{
 // Re-export service
 pub use service::{DefaultEnrichmentService, DEFAULT_MAX_BATCH_SIZE, DEFAULT_MIN_WORDS_FOR_EMBEDDING};
 
-// Re-export document processor
-pub use document_processor::{
-    DocumentProcessor, DocumentProcessingResult, ProcessingMetrics, ProcessorConfig,
+// Re-export enrichment pipeline
+pub use enrichment_pipeline::{
+    EnrichmentPipeline, EnrichmentResult, ProcessingMetrics, EnrichmentPipelineConfig,
 };
