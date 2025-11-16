@@ -34,6 +34,9 @@ tokio = { workspace = true, features = ["full", "tracing"] }
 # Parser dependency (now separate crate with dependency inversion)
 crucible-parser = { workspace = true }
 
+# Configuration management (for enrichment config types)
+crucible-config = { path = "../crucible-config" }
+
 # NOTE: crucible-enrichment dependency REMOVED to break circular dependency
 # Core only defines EmbeddingProvider trait; enrichment crate provides implementation
 # Higher-level crates (CLI, Tauri) use both as needed
