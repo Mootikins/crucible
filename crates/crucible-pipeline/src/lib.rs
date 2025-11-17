@@ -44,4 +44,4 @@
 
 pub mod note_pipeline;
 
-pub use note_pipeline::*;
+pub use note_pipeline::{NotePipeline, NotePipelineConfig, PipelineMetrics, ProcessingResult};
