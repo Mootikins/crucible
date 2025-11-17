@@ -133,27 +133,33 @@ Note: ACP is NOT a layer - it's how CLI spawns/communicates with external agents
 
 ### Data Flow
 
-**File → Database** (Enrichment Pipeline Architecture):
+**File → Database** (Refined Pipeline Architecture):
 ```
 1. File watcher detects change (notify-rs)
-2. Merkle tree diff identifies changed sections
-3. Parser converts Markdown → AST → EPR entities
-4. Enrichment layer (business logic):
-   a. Embedding generation (>5 words per block)
-   b. Merkle tree computation (content hashes, structure)
-   c. Metadata extraction and enhancement
-   d. Relationship inference
-5. Storage layer persists enriched data:
+2. Pipeline Phase 1: Quick filter (file hash, modification time)
+3. Pipeline Phase 2: Parser converts Markdown → AST → EPR entities
+4. Pipeline Phase 3: Merkle tree diff identifies changed sections
+5. Pipeline Phase 4a: Content enrichment (block selection + embedding generation)
+6. Pipeline Phase 4b: Metadata enrichment (metadata extraction + relationship inference)
+7. Pipeline Phase 5: Storage layer persists enriched data:
    - EPR entities/properties/relations
    - Vector embeddings
    - Merkle tree structure
 ```
 
 **Clean Architecture Principles**:
+- **Pipeline**: Configuration and coordination layer - controls "what and when", manages resources
 - **Parser**: Pure transformation (Markdown → AST → EPR) - no side effects
-- **Enrichment**: Business logic layer - adds embeddings, computes Merkle hashes, infers relationships
-- **Storage**: Pure I/O layer - no knowledge of embedding generation or tree computation
-- **Current State**: Some mixing exists (storage doing enrichment) - future refactor will separate concerns
+- **ContentEnrichService**: Block selection and embedding generation - controlled by pipeline
+- **MetadataEnrichService**: Metadata extraction and relationship inference - controlled by pipeline
+- **Storage**: Pure I/O layer - no knowledge of enrichment generation or tree computation
+- **Configuration**: Centralized in config crate for ALL system components
+
+**Pipeline Resource Control**:
+- **"Diameter of the pipe"**: Pipeline controls batch sizes, parallelism, memory limits
+- **Adaptive resource management**: Adjusts throughput based on system conditions
+- **Strategy selection**: Incremental vs full enrichment approaches
+- **Error handling**: Simple error bubbling with clear boundaries
 
 **Query → Response**:
 ```
