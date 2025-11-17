@@ -205,8 +205,8 @@ impl NotePipeline {
 
         let phase3_duration = phase3_start.elapsed().as_millis() as u64;
 
-        // If no changes, update file state and return
-        if diff.changed_sections.is_empty() && old_tree.is_some() {
+        // If no changes and not forcing reprocess, update file state and return
+        if diff.changed_sections.is_empty() && old_tree.is_some() && !self.config.force_reprocess {
             debug!("Phase 3: No content changes detected");
             self.update_file_state(path).await?;
             self.merkle_store.store(&path_str, &new_tree).await
@@ -217,14 +217,35 @@ impl NotePipeline {
         // Extract changed block IDs from diff
         // Note: The diff provides section-level changes. For now, we treat entire sections
         // as changed blocks. Future enhancement: block-level granularity.
-        let changed_block_ids: Vec<String> = diff.changed_sections
-            .iter()
-            .enumerate()
-            .map(|(idx, _section)| format!("section_{}", idx))
-            .collect();
 
-        let changed_count = changed_block_ids.len();
-        debug!("Phase 3: {} sections changed", changed_count);
+        // Count all types of changes: modified, added, and removed sections
+        let changed_count = diff.changed_sections.len() + diff.added_sections + diff.removed_sections;
+
+        // Build IDs for all affected sections
+        let mut changed_block_ids = Vec::with_capacity(changed_count);
+
+        // Add modified sections
+        for (idx, section) in diff.changed_sections.iter().enumerate() {
+            changed_block_ids.push(format!("modified_section_{}", section.section_index));
+        }
+
+        // Add newly added sections
+        for idx in 0..diff.added_sections {
+            changed_block_ids.push(format!("added_section_{}", idx));
+        }
+
+        // Add removed sections (for tracking purposes)
+        for idx in 0..diff.removed_sections {
+            changed_block_ids.push(format!("removed_section_{}", idx));
+        }
+
+        debug!(
+            "Phase 3: {} sections changed (modified: {}, added: {}, removed: {})",
+            changed_count,
+            diff.changed_sections.len(),
+            diff.added_sections,
+            diff.removed_sections
+        );
 
         // Phase 4: Enrichment (if enabled)
         let phase4_start = std::time::Instant::now();
@@ -266,6 +287,10 @@ impl NotePipeline {
             .store_enriched(&enriched, &path_str)
             .await
             .context("Phase 5: Failed to store enriched note")?;
+
+        // Store Merkle tree separately for future diffs
+        self.merkle_store.store(&path_str, &new_tree).await
+            .context("Phase 5: Failed to store Merkle tree")?;
 
         // Update file state tracking
         self.update_file_state(path).await
