@@ -1,6 +1,7 @@
 //! Chat Command - ACP-based Natural Language Interface
 //!
 //! Provides an interactive chat interface using the Agent Client Protocol.
+//! Supports toggleable plan (read-only) and act (write-enabled) modes.
 
 use anyhow::Result;
 use std::sync::Arc;
@@ -10,13 +11,45 @@ use crate::acp::{discover_agent, ContextEnricher, CrucibleAcpClient};
 use crate::config::CliConfig;
 use crate::core_facade::CrucibleCoreFacade;
 
+/// Chat mode - can be toggled during session
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChatMode {
+    /// Plan mode - read-only, agent cannot modify files
+    Plan,
+    /// Act mode - write-enabled, agent can modify files
+    Act,
+}
+
+impl ChatMode {
+    /// Get the display name for this mode
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            ChatMode::Plan => "plan",
+            ChatMode::Act => "act",
+        }
+    }
+
+    /// Toggle to the other mode
+    pub fn toggle(&self) -> Self {
+        match self {
+            ChatMode::Plan => ChatMode::Act,
+            ChatMode::Act => ChatMode::Plan,
+        }
+    }
+
+    /// Check if this mode allows writes
+    pub fn is_read_only(&self) -> bool {
+        matches!(self, ChatMode::Plan)
+    }
+}
+
 /// Execute the chat command
 ///
 /// # Arguments
 /// * `config` - CLI configuration
 /// * `agent_name` - Optional preferred agent name
 /// * `query` - Optional one-shot query (if None, starts interactive mode)
-/// * `read_only` - If true, agent cannot write files (chat mode); if false, agent can write (act mode)
+/// * `read_only` - Initial mode: if true, starts in plan mode; if false, starts in act mode
 /// * `no_context` - If true, skip context enrichment
 /// * `context_size` - Number of context results to include
 pub async fn execute(
@@ -27,15 +60,15 @@ pub async fn execute(
     no_context: bool,
     context_size: Option<usize>,
 ) -> Result<()> {
+    // Determine initial mode
+    let initial_mode = if read_only {
+        ChatMode::Plan
+    } else {
+        ChatMode::Act
+    };
+
     info!("Starting chat command");
-    info!(
-        "Mode: {}",
-        if read_only {
-            "Read-only (chat)"
-        } else {
-            "Write-enabled (act)"
-        }
-    );
+    info!("Initial mode: {}", initial_mode.display_name());
 
     // Initialize core facade
     info!("Initializing Crucible core...");
@@ -48,7 +81,7 @@ pub async fn execute(
     info!("Using agent: {} ({})", agent.name, agent.command);
 
     // Create ACP client
-    let client = CrucibleAcpClient::new(agent, read_only);
+    let client = CrucibleAcpClient::new(agent, initial_mode.is_read_only());
 
     // Spawn agent
     client.spawn().await?;
@@ -70,26 +103,65 @@ pub async fn execute(
 
         // Start chat with enriched prompt
         client.start_chat(&prompt).await?;
+
+        // Cleanup
+        client.shutdown().await?;
     } else {
         // Interactive mode
         info!("Interactive chat mode");
-        println!("\n🤖 Crucible Chat");
-        println!("================");
-        println!("Mode: {}", if read_only { "Read-only (chat)" } else { "Write-enabled (act)" });
-        println!("Type your message and press Enter. Type 'exit' to quit.\n");
+        run_interactive_session(core, &client, initial_mode, no_context, context_size).await?;
 
-        // TODO: Implement interactive loop with rustyline/reedline
-        // For MVP, just show what would happen
-        println!("🚧 Interactive chat loop - MVP placeholder");
-        println!("In full implementation, this would:");
-        println!("  1. Accept user input with line editing");
-        println!("  2. Enrich each query with context");
-        println!("  3. Send to agent and stream responses");
-        println!("  4. Handle file operations based on read_only mode");
+        // Cleanup
+        client.shutdown().await?;
     }
 
-    // Cleanup
-    client.shutdown().await?;
+    Ok(())
+}
+
+/// Run an interactive chat session with mode toggling support
+async fn run_interactive_session(
+    core: Arc<CrucibleCoreFacade>,
+    client: &CrucibleAcpClient,
+    initial_mode: ChatMode,
+    no_context: bool,
+    context_size: Option<usize>,
+) -> Result<()> {
+    use colored::Colorize;
+
+    let mut current_mode = initial_mode;
+
+    println!("\n{}", "🤖 Crucible Chat".bright_blue().bold());
+    println!("{}", "=================".bright_blue());
+    println!("Mode: {} {}",
+        current_mode.display_name().bright_cyan().bold(),
+        if current_mode == ChatMode::Plan { "(read-only)" } else { "(write-enabled)" }.dimmed()
+    );
+    println!();
+    println!("{}", "Commands:".bold());
+    println!("  {} - Switch to plan mode (read-only)", "/plan".green());
+    println!("  {} - Switch to act mode (write-enabled)", "/act".green());
+    println!("  {} - Exit chat", "/exit".green());
+    println!();
+
+    // TODO: Implement interactive loop with rustyline/reedline
+    // For MVP, just show what would happen
+    println!("{}", "🚧 Interactive chat loop - MVP placeholder".yellow());
+    println!("In full implementation, this would:");
+    println!("  1. Accept user input with line editing (rustyline/reedline)");
+    println!("  2. Handle mode toggle commands:");
+    println!("     - /plan → switch to plan mode");
+    println!("     - /act → switch to act mode");
+    println!("  3. Enrich each query with context (unless --no-context)");
+    println!("  4. Send to agent and stream responses");
+    println!("  5. Update client permissions when mode changes");
+    println!();
+    println!("Example session:");
+    println!("  {} What notes do I have about Rust?", "> ".bright_green());
+    println!("  {} [Agent responds with search results]", "│".dimmed());
+    println!("  {} /act", "> ".bright_green());
+    println!("  {} Mode switched to: act (write-enabled)", "│".bright_cyan());
+    println!("  {} Create a new note about async Rust", "> ".bright_green());
+    println!("  {} [Agent creates file]", "│".dimmed());
 
     Ok(())
 }
