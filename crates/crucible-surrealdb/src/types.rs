@@ -1053,6 +1053,32 @@ impl From<EmbeddingDocument> for EmbeddingData {
     }
 }
 
+/// Document embedding with chunking metadata (legacy type for kiln_integration compatibility)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentEmbedding {
+    pub document_id: String,
+    pub vector: Vec<f32>,
+    pub embedding_model: String,
+    pub chunk_id: Option<String>,
+    pub chunk_size: usize,
+    pub chunk_position: Option<usize>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl DocumentEmbedding {
+    pub fn new(document_id: String, vector: Vec<f32>, embedding_model: String) -> Self {
+        Self {
+            document_id,
+            vector,
+            embedding_model,
+            chunk_id: None,
+            chunk_size: 0,
+            chunk_position: None,
+            created_at: chrono::Utc::now(),
+        }
+    }
+}
+
 /// Search query parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchQuery {
