@@ -255,7 +255,7 @@ impl<'a> NoteIngestor<'a> {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use crucible_enrichment::EnrichmentPipeline;
+    /// use crucible_enrichment::NoteEnricher;
     /// use crucible_surrealdb::eav_graph::NoteIngestor;
     ///
     /// // Phase 1-4: Enrichment
