@@ -13,9 +13,9 @@ async fn test_empty_text_embedding() {
 
     // Should either succeed with empty/zero embedding or return error
     match result {
-        Ok(embedding) => {
+        Ok(response) => {
             // If it succeeds, embedding should be valid dimensional vector
-            assert!(!embedding.is_empty());
+            assert!(!response.embedding.is_empty());
         }
         Err(_) => {
             // Error is also acceptable for empty input
@@ -47,8 +47,8 @@ async fn test_special_characters_embedding() {
     let result = provider.embed(special_text).await;
     assert!(result.is_ok());
 
-    let embedding = result.unwrap();
-    assert!(!embedding.is_empty());
+    let response = result.unwrap();
+    assert!(!response.embedding.is_empty());
 }
 
 #[tokio::test]
@@ -61,8 +61,8 @@ async fn test_unicode_text_embedding() {
     let result = provider.embed(unicode_text).await;
     assert!(result.is_ok());
 
-    let embedding = result.unwrap();
-    assert!(!embedding.is_empty());
+    let response = result.unwrap();
+    assert!(!response.embedding.is_empty());
 }
 
 #[tokio::test]
@@ -76,8 +76,8 @@ async fn test_batch_embedding_empty_vec() {
 
     // Should either return empty vec or error
     match result {
-        Ok(embeddings) => {
-            assert_eq!(embeddings.len(), 0);
+        Ok(responses) => {
+            assert_eq!(responses.len(), 0);
         }
         Err(_) => {
             // Error is acceptable for empty batch
@@ -95,9 +95,9 @@ async fn test_batch_embedding_single_item() {
     let result = provider.embed_batch(&texts).await;
     assert!(result.is_ok());
 
-    let embeddings = result.unwrap();
-    assert_eq!(embeddings.len(), 1);
-    assert!(!embeddings[0].is_empty());
+    let responses = result.unwrap();
+    assert_eq!(responses.len(), 1);
+    assert!(!responses[0].embedding.is_empty());
 }
 
 #[tokio::test]
@@ -110,13 +110,13 @@ async fn test_batch_embedding_preserves_order() {
     let result = provider.embed_batch(&texts).await;
     assert!(result.is_ok());
 
-    let embeddings = result.unwrap();
-    assert_eq!(embeddings.len(), 4);
+    let responses = result.unwrap();
+    assert_eq!(responses.len(), 4);
 
     // Mock provider should return deterministic embeddings
     // Verify we got 4 distinct embeddings in correct order
-    for embedding in &embeddings {
-        assert!(!embedding.is_empty());
+    for response in &responses {
+        assert!(!response.embedding.is_empty());
     }
 }
 
@@ -136,8 +136,8 @@ async fn test_batch_with_mixed_content() {
     let result = provider.embed_batch(&texts).await;
 
     // Should handle mixed content gracefully
-    if let Ok(embeddings) = result {
-        assert_eq!(embeddings.len(), texts.len());
+    if let Ok(responses) = result {
+        assert_eq!(responses.len(), texts.len());
     }
 }
 
@@ -146,11 +146,11 @@ async fn test_embedding_dimension_consistency() {
     let config = EmbeddingConfig::mock(None);
     let provider = create_provider(config).await.unwrap();
 
-    let text1 = provider.embed("first text").await.unwrap();
-    let text2 = provider.embed("different text").await.unwrap();
+    let response1 = provider.embed("first text").await.unwrap();
+    let response2 = provider.embed("different text").await.unwrap();
 
     // All embeddings from same provider should have same dimensions
-    assert_eq!(text1.len(), text2.len());
+    assert_eq!(response1.embedding.len(), response2.embedding.len());
 }
 
 #[tokio::test]
@@ -160,9 +160,9 @@ async fn test_mock_provider_deterministic() {
 
     let text = "test text";
 
-    let embedding1 = provider.embed(text).await.unwrap();
-    let embedding2 = provider.embed(text).await.unwrap();
+    let response1 = provider.embed(text).await.unwrap();
+    let response2 = provider.embed(text).await.unwrap();
 
     // Mock provider should be deterministic
-    assert_eq!(embedding1, embedding2);
+    assert_eq!(response1.embedding, response2.embedding);
 }
