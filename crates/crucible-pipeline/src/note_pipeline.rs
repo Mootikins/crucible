@@ -19,47 +19,14 @@
 //! - **Single Responsibility**: Pipeline coordinates; infrastructure crates provide capabilities
 
 use anyhow::{Context, Result};
-use crucible_core::processing::{ChangeDetectionStore, FileState};
-use crucible_core::EnrichmentService;
+use crucible_core::processing::{ChangeDetectionStore, FileState, NotePipelineOrchestrator, PipelineMetrics, ProcessingResult};
+use crucible_core::{EnrichedNoteStore, EnrichmentService};
 use crucible_merkle::{HybridMerkleTree, MerkleStore};
 use crucible_parser::{CrucibleParser, traits::MarkdownParserImplementation};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
-use tracing::{debug, info, warn};
-
-/// Result of processing a note through the pipeline
-#[derive(Debug, Clone)]
-pub enum ProcessingResult {
-    /// Note was processed successfully with changes
-    Success {
-        /// Number of blocks that were changed
-        changed_blocks: usize,
-        /// Whether embeddings were generated
-        embeddings_generated: bool,
-    },
-    /// Note was skipped (unchanged file hash)
-    Skipped,
-    /// Note had no content changes (same Merkle tree)
-    NoChanges,
-}
-
-/// Metrics collected during pipeline execution
-#[derive(Debug, Clone, Default)]
-pub struct PipelineMetrics {
-    /// Time spent in Phase 1 (quick filter)
-    pub phase1_duration_ms: u64,
-    /// Time spent in Phase 2 (parse)
-    pub phase2_duration_ms: u64,
-    /// Time spent in Phase 3 (Merkle diff)
-    pub phase3_duration_ms: u64,
-    /// Time spent in Phase 4 (enrichment)
-    pub phase4_duration_ms: u64,
-    /// Time spent in Phase 5 (storage)
-    pub phase5_duration_ms: u64,
-    /// Total pipeline execution time
-    pub total_duration_ms: u64,
-}
+use tracing::{debug, info};
 
 /// Configuration for pipeline behavior
 #[derive(Debug, Clone)]
@@ -136,6 +103,9 @@ pub struct NotePipeline {
     /// Enrichment service for embeddings and metadata (Phase 4)
     enrichment_service: Arc<dyn EnrichmentService>,
 
+    /// Storage for enriched notes (Phase 5)
+    storage: Arc<dyn EnrichedNoteStore>,
+
     /// Configuration
     config: NotePipelineConfig,
 }
@@ -146,12 +116,14 @@ impl NotePipeline {
         change_detector: Arc<dyn ChangeDetectionStore>,
         merkle_store: Arc<dyn MerkleStore>,
         enrichment_service: Arc<dyn EnrichmentService>,
+        storage: Arc<dyn EnrichedNoteStore>,
     ) -> Self {
         Self {
             parser: CrucibleParser::new(),
             change_detector,
             merkle_store,
             enrichment_service,
+            storage,
             config: NotePipelineConfig::default(),
         }
     }
@@ -161,6 +133,7 @@ impl NotePipeline {
         change_detector: Arc<dyn ChangeDetectionStore>,
         merkle_store: Arc<dyn MerkleStore>,
         enrichment_service: Arc<dyn EnrichmentService>,
+        storage: Arc<dyn EnrichedNoteStore>,
         config: NotePipelineConfig,
     ) -> Self {
         Self {
@@ -168,6 +141,7 @@ impl NotePipeline {
             change_detector,
             merkle_store,
             enrichment_service,
+            storage,
             config,
         }
     }
@@ -240,37 +214,62 @@ impl NotePipeline {
             return Ok(ProcessingResult::NoChanges);
         }
 
-        // Count changed sections as a proxy for changed blocks
-        // TODO: Enhance diff to provide block-level granularity
-        let changed_section_count = diff.changed_sections.len();
-        debug!("Phase 3: {} sections changed", changed_section_count);
+        // Extract changed block IDs from diff
+        // Note: The diff provides section-level changes. For now, we treat entire sections
+        // as changed blocks. Future enhancement: block-level granularity.
+        let changed_block_ids: Vec<String> = diff.changed_sections
+            .iter()
+            .enumerate()
+            .map(|(idx, _section)| format!("section_{}", idx))
+            .collect();
+
+        let changed_count = changed_block_ids.len();
+        debug!("Phase 3: {} sections changed", changed_count);
 
         // Phase 4: Enrichment (if enabled)
         let phase4_start = std::time::Instant::now();
-        let embeddings_generated = if !self.config.skip_enrichment {
-            // TODO: Call enrichment service with parsed note and changed sections
-            // For now, this is a placeholder until we integrate with EnrichmentService
-            warn!("Phase 4: Enrichment not yet implemented in pipeline");
-            false
+        let enriched = if !self.config.skip_enrichment {
+            debug!("Phase 4: Enriching note with {} changed blocks", changed_count);
+
+            // Call enrichment service with Merkle tree (avoids recomputation)
+            self.enrichment_service
+                .enrich_with_tree(parsed.clone(), new_tree.clone(), changed_block_ids)
+                .await
+                .context("Phase 4: Failed to enrich note")?
         } else {
             debug!("Phase 4: Enrichment skipped (disabled in config)");
-            false
+
+            // Create minimal enriched note without embeddings
+            use crucible_core::enrichment::{EnrichedNote, NoteMetadata};
+            EnrichedNote::new(
+                parsed.clone(),
+                new_tree.clone(),
+                Vec::new(),  // No embeddings
+                NoteMetadata::default(),
+                Vec::new(),  // No inferred relations
+            )
         };
+
+        let embeddings_generated = !enriched.embeddings.is_empty();
         let phase4_duration = phase4_start.elapsed().as_millis() as u64;
+        debug!(
+            "Phase 4: Generated {} embeddings, {} relations",
+            enriched.embeddings.len(),
+            enriched.inferred_relations.len()
+        );
 
         // Phase 5: Storage
         let phase5_start = std::time::Instant::now();
 
-        // Store Merkle tree
-        self.merkle_store.store(&path_str, &new_tree).await
-            .context("Phase 5: Failed to store Merkle tree")?;
+        // Store enriched note (includes parsed content, Merkle tree, embeddings, metadata)
+        self.storage
+            .store_enriched(&enriched, &path_str)
+            .await
+            .context("Phase 5: Failed to store enriched note")?;
 
-        // Update file state
+        // Update file state tracking
         self.update_file_state(path).await
             .context("Phase 5: Failed to update file state")?;
-
-        // TODO: Store enriched note data
-        // This will use NoteIngestor::ingest_enriched() once we wire it up
 
         let phase5_duration = phase5_start.elapsed().as_millis() as u64;
 
@@ -286,10 +285,7 @@ impl NotePipeline {
             phase5_duration
         );
 
-        Ok(ProcessingResult::Success {
-            changed_blocks: changed_section_count,
-            embeddings_generated,
-        })
+        Ok(ProcessingResult::success(changed_count, embeddings_generated))
     }
 
     /// Phase 1: Quick filter check
@@ -318,7 +314,7 @@ impl NotePipeline {
                     &current_state.file_hash[..8],
                     current_state.file_size
                 );
-                return Ok(Some(ProcessingResult::Skipped));
+                return Ok(Some(ProcessingResult::skipped()));
             }
         }
 
@@ -348,6 +344,22 @@ impl NotePipeline {
         self.change_detector.store_file_state(path, state).await
             .context("Failed to store file state")?;
         Ok(())
+    }
+}
+
+// Implement the NotePipelineOrchestrator trait
+#[async_trait::async_trait]
+impl NotePipelineOrchestrator for NotePipeline {
+    async fn process(&self, path: &Path) -> Result<ProcessingResult> {
+        // Delegate to the existing process implementation
+        NotePipeline::process(self, path).await
+    }
+
+    async fn process_with_metrics(&self, path: &Path) -> Result<(ProcessingResult, PipelineMetrics)> {
+        // TODO: Collect detailed metrics during processing
+        // For now, just call process and return empty metrics
+        let result = self.process(path).await?;
+        Ok((result, PipelineMetrics::default()))
     }
 }
 
