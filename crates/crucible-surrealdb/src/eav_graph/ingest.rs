@@ -301,15 +301,67 @@ impl<'a> NoteIngestor<'a> {
             }
         }
 
-        // Step 4: Store enrichment metadata and inferred relations
-        // TODO: Implement metadata storage as EAV properties when property API is finalized
-        // For now, metadata (reading_time, complexity_score, language) is available
-        // in the EnrichedNote struct for callers to use
+        // Step 4: Store enrichment metadata as properties
+        use super::types::{Property, PropertyNamespace};
+        use crucible_core::storage::PropertyValue;
+
+        // Metadata namespace for enrichment-computed properties
+        let metadata_namespace = PropertyNamespace("enrichment".to_string());
+
+        // Store reading time (always present)
+        self.store
+            .upsert_property(&Property {
+                id: None,
+                entity_id: entity_id.clone(),
+                namespace: metadata_namespace.clone(),
+                key: "reading_time".to_string(),
+                value: PropertyValue::Number(enriched.metadata.reading_time_minutes as f64),
+                source: "enrichment_service".to_string(),
+                confidence: 1.0,
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+            })
+            .await?;
+
+        // Store complexity score if present
+        if let Some(complexity) = enriched.metadata.complexity_score {
+            self.store
+                .upsert_property(&Property {
+                    id: None,
+                    entity_id: entity_id.clone(),
+                    namespace: metadata_namespace.clone(),
+                    key: "complexity_score".to_string(),
+                    value: PropertyValue::Number(complexity as f64),
+                    source: "enrichment_service".to_string(),
+                    confidence: 1.0,
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                })
+                .await?;
+        }
+
+        // Store language if detected
+        if let Some(language) = &enriched.metadata.language {
+            self.store
+                .upsert_property(&Property {
+                    id: None,
+                    entity_id: entity_id.clone(),
+                    namespace: metadata_namespace,
+                    key: "language".to_string(),
+                    value: PropertyValue::Text(language.clone()),
+                    source: "enrichment_service".to_string(),
+                    confidence: 1.0,
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                })
+                .await?;
+        }
 
         // Step 5: Store inferred relations
-        // TODO: Implement when inferred relations are needed
-        // For now, inferred relations are stored in EnrichedNote.inferred_relations
-        // and can be processed by callers if needed
+        // For now, we skip storing inferred relations as the relation system
+        // is primarily designed for explicit wikilinks and tags.
+        // Inferred relations from semantic similarity can be added in the future
+        // when there's a clear use case for them in queries.
 
         Ok(entity_id)
     }
@@ -2709,6 +2761,33 @@ impl<'a> NoteIngestor<'a> {
         }
 
         blocks
+    }
+}
+
+// Implement EnrichedNoteStore trait for NoteIngestor
+#[async_trait::async_trait]
+impl<'a> crucible_core::EnrichedNoteStore for NoteIngestor<'a> {
+    async fn store_enriched(
+        &self,
+        enriched: &crucible_core::enrichment::EnrichedNote,
+        relative_path: &str,
+    ) -> Result<()> {
+        // Delegate to existing ingest_enriched implementation
+        // Convert result to () (discard entity ID)
+        self.ingest_enriched(enriched, relative_path).await?;
+        Ok(())
+    }
+
+    async fn note_exists(&self, relative_path: &str) -> Result<bool> {
+        // Check if note entity exists by attempting to query it
+        let entity_id = self.note_entity_id(relative_path);
+
+        // Try to fetch the entity
+        match self.store.get_entity(&entity_id).await {
+            Ok(Some(_)) => Ok(true),
+            Ok(None) => Ok(false),
+            Err(e) => Err(e),
+        }
     }
 }
 
