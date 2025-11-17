@@ -35,6 +35,21 @@ This change corrects the architecture to match the clean enrichment pipeline doc
 - Industry standard pattern (Unified/Remark, Pandoc, Elasticsearch, Apache Tika)
 - Enables metadata access without requiring enrichment
 
+**NEW: crucible-merkle Crate** (Completed 2025-11-16):
+- Separate crate for Merkle tree implementation (follows crucible-parser pattern)
+- Pure transformation: ParsedNote → HybridMerkleTree + diff capability
+- MerkleStore trait for storage abstraction
+- No circular dependencies with core
+- Reusable in other content-addressed storage contexts
+
+**NEW: crucible-pipeline Crate** (Completed 2025-11-16):
+- Top-level orchestrator for all five phases of note processing
+- Single canonical pipeline for all frontends (CLI, Desktop, MCP, Obsidian plugin, etc.)
+- Dependency injection for all services (testable, flexible)
+- NotePipeline struct coordinates: ChangeDetectionStore, Parser, MerkleStore, EnrichmentService
+- Clear phase boundaries with metrics and error handling
+- Pure orchestration - delegates business logic to specialized crates
+
 **Refactored: Embedding Components**:
 - Trait definitions moved to `crucible-core/src/enrichment/embedding.rs`
 - Provider implementations in `crucible-llm/src/providers/` (Fastembed, OpenAI)
@@ -51,6 +66,20 @@ This change corrects the architecture to match the clean enrichment pipeline doc
 5. **Storage**: Transactional persistence of enriched data
 
 **Efficiency Strategy**: Merkle diff identifies changed blocks, avoiding redundant processing of unchanged content. Multiple logical passes are acceptable - real efficiency comes from processing only what changed.
+
+**Implementation Architecture**:
+- **Pipeline Orchestrator**: `crucible-pipeline` (NotePipeline) - coordinates all 5 phases
+- **Enrichment Logic**: `crucible-enrichment` (EnrichmentService) - Phase 4 business logic
+- **Merkle Tree**: `crucible-merkle` (HybridMerkleTree, diffing) - Phase 3 core functionality
+- **Parser**: `crucible-parser` (CrucibleParser) - Phase 2 transformation
+- **Storage**: `crucible-surrealdb` (NoteIngestor) - Phase 5 persistence
+
+NotePipeline orchestrates the full flow using dependency-injected traits:
+- ChangeDetectionStore (Phase 1)
+- CrucibleParser (Phase 2)
+- MerkleStore + HybridMerkleTree (Phase 3)
+- EnrichmentService (Phase 4)
+- Storage layer (Phase 5)
 
 ### Technical Changes
 
@@ -70,7 +99,21 @@ This change corrects the architecture to match the clean enrichment pipeline doc
 - `crates/crucible-enrichment/src/service.rs` - EnrichmentService orchestrator (moved from core)
 - `crates/crucible-enrichment/src/types.rs` - EnrichedNote and related types (moved from core)
 - `crates/crucible-enrichment/src/config.rs` - Configuration types (moved from core)
-- `crates/crucible-enrichment/src/document_processor.rs` - Five-phase pipeline (moved from core)
+- `crates/crucible-enrichment/src/enrichment_pipeline.rs` - EnrichmentPipeline implementation
+
+**crucible-merkle Crate** (✅ Complete):
+- `crates/crucible-merkle/Cargo.toml` - Merkle tree crate manifest
+- `crates/crucible-merkle/src/lib.rs` - Module entry point
+- `crates/crucible-merkle/src/hash.rs` - Hashing utilities (moved from core)
+- `crates/crucible-merkle/src/hybrid.rs` - HybridMerkleTree implementation (moved from core)
+- `crates/crucible-merkle/src/storage.rs` - MerkleStore trait (moved from core)
+- `crates/crucible-merkle/src/thread_safe.rs` - Thread-safe wrapper (moved from core)
+- `crates/crucible-merkle/src/virtual_section.rs` - Virtual sections (moved from core)
+
+**crucible-pipeline Crate** (✅ Complete):
+- `crates/crucible-pipeline/Cargo.toml` - Pipeline orchestrator crate manifest
+- `crates/crucible-pipeline/src/lib.rs` - Module entry point
+- `crates/crucible-pipeline/src/note_pipeline.rs` - NotePipeline orchestrator (5-phase coordination)
 
 **crucible-parser Metadata** (🔄 In Progress):
 - `crates/crucible-parser/src/metadata.rs` - Structural metadata extraction
@@ -120,6 +163,8 @@ This change corrects the architecture to match the clean enrichment pipeline doc
 ### Affected Specs
 - `embeddings` - Updated with correct architecture and data flow
 - `parser` - Clarified integration with enrichment layer
+- `merkle` - Now exists as separate crate (crucible-merkle)
+- **NEW**: `pipeline` - Pipeline orchestration spec (to be created)
 
 ## Success Criteria
 

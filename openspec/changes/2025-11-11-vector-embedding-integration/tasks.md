@@ -340,21 +340,46 @@ This implementation corrects severe architectural violations and establishes the
 
 **Goal**: Integrate enrichment layer into document processing pipeline with five-phase architecture.
 
-### Task 3.1: Implement Five-Phase Enrichment Pipeline ✅
+**Actual Implementation - Architectural Evolution:**
+This phase evolved beyond the original spec with significant architectural improvements:
+1. **Created `crucible-merkle` crate** - Extracted Merkle tree (follows `crucible-parser` pattern)
+2. **Created `crucible-pipeline` crate** - Single canonical orchestrator for all frontends
+3. **Maintained `EnrichmentPipeline`** - Standalone enrichment for testing/custom integrations
 
-**Actual Implementation:**
-- `crates/crucible-enrichment/src/enrichment_pipeline.rs` (EnrichmentPipeline)
-- `crates/crucible-core/src/processing/change_detection.rs` (NEW - change detection storage traits)
+These changes provide better separation of concerns, cleaner dependencies, and a single entry point for CLI/Desktop/MCP/etc.
+
+### Task 3.1: Implement Pipeline Orchestrator ✅
+
+**New Crates Created:**
+
+`crucible-merkle` (follows parser pattern):
+- `crates/crucible-merkle/src/hybrid.rs` - HybridMerkleTree (moved from core)
+- `crates/crucible-merkle/src/storage.rs` - MerkleStore trait (moved from core)
+- `crates/crucible-merkle/src/hash.rs`, `thread_safe.rs`, `virtual_section.rs`
+- Pure transformation: ParsedNote → Merkle Tree + diff
+- No circular dependencies
+
+`crucible-pipeline` (new orchestration layer):
+- `crates/crucible-pipeline/src/note_pipeline.rs` - NotePipeline orchestrator
+- Coordinates all 5 phases via dependency injection
+- Single canonical entry point for all frontends
+
+**Also Implemented (Original Plan):**
+- `crates/crucible-enrichment/src/enrichment_pipeline.rs` - EnrichmentPipeline (Phases 1-4)
+- `crates/crucible-core/src/processing/change_detection.rs` - ChangeDetectionStore trait
 
 **Files Modified:**
-- `crates/crucible-core/src/processing/mod.rs` (added change detection module)
-- `crates/crucible-core/src/lib.rs` (exported change detection types)
+- `crates/crucible-core/src/merkle/mod.rs` - Now re-exports from crucible-merkle
+- `crates/crucible-core/src/processing/mod.rs` - Added change detection module
+- `crates/crucible-core/Cargo.toml` - Added crucible-merkle dependency
+- `Cargo.toml` - Added crucible-merkle and crucible-pipeline to workspace
 
 **Implementation Notes:**
-- **Renamed**: `DocumentProcessor` → `EnrichmentPipeline` (moved to crucible-enrichment)
-- **Location Change**: Placed in `crucible-enrichment` (not `crucible-core`) following SOLID
-- **Phases 1-4** implemented in `EnrichmentPipeline`
-- **Phase 5** (storage) kept separate in `NoteIngestor` (coordinator pattern)
+- **Two pipelines coexist** (by design):
+  1. `NotePipeline` (crucible-pipeline) - Full 5-phase orchestrator, canonical for frontends
+  2. `EnrichmentPipeline` (crucible-enrichment) - Standalone Phases 1-4, for testing/custom use
+- NotePipeline uses dependency injection: ChangeDetectionStore, MerkleStore, EnrichmentService
+- Phase 5 (storage) integrated via `NoteIngestor::ingest_enriched()`
 
 **Acceptance Criteria:**
 - [x] `EnrichmentPipeline` implements phases 1-4:
