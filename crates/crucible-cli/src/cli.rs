@@ -55,7 +55,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Natural language chat interface (read-only mode, default)
+    /// Natural language chat interface (toggleable plan/act modes)
     Chat {
         /// Optional one-shot query (if omitted, starts interactive mode)
         query: Option<String>,
@@ -71,24 +71,11 @@ pub enum Commands {
         /// Number of context results to include (default: 5)
         #[arg(long, default_value = "5")]
         context_size: usize,
-    },
 
-    /// Natural language chat with write permissions
-    Act {
-        /// Optional one-shot query (if omitted, starts interactive mode)
-        query: Option<String>,
-
-        /// Preferred agent to use (claude-code, gemini-cli, codex)
-        #[arg(short = 'a', long)]
-        agent: Option<String>,
-
-        /// Skip context enrichment (faster, but agent has no knowledge base access)
+        /// Start in act mode (write-enabled) instead of plan mode (read-only)
+        /// Can be toggled during session with /plan and /act commands
         #[arg(long)]
-        no_context: bool,
-
-        /// Number of context results to include (default: 5)
-        #[arg(long, default_value = "5")]
-        context_size: usize,
+        act: bool,
     },
 
     /// Process files through the pipeline (parse, enrich, store)
@@ -98,7 +85,7 @@ pub enum Commands {
         path: Option<PathBuf>,
 
         /// Force reprocess all files (ignore change detection)
-        #[arg(short = 'f', long)]
+        #[arg(long)]
         force: bool,
 
         /// Watch for changes and reprocess automatically

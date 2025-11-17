@@ -8,6 +8,9 @@ pub mod agent;
 pub mod client;
 pub mod context;
 
-pub use agent::{discover_agent, AgentInfo};
+#[cfg(test)]
+mod tests;
+
+pub use agent::{discover_agent, is_agent_available, AgentInfo};
 pub use client::CrucibleAcpClient;
 pub use context::ContextEnricher;
