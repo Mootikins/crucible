@@ -12,6 +12,7 @@ crucible-enrichment = { path = "../crucible-enrichment" }
 
 # Async runtime
 tokio = { version = "1.42", features = ["full"] }
+async-trait = { workspace = true }
 
 # Error handling
 anyhow = "1.0"
