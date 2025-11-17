@@ -13,6 +13,7 @@
 
 pub mod embedding;
 pub mod service;
+pub mod storage;
 pub mod types;
 
 // Re-export the embedding provider trait
@@ -20,6 +21,9 @@ pub use embedding::EmbeddingProvider;
 
 // Re-export the enrichment service trait
 pub use service::EnrichmentService;
+
+// Re-export the enriched note storage trait
+pub use storage::EnrichedNoteStore;
 
 // Re-export domain types
 pub use types::{
