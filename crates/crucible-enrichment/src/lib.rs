@@ -24,10 +24,8 @@
 //! ## Modules
 //!
 //! - **types**: EnrichedNote and related types
-//! - **service**: EnrichmentService orchestrator
-//! - **note_enricher**: Note enrichment workflow (phases 1-4)
+//! - **service**: EnrichmentService implementation
 
-pub mod note_enricher;
 pub mod service;
 pub mod types;
 
@@ -38,8 +36,3 @@ pub use types::{
 
 // Re-export service
 pub use service::{DefaultEnrichmentService, DEFAULT_MAX_BATCH_SIZE, DEFAULT_MIN_WORDS_FOR_EMBEDDING};
-
-// Re-export note enricher
-pub use note_enricher::{
-    NoteEnricher, EnrichmentResult, ProcessingMetrics, NoteEnricherConfig,
-};
