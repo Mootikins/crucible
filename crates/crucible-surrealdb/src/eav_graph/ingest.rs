@@ -255,15 +255,14 @@ impl<'a> NoteIngestor<'a> {
     /// # Example
     ///
     /// ```rust,ignore
-    /// use crucible_enrichment::NoteEnricher;
+    /// use crucible_pipeline::NotePipeline;
     /// use crucible_surrealdb::eav_graph::NoteIngestor;
     ///
-    /// // Phase 1-4: Enrichment
-    /// let enriched = pipeline.process(path).await?;
+    /// // Pipeline handles phases 1-4 and calls this method for phase 5
+    /// // This example shows direct usage (pipeline handles this automatically)
     ///
-    /// // Phase 5: Storage
     /// let ingestor = NoteIngestor::new(&store);
-    /// let entity_id = ingestor.ingest_enriched(&enriched.enriched, "notes/example.md").await?;
+    /// let entity_id = ingestor.ingest_enriched(&enriched, "notes/example.md").await?;
     /// ```
     pub async fn ingest_enriched(
         &self,
