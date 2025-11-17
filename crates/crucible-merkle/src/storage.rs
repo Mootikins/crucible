@@ -30,7 +30,7 @@
 //! # }
 //! ```
 
-use crate::merkle::HybridMerkleTree;
+use crate::HybridMerkleTree;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -415,7 +415,7 @@ impl MerkleStore for InMemoryMerkleStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::merkle::HybridMerkleTree;
+    use crate::HybridMerkleTree;
     use crate::parser::ParsedNote;
 
     #[tokio::test]

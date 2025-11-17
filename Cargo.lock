@@ -1836,6 +1836,7 @@ dependencies = [
  "chrono",
  "config",
  "crucible-config",
+ "crucible-merkle",
  "crucible-parser",
  "futures",
  "hex",
@@ -1901,6 +1902,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "crucible-merkle"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "blake3",
+ "chrono",
+ "crucible-parser",
+ "hex",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "tokio",
+]
+
+[[package]]
 name = "crucible-parser"
 version = "0.1.0"
 dependencies = [
@@ -1919,6 +1936,21 @@ dependencies = [
  "tokio",
  "tokio-test",
  "toml 0.9.8",
+]
+
+[[package]]
+name = "crucible-pipeline"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crucible-core",
+ "crucible-enrichment",
+ "crucible-merkle",
+ "crucible-parser",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

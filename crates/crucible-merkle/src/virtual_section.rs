@@ -33,7 +33,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::merkle::{HeadingSummary, NodeHash, SectionNode};
+use crate::{HeadingSummary, NodeHash, SectionNode};
 
 /// Configuration for section virtualization
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -302,7 +302,7 @@ pub struct VirtualSectionStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::merkle::hybrid::BinaryMerkleTree;
+    use crate::hybrid::BinaryMerkleTree;
 
     fn create_test_section(
         depth: u8,
