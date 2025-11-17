@@ -14,6 +14,8 @@ path = "src/main.rs"
 crucible-core = { path = "../crucible-core" }
 crucible-surrealdb = { path = "../crucible-surrealdb" }
 crucible-config = { path = "../crucible-config", features = ["toml"] }
+crucible-llm = { path = "../crucible-llm" }
+crucible-pipeline = { path = "../crucible-pipeline" }
 
 # CLI framework
 clap = { workspace = true, features = ["derive", "env", "string"] }
@@ -47,6 +49,12 @@ indicatif = { workspace = true }
 # Logging
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+# ACP (Agent Client Protocol) integration
+agent-client-protocol = "0.6"
+
+# File system utilities
+walkdir = "2.4"
 
 # Rune scripting
 # rune = { workspace = true }  # Commented out - not MVP critical
