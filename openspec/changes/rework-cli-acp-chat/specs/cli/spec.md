@@ -4,7 +4,7 @@
 
 ### Requirement: Natural Language Chat Interface
 
-The CLI SHALL provide a natural language chat interface as the default mode, using the Agent Client Protocol (ACP) to communicate with external AI agents.
+The CLI SHALL provide a natural language chat interface as the default mode, using the Agent Client Protocol (ACP) to communicate with external AI agents. Chat mode SHALL be read-only by default (plan/ask mode).
 
 #### Scenario: User starts chat with default agent
 - **WHEN** user runs `cru chat` without arguments
@@ -24,11 +24,54 @@ The CLI SHALL provide a natural language chat interface as the default mode, usi
 - **THEN** the CLI spawns the gemini-cli agent instead of default
 - **AND** proceeds with chat session normally
 
-#### Scenario: Agent not found
-- **WHEN** user runs `cru chat --agent nonexistent`
-- **THEN** the CLI displays an error message
-- **AND** provides installation instructions for supported agents
+#### Scenario: Agent discovery fallback
+- **WHEN** user runs `cru chat` without specifying an agent
+- **THEN** the CLI tries known agents in order (claude-code, gemini-cli, codex)
+- **AND** spawns the first available agent
+- **AND** logs which agent was selected
+
+#### Scenario: No compatible agents found
+- **WHEN** user runs `cru chat` and no known agents are installed
+- **THEN** the CLI displays an error listing compatible agents
+- **AND** provides installation instructions
 - **AND** exits with non-zero status code
+
+#### Scenario: Preferred agent not found with fallback
+- **WHEN** user runs `cru chat --agent gemini` but gemini-cli is not installed
+- **THEN** the CLI tries other known agents as fallback
+- **AND** spawns the first available agent
+- **AND** warns that preferred agent was unavailable
+
+#### Scenario: Watch mode auto-enabled in chat
+- **WHEN** user starts a chat session with `cru chat`
+- **THEN** the CLI automatically enables file watching on the kiln directory
+- **AND** processes files when they are modified during the chat session
+- **AND** allows disabling with `--no-watch` flag
+
+---
+
+### Requirement: Action Mode (Write-Enabled Chat)
+
+The CLI SHALL provide an "act" mode that allows agents to write files to the kiln.
+
+#### Scenario: User starts action mode
+- **WHEN** user runs `cru act`
+- **THEN** the CLI spawns an agent with write permissions enabled
+- **AND** displays a warning that the agent can modify files
+- **AND** auto-enables file watching
+
+#### Scenario: Agent writes file in action mode
+- **WHEN** agent requests to write a file via `fs_write_text_file`
+- **AND** the session is in action mode
+- **THEN** the CLI writes the content to the kiln
+- **AND** triggers pipeline processing on the modified file
+
+#### Scenario: Agent writes file in chat mode (denied)
+- **WHEN** agent requests to write a file via `fs_write_text_file`
+- **AND** the session is in chat mode (not act mode)
+- **THEN** the CLI denies the write operation
+- **AND** informs the agent that writes are disabled in chat mode
+- **AND** suggests using `cru act` for write operations
 
 ---
 
@@ -53,11 +96,13 @@ The CLI SHALL provide an explicit command to run the NotePipeline orchestrator o
 - **THEN** the CLI bypasses change detection (Phase 1)
 - **AND** reprocesses all files regardless of modification status
 
-#### Scenario: Watch mode
+#### Scenario: Watch mode (explicit)
 - **WHEN** user runs `cru process --watch`
 - **THEN** the CLI starts a file watcher on the kiln directory
 - **AND** automatically processes files when they are created or modified
 - **AND** continues watching until user terminates (Ctrl+C)
+
+**Note**: Watch mode is also auto-enabled during chat/act sessions for responsive updates.
 
 ---
 
@@ -154,10 +199,10 @@ The CLI SHALL automatically process the kiln in the background on startup unless
 
 The CLI SHALL enrich user queries with relevant context from the kiln before sending to the agent.
 
-#### Scenario: Semantic search context
+#### Scenario: Semantic search context with configurable size
 - **WHEN** user asks a question in chat mode
 - **THEN** the CLI performs semantic search
-- **AND** selects the top 5 most relevant notes
+- **AND** selects the top N most relevant notes (N = agent.context_size config, default 5)
 - **AND** formats them as markdown context
 - **AND** prepends context to user query before sending to agent
 
@@ -239,10 +284,17 @@ The CLI SHALL implement the ACP `Client` trait to communicate with external agen
 - **THEN** the CLI reads the file from the kiln
 - **AND** returns the markdown content to the agent
 
-#### Scenario: File write request from agent
+#### Scenario: File write request from agent in action mode
 - **WHEN** agent requests to write a file via `fs_write_text_file`
+- **AND** the session is in action mode (`cru act`)
 - **THEN** the CLI writes the content to the kiln
 - **AND** triggers pipeline processing on the modified file
+
+#### Scenario: File write request from agent in chat mode
+- **WHEN** agent requests to write a file via `fs_write_text_file`
+- **AND** the session is in chat mode (not action mode)
+- **THEN** the CLI denies the operation
+- **AND** returns an error to the agent
 
 #### Scenario: Session update from agent
 - **WHEN** agent sends a `session_update` message
@@ -252,11 +304,21 @@ The CLI SHALL implement the ACP `Client` trait to communicate with external agen
   - ToolCall: prefix with 🔧 emoji
   - Done: print newline and complete
 
-#### Scenario: Permission request
-- **WHEN** agent requests permission for an operation
-- **THEN** the CLI auto-approves read operations (MVP)
-- **AND** auto-approves write operations to kiln directory
-- **AND** denies operations outside kiln directory
+#### Scenario: Permission request for read operations
+- **WHEN** agent requests permission for a read operation
+- **THEN** the CLI auto-approves reads within the kiln directory
+- **AND** denies reads outside the kiln directory
+
+#### Scenario: Permission request for write operations
+- **WHEN** agent requests permission for a write operation
+- **AND** the session is in action mode
+- **THEN** the CLI auto-approves writes within the kiln directory
+- **AND** denies writes outside the kiln directory
+
+#### Scenario: Permission request in chat mode
+- **WHEN** agent requests permission for a write operation
+- **AND** the session is in chat mode (read-only)
+- **THEN** the CLI denies the write operation
 
 ---
 
@@ -277,20 +339,3 @@ The CLI SHALL continue operating with reduced functionality when non-critical co
 - **AND** continues executing the user's command
 - **AND** displays a warning that data may be stale
 
----
-
-### Requirement: Migration from REPL
-
-The CLI SHALL provide guidance for users migrating from the old SurrealQL REPL mode.
-
-#### Scenario: REPL deprecation warning
-- **WHEN** a user attempts to run old REPL commands
-- **THEN** the CLI displays a deprecation notice
-- **AND** suggests equivalent chat or search commands
-- **AND** provides link to migration guide
-
-#### Scenario: Migration documentation
-- **WHEN** the CLI package is installed
-- **THEN** it SHALL include a MIGRATION.md document
-- **AND** the document SHALL map old REPL patterns to new commands
-- **AND** provide examples of natural language equivalents

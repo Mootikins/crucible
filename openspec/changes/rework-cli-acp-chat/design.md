@@ -39,9 +39,42 @@ The **short-term roadmap** (ARCHITECTURE.md) prioritizes:
 
 ## Decisions
 
-### Decision 1: ACP Over Custom Protocol
+### Decision 1: ACP Over Custom Protocol with Agent Discovery
 
-**Choice**: Use official `agent-client-protocol` Rust crate
+**Choice**: Use official `agent-client-protocol` Rust crate with automatic agent discovery
+
+**Agent Discovery Strategy**:
+```rust
+// Try known agents in order
+const KNOWN_AGENTS: &[(&str, &str)] = &[
+    ("claude-code", "claude-code"),
+    ("gemini", "gemini-cli"),
+    ("codex", "codex"),
+];
+
+async fn discover_agent(preferred: Option<&str>) -> Result<String> {
+    // Try user's preferred agent first
+    if let Some(agent) = preferred {
+        if is_available(agent).await? {
+            return Ok(agent.to_string());
+        }
+    }
+
+    // Fallback: try all known agents
+    for (name, cmd) in KNOWN_AGENTS {
+        if is_available(cmd).await? {
+            return Ok(cmd.to_string());
+        }
+    }
+
+    // None found - error with list of compatible agents
+    Err(anyhow::anyhow!(
+        "No compatible ACP agent found.\n\
+         Compatible agents: claude-code, gemini-cli, codex\n\
+         Install one with: npm install -g @anthropic/claude-code"
+    ))
+}
+```
 
 **Why**:
 - Mature, maintained implementation (~6 months in production)
@@ -49,11 +82,13 @@ The **short-term roadmap** (ARCHITECTURE.md) prioritizes:
 - Handles JSON-RPC, subprocess management, streaming
 - Future-proof as protocol evolves
 - ~300 lines to implement vs. ~1500+ for custom protocol
+- Auto-discovery improves UX - works out of box if any agent installed
 
 **Alternatives Considered**:
 - Custom JSON-RPC protocol: More control, but 5x more code + maintenance burden
 - Direct LLM integration: Couples CLI to specific providers, violates separation of concerns
 - MCP (Model Context Protocol): Wrong layer - MCP is for tools, ACP is for client-agent communication
+- Require explicit agent selection: More friction, worse UX
 
 **References**: docs/ACP-MVP.md, docs/ARCHITECTURE.md (line 586-669)
 
@@ -127,12 +162,15 @@ async fn main() {
 
 ### Decision 4: Context Enrichment Approach
 
-**Choice**: Semantic search top-5 results, formatted as markdown context
+**Choice**: Configurable semantic search results, formatted as markdown context
 
 **Implementation**:
 ```rust
 async fn enrich_with_context(&self, query: &str) -> Result<String> {
-    let results = core.semantic_search(query, 5).await?;
+    // Get configured context size (default 5)
+    let context_size = self.config.agent.context_size.unwrap_or(5);
+
+    let results = core.semantic_search(query, context_size).await?;
 
     let context = results.iter()
         .map(|r| format!("## {}\n\n{}\n", r.title, r.snippet))
@@ -146,14 +184,28 @@ async fn enrich_with_context(&self, query: &str) -> Result<String> {
 }
 ```
 
+**Configuration**:
+```toml
+# config.toml
+[agent]
+context_size = 5  # Number of semantic search results to include
+```
+
+```bash
+# Via CLI
+cru config set agent.context_size 10
+```
+
 **Why**:
 - Simple, predictable behavior
-- 5 results balances context richness vs. token usage
+- 5 results default balances context richness vs. token usage
+- Configurable for different use cases (quick queries vs deep research)
 - Markdown format is human-readable and agent-friendly
 - Semantic search finds conceptually related content
-- Configurable for future tuning
 
 **Alternatives Considered**:
+- Hard-coded to 5: Less flexible, can't tune per use case
+- Dynamic based on query: Too complex for MVP, unpredictable
 - Graph traversal context: More complex, less predictable
 - Full-text search: Misses semantic connections
 - Vector similarity only: Loses graph structure
@@ -162,29 +214,40 @@ async fn enrich_with_context(&self, query: &str) -> Result<String> {
 **Open Question**: Should we include graph structure (wikilinks, backlinks) in context?
 - **Deferred**: Start with semantic search, add graph in post-MVP if needed
 
-### Decision 5: Command Structure
+### Decision 5: Command Structure and Modes
 
-**Choice**: Five core commands with chat as default
+**Choice**: Five core commands with chat as default, plus separate read/write modes
 
+**Commands**:
 ```bash
-cru [chat]     # Default - natural language
+cru [chat]     # Default - natural language (read-only/plan mode)
+cru act        # Action mode - allows agent to write files
 cru process    # Explicit pipeline run
 cru status     # Kiln statistics
 cru search     # Quick semantic search
 cru config     # Configuration
 ```
 
+**Chat Mode Strategy**:
+- **Default (plan/ask mode)**: Agent can read files, no writes
+- **Act mode (`cru act`)**: Agent can read AND write files
+- Auto-enable watch mode during chat sessions for responsive file updates
+
 **Why**:
 - Chat-first aligns with ACP roadmap
+- Separate modes prevent accidental file modifications
 - Process gives explicit control when needed
 - Status provides visibility
 - Search for quick lookups without agent
 - Config for setup and troubleshooting
+- Watch mode during chat ensures agent sees latest changes
 
 **Alternatives Considered**:
 - REPL as default: Old paradigm, doesn't support ACP vision
 - All-in-one command with modes: Confusing UX, hidden features
 - Subcommand-heavy structure: Verbose, high cognitive load
+- Always allow writes: Too permissive, accidents likely
+- Always prompt for permission: Too much friction
 
 ## Architecture Diagrams
 
@@ -360,6 +423,33 @@ If major issues discovered:
 3. Fix issues in new implementation
 4. Re-deploy when stable
 
+## Resolved Questions
+
+### Q1: Agent Installation Dependency ✅
+**Decision**: Fallback through known agents, error if none found
+
+**Rationale**: Auto-discovery improves UX - CLI works out of box if any compatible agent installed. Error message lists all compatible agents with install instructions.
+
+### Q2: Context Size Configuration ✅
+**Decision**: Configurable via `agent.context_size` in config file
+
+**Rationale**: Default of 5 balances context vs tokens, but users can tune for their use case (quick queries vs deep research).
+
+### Q3: Write Permissions ✅
+**Decision**: Separate `cru chat` (read-only/plan) vs `cru act` (write mode)
+
+**Rationale**: Prevents accidental file modifications while allowing intentional agent actions. Clear separation of concerns.
+
+### Q4: Watch Mode Integration ✅
+**Decision**: Auto-enable watch mode during chat sessions
+
+**Rationale**: Ensures agent sees latest file changes during conversation. Can be disabled with `--no-watch` if needed.
+
+### Q5: Migration Documentation ✅
+**Decision**: No migration documentation needed
+
+**Rationale**: Single developer/user, no backwards compatibility burden for MVP.
+
 ## Open Questions
 
 ### Q1: Session Persistence
@@ -380,27 +470,7 @@ If major issues discovered:
 
 **Recommendation**: Defer to post-MVP (choose B for simplicity now)
 
-### Q3: Permission Model
-**Question**: Auto-approve all agent file operations or prompt user?
-
-**Options**:
-- A: Auto-approve for MVP (trust agent)
-- B: Prompt for destructive operations (write, delete)
-
-**Recommendation**: Start with A (auto-approve), add B in post-MVP
-
-**Rationale**: Chat-only mode is read-heavy, prompts add friction
-
-### Q4: Context Assembly Strategy
-**Question**: Should we include graph structure in context?
-
-**Options**:
-- A: Just semantic search results (simpler)
-- B: Add wikilinks and backlinks (richer context)
-
-**Recommendation**: Start with A, add B if agents request it
-
-### Q5: Error Handling Strategy
+### Q3: Error Handling Strategy
 **Question**: How should we handle agent crashes or timeouts?
 
 **Options**:
