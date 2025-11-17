@@ -322,22 +322,20 @@ impl<'a> NoteIngestor<'a> {
             })
             .await?;
 
-        // Store complexity score if present
-        if let Some(complexity) = enriched.metadata.complexity_score {
-            self.store
-                .upsert_property(&Property {
-                    id: None,
-                    entity_id: entity_id.clone(),
-                    namespace: metadata_namespace.clone(),
-                    key: "complexity_score".to_string(),
-                    value: PropertyValue::Number(complexity as f64),
-                    source: "enrichment_service".to_string(),
-                    confidence: 1.0,
-                    created_at: chrono::Utc::now(),
-                    updated_at: chrono::Utc::now(),
-                })
-                .await?;
-        }
+        // Store complexity score (always present as f32)
+        self.store
+            .upsert_property(&Property {
+                id: None,
+                entity_id: entity_id.clone(),
+                namespace: metadata_namespace.clone(),
+                key: "complexity_score".to_string(),
+                value: PropertyValue::Number(enriched.metadata.complexity_score as f64),
+                source: "enrichment_service".to_string(),
+                confidence: 1.0,
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+            })
+            .await?;
 
         // Store language if detected
         if let Some(language) = &enriched.metadata.language {
