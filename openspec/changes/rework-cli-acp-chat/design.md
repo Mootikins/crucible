@@ -450,34 +450,24 @@ If major issues discovered:
 
 **Rationale**: Single developer/user, no backwards compatibility burden for MVP.
 
+### Q6: Session Persistence ✅
+**Decision**: No persistence for MVP (option B)
+
+**Rationale**: Keep initial implementation simple. Post-MVP: sessions will be saved as markdown files in the kiln for RLHF and other post-processing workflows.
+
+### Q7: Multi-Agent Support ✅
+**Decision**: Single agent per session for MVP (option B)
+
+**Rationale**: Simpler implementation. Long-term vision: hand-rolled agent system where agents and multi-agent workflows are defined via markdown files in the kiln.
+
+### Q8: Error Handling Strategy ✅
+**Decision**: Fail and let user restart manually (option B)
+
+**Rationale**: Simpler error handling for MVP. Automatic restart can be added post-MVP if needed based on usage patterns.
+
 ## Open Questions
 
-### Q1: Session Persistence
-**Question**: Should chat sessions persist across CLI invocations?
-
-**Options**:
-- A: Save to `~/.crucible/sessions/` (similar to shell history)
-- B: No persistence, each invocation is fresh session
-
-**Recommendation**: Defer to post-MVP (choose B for simplicity now)
-
-### Q2: Multi-Agent Support
-**Question**: Should we support multiple agents in one session?
-
-**Options**:
-- A: Yes, allow switching agents: `/agent gemini`
-- B: No, one agent per session
-
-**Recommendation**: Defer to post-MVP (choose B for simplicity now)
-
-### Q3: Error Handling Strategy
-**Question**: How should we handle agent crashes or timeouts?
-
-**Options**:
-- A: Restart agent and resume session
-- B: Fail and let user restart manually
-
-**Recommendation**: Start with B (simpler), add A if needed
+None remaining for MVP. All architectural decisions finalized.
 
 ## Success Metrics
 
