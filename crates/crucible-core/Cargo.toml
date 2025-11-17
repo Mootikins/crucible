@@ -34,6 +34,9 @@ tokio = { workspace = true, features = ["full", "tracing"] }
 # Parser dependency (now separate crate with dependency inversion)
 crucible-parser = { workspace = true }
 
+# Merkle tree (extracted to separate crate)
+crucible-merkle = { path = "../crucible-merkle" }
+
 # Configuration management (for enrichment config types)
 crucible-config = { path = "../crucible-config" }
 

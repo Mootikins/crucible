@@ -30,7 +30,7 @@
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::sync::Arc;
 
-use crate::merkle::{HybridMerkleTree, NodeHash, VirtualizationConfig};
+use crate::{HybridMerkleTree, NodeHash, VirtualizationConfig};
 use crucible_parser::types::ParsedNote;
 
 /// Thread-safe wrapper around HybridMerkleTree
