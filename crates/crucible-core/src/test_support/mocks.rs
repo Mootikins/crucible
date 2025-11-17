@@ -1737,6 +1737,7 @@ impl crate::enrichment::EnrichmentService for MockEnrichmentService {
 #[cfg(test)]
 mod enrichment_service_tests {
     use super::*;
+    use crate::enrichment::service::EnrichmentService;
 
     #[tokio::test]
     async fn test_mock_enrichment_service_basic() {
