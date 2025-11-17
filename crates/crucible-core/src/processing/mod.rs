@@ -19,10 +19,15 @@
 //! the enrichment pipeline and depends on enrichment services.
 
 pub mod change_detection;
+pub mod pipeline;
 
 pub use change_detection::{
     ChangeDetectionError, ChangeDetectionResult, ChangeDetectionStore, FileState,
     InMemoryChangeDetectionStore,
+};
+
+pub use pipeline::{
+    NotePipelineOrchestrator, PipelineMetrics, ProcessingResult,
 };
 
 use serde::{Deserialize, Serialize};

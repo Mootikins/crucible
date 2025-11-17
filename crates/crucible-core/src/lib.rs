@@ -31,16 +31,17 @@ pub use crucible_core::CrucibleCore;
 
 // Re-export enrichment traits and types (implementations in crucible-enrichment crate)
 pub use enrichment::{
-    BlockEmbedding, EmbeddingProvider, EnrichedNote, EnrichmentService, InferredRelation,
-    NoteMetadata, RelationType,
+    BlockEmbedding, EmbeddingProvider, EnrichedNote, EnrichedNoteStore, EnrichmentService,
+    InferredRelation, NoteMetadata, RelationType,
 };
 
-// Re-export processing handoff types and change detection
+// Re-export processing handoff types, change detection, and pipeline trait
 pub use processing::{
     ChangeDetectionError, ChangeDetectionResult, ChangeDetectionStore, FileState,
     InMemoryChangeDetectionStore, JobConfiguration, JobStats, NoteProcessingJob,
-    NoteProcessingResult, ProcessedNote, ProcessingContext, ProcessingMetadata,
-    ProcessingPriority, ProcessingSource,
+    NoteProcessingResult, NotePipelineOrchestrator, PipelineMetrics, ProcessedNote,
+    ProcessingContext, ProcessingMetadata, ProcessingPriority, ProcessingResult,
+    ProcessingSource,
 };
 
 // Re-export core traits (abstractions for Dependency Inversion)
