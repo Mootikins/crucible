@@ -443,8 +443,9 @@ async fn test_pipeline_skip_unchanged_files() {
         "First processing should succeed"
     );
 
-    // Clear mock counters
-    storage.clear();
+    // Save counts before second processing
+    let enrich_count_before = enrichment_service.enrich_with_tree_count();
+    let store_count_before = storage.store_count();
 
     // Second processing - should skip (file hash matches)
     let result2 = pipeline.process(&file_path).await.unwrap();
@@ -454,12 +455,12 @@ async fn test_pipeline_skip_unchanged_files() {
             // Perfect - file was skipped
             assert_eq!(
                 enrichment_service.enrich_with_tree_count(),
-                0,
+                enrich_count_before,
                 "Enrichment should not be called for skipped files"
             );
             assert_eq!(
                 storage.store_count(),
-                0,
+                store_count_before,
                 "Storage should not be called for skipped files"
             );
         }
@@ -528,11 +529,11 @@ async fn test_pipeline_skip_enrichment_mode() {
 
     match result {
         ProcessingResult::Success { .. } => {
-            // Verify enrichment was called but should create minimal enriched note
+            // Verify enrichment service was NOT called (pipeline creates minimal note directly)
             assert_eq!(
                 enrichment_service.enrich_with_tree_count(),
-                1,
-                "Enrichment called once even in skip mode (creates minimal note)"
+                0,
+                "Enrichment service should not be called in skip mode (minimal note created directly)"
             );
 
             // Verify storage was still called (we still store parsed note)
