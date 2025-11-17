@@ -832,7 +832,7 @@ max_performance_degradation = 20.0
         if self.kiln.embedding_model.as_deref() == Some("mock")
             || self.kiln.embedding_model.as_deref() == Some("mock-test-model")
         {
-            return Ok(EmbeddingConfig::mock());
+            return Ok(EmbeddingConfig::mock(None));
         }
 
         // NEW: Check for new [embedding] section format
@@ -876,7 +876,7 @@ max_performance_degradation = 20.0
                     .cache_dir
                     .as_ref()
                     .map(|p| p.to_string_lossy().to_string()),
-                embedding.fastembed.batch_size,
+                embedding.fastembed.batch_size.map(|v| v as usize),
             )),
             "ollama" => {
                 let url = embedding
