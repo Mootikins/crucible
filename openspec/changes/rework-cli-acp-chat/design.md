@@ -203,6 +203,18 @@ cru config set agent.context_size 10
 - Markdown format is human-readable and agent-friendly
 - Semantic search finds conceptually related content
 
+**Implementation Note**:
+This functionality **already exists** in `crates/crucible-cli/src/commands/semantic.rs.disabled` (831 lines). The file contains:
+- `DefaultSemanticSearchService` implementing `SemanticSearchService` trait
+- Integration with `semantic_search_with_reranking()` from `kiln_integration.rs`
+- Progress bars, JSON output, error handling
+- Context formatting and enrichment
+
+We're **re-enabling and integrating** existing production-ready code, not building from scratch. The code path is:
+1. Re-enable `semantic.rs.disabled` → `semantic.rs`
+2. Wire into `CrucibleCore` facade
+3. Call from ACP context enrichment in chat mode
+
 **Alternatives Considered**:
 - Hard-coded to 5: Less flexible, can't tune per use case
 - Dynamic based on query: Too complex for MVP, unpredictable

@@ -1,5 +1,20 @@
 # Implementation Tasks
 
+## 0. Architecture Cleanup (Pre-Implementation)
+- [ ] 0.1 Re-enable `semantic.rs.disabled` as `semantic.rs` (831 lines of production-ready code)
+- [ ] 0.2 Delete `kiln_scanner.rs` (1,429 lines - old polling architecture, marked with TODO)
+- [ ] 0.3 Delete `kiln_pipeline_connector.rs` (757 lines - replaced by NotePipeline)
+- [ ] 0.4 Refactor `kiln_integration.rs` - extract semantic search, delete old processing (~1,700 lines to remove)
+- [ ] 0.5 Delete 11 `.disabled` files from old architecture (CLI common/, commands/)
+- [ ] 0.6 Update `lib.rs` exports after module deletions
+- [ ] 0.7 Fix compilation errors from deleted modules
+- [ ] 0.8 Run full test suite and fix broken tests: `cargo test --workspace`
+- [ ] 0.9 Commit cleanup: "refactor: remove old polling architecture (~6,000 lines)"
+
+**Rationale**: The codebase has ~6,000 lines of redundant code from the old embedding_pool polling architecture. The new `NotePipeline` orchestrator supersedes these modules. Cleaning up first provides a clear foundation for the CLI rework.
+
+**Key Finding**: `semantic.rs.disabled` (831 lines) contains a fully-implemented semantic search command with progress bars, reranking, and JSON output. It just needs to be re-enabled and integrated with the new facade pattern.
+
 ## 1. Foundation & Setup
 - [ ] 1.1 Add dependencies to Cargo.toml (agent-client-protocol, rustyline, indicatif, walkdir)
 - [ ] 1.2 Create new module structure (acp/, pipeline/, core_facade.rs)
@@ -25,10 +40,12 @@
 
 ## 4. Context Enrichment
 - [ ] 4.1 Create `acp/context.rs` for context assembly
-- [ ] 4.2 Implement semantic search integration
-- [ ] 4.3 Add context formatting for agent prompts
-- [ ] 4.4 Add configurable context size (number of results)
-- [ ] 4.5 Write tests for context enrichment logic
+- [ ] 4.2 Integrate existing `semantic_search_with_reranking()` from kiln_integration (already implemented!)
+- [ ] 4.3 Add context formatting for agent prompts (markdown format from design.md)
+- [ ] 4.4 Wire configurable `agent.context_size` from config to search queries
+- [ ] 4.5 Write integration tests for context enrichment in chat mode
+
+**Note**: Semantic search functionality already exists in `semantic.rs` (831 lines). The `semantic_search_with_reranking()` function in `kiln_integration.rs` provides full vector search + reranking. We're integrating existing code, not building from scratch.
 
 ## 5. Chat Command
 - [ ] 5.1 Create `commands/chat.rs` module
@@ -56,12 +73,22 @@
 - [ ] 7.5 Add detailed mode (--detailed flag)
 - [ ] 7.6 Write tests for status display
 
-## 8. Search Command
-- [ ] 8.1 Refactor `commands/search.rs` to use semantic search
-- [ ] 8.2 Remove fuzzy text matching code
-- [ ] 8.3 Add snippet extraction
-- [ ] 8.4 Add limit and format options
-- [ ] 8.5 Write tests for semantic search integration
+## 8. Search Command (Already Exists!)
+- [ ] 8.1 Verify re-enabled `semantic.rs` works with current codebase
+- [ ] 8.2 Integrate with `CrucibleCore` facade pattern
+- [ ] 8.3 Update CLI module imports to use re-enabled semantic command
+- [ ] 8.4 Test `cru search` command end-to-end
+- [ ] 8.5 Verify JSON output format and progress bars work correctly
+
+**Note**: `semantic.rs.disabled` (831 lines) is a complete, production-ready implementation with:
+- Full `SemanticSearchService` trait
+- Vector search + optional reranking
+- Progress bars with `indicatif`
+- JSON output support
+- Snippet extraction
+- Error handling
+
+It was disabled during a previous refactor but is ready to re-enable. No new code needed, just integration with the new facade.
 
 ## 9. Config Command (Keep Existing)
 - [ ] 9.1 Review existing config command - minimal changes needed
@@ -75,13 +102,15 @@
 - [ ] 10.4 Implement graceful degradation on processing errors
 - [ ] 10.5 Write tests for background processing logic
 
-## 11. Code Cleanup
-- [ ] 11.1 Remove `commands/repl/` directory
-- [ ] 11.2 Remove `commands/fuzzy.rs`
-- [ ] 11.3 Remove `commands/diff.rs`
-- [ ] 11.4 Remove all `*.disabled` files
+## 11. Final Code Cleanup (Post-Implementation)
+- [ ] 11.1 Remove `commands/repl/` directory (after chat/act commands proven working)
+- [ ] 11.2 Remove `commands/fuzzy.rs` (replaced by semantic search)
+- [ ] 11.3 Remove `commands/diff.rs` (not needed for MVP)
+- [ ] 11.4 Verify all `.disabled` files removed in Phase 0
 - [ ] 11.5 Update imports throughout codebase
-- [ ] 11.6 Remove unused dependencies
+- [ ] 11.6 Remove unused dependencies from Cargo.toml
+
+**Note**: Major cleanup (~6,000 lines of old polling architecture) happens in Phase 0. This section is for final cleanup after the new CLI is proven working.
 
 ## 12. Testing
 - [ ] 12.1 Create integration test suite (`tests/cli_integration.rs`)
