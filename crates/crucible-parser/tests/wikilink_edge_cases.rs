@@ -4,14 +4,15 @@
 //! circular references, nested structures, and error recovery.
 
 use crucible_parser::{CrucibleParser, MarkdownParserImplementation, ParsedNote};
+use std::path::Path;
 
-fn parse_note(content: &str, path: &str) -> Result<ParsedNote, Box<dyn std::error::Error>> {
+async fn parse_note(content: &str, path: &str) -> Result<ParsedNote, Box<dyn std::error::Error>> {
     let parser = CrucibleParser::with_default_extensions();
-    Ok(parser.parse(content, path)?)
+    Ok(parser.parse_content(content, Path::new(path)).await?)
 }
 
-#[test]
-fn test_transclusion_syntax() {
+#[tokio::test]
+async fn test_transclusion_syntax() {
     let content = r#"# Note
 Embed another note:
 ![[embedded-note]]
@@ -20,12 +21,8 @@ Regular wikilink:
 [[regular-link]]
 "#;
 
-    let parsed = parse_note(content, "test.md").unwrap();
-    let wikilinks: Vec<_> = parsed
-        .blocks
-        .iter()
-        .flat_map(|b| &b.wikilinks)
-        .collect();
+    let parsed = parse_note(content, "test.md").await.unwrap();
+    let wikilinks = &parsed.wikilinks;
 
     assert_eq!(wikilinks.len(), 2);
 
@@ -40,65 +37,49 @@ Regular wikilink:
     assert_eq!(transclusion.target, "embedded-note");
 }
 
-#[test]
-fn test_wikilink_with_heading_reference() {
+#[tokio::test]
+async fn test_wikilink_with_heading_reference() {
     let content = "Link to heading: [[note#Section Title]]";
 
-    let parsed = parse_note(content, "test.md").unwrap();
-    let wikilinks: Vec<_> = parsed
-        .blocks
-        .iter()
-        .flat_map(|b| &b.wikilinks)
-        .collect();
+    let parsed = parse_note(content, "test.md").await.unwrap();
+    let wikilinks = &parsed.wikilinks;
 
     assert_eq!(wikilinks.len(), 1);
     assert_eq!(wikilinks[0].target, "note");
-    assert_eq!(wikilinks[0].heading_reference.as_deref(), Some("Section Title"));
+    assert_eq!(wikilinks[0].heading_ref.as_deref(), Some("Section Title"));
 }
 
-#[test]
-fn test_wikilink_with_block_reference() {
+#[tokio::test]
+async fn test_wikilink_with_block_reference() {
     let content = "Link to block: [[note#^block-id]]";
 
-    let parsed = parse_note(content, "test.md").unwrap();
-    let wikilinks: Vec<_> = parsed
-        .blocks
-        .iter()
-        .flat_map(|b| &b.wikilinks)
-        .collect();
+    let parsed = parse_note(content, "test.md").await.unwrap();
+    let wikilinks = &parsed.wikilinks;
 
     assert_eq!(wikilinks.len(), 1);
     assert_eq!(wikilinks[0].target, "note");
-    assert_eq!(wikilinks[0].block_reference.as_deref(), Some("block-id"));
+    assert_eq!(wikilinks[0].block_ref.as_deref(), Some("block-id"));
 }
 
-#[test]
-fn test_wikilink_with_alias_and_heading() {
+#[tokio::test]
+async fn test_wikilink_with_alias_and_heading() {
     let content = "Complex link: [[note#Section|Display Text]]";
 
-    let parsed = parse_note(content, "test.md").unwrap();
-    let wikilinks: Vec<_> = parsed
-        .blocks
-        .iter()
-        .flat_map(|b| &b.wikilinks)
-        .collect();
+    let parsed = parse_note(content, "test.md").await.unwrap();
+    let wikilinks = &parsed.wikilinks;
 
     assert_eq!(wikilinks.len(), 1);
     assert_eq!(wikilinks[0].target, "note");
     assert_eq!(wikilinks[0].alias.as_deref(), Some("Display Text"));
-    assert_eq!(wikilinks[0].heading_reference.as_deref(), Some("Section"));
+    assert_eq!(wikilinks[0].heading_ref.as_deref(), Some("Section"));
 }
 
-#[test]
-fn test_multiple_wikilinks_same_line() {
+#[tokio::test]
+async fn test_multiple_wikilinks_same_line() {
     let content = "Multiple links: [[first]] and [[second]] and [[third]]";
 
-    let parsed = parse_note(content, "test.md").unwrap();
-    let wikilinks: Vec<_> = parsed
-        .blocks
-        .iter()
-        .flat_map(|b| &b.wikilinks)
-        .collect();
+    let parsed = parse_note(content, "test.md").await.unwrap();
+    let wikilinks = &parsed.wikilinks;
 
     assert_eq!(wikilinks.len(), 3);
     assert_eq!(wikilinks[0].target, "first");
@@ -106,8 +87,8 @@ fn test_multiple_wikilinks_same_line() {
     assert_eq!(wikilinks[2].target, "third");
 }
 
-#[test]
-fn test_wikilink_with_special_characters() {
+#[tokio::test]
+async fn test_wikilink_with_special_characters() {
     let content = r#"Links with special chars:
 [[note-with-dashes]]
 [[note_with_underscores]]
@@ -115,12 +96,8 @@ fn test_wikilink_with_special_characters() {
 [[note.with.dots]]
 "#;
 
-    let parsed = parse_note(content, "test.md").unwrap();
-    let wikilinks: Vec<_> = parsed
-        .blocks
-        .iter()
-        .flat_map(|b| &b.wikilinks)
-        .collect();
+    let parsed = parse_note(content, "test.md").await.unwrap();
+    let wikilinks = &parsed.wikilinks;
 
     assert_eq!(wikilinks.len(), 4);
     assert!(wikilinks.iter().any(|w| w.target == "note-with-dashes"));
@@ -129,8 +106,8 @@ fn test_wikilink_with_special_characters() {
     assert!(wikilinks.iter().any(|w| w.target == "note.with.dots"));
 }
 
-#[test]
-fn test_nested_wikilinks_in_different_blocks() {
+#[tokio::test]
+async fn test_nested_wikilinks_in_different_blocks() {
     let content = r#"# Heading 1
 Link in paragraph: [[first]]
 
@@ -140,37 +117,29 @@ Link in nested section: [[second]]
 - List item with [[third]]
 "#;
 
-    let parsed = parse_note(content, "test.md").unwrap();
-    let wikilinks: Vec<_> = parsed
-        .blocks
-        .iter()
-        .flat_map(|b| &b.wikilinks)
-        .collect();
+    let parsed = parse_note(content, "test.md").await.unwrap();
+    let wikilinks = &parsed.wikilinks;
 
     assert_eq!(wikilinks.len(), 3);
 }
 
-#[test]
-fn test_unclosed_wikilink() {
+#[tokio::test]
+async fn test_unclosed_wikilink() {
     // Test that unclosed wikilinks don't cause parser to fail
     let content = "Unclosed link: [[broken";
 
-    let parsed = parse_note(content, "test.md").unwrap();
+    let parsed = parse_note(content, "test.md").await.unwrap();
 
     // Should parse without error, even if wikilink isn't extracted
-    assert!(!parsed.blocks.is_empty());
+    // ParsedNote exists, which means it parsed successfully
 }
 
-#[test]
-fn test_empty_wikilink() {
+#[tokio::test]
+async fn test_empty_wikilink() {
     let content = "Empty link: [[]]";
 
-    let parsed = parse_note(content, "test.md").unwrap();
-    let wikilinks: Vec<_> = parsed
-        .blocks
-        .iter()
-        .flat_map(|b| &b.wikilinks)
-        .collect();
+    let parsed = parse_note(content, "test.md").await.unwrap();
+    let wikilinks = &parsed.wikilinks;
 
     // Empty wikilinks should either be ignored or parsed with empty target
     // Behavior depends on implementation
@@ -179,8 +148,8 @@ fn test_empty_wikilink() {
     }
 }
 
-#[test]
-fn test_wikilink_in_code_block_not_parsed() {
+#[tokio::test]
+async fn test_wikilink_in_code_block_not_parsed() {
     let content = r#"Regular link: [[normal]]
 
 ```
@@ -190,12 +159,8 @@ Code block link: [[should-not-parse]]
 After code: [[after]]
 "#;
 
-    let parsed = parse_note(content, "test.md").unwrap();
-    let wikilinks: Vec<_> = parsed
-        .blocks
-        .iter()
-        .flat_map(|b| &b.wikilinks)
-        .collect();
+    let parsed = parse_note(content, "test.md").await.unwrap();
+    let wikilinks = &parsed.wikilinks;
 
     // Should only find wikilinks outside code blocks
     assert_eq!(wikilinks.len(), 2);
