@@ -105,8 +105,48 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Execute command (default to REPL if no command provided)
+    // Execute command
     match cli.command {
+        // New ACP-based commands
+        Some(Commands::Chat {
+            query,
+            agent,
+            no_context,
+            context_size,
+        }) => {
+            commands::chat::execute(
+                config,
+                agent,
+                query,
+                true,  // read_only = true for chat mode
+                no_context,
+                Some(context_size),
+            )
+            .await?
+        }
+
+        Some(Commands::Act {
+            query,
+            agent,
+            no_context,
+            context_size,
+        }) => {
+            commands::chat::execute(
+                config,
+                agent,
+                query,
+                false,  // read_only = false for act mode
+                no_context,
+                Some(context_size),
+            )
+            .await?
+        }
+
+        Some(Commands::Process { path, force, watch }) => {
+            commands::process::execute(config, path, force, watch).await?
+        }
+
+        // Existing commands
         Some(Commands::Search {
             query,
             limit,

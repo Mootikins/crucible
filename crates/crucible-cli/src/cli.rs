@@ -55,6 +55,57 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Natural language chat interface (read-only mode, default)
+    Chat {
+        /// Optional one-shot query (if omitted, starts interactive mode)
+        query: Option<String>,
+
+        /// Preferred agent to use (claude-code, gemini-cli, codex)
+        #[arg(short = 'a', long)]
+        agent: Option<String>,
+
+        /// Skip context enrichment (faster, but agent has no knowledge base access)
+        #[arg(long)]
+        no_context: bool,
+
+        /// Number of context results to include (default: 5)
+        #[arg(long, default_value = "5")]
+        context_size: usize,
+    },
+
+    /// Natural language chat with write permissions
+    Act {
+        /// Optional one-shot query (if omitted, starts interactive mode)
+        query: Option<String>,
+
+        /// Preferred agent to use (claude-code, gemini-cli, codex)
+        #[arg(short = 'a', long)]
+        agent: Option<String>,
+
+        /// Skip context enrichment (faster, but agent has no knowledge base access)
+        #[arg(long)]
+        no_context: bool,
+
+        /// Number of context results to include (default: 5)
+        #[arg(long, default_value = "5")]
+        context_size: usize,
+    },
+
+    /// Process files through the pipeline (parse, enrich, store)
+    Process {
+        /// Specific file or directory to process (if omitted, processes entire kiln)
+        #[arg(value_name = "PATH")]
+        path: Option<PathBuf>,
+
+        /// Force reprocess all files (ignore change detection)
+        #[arg(short = 'f', long)]
+        force: bool,
+
+        /// Watch for changes and reprocess automatically
+        #[arg(short = 'w', long)]
+        watch: bool,
+    },
+
     /// Interactive search through kiln notes (fuzzy finder)
     Search {
         /// Search query (optional - opens picker if omitted)
