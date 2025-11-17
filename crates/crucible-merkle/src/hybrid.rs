@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::merkle::{NodeHash, VirtualSection, VirtualizationConfig};
+use crate::{NodeHash, VirtualSection, VirtualizationConfig};
 use crucible_parser::types::{BlockHash, Heading, Paragraph, ParsedNote};
 
 /// Hybrid Merkle tree that groups note content into semantic sections and
