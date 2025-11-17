@@ -16,9 +16,9 @@ use tokio::io::{AsyncReadExt, BufReader};
 use tracing::{debug, info, warn};
 use walkdir::{DirEntry, WalkDir};
 
-// TODO: Update to use new enrichment architecture (EnrichmentPipeline)
+// TODO: Update to use new enrichment architecture (NoteEnricher)
 // This module was part of the old embedding_pool polling architecture.
-// The new architecture uses file watchers + EnrichmentPipeline for event-driven processing.
+// The new architecture uses file watchers + NoteEnricher for event-driven processing.
 // use crate::embedding_pool::EmbeddingThreadPool;
 use crate::hash_lookup::{lookup_file_hashes_batch_cached, BatchLookupConfig, HashLookupCache};
 use crate::kiln_integration::*;

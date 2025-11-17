@@ -76,9 +76,9 @@ impl DefaultEnrichmentService {
     /// # Example
     ///
     /// ```rust
-    /// use crucible_enrichment::EnrichmentService;
+    /// use crucible_enrichment::DefaultEnrichmentService;
     ///
-    /// let service = EnrichmentService::without_embeddings();
+    /// let service = DefaultEnrichmentService::without_embeddings();
     /// ```
     pub fn without_embeddings() -> Self {
         Self::default()
@@ -89,9 +89,9 @@ impl DefaultEnrichmentService {
     /// # Example
     ///
     /// ```rust
-    /// use crucible_enrichment::EnrichmentService;
+    /// use crucible_enrichment::DefaultEnrichmentService;
     ///
-    /// let service = EnrichmentService::without_embeddings()
+    /// let service = DefaultEnrichmentService::without_embeddings()
     ///     .with_min_words(10);
     /// ```
     pub fn with_min_words(mut self, min_words: usize) -> Self {
@@ -104,9 +104,9 @@ impl DefaultEnrichmentService {
     /// # Example
     ///
     /// ```rust
-    /// use crucible_enrichment::EnrichmentService;
+    /// use crucible_enrichment::DefaultEnrichmentService;
     ///
-    /// let service = EnrichmentService::without_embeddings()
+    /// let service = DefaultEnrichmentService::without_embeddings()
     ///     .with_max_batch_size(20);
     /// ```
     pub fn with_max_batch_size(mut self, max_batch_size: usize) -> Self {

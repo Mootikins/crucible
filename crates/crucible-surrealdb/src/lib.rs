@@ -39,7 +39,7 @@ pub mod hash_lookup;
 pub mod kiln_integration;
 // TODO: These modules (kiln_pipeline_connector, kiln_scanner) are part of the old
 // embedding_pool polling architecture and need to be updated to use the new
-// EnrichmentPipeline + NoteIngestor pattern. Disabled for now.
+// NoteEnricher + NoteIngestor pattern. Disabled for now.
 // #[cfg(feature = "embeddings")]
 // pub mod kiln_pipeline_connector;
 // #[cfg(feature = "embeddings")]

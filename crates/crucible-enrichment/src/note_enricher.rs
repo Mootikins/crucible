@@ -1,6 +1,6 @@
-//! Enrichment Pipeline
+//! Note Enricher
 //!
-//! This module implements the enrichment pipeline as defined in
+//! This module implements the note enrichment workflow (phases 1-4) as defined in
 //! ARCHITECTURE.md, following clean architecture principles with proper
 //! separation of concerns.
 //!
@@ -15,7 +15,7 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use crucible_enrichment::{EnrichmentPipeline, DefaultEnrichmentService};
+//! use crucible_enrichment::{NoteEnricher, DefaultEnrichmentService};
 //! use std::path::Path;
 //! use std::sync::Arc;
 //!
@@ -25,7 +25,7 @@
 //!     let enrichment_service = Arc::new(DefaultEnrichmentService::without_embeddings());
 //!
 //!     // Create processor
-//!     let processor = EnrichmentPipeline::new(enrichment_service);
+//!     let processor = NoteEnricher::new(enrichment_service);
 //!
 //!     // Process a note
 //!     let note_path = Path::new("notes/example.md");
@@ -97,13 +97,13 @@ pub struct ProcessingMetrics {
 
 /// Configuration for the enrichment pipeline
 #[derive(Debug, Clone)]
-pub struct EnrichmentPipelineConfig {
+pub struct NoteEnricherConfig {
     /// Whether to enable Phase 1 quick filter optimization
     /// (file date + BLAKE3 hash check to skip unchanged files)
     pub enable_quick_filter: bool,
 }
 
-impl Default for EnrichmentPipelineConfig {
+impl Default for NoteEnricherConfig {
     fn default() -> Self {
         Self {
             enable_quick_filter: true,
@@ -115,7 +115,7 @@ impl Default for EnrichmentPipelineConfig {
 ///
 /// Orchestrates the complete enrichment pipeline from file input
 /// to enriched note output ready for storage.
-pub struct EnrichmentPipeline {
+pub struct NoteEnricher {
     /// Enrichment service for Phase 4
     enrichment_service: Arc<dyn crucible_core::enrichment::EnrichmentService>,
 
@@ -123,10 +123,10 @@ pub struct EnrichmentPipeline {
     parser: CrucibleParser,
 
     /// Processor configuration
-    config: EnrichmentPipelineConfig,
+    config: NoteEnricherConfig,
 }
 
-impl EnrichmentPipeline {
+impl NoteEnricher {
     /// Create a new note processor with the given enrichment service
     ///
     /// # Arguments
@@ -136,22 +136,22 @@ impl EnrichmentPipeline {
     /// # Example
     ///
     /// ```rust
-    /// use crucible_enrichment::{EnrichmentPipeline, DefaultEnrichmentService};
+    /// use crucible_enrichment::{NoteEnricher, DefaultEnrichmentService};
     /// use std::sync::Arc;
     ///
     /// let service = Arc::new(DefaultEnrichmentService::without_embeddings());
-    /// let processor = EnrichmentPipeline::new(service);
+    /// let processor = NoteEnricher::new(service);
     /// ```
     pub fn new(enrichment_service: Arc<dyn crucible_core::enrichment::EnrichmentService>) -> Self {
         Self {
             enrichment_service,
             parser: CrucibleParser::new(),
-            config: EnrichmentPipelineConfig::default(),
+            config: NoteEnricherConfig::default(),
         }
     }
 
     /// Create a processor with custom configuration
-    pub fn with_config(enrichment_service: Arc<dyn crucible_core::enrichment::EnrichmentService>, config: EnrichmentPipelineConfig) -> Self {
+    pub fn with_config(enrichment_service: Arc<dyn crucible_core::enrichment::EnrichmentService>, config: NoteEnricherConfig) -> Self {
         Self {
             enrichment_service,
             parser: CrucibleParser::new(),
@@ -401,7 +401,7 @@ mod tests {
     #[tokio::test]
     async fn test_document_processor_creation() {
         let service = Arc::new(crate::DefaultEnrichmentService::without_embeddings());
-        let processor = EnrichmentPipeline::new(service);
+        let processor = NoteEnricher::new(service);
 
         assert!(processor.config.enable_quick_filter);
     }
@@ -409,7 +409,7 @@ mod tests {
     #[tokio::test]
     async fn test_process_simple_document() {
         let service = Arc::new(crate::DefaultEnrichmentService::without_embeddings());
-        let processor = EnrichmentPipeline::new(service);
+        let processor = NoteEnricher::new(service);
 
         let content = "# Test Heading\n\nThis is a test paragraph with more than three words.";
         let (_temp, path) = create_test_markdown_file(content);
@@ -426,7 +426,7 @@ mod tests {
     async fn test_process_without_embedding_provider() {
         // When service has no embedding provider, should still enrich with metadata
         let service = Arc::new(crate::DefaultEnrichmentService::without_embeddings());
-        let processor = EnrichmentPipeline::new(service);
+        let processor = NoteEnricher::new(service);
 
         let content = "# Heading\n\nParagraph text here with enough words to meet minimum.";
         let (_temp, path) = create_test_markdown_file(content);
@@ -446,7 +446,7 @@ mod tests {
         use crucible_parser::types::*;
 
         let service = Arc::new(crate::DefaultEnrichmentService::without_embeddings());
-        let processor = EnrichmentPipeline::new(service);
+        let processor = NoteEnricher::new(service);
 
         let mut parsed = ParsedNote {
             path: std::path::PathBuf::from("test.md"),

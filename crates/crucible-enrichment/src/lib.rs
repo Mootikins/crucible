@@ -25,9 +25,9 @@
 //!
 //! - **types**: EnrichedNote and related types
 //! - **service**: EnrichmentService orchestrator
-//! - **enrichment_pipeline**: Enrichment pipeline (five-phase)
+//! - **note_enricher**: Note enrichment workflow (phases 1-4)
 
-pub mod enrichment_pipeline;
+pub mod note_enricher;
 pub mod service;
 pub mod types;
 
@@ -39,7 +39,7 @@ pub use types::{
 // Re-export service
 pub use service::{DefaultEnrichmentService, DEFAULT_MAX_BATCH_SIZE, DEFAULT_MIN_WORDS_FOR_EMBEDDING};
 
-// Re-export enrichment pipeline
-pub use enrichment_pipeline::{
-    EnrichmentPipeline, EnrichmentResult, ProcessingMetrics, EnrichmentPipelineConfig,
+// Re-export note enricher
+pub use note_enricher::{
+    NoteEnricher, EnrichmentResult, ProcessingMetrics, NoteEnricherConfig,
 };
