@@ -1,11 +1,7 @@
-pub mod hash;
-pub mod hybrid;
-pub mod storage;
-pub mod thread_safe;
-pub mod virtual_section;
+//! Merkle Tree Module
+//!
+//! This module re-exports merkle tree functionality from the crucible-merkle crate.
+//! All implementation has been moved to crucible-merkle for clean separation.
 
-pub use hash::*;
-pub use hybrid::*;
-pub use storage::*;
-pub use thread_safe::*;
-pub use virtual_section::*;
+// Re-export everything from crucible-merkle
+pub use crucible_merkle::*;
