@@ -37,21 +37,12 @@ pub mod eav_graph;
 pub mod hash_lookup;
 #[cfg(feature = "embeddings")]
 pub mod kiln_integration;
-// TODO: These modules (kiln_pipeline_connector, kiln_scanner) are part of the old
-// embedding_pool polling architecture and need to be updated to use the new
-// NoteEnricher + NoteIngestor pattern. Disabled for now.
-// #[cfg(feature = "embeddings")]
-// pub mod kiln_pipeline_connector;
-// #[cfg(feature = "embeddings")]
-// pub mod kiln_scanner;
 pub mod kiln_store;
 pub mod merkle_persistence;
 pub mod metrics;
 pub mod migration;
 pub mod query;
 pub mod schema_types;
-#[cfg(feature = "embeddings")]
-pub mod simple_integration;
 pub mod surreal_client;
 #[cfg(feature = "embeddings")]
 pub mod transaction_consumer;
@@ -103,31 +94,6 @@ pub use types::{
 
 // Re-export embedding functionality from crucible-enrichment
 pub use crucible_enrichment::{
-};
-#[cfg(feature = "embeddings")]
-
-// Kiln scanner exports (requires embeddings feature)
-#[cfg(feature = "embeddings")]
-#[cfg(feature = "embeddings")]
-pub use kiln_scanner::{
-    create_kiln_scanner, create_kiln_scanner_with_embeddings, parse_file_to_document,
-    validate_kiln_scanner_config, ChangeDetectionMethod, ChangeDetectionSummary, ErrorHandlingMode,
-    KilnFileInfo, KilnProcessError, KilnProcessResult, KilnScanError, KilnScanResult, KilnScanner,
-    KilnScannerConfig, KilnScannerErrorType, KilnScannerMetrics, KilnScannerState,
-};
-
-// Kiln pipeline connector exports (requires embeddings feature)
-#[cfg(feature = "embeddings")]
-pub use kiln_pipeline_connector::{
-    generate_document_id_from_path, get_parsed_documents_from_scan,
-    transform_parsed_document_to_embedding_inputs, BatchProcessingResult, KilnPipelineConfig,
-    KilnPipelineConnector, NoteProcessingResult,
-};
-
-// Simple integration exports (replaces complex QueueBasedProcessor)
-#[cfg(feature = "embeddings")]
-pub use simple_integration::{
-    enqueue_document, enqueue_document_deletion, enqueue_documents, get_queue_status,
 };
 
 // Metrics exports

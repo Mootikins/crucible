@@ -2776,14 +2776,14 @@ impl<'a> crucible_core::EnrichedNoteStore for NoteIngestor<'a> {
     }
 
     async fn note_exists(&self, relative_path: &str) -> Result<bool> {
-        // Check if note entity exists by attempting to query it
+        // Check if note entity exists by querying the database directly
         let entity_id = self.note_entity_id(relative_path);
 
-        // Try to fetch the entity
-        match self.store.get_entity(&entity_id).await {
-            Ok(Some(_)) => Ok(true),
-            Ok(None) => Ok(false),
-            Err(e) => Err(e),
+        // Use direct SQL query to check entity existence
+        let sql = format!("SELECT * FROM {} LIMIT 1", entity_id);
+        match self.store.client.query(&sql, &[]).await {
+            Ok(result) => Ok(!result.records.is_empty()),
+            Err(_) => Ok(false),
         }
     }
 }
