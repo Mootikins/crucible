@@ -206,8 +206,8 @@ impl HybridMerkleTree {
         HybridDiff {
             root_hash_changed: true,
             changed_sections,
-            added_sections: other.sections.len().saturating_sub(self.sections.len()),
-            removed_sections: self.sections.len().saturating_sub(other.sections.len()),
+            added_sections: self.sections.len().saturating_sub(other.sections.len()),
+            removed_sections: other.sections.len().saturating_sub(self.sections.len()),
         }
     }
 }
