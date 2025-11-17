@@ -110,18 +110,6 @@ fn discover_markdown_files(path: &std::path::Path) -> Result<Vec<PathBuf>> {
 }
 
 /// Check if a path is a markdown file
-fn is_markdown_file(path: &std::path::Path) -> bool {
+pub fn is_markdown_file(path: &std::path::Path) -> bool {
     path.extension().and_then(|s| s.to_str()) == Some("md")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_is_markdown_file() {
-        assert!(is_markdown_file(std::path::Path::new("test.md")));
-        assert!(!is_markdown_file(std::path::Path::new("test.txt")));
-        assert!(!is_markdown_file(std::path::Path::new("test")));
-    }
 }

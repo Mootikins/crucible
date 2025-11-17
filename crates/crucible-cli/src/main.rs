@@ -113,29 +113,13 @@ async fn main() -> Result<()> {
             agent,
             no_context,
             context_size,
+            act,
         }) => {
             commands::chat::execute(
                 config,
                 agent,
                 query,
-                true,  // read_only = true for chat mode
-                no_context,
-                Some(context_size),
-            )
-            .await?
-        }
-
-        Some(Commands::Act {
-            query,
-            agent,
-            no_context,
-            context_size,
-        }) => {
-            commands::chat::execute(
-                config,
-                agent,
-                query,
-                false,  // read_only = false for act mode
+                !act,  // read_only = !act (plan mode is default)
                 no_context,
                 Some(context_size),
             )
