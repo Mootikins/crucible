@@ -11,7 +11,7 @@ use crate::eav_graph::{
 // TODO: Update to use new enrichment architecture (EnrichedNote, NoteEnricher)
 // These types were part of the old embedding_pool architecture that has been replaced
 // use crucible_enrichment::{DocumentEmbedding, EmbeddingConfig, EmbeddingError, EmbeddingModel, EmbeddingProcessingResult, PrivacyMode, ThreadPoolMetrics};
-use crate::types::{DatabaseStats, Record};
+use crate::types::{DatabaseStats, DocumentEmbedding, Record};
 use crate::SurrealClient;
 use anyhow::{anyhow, Result};
 use crucible_core::parser::Wikilink;
