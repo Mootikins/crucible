@@ -158,15 +158,39 @@ impl MerklePersistence {
             metadata: None,
         };
 
-        // Use angle brackets for safe record ID formatting
+        // Upsert pattern: try UPDATE first, then CREATE if record doesn't exist
+        // Use SET instead of CONTENT to preserve the id field
         let safe_id = sanitize_id(tree_id);
-        self.client
+        let params = serde_json::json!({
+            "id": tree_record.id,
+            "root_hash": tree_record.root_hash,
+            "section_count": tree_record.section_count,
+            "total_blocks": tree_record.total_blocks,
+            "is_virtualized": tree_record.is_virtualized,
+            "virtual_section_count": tree_record.virtual_section_count,
+            "created_at": tree_record.created_at,
+            "updated_at": tree_record.updated_at,
+            "metadata": tree_record.metadata,
+        });
+
+        let update_result = self.client
             .query(
-                &format!("UPDATE hybrid_tree:⟨{}⟩ CONTENT $tree", safe_id),
-                &[serde_json::json!({"tree": tree_record})],
+                &format!("UPDATE hybrid_tree:{} SET id = $id, root_hash = $root_hash, section_count = $section_count, total_blocks = $total_blocks, is_virtualized = $is_virtualized, virtual_section_count = $virtual_section_count, created_at = $created_at, updated_at = $updated_at, metadata = $metadata", safe_id),
+                &[params.clone()],
             )
             .await
-            .map_err(|e| DbError::Query(format!("Failed to store tree metadata: {}", e)))?;
+            .map_err(|e| DbError::Query(format!("Failed to update tree metadata: {}", e)))?;
+
+        // If UPDATE returned no records, the tree doesn't exist yet - CREATE it
+        if update_result.records.is_empty() {
+            self.client
+                .query(
+                    &format!("CREATE hybrid_tree:{} SET id = $id, root_hash = $root_hash, section_count = $section_count, total_blocks = $total_blocks, is_virtualized = $is_virtualized, virtual_section_count = $virtual_section_count, created_at = $created_at, updated_at = $updated_at, metadata = $metadata", safe_id),
+                    &[params],
+                )
+                .await
+                .map_err(|e| DbError::Query(format!("Failed to create tree metadata: {}", e)))?;
+        }
 
         // 2. Store sections with binary encoding
         let mut cumulative_blocks = 0;
@@ -262,7 +286,7 @@ impl MerklePersistence {
         let query_result = self
             .client
             .query(
-                &format!("SELECT * FROM hybrid_tree:⟨{}⟩", safe_id),
+                &format!("SELECT * FROM hybrid_tree:{}", safe_id),
                 &[],
             )
             .await
@@ -410,7 +434,7 @@ impl MerklePersistence {
 
         let safe_id = sanitize_id(tree_id);
         self.client
-            .query(&format!("DELETE hybrid_tree:⟨{}⟩", safe_id), &[])
+            .query(&format!("DELETE hybrid_tree:{}", safe_id), &[])
             .await
             .map_err(|e| DbError::Query(format!("Failed to delete tree metadata: {}", e)))?;
 
@@ -534,7 +558,7 @@ impl MerklePersistence {
         let query_result = self
             .client
             .query(
-                &format!("SELECT * FROM hybrid_tree:⟨{}⟩", safe_id),
+                &format!("SELECT * FROM hybrid_tree:{}", safe_id),
                 &[],
             )
             .await
