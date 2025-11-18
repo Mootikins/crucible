@@ -24,23 +24,6 @@
 //! - Manages dependencies between phases
 //! - Handles error recovery and rollback
 //! - Provides single interface for UI layers (CLI, Desktop, MCP, etc.)
-//!
-//! ## Usage
-//!
-//! ```rust,ignore
-//! use crucible_pipeline::NotePipeline;
-//!
-//! // Create pipeline with dependencies
-//! let pipeline = NotePipeline::new(
-//!     change_detector,
-//!     merkle_store,
-//!     enrichment_service,
-//!     storage,
-//! );
-//!
-//! // Process a note
-//! let result = pipeline.process(&path).await?;
-//! ```
 
 pub mod note_pipeline;
 

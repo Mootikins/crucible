@@ -13,20 +13,6 @@
 //! - This crate: Merkle tree building, diffing, hashing
 //! - crucible-core: Storage traits (MerkleStore)
 //! - Infrastructure crates: Persistence implementations
-//!
-//! ## Usage
-//!
-//! ```rust,ignore
-//! use crucible_merkle::HybridMerkleTree;
-//! use crucible_parser::ParsedNote;
-//!
-//! // Build tree from parsed note
-//! let tree = HybridMerkleTree::from_document(&parsed_note);
-//!
-//! // Compare with previous version
-//! let diff = tree.diff(&old_tree);
-//! let changed_blocks = diff.changed_block_ids();
-//! ```
 
 pub mod hash;
 pub mod hybrid;

@@ -19,17 +19,6 @@
 //! - **Without virtualization**: 10,000 section objects in memory
 //! - **With virtualization**: ~100 virtual sections grouping the real sections
 //! - **Memory savings**: ~99% reduction in active section metadata
-//!
-//! ## Usage Example
-//!
-//! ```rust,ignore
-//! use crucible_core::merkle::{VirtualSection, VirtualizationConfig};
-//!
-//! let config = VirtualizationConfig::default();
-//! if sections.len() > config.threshold {
-//!     let virtual_sections = VirtualSection::virtualize(&sections, &config);
-//! }
-//! ```
 
 use serde::{Deserialize, Serialize};
 
@@ -143,10 +132,6 @@ impl VirtualSection {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// let sections = vec![section1, section2, section3];
-    /// let virtual_section = VirtualSection::from_sections(&sections, 0);
-    /// ```
     pub fn from_sections(sections: &[SectionNode], start_index: usize) -> Self {
         if sections.is_empty() {
             return Self::empty(start_index);
@@ -225,10 +210,6 @@ impl VirtualSection {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// let config = VirtualizationConfig::default();
-    /// let virtual_sections = VirtualSection::virtualize(&sections, &config);
-    /// ```
     pub fn virtualize(
         sections: &[SectionNode],
         config: &VirtualizationConfig,
