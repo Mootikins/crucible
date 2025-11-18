@@ -104,6 +104,8 @@ impl CrucibleParser {
     pub fn with_default_extensions() -> Self {
         let builder = crate::ExtensionRegistryBuilder::new()
             .with_extension(crate::create_basic_markdown_extension()) // Core markdown parsing (headings, lists, etc.)
+            .with_extension(crate::create_wikilink_extension()) // Wikilinks [[note]]
+            .with_extension(crate::create_inline_link_extension()) // Inline links [text](url)
             .with_extension(crate::create_latex_extension())
             .with_extension(crate::create_callout_extension())
             .with_extension(crate::create_blockquote_extension())
@@ -340,6 +342,8 @@ impl MarkdownParserImplementation for CrucibleParser {
             paragraphs: Vec::new(),
             lists: Vec::new(),
             inline_links: Vec::new(),
+            wikilinks: Vec::new(),
+            tags: Vec::new(),
             latex_expressions: Vec::new(),
             callouts: Vec::new(),
             blockquotes: Vec::new(),
@@ -368,6 +372,9 @@ impl MarkdownParserImplementation for CrucibleParser {
         let callouts = document_content.callouts.clone();
         let latex_expressions = document_content.latex_expressions.clone();
         let footnotes = document_content.footnotes.clone();
+        let wikilinks = document_content.wikilinks.clone();
+        let tags = document_content.tags.clone();
+        let inline_links = document_content.inline_links.clone();
 
         // Extract structural metadata from parsed content
         let metadata = Self::extract_metadata(&document_content, &callouts, &latex_expressions, &footnotes);
@@ -376,6 +383,9 @@ impl MarkdownParserImplementation for CrucibleParser {
         let mut parsed_doc = ParsedNote::builder(source_path.to_path_buf())
             .with_frontmatter(frontmatter)
             .with_content(document_content)
+            .with_wikilinks(wikilinks)
+            .with_tags(tags)
+            .with_inline_links(inline_links)
             .with_callouts(callouts)
             .with_latex_expressions(latex_expressions)
             .with_footnotes(footnotes)
