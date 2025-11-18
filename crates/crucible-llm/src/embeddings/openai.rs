@@ -301,7 +301,7 @@ mod tests {
 
     fn create_test_config() -> EmbeddingConfig {
         EmbeddingConfig::openai(
-            "test-api-key".to_string(),
+            "sk-test-api-key-for-testing-only".to_string(),
             Some("text-embedding-3-small".to_string()),
         )
     }
@@ -322,7 +322,7 @@ mod tests {
     fn test_provider_creation_with_invalid_config() {
         // Create config with empty model name (invalid)
         let config = EmbeddingConfig::openai(
-            "test-api-key".to_string(),
+            "sk-test-api-key-for-testing".to_string(),
             Some(String::new()), // Invalid empty model name
         );
 
