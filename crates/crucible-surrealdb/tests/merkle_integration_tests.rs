@@ -4,7 +4,7 @@
 //! - Document parsing → Tree building → Persistence → Retrieval → Verification
 //! - NoteIngestor integration with automatic tree persistence
 //! - Incremental updates with change detection
-//! - Large documents with virtualization
+//! - Large notes with virtualization
 
 use crucible_core::merkle::{HybridMerkleTree, VirtualizationConfig};
 use crucible_core::parser::ParsedNote;
@@ -27,8 +27,8 @@ async fn create_test_client() -> SurrealClient {
         .expect("Failed to create test client")
 }
 
-/// Create a realistic test document with multiple sections
-fn create_complex_document() -> ParsedNote {
+/// Create a realistic test note with multiple sections
+fn create_complex_note() -> ParsedNote {
     let mut doc = ParsedNote::default();
     doc.path = PathBuf::from("test_docs/complex_doc.md");
     doc.content = NoteContent::default();
@@ -58,7 +58,7 @@ fn create_complex_document() -> ParsedNote {
             offset,
             id: Some(heading_text.to_lowercase().replace(' ', "-")),
         });
-        offset += heading_text.len() + level + 2; // Account for # markers and newline
+        offset += heading_text.len() + (level as usize) + 2; // Account for # markers and newline
 
         // Add content paragraph
         doc.content
@@ -70,8 +70,8 @@ fn create_complex_document() -> ParsedNote {
     doc
 }
 
-/// Create a large document that triggers virtualization
-fn create_large_document(section_count: usize) -> ParsedNote {
+/// Create a large note that triggers virtualization
+fn create_large_note(section_count: usize) -> ParsedNote {
     let mut doc = ParsedNote::default();
     doc.path = PathBuf::from("test_docs/large_doc.md");
     doc.content = NoteContent::default();
@@ -105,7 +105,7 @@ async fn test_end_to_end_pipeline() {
     let persistence = MerklePersistence::new(client);
 
     // 1. Create and parse a complex document
-    let doc = create_complex_document();
+    let doc = create_complex_note();
     let original_path = doc.path.to_string_lossy().to_string();
 
     // 2. Build Merkle tree
@@ -180,14 +180,14 @@ async fn test_incremental_update_with_content_changes() {
     let persistence = MerklePersistence::new(client);
 
     // 1. Create and store initial document
-    let doc1 = create_complex_document();
+    let doc1 = create_complex_note();
     let tree_id = doc1.path.to_string_lossy().to_string();
     let tree1 = HybridMerkleTree::from_document(&doc1);
 
     persistence.store_tree(&tree_id, &tree1).await.unwrap();
 
     // 2. Modify the document (change one section's content)
-    let mut doc2 = create_complex_document();
+    let mut doc2 = create_complex_note();
     // Modify the third paragraph (Technical Details section)
     doc2.content.paragraphs[2] = Paragraph::new(
         "MODIFIED: This is completely different technical content.".to_string(),
@@ -248,17 +248,17 @@ async fn test_incremental_update_with_content_changes() {
 }
 
 #[tokio::test]
-async fn test_large_document_virtualization() {
+async fn test_large_note_virtualization() {
     let client = create_test_client().await;
     let persistence = MerklePersistence::new(client);
 
-    // 1. Create a large document that triggers virtualization (>100 sections)
-    let doc = create_large_document(150);
+    // 1. Create a large note that triggers virtualization (>100 sections)
+    let doc = create_large_note(150);
     let tree_id = doc.path.to_string_lossy().to_string();
 
     // 2. Build tree with auto-virtualization
     let config = VirtualizationConfig::default(); // threshold = 100
-    let tree = HybridMerkleTree::from_document_with_config(&doc, config);
+    let tree = HybridMerkleTree::from_document_with_config(&doc, &config);
 
     // 3. Verify virtualization occurred
     assert!(
@@ -334,7 +334,7 @@ async fn test_large_document_virtualization() {
         );
     }
 
-    println!("✅ Large document virtualization test passed!");
+    println!("✅ Large note virtualization test passed!");
 }
 
 #[tokio::test]
@@ -347,7 +347,7 @@ async fn test_note_ingestor_integration() {
     let ingestor = NoteIngestor::with_merkle_persistence(&store, persistence.clone());
 
     // 2. Ingest a document
-    let doc = create_complex_document();
+    let doc = create_complex_note();
     let doc_path = doc.path.to_string_lossy().to_string();
 
     ingestor
@@ -368,7 +368,7 @@ async fn test_note_ingestor_integration() {
     );
     assert!(
         !tree_metadata.is_virtualized,
-        "Small document shouldn't be virtualized"
+        "Small note shouldn't be virtualized"
     );
 
     // 4. Verify we can retrieve the full tree
@@ -380,7 +380,7 @@ async fn test_note_ingestor_integration() {
     assert_eq!(tree.sections.len(), 8, "Should have 8 sections (root + 7)");
 
     // 5. Update the document
-    let mut updated_doc = create_complex_document();
+    let mut updated_doc = create_complex_note();
     updated_doc.content.paragraphs[0] = Paragraph::new(
         "UPDATED: This introduction has been modified.".to_string(),
         updated_doc.content.paragraphs[0].offset,
@@ -414,7 +414,7 @@ async fn test_concurrent_tree_operations() {
     // Create multiple different documents
     let docs: Vec<_> = (0..5)
         .map(|i| {
-            let mut doc = create_complex_document();
+            let mut doc = create_complex_note();
             doc.path = PathBuf::from(format!("test_docs/doc_{}.md", i));
             doc
         })
@@ -476,7 +476,7 @@ async fn test_persistence_error_handling() {
     assert!(result.is_err(), "Should error on non-existent tree");
 
     // Test 2: Update with invalid indices
-    let doc = create_complex_document();
+    let doc = create_complex_note();
     let tree = HybridMerkleTree::from_document(&doc);
 
     let result = persistence
@@ -510,7 +510,7 @@ async fn test_tree_deletion_cleanup() {
     let persistence = MerklePersistence::new(client);
 
     // 1. Store a tree
-    let doc = create_complex_document();
+    let doc = create_complex_note();
     let tree_id = doc.path.to_string_lossy().to_string();
     let tree = HybridMerkleTree::from_document(&doc);
 
