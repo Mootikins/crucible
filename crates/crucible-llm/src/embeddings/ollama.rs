@@ -382,8 +382,11 @@ mod tests {
 
     #[test]
     fn test_provider_creation_with_invalid_config() {
-        let mut config = create_test_config();
-        config.model.name = String::new(); // Invalid model name
+        // Create config with empty model name (invalid)
+        let config = EmbeddingConfig::ollama(
+            Some("https://llama.krohnos.io".to_string()),
+            Some(String::new()), // Invalid empty model name
+        );
 
         let provider = OllamaProvider::new(config);
         assert!(provider.is_err());
