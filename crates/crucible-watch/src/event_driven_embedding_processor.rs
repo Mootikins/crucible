@@ -18,7 +18,8 @@ use tracing::{debug, error, info, warn};
 
 // Import embedding pool types
 use crucible_surrealdb::consistency;
-use crucible_surrealdb::embedding_pool::EmbeddingThreadPool;
+// TODO: EmbeddingThreadPool has been removed - this module needs to be updated to new architecture
+// use crucible_surrealdb::embedding_pool::EmbeddingThreadPool;
 
 /// Event-driven embedding processor that connects file system events to embedding generation
 pub struct EventDrivenEmbeddingProcessor {
