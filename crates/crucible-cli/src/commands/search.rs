@@ -511,69 +511,9 @@ mod tests {
     }
 }
 
-/// Extract a snippet around the matching text
-fn extract_snippet(content: &str, query: &str, include_full: bool) -> String {
-    if include_full {
-        // Return first few lines of content
-        content.lines().take(5).collect::<Vec<_>>().join("\n")
-    } else {
-        // Find first occurrence of query and extract context
-        let content_lower = content.to_lowercase();
-        let query_lower = query.to_lowercase();
+// Removed: extract_snippet and calculate_relevance_score - replaced by Unicode-aware versions
 
-        if let Some(start_pos) = content_lower.find(&query_lower) {
-            // Extract some context around the match
-            let start = start_pos.saturating_sub(100);
-            let end = (start_pos + query.len() + 100).min(content.len());
-
-            let snippet = &content[start..end];
-
-            if start > 0 {
-                format!("...{}", snippet)
-            } else {
-                snippet.to_string()
-            }
-        } else {
-            // Fallback: return first line
-            content.lines().next().unwrap_or("").to_string()
-        }
-    }
-}
-
-/// Calculate a simple relevance score for search results
-fn calculate_relevance_score(content: &str, query_lower: &str) -> f64 {
-    let mut score = 0.0;
-
-    // Title matches (first line) get higher score
-    let lines: Vec<&str> = content.lines().collect();
-    if let Some(first_line) = lines.first() {
-        if first_line.to_lowercase().contains(query_lower) {
-            score += 100.0;
-        }
-    }
-
-    // Count occurrences of the query
-    let content_lower = content.to_lowercase();
-    let mut start = 0;
-    let mut count = 0;
-    while let Some(pos) = content_lower[start..].find(query_lower) {
-        count += 1;
-        start += pos + query_lower.len();
-
-        // Early exit if we already have many matches
-        if count >= 10 {
-            break;
-        }
-    }
-
-    score += count as f64 * 10.0;
-
-    // Prefer shorter documents (higher score for concise content)
-    let length_factor = 1000.0 / (content.len() as f64 + 1.0);
-    score += length_factor;
-
-    score
-}
+// (Removed - replaced by Unicode-aware version below)
 
 /// Unicode-aware version of calculate_relevance_score for search results
 fn calculate_relevance_score_unicode(content: &str, query_normalized: &str) -> f64 {
