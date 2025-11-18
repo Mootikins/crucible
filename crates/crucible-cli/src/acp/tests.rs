@@ -57,13 +57,26 @@ mod agent_tests {
 
     #[tokio::test]
     async fn test_discover_agent_with_nonexistent_preferred() {
-        // Should fail when preferred agent doesn't exist and no fallbacks available
+        // When preferred agent doesn't exist, should fall back to known agents
         let result = discover_agent(Some("nonexistent-agent-xyz")).await;
 
-        // This should return an error with helpful message
-        assert!(result.is_err());
-        let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("No compatible ACP agent found"));
+        // This will succeed if ANY known agent is available on the system
+        // or fail if no agents are found at all
+        match result {
+            Ok(agent) => {
+                // Fallback succeeded - should be one of the known agents
+                assert!(
+                    agent.name == "claude-code" || agent.name == "gemini" || agent.name == "codex",
+                    "Should fall back to a known agent, got: {}",
+                    agent.name
+                );
+            }
+            Err(e) => {
+                // No agents available at all - expected in isolated test environments
+                let error_msg = e.to_string();
+                assert!(error_msg.contains("No compatible ACP agent found"));
+            }
+        }
     }
 
     #[tokio::test]
