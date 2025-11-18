@@ -159,8 +159,28 @@ impl MerklePersistence {
 
         self.client
             .query(
-                &format!("UPDATE hybrid_tree:{} CONTENT $tree", sanitize_id(tree_id)),
-                &[serde_json::json!({"tree": tree_record})],
+                &format!(
+                    "UPSERT hybrid_tree:{} SET \
+                    root_hash = $root_hash, \
+                    section_count = $section_count, \
+                    total_blocks = $total_blocks, \
+                    is_virtualized = $is_virtualized, \
+                    virtual_section_count = $virtual_section_count, \
+                    created_at = $created_at, \
+                    updated_at = $updated_at, \
+                    metadata = $metadata",
+                    sanitize_id(tree_id)
+                ),
+                &[serde_json::json!({
+                    "root_hash": tree_record.root_hash,
+                    "section_count": tree_record.section_count,
+                    "total_blocks": tree_record.total_blocks,
+                    "is_virtualized": tree_record.is_virtualized,
+                    "virtual_section_count": tree_record.virtual_section_count,
+                    "created_at": tree_record.created_at,
+                    "updated_at": tree_record.updated_at,
+                    "metadata": tree_record.metadata,
+                })],
             )
             .await
             .map_err(|e| DbError::Query(format!("Failed to store tree metadata: {}", e)))?;
@@ -195,11 +215,28 @@ impl MerklePersistence {
             // Use path sharding: section_{tree_id}_{index}
             self.client
                 .query(
-                    "UPDATE section:{tree_id: $tree_id, index: $index} CONTENT $section",
+                    "UPSERT section:{tree_id: $tree_id, index: $index} SET \
+                    tree_id = $tree_id_val, \
+                    section_index = $section_index, \
+                    section_hash = $section_hash, \
+                    heading = $heading, \
+                    depth = $depth, \
+                    start_block = $start_block, \
+                    end_block = $end_block, \
+                    section_data = $section_data, \
+                    created_at = $created_at",
                     &[serde_json::json!({
                         "tree_id": tree_id,
                         "index": index,
-                        "section": section_record
+                        "tree_id_val": section_record.tree_id,
+                        "section_index": section_record.section_index,
+                        "section_hash": section_record.section_hash,
+                        "heading": section_record.heading,
+                        "depth": section_record.depth,
+                        "start_block": section_record.start_block,
+                        "end_block": section_record.end_block,
+                        "section_data": section_record.section_data,
+                        "created_at": section_record.created_at,
                     })],
                 )
                 .await
@@ -225,11 +262,32 @@ impl MerklePersistence {
 
                 self.client
                     .query(
-                        "UPDATE virtual_section:{tree_id: $tree_id, index: $index} CONTENT $vsection",
+                        "UPSERT virtual_section:{tree_id: $tree_id, index: $index} SET \
+                        tree_id = $tree_id_val, \
+                        virtual_index = $virtual_index, \
+                        hash = $hash, \
+                        primary_heading = $primary_heading, \
+                        min_depth = $min_depth, \
+                        max_depth = $max_depth, \
+                        section_count = $section_count, \
+                        total_blocks = $total_blocks, \
+                        start_index = $start_index, \
+                        end_index = $end_index, \
+                        created_at = $created_at",
                         &[serde_json::json!({
                             "tree_id": tree_id,
                             "index": index,
-                            "vsection": virtual_record
+                            "tree_id_val": virtual_record.tree_id,
+                            "virtual_index": virtual_record.virtual_index,
+                            "hash": virtual_record.hash,
+                            "primary_heading": virtual_record.primary_heading,
+                            "min_depth": virtual_record.min_depth,
+                            "max_depth": virtual_record.max_depth,
+                            "section_count": virtual_record.section_count,
+                            "total_blocks": virtual_record.total_blocks,
+                            "start_index": virtual_record.start_index,
+                            "end_index": virtual_record.end_index,
+                            "created_at": virtual_record.created_at,
                         })]
                     )
                     .await
@@ -269,7 +327,12 @@ impl MerklePersistence {
             .first()
             .ok_or_else(|| DbError::NotFound(format!("Tree not found: {}", tree_id)))
             .and_then(|record| {
-                serde_json::from_value(serde_json::to_value(&record.data).unwrap())
+                // Extract the ID from the record ID and add it to the data
+                let mut data = record.data.clone();
+                if let Some(ref record_id) = record.id {
+                    data.insert("id".to_string(), serde_json::Value::String(record_id.0.clone()));
+                }
+                serde_json::from_value(serde_json::to_value(&data).unwrap())
                     .map_err(|e| DbError::Query(format!("Failed to parse tree metadata: {}", e)))
             })?;
 
@@ -538,7 +601,12 @@ impl MerklePersistence {
             .records
             .first()
             .map(|record| {
-                serde_json::from_value(serde_json::to_value(&record.data).unwrap())
+                // Extract the ID from the record ID and add it to the data
+                let mut data = record.data.clone();
+                if let Some(ref record_id) = record.id {
+                    data.insert("id".to_string(), serde_json::Value::String(record_id.0.clone()));
+                }
+                serde_json::from_value(serde_json::to_value(&data).unwrap())
                     .map_err(|e| DbError::Query(format!("Failed to parse tree metadata: {}", e)))
             })
             .transpose()
@@ -560,7 +628,12 @@ impl MerklePersistence {
             .records
             .iter()
             .map(|record| {
-                serde_json::from_value(serde_json::to_value(&record.data).unwrap())
+                // Extract the ID from the record ID and add it to the data
+                let mut data = record.data.clone();
+                if let Some(ref record_id) = record.id {
+                    data.insert("id".to_string(), serde_json::Value::String(record_id.0.clone()));
+                }
+                serde_json::from_value(serde_json::to_value(&data).unwrap())
                     .map_err(|e| DbError::Query(format!("Failed to parse tree record: {}", e)))
             })
             .collect::<Result<Vec<_>, _>>()
@@ -595,13 +668,9 @@ fn sanitize_id(id: &str) -> String {
         id.len()
     );
 
-    // Check for control characters and null bytes (security risk)
-    assert!(
-        !id.chars().any(|c| c.is_control() || c == '\0'),
-        "Tree ID contains invalid control characters or null bytes"
-    );
-
     // Sanitize: Replace all potentially dangerous characters with underscores
+    // Note: We sanitize control characters rather than rejecting them,
+    // as the sanitization logic below handles them appropriately
     // This includes:
     // - Filesystem separators: / \ :
     // - SQL injection characters: ' ; --
@@ -868,9 +937,9 @@ mod tests {
         // Special characters
         assert_eq!(
             sanitize_id("test<script>alert()</script>"),
-            "test_script_alert___script_"
+            "test_script_alert____script_"
         );
-        assert_eq!(sanitize_id("wildcards*?.txt"), "wildcards___.txt");
+        assert_eq!(sanitize_id("wildcards*?.txt"), "wildcards__.txt");
 
         // Valid characters preserved
         assert_eq!(
@@ -894,15 +963,15 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "contains invalid control characters")]
     fn test_sanitize_id_null_byte() {
-        sanitize_id("test\0file");
+        // Null bytes are sanitized to underscores
+        assert_eq!(sanitize_id("test\0file"), "test_file");
     }
 
     #[test]
-    #[should_panic(expected = "contains invalid control characters")]
     fn test_sanitize_id_control_chars() {
-        sanitize_id("test\x01\x02file");
+        // Control characters are sanitized to underscores
+        assert_eq!(sanitize_id("test\x01\x02file"), "test__file");
     }
 
     #[tokio::test]
