@@ -70,9 +70,9 @@ async fn test_batch_embedding_empty_vec() {
     let config = EmbeddingConfig::mock(None);
     let provider = create_provider(config).await.unwrap();
 
-    let texts: Vec<&str> = vec![];
+    let texts: Vec<String> = vec![];
 
-    let result = provider.embed_batch(texts.iter().map(|s| s.to_string()).collect()).await;
+    let result = provider.embed_batch(texts).await;
 
     // Should either return empty vec or error
     match result {
@@ -90,9 +90,9 @@ async fn test_batch_embedding_single_item() {
     let config = EmbeddingConfig::mock(None);
     let provider = create_provider(config).await.unwrap();
 
-    let texts = vec!["single item"];
+    let texts = vec!["single item".to_string()];
 
-    let result = provider.embed_batch(texts.iter().map(|s| s.to_string()).collect()).await;
+    let result = provider.embed_batch(texts).await;
     assert!(result.is_ok());
 
     let responses = result.unwrap();
@@ -105,9 +105,9 @@ async fn test_batch_embedding_preserves_order() {
     let config = EmbeddingConfig::mock(None);
     let provider = create_provider(config).await.unwrap();
 
-    let texts = vec!["first", "second", "third", "fourth"];
+    let texts = vec!["first".to_string(), "second".to_string(), "third".to_string(), "fourth".to_string()];
 
-    let result = provider.embed_batch(texts.iter().map(|s| s.to_string()).collect()).await;
+    let result = provider.embed_batch(texts).await;
     assert!(result.is_ok());
 
     let responses = result.unwrap();
@@ -125,20 +125,20 @@ async fn test_batch_with_mixed_content() {
     let config = EmbeddingConfig::mock(None);
     let provider = create_provider(config).await.unwrap();
 
-    let long_text = "x".repeat(1000);
     let texts = vec![
-        "normal text",
-        "",                    // empty
-        "日本語",              // unicode
-        "@#$%",                // special chars
-        &long_text,            // long text
+        "normal text".to_string(),
+        String::new(),          // empty
+        "日本語".to_string(),   // unicode
+        "@#$%".to_string(),     // special chars
+        "x".repeat(1000),       // long text
     ];
 
-    let result = provider.embed_batch(texts.iter().map(|s| s.to_string()).collect()).await;
+    let expected_len = texts.len();
+    let result = provider.embed_batch(texts).await;
 
     // Should handle mixed content gracefully
     if let Ok(responses) = result {
-        assert_eq!(responses.len(), texts.len());
+        assert_eq!(responses.len(), expected_len);
     }
 }
 
