@@ -44,7 +44,7 @@ mod change_detector;
 mod config;
 mod embedding_events;
 mod error;
-// TODO: Re-enable when EmbeddingThreadPool is available in crucible-surrealdb
+// TODO: event_driven_embedding_processor uses EmbeddingThreadPool which no longer exists
 // mod event_driven_embedding_processor;
 mod events;
 mod file_scanner;
@@ -68,7 +68,7 @@ pub use config::{
 };
 pub use embedding_events::*;
 pub use error::*;
-// TODO: Re-enable when EmbeddingThreadPool is available
+// TODO: event_driven_embedding_processor uses EmbeddingThreadPool which no longer exists
 // pub use event_driven_embedding_processor::*;
 pub use events::*;
 pub use file_scanner::{
@@ -101,7 +101,7 @@ pub mod prelude {
             EmbeddingEventResult, EventDrivenEmbeddingConfig,
         },
         // Event-driven embedding components
-        // TODO: Re-enable when EmbeddingThreadPool is available
+        // TODO: event_driven_embedding_processor uses EmbeddingThreadPool which no longer exists
         // event_driven_embedding_processor::{
         //     EmbeddingEventHandler, EventDrivenEmbeddingProcessor, EventProcessorMetrics,
         // },
