@@ -12,26 +12,8 @@
 //!
 //! ## Usage
 //!
-//! ```rust,no_run
-//! use crucible_llm::embeddings::{create_provider, EmbeddingConfig, CoreProviderAdapter};
-//! use std::sync::Arc;
-//!
-//! #[tokio::main]
-//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     // Create a crucible-llm provider
-//!     let config = EmbeddingConfig::fastembed(None, None, None);
-//!     let llm_provider = create_provider(config).await?;
-//!
-//!     // Wrap it for use with core enrichment layer
-//!     let core_provider = CoreProviderAdapter::new(llm_provider);
-//!
-//!     // Now it implements crucible_core::enrichment::EmbeddingProvider
-//!     let embedding = core_provider.embed("Hello, world!").await?;
-//!     println!("Generated embedding with {} dimensions", embedding.len());
-//!
-//!     Ok(())
-//! }
-//! ```
+//! Create a crucible-llm provider using `create_provider()`, then wrap it with
+//! `CoreProviderAdapter::new()` to use with the core enrichment layer.
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -55,19 +37,6 @@ impl CoreProviderAdapter {
     /// # Arguments
     ///
     /// * `provider` - Any provider implementing crucible_llm::embeddings::EmbeddingProvider
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use crucible_llm::embeddings::{create_provider, EmbeddingConfig, CoreProviderAdapter};
-    ///
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let config = EmbeddingConfig::fastembed(None, None, None);
-    /// let llm_provider = create_provider(config).await?;
-    /// let adapter = CoreProviderAdapter::new(llm_provider);
-    /// # Ok(())
-    /// # }
-    /// ```
     pub fn new(provider: Arc<dyn LlmEmbeddingProvider>) -> Self {
         Self { inner: provider }
     }
