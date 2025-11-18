@@ -408,7 +408,7 @@ mod tests {
         let tree = ThreadSafeMerkleTree::new(&doc);
 
         // Get write lock
-        let mut guard = tree.write();
+        let guard = tree.write();
         let old_hash = guard.root_hash;
 
         // Modify something (in real code, you'd modify the tree)
