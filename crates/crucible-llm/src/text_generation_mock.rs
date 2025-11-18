@@ -17,28 +17,6 @@ use tokio::sync::mpsc;
 /// Returns deterministic responses based on configured templates, useful for unit tests
 /// without requiring external LLM services.
 ///
-/// # Example
-///
-/// ```rust,ignore
-/// use crucible_llm::text_generation_mock::MockTextProvider;
-/// use crucible_llm::text_generation::{ChatCompletionRequest, ChatMessage, TextGenerationProvider};
-///
-/// #[tokio::main]
-/// async fn main() {
-///     let provider = MockTextProvider::new();
-///
-///     // Configure a specific response for a chat completion
-///     provider.set_chat_response("What is Rust?", "Rust is a systems programming language.");
-///
-///     let request = ChatCompletionRequest::new(
-///         "mock-model".to_string(),
-///         vec![ChatMessage::user("What is Rust?".to_string())]
-///     );
-///
-///     let response = provider.generate_chat_completion(request).await.unwrap();
-///     assert_eq!(response.choices[0].message.content, "Rust is a systems programming language.");
-/// }
-/// ```
 pub struct MockTextProvider {
     model_name: String,
     /// Configured responses for specific prompts
