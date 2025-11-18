@@ -126,24 +126,6 @@ impl PipelineMetrics {
 /// - Easy to swap implementations or add new pipeline strategies
 /// - Testable with mock implementations
 ///
-/// # Example
-///
-/// ```rust,ignore
-/// use crucible_core::processing::{NotePipelineOrchestrator, ProcessingResult};
-/// use std::sync::Arc;
-/// use std::path::Path;
-///
-/// async fn process_notes(
-///     pipeline: Arc<dyn NotePipelineOrchestrator>,
-///     paths: Vec<&Path>,
-/// ) -> Vec<Result<ProcessingResult>> {
-///     let mut results = Vec::new();
-///     for path in paths {
-///         results.push(pipeline.process(path).await);
-///     }
-///     results
-/// }
-/// ```
 #[async_trait::async_trait]
 pub trait NotePipelineOrchestrator: Send + Sync {
     /// Process a note through all five phases

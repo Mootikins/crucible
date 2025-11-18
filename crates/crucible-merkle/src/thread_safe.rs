@@ -9,23 +9,6 @@
 //! - **Low contention**: Read-heavy workloads benefit from RwLock's multiple readers
 //! - **Ergonomic API**: Convenient methods for common operations
 //! - **Clone-friendly**: `Arc` enables cheap cloning for sharing across threads
-//!
-//! ## Usage Example
-//!
-//! ```rust,ignore
-//! use crucible_core::merkle::{ThreadSafeMerkleTree, VirtualizationConfig};
-//!
-//! let tree = ThreadSafeMerkleTree::new_auto(&doc);
-//!
-//! // Clone for sharing across threads
-//! let tree_clone = tree.clone();
-//!
-//! // Read access (multiple readers allowed)
-//! let hash = tree.read_hash().unwrap();
-//!
-//! // Write access (exclusive)
-//! tree.update(&new_doc).unwrap();
-//! ```
 
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::sync::Arc;
@@ -46,26 +29,6 @@ use crucible_parser::types::ParsedNote;
 /// - **Write operations**: Exclusive lock required (serialized)
 /// - **Cloning**: Cheap (just increments Arc refcount)
 ///
-/// ## Example
-///
-/// ```rust,ignore
-/// use std::thread;
-///
-/// let tree = ThreadSafeMerkleTree::new_auto(&doc);
-///
-/// // Share across threads
-/// let handles: Vec<_> = (0..4).map(|_| {
-///     let tree_clone = tree.clone();
-///     thread::spawn(move || {
-///         // Read access from multiple threads
-///         let hash = tree_clone.read_hash().unwrap();
-///     })
-/// }).collect();
-///
-/// for handle in handles {
-///     handle.join().unwrap();
-/// }
-/// ```
 #[derive(Clone)]
 pub struct ThreadSafeMerkleTree {
     inner: Arc<RwLock<HybridMerkleTree>>,
@@ -149,10 +112,6 @@ impl ThreadSafeMerkleTree {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// let guard = tree.read();
-    /// println!("Hash: {}", guard.root_hash);
-    /// ```
     pub fn read(&self) -> RwLockReadGuard<'_, HybridMerkleTree> {
         self.inner.read()
     }
@@ -167,10 +126,6 @@ impl ThreadSafeMerkleTree {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// let mut guard = tree.write();
-    /// // Modify the tree...
-    /// ```
     pub fn write(&self) -> RwLockWriteGuard<'_, HybridMerkleTree> {
         self.inner.write()
     }

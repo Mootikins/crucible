@@ -102,10 +102,6 @@ impl HybridMerkleTree {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// let config = VirtualizationConfig::default();
-    /// let tree = HybridMerkleTree::from_document_with_config(&doc, &config);
-    /// ```
     pub fn from_document_with_config(doc: &ParsedNote, config: &VirtualizationConfig) -> Self {
         let (sections, total_blocks) = build_sections(doc);
 
