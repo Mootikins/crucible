@@ -320,8 +320,13 @@ mod tests {
 
     #[test]
     fn test_provider_creation_with_invalid_config() {
-        let mut config = create_test_config();
-        config.model.name = String::new(); // Invalid model name
+        // Create a config with an empty model name (invalid)
+        use crucible_config::OpenAIConfig;
+        let config = EmbeddingConfig::OpenAI(OpenAIConfig {
+            model: String::new(), // Invalid model name
+            api_key: "test-api-key".to_string(),
+            ..Default::default()
+        });
 
         let provider = OpenAIProvider::new(config);
         assert!(provider.is_err());
@@ -329,8 +334,12 @@ mod tests {
 
     #[test]
     fn test_provider_creation_without_api_key() {
-        let mut config = create_test_config();
-        config.api.key = None; // OpenAI requires API key
+        // Create a config without an API key (OpenAI requires one)
+        use crucible_config::OpenAIConfig;
+        let config = EmbeddingConfig::OpenAI(OpenAIConfig {
+            api_key: String::new(), // Empty API key
+            ..Default::default()
+        });
 
         let provider = OpenAIProvider::new(config);
         assert!(provider.is_err());

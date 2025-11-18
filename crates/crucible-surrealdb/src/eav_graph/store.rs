@@ -53,7 +53,10 @@ impl EAVGraphStore {
                 "#,
                 return_clause
             );
-            self.client.query(&create_query, &[params.clone()]).await
+            self.client
+                .query(&create_query, &[params.clone()])
+                .await
+                .map_err(|e| e.into())
         } else {
             Ok(result)
         }
@@ -105,9 +108,14 @@ impl EAVGraphStore {
                 Err(e) if ignore_already_exists && e.to_string().contains("already exists") => {
                     // Race condition: another thread created the record between UPDATE and CREATE
                     // This is expected and safe - return empty result
-                    Ok(QueryResult { records: vec![] })
+                    Ok(QueryResult {
+                        records: vec![],
+                        total_count: Some(0),
+                        execution_time_ms: None,
+                        has_more: false,
+                    })
                 }
-                Err(e) => Err(e),
+                Err(e) => Err(e.into()),
             }
         } else {
             Ok(result)

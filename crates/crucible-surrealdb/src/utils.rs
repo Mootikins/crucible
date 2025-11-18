@@ -112,12 +112,14 @@ pub fn sanitize_record_id(id: &str) -> Result<String, String> {
         ));
     }
 
-    // Check for control characters and null bytes (security risk)
-    if id.chars().any(|c| c.is_control() || c == '\0') {
+    // Check for null bytes specifically (absolute security risk)
+    if id.contains('\0') {
         return Err("Record ID contains invalid control characters or null bytes".to_string());
     }
 
     // Sanitize: Replace all potentially dangerous characters with underscores
+    // Note: Control characters (including tabs, newlines) are replaced, not rejected,
+    // to handle real-world file paths that might contain these characters
     // This includes:
     // - Filesystem separators: / \ :
     // - SQL injection characters: ' ` ; --
@@ -133,8 +135,8 @@ pub fn sanitize_record_id(id: &str) -> Result<String, String> {
             '-' if id.contains("--") => '_',
             // Wildcards and special characters
             '*' | '?' | '"' | '<' | '>' | '|' => '_',
-            // Whitespace
-            c if c.is_whitespace() => '_',
+            // Whitespace and control characters
+            c if c.is_whitespace() || c.is_control() => '_',
             // Allow alphanumeric, underscore, period, and hyphen
             c if c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-' => c,
             // Replace anything else with underscore
@@ -196,24 +198,32 @@ mod tests {
     #[test]
     fn test_sanitize_record_id_sql_injection() {
         // Single quotes should be replaced
+        // Input: "'; DROP TABLE users; --"
+        // ' -> _, ; -> _, space -> _, DROP, space -> _, TABLE, space -> _, users, ; -> _, space -> _, - -> _, - -> _
         assert_eq!(
             sanitize_record_id("'; DROP TABLE users; --").unwrap(),
-            "__DROP_TABLE_users____"
+            "___DROP_TABLE_users____"
         );
 
         // Backticks should be replaced (the bug we're fixing!)
+        // Input: "`; DELETE FROM data; --"
+        // ` -> _, ; -> _, space -> _, DELETE, space -> _, FROM, space -> _, data, ; -> _, space -> _, - -> _, - -> _
         assert_eq!(
             sanitize_record_id("`; DELETE FROM data; --").unwrap(),
-            "__DELETE_FROM_data____"
+            "___DELETE_FROM_data____"
         );
     }
 
     #[test]
     fn test_sanitize_record_id_path_traversal() {
+        // Input: "../../../etc/passwd"
+        // .. -> .., / -> _, .. -> .., / -> _, .. -> .., / -> _, etc, / -> _, passwd
         assert_eq!(
             sanitize_record_id("../../../etc/passwd").unwrap(),
-            ".._.._..._etc_passwd"
+            ".._.._.._etc_passwd"
         );
+        // Input: "C:\\Windows\\System32" (literal backslashes in Rust string)
+        // C, : -> _, \ -> _, Windows, \ -> _, System32
         assert_eq!(
             sanitize_record_id("C:\\Windows\\System32").unwrap(),
             "C__Windows_System32"
@@ -233,8 +243,18 @@ mod tests {
 
     #[test]
     fn test_sanitize_record_id_control_chars() {
+        // Null bytes are rejected
         assert!(sanitize_record_id("test\0null").is_err());
-        assert!(sanitize_record_id("test\nnewline").is_err());
+
+        // Other control characters (newlines, tabs, etc.) are sanitized to underscores
+        assert_eq!(
+            sanitize_record_id("test\nnewline").unwrap(),
+            "test_newline"
+        );
+        assert_eq!(
+            sanitize_record_id("test\ttab").unwrap(),
+            "test_tab"
+        );
     }
 
     #[test]
