@@ -21,6 +21,7 @@ pub mod inline_links;
 pub mod latex;
 pub mod traits;
 pub mod types;
+pub mod wikilinks;
 
 // Re-export main types for convenience
 pub use block_extractor::{BlockExtractor, ExtractionConfig};
@@ -46,3 +47,4 @@ pub use enhanced_tags::create_enhanced_tags_extension;
 pub use footnotes::create_footnote_extension;
 pub use inline_links::create_inline_link_extension;
 pub use latex::create_latex_extension;
+pub use wikilinks::create_wikilink_extension;
