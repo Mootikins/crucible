@@ -113,16 +113,13 @@ fn normalize_embedding_vector(mut vector: Vec<f32>) -> Vec<f32> {
     }
 }
 
-/// Escape a record ID for safe use in SurrealDB queries
+/// Escape a record ID for safe use in SurrealDB queries with angle brackets
 ///
-/// This is a wrapper around the shared `sanitize_record_id` function
-/// that panics on error for backward compatibility with existing code.
-///
-/// Note: This function will panic if the ID is invalid. For error handling,
-/// use `sanitize_record_id` directly.
+/// When using angle bracket syntax (⟨...⟩), SurrealDB allows special characters
+/// like colons and slashes. We only need to escape single quotes to prevent
+/// breaking out of the angle bracket delimiters.
 fn escape_record_id(value: &str) -> String {
-    sanitize_record_id(value)
-        .unwrap_or_else(|e| panic!("Invalid record ID '{}': {}", value, e))
+    value.replace('\'', "\\'")
 }
 
 fn chunk_record_body(chunk_id: &str) -> &str {
