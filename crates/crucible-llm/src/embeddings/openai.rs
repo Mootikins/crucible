@@ -320,8 +320,11 @@ mod tests {
 
     #[test]
     fn test_provider_creation_with_invalid_config() {
-        let mut config = create_test_config();
-        config.model.name = String::new(); // Invalid model name
+        // Create config with empty model name (invalid)
+        let config = EmbeddingConfig::openai(
+            "test-api-key".to_string(),
+            Some(String::new()), // Invalid empty model name
+        );
 
         let provider = OpenAIProvider::new(config);
         assert!(provider.is_err());
@@ -329,8 +332,11 @@ mod tests {
 
     #[test]
     fn test_provider_creation_without_api_key() {
-        let mut config = create_test_config();
-        config.api.key = None; // OpenAI requires API key
+        // Create config with empty API key (invalid for OpenAI)
+        let config = EmbeddingConfig::openai(
+            String::new(), // Empty API key (invalid)
+            Some("text-embedding-3-small".to_string()),
+        );
 
         let provider = OpenAIProvider::new(config);
         assert!(provider.is_err());

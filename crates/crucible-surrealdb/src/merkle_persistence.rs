@@ -755,11 +755,11 @@ mod tests {
 
     async fn create_test_client() -> SurrealClient {
         let config = SurrealDbConfig {
-            address: "memory".to_string(),
+            path: ":memory:".to_string(),
             namespace: "test".to_string(),
             database: "test".to_string(),
-            username: "root".to_string(),
-            password: "root".to_string(),
+            max_connections: Some(10),
+            timeout_seconds: Some(30),
         };
         SurrealClient::new(config).await.unwrap()
     }
