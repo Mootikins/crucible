@@ -664,6 +664,12 @@ pub struct NoteContent {
     /// Inline markdown links [text](url)
     pub inline_links: Vec<InlineLink>,
 
+    /// Wikilinks [[note]] extracted from content
+    pub wikilinks: Vec<Wikilink>,
+
+    /// Tags #tag extracted from content
+    pub tags: Vec<Tag>,
+
     /// LaTeX mathematical expressions extracted from content
     pub latex_expressions: Vec<LatexExpression>,
 
@@ -699,6 +705,8 @@ impl NoteContent {
             paragraphs: Vec::new(),
             lists: Vec::new(),
             inline_links: Vec::new(),
+            wikilinks: Vec::new(),
+            tags: Vec::new(),
             latex_expressions: Vec::new(),
             callouts: Vec::new(),
             blockquotes: Vec::new(),
