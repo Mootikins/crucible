@@ -3,9 +3,10 @@ use serde_json;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
-use tabled::{settings::Style, Table, Tabled};
+use tabled::Tabled;
 
 use crate::config::CliConfig;
+use crate::formatting::{format_bytes, get_block_preview, render_table, OutputFormat};
 use crate::output;
 use crucible_core::parser::{PulldownParser, StorageAwareParser};
 use crucible_core::storage::builder::{
@@ -15,23 +16,7 @@ use crucible_core::storage::{
     ContentAddressedStorage, ContentHasher, HashedBlock, MerkleTree, StorageResult,
 };
 
-/// Output formats for parse command
-#[derive(Debug, Clone)]
-pub enum ParseOutputFormat {
-    Plain,
-    Json,
-    Detailed,
-}
-
-impl From<String> for ParseOutputFormat {
-    fn from(s: String) -> Self {
-        match s.to_lowercase().as_str() {
-            "json" => ParseOutputFormat::Json,
-            "detailed" => ParseOutputFormat::Detailed,
-            _ => ParseOutputFormat::Plain,
-        }
-    }
-}
+// Removed: Now using shared OutputFormat from formatting module
 
 /// Table-friendly block information
 #[derive(Tabled)]
@@ -81,7 +66,7 @@ pub async fn execute(
     max_depth: usize,
     continue_on_error: bool,
 ) -> Result<()> {
-    let output_format: ParseOutputFormat = format.into();
+    let output_format = OutputFormat::from(format);
     let start_time = Instant::now();
 
     // Validate input path
@@ -113,9 +98,15 @@ pub async fn execute(
 
     // Generate output
     match output_format {
-        ParseOutputFormat::Plain => output_plain_format(&results, show_tree, show_blocks),
-        ParseOutputFormat::Json => output_json_format(&results, show_tree, show_blocks)?,
-        ParseOutputFormat::Detailed => output_detailed_format(&results, show_tree, show_blocks)?,
+        OutputFormat::Plain => output_plain_format(&results, show_tree, show_blocks),
+        OutputFormat::Json => output_json_format(&results, show_tree, show_blocks)?,
+        OutputFormat::Detailed | OutputFormat::Table => {
+            output_detailed_format(&results, show_tree, show_blocks)?
+        }
+        OutputFormat::Csv => {
+            // CSV format not yet implemented for parse command
+            output_plain_format(&results, show_tree, show_blocks)
+        }
     }
 
     // Show summary
@@ -370,8 +361,7 @@ fn output_detailed_format(
 
     if !summary_rows.is_empty() {
         output::header("Parse Summary");
-        let table = Table::new(&summary_rows).with(Style::modern()).to_string();
-        println!("{}", table);
+        println!("{}", render_table(&summary_rows));
         println!();
     }
 
@@ -417,13 +407,12 @@ fn output_detailed_format(
                             block_type: "Content".to_string(), // TODO: Determine actual block type
                             hash: block.hash[..12].to_string(),
                             size: format_bytes(block.data.len() as u64),
-                            preview: get_block_preview(&block.data),
+                            preview: get_block_preview(&block.data, 50),
                         }
                     })
                     .collect();
 
-                let table = Table::new(&block_rows).with(Style::modern()).to_string();
-                println!("{}", table);
+                println!("{}", render_table(&block_rows));
             }
         }
     }
@@ -444,33 +433,4 @@ fn output_detailed_format(
     Ok(())
 }
 
-/// Get a preview of block content
-fn get_block_preview(data: &[u8]) -> String {
-    let preview = String::from_utf8_lossy(data);
-    let lines: Vec<&str> = preview.lines().take(3).collect();
-    let preview = lines.join(" ");
-
-    if preview.len() > 50 {
-        format!("{}...", &preview[..50])
-    } else {
-        preview.to_string()
-    }
-}
-
-/// Format bytes into human readable format
-fn format_bytes(bytes: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB"];
-    let mut size = bytes as f64;
-    let mut unit_index = 0;
-
-    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_index += 1;
-    }
-
-    if unit_index == 0 {
-        format!("{} {}", bytes, UNITS[unit_index])
-    } else {
-        format!("{:.1} {}", size, UNITS[unit_index])
-    }
-}
+// Removed: Now using shared format_bytes and get_block_preview from formatting module
