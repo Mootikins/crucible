@@ -470,15 +470,9 @@ fn parse_content_structure(body: &str) -> ParserResult<NoteContent> {
         code_blocks,
         paragraphs,
         lists,
-        inline_links: Vec::new(),
-        latex_expressions: Vec::new(),
-        callouts: Vec::new(),
-        blockquotes: Vec::new(),
-        footnotes: FootnoteMap::new(),
-        tables: Vec::new(),
-        horizontal_rules: Vec::new(),
         word_count,
         char_count,
+        ..Default::default()
     })
 }
 
