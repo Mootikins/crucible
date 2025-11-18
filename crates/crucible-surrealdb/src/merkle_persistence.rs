@@ -158,9 +158,11 @@ impl MerklePersistence {
             metadata: None,
         };
 
+        // Use angle brackets for safe record ID formatting
+        let safe_id = sanitize_id(tree_id);
         self.client
             .query(
-                &format!("UPDATE hybrid_tree:{} CONTENT $tree", sanitize_id(tree_id)),
+                &format!("UPDATE hybrid_tree:⟨{}⟩ CONTENT $tree", safe_id),
                 &[serde_json::json!({"tree": tree_record})],
             )
             .await
@@ -256,10 +258,11 @@ impl MerklePersistence {
     /// The reconstructed Hybrid Merkle tree or an error
     pub async fn retrieve_tree(&self, tree_id: &str) -> DbResult<HybridMerkleTree> {
         // 1. Retrieve tree metadata
+        let safe_id = sanitize_id(tree_id);
         let query_result = self
             .client
             .query(
-                &format!("SELECT * FROM hybrid_tree:{}", sanitize_id(tree_id)),
+                &format!("SELECT * FROM hybrid_tree:⟨{}⟩", safe_id),
                 &[],
             )
             .await
@@ -405,8 +408,9 @@ impl MerklePersistence {
             .await
             .map_err(|e| DbError::Query(format!("Failed to delete sections: {}", e)))?;
 
+        let safe_id = sanitize_id(tree_id);
         self.client
-            .query(&format!("DELETE hybrid_tree:{}", sanitize_id(tree_id)), &[])
+            .query(&format!("DELETE hybrid_tree:⟨{}⟩", safe_id), &[])
             .await
             .map_err(|e| DbError::Query(format!("Failed to delete tree metadata: {}", e)))?;
 
@@ -526,10 +530,11 @@ impl MerklePersistence {
     ///
     /// Tree metadata or None if not found
     pub async fn get_tree_metadata(&self, tree_id: &str) -> DbResult<Option<HybridTreeRecord>> {
+        let safe_id = sanitize_id(tree_id);
         let query_result = self
             .client
             .query(
-                &format!("SELECT * FROM hybrid_tree:{}", sanitize_id(tree_id)),
+                &format!("SELECT * FROM hybrid_tree:⟨{}⟩", safe_id),
                 &[],
             )
             .await
@@ -720,11 +725,11 @@ mod tests {
 
     async fn create_test_client() -> SurrealClient {
         let config = SurrealDbConfig {
-            address: "memory".to_string(),
+            path: ":memory:".to_string(),
             namespace: "test".to_string(),
             database: "test".to_string(),
-            username: "root".to_string(),
-            password: "root".to_string(),
+            max_connections: None,
+            timeout_seconds: None,
         };
         SurrealClient::new(config).await.unwrap()
     }
@@ -831,11 +836,14 @@ mod tests {
         assert_eq!(sanitize_id("tab\tseparated"), "tab_separated");
 
         // Special characters
+        // Input: "test<script>alert()</script>"
+        // < -> _, script, > -> _, alert, ( -> _, ) -> _, < -> _, / -> _, script, > -> _
         assert_eq!(
             sanitize_id("test<script>alert()</script>"),
-            "test_script_alert___script_"
+            "test_script_alert____script_"
         );
-        assert_eq!(sanitize_id("wildcards*?.txt"), "wildcards___.txt");
+        // Input: "wildcards*?.txt" - * -> _, ? -> _, .txt
+        assert_eq!(sanitize_id("wildcards*?.txt"), "wildcards__.txt");
 
         // Valid characters preserved
         assert_eq!(
@@ -846,28 +854,28 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Tree ID must be between 1 and 255 characters")]
+    #[should_panic(expected = "Record ID cannot be empty")]
     fn test_sanitize_id_empty() {
         sanitize_id("");
     }
 
     #[test]
-    #[should_panic(expected = "Tree ID must be between 1 and 255 characters")]
+    #[should_panic(expected = "Record ID must be between 1 and 255 characters")]
     fn test_sanitize_id_too_long() {
         let long_id = "a".repeat(256);
         sanitize_id(&long_id);
     }
 
     #[test]
-    #[should_panic(expected = "contains invalid control characters")]
+    #[should_panic(expected = "Record ID contains invalid control characters")]
     fn test_sanitize_id_null_byte() {
         sanitize_id("test\0file");
     }
 
     #[test]
-    #[should_panic(expected = "contains invalid control characters")]
     fn test_sanitize_id_control_chars() {
-        sanitize_id("test\x01\x02file");
+        // Control characters (except null) are sanitized to underscores
+        assert_eq!(sanitize_id("test\x01\x02file"), "test__file");
     }
 
     #[tokio::test]
