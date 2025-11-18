@@ -50,18 +50,6 @@ pub trait Reranker: Send + Sync {
     ///
     /// # Returns
     /// Reranked results sorted by relevance score (highest first)
-    ///
-    /// # Example
-    /// ```ignore
-    /// let results = reranker.rerank(
-    ///     "rust async programming",
-    ///     vec![
-    ///         ("doc1".into(), "async/await in Rust...".into(), 0.85),
-    ///         ("doc2".into(), "Python asyncio guide...".into(), 0.82),
-    ///     ],
-    ///     Some(10),
-    /// ).await?;
-    /// ```
     async fn rerank(
         &self,
         query: &str,

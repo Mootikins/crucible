@@ -52,16 +52,6 @@ impl Default for DefaultEnrichmentService {
 
 impl DefaultEnrichmentService {
     /// Create a new enrichment service with an embedding provider
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// use std::sync::Arc;
-    /// use crucible_core::enrichment::EnrichmentService;
-    ///
-    /// let provider = Arc::new(my_provider);
-    /// let service = EnrichmentService::new(provider);
-    /// ```
     pub fn new(embedding_provider: Arc<dyn EmbeddingProvider>) -> Self {
         Self {
             embedding_provider: Some(embedding_provider),
@@ -419,15 +409,6 @@ impl DefaultEnrichmentService {
 ///
 /// A HashMap mapping byte offsets to breadcrumb strings
 ///
-/// # Example
-///
-/// ```rust,ignore
-/// use crucible_core::enrichment::build_breadcrumbs;
-///
-/// let breadcrumbs = build_breadcrumbs(&parsed_note);
-/// // For a paragraph under "# Introduction" > "## Background":
-/// // breadcrumbs[offset] == "Introduction > Background"
-/// ```
 fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, String> {
     use std::collections::HashMap;
 
