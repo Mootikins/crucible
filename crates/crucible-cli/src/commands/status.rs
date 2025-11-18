@@ -3,9 +3,10 @@ use serde_json;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use tabled::{settings::Style, Table, Tabled};
+use tabled::Tabled;
 
 use crate::config::CliConfig;
+use crate::formatting::{format_bytes, format_timestamp, render_table, OutputFormat};
 use crate::output;
 use crucible_core::hashing::blake3::Blake3Hasher;
 use crucible_core::parser::{PulldownParser, StorageAwareParser};
@@ -14,23 +15,7 @@ use crucible_core::storage::builder::{
 };
 use crucible_core::storage::{ContentAddressedStorage, StorageResult};
 
-/// Output formats for status command
-#[derive(Debug, Clone)]
-pub enum StatusOutputFormat {
-    Table,
-    Json,
-    Plain,
-}
-
-impl From<String> for StatusOutputFormat {
-    fn from(s: String) -> Self {
-        match s.to_lowercase().as_str() {
-            "json" => StatusOutputFormat::Json,
-            "plain" => StatusOutputFormat::Plain,
-            _ => StatusOutputFormat::Table,
-        }
-    }
-}
+// Removed: Now using shared OutputFormat from formatting module
 
 /// Table-friendly storage statistics
 #[derive(Tabled)]
@@ -83,7 +68,7 @@ pub async fn execute(
     detailed: bool,
     recent: bool,
 ) -> Result<()> {
-    let output_format: StatusOutputFormat = format.into();
+    let output_format = OutputFormat::from(format);
     let start_time = Instant::now();
 
     // Create storage backend
@@ -104,9 +89,15 @@ pub async fn execute(
 
     // Generate output
     match output_format {
-        StatusOutputFormat::Table => output_table_format(&status_info, detailed, recent)?,
-        StatusOutputFormat::Json => output_json_format(&status_info, detailed, recent)?,
-        StatusOutputFormat::Plain => output_plain_format(&status_info, detailed, recent),
+        OutputFormat::Table | OutputFormat::Detailed => {
+            output_table_format(&status_info, detailed, recent)?
+        }
+        OutputFormat::Json => output_json_format(&status_info, detailed, recent)?,
+        OutputFormat::Plain => output_plain_format(&status_info, detailed, recent),
+        OutputFormat::Csv => {
+            // CSV format not yet implemented for status command
+            output_plain_format(&status_info, detailed, recent)
+        }
     }
 
     // Show performance metrics
@@ -220,9 +211,7 @@ fn output_table_format(status_info: &StatusInfo, detailed: bool, recent: bool) -
         },
     ];
 
-    let overview_table = Table::new(&overview_rows).with(Style::modern()).to_string();
-
-    println!("{}", overview_table);
+    println!("{}", render_table(&overview_rows));
 
     if detailed {
         output::header("Detailed Information");
@@ -252,24 +241,14 @@ fn output_table_format(status_info: &StatusInfo, detailed: bool, recent: bool) -
                 .recent_changes
                 .iter()
                 .take(10) // Limit to 10 recent activities
-                .map(|activity| {
-                    let timestamp = activity
-                        .timestamp
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs();
-
-                    ActivityRow {
-                        timestamp: format_timestamp(timestamp),
-                        activity_type: activity.activity_type.clone(),
-                        description: activity.description.clone(),
-                    }
+                .map(|activity| ActivityRow {
+                    timestamp: format_timestamp(activity.timestamp),
+                    activity_type: activity.activity_type.clone(),
+                    description: activity.description.clone(),
                 })
                 .collect();
 
-            let activity_table = Table::new(&activity_rows).with(Style::modern()).to_string();
-
-            println!("{}", activity_table);
+            println!("{}", render_table(&activity_rows));
         }
     }
 
@@ -354,15 +333,9 @@ fn output_plain_format(status_info: &StatusInfo, detailed: bool, recent: bool) {
             println!("No recent activity recorded");
         } else {
             for activity in status_info.recent_changes.iter().take(5) {
-                let timestamp = activity
-                    .timestamp
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs();
-
                 println!(
                     "  [{}] {}: {}",
-                    format_timestamp(timestamp),
+                    format_timestamp(activity.timestamp),
                     activity.activity_type,
                     activity.description
                 );
@@ -371,30 +344,4 @@ fn output_plain_format(status_info: &StatusInfo, detailed: bool, recent: bool) {
     }
 }
 
-/// Format bytes into human readable format
-fn format_bytes(bytes: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB"];
-    let mut size = bytes as f64;
-    let mut unit_index = 0;
-
-    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_index += 1;
-    }
-
-    if unit_index == 0 {
-        format!("{} {}", bytes, UNITS[unit_index])
-    } else {
-        format!("{:.1} {}", size, UNITS[unit_index])
-    }
-}
-
-/// Format timestamp into human readable format
-fn format_timestamp(timestamp: u64) -> String {
-    if timestamp == 0 {
-        "-".to_string()
-    } else {
-        let datetime = chrono::DateTime::from_timestamp(timestamp as i64, 0).unwrap_or_default();
-        datetime.format("%Y-%m-%d %H:%M:%S").to_string()
-    }
-}
+// Removed: Now using shared format_bytes and format_timestamp from formatting module
