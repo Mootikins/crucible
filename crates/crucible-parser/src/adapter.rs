@@ -183,16 +183,13 @@ mod tests {
                 plain_text: "Test\n\nThis is a test note with link and tag.".to_string(),
                 word_count: 10,
                 char_count: 47,
-                paragraphs: vec![],
-                lists: vec![],
                 headings: vec![Heading {
                     level: 1,
                     text: "Test".to_string(),
                     offset: 0,
                     id: Some("test".to_string()),
                 }],
-                code_blocks: vec![],
-                latex_expressions: vec![],
+                ..Default::default()
             },
             wikilinks: vec![Wikilink {
                 target: "link".to_string(),
@@ -338,10 +335,7 @@ mod tests {
                 plain_text: "Simple content".to_string(),
                 word_count: 2,
                 char_count: 14,
-                headings: vec![],
-                code_blocks: vec![],
-                paragraphs: vec![],
-                lists: vec![],
+                ..Default::default()
             },
             wikilinks: vec![],
             tags: vec![],
