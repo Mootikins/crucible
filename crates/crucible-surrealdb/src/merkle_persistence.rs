@@ -51,12 +51,14 @@ pub struct HybridTreeRecord {
     /// Whether the tree is using virtual sections
     pub is_virtualized: bool,
     /// Number of virtual sections (if virtualized)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub virtual_section_count: Option<usize>,
     /// Creation timestamp
     pub created_at: chrono::DateTime<chrono::Utc>,
     /// Last updated timestamp
     pub updated_at: chrono::DateTime<chrono::Utc>,
     /// Optional metadata
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<HashMap<String, serde_json::Value>>,
 }
 
@@ -73,6 +75,7 @@ pub struct SectionRecord {
     /// Section hash (16-byte NodeHash as hex string)
     pub section_hash: String,
     /// Heading text (None for root section)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub heading: Option<String>,
     /// Heading depth (0 for root)
     pub depth: u8,
@@ -99,6 +102,7 @@ pub struct VirtualSectionRecord {
     /// Aggregated hash
     pub hash: String,
     /// Primary heading summary
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub primary_heading: Option<String>,
     /// Minimum section depth
     pub min_depth: u8,
@@ -157,31 +161,47 @@ impl MerklePersistence {
             metadata: None,
         };
 
+        // Build UPSERT query with inline JSON (avoiding NONE parameter issue)
+        // Build content fields, conditionally including optional fields
+        // Note: We store the original tree_id as 'document_path' since SurrealDB doesn't allow
+        // an 'id' field in CONTENT when a specific record ID is specified
+        let mut content_fields = format!(
+            "document_path: '{}',
+            root_hash: '{}',
+            section_count: {},
+            total_blocks: {},
+            is_virtualized: {},
+            created_at: '{}',
+            updated_at: '{}'",
+            tree_record.id,
+            tree_record.root_hash,
+            tree_record.section_count,
+            tree_record.total_blocks,
+            tree_record.is_virtualized,
+            tree_record.created_at.to_rfc3339(),
+            tree_record.updated_at.to_rfc3339()
+        );
+
+        if let Some(virtual_section_count) = tree_record.virtual_section_count {
+            content_fields.push_str(&format!(",\n            virtual_section_count: {}", virtual_section_count));
+        }
+
+        if let Some(metadata) = &tree_record.metadata {
+            let metadata_json = serde_json::to_string(metadata)
+                .map_err(|e| DbError::Internal(format!("Failed to serialize metadata: {}", e)))?;
+            content_fields.push_str(&format!(",\n            metadata: {}", metadata_json));
+        }
+
+        let query = format!(
+            "UPSERT hybrid_tree:`{}` CONTENT {{
+                {}
+            }}",
+            sanitize_id(tree_id),
+            content_fields
+        );
+
         self.client
-            .query(
-                &format!(
-                    "UPSERT hybrid_tree:{} SET \
-                    root_hash = $root_hash, \
-                    section_count = $section_count, \
-                    total_blocks = $total_blocks, \
-                    is_virtualized = $is_virtualized, \
-                    virtual_section_count = $virtual_section_count, \
-                    created_at = $created_at, \
-                    updated_at = $updated_at, \
-                    metadata = $metadata",
-                    sanitize_id(tree_id)
-                ),
-                &[serde_json::json!({
-                    "root_hash": tree_record.root_hash,
-                    "section_count": tree_record.section_count,
-                    "total_blocks": tree_record.total_blocks,
-                    "is_virtualized": tree_record.is_virtualized,
-                    "virtual_section_count": tree_record.virtual_section_count,
-                    "created_at": tree_record.created_at,
-                    "updated_at": tree_record.updated_at,
-                    "metadata": tree_record.metadata,
-                })],
-            )
+            .query(&query, &[])
             .await
             .map_err(|e| DbError::Query(format!("Failed to store tree metadata: {}", e)))?;
 
@@ -215,28 +235,11 @@ impl MerklePersistence {
             // Use path sharding: section_{tree_id}_{index}
             self.client
                 .query(
-                    "UPSERT section:{tree_id: $tree_id, index: $index} SET \
-                    tree_id = $tree_id_val, \
-                    section_index = $section_index, \
-                    section_hash = $section_hash, \
-                    heading = $heading, \
-                    depth = $depth, \
-                    start_block = $start_block, \
-                    end_block = $end_block, \
-                    section_data = $section_data, \
-                    created_at = $created_at",
+                    "UPSERT section:{tree_id: $tree_id, index: $index} CONTENT $section",
                     &[serde_json::json!({
                         "tree_id": tree_id,
                         "index": index,
-                        "tree_id_val": section_record.tree_id,
-                        "section_index": section_record.section_index,
-                        "section_hash": section_record.section_hash,
-                        "heading": section_record.heading,
-                        "depth": section_record.depth,
-                        "start_block": section_record.start_block,
-                        "end_block": section_record.end_block,
-                        "section_data": section_record.section_data,
-                        "created_at": section_record.created_at,
+                        "section": section_record,
                     })],
                 )
                 .await
@@ -262,32 +265,11 @@ impl MerklePersistence {
 
                 self.client
                     .query(
-                        "UPSERT virtual_section:{tree_id: $tree_id, index: $index} SET \
-                        tree_id = $tree_id_val, \
-                        virtual_index = $virtual_index, \
-                        hash = $hash, \
-                        primary_heading = $primary_heading, \
-                        min_depth = $min_depth, \
-                        max_depth = $max_depth, \
-                        section_count = $section_count, \
-                        total_blocks = $total_blocks, \
-                        start_index = $start_index, \
-                        end_index = $end_index, \
-                        created_at = $created_at",
+                        "UPSERT virtual_section:{tree_id: $tree_id, index: $index} CONTENT $virtual_section",
                         &[serde_json::json!({
                             "tree_id": tree_id,
                             "index": index,
-                            "tree_id_val": virtual_record.tree_id,
-                            "virtual_index": virtual_record.virtual_index,
-                            "hash": virtual_record.hash,
-                            "primary_heading": virtual_record.primary_heading,
-                            "min_depth": virtual_record.min_depth,
-                            "max_depth": virtual_record.max_depth,
-                            "section_count": virtual_record.section_count,
-                            "total_blocks": virtual_record.total_blocks,
-                            "start_index": virtual_record.start_index,
-                            "end_index": virtual_record.end_index,
-                            "created_at": virtual_record.created_at,
+                            "virtual_section": virtual_record,
                         })]
                     )
                     .await
@@ -316,7 +298,7 @@ impl MerklePersistence {
         let query_result = self
             .client
             .query(
-                &format!("SELECT * FROM hybrid_tree:{}", sanitize_id(tree_id)),
+                &format!("SELECT * FROM hybrid_tree:`{}`", sanitize_id(tree_id)),
                 &[],
             )
             .await
@@ -327,10 +309,11 @@ impl MerklePersistence {
             .first()
             .ok_or_else(|| DbError::NotFound(format!("Tree not found: {}", tree_id)))
             .and_then(|record| {
-                // Extract the ID from the record ID and add it to the data
+                // Map 'document_path' field to 'id' for deserialization
+                // (We store as document_path because SurrealDB doesn't allow 'id' in CONTENT)
                 let mut data = record.data.clone();
-                if let Some(ref record_id) = record.id {
-                    data.insert("id".to_string(), serde_json::Value::String(record_id.0.clone()));
+                if let Some(doc_path) = data.remove("document_path") {
+                    data.insert("id".to_string(), doc_path);
                 }
                 serde_json::from_value(serde_json::to_value(&data).unwrap())
                     .map_err(|e| DbError::Query(format!("Failed to parse tree metadata: {}", e)))
@@ -468,7 +451,7 @@ impl MerklePersistence {
             .map_err(|e| DbError::Query(format!("Failed to delete sections: {}", e)))?;
 
         self.client
-            .query(&format!("DELETE hybrid_tree:{}", sanitize_id(tree_id)), &[])
+            .query(&format!("DELETE hybrid_tree:`{}`", sanitize_id(tree_id)), &[])
             .await
             .map_err(|e| DbError::Query(format!("Failed to delete tree metadata: {}", e)))?;
 
@@ -508,18 +491,16 @@ impl MerklePersistence {
 
         let now = chrono::Utc::now();
 
-        // 1. Update tree metadata
+        // 1. Update tree metadata (inline values to avoid NONE issue)
+        let query = format!(
+            "UPDATE hybrid_tree:`{}` SET root_hash = '{}', updated_at = '{}'",
+            sanitize_id(tree_id),
+            tree.root_hash.to_hex(),
+            now.to_rfc3339()
+        );
+
         self.client
-            .query(
-                &format!(
-                    "UPDATE hybrid_tree:{} SET root_hash = $root_hash, updated_at = $updated_at",
-                    sanitize_id(tree_id)
-                ),
-                &[serde_json::json!({
-                    "root_hash": tree.root_hash.to_hex(),
-                    "updated_at": now
-                })],
-            )
+            .query(&query, &[])
             .await
             .map_err(|e| DbError::Query(format!("Failed to update tree metadata: {}", e)))?;
 
@@ -591,7 +572,7 @@ impl MerklePersistence {
         let query_result = self
             .client
             .query(
-                &format!("SELECT * FROM hybrid_tree:{}", sanitize_id(tree_id)),
+                &format!("SELECT * FROM hybrid_tree:`{}`", sanitize_id(tree_id)),
                 &[],
             )
             .await
@@ -601,10 +582,11 @@ impl MerklePersistence {
             .records
             .first()
             .map(|record| {
-                // Extract the ID from the record ID and add it to the data
+                // Map 'document_path' field to 'id' for deserialization
+                // (We store as document_path because SurrealDB doesn't allow 'id' in CONTENT)
                 let mut data = record.data.clone();
-                if let Some(ref record_id) = record.id {
-                    data.insert("id".to_string(), serde_json::Value::String(record_id.0.clone()));
+                if let Some(doc_path) = data.remove("document_path") {
+                    data.insert("id".to_string(), doc_path);
                 }
                 serde_json::from_value(serde_json::to_value(&data).unwrap())
                     .map_err(|e| DbError::Query(format!("Failed to parse tree metadata: {}", e)))
@@ -628,10 +610,11 @@ impl MerklePersistence {
             .records
             .iter()
             .map(|record| {
-                // Extract the ID from the record ID and add it to the data
+                // Map 'document_path' field to 'id' for deserialization
+                // (We store as document_path because SurrealDB doesn't allow 'id' in CONTENT)
                 let mut data = record.data.clone();
-                if let Some(ref record_id) = record.id {
-                    data.insert("id".to_string(), serde_json::Value::String(record_id.0.clone()));
+                if let Some(doc_path) = data.remove("document_path") {
+                    data.insert("id".to_string(), doc_path);
                 }
                 serde_json::from_value(serde_json::to_value(&data).unwrap())
                     .map_err(|e| DbError::Query(format!("Failed to parse tree record: {}", e)))
