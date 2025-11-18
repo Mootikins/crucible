@@ -16,11 +16,11 @@ use std::path::PathBuf;
 /// Create a test SurrealDB client with in-memory storage
 async fn create_test_client() -> SurrealClient {
     let config = SurrealDbConfig {
-        address: "memory".to_string(),
+        path: ":memory:".to_string(),
         namespace: "test_integration".to_string(),
         database: "test_integration".to_string(),
-        username: "root".to_string(),
-        password: "root".to_string(),
+        max_connections: Some(10),
+        timeout_seconds: Some(30),
     };
     SurrealClient::new(config)
         .await
