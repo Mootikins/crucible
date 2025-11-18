@@ -13,7 +13,7 @@
 //! # Example
 //!
 //! ```rust
-//! use crucible_core::merkle::{MerkleStore, InMemoryMerkleStore, HybridMerkleTree};
+//! use crucible_merkle::{MerkleStore, InMemoryMerkleStore, HybridMerkleTree};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! // Use in-memory store for testing
@@ -25,7 +25,7 @@
 //!
 //! // Retrieve it
 //! let retrieved = store.retrieve("my-doc").await?;
-//! assert_eq!(tree.root_hash(), retrieved.root_hash());
+//! assert_eq!(tree.root_hash, retrieved.root_hash);
 //! # Ok(())
 //! # }
 //! ```
@@ -134,7 +134,7 @@ pub trait MerkleStore: Send + Sync {
     /// # Example
     ///
     /// ```rust
-    /// # use crucible_core::merkle::{MerkleStore, InMemoryMerkleStore, HybridMerkleTree};
+    /// # use crucible_merkle::{MerkleStore, InMemoryMerkleStore, HybridMerkleTree};
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let store = InMemoryMerkleStore::new();
     /// let tree = HybridMerkleTree::default();
@@ -159,7 +159,7 @@ pub trait MerkleStore: Send + Sync {
     /// # Example
     ///
     /// ```rust
-    /// # use crucible_core::merkle::{MerkleStore, InMemoryMerkleStore, HybridMerkleTree};
+    /// # use crucible_merkle::{MerkleStore, InMemoryMerkleStore, HybridMerkleTree};
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let store = InMemoryMerkleStore::new();
     /// # store.store("my-doc", &HybridMerkleTree::default()).await?;
@@ -220,7 +220,7 @@ pub trait MerkleStore: Send + Sync {
     /// # Example
     ///
     /// ```rust
-    /// # use crucible_core::merkle::{MerkleStore, InMemoryMerkleStore, HybridMerkleTree};
+    /// # use crucible_merkle::{MerkleStore, InMemoryMerkleStore, HybridMerkleTree};
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let store = InMemoryMerkleStore::new();
     /// # let old_tree = HybridMerkleTree::default();
@@ -273,7 +273,7 @@ pub trait MerkleStore: Send + Sync {
 /// # Example
 ///
 /// ```rust
-/// use crucible_core::merkle::{MerkleStore, InMemoryMerkleStore, HybridMerkleTree};
+/// use crucible_merkle::{MerkleStore, InMemoryMerkleStore, HybridMerkleTree};
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let store = InMemoryMerkleStore::new();
