@@ -5,6 +5,7 @@ use std::time::Instant;
 use tabled::{settings::Style, Table, Tabled};
 
 use crate::config::CliConfig;
+use crate::formatting;
 use crate::output;
 use crucible_core::hashing::blake3::Blake3Hasher;
 use crucible_core::storage::builder::{
@@ -435,23 +436,7 @@ fn output_detailed_format(
     Ok(())
 }
 
-/// Format bytes into human readable format
-fn format_bytes(bytes: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB"];
-    let mut size = bytes as f64;
-    let mut unit_index = 0;
-
-    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_index += 1;
-    }
-
-    if unit_index == 0 {
-        format!("{} {}", bytes, UNITS[unit_index])
-    } else {
-        format!("{:.1} {}", size, UNITS[unit_index])
-    }
-}
+// Removed: Now using shared formatting::format_bytes
 
 /// Format timestamp into human readable format
 fn format_timestamp(timestamp: u64) -> String {
