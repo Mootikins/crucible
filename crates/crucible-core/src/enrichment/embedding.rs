@@ -20,15 +20,6 @@ use anyhow::Result;
 /// concrete implementations. The infrastructure layer (crucible-llm)
 /// depends on the core layer and provides concrete implementations.
 ///
-/// # Example
-///
-/// ```rust,ignore
-/// use crucible_core::enrichment::EmbeddingProvider;
-///
-/// async fn embed_text(provider: &dyn EmbeddingProvider, text: &str) -> Result<Vec<f32>> {
-///     provider.embed(text).await
-/// }
-/// ```
 #[async_trait::async_trait]
 pub trait EmbeddingProvider: Send + Sync {
     /// Generate an embedding vector for a single text input

@@ -18,20 +18,6 @@ use anyhow::Result;
 /// - Both depend on abstractions (this trait)
 /// - Easy to swap implementations or add new storage backends
 ///
-/// ## Example
-///
-/// ```rust,ignore
-/// use crucible_core::enrichment::{EnrichedNoteStore, EnrichedNote};
-/// use std::sync::Arc;
-///
-/// async fn store_note(
-///     storage: Arc<dyn EnrichedNoteStore>,
-///     enriched: &EnrichedNote,
-///     path: &str,
-/// ) -> Result<()> {
-///     storage.store_enriched(enriched, path).await
-/// }
-/// ```
 #[async_trait::async_trait]
 pub trait EnrichedNoteStore: Send + Sync {
     /// Store an enriched note with all its associated data

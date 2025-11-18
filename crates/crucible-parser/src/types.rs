@@ -13,15 +13,8 @@
 //!
 //! ## Import Guidelines
 //!
-//! Prefer importing from the canonical location:
-//! ```rust,ignore
-//! use crucible_parser::types::{ParsedNote, Wikilink, Tag, BlockHash};
-//! ```
-//!
-//! Re-exports are available for convenience:
-//! ```rust,ignore
-//! use crucible_core::parser::{ParsedNote, Wikilink, Tag};
-//! ```
+//! Import from the canonical location `crucible_parser::types` or use re-exports
+//! from `crucible_core::parser` for convenience.
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
