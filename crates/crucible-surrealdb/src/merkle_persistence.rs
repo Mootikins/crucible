@@ -158,39 +158,15 @@ impl MerklePersistence {
             metadata: None,
         };
 
-        // Upsert pattern: try UPDATE first, then CREATE if record doesn't exist
-        // Use SET instead of CONTENT to preserve the id field
+        // Use UPSERT to insert or update the tree record
         let safe_id = sanitize_id(tree_id);
-        let params = serde_json::json!({
-            "id": tree_record.id,
-            "root_hash": tree_record.root_hash,
-            "section_count": tree_record.section_count,
-            "total_blocks": tree_record.total_blocks,
-            "is_virtualized": tree_record.is_virtualized,
-            "virtual_section_count": tree_record.virtual_section_count,
-            "created_at": tree_record.created_at,
-            "updated_at": tree_record.updated_at,
-            "metadata": tree_record.metadata,
-        });
-
-        let update_result = self.client
+        self.client
             .query(
-                &format!("UPDATE hybrid_tree:{} SET id = $id, root_hash = $root_hash, section_count = $section_count, total_blocks = $total_blocks, is_virtualized = $is_virtualized, virtual_section_count = $virtual_section_count, created_at = $created_at, updated_at = $updated_at, metadata = $metadata", safe_id),
-                &[params.clone()],
+                &format!("UPSERT hybrid_tree:{} CONTENT $tree", safe_id),
+                &[serde_json::json!({"tree": tree_record})],
             )
             .await
-            .map_err(|e| DbError::Query(format!("Failed to update tree metadata: {}", e)))?;
-
-        // If UPDATE returned no records, the tree doesn't exist yet - CREATE it
-        if update_result.records.is_empty() {
-            self.client
-                .query(
-                    &format!("CREATE hybrid_tree:{} SET id = $id, root_hash = $root_hash, section_count = $section_count, total_blocks = $total_blocks, is_virtualized = $is_virtualized, virtual_section_count = $virtual_section_count, created_at = $created_at, updated_at = $updated_at, metadata = $metadata", safe_id),
-                    &[params],
-                )
-                .await
-                .map_err(|e| DbError::Query(format!("Failed to create tree metadata: {}", e)))?;
-        }
+            .map_err(|e| DbError::Query(format!("Failed to upsert tree metadata: {}", e)))?;
 
         // 2. Store sections with binary encoding
         let mut cumulative_blocks = 0;
@@ -219,10 +195,10 @@ impl MerklePersistence {
                 created_at: now,
             };
 
-            // Use path sharding: section_{tree_id}_{index}
+            // Use UPSERT with path sharding: section_{tree_id}_{index}
             self.client
                 .query(
-                    "UPDATE section:{tree_id: $tree_id, index: $index} CONTENT $section",
+                    "UPSERT section:{tree_id: $tree_id, index: $index} CONTENT $section",
                     &[serde_json::json!({
                         "tree_id": tree_id,
                         "index": index,
@@ -230,7 +206,7 @@ impl MerklePersistence {
                     })],
                 )
                 .await
-                .map_err(|e| DbError::Query(format!("Failed to store section {}: {}", index, e)))?;
+                .map_err(|e| DbError::Query(format!("Failed to upsert section {}: {}", index, e)))?;
         }
 
         // 3. Store virtual sections if present
@@ -252,7 +228,7 @@ impl MerklePersistence {
 
                 self.client
                     .query(
-                        "UPDATE virtual_section:{tree_id: $tree_id, index: $index} CONTENT $vsection",
+                        "UPSERT virtual_section:{tree_id: $tree_id, index: $index} CONTENT $vsection",
                         &[serde_json::json!({
                             "tree_id": tree_id,
                             "index": index,
@@ -297,7 +273,14 @@ impl MerklePersistence {
             .first()
             .ok_or_else(|| DbError::NotFound(format!("Tree not found: {}", tree_id)))
             .and_then(|record| {
-                serde_json::from_value(serde_json::to_value(&record.data).unwrap())
+                // Extract the ID from the record and add it to the data
+                let mut data = record.data.clone();
+                if let Some(ref record_id) = record.id {
+                    // Extract just the ID part from "table:id" format
+                    let id_str = record_id.0.split(':').last().unwrap_or(&record_id.0);
+                    data.insert("id".to_string(), serde_json::Value::String(id_str.to_string()));
+                }
+                serde_json::from_value(serde_json::to_value(&data).unwrap())
                     .map_err(|e| DbError::Query(format!("Failed to parse tree metadata: {}", e)))
             })?;
 
@@ -568,7 +551,14 @@ impl MerklePersistence {
             .records
             .first()
             .map(|record| {
-                serde_json::from_value(serde_json::to_value(&record.data).unwrap())
+                // Extract the ID from the record and add it to the data
+                let mut data = record.data.clone();
+                if let Some(ref record_id) = record.id {
+                    // Extract just the ID part from "table:id" format
+                    let id_str = record_id.0.split(':').last().unwrap_or(&record_id.0);
+                    data.insert("id".to_string(), serde_json::Value::String(id_str.to_string()));
+                }
+                serde_json::from_value(serde_json::to_value(&data).unwrap())
                     .map_err(|e| DbError::Query(format!("Failed to parse tree metadata: {}", e)))
             })
             .transpose()
@@ -590,7 +580,14 @@ impl MerklePersistence {
             .records
             .iter()
             .map(|record| {
-                serde_json::from_value(serde_json::to_value(&record.data).unwrap())
+                // Extract the ID from the record and add it to the data
+                let mut data = record.data.clone();
+                if let Some(ref record_id) = record.id {
+                    // Extract just the ID part from "table:id" format
+                    let id_str = record_id.0.split(':').last().unwrap_or(&record_id.0);
+                    data.insert("id".to_string(), serde_json::Value::String(id_str.to_string()));
+                }
+                serde_json::from_value(serde_json::to_value(&data).unwrap())
                     .map_err(|e| DbError::Query(format!("Failed to parse tree record: {}", e)))
             })
             .collect::<Result<Vec<_>, _>>()
