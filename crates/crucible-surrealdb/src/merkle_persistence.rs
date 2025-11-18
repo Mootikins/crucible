@@ -11,6 +11,7 @@
 //! - **Metadata Preservation**: Store all section and node metadata
 //! - **Incremental Updates**: Support for partial tree updates
 
+use crate::utils::sanitize_record_id as sanitize_record_id_result;
 use crate::{DbError, DbResult, RecordId, SurrealClient};
 use crucible_core::merkle::{HybridMerkleTree, NodeHash, SectionNode, VirtualSection};
 use crucible_core::parser::ParsedNote;
@@ -569,11 +570,8 @@ impl MerklePersistence {
 
 /// Sanitize and validate ID for use in SurrealDB record IDs
 ///
-/// This provides defense-in-depth protection against SQL injection and malformed IDs:
-/// - Validates length (1-255 characters)
-/// - Rejects control characters and null bytes
-/// - Sanitizes filesystem and SQL injection characters
-/// - Ensures only safe characters remain
+/// This is a wrapper around the shared `sanitize_record_id` function
+/// that panics on error for backward compatibility with existing code.
 ///
 /// # Arguments
 ///
@@ -585,44 +583,11 @@ impl MerklePersistence {
 ///
 /// # Panics
 ///
-/// Panics if the ID is empty or longer than 255 characters. This is intentional
-/// as these should be caught during development/testing.
+/// Panics if the ID is empty, longer than 255 characters, or contains invalid characters.
+/// This is intentional as these should be caught during development/testing.
 fn sanitize_id(id: &str) -> String {
-    // Validate length
-    assert!(
-        !id.is_empty() && id.len() <= 255,
-        "Tree ID must be between 1 and 255 characters, got {} characters",
-        id.len()
-    );
-
-    // Check for control characters and null bytes (security risk)
-    assert!(
-        !id.chars().any(|c| c.is_control() || c == '\0'),
-        "Tree ID contains invalid control characters or null bytes"
-    );
-
-    // Sanitize: Replace all potentially dangerous characters with underscores
-    // This includes:
-    // - Filesystem separators: / \ :
-    // - SQL injection characters: ' ; --
-    // - Wildcards and special chars: * ? " < > |
-    // - Whitespace (replace with underscore for clarity)
-    id.chars()
-        .map(|c| match c {
-            // Filesystem separators
-            '/' | '\\' | ':' => '_',
-            // SQL injection risks
-            '\'' | ';' | '-' if id.contains("--") => '_',
-            // Wildcards and special characters
-            '*' | '?' | '"' | '<' | '>' | '|' => '_',
-            // Whitespace
-            c if c.is_whitespace() => '_',
-            // Allow alphanumeric, underscore, period, and hyphen
-            c if c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-' => c,
-            // Replace anything else with underscore
-            _ => '_',
-        })
-        .collect()
+    sanitize_record_id_result(id)
+        .unwrap_or_else(|e| panic!("Invalid tree ID '{}': {}", id, e))
 }
 
 // Implement the MerkleStore trait for SurrealDB backend
