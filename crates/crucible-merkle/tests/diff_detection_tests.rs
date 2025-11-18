@@ -48,11 +48,11 @@ async fn test_detect_section_content_change() {
 async fn test_no_change_same_hash() {
     let content = "# Section 1\n\nSame content";
 
-    let parsed1 = parse_note(content, "test.md").unwrap();
-    let parsed2 = parse_note(content, "test.md").unwrap();
+    let parsed1 = parse_note(content, "test.md").await.unwrap();
+    let parsed2 = parse_note(content, "test.md").await.unwrap();
 
-    let tree1 = HybridMerkleTree::from_parsed_note(&parsed1).unwrap();
-    let tree2 = HybridMerkleTree::from_parsed_note(&parsed2).unwrap();
+    let tree1 = HybridMerkleTree::from_document(&parsed1);
+    let tree2 = HybridMerkleTree::from_document(&parsed2);
 
     // Root hashes should be identical
     assert_eq!(tree1.root_hash, tree2.root_hash);
@@ -158,7 +158,8 @@ Same content
 
     // Should handle duplicate content in different sections
     assert!(!tree.root_hash.is_zero());
-    assert_eq!(tree.section_count(), 3);
+    // Note: 4 sections = 1 root section + 3 heading sections
+    assert_eq!(tree.section_count(), 4);
 }
 
 #[tokio::test]
