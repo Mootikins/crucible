@@ -382,8 +382,12 @@ mod tests {
 
     #[test]
     fn test_provider_creation_with_invalid_config() {
-        let mut config = create_test_config();
-        config.model.name = String::new(); // Invalid model name
+        // Create a config with an empty model name (invalid)
+        use crucible_config::OllamaConfig;
+        let config = EmbeddingConfig::Ollama(OllamaConfig {
+            model: String::new(), // Invalid model name
+            ..Default::default()
+        });
 
         let provider = OllamaProvider::new(config);
         assert!(provider.is_err());
