@@ -158,7 +158,8 @@ Same content
 
     // Should handle duplicate content in different sections
     assert!(!tree.root_hash.is_zero());
-    assert_eq!(tree.section_count(), 3);
+    // Note: 4 sections = 1 root section + 3 heading sections
+    assert_eq!(tree.section_count(), 4);
 }
 
 #[tokio::test]
