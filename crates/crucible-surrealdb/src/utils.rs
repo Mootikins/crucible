@@ -3,6 +3,77 @@
 /// This module provides common utilities for safe database operations,
 /// particularly focused on preventing SQL injection and ensuring data integrity.
 
+use std::path::Path;
+
+/// Normalize a path string to a consistent format for database storage.
+///
+/// This function:
+/// - Converts backslashes to forward slashes
+/// - Removes leading `./` and `/` prefixes
+/// - Ensures consistent path representation across platforms
+///
+/// # Arguments
+///
+/// * `path` - The path string to normalize
+///
+/// # Returns
+///
+/// Normalized path string
+///
+/// # Examples
+///
+/// ```
+/// use crucible_surrealdb::utils::normalize_path_string;
+///
+/// assert_eq!(normalize_path_string(r".\foo\bar.md"), "foo/bar.md");
+/// assert_eq!(normalize_path_string("/foo/bar.md"), "foo/bar.md");
+/// assert_eq!(normalize_path_string("./foo/bar.md"), "foo/bar.md");
+/// ```
+pub fn normalize_path_string(path: &str) -> String {
+    let mut normalized = path.replace('\\', "/");
+
+    // Remove leading ./ prefixes
+    while normalized.starts_with("./") {
+        normalized = normalized.trim_start_matches("./").to_string();
+    }
+
+    // Remove leading / prefix
+    if normalized.starts_with('/') {
+        normalized = normalized.trim_start_matches('/').to_string();
+    }
+
+    normalized
+}
+
+/// Resolve a path relative to a root directory and normalize it.
+///
+/// This function strips the root prefix from the path and normalizes
+/// the result for consistent database storage.
+///
+/// # Arguments
+///
+/// * `path` - The full path
+/// * `root` - The root directory to strip
+///
+/// # Returns
+///
+/// Normalized relative path string
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::path::Path;
+/// use crucible_surrealdb::utils::resolve_and_normalize_path;
+///
+/// let path = Path::new("/workspace/notes/foo.md");
+/// let root = Path::new("/workspace/notes");
+/// assert_eq!(resolve_and_normalize_path(path, root), "foo.md");
+/// ```
+pub fn resolve_and_normalize_path(path: &Path, root: &Path) -> String {
+    let relative = path.strip_prefix(root).unwrap_or(path);
+    normalize_path_string(&relative.to_string_lossy())
+}
+
 /// Sanitize and validate a record ID for safe use in SurrealDB queries
 ///
 /// This provides defense-in-depth protection against SQL injection and malformed IDs:

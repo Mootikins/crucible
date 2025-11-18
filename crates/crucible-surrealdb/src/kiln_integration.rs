@@ -12,7 +12,7 @@ use crate::eav_graph::{
 // These types were part of the old embedding_pool architecture that has been replaced
 // use crucible_enrichment::{DocumentEmbedding, EmbeddingConfig, EmbeddingError, EmbeddingModel, EmbeddingProcessingResult, PrivacyMode, ThreadPoolMetrics};
 use crate::types::{DatabaseStats, DocumentEmbedding, Record};
-use crate::utils::sanitize_record_id;
+use crate::utils::{resolve_and_normalize_path, sanitize_record_id};
 use crate::SurrealClient;
 use anyhow::{anyhow, Result};
 use crucible_core::parser::Wikilink;
@@ -59,15 +59,9 @@ pub async fn store_parsed_document(
 }
 
 fn resolve_relative_path(path: &std::path::Path, kiln_root: &std::path::Path) -> String {
-    let relative = path.strip_prefix(kiln_root).unwrap_or(path).to_path_buf();
+    let normalized = resolve_and_normalize_path(path, kiln_root);
 
-    let mut normalized = relative.to_string_lossy().replace('\\', "/");
-    if normalized.starts_with("./") {
-        normalized = normalized.trim_start_matches("./").to_string();
-    }
-    if normalized.starts_with('/') {
-        normalized = normalized.trim_start_matches('/').to_string();
-    }
+    // If normalization resulted in an empty string, use the filename
     if normalized.is_empty() {
         return path
             .file_name()
