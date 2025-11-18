@@ -85,7 +85,7 @@ impl EnhancedTagsExtension {
     fn extract_hashtags(
         &self,
         content: &str,
-        _doc_content: &mut NoteContent,
+        doc_content: &mut NoteContent,
     ) -> Result<(), ParseError> {
         // Pattern to match #hashtags (excluding URLs like http:// and # in code blocks)
         // Note: Rust's regex crate doesn't support lookbehind, so we'll filter matches manually
@@ -128,14 +128,8 @@ impl EnhancedTagsExtension {
                     continue;
                 }
 
-                let _tag = Tag {
-                    name: hashtag.to_string(),
-                    path: hashtag.split('-').map(|s| s.to_string()).collect(),
-                    offset,
-                };
-
-                // Add to tags (Note: this would need to be added to the ParsedNote, not NoteContent)
-                // For now, we'll add it to a hypothetical tags field in NoteContent
+                let tag = Tag::new(hashtag, offset);
+                doc_content.tags.push(tag);
             }
             line_offset += line.len() + 1; // +1 for newline
         }
