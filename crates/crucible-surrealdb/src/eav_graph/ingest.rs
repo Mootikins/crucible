@@ -146,14 +146,6 @@ impl<'a> NoteIngestor<'a> {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// use crucible_surrealdb::{EAVGraphStore, MerklePersistence};
-    /// use crucible_core::merkle::MerkleStore;
-    ///
-    /// let store = EAVGraphStore::new(client.clone());
-    /// let merkle_store = MerklePersistence::new(client);
-    /// let ingestor = NoteIngestor::with_merkle_store(&store, Box::new(merkle_store));
-    /// ```
     pub fn with_merkle_store(
         store: &'a EAVGraphStore,
         merkle_store: Box<dyn crucible_core::merkle::MerkleStore>,
@@ -254,16 +246,6 @@ impl<'a> NoteIngestor<'a> {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// use crucible_pipeline::NotePipeline;
-    /// use crucible_surrealdb::eav_graph::NoteIngestor;
-    ///
-    /// // Pipeline handles phases 1-4 and calls this method for phase 5
-    /// // This example shows direct usage (pipeline handles this automatically)
-    ///
-    /// let ingestor = NoteIngestor::new(&store);
-    /// let entity_id = ingestor.ingest_enriched(&enriched, "notes/example.md").await?;
-    /// ```
     pub async fn ingest_enriched(
         &self,
         enriched: &crucible_core::enrichment::EnrichedNote,

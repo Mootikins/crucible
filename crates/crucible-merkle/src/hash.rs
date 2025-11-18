@@ -26,19 +26,6 @@ use std::fmt;
 /// - **Copy**: Zero-cost cloning
 /// - **Equality**: Fast byte-wise comparison
 /// - **Hash**: Can be used as HashMap key
-///
-/// ## Example
-///
-/// ```rust,ignore
-/// use crucible_core::merkle::NodeHash;
-///
-/// let hash1 = NodeHash::from_content(b"Hello, World!");
-/// let hash2 = NodeHash::from_content(b"Hello, World!");
-/// assert_eq!(hash1, hash2);
-///
-/// let combined = NodeHash::combine(&hash1, &hash2);
-/// assert_ne!(combined, hash1);
-/// ```
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NodeHash([u8; 16]);
 
@@ -51,12 +38,6 @@ impl NodeHash {
     /// # Arguments
     ///
     /// * `bytes` - A 16-byte array containing the hash value
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let hash = NodeHash::new([0u8; 16]);
-    /// ```
     pub fn new(bytes: [u8; 16]) -> Self {
         Self(bytes)
     }
@@ -64,41 +45,16 @@ impl NodeHash {
     /// Create a zero hash (all bytes are 0)
     ///
     /// This is useful for representing empty or null nodes.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let zero = NodeHash::zero();
-    /// assert!(zero.is_zero());
-    /// ```
     pub fn zero() -> Self {
         Self([0u8; 16])
     }
 
     /// Check if this is a zero hash
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let zero = NodeHash::zero();
-    /// assert!(zero.is_zero());
-    ///
-    /// let hash = NodeHash::from_content(b"data");
-    /// assert!(!hash.is_zero());
-    /// ```
     pub fn is_zero(&self) -> bool {
         self.0 == [0u8; 16]
     }
 
     /// Get the hash as a byte slice
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let hash = NodeHash::from_content(b"data");
-    /// let bytes: &[u8] = hash.as_bytes();
-    /// assert_eq!(bytes.len(), 16);
-    /// ```
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
@@ -110,12 +66,6 @@ impl NodeHash {
     /// # Arguments
     ///
     /// * `content` - The content to hash
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let hash = NodeHash::from_content(b"Hello, World!");
-    /// ```
     ///
     /// # Performance
     ///
@@ -137,14 +87,6 @@ impl NodeHash {
     ///
     /// * `left` - Hash of the left child node
     /// * `right` - Hash of the right child node
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let left = NodeHash::from_content(b"left");
-    /// let right = NodeHash::from_content(b"right");
-    /// let parent = NodeHash::combine(&left, &right);
-    /// ```
     ///
     /// # Performance
     ///
@@ -172,17 +114,6 @@ impl NodeHash {
     ///
     /// The combined hash, or zero hash if the input is empty
     ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let hashes = vec![
-    ///     NodeHash::from_content(b"one"),
-    ///     NodeHash::from_content(b"two"),
-    ///     NodeHash::from_content(b"three"),
-    /// ];
-    /// let combined = NodeHash::combine_many(&hashes);
-    /// ```
-    ///
     /// # Performance
     ///
     /// Optimized for combining multiple hashes in one pass.
@@ -205,13 +136,6 @@ impl NodeHash {
     /// Convert the hash to a hexadecimal string
     ///
     /// This is primarily for debugging and display purposes.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let hash = NodeHash::from_content(b"data");
-    /// println!("Hash: {}", hash.to_hex());
-    /// ```
     pub fn to_hex(&self) -> String {
         hex::encode(self.0)
     }
@@ -225,14 +149,6 @@ impl NodeHash {
     /// # Errors
     ///
     /// Returns an error if the hex string is invalid or has the wrong length.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let hex = "0123456789abcdef0123456789abcdef";
-    /// let hash = NodeHash::from_hex(hex).unwrap();
-    /// assert_eq!(hash.to_hex(), hex);
-    /// ```
     pub fn from_hex(hex: &str) -> Result<Self, String> {
         let bytes = hex::decode(hex).map_err(|e| format!("Invalid hex format: {}", e))?;
         if bytes.len() != 16 {

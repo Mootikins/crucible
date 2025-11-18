@@ -63,33 +63,6 @@ impl Default for NotePipelineConfig {
 ///   └─> Storage (Phase 5: persistence)
 /// ```
 ///
-/// # Example
-///
-/// ```rust,ignore
-/// use crucible_pipeline::{NotePipeline, NotePipelineConfig};
-///
-/// // Create pipeline with all dependencies injected
-/// let pipeline = NotePipeline::builder()
-///     .change_detector(change_store)
-///     .merkle_store(merkle_store)
-///     .enrichment_service(enrichment_service)
-///     .storage(storage)
-///     .build();
-///
-/// // Process a note
-/// let result = pipeline.process(path).await?;
-/// match result {
-///     ProcessingResult::Success { changed_blocks, .. } => {
-///         println!("Processed {} changed blocks", changed_blocks);
-///     }
-///     ProcessingResult::Skipped => {
-///         println!("Note unchanged, skipped processing");
-///     }
-///     ProcessingResult::NoChanges => {
-///         println!("No content changes detected");
-///     }
-/// }
-/// ```
 pub struct NotePipeline {
     /// Markdown parser (Phase 2)
     parser: CrucibleParser,
