@@ -22,20 +22,6 @@ use anyhow::Result;
 /// - Both depend on abstractions (this trait)
 /// - Easy to swap implementations or add new enrichment strategies
 ///
-/// ## Example
-///
-/// ```rust,ignore
-/// use crucible_core::enrichment::{EnrichmentService, EnrichedNote};
-/// use std::sync::Arc;
-///
-/// async fn enrich_document(
-///     service: Arc<dyn EnrichmentService>,
-///     parsed: ParsedNote,
-///     changed_blocks: Vec<String>,
-/// ) -> Result<EnrichedNote> {
-///     service.enrich(parsed, changed_blocks).await
-/// }
-/// ```
 #[async_trait::async_trait]
 pub trait EnrichmentService: Send + Sync {
     /// Enrich a parsed note with embeddings, metadata, and relations
