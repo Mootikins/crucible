@@ -11,7 +11,6 @@
 //! - **Metadata Preservation**: Store all section and node metadata
 //! - **Incremental Updates**: Support for partial tree updates
 
-use crate::utils::sanitize_record_id as sanitize_record_id_result;
 use crate::{DbError, DbResult, RecordId, SurrealClient};
 use crucible_core::merkle::{HybridMerkleTree, NodeHash, SectionNode, VirtualSection};
 use crucible_core::parser::ParsedNote;
@@ -158,15 +157,13 @@ impl MerklePersistence {
             metadata: None,
         };
 
-        // Use UPSERT to insert or update the tree record
-        let safe_id = sanitize_id(tree_id);
         self.client
             .query(
-                &format!("UPSERT hybrid_tree:{} CONTENT $tree", safe_id),
+                &format!("UPDATE hybrid_tree:{} CONTENT $tree", sanitize_id(tree_id)),
                 &[serde_json::json!({"tree": tree_record})],
             )
             .await
-            .map_err(|e| DbError::Query(format!("Failed to upsert tree metadata: {}", e)))?;
+            .map_err(|e| DbError::Query(format!("Failed to store tree metadata: {}", e)))?;
 
         // 2. Store sections with binary encoding
         let mut cumulative_blocks = 0;
@@ -195,10 +192,10 @@ impl MerklePersistence {
                 created_at: now,
             };
 
-            // Use UPSERT with path sharding: section_{tree_id}_{index}
+            // Use path sharding: section_{tree_id}_{index}
             self.client
                 .query(
-                    "UPSERT section:{tree_id: $tree_id, index: $index} CONTENT $section",
+                    "UPDATE section:{tree_id: $tree_id, index: $index} CONTENT $section",
                     &[serde_json::json!({
                         "tree_id": tree_id,
                         "index": index,
@@ -206,7 +203,7 @@ impl MerklePersistence {
                     })],
                 )
                 .await
-                .map_err(|e| DbError::Query(format!("Failed to upsert section {}: {}", index, e)))?;
+                .map_err(|e| DbError::Query(format!("Failed to store section {}: {}", index, e)))?;
         }
 
         // 3. Store virtual sections if present
@@ -228,7 +225,7 @@ impl MerklePersistence {
 
                 self.client
                     .query(
-                        "UPSERT virtual_section:{tree_id: $tree_id, index: $index} CONTENT $vsection",
+                        "UPDATE virtual_section:{tree_id: $tree_id, index: $index} CONTENT $vsection",
                         &[serde_json::json!({
                             "tree_id": tree_id,
                             "index": index,
@@ -258,11 +255,10 @@ impl MerklePersistence {
     /// The reconstructed Hybrid Merkle tree or an error
     pub async fn retrieve_tree(&self, tree_id: &str) -> DbResult<HybridMerkleTree> {
         // 1. Retrieve tree metadata
-        let safe_id = sanitize_id(tree_id);
         let query_result = self
             .client
             .query(
-                &format!("SELECT * FROM hybrid_tree:{}", safe_id),
+                &format!("SELECT * FROM hybrid_tree:{}", sanitize_id(tree_id)),
                 &[],
             )
             .await
@@ -273,14 +269,7 @@ impl MerklePersistence {
             .first()
             .ok_or_else(|| DbError::NotFound(format!("Tree not found: {}", tree_id)))
             .and_then(|record| {
-                // Extract the ID from the record and add it to the data
-                let mut data = record.data.clone();
-                if let Some(ref record_id) = record.id {
-                    // Extract just the ID part from "table:id" format
-                    let id_str = record_id.0.split(':').last().unwrap_or(&record_id.0);
-                    data.insert("id".to_string(), serde_json::Value::String(id_str.to_string()));
-                }
-                serde_json::from_value(serde_json::to_value(&data).unwrap())
+                serde_json::from_value(serde_json::to_value(&record.data).unwrap())
                     .map_err(|e| DbError::Query(format!("Failed to parse tree metadata: {}", e)))
             })?;
 
@@ -415,9 +404,8 @@ impl MerklePersistence {
             .await
             .map_err(|e| DbError::Query(format!("Failed to delete sections: {}", e)))?;
 
-        let safe_id = sanitize_id(tree_id);
         self.client
-            .query(&format!("DELETE hybrid_tree:{}", safe_id), &[])
+            .query(&format!("DELETE hybrid_tree:{}", sanitize_id(tree_id)), &[])
             .await
             .map_err(|e| DbError::Query(format!("Failed to delete tree metadata: {}", e)))?;
 
@@ -537,11 +525,10 @@ impl MerklePersistence {
     ///
     /// Tree metadata or None if not found
     pub async fn get_tree_metadata(&self, tree_id: &str) -> DbResult<Option<HybridTreeRecord>> {
-        let safe_id = sanitize_id(tree_id);
         let query_result = self
             .client
             .query(
-                &format!("SELECT * FROM hybrid_tree:{}", safe_id),
+                &format!("SELECT * FROM hybrid_tree:{}", sanitize_id(tree_id)),
                 &[],
             )
             .await
@@ -551,14 +538,7 @@ impl MerklePersistence {
             .records
             .first()
             .map(|record| {
-                // Extract the ID from the record and add it to the data
-                let mut data = record.data.clone();
-                if let Some(ref record_id) = record.id {
-                    // Extract just the ID part from "table:id" format
-                    let id_str = record_id.0.split(':').last().unwrap_or(&record_id.0);
-                    data.insert("id".to_string(), serde_json::Value::String(id_str.to_string()));
-                }
-                serde_json::from_value(serde_json::to_value(&data).unwrap())
+                serde_json::from_value(serde_json::to_value(&record.data).unwrap())
                     .map_err(|e| DbError::Query(format!("Failed to parse tree metadata: {}", e)))
             })
             .transpose()
@@ -580,14 +560,7 @@ impl MerklePersistence {
             .records
             .iter()
             .map(|record| {
-                // Extract the ID from the record and add it to the data
-                let mut data = record.data.clone();
-                if let Some(ref record_id) = record.id {
-                    // Extract just the ID part from "table:id" format
-                    let id_str = record_id.0.split(':').last().unwrap_or(&record_id.0);
-                    data.insert("id".to_string(), serde_json::Value::String(id_str.to_string()));
-                }
-                serde_json::from_value(serde_json::to_value(&data).unwrap())
+                serde_json::from_value(serde_json::to_value(&record.data).unwrap())
                     .map_err(|e| DbError::Query(format!("Failed to parse tree record: {}", e)))
             })
             .collect::<Result<Vec<_>, _>>()
@@ -596,8 +569,11 @@ impl MerklePersistence {
 
 /// Sanitize and validate ID for use in SurrealDB record IDs
 ///
-/// This is a wrapper around the shared `sanitize_record_id` function
-/// that panics on error for backward compatibility with existing code.
+/// This provides defense-in-depth protection against SQL injection and malformed IDs:
+/// - Validates length (1-255 characters)
+/// - Rejects control characters and null bytes
+/// - Sanitizes filesystem and SQL injection characters
+/// - Ensures only safe characters remain
 ///
 /// # Arguments
 ///
@@ -609,11 +585,44 @@ impl MerklePersistence {
 ///
 /// # Panics
 ///
-/// Panics if the ID is empty, longer than 255 characters, or contains invalid characters.
-/// This is intentional as these should be caught during development/testing.
+/// Panics if the ID is empty or longer than 255 characters. This is intentional
+/// as these should be caught during development/testing.
 fn sanitize_id(id: &str) -> String {
-    sanitize_record_id_result(id)
-        .unwrap_or_else(|e| panic!("Invalid tree ID '{}': {}", id, e))
+    // Validate length
+    assert!(
+        !id.is_empty() && id.len() <= 255,
+        "Tree ID must be between 1 and 255 characters, got {} characters",
+        id.len()
+    );
+
+    // Check for control characters and null bytes (security risk)
+    assert!(
+        !id.chars().any(|c| c.is_control() || c == '\0'),
+        "Tree ID contains invalid control characters or null bytes"
+    );
+
+    // Sanitize: Replace all potentially dangerous characters with underscores
+    // This includes:
+    // - Filesystem separators: / \ :
+    // - SQL injection characters: ' ; --
+    // - Wildcards and special chars: * ? " < > |
+    // - Whitespace (replace with underscore for clarity)
+    id.chars()
+        .map(|c| match c {
+            // Filesystem separators
+            '/' | '\\' | ':' => '_',
+            // SQL injection risks
+            '\'' | ';' | '-' if id.contains("--") => '_',
+            // Wildcards and special characters
+            '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            // Whitespace
+            c if c.is_whitespace() => '_',
+            // Allow alphanumeric, underscore, period, and hyphen
+            c if c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-' => c,
+            // Replace anything else with underscore
+            _ => '_',
+        })
+        .collect()
 }
 
 // Implement the MerkleStore trait for SurrealDB backend
@@ -749,8 +758,8 @@ mod tests {
             path: ":memory:".to_string(),
             namespace: "test".to_string(),
             database: "test".to_string(),
-            max_connections: None,
-            timeout_seconds: None,
+            max_connections: Some(10),
+            timeout_seconds: Some(30),
         };
         SurrealClient::new(config).await.unwrap()
     }
@@ -857,14 +866,11 @@ mod tests {
         assert_eq!(sanitize_id("tab\tseparated"), "tab_separated");
 
         // Special characters
-        // Input: "test<script>alert()</script>"
-        // < -> _, script, > -> _, alert, ( -> _, ) -> _, < -> _, / -> _, script, > -> _
         assert_eq!(
             sanitize_id("test<script>alert()</script>"),
-            "test_script_alert____script_"
+            "test_script_alert___script_"
         );
-        // Input: "wildcards*?.txt" - * -> _, ? -> _, .txt
-        assert_eq!(sanitize_id("wildcards*?.txt"), "wildcards__.txt");
+        assert_eq!(sanitize_id("wildcards*?.txt"), "wildcards___.txt");
 
         // Valid characters preserved
         assert_eq!(
@@ -875,28 +881,28 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Record ID cannot be empty")]
+    #[should_panic(expected = "Tree ID must be between 1 and 255 characters")]
     fn test_sanitize_id_empty() {
         sanitize_id("");
     }
 
     #[test]
-    #[should_panic(expected = "Record ID must be between 1 and 255 characters")]
+    #[should_panic(expected = "Tree ID must be between 1 and 255 characters")]
     fn test_sanitize_id_too_long() {
         let long_id = "a".repeat(256);
         sanitize_id(&long_id);
     }
 
     #[test]
-    #[should_panic(expected = "Record ID contains invalid control characters")]
+    #[should_panic(expected = "contains invalid control characters")]
     fn test_sanitize_id_null_byte() {
         sanitize_id("test\0file");
     }
 
     #[test]
+    #[should_panic(expected = "contains invalid control characters")]
     fn test_sanitize_id_control_chars() {
-        // Control characters (except null) are sanitized to underscores
-        assert_eq!(sanitize_id("test\x01\x02file"), "test__file");
+        sanitize_id("test\x01\x02file");
     }
 
     #[tokio::test]

@@ -382,12 +382,11 @@ mod tests {
 
     #[test]
     fn test_provider_creation_with_invalid_config() {
-        // Create a config with an empty model name (invalid)
-        use crucible_config::OllamaConfig;
-        let config = EmbeddingConfig::Ollama(OllamaConfig {
-            model: String::new(), // Invalid model name
-            ..Default::default()
-        });
+        // Create config with empty model name (invalid)
+        let config = EmbeddingConfig::ollama(
+            Some("https://llama.krohnos.io".to_string()),
+            Some(String::new()), // Invalid empty model name
+        );
 
         let provider = OllamaProvider::new(config);
         assert!(provider.is_err());

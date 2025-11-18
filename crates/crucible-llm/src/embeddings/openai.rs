@@ -301,7 +301,7 @@ mod tests {
 
     fn create_test_config() -> EmbeddingConfig {
         EmbeddingConfig::openai(
-            "sk-test-1234567890abcdef1234567890abcdef12345678".to_string(),
+            "test-api-key".to_string(),
             Some("text-embedding-3-small".to_string()),
         )
     }
@@ -310,9 +310,6 @@ mod tests {
     fn test_provider_creation() {
         let config = create_test_config();
         let provider = OpenAIProvider::new(config);
-        if let Err(ref e) = provider {
-            eprintln!("OpenAI provider creation error: {:?}", e);
-        }
         assert!(provider.is_ok());
 
         let provider = provider.unwrap();
@@ -323,13 +320,11 @@ mod tests {
 
     #[test]
     fn test_provider_creation_with_invalid_config() {
-        // Create a config with an empty model name (invalid)
-        use crucible_config::OpenAIConfig;
-        let config = EmbeddingConfig::OpenAI(OpenAIConfig {
-            model: String::new(), // Invalid model name
-            api_key: "sk-test-1234567890abcdef1234567890abcdef12345678".to_string(),
-            ..Default::default()
-        });
+        // Create config with empty model name (invalid)
+        let config = EmbeddingConfig::openai(
+            "test-api-key".to_string(),
+            Some(String::new()), // Invalid empty model name
+        );
 
         let provider = OpenAIProvider::new(config);
         assert!(provider.is_err());
@@ -337,12 +332,11 @@ mod tests {
 
     #[test]
     fn test_provider_creation_without_api_key() {
-        // Create a config without an API key (OpenAI requires one)
-        use crucible_config::OpenAIConfig;
-        let config = EmbeddingConfig::OpenAI(OpenAIConfig {
-            api_key: String::new(), // Empty API key
-            ..Default::default()
-        });
+        // Create config with empty API key (invalid for OpenAI)
+        let config = EmbeddingConfig::openai(
+            String::new(), // Empty API key (invalid)
+            Some("text-embedding-3-small".to_string()),
+        );
 
         let provider = OpenAIProvider::new(config);
         assert!(provider.is_err());
