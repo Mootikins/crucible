@@ -72,7 +72,7 @@ async fn test_batch_embedding_empty_vec() {
 
     let texts: Vec<&str> = vec![];
 
-    let result = provider.embed_batch(&texts).await;
+    let result = provider.embed_batch(texts.iter().map(|s| s.to_string()).collect()).await;
 
     // Should either return empty vec or error
     match result {
@@ -92,7 +92,7 @@ async fn test_batch_embedding_single_item() {
 
     let texts = vec!["single item"];
 
-    let result = provider.embed_batch(&texts).await;
+    let result = provider.embed_batch(texts.iter().map(|s| s.to_string()).collect()).await;
     assert!(result.is_ok());
 
     let responses = result.unwrap();
@@ -107,7 +107,7 @@ async fn test_batch_embedding_preserves_order() {
 
     let texts = vec!["first", "second", "third", "fourth"];
 
-    let result = provider.embed_batch(&texts).await;
+    let result = provider.embed_batch(texts.iter().map(|s| s.to_string()).collect()).await;
     assert!(result.is_ok());
 
     let responses = result.unwrap();
@@ -125,15 +125,16 @@ async fn test_batch_with_mixed_content() {
     let config = EmbeddingConfig::mock(None);
     let provider = create_provider(config).await.unwrap();
 
+    let long_text = "x".repeat(1000);
     let texts = vec![
         "normal text",
         "",                    // empty
         "日本語",              // unicode
         "@#$%",                // special chars
-        "x".repeat(1000),      // long text
+        &long_text,            // long text
     ];
 
-    let result = provider.embed_batch(&texts).await;
+    let result = provider.embed_batch(texts.iter().map(|s| s.to_string()).collect()).await;
 
     // Should handle mixed content gracefully
     if let Ok(responses) = result {

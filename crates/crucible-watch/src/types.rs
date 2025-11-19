@@ -293,7 +293,7 @@ impl FileInfo {
             if metadata.permissions().readonly() {
                 self.permissions = Some(FilePermissions::ReadOnly);
             } else {
-                self.permissions = Some(FilePermissions::Writable);
+                self.permissions = Some(FilePermissions::Writable(0o666));
             }
         }
 
