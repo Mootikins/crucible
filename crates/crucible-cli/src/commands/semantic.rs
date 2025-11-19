@@ -17,10 +17,9 @@ use crucible_surrealdb::{
         clear_all_embeddings, get_embedding_index_metadata, retrieve_parsed_document,
         semantic_search_with_reranking,
     },
-    kiln_processor::{process_kiln_delta, process_kiln_files, scan_kiln_directory},
-    kiln_scanner::{KilnProcessResult, KilnScannerConfig},
     EmbeddingConfig, SurrealClient, SurrealDbConfig,
 };
+use crucible_tools::kiln_scanner::{KilnProcessResult, KilnScannerConfig};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -513,8 +512,8 @@ async fn process_kiln_integrated(
         enable_incremental: false,
         track_file_changes: true,
         change_detection_method:
-            crucible_surrealdb::kiln_scanner::ChangeDetectionMethod::ContentHash,
-        error_handling_mode: crucible_surrealdb::kiln_scanner::ErrorHandlingMode::ContinueOnError,
+            crucible_tools::kiln_scanner::ChangeDetectionMethod::ContentHash,
+        error_handling_mode: crucible_tools::kiln_scanner::ErrorHandlingMode::ContinueOnError,
         max_error_count: 100,
         error_retry_attempts: 3,
         error_retry_delay_ms: 500,
@@ -638,8 +637,8 @@ async fn process_kiln_delta_if_needed(
         enable_incremental: true,
         track_file_changes: true,
         change_detection_method:
-            crucible_surrealdb::kiln_scanner::ChangeDetectionMethod::ContentHash,
-        error_handling_mode: crucible_surrealdb::kiln_scanner::ErrorHandlingMode::ContinueOnError,
+            crucible_tools::kiln_scanner::ChangeDetectionMethod::ContentHash,
+        error_handling_mode: crucible_tools::kiln_scanner::ErrorHandlingMode::ContinueOnError,
         max_error_count: 100,
         error_retry_attempts: 3,
         error_retry_delay_ms: 500,

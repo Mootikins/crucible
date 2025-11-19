@@ -301,7 +301,7 @@ mod tests {
 
     fn create_test_config() -> EmbeddingConfig {
         EmbeddingConfig::openai(
-            "test-api-key".to_string(),
+            "sk-test-1234567890abcdef1234567890abcdef12345678".to_string(),
             Some("text-embedding-3-small".to_string()),
         )
     }
@@ -327,7 +327,7 @@ mod tests {
         use crucible_config::OpenAIConfig;
         let config = EmbeddingConfig::OpenAI(OpenAIConfig {
             model: String::new(), // Invalid model name
-            api_key: "test-api-key".to_string(),
+            api_key: "sk-test-1234567890abcdef1234567890abcdef12345678".to_string(),
             ..Default::default()
         });
 
