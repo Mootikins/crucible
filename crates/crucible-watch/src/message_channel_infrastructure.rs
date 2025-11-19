@@ -316,7 +316,7 @@ impl MessageChannelInfrastructure {
                 }
             };
 
-            if let Some(batch_id) = batch_id {
+            if let Some(_batch_id) = batch_id {
                 // Send batch completion results
                 for event in &batch {
                     let result = EmbeddingEventResult::success(
