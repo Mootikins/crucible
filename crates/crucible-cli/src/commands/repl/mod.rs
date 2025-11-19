@@ -275,7 +275,7 @@ impl Repl {
     pub async fn execute_command(&mut self, cmd: Command) -> Result<(), ReplError> {
         match cmd {
             Command::ListTools => {
-                self.list_tools().await;
+                self.list_tools();
                 Ok(())
             }
             Command::RunTool { tool_name, args } => self.run_tool(&tool_name, args).await,
@@ -417,7 +417,7 @@ impl Repl {
     async fn list_tools(&self) {
         use colored::Colorize;
 
-        let grouped_tools = self.tools.list_tools_by_group().await;
+        let grouped_tools = self.tools.list_tools_by_group();
 
         if grouped_tools.is_empty() {
             println!("\n{} No tools found.\n", "ℹ".blue());
@@ -455,7 +455,7 @@ impl Repl {
             let schema_futures: Vec<_> = tools
                 .iter()
                 .map(|tool_name| async {
-                    let schema = self.tools.get_tool_schema(tool_name).await.ok().flatten();
+                    let schema = self.tools.get_tool_schema(tool_name).ok().flatten();
                     (tool_name.clone(), schema)
                 })
                 .collect();
@@ -596,7 +596,7 @@ impl Repl {
         println!("  History size:      {}", self.history.len());
         println!(
             "  Tools loaded:      {}",
-            self.tools.list_tools().await.len()
+            self.tools.list_tools().len()
         );
         println!();
     }
@@ -666,7 +666,7 @@ impl Repl {
         use colored::Colorize;
 
         // Fetch the tool schema
-        match self.tools.get_tool_schema(tool_name).await {
+        match self.tools.get_tool_schema(tool_name) {
             Ok(Some(schema)) => {
                 // Format and display the schema
                 let formatted = format_tool_schema(&schema);

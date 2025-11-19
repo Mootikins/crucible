@@ -70,7 +70,7 @@ async fn test_unified_tool_registry_initialization() {
         .await
         .expect("Failed to create registry");
 
-    let tools = registry.list_tools().await;
+    let tools = registry.list_tools();
     assert!(tools.contains(&"read_note".to_string()));
     assert!(tools.contains(&"list_notes".to_string()));
     assert!(tools.contains(&"search_notes".to_string()));
@@ -187,7 +187,6 @@ async fn test_get_tool_schema() {
 
     // Test existing tool schema
     let schema = registry.get_tool_schema("read_note")
-        .await
         .expect("Failed to get schema")
         .expect("Schema should exist for read_note");
 
@@ -197,7 +196,6 @@ async fn test_get_tool_schema() {
 
     // Test non-existent tool schema
     let schema = registry.get_tool_schema("non_existent_tool")
-        .await
         .expect("Failed to get schema");
 
     assert!(schema.is_none(), "Schema should be None for non-existent tool");

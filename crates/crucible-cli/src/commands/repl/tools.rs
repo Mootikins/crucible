@@ -3,7 +3,7 @@
 // This module integrates the crucible-tools crate into the CLI REPL.
 
 use anyhow::Result;
-use crucible_tools::types::{ToolConfigContext, ToolError};
+use crucible_tools::types::{ToolConfigContext, ToolError, ToolRegistry};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -34,29 +34,32 @@ pub struct ToolSchema {
 /// Unified tool registry wrapping crucible-tools
 pub struct UnifiedToolRegistry {
     _tool_dir: PathBuf,
+    registry: ToolRegistry,
 }
 
 impl UnifiedToolRegistry {
     /// Create a new tool registry and initialize crucible-tools
     pub async fn new(tool_dir: PathBuf, context: ToolConfigContext) -> Result<Self> {
-        // Set the global tool context
-        crucible_tools::types::set_tool_context(context);
+        // Load all tools into a new registry
+        let registry = crucible_tools::load_all_tools(Arc::new(context))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to load tools: {}", e))?;
 
-        // Load all tools
-        crucible_tools::types::load_all_tools().await.map_err(|e| anyhow::anyhow!("Failed to load tools: {}", e))?;
-
-        Ok(Self { _tool_dir: tool_dir })
+        Ok(Self {
+            _tool_dir: tool_dir,
+            registry,
+        })
     }
 
     /// List all available tools
-    pub async fn list_tools(&self) -> Vec<String> {
-        crucible_tools::types::list_registered_tools().await
+    pub fn list_tools(&self) -> Vec<String> {
+        self.registry.list_tools()
     }
 
     /// List tools grouped by source
-    pub async fn list_tools_by_group(&self) -> HashMap<String, Vec<String>> {
+    pub fn list_tools_by_group(&self) -> HashMap<String, Vec<String>> {
         let mut groups = HashMap::new();
-        let tools = self.list_tools().await;
+        let tools = self.list_tools();
         
         // For now, group everything under "system" as we don't have external tools yet
         groups.insert("system".to_string(), tools);
@@ -101,7 +104,7 @@ impl UnifiedToolRegistry {
         };
 
         // Execute the tool
-        let result = crucible_tools::types::execute_tool(
+        let result = self.registry.execute_tool(
             tool_name.to_string(),
             parameters,
             Some("cli_user".to_string()), // TODO: Get real user
@@ -131,14 +134,14 @@ impl UnifiedToolRegistry {
     }
 
     /// Get tool schema
-    pub async fn get_tool_schema(&self, tool_name: &str) -> Result<Option<ToolSchema>> {
-        match crucible_tools::types::get_tool_definition(tool_name).await {
-            Ok(def) => Ok(Some(ToolSchema {
-                name: def.name,
-                description: def.description,
-                input_schema: def.input_schema,
+    pub fn get_tool_schema(&self, tool_name: &str) -> Result<Option<ToolSchema>> {
+        match self.registry.get_definition(tool_name) {
+            Some(def) => Ok(Some(ToolSchema {
+                name: def.name.clone(),
+                description: def.description.clone(),
+                input_schema: def.input_schema.clone(),
             })),
-            Err(_) => Ok(None),
+            None => Ok(None),
         }
     }
 }
