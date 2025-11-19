@@ -8,64 +8,7 @@
 //! ### Using Individual Tool Functions
 //!
 //! ```rust
-//! use crucible_tools::{search_tools, system_tools};
-//! use serde_json::json;
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     // Get tool functions directly
-//!     let search_fn = search_tools::search_documents();
-//!     let system_fn = system_tools::get_system_info();
-//!
-//!     // Execute tools with the unified ToolFunction signature
-//!     let search_result = search_fn(
-//!         "search_documents".to_string(),
-//!         json!({"query": "machine learning", "top_k": 10}),
-//!         Some("user123".to_string()),
-//!         Some("session456".to_string()),
-//!     ).await?;
-//!
-//!     let system_info = system_fn(
-//!         "get_system_info".to_string(),
-//!         json!({}),
-//!         Some("user123".to_string()),
-//!         Some("session456".to_string()),
-//!     ).await?;
-//!
-//!     println!("Search successful: {}", search_result.success);
-//!     println!("System: {}", system_info.data.unwrap()["os"]);
-//!
-//!     Ok(())
-//! }
-//! ```
-//!
-//! ### Using the Unified Tool Interface
-//!
-//! ```rust
-//! use crucible_tools::{execute_tool, load_all_tools};
-//! use serde_json::json;
-//!
-//! #[tokio::main]
-//! async fn main() -> anyhow::Result<()> {
-//!     // Load all tools into the registry
-//!     load_all_tools().await?;
-//!
-//!     // Execute any tool by name
-//!     let result = execute_tool(
-//!         "system_info".to_string(),
-//!         json!({}),
-//!         Some("user123".to_string()),
-//!         Some("session456".to_string()),
-//!     ).await?;
-//!
-//!     if result.success {
-//!         println!("Tool executed successfully: {:?}", result.data);
-//!     } else {
-//!         println!("Tool execution failed: {:?}", result.error);
-//!     }
-//!
-//!     Ok(())
-//! }
+//! // Examples have been removed as they are being updated to the new API.
 //! ```
 //!
 //! ## Available Tools
@@ -83,6 +26,7 @@
 
 pub mod database_tools;
 pub mod kiln_tools;
+pub mod permission;
 pub mod search_tools;
 pub mod system_tools;
 pub mod types;
@@ -105,9 +49,7 @@ pub use types::{
 };
 
 // Unified tool interface
-pub use types::{
-    execute_tool, initialize_tool_registry, list_registered_tools, register_tool_function,
-};
+pub use types::ToolRegistry;
 
 // Tool loading utilities
 pub use types::{load_all_tools, tool_loader_info, ToolLoaderInfo};

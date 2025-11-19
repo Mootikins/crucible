@@ -236,7 +236,7 @@ pub mod schemas {
 /// Get system information - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn get_system_info() -> ToolFunction {
-    |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>, _context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -266,7 +266,7 @@ pub fn get_system_info() -> ToolFunction {
 /// Execute shell command - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn execute_command() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -303,7 +303,7 @@ pub fn execute_command() -> ToolFunction {
 /// List files in directory - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn list_files() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -367,7 +367,7 @@ pub fn list_files() -> ToolFunction {
 /// Read file content - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn read_file() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -407,7 +407,7 @@ pub fn read_file() -> ToolFunction {
 /// Get environment variables - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn get_environment() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -560,6 +560,7 @@ mod tests {
             parameters,
             Some("test_user".to_string()),
             Some("test_session".to_string()),
+            std::sync::Arc::new(crate::types::ToolConfigContext::new()),
         )
         .await
         .unwrap();
@@ -581,9 +582,15 @@ mod tests {
             "working_directory": "/tmp"
         });
 
-        let result = tool_fn("execute_command".to_string(), parameters, None, None)
-            .await
-            .unwrap();
+        let result = tool_fn(
+            "execute_command".to_string(),
+            parameters,
+            None,
+            None,
+            std::sync::Arc::new(crate::types::ToolConfigContext::new()),
+        )
+        .await
+        .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -598,7 +605,14 @@ mod tests {
         let tool_fn = execute_command();
         let parameters = json!({}); // Missing required 'command' parameter
 
-        let result = tool_fn("execute_command".to_string(), parameters, None, None).await;
+        let result = tool_fn(
+            "execute_command".to_string(),
+            parameters,
+            None,
+            None,
+            std::sync::Arc::new(crate::types::ToolConfigContext::new()),
+        )
+        .await;
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -618,9 +632,15 @@ mod tests {
             "show_hidden": false
         });
 
-        let result = tool_fn("list_files".to_string(), parameters, None, None)
-            .await
-            .unwrap();
+        let result = tool_fn(
+            "list_files".to_string(),
+            parameters,
+            None,
+            None,
+            std::sync::Arc::new(crate::types::ToolConfigContext::new()),
+        )
+        .await
+        .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -640,9 +660,15 @@ mod tests {
             "encoding": "utf-8"
         });
 
-        let result = tool_fn("read_file".to_string(), parameters, None, None)
-            .await
-            .unwrap();
+        let result = tool_fn(
+            "read_file".to_string(),
+            parameters,
+            None,
+            None,
+            std::sync::Arc::new(crate::types::ToolConfigContext::new()),
+        )
+        .await
+        .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -660,9 +686,15 @@ mod tests {
             "filter": "PATH"
         });
 
-        let result = tool_fn("get_environment".to_string(), parameters, None, None)
-            .await
-            .unwrap();
+        let result = tool_fn(
+            "get_environment".to_string(),
+            parameters,
+            None,
+            None,
+            std::sync::Arc::new(crate::types::ToolConfigContext::new()),
+        )
+        .await
+        .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
@@ -677,9 +709,15 @@ mod tests {
         let tool_fn = get_environment();
         let parameters = json!({});
 
-        let result = tool_fn("get_environment".to_string(), parameters, None, None)
-            .await
-            .unwrap();
+        let result = tool_fn(
+            "get_environment".to_string(),
+            parameters,
+            None,
+            None,
+            std::sync::Arc::new(crate::types::ToolConfigContext::new()),
+        )
+        .await
+        .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
