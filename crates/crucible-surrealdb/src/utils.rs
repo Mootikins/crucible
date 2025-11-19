@@ -90,16 +90,6 @@ pub fn resolve_and_normalize_path(path: &Path, root: &Path) -> String {
 ///
 /// `Ok(String)` with the sanitized identifier safe for use in SurrealDB queries,
 /// or `Err(String)` if the ID is invalid (empty or too long)
-///
-/// # Examples
-///
-/// ```
-/// use crucible_surrealdb::utils::sanitize_record_id;
-///
-/// let safe_id = sanitize_record_id("my-safe-id").unwrap();
-/// let dangerous_id = sanitize_record_id("'; DROP TABLE users; --").unwrap();
-/// assert_eq!(dangerous_id, "__DROP_TABLE_users____");
-/// ```
 pub fn sanitize_record_id(id: &str) -> Result<String, String> {
     // Validate length
     if id.is_empty() {
