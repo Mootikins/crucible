@@ -43,6 +43,7 @@ pub use crate::database::{
     QueryResult,
     Record,
     RecordId,
+    SearchResult,
 };
 
 // Re-export note types
