@@ -320,7 +320,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_rerank_empty_documents() {
-        let config = FastEmbedRerankerConfig::default();
+        let mut config = FastEmbedRerankerConfig::default();
+        config.cache_dir = Some("/tmp/fastembed_cache".into());
         let reranker = FastEmbedReranker::new(config).unwrap();
 
         let results = reranker.rerank("test query", vec![], None).await.unwrap();

@@ -310,6 +310,9 @@ mod tests {
     fn test_provider_creation() {
         let config = create_test_config();
         let provider = OpenAIProvider::new(config);
+        if let Err(ref e) = provider {
+            eprintln!("OpenAI provider creation error: {:?}", e);
+        }
         assert!(provider.is_ok());
 
         let provider = provider.unwrap();

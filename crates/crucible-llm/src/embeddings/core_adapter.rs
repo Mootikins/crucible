@@ -121,7 +121,11 @@ mod tests {
     #[tokio::test]
     async fn test_adapter_single_embedding() {
         // Create a FastEmbed provider
-        let config = EmbeddingConfig::fastembed(Some("all-MiniLM-L6-v2".to_string()), None, None);
+        let config = EmbeddingConfig::fastembed(
+            Some("all-MiniLM-L6-v2".to_string()),
+            Some("/tmp/fastembed_cache".to_string()),
+            None,
+        );
         let llm_provider = create_provider(config).await.unwrap();
 
         // Wrap in adapter
@@ -139,7 +143,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_adapter_batch_embedding() {
-        let config = EmbeddingConfig::fastembed(None, None, None);
+        let config = EmbeddingConfig::fastembed(
+            None,
+            Some("/tmp/fastembed_cache".to_string()),
+            None,
+        );
         let llm_provider = create_provider(config).await.unwrap();
         let adapter = CoreProviderAdapter::new(llm_provider);
 
