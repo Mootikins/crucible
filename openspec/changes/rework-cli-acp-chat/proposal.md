@@ -26,8 +26,9 @@ The ACP MVP (short-term roadmap) requires a chat interface that spawns external 
 
 **Architecture:**
 - Create `CrucibleCore` facade pattern - clean trait-based interface between CLI and core
-- Implement ACP client using official `agent-client-protocol` crate
-- Add context enrichment - semantic search results injected into agent prompts
+- Implement ACP client using official `agent-client-protocol` crate (see acp-integration spec)
+- Add context enrichment powered by query-system specification
+- Tool integration using tool-system specification for kiln access
 - Background processing - pipeline runs on startup unless `--no-process` flag
 - File watching integration - auto-process on file changes in watch mode
 
@@ -43,6 +44,9 @@ The ACP MVP (short-term roadmap) requires a chat interface that spawns external 
 ### Affected Specs
 - **CLI** (new capability) - Define natural language chat interface, pipeline commands
 - **Pipeline** (reference) - CLI becomes primary consumer of `NotePipelineOrchestrator` trait
+- **tool-system** (dependency) - CLI chat interface uses kiln access tools for agent operations
+- **query-system** (dependency) - Context enrichment powered by standardized query system
+- **acp-integration** (dependency) - ACP client integration for agent communication
 
 ### Affected Code
 **Major Changes:**
