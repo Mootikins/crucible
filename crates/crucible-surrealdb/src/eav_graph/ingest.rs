@@ -1,7 +1,7 @@
 use anyhow::Result;
 use blake3::Hasher;
 use crucible_core::content_category::ContentCategory;
-use crucible_core::merkle::HybridMerkleTree;
+use crucible_core::merkle::{HybridMerkleTree, MerkleStore};
 use crucible_core::parser::ParsedNote;
 use crucible_core::storage::{Relation as CoreRelation, RelationStorage};
 use serde_json::{Map, Value};
@@ -128,7 +128,7 @@ fn classify_content(target: &str) -> ContentCategory {
 /// High-level helper for writing parsed documents into the EAV+Graph schema.
 pub struct NoteIngestor<'a> {
     store: &'a EAVGraphStore,
-    merkle_store: Option<Box<dyn crucible_core::merkle::MerkleStore>>,
+    merkle_store: Option<Box<dyn MerkleStore>>,
 }
 
 impl<'a> NoteIngestor<'a> {
@@ -1036,7 +1036,7 @@ impl<'a> NoteIngestor<'a> {
 
         // Persist the tree if storage is enabled
         if let Some(ref merkle_store) = self.merkle_store {
-            use crucible_core::merkle::MerkleStore;
+
 
             // Try to get the old tree for incremental updates
             if let Ok(Some(old_metadata)) = merkle_store.get_metadata(relative_path).await {
