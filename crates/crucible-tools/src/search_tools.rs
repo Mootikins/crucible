@@ -12,7 +12,7 @@ use tracing::info;
 /// Search documents using semantic similarity - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn search_documents() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -80,7 +80,7 @@ pub fn search_documents() -> ToolFunction {
 /// Rebuild search indexes for all documents - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn rebuild_index() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -132,7 +132,7 @@ pub fn rebuild_index() -> ToolFunction {
 /// Get statistics about search indexes - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn get_index_stats() -> ToolFunction {
-    |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>, _context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -191,7 +191,7 @@ pub fn get_index_stats() -> ToolFunction {
 /// Optimize search indexes for better performance - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn optimize_index() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -243,7 +243,7 @@ pub fn optimize_index() -> ToolFunction {
 /// Advanced search with multiple criteria and ranking - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn advanced_search() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -341,6 +341,7 @@ mod tests {
             parameters,
             Some("test_user".to_string()),
             Some("test_session".to_string()),
+            std::sync::Arc::new(crate::types::ToolConfigContext::new()),
         )
         .await
         .unwrap();
@@ -379,6 +380,7 @@ mod tests {
             parameters,
             Some("test_user".to_string()),
             Some("test_session".to_string()),
+            std::sync::Arc::new(crate::types::ToolConfigContext::new()),
         )
         .await
         .unwrap();
@@ -395,7 +397,7 @@ mod tests {
             "index_types": ["semantic", "full_text"]
         });
 
-        let result = tool_fn("rebuild_index".to_string(), parameters, None, None)
+        let result = tool_fn("rebuild_index".to_string(), parameters, None, None, std::sync::Arc::new(crate::types::ToolConfigContext::new()))
             .await
             .unwrap();
 
@@ -408,7 +410,7 @@ mod tests {
         let tool_fn = get_index_stats();
         let parameters = json!({});
 
-        let result = tool_fn("get_index_stats".to_string(), parameters, None, None)
+        let result = tool_fn("get_index_stats".to_string(), parameters, None, None, std::sync::Arc::new(crate::types::ToolConfigContext::new()))
             .await
             .unwrap();
 
@@ -427,7 +429,7 @@ mod tests {
             "rebuild_threshold": 0.5
         });
 
-        let result = tool_fn("optimize_index".to_string(), parameters, None, None)
+        let result = tool_fn("optimize_index".to_string(), parameters, None, None, std::sync::Arc::new(crate::types::ToolConfigContext::new()))
             .await
             .unwrap();
 
@@ -440,7 +442,7 @@ mod tests {
         let tool_fn = search_documents();
         let parameters = json!({}); // Missing required 'query' parameter
 
-        let result = tool_fn("search_documents".to_string(), parameters, None, None).await;
+        let result = tool_fn("search_documents".to_string(), parameters, None, None, std::sync::Arc::new(crate::types::ToolConfigContext::new())).await;
 
         assert!(result.is_err());
         match result.unwrap_err() {

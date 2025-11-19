@@ -18,12 +18,8 @@ use tracing::info;
 /// Now uses integrated `KnowledgeRepository` and `EmbeddingProvider` from context.
 #[must_use]
 pub fn semantic_search() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
-            use crate::types::{
-                get_embedding_provider_from_context, get_knowledge_repo_from_context,
-            };
-
             let start_time = std::time::Instant::now();
 
             // Extract parameters
@@ -43,8 +39,14 @@ pub fn semantic_search() -> ToolFunction {
             );
 
             // Get dependencies from context
-            let embedding_provider = get_embedding_provider_from_context()?;
-            let knowledge_repo = get_knowledge_repo_from_context()?;
+            let embedding_provider = context
+                .embedding_provider
+                .as_ref()
+                .ok_or_else(|| ToolError::Other("No embedding provider configured".to_string()))?;
+            let knowledge_repo = context
+                .knowledge_repo
+                .as_ref()
+                .ok_or_else(|| ToolError::Other("No knowledge repository configured".to_string()))?;
 
             // Generate embedding for the query
             let embedding = embedding_provider
@@ -95,7 +97,7 @@ pub fn semantic_search() -> ToolFunction {
 /// Full-text search in note contents - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn search_by_content() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -134,7 +136,7 @@ pub fn search_by_content() -> ToolFunction {
 /// Search notes by filename pattern - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn search_by_filename() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -170,7 +172,7 @@ pub fn search_by_filename() -> ToolFunction {
 /// Update frontmatter properties of a note - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn update_note_properties() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -203,7 +205,7 @@ pub fn update_note_properties() -> ToolFunction {
 /// Index a specific note for search - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn index_document() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -239,7 +241,7 @@ pub fn index_document() -> ToolFunction {
 /// Get note statistics from the database - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn get_document_stats() -> ToolFunction {
-    |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>, _context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -266,7 +268,7 @@ pub fn get_document_stats() -> ToolFunction {
 /// Sync metadata from external source to database - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn sync_metadata() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -336,6 +338,7 @@ mod tests {
             parameters,
             Some("test_user".to_string()),
             Some("test_session".to_string()),
+            std::sync::Arc::new(crate::types::ToolConfigContext::new()),
         )
         .await;
 
@@ -360,6 +363,7 @@ mod tests {
             parameters,
             Some("test_user".to_string()),
             Some("test_session".to_string()),
+            std::sync::Arc::new(crate::types::ToolConfigContext::new()),
         )
         .await
         .unwrap();
@@ -373,7 +377,7 @@ mod tests {
         let tool_fn = get_document_stats();
         let parameters = json!({});
 
-        let result = tool_fn("get_document_stats".to_string(), parameters, None, None)
+        let result = tool_fn("get_document_stats".to_string(), parameters, None, None, std::sync::Arc::new(crate::types::ToolConfigContext::new()))
             .await
             .unwrap();
 
@@ -386,7 +390,7 @@ mod tests {
         let tool_fn = semantic_search();
         let parameters = json!({}); // Missing required 'query' parameter
 
-        let result = tool_fn("semantic_search".to_string(), parameters, None, None).await;
+        let result = tool_fn("semantic_search".to_string(), parameters, None, None, std::sync::Arc::new(crate::types::ToolConfigContext::new())).await;
 
         assert!(result.is_err());
         match result.unwrap_err() {

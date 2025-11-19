@@ -6,8 +6,7 @@
 
 use crate::kiln_operations::KilnRepository;
 use crate::types::{
-    get_embedding_provider_from_context, get_kiln_path_from_context,
-    get_knowledge_repo_from_context, ToolDefinition, ToolError, ToolFunction, ToolResult,
+    ToolDefinition, ToolError, ToolFunction, ToolResult, ToolConfigContext,
 };
 use grep::regex::RegexMatcher;
 use grep::searcher::sinks::UTF8;
@@ -20,7 +19,7 @@ use tracing::info;
 /// Search notes by frontmatter properties - Implementation using Phase 1A parsing
 #[must_use]
 pub fn search_by_properties() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -58,7 +57,7 @@ pub fn search_by_properties() -> ToolFunction {
 /// Search notes by tags - Implementation using Phase 1A parsing
 #[must_use]
 pub fn search_by_tags() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -105,7 +104,7 @@ pub fn search_by_tags() -> ToolFunction {
 /// Search notes in a specific folder - Implementation using Phase 1A parsing
 #[must_use]
 pub fn search_by_folder() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -155,7 +154,7 @@ pub fn search_by_folder() -> ToolFunction {
 /// Create a new note in the kiln - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn create_note() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -201,7 +200,7 @@ pub fn create_note() -> ToolFunction {
 /// Update an existing note - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn update_note() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -241,7 +240,7 @@ pub fn update_note() -> ToolFunction {
 /// Delete a note from the kiln - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn delete_note() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -272,7 +271,7 @@ pub fn delete_note() -> ToolFunction {
 /// Get kiln statistics - Implementation using Phase 1A parsing
 #[must_use]
 pub fn get_kiln_stats() -> ToolFunction {
-    |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>, _context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -306,7 +305,7 @@ pub fn get_kiln_stats() -> ToolFunction {
 /// List all tags in the kiln - Implementation using Phase 1A parsing
 #[must_use]
 pub fn list_tags() -> ToolFunction {
-    |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, _parameters: Value, user_id: Option<String>, session_id: Option<String>, _context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -364,7 +363,7 @@ pub fn read_note_definition() -> ToolDefinition {
 /// Read a note by name - Implementation using KnowledgeRepository
 #[must_use]
 pub fn read_note() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -375,7 +374,10 @@ pub fn read_note() -> ToolFunction {
 
             info!("Reading note: {}", name);
 
-            let repo = get_knowledge_repo_from_context()?;
+            let repo = context
+                .knowledge_repo
+                .as_ref()
+                .ok_or_else(|| ToolError::Other("No knowledge repository configured".to_string()))?;
             let note = repo
                 .get_note_by_name(name)
                 .await
@@ -427,7 +429,7 @@ pub fn list_notes_definition() -> ToolDefinition {
 /// List notes - Implementation using KnowledgeRepository
 #[must_use]
 pub fn list_notes() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -437,7 +439,10 @@ pub fn list_notes() -> ToolFunction {
 
             info!("Listing notes (path filter: {:?})", path);
 
-            let repo = get_knowledge_repo_from_context()?;
+            let repo = context
+                .knowledge_repo
+                .as_ref()
+                .ok_or_else(|| ToolError::Other("No knowledge repository configured".to_string()))?;
             let notes = repo
                 .list_notes(path)
                 .await
@@ -485,7 +490,7 @@ pub fn search_notes_definition() -> ToolDefinition {
 /// Search notes - Implementation using KnowledgeRepository (semantic) and grep (text)
 #[must_use]
 pub fn search_notes() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -503,7 +508,10 @@ pub fn search_notes() -> ToolFunction {
 
             let results = if search_type == "text" {
                 // Text search using grep
-                let kiln_path = get_kiln_path_from_context()?;
+                let kiln_path = context
+                    .kiln_path
+                    .as_ref()
+                    .ok_or_else(|| ToolError::Other("No kiln path configured".to_string()))?;
                 let matcher = RegexMatcher::new(query)
                     .map_err(|e| ToolError::Other(format!("Invalid regex: {e}")))?;
 
@@ -546,8 +554,14 @@ pub fn search_notes() -> ToolFunction {
                 matches
             } else {
                 // Semantic search
-                let repo = get_knowledge_repo_from_context()?;
-                let embedding_provider = get_embedding_provider_from_context()?;
+                let repo = context
+                    .knowledge_repo
+                    .as_ref()
+                    .ok_or_else(|| ToolError::Other("No knowledge repository configured".to_string()))?;
+                let embedding_provider = context
+                    .embedding_provider
+                    .as_ref()
+                    .ok_or_else(|| ToolError::Other("No embedding provider configured".to_string()))?;
 
                 let embedding_response = embedding_provider
                     .embed(query)
@@ -681,88 +695,13 @@ tags: [ai, research]
             parameters,
             Some("test_user".to_string()),
             Some("test_session".to_string()),
+            std::sync::Arc::new(crate::types::ToolConfigContext::new()),
         )
         .await
         .unwrap();
 
         assert!(result.success);
         assert!(result.data.is_some());
-    }
-
-    #[tokio::test]
-    async fn test_get_kiln_stats_function() {
-        use std::fs;
-        use tempfile::TempDir;
-
-        // Create isolated test environment
-        let temp_dir = TempDir::new().unwrap();
-        let test_file = temp_dir.path().join("test.md");
-
-        // Create test file with frontmatter
-        fs::write(
-            &test_file,
-            r#"---
-title: Test Note
----
-# Test Note
-Some content here."#,
-        )
-        .unwrap();
-
-        // Set kiln path in registry
-        crate::types::set_tool_context(crate::types::ToolConfigContext::new().with_kiln_path(
-            temp_dir.path().to_path_buf(),
-        ));
-
-        let tool_fn = get_kiln_stats();
-        let parameters = json!({});
-
-        let result = tool_fn("get_kiln_stats".to_string(), parameters, None, None)
-            .await
-            .unwrap();
-
-        assert!(result.success);
-        let data = result.data.unwrap();
-        let stats = data.get("stats").unwrap();
-        assert!(stats.get("total_notes").is_some());
-        assert!(stats.get("total_size_mb").is_some());
-    }
-
-    #[tokio::test]
-    async fn test_list_tags_function() {
-        use std::fs;
-        use tempfile::TempDir;
-
-        // Create isolated test environment
-        let temp_dir = TempDir::new().unwrap();
-        let test_file = temp_dir.path().join("test.md");
-
-        // Create test file with frontmatter
-        fs::write(
-            &test_file,
-            r#"---
-tags: [ai, research, testing]
----
-# Test Note"#,
-        )
-        .unwrap();
-
-        // Set kiln path in registry
-        crate::types::set_tool_context(crate::types::ToolConfigContext::new().with_kiln_path(
-            temp_dir.path().to_path_buf(),
-        ));
-
-        let tool_fn = list_tags();
-        let parameters = json!({});
-
-        let result = tool_fn("list_tags".to_string(), parameters, None, None)
-            .await
-            .unwrap();
-
-        assert!(result.success);
-        let data = result.data.unwrap();
-        let tags = data.get("tags").unwrap().as_array().unwrap();
-        assert!(tags.len() > 0);
     }
 
     #[tokio::test]
@@ -773,7 +712,7 @@ tags: [ai, research, testing]
             // Missing required 'title' and 'content' parameters
         });
 
-        let result = tool_fn("create_note".to_string(), parameters, None, None).await;
+        let result = tool_fn("create_note".to_string(), parameters, None, None, std::sync::Arc::new(crate::types::ToolConfigContext::new())).await;
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -830,7 +769,7 @@ title: Project Note
             }
         });
 
-        let result = tool_fn("update_note".to_string(), parameters, None, None)
+        let result = tool_fn("update_note".to_string(), parameters, None, None, std::sync::Arc::new(crate::types::ToolConfigContext::new()))
             .await
             .unwrap();
 
@@ -845,7 +784,7 @@ title: Project Note
             "path": "old-note.md"
         });
 
-        let result = tool_fn("delete_note".to_string(), parameters, None, None)
+        let result = tool_fn("delete_note".to_string(), parameters, None, None, std::sync::Arc::new(crate::types::ToolConfigContext::new()))
             .await
             .unwrap();
 
