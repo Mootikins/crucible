@@ -429,12 +429,15 @@ mod tests {
     async fn test_fastembed_single_embedding() {
         let config = super::super::config::EmbeddingConfig::fastembed(
             Some("all-MiniLM-L6-v2".to_string()),
-            None,
+            Some("/tmp/fastembed_cache".to_string()),
             None,
         );
         let provider = FastEmbedProvider::new(config).unwrap();
 
         let response = provider.embed("Hello, world!").await;
+        if let Err(ref e) = response {
+            eprintln!("FastEmbed error: {:?}", e);
+        }
         assert!(response.is_ok());
 
         let response = response.unwrap();
@@ -449,7 +452,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_fastembed_batch_embedding() {
-        let config = super::super::config::EmbeddingConfig::fastembed(None, None, None);
+        let config = super::super::config::EmbeddingConfig::fastembed(
+            None,
+            Some("/tmp/fastembed_cache".to_string()),
+            None,
+        );
         let provider = FastEmbedProvider::new(config).unwrap();
 
         let texts = vec![
@@ -459,6 +466,9 @@ mod tests {
         ];
 
         let responses = provider.embed_batch(texts).await;
+        if let Err(ref e) = responses {
+            eprintln!("FastEmbed batch error: {:?}", e);
+        }
         assert!(responses.is_ok());
 
         let responses = responses.unwrap();
@@ -472,7 +482,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_fastembed_error_handling() {
-        let config = super::super::config::EmbeddingConfig::fastembed(None, None, None);
+        let config = super::super::config::EmbeddingConfig::fastembed(
+            None,
+            Some("/tmp/fastembed_cache".to_string()),
+            None,
+        );
         let provider = FastEmbedProvider::new(config).unwrap();
 
         // Test empty text

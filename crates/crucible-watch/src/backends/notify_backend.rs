@@ -18,7 +18,7 @@ use tracing::{debug, error, info, warn};
 /// Notify-based file watcher with debouncing support.
 pub struct NotifyWatcher {
     /// Debounced file system watcher
-    debouncer: Option<Debouncer<RecommendedWatcher, notify_debouncer_full::NoCache>>,
+    debouncer: Option<Debouncer<RecommendedWatcher, notify_debouncer_full::FileIdMap>>,
     /// Event sender
     event_sender: Option<mpsc::UnboundedSender<FileEvent>>,
     /// Active watches

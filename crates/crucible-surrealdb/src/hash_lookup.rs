@@ -8,6 +8,7 @@
 //! providing a complete abstraction layer for hash storage and retrieval operations.
 
 use crate::types::Record;
+use crate::utils::normalize_path_string;
 use crate::SurrealClient;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -49,19 +50,8 @@ pub struct HashLookupResult {
     pub database_round_trips: usize,
 }
 
-fn normalize_relative_path(path: &str) -> String {
-    let mut normalized = path.replace('\\', "/");
-    while normalized.starts_with("./") {
-        normalized = normalized.trim_start_matches("./").to_string();
-    }
-    if normalized.starts_with('/') {
-        normalized = normalized.trim_start_matches('/').to_string();
-    }
-    normalized.replace(':', "_")
-}
-
 fn entity_id_body_from_path(relative_path: &str) -> String {
-    let normalized = normalize_relative_path(relative_path);
+    let normalized = normalize_path_string(relative_path).replace(':', "_");
     if normalized.starts_with("note:") {
         normalized
     } else {
