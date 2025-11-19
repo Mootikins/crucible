@@ -30,6 +30,7 @@
 
 use crate::types::SurrealDbConfig;
 use crate::types::{DbError, DbResult, QueryResult, Record, RecordId, SelectQuery, TableSchema};
+use crate::utils::sanitize_record_id;
 use serde_json::Value;
 use surrealdb::engine::local::Db;
 use surrealdb::Surreal;
@@ -309,8 +310,11 @@ impl SurrealClient {
             } else {
                 id
             };
-            // Wrap string IDs in backticks to ensure they're treated as identifiers
-            format!("CREATE {}:`{}` CONTENT {}", table, id_part, data_json)
+            // Sanitize the ID to prevent SQL injection
+            let safe_id = sanitize_record_id(id_part)
+                .map_err(|e| DbError::Query(format!("Invalid record ID: {}", e)))?;
+            // Use angle brackets for safer record ID syntax
+            format!("CREATE {}:⟨{}⟩ CONTENT {}", table, safe_id, data_json)
         } else {
             format!("CREATE {} CONTENT {}", table, data_json)
         };

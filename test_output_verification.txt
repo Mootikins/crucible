@@ -1,0 +1,353 @@
+warning: unused variable: `storage_builder`
+   --> crates\crucible-core\src\parser\storage_bridge.rs:274:9
+    |
+274 |         storage_builder: &ContentAddressedStorageBuilder,
+    |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_storage_builder`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: `crucible-core` (lib) generated 1 warning
+   Compiling librocksdb-sys v0.17.3+10.4.2
+warning: unused variable: `idx`
+   --> crates\crucible-pipeline\src\note_pipeline.rs:228:14
+    |
+228 |         for (idx, section) in diff.changed_sections.iter().enumerate() {
+    |              ^^^ help: if this is intentional, prefix it with an underscore: `_idx`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: `crucible-pipeline` (lib) generated 1 warning
+warning: unused import: `tokio::fs`
+   --> crates\crucible-core\src\hashing\file_hasher.rs:300:9
+    |
+300 |     use tokio::fs;
+    |         ^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `std::collections::HashMap`
+   --> crates\crucible-core\src\hashing\sha256.rs:129:9
+    |
+129 |     use std::collections::HashMap;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `block`
+    --> crates\crucible-core\src\hashing\block_hasher.rs:1522:23
+     |
+1522 |             .map(|(i, block)| {
+     |                       ^^^^^ help: if this is intentional, prefix it with an underscore: `_block`
+     |
+     = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `i`
+    --> crates\crucible-core\src\hashing\block_hasher.rs:1676:14
+     |
+1676 |         for (i, (hashed_block, original_block)) in
+     |              ^ help: if this is intentional, prefix it with an underscore: `_i`
+
+warning: unused variable: `block`
+    --> crates\crucible-core\src\hashing\block_hasher.rs:1823:17
+     |
+1823 |         for (i, block) in blocks.iter().enumerate() {
+     |                 ^^^^^ help: if this is intentional, prefix it with an underscore: `_block`
+
+warning: unused variable: `is_valid`
+    --> crates\crucible-core\src\hashing\block_hasher.rs:1824:17
+     |
+1824 |             let is_valid = hasher
+     |                 ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_is_valid`
+
+warning: unused variable: `coordinator`
+    --> crates\crucible-core\src\parser\coordinator.rs:1086:13
+     |
+1086 |         let coordinator = factory::create_coordinator_with_config(
+     |             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_coordinator`
+
+warning: unused variable: `storage_builder`
+   --> crates\crucible-core\src\parser\storage_bridge.rs:274:9
+    |
+274 |         storage_builder: &ContentAddressedStorageBuilder,
+    |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_storage_builder`
+
+warning: unused variable: `now`
+    --> crates\crucible-core\src\storage\eav_graph_traits.rs:1425:13
+     |
+1425 |         let now = Utc::now();
+     |             ^^^ help: if this is intentional, prefix it with an underscore: `_now`
+
+warning: unused variable: `hasher`
+   --> crates\crucible-core\src\storage\merkle.rs:779:13
+    |
+779 |         let hasher = MockHasher::new();
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_hasher`
+
+warning: unused variable: `hasher`
+    --> crates\crucible-core\src\storage\merkle.rs:1102:13
+     |
+1102 |         let hasher = MockHasher::new();
+     |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_hasher`
+
+warning: unused variable: `blocks2`
+    --> crates\crucible-core\src\storage\merkle.rs:1156:13
+     |
+1156 |         let blocks2: Vec<HashedBlock> = vec![]; // Empty
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_blocks2`
+
+warning: field `name` is never read
+   --> crates\crucible-core\src\storage\builder.rs:561:9
+    |
+560 |     struct MockStorageBackend {
+    |            ------------------ field in this struct
+561 |         name: String,
+    |         ^^^^
+    |
+    = note: `MockStorageBackend` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` on by default
+
+warning: comparison is useless due to type limits
+  --> crates\crucible-core\src\crdt.rs:51:17
+   |
+51 |         assert!(manager.get_document().client_id() >= 0);
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_comparisons)]` on by default
+
+warning: comparison is useless due to type limits
+  --> crates\crucible-core\src\crdt.rs:57:17
+   |
+57 |         assert!(manager.get_document().client_id() >= 0);
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: comparison is useless due to type limits
+    --> crates\crucible-core\src\storage\memory.rs:1447:17
+     |
+1447 |         assert!(evicted_count >= 0);
+     |                 ^^^^^^^^^^^^^^^^^^
+
+warning: `crucible-core` (lib test) generated 16 warnings (run `cargo fix --lib -p crucible-core --tests` to apply 2 suggestions)
+   Compiling crucible-llm v0.1.0 (C:\Users\Matthew\Documents\crucible\crates\crucible-llm)
+warning: unused import: `StorageManagement`
+  --> crates\crucible-core\examples\test_mocks_demo.rs:12:55
+   |
+12 | use crucible_core::storage::traits::{BlockOperations, StorageManagement};
+   |                                                       ^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `HashAlgorithm`
+  --> crates\crucible-core\examples\content_hasher_demo.rs:22:46
+   |
+22 |     types::hashing::{FileHash, FileHashInfo, HashAlgorithm, HashError},
+   |                                              ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused variable: `stored`
+   --> crates\crucible-core\examples\content_hasher_demo.rs:225:21
+    |
+225 |         if let Some(stored) = lookup_result.found_files.get(path) {
+    |                     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_stored`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: `crucible-core` (example "test_mocks_demo") generated 1 warning (run `cargo fix --example "test_mocks_demo"` to apply 1 suggestion)
+warning: `crucible-core` (example "content_hasher_demo") generated 2 warnings (run `cargo fix --example "content_hasher_demo"` to apply 1 suggestion)
+warning: unused variable: `change_detector`
+   --> crates\crucible-pipeline\tests\pipeline_integration_tests.rs:433:20
+    |
+433 |     let (pipeline, change_detector, _merkle_store, enrichment_service, storage) =
+    |                    ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_change_detector`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `change_detector`
+   --> crates\crucible-pipeline\tests\pipeline_integration_tests.rs:478:20
+    |
+478 |     let (pipeline, change_detector, _merkle_store, enrichment_service, storage) =
+    |                    ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_change_detector`
+
+warning: unused variable: `merkle_store`
+   --> crates\crucible-pipeline\tests\pipeline_integration_tests.rs:655:38
+    |
+655 |     let (pipeline, _change_detector, merkle_store, enrichment_service, storage) =
+    |                                      ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_merkle_store`
+
+warning: unused variable: `storage`
+   --> crates\crucible-pipeline\tests\pipeline_integration_tests.rs:655:72
+    |
+655 |     let (pipeline, _change_detector, merkle_store, enrichment_service, storage) =
+    |                                                                        ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_storage`
+
+warning: unused variable: `storage`
+   --> crates\crucible-pipeline\tests\pipeline_integration_tests.rs:696:72
+    |
+696 |     let (pipeline, _change_detector, merkle_store, enrichment_service, storage) =
+    |                                                                        ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_storage`
+
+warning: unused variable: `initial_enrich_count`
+   --> crates\crucible-pipeline\tests\pipeline_integration_tests.rs:711:9
+    |
+711 |     let initial_enrich_count = enrichment_service.enrich_with_tree_count();
+    |         ^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_initial_enrich_count`
+
+warning: methods `set_simulate_errors`, `add_file_state`, and `clear` are never used
+  --> crates\crucible-pipeline\tests\pipeline_integration_tests.rs:46:8
+   |
+35 | impl MockChangeDetectionStore {
+   | ----------------------------- methods in this implementation
+...
+46 |     fn set_simulate_errors(&self, enabled: bool, message: &str) {
+   |        ^^^^^^^^^^^^^^^^^^^
+...
+52 |     fn add_file_state(&self, path: &str, file_state: FileState) {
+   |        ^^^^^^^^^^^^^^
+...
+57 |     fn clear(&self) {
+   |        ^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: methods `set_simulate_errors`, `add_tree`, and `clear` are never used
+   --> crates\crucible-pipeline\tests\pipeline_integration_tests.rs:138:8
+    |
+127 | impl MockMerkleStore {
+    | -------------------- methods in this implementation
+...
+138 |     fn set_simulate_errors(&self, enabled: bool, message: &str) {
+    |        ^^^^^^^^^^^^^^^^^^^
+...
+144 |     fn add_tree(&self, id: &str, tree: HybridMerkleTree) {
+    |        ^^^^^^^^
+...
+149 |     fn clear(&self) {
+    |        ^^^^^
+
+warning: method `clear` is never used
+   --> crates\crucible-pipeline\tests\pipeline_integration_tests.rs:268:8
+    |
+242 | impl MockEnrichedNoteStore {
+    | -------------------------- method in this implementation
+...
+268 |     fn clear(&self) {
+    |        ^^^^^
+
+   Compiling crucible-enrichment v0.1.0 (C:\Users\Matthew\Documents\crucible\crates\crucible-enrichment)
+warning: unused import: `super::*`
+   --> crates\crucible-pipeline\src\note_pipeline.rs:393:9
+    |
+393 |     use super::*;
+    |         ^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `tempfile::NamedTempFile`
+   --> crates\crucible-pipeline\src\note_pipeline.rs:397:9
+    |
+397 |     use tempfile::NamedTempFile;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::io::Write`
+   --> crates\crucible-pipeline\src\note_pipeline.rs:398:9
+    |
+398 |     use std::io::Write;
+    |         ^^^^^^^^^^^^^^
+
+warning: unused variable: `change_detector`
+   --> crates\crucible-pipeline\src\note_pipeline.rs:404:13
+    |
+404 |         let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
+    |             ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_change_detector`
+
+warning: unused variable: `merkle_store`
+   --> crates\crucible-pipeline\src\note_pipeline.rs:405:13
+    |
+405 |         let merkle_store = Arc::new(InMemoryMerkleStore::new());
+    |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_merkle_store`
+
+warning: unused import: `ListType`
+   --> crates\crucible-parser\src\block_hasher.rs:228:38
+    |
+228 |     use crate::types::{ASTBlockType, ListType};
+    |                                      ^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` on by default
+
+warning: unused variable: `errors`
+   --> crates\crucible-parser\src\enhanced_tags.rs:611:13
+    |
+611 |         let errors = extension.parse(content, &mut doc_content).await;
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_errors`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: `crucible-pipeline` (test "pipeline_integration_tests") generated 9 warnings
+warning: `crucible-pipeline` (lib test) generated 6 warnings (1 duplicate) (run `cargo fix --lib -p crucible-pipeline --tests` to apply 3 suggestions)
+warning: `crucible-parser` (lib test) generated 2 warnings (run `cargo fix --lib -p crucible-parser --tests` to apply 1 suggestion)
+warning: unused variable: `updates`
+   --> crates\crucible-sync\src\note.rs:178:13
+    |
+178 |         let updates = doc1.get_updates_since(sv.clone()).await.unwrap();
+    |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_updates`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: unused import: `crucible_parser::types::ParsedNote`
+ --> crates\crucible-parser\tests\heading_hierarchy.rs:7:5
+  |
+7 | use crucible_parser::types::ParsedNote;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `PathBuf`
+ --> crates\crucible-parser\tests\heading_hierarchy.rs:8:23
+  |
+8 | use std::path::{Path, PathBuf};
+  |                       ^^^^^^^
+
+warning: unused variable: `parsed`
+   --> crates\crucible-parser\tests\wikilink_edge_cases.rs:131:9
+    |
+131 |     let parsed = parse_note(content, "test.md").await.unwrap();
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_parsed`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: `crucible-sync` (lib test) generated 1 warning
+warning: `crucible-parser` (test "heading_hierarchy") generated 2 warnings (run `cargo fix --test "heading_hierarchy"` to apply 2 suggestions)
+warning: `crucible-parser` (test "wikilink_edge_cases") generated 1 warning
+warning: variable does not need to be mutable
+   --> crates\crucible-merkle\src\thread_safe.rs:411:13
+    |
+411 |         let mut guard = tree.write();
+    |             ----^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` on by default
+
+warning: `crucible-merkle` (lib test) generated 1 warning (run `cargo fix --lib -p crucible-merkle --tests` to apply 1 suggestion)
+error[E0716]: temporary value dropped while borrowed
+   --> crates\crucible-llm\tests\embedding_edge_cases.rs:133:10
+    |
+133 |         &"x".repeat(1000),      // long text
+    |          ^^^^^^^^^^^^^^^^ creates a temporary value which is freed while still in use
+134 |     ];
+    |      - temporary value is freed at the end of this statement
+135 |
+136 |     let result = provider.embed_batch(texts.iter().map(|s| s.to_string()).collect()).await;
+    |                                       ----- borrow later used here
+    |
+help: consider using a `let` binding to create a longer lived value
+    |
+128 ~     let binding = "x".repeat(1000);
+129 ~     let texts = vec![
+130 |         "normal text",
+...
+133 |         "@#$%",                // special chars
+134 ~         &binding,      // long text
+    |
+
+For more information about this error, try `rustc --explain E0716`.
+error: could not compile `crucible-llm` (test "embedding_edge_cases") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
