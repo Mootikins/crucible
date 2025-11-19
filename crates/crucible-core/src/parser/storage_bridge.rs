@@ -271,7 +271,7 @@ impl StorageAwareParser {
     /// New storage-aware parser instance
     pub fn with_storage_builder(
         base_parser: Box<dyn MarkdownParser>,
-        storage_builder: &ContentAddressedStorageBuilder,
+        _storage_builder: &ContentAddressedStorageBuilder,
         config: StorageAwareParserConfig,
     ) -> Self {
         // Extract hasher from builder or use default
