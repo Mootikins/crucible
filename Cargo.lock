@@ -1587,6 +1587,7 @@ dependencies = [
  "crucible-llm",
  "crucible-pipeline",
  "crucible-surrealdb",
+ "crucible-tools",
  "csv",
  "dirs",
  "fs2",

@@ -58,8 +58,8 @@ async fn main() -> Result<()> {
         }
         _ => {
             if cli.no_process {
-                info!("⚡ File processing skipped due to --no-process flag");
-                info!("ℹ️  CLI commands may operate on stale data");
+                info!("File processing skipped due to --no-process flag");
+                info!("CLI commands may operate on stale data");
             } else {
                 // Process files before command execution to ensure up-to-date data
                 debug!(
@@ -86,18 +86,18 @@ async fn main() -> Result<()> {
                                 debug!("File processing completed successfully");
                             }
                             Err(e) => {
-                                error!("❌ File processing failed: {}", e);
-                                info!("⚠️  CLI commands may operate on stale data");
+                                error!("File processing failed: {}", e);
+                                info!("CLI commands may operate on stale data");
                                 // Continue execution even if processing fails (graceful degradation)
                             }
                         }
                     }
                     Err(timeout_err) => {
                         warn!(
-                            "⏱️  File processing timed out after {} seconds",
+                            "File processing timed out after {} seconds",
                             cli.process_timeout
                         );
-                        info!("⚠️  CLI commands may operate on partially updated data");
+                        info!("CLI commands may operate on partially updated data");
                         // Continue execution even if processing times out (graceful degradation)
                     }
                 }

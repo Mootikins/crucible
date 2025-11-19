@@ -21,6 +21,107 @@ impl EAVGraphStore {
         Self { client }
     }
 
+    /// Generic upsert helper using CONTENT syntax.
+    ///
+    /// Tries UPDATE first, then CREATE if no records were affected.
+    /// This eliminates the duplicate "UPDATE-then-CREATE" pattern.
+    ///
+    /// # Arguments
+    ///
+    /// * `params` - Parameters including `table`, `id`, and `content`
+    /// * `return_after` - Whether to return the record after creation
+    async fn upsert_with_content(&self, params: &Value, return_after: bool) -> Result<QueryResult> {
+        let return_clause = if return_after { "RETURN AFTER" } else { "RETURN NONE" };
+
+        let update_query = format!(
+            r#"
+            UPDATE type::thing($table, $id)
+            CONTENT $content
+            {};
+            "#,
+            return_clause
+        );
+
+        let result = self.client.query(&update_query, &[params.clone()]).await?;
+
+        if result.records.is_empty() {
+            let create_query = format!(
+                r#"
+                CREATE type::thing($table, $id)
+                CONTENT $content
+                {};
+                "#,
+                return_clause
+            );
+            self.client
+                .query(&create_query, &[params.clone()])
+                .await
+                .map_err(|e| e.into())
+        } else {
+            Ok(result)
+        }
+    }
+
+    /// Generic upsert helper using SET syntax.
+    ///
+    /// Tries UPDATE first, then CREATE if no records were affected.
+    /// This eliminates the duplicate "UPDATE-then-CREATE" pattern.
+    ///
+    /// # Arguments
+    ///
+    /// * `set_clause` - The SET portion of the query (e.g., "entity_id = $entity_id, key = $key")
+    /// * `params` - Parameters including `table`, `id`, and all field values
+    /// * `return_after` - Whether to return the record after creation
+    /// * `ignore_already_exists` - If true, ignores "already exists" errors (for race condition handling)
+    async fn upsert_with_set(
+        &self,
+        set_clause: &str,
+        params: &Value,
+        return_after: bool,
+        ignore_already_exists: bool,
+    ) -> Result<QueryResult> {
+        let return_clause = if return_after { "RETURN AFTER" } else { "RETURN NONE" };
+
+        let update_query = format!(
+            r#"
+            UPDATE type::thing($table, $id)
+            SET {}
+            {};
+            "#,
+            set_clause, return_clause
+        );
+
+        let result = self.client.query(&update_query, &[params.clone()]).await?;
+
+        if result.records.is_empty() {
+            let create_query = format!(
+                r#"
+                CREATE type::thing($table, $id)
+                SET {}
+                {};
+                "#,
+                set_clause, return_clause
+            );
+
+            match self.client.query(&create_query, &[params.clone()]).await {
+                Ok(result) => Ok(result),
+                Err(e) if ignore_already_exists && e.to_string().contains("already exists") => {
+                    // Race condition: another thread created the record between UPDATE and CREATE
+                    // This is expected and safe - return empty result
+                    Ok(QueryResult {
+                        records: vec![],
+                        total_count: Some(0),
+                        execution_time_ms: None,
+                        has_more: false,
+                    })
+                }
+                Err(e) => Err(e.into()),
+            }
+        } else {
+            Ok(result)
+        }
+    }
+
     /// Helper method to deserialize query results into Property structs
     ///
     /// Handles the conversion from SurrealDB's internal representation to our
@@ -74,30 +175,7 @@ impl EAVGraphStore {
             "content": content,
         });
 
-        let result = self
-            .client
-            .query(
-                r#"
-                UPDATE type::thing($table, $id)
-                CONTENT $content
-                RETURN AFTER;
-                "#,
-                &[params.clone()],
-            )
-            .await?;
-
-        if result.records.is_empty() {
-            self.client
-                .query(
-                    r#"
-                    CREATE type::thing($table, $id)
-                    CONTENT $content
-                    RETURN AFTER;
-                    "#,
-                    &[params],
-                )
-                .await?;
-        }
+        self.upsert_with_content(&params, true).await?;
 
         Ok(id.clone())
     }
@@ -126,42 +204,18 @@ impl EAVGraphStore {
             "confidence": property.confidence,
         });
 
-        let result = self
-            .client
-            .query(
-                r#"
-                UPDATE type::thing($table, $id)
-                SET
-                    entity_id = type::thing($entity_table, $entity_id),
+        self.upsert_with_set(
+            r#"entity_id = type::thing($entity_table, $entity_id),
                     namespace = $namespace,
                     key = $key,
                     value = $value,
                     source = $source,
-                    confidence = $confidence
-                RETURN AFTER;
-                "#,
-                &[params.clone()],
-            )
-            .await?;
-
-        if result.records.is_empty() {
-            self.client
-                .query(
-                    r#"
-                    CREATE type::thing($table, $id)
-                    SET
-                        entity_id = type::thing($entity_table, $entity_id),
-                        namespace = $namespace,
-                        key = $key,
-                        value = $value,
-                        source = $source,
-                        confidence = $confidence
-                    RETURN AFTER;
-                    "#,
-                    &[params],
-                )
-                .await?;
-        }
+                    confidence = $confidence"#,
+            &params,
+            true,
+            false, // ignore_already_exists
+        )
+        .await?;
 
         Ok(id.clone())
     }
@@ -265,44 +319,19 @@ impl EAVGraphStore {
             "content_used": embedding.content_used,
         });
 
-        let result = self
-            .client
-            .query(
-                r#"
-                UPDATE type::thing($table, $id)
-                SET
-                    entity_id = type::thing($entity_table, $entity_id),
+        self.upsert_with_set(
+            r#"entity_id = type::thing($entity_table, $entity_id),
                     block_id = $block_id,
                     embedding = $embedding,
                     dimensions = $dimensions,
                     model = $model,
                     model_version = $model_version,
-                    content_used = $content_used
-                RETURN NONE;
-                "#,
-                &[params.clone()],
-            )
-            .await?;
-
-        if result.records.is_empty() {
-            self.client
-                .query(
-                    r#"
-                    CREATE type::thing($table, $id)
-                    SET
-                        entity_id = type::thing($entity_table, $entity_id),
-                        block_id = $block_id,
-                        embedding = $embedding,
-                        dimensions = $dimensions,
-                        model = $model,
-                        model_version = $model_version,
-                        content_used = $content_used
-                    RETURN NONE;
-                    "#,
-                    &[params],
-                )
-                .await?;
-        }
+                    content_used = $content_used"#,
+            &params,
+            false,
+            false, // ignore_already_exists
+        )
+        .await?;
 
         Ok(())
     }
@@ -411,66 +440,23 @@ impl EAVGraphStore {
         // so we use a two-phase approach to handle concurrent tag creation:
         //
         // Phase 1: Try UPDATE first - this works if the tag already exists
-        // If another thread created the tag between our check and now,
-        // UPDATE will successfully update it in place.
-        let result = self
-            .client
-            .query(
-                r#"
-                UPDATE type::thing($table, $id)
-                SET
-                    name = $name,
+        // Phase 2: If UPDATE fails (empty result), CREATE with "already exists" error handling
+        //
+        // The helper handles the race condition where another thread creates the tag
+        // between our UPDATE and CREATE operations.
+        self.upsert_with_set(
+            r#"name = $name,
                     parent_id = if $has_parent THEN type::thing($parent_table, $parent_id) ELSE NONE END,
                     path = $path,
                     depth = $depth,
                     description = $description,
                     color = $color,
-                    icon = $icon;
-                "#,
-                &[params.clone()],
-            )
-            .await?;
-
-        // Phase 2: Check if UPDATE succeeded
-        if result.records.is_empty() {
-            // UPDATE returned empty results, meaning the tag doesn't exist yet.
-            // Now we need to CREATE it.
-            //
-            // RACE CONDITION SCENARIO:
-            // Thread A: UPDATE fails (tag doesn't exist)
-            // Thread B: UPDATE fails (tag doesn't exist)
-            // Thread A: CREATE succeeds (creates tag)
-            // Thread B: CREATE fails with "already exists" (because Thread A created it)
-            // This is EXPECTED behavior - Thread B should not fail the operation
-            let create_result = self.client
-                .query(
-                    r#"
-                    CREATE type::thing($table, $id)
-                    SET
-                        name = $name,
-                        parent_id = if $has_parent THEN type::thing($parent_table, $parent_id) ELSE NONE END,
-                        path = $path,
-                        depth = $depth,
-                        description = $description,
-                        color = $color,
-                        icon = $icon;
-                    "#,
-                    &[params],
-                )
-                .await;
-
-            // Handle CREATE result with race condition awareness
-            if let Err(e) = create_result {
-                let err_msg = e.to_string();
-                if !err_msg.contains("already exists") {
-                    // Unexpected error - propagate it
-                    return Err(anyhow::Error::from(e));
-                }
-                // SUCCESS CASE: "already exists" error means another thread
-                // created the tag between our UPDATE and CREATE operations.
-                // This is exactly what we want - the tag exists now!
-            }
-        }
+                    icon = $icon"#,
+            &params,
+            false, // return_after
+            true,  // ignore_already_exists (for race condition handling)
+        )
+        .await?;
 
         Ok(id.clone())
     }
@@ -525,64 +511,18 @@ impl EAVGraphStore {
 
         // RACE CONDITION HANDLING: UPDATE-first approach for entity-tag mapping
         //
-        // Phase 1: Try UPDATE first - this works if the mapping already exists
-        // If another thread created the mapping between our check and now,
-        // UPDATE will successfully update it in place.
-        let result = self
-            .client
-            .query(
-                r#"
-                UPDATE type::thing($table, $id)
-                SET
-                    entity_id = type::thing($entity_table, $entity_id),
+        // The helper handles the race condition where another thread creates the mapping
+        // between our UPDATE and CREATE operations.
+        self.upsert_with_set(
+            r#"entity_id = type::thing($entity_table, $entity_id),
                     tag_id = type::thing($tag_table, $tag_id),
                     source = $source,
-                    confidence = $confidence
-                RETURN NONE;
-                "#,
-                &[params.clone()],
-            )
-            .await?;
-
-        // Phase 2: Check if UPDATE succeeded
-        if result.records.is_empty() {
-            // UPDATE returned empty results, meaning the mapping doesn't exist yet.
-            // Now we need to CREATE it.
-            //
-            // RACE CONDITION SCENARIO:
-            // Thread A: UPDATE fails (mapping doesn't exist)
-            // Thread B: UPDATE fails (mapping doesn't exist)
-            // Thread A: CREATE succeeds (creates mapping)
-            // Thread B: CREATE fails with "already exists" (because Thread A created it)
-            // This is EXPECTED behavior - Thread B should not fail the operation
-            let create_result = self
-                .client
-                .query(
-                    r#"
-                    CREATE type::thing($table, $id)
-                    SET
-                        entity_id = type::thing($entity_table, $entity_id),
-                        tag_id = type::thing($tag_table, $tag_id),
-                        source = $source,
-                        confidence = $confidence
-                    RETURN NONE;
-                    "#,
-                    &[params],
-                )
-                .await;
-
-            // Handle CREATE result with race condition awareness
-            if let Err(e) = create_result {
-                let err_msg = e.to_string();
-                if !err_msg.contains("already exists") {
-                    // Unexpected error - propagate it
-                    return Err(anyhow::Error::from(e));
-                }
-                // SUCCESS CASE: "already exists" error means another thread
-                // created the mapping between our UPDATE and CREATE operations.
-                // This is exactly what we want - the mapping exists now!
-            }
-        }
+                    confidence = $confidence"#,
+            &params,
+            false, // return_after
+            true,  // ignore_already_exists (for race condition handling)
+        )
+        .await?;
 
         Ok(())
     }

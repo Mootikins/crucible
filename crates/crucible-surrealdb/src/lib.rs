@@ -48,6 +48,7 @@ pub mod surreal_client;
 pub mod transaction_consumer;
 pub mod transaction_queue;
 pub mod types;
+pub mod utils;
 
 // Embedding modules
 #[cfg(feature = "embeddings")]

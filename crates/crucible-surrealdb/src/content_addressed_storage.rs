@@ -4,6 +4,7 @@
 //! enabling persistent storage of content blocks and Merkle trees with full ACID
 //! transaction support and efficient hash-based lookups.
 
+use crate::utils::sanitize_record_id;
 use crate::{SurrealClient, SurrealDbConfig};
 use async_trait::async_trait;
 use crucible_core::storage::traits::{BlockOperations, StorageStats, TreeOperations};
@@ -508,7 +509,9 @@ impl crucible_core::storage::traits::BlockOperations for ContentAddressedStorage
             return Err(StorageError::InvalidHash("Empty hash provided".to_string()));
         }
 
-        let query = format!("SELECT data FROM content_blocks:`{}`", hash);
+        let safe_hash = sanitize_record_id(hash)
+            .map_err(|e| StorageError::InvalidHash(format!("Invalid hash: {}", e)))?;
+        let query = format!("SELECT data FROM content_blocks:⟨{}⟩", safe_hash);
         let result = self
             .client
             .query(&query, &[])
@@ -535,7 +538,9 @@ impl crucible_core::storage::traits::BlockOperations for ContentAddressedStorage
             return Err(StorageError::InvalidHash("Empty hash provided".to_string()));
         }
 
-        let query = format!("SELECT count() FROM content_blocks WHERE hash = '{}'", hash);
+        let safe_hash = sanitize_record_id(hash)
+            .map_err(|e| StorageError::InvalidHash(format!("Invalid hash: {}", e)))?;
+        let query = format!("SELECT count() FROM content_blocks WHERE hash = '{}'", safe_hash);
         let result = self.client.query(&query, &[]).await.map_err(|e| {
             StorageError::backend(format!("Failed to check block existence: {}", e))
         })?;
@@ -556,7 +561,9 @@ impl crucible_core::storage::traits::BlockOperations for ContentAddressedStorage
         }
 
         // Delete the block
-        let query = format!("DELETE FROM content_blocks:`{}`", hash);
+        let safe_hash = sanitize_record_id(hash)
+            .map_err(|e| StorageError::InvalidHash(format!("Invalid hash: {}", e)))?;
+        let query = format!("DELETE FROM content_blocks:⟨{}⟩", safe_hash);
         let _result = self
             .client
             .query(&query, &[])
@@ -601,7 +608,9 @@ impl crucible_core::storage::traits::TreeOperations for ContentAddressedStorageS
             ));
         }
 
-        let query = format!("SELECT tree_data FROM merkle_trees:`{}`", root_hash);
+        let safe_hash = sanitize_record_id(root_hash)
+            .map_err(|e| StorageError::InvalidHash(format!("Invalid root hash: {}", e)))?;
+        let query = format!("SELECT tree_data FROM merkle_trees:⟨{}⟩", safe_hash);
         let result =
             self.client.query(&query, &[]).await.map_err(|e| {
                 StorageError::backend(format!("Failed to retrieve Merkle tree: {}", e))
@@ -635,9 +644,11 @@ impl crucible_core::storage::traits::TreeOperations for ContentAddressedStorageS
             ));
         }
 
+        let safe_hash = sanitize_record_id(root_hash)
+            .map_err(|e| StorageError::InvalidHash(format!("Invalid root hash: {}", e)))?;
         let query = format!(
             "SELECT count() FROM merkle_trees WHERE root_hash = '{}'",
-            root_hash
+            safe_hash
         );
         let result =
             self.client.query(&query, &[]).await.map_err(|e| {
@@ -662,7 +673,9 @@ impl crucible_core::storage::traits::TreeOperations for ContentAddressedStorageS
         }
 
         // Delete the tree
-        let query = format!("DELETE FROM merkle_trees:`{}`", root_hash);
+        let safe_hash = sanitize_record_id(root_hash)
+            .map_err(|e| StorageError::InvalidHash(format!("Invalid root hash: {}", e)))?;
+        let query = format!("DELETE FROM merkle_trees:⟨{}⟩", safe_hash);
         let _result =
             self.client.query(&query, &[]).await.map_err(|e| {
                 StorageError::backend(format!("Failed to delete Merkle tree: {}", e))
