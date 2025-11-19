@@ -41,7 +41,7 @@ impl ReplCompleter {
 
     /// Update cached tool list (call this periodically)
     pub async fn refresh_tools(&self) {
-        let tools = self.tools.list_tools().await;
+        let tools = self.tools.list_tools();
         if let Ok(mut cached) = self.cached_tools.write() {
             *cached = tools;
         }
@@ -334,9 +334,12 @@ mod tests {
 
             let temp_dir = TempDir::new().unwrap();
             let tools = Arc::new(
-                UnifiedToolRegistry::new(temp_dir.path().to_path_buf())
-                    .await
-                    .unwrap(),
+                UnifiedToolRegistry::new(
+                    temp_dir.path().to_path_buf(),
+                    crucible_tools::types::ToolConfigContext::new(),
+                )
+                .await
+                .unwrap(),
             );
             ReplCompleter::new(core, tools)
         })
@@ -432,9 +435,12 @@ mod tests {
             );
 
             let tools = Arc::new(
-                UnifiedToolRegistry::new(temp_dir.path().to_path_buf())
-                    .await
-                    .unwrap(),
+                UnifiedToolRegistry::new(
+                    temp_dir.path().to_path_buf(),
+                    crucible_tools::types::ToolConfigContext::new(),
+                )
+                .await
+                .unwrap(),
             );
             (core, tools)
         });

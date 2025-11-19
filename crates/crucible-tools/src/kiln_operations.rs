@@ -50,17 +50,13 @@ impl KilnRepository {
 
     /// Create new kiln repository from global execution context
     ///
-    /// This reads the `kiln_path` from the global `TOOL_EXECUTION_CONTEXT` set by
-    /// `CrucibleToolManager`. Returns an error if no context is set or no path is configured.
+    /// DEPRECATED: This method relied on global state which has been removed.
+    /// Use `KilnRepository::new(path)` directly instead.
+    #[deprecated(note = "Use KilnRepository::new(path) instead")]
     pub fn from_context() -> KilnResult<Self> {
-        use crate::types::get_kiln_path_from_context;
-
-        let kiln_path =
-            get_kiln_path_from_context().map_err(|e| KilnError::InvalidPath(e.to_string()))?;
-
-        Ok(Self::new(kiln_path.to_str().ok_or_else(|| {
-            KilnError::InvalidPath("Invalid UTF-8 in kiln path".to_string())
-        })?))
+        Err(KilnError::InvalidPath(
+            "from_context() is deprecated - use KilnRepository::new(path) instead".to_string(),
+        ))
     }
 
     /// Get the kiln path

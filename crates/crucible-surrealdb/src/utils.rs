@@ -98,7 +98,7 @@ pub fn resolve_and_normalize_path(path: &Path, root: &Path) -> String {
 ///
 /// let safe_id = sanitize_record_id("my-safe-id").unwrap();
 /// let dangerous_id = sanitize_record_id("'; DROP TABLE users; --").unwrap();
-/// assert_eq!(dangerous_id, "__DROP_TABLE_users____");
+/// assert_eq!(dangerous_id, "___DROP_TABLE_users____");
 /// ```
 pub fn sanitize_record_id(id: &str) -> Result<String, String> {
     // Validate length

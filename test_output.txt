@@ -1,0 +1,2330 @@
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded Inflector v0.11.4
+  Downloaded clap_derive v4.5.49
+  Downloaded colorchoice v1.0.4
+  Downloaded dirs-next v2.0.0
+  Downloaded futures-io v0.3.31
+  Downloaded json5 v0.4.1
+  Downloaded mime v0.3.17
+  Downloaded pathdiff v0.2.3
+  Downloaded rawpointer v0.2.1
+  Downloaded ref-cast-impl v1.0.25
+  Downloaded sync_wrapper v1.0.2
+  Downloaded tower-layer v0.3.3
+  Downloaded try-lock v0.2.5
+  Downloaded urlencoding v2.1.3
+  Downloaded wasm-bindgen-shared v0.2.104
+  Downloaded zerofrom v0.1.6
+  Downloaded zune-core v0.4.12
+  Downloaded zune-inflate v0.2.54
+  Downloaded zune-jpeg v0.4.21
+  Downloaded zerotrie v0.2.2
+  Downloaded yaml-rust2 v0.10.4
+  Downloaded ureq v2.12.1
+  Downloaded tokenizers v0.22.1
+  Downloaded zerovec v0.11.4
+  Downloaded winnow v0.7.13
+  Downloaded syn v1.0.109
+  Downloaded earcutr v0.4.3
+  Downloaded webpki-roots v1.0.3
+  Downloaded unicode-width v0.1.14
+  Downloaded unicode-width v0.2.0
+  Downloaded zerocopy v0.8.27
+  Downloaded rustls v0.23.33
+  Downloaded yrs v0.24.0
+  Downloaded rustix v1.1.2
+  Downloaded rustix v0.38.44
+  Downloaded syn v2.0.107
+  Downloaded spade v2.15.0
+  Downloaded robust v1.2.0
+  Downloaded regex-syntax v0.8.8
+  Downloaded ratatui v0.29.0
+  Downloaded spm_precompiled v0.1.4
+  Downloaded onig_sys v69.9.1
+  Downloaded csv v1.4.0
+  Downloaded petgraph v0.6.5
+  Downloaded tracing-subscriber v0.3.20
+  Downloaded regex-automata v0.4.13
+  Downloaded vcpkg v0.2.15
+  Downloaded libz-sys v1.1.22
+  Downloaded libc v0.2.177
+  Downloaded vart v0.8.1
+  Downloaded webpki-root-certs v1.0.3
+  Downloaded surrealdb-core v2.3.10
+  Downloaded pxfm v0.1.25
+  Downloaded tabled v0.15.0
+  Downloaded surrealdb v2.3.10
+  Downloaded ureq v3.1.2
+  Downloaded tokio v1.48.0
+  Downloaded sysinfo v0.33.1
+  Downloaded radix_trie v0.2.1
+  Downloaded serde_with v3.15.0
+  Downloaded quinn-proto v0.11.13
+  Downloaded vart v0.9.3
+  Downloaded zstd-sys v2.0.16+zstd.1.5.7
+  Downloaded encoding_rs v0.8.35
+  Downloaded openssl v0.10.74
+  Downloaded unicode-normalization v0.1.24
+  Downloaded tower-http v0.6.6
+  Downloaded wiremock v0.6.5
+  Downloaded unicode-segmentation v1.12.0
+  Downloaded tokio-util v0.7.16
+  Downloaded time v0.3.44
+  Downloaded rayon v1.11.0
+  Downloaded object_store v0.12.4
+  Downloaded zerocopy-derive v0.8.27
+  Downloaded unicode-normalization-alignments v0.1.12
+  Downloaded fst v0.4.7
+  Downloaded serde_json v1.0.145
+  Downloaded rust_decimal v1.39.0
+  Downloaded nix v0.27.1
+  Downloaded lz4-sys v1.11.1+lz4-1.10.0
+  Downloaded vte v0.14.1
+  Downloaded url v2.5.7
+  Downloaded ureq-proto v0.5.2
+  Downloaded rav1e v0.7.1
+  Downloaded unicode_categories v0.1.1
+  Downloaded unicode-security v0.1.2
+  Downloaded typenum v1.19.0
+  Downloaded tracing v0.1.41
+  Downloaded tower v0.5.2
+  Downloaded toml v0.9.8
+  Downloaded scc v2.4.0
+  Downloaded reqwest v0.12.24
+  Downloaded regex v1.12.2
+  Downloaded yoke v0.8.0
+  Downloaded ring v0.17.14
+  Downloaded writeable v0.6.1
+  Downloaded weezl v0.1.10
+  Downloaded webpki-roots v0.26.11
+  Downloaded wasm-bindgen v0.2.104
+  Downloaded uuid v1.18.1
+  Downloaded unsafe-libyaml v0.2.11
+  Downloaded tiff v0.10.3
+  Downloaded tungstenite v0.23.0
+  Downloaded tracing-core v0.1.34
+  Downloaded toml_edit v0.23.7
+  Downloaded surrealkv v0.9.3
+  Downloaded rocksdb v0.23.0
+  Downloaded rkyv v0.7.45
+  Downloaded ndarray v0.16.1
+  Downloaded ndarray v0.15.6
+  Downloaded zerovec-derive v0.11.1
+  Downloaded zeroize v1.8.2
+  Downloaded zerofrom-derive v0.1.6
+  Downloaded yoke-derive v0.8.0
+  Downloaded web_atoms v0.1.3
+  Downloaded wasm-bindgen-macro-support v0.2.104
+  Downloaded wasm-bindgen-backend v0.2.104
+  Downloaded walkdir v2.5.0
+  Downloaded unicode-script v0.5.7
+  Downloaded unicode-ident v1.0.20
+  Downloaded tungstenite v0.28.0
+  Downloaded reedline v0.34.0
+  Downloaded proptest v1.9.0
+  Downloaded xattr v1.6.1
+  Downloaded wyz v0.5.1
+  Downloaded utf8_iter v1.0.4
+  Downloaded unicase v2.8.1
+  Downloaded ucd-trie v0.1.7
+  Downloaded tinyvec v1.10.0
+  Downloaded linux-raw-sys v0.4.15
+  Downloaded tendril v0.4.3
+  Downloaded tar v0.4.44
+  Downloaded plotters v0.3.7
+  Downloaded wasm-bindgen-macro v0.2.104
+  Downloaded want v0.3.1
+  Downloaded wait-timeout v0.2.1
+  Downloaded version_check v0.9.5
+  Downloaded validator_derive v0.20.0
+  Downloaded validator v0.20.0
+  Downloaded v_frame v0.3.9
+  Downloaded utf8parse v0.2.2
+  Downloaded utf-8 v0.7.6
+  Downloaded untrusted v0.9.0
+  Downloaded unit-prefix v0.5.1
+  Downloaded unicode-xid v0.2.6
+  Downloaded unicode-truncate v1.1.0
+  Downloaded tracing-attributes v0.1.30
+  Downloaded rust-stemmers v1.2.0
+  Downloaded toml_parser v1.0.4
+  Downloaded tokio-tungstenite v0.28.0
+  Downloaded time-macros v0.2.24
+  Downloaded thiserror v2.0.17
+  Downloaded tempfile v3.23.0
+  Downloaded socket2 v0.6.1
+  Downloaded sharded-slab v0.1.7
+  Downloaded serde v1.0.228
+  Downloaded linux-raw-sys v0.11.0
+  Downloaded rustls-webpki v0.103.7
+  Downloaded roaring v0.10.12
+  Downloaded portable-atomic v1.11.1
+  Downloaded image v0.25.8
+  Downloaded unarray v0.1.4
+  Downloaded ulid v1.2.1
+  Downloaded typeid v1.0.3
+  Downloaded trice v0.4.0
+  Downloaded tracing-test v0.2.5
+  Downloaded tracing-log v0.2.0
+  Downloaded toml_datetime v0.7.3
+  Downloaded tokio-tungstenite v0.23.1
+  Downloaded tokio-stream v0.1.17
+  Downloaded tokio-rustls v0.26.4
+  Downloaded tinytemplate v1.2.1
+  Downloaded tinystr v0.8.1
+  Downloaded tiny-keccak v2.0.2
+  Downloaded time-core v0.1.6
+  Downloaded thread_local v1.1.9
+  Downloaded thiserror-impl v1.0.69
+  Downloaded thiserror v1.0.69
+  Downloaded term v0.7.0
+  Downloaded smallvec v2.0.0-alpha.10
+  Downloaded similar v2.7.0
+  Downloaded signal-hook v0.3.18
+  Downloaded serde_yaml v0.9.34+deprecated
+  Downloaded serde_with_macros v3.15.0
+  Downloaded serde_derive v1.0.228
+  Downloaded serde_core v1.0.228
+  Downloaded schemars v1.0.4
+  Downloaded schemars v0.9.0
+  Downloaded rustls-pki-types v1.12.0
+  Downloaded rand v0.9.2
+  Downloaded rand v0.8.5
+  Downloaded pulldown-cmark v0.13.0
+  Downloaded pest v2.8.3
+  Downloaded tracing-test-macro v0.2.5
+  Downloaded tower-service v0.3.3
+  Downloaded toml_writer v1.0.4
+  Downloaded tokio-test v0.4.4
+  Downloaded tokio-native-tls v0.3.1
+  Downloaded tokio-macros v2.6.0
+  Downloaded tinyvec_macros v0.1.1
+  Downloaded thiserror-impl v2.0.17
+  Downloaded termtree v0.5.1
+  Downloaded tap v1.0.1
+  Downloaded tabled_derive v0.7.0
+  Downloaded synstructure v0.13.2
+  Downloaded strum_macros v0.26.4
+  Downloaded string_cache v0.8.9
+  Downloaded static_assertions v1.1.0
+  Downloaded spin v0.9.8
+  Downloaded snap v1.1.1
+  Downloaded smol_str v0.2.2
+  Downloaded smallvec v1.15.1
+  Downloaded siphasher v1.0.1
+  Downloaded simple_asn1 v0.6.3
+  Downloaded simdutf8 v0.1.5
+  Downloaded signal-hook-registry v1.4.6
+  Downloaded sha2 v0.10.9
+  Downloaded sha1 v0.10.6
+  Downloaded serde_derive_internals v0.29.1
+  Downloaded ryu v1.0.20
+  Downloaded ron v0.8.1
+  Downloaded quinn v0.11.9
+  Downloaded ort v2.0.0-rc.10
+  Downloaded fastembed v5.2.0
+  Downloaded bzip2-sys v0.1.13+1.0.8
+  Downloaded subtle v2.6.1
+  Downloaded strum v0.26.3
+  Downloaded strsim v0.11.1
+  Downloaded strip-ansi-escapes v0.2.1
+  Downloaded string_cache_codegen v0.5.4
+  Downloaded storekey v0.5.0
+  Downloaded static_assertions_next v1.1.2
+  Downloaded stacker v0.1.22
+  Downloaded stable_deref_trait v1.2.1
+  Downloaded socks v0.3.4
+  Downloaded smallstr v0.3.1
+  Downloaded slab v0.4.11
+  Downloaded simd_helpers v0.1.0
+  Downloaded simd-adler32 v0.3.7
+  Downloaded signal-hook-mio v0.2.5
+  Downloaded shlex v1.3.0
+  Downloaded serial_test v3.2.0
+  Downloaded serde_urlencoded v0.7.1
+  Downloaded serde-untagged v0.1.9
+  Downloaded serde-content v0.1.2
+  Downloaded semver v1.0.27
+  Downloaded seahash v4.1.0
+  Downloaded sdd v3.0.10
+  Downloaded schemars_derive v1.0.4
+  Downloaded rustversion v1.0.22
+  Downloaded rust-ini v0.21.3
+  Downloaded rstar v0.12.2
+  Downloaded rmp-serde v1.3.0
+  Downloaded reblessive v0.4.3
+  Downloaded rayon-core v1.13.0
+  Downloaded quick_cache v0.5.2
+  Downloaded png v0.18.0
+  Downloaded num-bigint v0.4.6
+  Downloaded nom v8.0.0
+  Downloaded moxcms v0.7.8
+  Downloaded serial_test_derive v3.2.0
+  Downloaded serde_spanned v1.0.3
+  Downloaded scrypt v0.11.0
+  Downloaded scopeguard v1.2.0
+  Downloaded same-file v1.0.6
+  Downloaded salsa20 v0.10.2
+  Downloaded rusty-fork v0.3.1
+  Downloaded rustls-pemfile v2.2.0
+  Downloaded rustc_lexer v0.1.0
+  Downloaded rustc-hash v2.1.1
+  Downloaded rmpv v1.3.0
+  Downloaded rmp v0.8.14
+  Downloaded rkyv_derive v0.7.45
+  Downloaded rgb v0.8.52
+  Downloaded revision-derive v0.11.0
+  Downloaded revision-derive v0.10.0
+  Downloaded revision v0.11.0
+  Downloaded revision v0.10.0
+  Downloaded rend v0.4.2
+  Downloaded ref-cast v1.0.25
+  Downloaded rand_core v0.9.3
+  Downloaded quote v1.0.41
+  Downloaded quick_cache v0.6.18
+  Downloaded qoi v0.4.1
+  Downloaded pest_meta v2.8.3
+  Downloaded pest_generator v2.8.3
+  Downloaded papergrid v0.11.0
+  Downloaded nom v7.1.3
+  Downloaded mio v1.0.4
+  Downloaded libm v0.2.15
+  Downloaded lalrpop v0.20.2
+  Downloaded rayon-cond v0.4.0
+  Downloaded ravif v0.11.20
+  Downloaded rand_xorshift v0.4.0
+  Downloaded rand_core v0.6.4
+  Downloaded rand_chacha v0.9.0
+  Downloaded rand_chacha v0.3.1
+  Downloaded radium v0.7.0
+  Downloaded quinn-udp v0.5.14
+  Downloaded quick-error v2.0.1
+  Downloaded quick-error v1.2.3
+  Downloaded psm v0.1.27
+  Downloaded psl-types v2.0.11
+  Downloaded profiling-procmacros v1.0.17
+  Downloaded proc-macro2 v1.0.101
+  Downloaded proc-macro-error2 v2.0.1
+  Downloaded proc-macro-error-attr2 v2.0.0
+  Downloaded proc-macro-error-attr v1.0.4
+  Downloaded proc-macro-error v1.0.4
+  Downloaded predicates-tree v1.0.12
+  Downloaded predicates-core v1.0.9
+  Downloaded predicates v3.1.3
+  Downloaded ppv-lite86 v0.2.21
+  Downloaded potential_utf v0.1.3
+  Downloaded plotters-svg v0.3.7
+  Downloaded pin-project-lite v0.2.16
+  Downloaded pest_derive v2.8.3
+  Downloaded pem v3.0.6
+  Downloaded parking_lot_core v0.9.12
+  Downloaded ort-sys v2.0.0-rc.10
+  Downloaded openssl-sys v0.9.110
+  Downloaded onig v6.5.1
+  Downloaded num_cpus v1.17.0
+  Downloaded num-traits v0.2.19
+  Downloaded num-rational v0.4.2
+  Downloaded num-derive v0.4.2
+  Downloaded num-complex v0.4.6
+  Downloaded mio v0.8.11
+  Downloaded itertools v0.10.5
+  Downloaded idna v1.1.0
+  Downloaded icu_properties_data v2.0.1
+  Downloaded geo v0.28.0
+  Downloaded ptr_meta_derive v0.1.4
+  Downloaded ptr_meta v0.1.4
+  Downloaded profiling v1.0.17
+  Downloaded proc-macro-crate v3.4.0
+  Downloaded precomputed-hash v0.1.1
+  Downloaded powerfmt v0.2.0
+  Downloaded plotters-backend v0.3.7
+  Downloaded pkg-config v0.3.32
+  Downloaded pin-utils v0.1.0
+  Downloaded pico-args v0.5.0
+  Downloaded phf_shared v0.11.3
+  Downloaded phf_macros v0.11.3
+  Downloaded phf_generator v0.11.3
+  Downloaded phf_codegen v0.11.3
+  Downloaded phf v0.11.3
+  Downloaded percent-encoding v2.3.2
+  Downloaded pem-rfc7468 v0.7.0
+  Downloaded pbkdf2 v0.12.2
+  Downloaded paste v1.0.15
+  Downloaded parking_lot v0.12.5
+  Downloaded parking v2.2.1
+  Downloaded ordered-multimap v0.7.3
+  Downloaded option-ext v0.2.0
+  Downloaded once_cell v1.21.3
+  Downloaded num-integer v0.1.46
+  Downloaded num-conv v0.1.0
+  Downloaded nucleo-matcher v0.3.1
+  Downloaded nucleo v0.5.0
+  Downloaded nu-ansi-term v0.50.3
+  Downloaded notify-types v2.0.0
+  Downloaded notify-debouncer-mini v0.7.0
+  Downloaded notify-debouncer-full v0.5.0
+  Downloaded notify v8.2.0
+  Downloaded noisy_float v0.2.0
+  Downloaded nibble_vec v0.1.0
+  Downloaded ndarray-stats v0.5.1
+  Downloaded native-tls v0.2.14
+  Downloaded multer v3.1.0
+  Downloaded monostate v0.1.18
+  Downloaded mockito v1.7.0
+  Downloaded mockall_derive v0.12.1
+  Downloaded mockall v0.12.1
+  Downloaded miniz_oxide v0.8.9
+  Downloaded log v0.4.28
+  Downloaded litrs v0.4.2
+  Downloaded litemap v0.8.0
+  Downloaded itertools v0.11.0
+  Downloaded iri-string v0.7.8
+  Downloaded indexmap v2.12.0
+  Downloaded icu_locale_core v2.0.0
+  Downloaded hyper-util v0.1.17
+  Downloaded hyper v1.7.0
+  Downloaded h2 v0.4.12
+  Downloaded exr v1.73.0
+  Downloaded path-clean v1.0.1
+  Downloaded password-hash v0.5.0
+  Downloaded openssl-probe v0.1.6
+  Downloaded openssl-macros v0.1.1
+  Downloaded oorandom v11.1.5
+  Downloaded number_prefix v0.4.0
+  Downloaded nucleo-picker v0.9.0
+  Downloaded normalize-line-endings v0.3.0
+  Downloaded noop_proc_macro v0.3.0
+  Downloaded new_debug_unreachable v1.0.6
+  Downloaded nanorand v0.7.0
+  Downloaded nanoid v0.4.0
+  Downloaded monostate-impl v0.1.18
+  Downloaded minimal-lexical v0.2.1
+  Downloaded mime_guess v2.0.5
+  Downloaded miette-derive v5.10.0
+  Downloaded miette v5.10.0
+  Downloaded memchr v2.7.6
+  Downloaded md-5 v0.10.6
+  Downloaded matrixmultiply v0.3.10
+  Downloaded markup5ever v0.35.0
+  Downloaded maplit v1.0.2
+  Downloaded lru-slab v0.1.2
+  Downloaded lru v0.12.5
+  Downloaded loop9 v0.1.5
+  Downloaded lock_api v0.4.14
+  Downloaded linfa-linalg v0.1.0
+  Downloaded libloading v0.8.9
+  Downloaded lexicmp v0.1.0
+  Downloaded lebe v0.5.3
+  Downloaded lazy_static v1.5.0
+  Downloaded itertools v0.14.0
+  Downloaded itertools v0.13.0
+  Downloaded librocksdb-sys v0.17.3+10.4.2
+  Downloaded itertools v0.12.1
+  Downloaded inotify v0.11.0
+  Downloaded indicatif v0.17.11
+  Downloaded indexmap v1.9.3
+  Downloaded imgref v1.12.0
+  Downloaded ignore v0.4.25
+  Downloaded icu_provider v2.0.0
+  Downloaded icu_properties v2.0.1
+  Downloaded icu_collections v2.0.0
+  Downloaded iana-time-zone v0.1.64
+  Downloaded hyper-rustls v0.27.7
+  Downloaded hashbrown v0.16.0
+  Downloaded hashbrown v0.14.5
+  Downloaded flume v0.11.1
+  Downloaded flate2 v1.1.4
+  Downloaded esaxx-rs v0.1.10
+  Downloaded deunicode v1.6.2
+  Downloaded maybe-rayon v0.1.1
+  Downloaded matchers v0.2.0
+  Downloaded match_token v0.35.0
+  Downloaded macro_rules_attribute-proc_macro v0.2.2
+  Downloaded macro_rules_attribute v0.2.2
+  Downloaded mac v0.1.1
+  Downloaded lalrpop-util v0.20.2
+  Downloaded jsonwebtoken v9.3.1
+  Downloaded jobserver v0.1.34
+  Downloaded itoa v1.0.15
+  Downloaded is_terminal_polyfill v1.70.2
+  Downloaded instability v0.3.9
+  Downloaded inout v0.1.4
+  Downloaded inotify-sys v0.1.5
+  Downloaded indoc v2.0.7
+  Downloaded indicatif v0.18.2
+  Downloaded image-webp v0.2.4
+  Downloaded ident_case v1.0.1
+  Downloaded icu_normalizer_data v2.0.0
+  Downloaded icu_normalizer v2.0.0
+  Downloaded hyper-tls v0.6.0
+  Downloaded httpdate v1.0.3
+  Downloaded httparse v1.10.1
+  Downloaded http-body-util v0.1.3
+  Downloaded http-body v1.0.1
+  Downloaded http v1.3.1
+  Downloaded html5ever v0.35.0
+  Downloaded hmac v0.12.1
+  Downloaded hf-hub v0.4.3
+  Downloaded heapless v0.8.0
+  Downloaded hashbrown v0.15.5
+  Downloaded hashbrown v0.12.3
+  Downloaded half v2.7.1
+  Downloaded geographiclib-rs v0.2.5
+  Downloaded geo-types v0.7.17
+  Downloaded futures-util v0.3.31
+  Downloaded futures-channel v0.3.31
+  Downloaded futures v0.3.31
+  Downloaded form_urlencoded v1.2.2
+  Downloaded foldhash v0.1.5
+  Downloaded fixedbitset v0.5.7
+  Downloaded fixedbitset v0.4.2
+  Downloaded find-msvc-tools v0.1.4
+  Downloaded ext-sort v0.1.5
+  Downloaded event-listener v5.4.1
+  Downloaded erased-serde v0.4.8
+  Downloaded derive_more-impl v2.0.1
+  Downloaded derive_more v2.0.1
+  Downloaded der v0.7.10
+  Downloaded crossterm v0.29.0
+  Downloaded is-terminal v0.4.17
+  Downloaded ipnet v2.11.0
+  Downloaded idna_adapter v1.2.1
+  Downloaded humantime v2.3.0
+  Downloaded hex v0.4.3
+  Downloaded heck v0.5.0
+  Downloaded heck v0.4.1
+  Downloaded hashlink v0.10.0
+  Downloaded hash32 v0.3.1
+  Downloaded globset v0.4.18
+  Downloaded glob v0.3.3
+  Downloaded gif v0.13.3
+  Downloaded getrandom v0.3.4
+  Downloaded getrandom v0.2.16
+  Downloaded generic-array v0.14.9
+  Downloaded fuzzy-matcher v0.3.7
+  Downloaded futures-timer v3.0.3
+  Downloaded futures-task v0.3.31
+  Downloaded futures-sink v0.3.31
+  Downloaded futures-macro v0.3.31
+  Downloaded futures-lite v2.6.1
+  Downloaded futures-executor v0.3.31
+  Downloaded futures-core v0.3.31
+  Downloaded futf v0.1.5
+  Downloaded funty v2.0.0
+  Downloaded fs2 v0.4.3
+  Downloaded fragile v2.0.1
+  Downloaded foreign-types-shared v0.1.1
+  Downloaded foreign-types v0.3.2
+  Downloaded fnv v1.0.7
+  Downloaded float_next_after v1.0.0
+  Downloaded float-cmp v0.10.0
+  Downloaded filetime v0.2.26
+  Downloaded filedescriptor v0.8.3
+  Downloaded file-id v0.2.3
+  Downloaded fdeflate v0.3.7
+  Downloaded fd-lock v4.0.4
+  Downloaded fax_derive v0.2.0
+  Downloaded fax v0.2.6
+  Downloaded fastrand v2.3.0
+  Downloaded event-listener-strategy v0.5.4
+  Downloaded errno v0.3.14
+  Downloaded equivalent v1.0.2
+  Downloaded equator-macro v0.4.2
+  Downloaded equator v0.4.2
+  Downloaded endian-type v0.1.2
+  Downloaded ena v0.14.3
+  Downloaded either v1.15.0
+  Downloaded downcast v0.11.0
+  Downloaded double-ended-peekable v0.1.0
+  Downloaded document-features v0.2.11
+  Downloaded doc-comment v0.3.3
+  Downloaded dmp v0.2.3
+  Downloaded dlv-list v0.5.2
+  Downloaded displaydoc v0.2.5
+  Downloaded dirs-sys v0.5.0
+  Downloaded dirs v6.0.0
+  Downloaded digest v0.10.7
+  Downloaded difflib v0.4.0
+  Downloaded derive_builder_core v0.20.2
+  Downloaded deadpool v0.12.3
+  Downloaded data-encoding v2.9.0
+  Downloaded dashmap v5.5.3
+  Downloaded dary_heap v0.3.8
+  Downloaded darling_macro v0.21.3
+  Downloaded darling_core v0.21.3
+  Downloaded darling_core v0.20.11
+  Downloaded darling v0.20.11
+  Downloaded crossterm v0.28.1
+  Downloaded crossterm v0.27.0
+  Downloaded criterion v0.5.1
+  Downloaded compact_str v0.9.0
+  Downloaded compact_str v0.8.1
+  Downloaded comfy-table v7.2.1
+  Downloaded clap_builder v4.5.50
+  Downloaded chrono v0.4.42
+  Downloaded cedar-policy-core v2.4.2
+  Downloaded bstr v1.12.0
+  Downloaded bitvec v1.0.1
+  Downloaded async-graphql v7.0.17
+  Downloaded any_ascii v0.3.3
+  Downloaded dyn-clone v1.0.20
+  Downloaded dtoa-short v0.3.5
+  Downloaded dtoa v1.0.10
+  Downloaded dirs-sys-next v0.1.2
+  Downloaded derive_builder_macro v0.20.2
+  Downloaded deranged v0.5.4
+  Downloaded deadpool-runtime v0.1.4
+  Downloaded dashmap v6.1.0
+  Downloaded darling v0.21.3
+  Downloaded csv-core v0.1.13
+  Downloaded cssparser-macros v0.6.1
+  Downloaded cssparser v0.35.0
+  Downloaded crypto-common v0.1.6
+  Downloaded crunchy v0.2.4
+  Downloaded crossbeam-deque v0.8.6
+  Downloaded criterion-plot v0.6.0
+  Downloaded cpufeatures v0.2.17
+  Downloaded convert_case v0.7.1
+  Downloaded convert_case v0.6.0
+  Downloaded constant_time_eq v0.3.1
+  Downloaded const-random-macro v0.1.16
+  Downloaded const-random v0.1.18
+  Downloaded console v0.16.1
+  Downloaded console v0.15.11
+  Downloaded config v0.15.18
+  Downloaded concurrent-queue v2.5.0
+  Downloaded cedar-policy-validator v2.4.2
+  Downloaded bumpalo v3.19.0
+  Downloaded blake3 v1.8.2
+  Downloaded bindgen v0.72.1
+  Downloaded base64 v0.22.1
+  Downloaded base64 v0.21.7
+  Downloaded base64 v0.13.1
+  Downloaded aho-corasick v1.1.3
+  Downloaded derive_builder v0.20.2
+  Downloaded darling_macro v0.20.11
+  Downloaded crossbeam-utils v0.8.21
+  Downloaded crossbeam-epoch v0.9.18
+  Downloaded criterion-plot v0.5.0
+  Downloaded criterion v0.7.0
+  Downloaded crc32fast v1.5.0
+  Downloaded colored v3.0.0
+  Downloaded colored v2.2.0
+  Downloaded clang-sys v1.8.1
+  Downloaded cipher v0.4.4
+  Downloaded ciborium v0.2.2
+  Downloaded cfg-if v1.0.4
+  Downloaded cexpr v0.6.0
+  Downloaded cc v1.2.41
+  Downloaded castaway v0.2.4
+  Downloaded cassowary v0.3.0
+  Downloaded bytes v1.10.1
+  Downloaded byteorder-lite v0.1.0
+  Downloaded byteorder v1.5.0
+  Downloaded bytecount v0.6.9
+  Downloaded bytecheck v0.6.12
+  Downloaded built v0.7.7
+  Downloaded borsh v1.5.7
+  Downloaded blowfish v0.9.1
+  Downloaded block-buffer v0.10.4
+  Downloaded blake2 v0.10.6
+  Downloaded bitstream-io v2.6.0
+  Downloaded bit_field v0.10.3
+  Downloaded bit-vec v0.8.0
+  Downloaded bit-vec v0.6.3
+  Downloaded bit-set v0.8.0
+  Downloaded bit-set v0.5.3
+  Downloaded bincode v1.3.3
+  Downloaded base64ct v1.8.0
+  Downloaded av1-grain v0.2.5
+  Downloaded autocfg v1.5.0
+  Downloaded atomic-waker v1.1.2
+  Downloaded async-trait v0.1.89
+  Downloaded async-task v4.7.1
+  Downloaded async-lock v3.4.1
+  Downloaded async-graphql-parser v7.0.17
+  Downloaded arrayvec v0.7.6
+  Downloaded arc-swap v1.7.1
+  Downloaded ammonia v4.1.2
+  Downloaded agent-client-protocol-schema v0.5.0
+  Downloaded addr v0.15.6
+  Downloaded color_quant v1.1.0
+  Downloaded clap_lex v0.7.6
+  Downloaded clap v4.5.50
+  Downloaded ciborium-ll v0.2.2
+  Downloaded cfg_aliases v0.2.1
+  Downloaded bytecheck_derive v0.6.12
+  Downloaded bitflags v2.10.0
+  Downloaded bcrypt v0.15.1
+  Downloaded avif-serialize v0.8.6
+  Downloaded async-stream-impl v0.3.6
+  Downloaded async-graphql-value v7.0.17
+  Downloaded async-graphql-derive v7.0.17
+  Downloaded async-executor v1.13.3
+  Downloaded async-channel v2.5.0
+  Downloaded async-broadcast v0.7.2
+  Downloaded assert_cmd v2.0.17
+  Downloaded ascii-canvas v3.0.0
+  Downloaded arraydeque v0.5.1
+  Downloaded approx v0.5.1
+  Downloaded approx v0.4.0
+  Downloaded anyhow v1.0.100
+  Downloaded anstyle-parse v0.2.7
+  Downloaded anstyle v1.0.13
+  Downloaded anstream v0.6.21
+  Downloaded anes v0.1.6
+  Downloaded allocator-api2 v0.2.21
+  Downloaded ahash v0.8.12
+  Downloaded ahash v0.7.8
+  Downloaded agent-client-protocol v0.6.0
+  Downloaded affinitypool v0.3.1
+  Downloaded adler2 v2.0.1
+  Downloaded ciborium-io v0.2.2
+  Downloaded cedar-policy v2.4.2
+  Downloaded cast v0.3.0
+  Downloaded bytemuck v1.24.0
+  Downloaded borsh-derive v1.5.7
+  Downloaded async-stream v0.3.6
+  Downloaded assert-json-diff v2.0.2
+  Downloaded arrayref v0.3.9
+  Downloaded argon2 v0.5.3
+  Downloaded arg_enum_proc_macro v0.3.4
+  Downloaded anstyle-query v1.1.4
+  Downloaded aligned-vec v0.6.4
+   Compiling proc-macro2 v1.0.101
+   Compiling quote v1.0.41
+   Compiling unicode-ident v1.0.20
+   Compiling cfg-if v1.0.4
+   Compiling libc v0.2.177
+   Compiling serde_core v1.0.228
+   Compiling memchr v2.7.6
+   Compiling serde v1.0.228
+   Compiling smallvec v1.15.1
+   Compiling itoa v1.0.15
+   Compiling scopeguard v1.2.0
+   Compiling log v0.4.28
+   Compiling shlex v1.3.0
+   Compiling parking_lot_core v0.9.12
+   Compiling find-msvc-tools v0.1.4
+   Compiling equivalent v1.0.2
+   Compiling autocfg v1.5.0
+   Compiling lock_api v0.4.14
+   Compiling once_cell v1.21.3
+   Compiling pin-project-lite v0.2.16
+   Compiling libm v0.2.15
+   Compiling ryu v1.0.20
+   Compiling hashbrown v0.16.0
+   Compiling regex-syntax v0.8.8
+   Compiling futures-core v0.3.31
+   Compiling serde_json v1.0.145
+   Compiling version_check v0.9.5
+   Compiling num-traits v0.2.19
+   Compiling futures-sink v0.3.31
+   Compiling slab v0.4.11
+   Compiling futures-io v0.3.31
+   Compiling aho-corasick v1.1.3
+   Compiling futures-channel v0.3.31
+   Compiling pin-utils v0.1.0
+   Compiling futures-task v0.3.31
+   Compiling unicase v2.8.1
+   Compiling fnv v1.0.7
+   Compiling thiserror v2.0.17
+   Compiling zerocopy v0.8.27
+   Compiling crossbeam-utils v0.8.21
+   Compiling anyhow v1.0.100
+   Compiling getrandom v0.3.4
+   Compiling typenum v1.19.0
+   Compiling generic-array v0.14.9
+   Compiling winnow v0.7.13
+   Compiling arrayvec v0.7.6
+   Compiling subtle v2.6.1
+   Compiling jobserver v0.1.34
+   Compiling iana-time-zone v0.1.64
+   Compiling linux-raw-sys v0.11.0
+   Compiling syn v2.0.107
+   Compiling regex-automata v0.4.13
+   Compiling pkg-config v0.3.32
+   Compiling cc v1.2.41
+   Compiling tracing-core v0.1.34
+   Compiling mio v1.0.4
+   Compiling signal-hook-registry v1.4.6
+   Compiling socket2 v0.6.1
+   Compiling parking_lot v0.12.5
+   Compiling toml_writer v1.0.4
+   Compiling unsafe-libyaml v0.2.11
+   Compiling constant_time_eq v0.3.1
+   Compiling indexmap v2.12.0
+   Compiling bitflags v2.10.0
+   Compiling toml_parser v1.0.4
+   Compiling serde_spanned v1.0.3
+   Compiling toml_datetime v0.7.3
+   Compiling arrayref v0.3.9
+   Compiling cpufeatures v0.2.17
+   Compiling pulldown-cmark v0.13.0
+   Compiling hex v0.4.3
+   Compiling either v1.15.0
+   Compiling rustix v1.1.2
+   Compiling crypto-common v0.1.6
+   Compiling block-buffer v0.10.4
+   Compiling unicode-segmentation v1.12.0
+   Compiling crunchy v0.2.4
+   Compiling rand_core v0.9.3
+   Compiling toml v0.9.8
+   Compiling digest v0.10.7
+   Compiling same-file v1.0.6
+   Compiling tiny-keccak v2.0.2
+   Compiling fastrand v2.3.0
+   Compiling walkdir v2.5.0
+   Compiling concurrent-queue v2.5.0
+   Compiling stable_deref_trait v1.2.1
+   Compiling parking v2.2.1
+   Compiling blake3 v1.8.2
+   Compiling vcpkg v0.2.15
+   Compiling ucd-trie v0.1.7
+   Compiling foldhash v0.1.5
+   Compiling event-listener v5.4.1
+   Compiling strsim v0.11.1
+   Compiling allocator-api2 v0.2.21
+   Compiling byteorder v1.5.0
+   Compiling hashbrown v0.14.5
+   Compiling pest v2.8.3
+   Compiling event-listener-strategy v0.5.4
+   Compiling getrandom v0.2.16
+   Compiling ref-cast v1.0.25
+   Compiling regex v1.12.2
+   Compiling hashbrown v0.15.5
+   Compiling encoding_rs v0.8.35
+   Compiling percent-encoding v2.3.2
+   Compiling num_cpus v1.17.0
+   Compiling ident_case v1.0.1
+   Compiling zeroize v1.8.2
+   Compiling thiserror v1.0.69
+   Compiling synstructure v0.13.2
+   Compiling serde_derive_internals v0.29.1
+   Compiling dyn-clone v1.0.20
+   Compiling httparse v1.10.1
+   Compiling base64 v0.22.1
+   Compiling typeid v1.0.3
+   Compiling rustls-pki-types v1.12.0
+   Compiling const-random-macro v0.1.16
+   Compiling dashmap v6.1.0
+   Compiling pest_meta v2.8.3
+   Compiling openssl-sys v0.9.110
+   Compiling async-lock v3.4.1
+   Compiling sha2 v0.10.9
+   Compiling inotify-sys v0.1.5
+   Compiling crossbeam-epoch v0.9.18
+   Compiling smallstr v0.3.1
+   Compiling const-random v0.1.18
+   Compiling arc-swap v1.7.1
+   Compiling tempfile v3.23.0
+   Compiling erased-serde v0.4.8
+   Compiling base64 v0.21.7
+   Compiling new_debug_unreachable v1.0.6
+   Compiling crossbeam-deque v0.8.6
+   Compiling dlv-list v0.5.2
+   Compiling pest_generator v2.8.3
+   Compiling inotify v0.11.0
+   Compiling serde_derive v1.0.228
+   Compiling tokio-macros v2.6.0
+   Compiling futures-macro v0.3.31
+   Compiling thiserror-impl v2.0.17
+   Compiling zerocopy-derive v0.8.27
+   Compiling async-trait v0.1.89
+   Compiling tracing-attributes v0.1.30
+   Compiling zerofrom-derive v0.1.6
+   Compiling ref-cast-impl v1.0.25
+   Compiling yoke-derive v0.8.0
+   Compiling zerovec-derive v0.11.1
+   Compiling thiserror-impl v1.0.69
+   Compiling schemars_derive v1.0.4
+   Compiling displaydoc v0.2.5
+   Compiling async-stream-impl v0.3.6
+   Compiling utf-8 v0.7.6
+   Compiling futures-util v0.3.31
+   Compiling notify-types v2.0.0
+   Compiling writeable v0.6.1
+   Compiling rayon-core v1.13.0
+   Compiling litemap v0.8.0
+   Compiling siphasher v1.0.1
+   Compiling notify v8.2.0
+   Compiling pest_derive v2.8.3
+   Compiling async-stream v0.3.6
+   Compiling phf_shared v0.11.3
+   Compiling ordered-multimap v0.7.3
+   Compiling hashlink v0.10.0
+   Compiling zerofrom v0.1.6
+   Compiling tracing v0.1.41
+   Compiling lazy_static v1.5.0
+   Compiling icu_normalizer_data v2.0.0
+   Compiling yoke v0.8.0
+   Compiling arraydeque v0.5.1
+   Compiling icu_properties_data v2.0.1
+   Compiling rust-ini v0.21.3
+   Compiling serde-untagged v0.1.9
+   Compiling convert_case v0.6.0
+   Compiling pathdiff v0.2.3
+   Compiling zerovec v0.11.4
+   Compiling zerotrie v0.2.2
+   Compiling yaml-rust2 v0.10.4
+   Compiling crc32fast v1.5.0
+   Compiling form_urlencoded v1.2.2
+   Compiling ring v0.17.14
+   Compiling num-integer v0.1.46
+   Compiling openssl v0.10.74
+   Compiling foreign-types-shared v0.1.1
+   Compiling rayon v1.11.0
+   Compiling openssl-macros v0.1.1
+   Compiling foreign-types v0.3.2
+   Compiling darling_core v0.20.11
+   Compiling adler2 v2.0.1
+   Compiling rustversion v1.0.22
+   Compiling tinystr v0.8.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling potential_utf v0.1.3
+   Compiling paste v1.0.15
+   Compiling utf8_iter v1.0.4
+   Compiling native-tls v0.2.14
+   Compiling untrusted v0.9.0
+   Compiling icu_locale_core v2.0.0
+   Compiling icu_collections v2.0.0
+   Compiling openssl-probe v0.1.6
+   Compiling minimal-lexical v0.2.1
+   Compiling futures-executor v0.3.31
+   Compiling bytes v1.10.1
+   Compiling chrono v0.4.42
+   Compiling serde_yaml v0.9.34+deprecated
+   Compiling rand_chacha v0.9.0
+   Compiling uuid v1.18.1
+   Compiling futures v0.3.31
+   Compiling schemars v1.0.4
+   Compiling yrs v0.24.0
+   Compiling ron v0.8.1
+   Compiling rand v0.9.2
+   Compiling json5 v0.4.1
+   Compiling icu_provider v2.0.0
+   Compiling tokio v1.48.0
+   Compiling http v1.3.1
+   Compiling icu_properties v2.0.1
+   Compiling icu_normalizer v2.0.0
+   Compiling config v0.15.18
+   Compiling darling_macro v0.20.11
+   Compiling ipnet v2.11.0
+   Compiling http-body v1.0.1
+   Compiling unicode-xid v0.2.6
+   Compiling simd-adler32 v0.3.7
+   Compiling rand_core v0.6.4
+   Compiling rustls v0.23.33
+   Compiling idna_adapter v1.2.1
+   Compiling rand v0.8.5
+   Compiling half v2.7.1
+   Compiling num-bigint v0.4.6
+   Compiling matrixmultiply v0.3.10
+   Compiling darling v0.20.11
+   Compiling idna v1.1.0
+   Compiling precomputed-hash v0.1.1
+   Compiling try-lock v0.2.5
+   Compiling atomic-waker v1.1.2
+   Compiling tower-service v0.3.3
+   Compiling want v0.3.1
+   Compiling ahash v0.8.12
+   Compiling httpdate v1.0.3
+   Compiling phf_generator v0.11.3
+   Compiling rawpointer v0.2.1
+   Compiling unicode-width v0.2.0
+   Compiling url v2.5.7
+   Compiling miniz_oxide v0.8.9
+   Compiling equator-macro v0.4.2
+   Compiling webpki-roots v1.0.3
+   Compiling num-complex v0.4.6
+   Compiling thread_local v1.1.9
+   Compiling heck v0.5.0
+   Compiling base64ct v1.8.0
+   Compiling castaway v0.2.4
+   Compiling serde_urlencoded v0.7.1
+   Compiling pem-rfc7468 v0.7.0
+   Compiling dirs-sys-next v0.1.2
+   Compiling glob v0.3.3
+   Compiling mime v0.3.17
+   Compiling bytemuck v1.24.0
+   Compiling unicode-width v0.1.14
+   Compiling dirs-next v2.0.0
+   Compiling der v0.7.10
+   Compiling equator v0.4.2
+   Compiling flate2 v1.1.4
+   Compiling http-body-util v0.1.3
+   Compiling webpki-root-certs v1.0.3
+   Compiling clang-sys v1.8.1
+   Compiling aligned-vec v0.6.4
+   Compiling ureq-proto v0.5.2
+   Compiling rustls-pemfile v2.2.0
+   Compiling socks v0.3.4
+   Compiling itertools v0.14.0
+   Compiling filetime v0.2.26
+   Compiling built v0.7.7
+   Compiling crucible-parser v0.1.0 (/home/user/crucible/crates/crucible-parser)
+   Compiling crucible-config v0.1.0 (/home/user/crucible/crates/crucible-config)
+   Compiling tokio-stream v0.1.17
+   Compiling tokio-util v0.7.16
+   Compiling portable-atomic v1.11.1
+   Compiling signal-hook v0.3.18
+   Compiling rav1e v0.7.1
+   Compiling xattr v1.6.1
+   Compiling tokio-test v0.4.4
+   Compiling h2 v0.4.12
+   Compiling tar v0.4.44
+   Compiling v_frame v0.3.9
+   Compiling term v0.7.0
+   Compiling webpki-roots v0.26.11
+   Compiling num-rational v0.4.2
+   Compiling profiling-procmacros v1.0.17
+   Compiling darling_core v0.21.3
+   Compiling onig_sys v69.9.1
+   Compiling sha1 v0.10.6
+   Compiling itertools v0.12.1
+   Compiling sync_wrapper v1.0.2
+   Compiling nom v8.0.0
+   Compiling tower-layer v0.3.3
+   Compiling bit-vec v0.6.3
+   Compiling static_assertions v1.1.0
+   Compiling fixedbitset v0.4.2
+   Compiling quick-error v2.0.1
+   Compiling bit-set v0.5.3
+   Compiling tower v0.5.2
+   Compiling profiling v1.0.17
+   Compiling petgraph v0.6.5
+   Compiling ascii-canvas v3.0.0
+   Compiling ureq v3.1.2
+   Compiling tokio-native-tls v0.3.1
+   Compiling crucible-merkle v0.1.0 (/home/user/crucible/crates/crucible-merkle)
+   Compiling string_cache v0.8.9
+   Compiling phf_macros v0.11.3
+   Compiling phf_codegen v0.11.3
+   Compiling string_cache_codegen v0.5.4
+   Compiling rand_chacha v0.3.1
+   Compiling lalrpop-util v0.20.2
+   Compiling hyper v1.7.0
+   Compiling derive_builder_core v0.20.2
+   Compiling crucible-core v0.1.0 (/home/user/crucible/crates/crucible-core)
+   Compiling itertools v0.11.0
+   Compiling maybe-rayon v0.1.1
+   Compiling nom v7.1.3
+   Compiling ena v0.14.3
+   Compiling darling_macro v0.21.3
+   Compiling fax_derive v0.2.0
+   Compiling av1-grain v0.2.5
+   Compiling ort-sys v2.0.0-rc.10
+   Compiling num-derive v0.4.2
+   Compiling arg_enum_proc_macro v0.3.4
+   Compiling psm v0.1.27
+   Compiling itertools v0.10.5
+   Compiling hyper-util v0.1.17
+   Compiling mio v0.8.11
+   Compiling simd_helpers v0.1.0
+   Compiling libloading v0.8.9
+   Compiling pico-args v0.5.0
+   Compiling noop_proc_macro v0.3.0
+   Compiling bitstream-io v2.6.0
+   Compiling data-encoding v2.9.0
+   Compiling iri-string v0.7.8
+   Compiling weezl v0.1.10
+   Compiling esaxx-rs v0.1.10
+   Compiling bindgen v0.72.1
+   Compiling heapless v0.8.0
+   Compiling imgref v1.12.0
+   Compiling option-ext v0.2.0
+   Compiling zune-core v0.4.12
+   Compiling dirs-sys v0.5.0
+   Compiling loop9 v0.1.5
+   Compiling hyper-tls v0.6.0
+   Compiling zune-jpeg v0.4.21
+   Compiling lalrpop v0.20.2
+   Compiling signal-hook-mio v0.2.5
+   Compiling cexpr v0.6.0
+   Compiling fax v0.2.6
+   Compiling darling v0.21.3
+   Compiling derive_builder_macro v0.20.2
+   Compiling phf v0.11.3
+   Compiling web_atoms v0.1.3
+   Compiling strum_macros v0.26.4
+   Compiling console v0.15.11
+   Compiling rustls-webpki v0.103.7
+   Compiling tower-http v0.6.6
+   Compiling itertools v0.13.0
+   Compiling zune-inflate v0.2.54
+   Compiling fdeflate v0.3.7
+   Compiling monostate-impl v0.1.18
+   Compiling libz-sys v1.1.22
+   Compiling hash32 v0.3.1
+   Compiling bzip2-sys v0.1.13+1.0.8
+   Compiling lz4-sys v1.11.1+lz4-1.10.0
+   Compiling stacker v0.1.22
+   Compiling zstd-sys v2.0.16+zstd.1.5.7
+   Compiling inout v0.1.4
+   Compiling pxfm v0.1.25
+   Compiling avif-serialize v0.8.6
+   Compiling lebe v0.5.3
+   Compiling tinyvec_macros v0.1.1
+   Compiling bit_field v0.10.3
+   Compiling color_quant v1.1.0
+   Compiling base64 v0.13.1
+   Compiling nu-ansi-term v0.50.3
+   Compiling rgb v0.8.52
+   Compiling macro_rules_attribute-proc_macro v0.2.2
+   Compiling mac v0.1.1
+   Compiling number_prefix v0.4.0
+   Compiling byteorder-lite v0.1.0
+   Compiling rustc-hash v2.1.1
+   Compiling futf v0.1.5
+   Compiling indicatif v0.17.11
+   Compiling spm_precompiled v0.1.4
+   Compiling gif v0.13.3
+   Compiling exr v1.73.0
+   Compiling image-webp v0.2.4
+   Compiling strum v0.26.3
+   Compiling tinyvec v1.10.0
+   Compiling macro_rules_attribute v0.2.2
+   Compiling ravif v0.11.20
+warning: unused variable: `storage_builder`
+   --> crates/crucible-core/src/parser/storage_bridge.rs:274:9
+    |
+274 |         storage_builder: &ContentAddressedStorageBuilder,
+    |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_storage_builder`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling cipher v0.4.4
+   Compiling monostate v0.1.18
+   Compiling moxcms v0.7.8
+   Compiling tokio-rustls v0.26.4
+   Compiling ureq v2.12.1
+   Compiling hyper-rustls v0.27.7
+   Compiling reqwest v0.12.24
+   Compiling png v0.18.0
+   Compiling derive_builder v0.20.2
+   Compiling crucible-enrichment v0.1.0 (/home/user/crucible/crates/crucible-enrichment)
+   Compiling tiff v0.10.3
+   Compiling serde_with_macros v3.15.0
+   Compiling dirs v6.0.0
+   Compiling compact_str v0.9.0
+   Compiling rayon-cond v0.4.0
+   Compiling qoi v0.4.1
+   Compiling ndarray v0.16.1
+   Compiling cedar-policy-core v2.4.2
+   Compiling dary_heap v0.3.8
+   Compiling sharded-slab v0.1.7
+   Compiling miette-derive v5.10.0
+   Compiling matchers v0.2.0
+   Compiling convert_case v0.7.1
+   Compiling tracing-log v0.2.0
+   Compiling unicode-normalization-alignments v0.1.12
+   Compiling smallvec v2.0.0-alpha.10
+   Compiling time-core v0.1.6
+   Compiling ciborium-io v0.2.2
+   Compiling powerfmt v0.2.0
+   Compiling unicode_categories v0.1.1
+   Compiling num-conv v0.1.0
+   Compiling ciborium-ll v0.2.2
+   Compiling time-macros v0.2.24
+   Compiling password-hash v0.5.0
+   Compiling deranged v0.5.4
+   Compiling toml_edit v0.23.7
+   Compiling tracing-subscriber v0.3.20
+   Compiling miette v5.10.0
+   Compiling derive_more-impl v2.0.1
+   Compiling async-graphql-value v7.0.17
+   Compiling image v0.25.8
+   Compiling ort v2.0.0-rc.10
+   Compiling serde_with v3.15.0
+   Compiling librocksdb-sys v0.17.3+10.4.2
+   Compiling hf-hub v0.4.3
+   Compiling rstar v0.12.2
+   Compiling unicode-normalization v0.1.24
+   Compiling tendril v0.4.3
+   Compiling rmp v0.8.14
+   Compiling rustc_lexer v0.1.0
+   Compiling smol_str v0.2.2
+   Compiling approx v0.5.1
+   Compiling approx v0.4.0
+   Compiling multer v3.1.0
+   Compiling indexmap v1.9.3
+   Compiling spin v0.9.8
+   Compiling unicode-script v0.5.7
+   Compiling dtoa v1.0.10
+   Compiling robust v1.2.0
+warning: `crucible-core` (lib) generated 1 warning
+   Compiling rust_decimal v1.39.0
+   Compiling dtoa-short v0.3.5
+   Compiling ndarray v0.15.6
+   Compiling derive_more v2.0.1
+   Compiling spade v2.15.0
+   Compiling unicode-security v0.1.2
+   Compiling geo-types v0.7.17
+   Compiling markup5ever v0.35.0
+   Compiling time v0.3.44
+   Compiling async-graphql-parser v7.0.17
+   Compiling proc-macro-crate v3.4.0
+   Compiling earcutr v0.4.3
+   Compiling ciborium v0.2.2
+   Compiling Inflector v0.11.4
+   Compiling revision-derive v0.10.0
+   Compiling match_token v0.35.0
+   Compiling cssparser-macros v0.6.1
+   Compiling lru v0.12.5
+   Compiling hmac v0.12.1
+   Compiling geographiclib-rs v0.2.5
+   Compiling float_next_after v1.0.0
+   Compiling fst v0.4.7
+   Compiling hashbrown v0.12.3
+   Compiling snap v1.1.1
+   Compiling html5ever v0.35.0
+   Compiling geo v0.28.0
+   Compiling simple_asn1 v0.6.3
+   Compiling cssparser v0.35.0
+   Compiling pbkdf2 v0.12.2
+   Compiling revision v0.10.0
+   Compiling rmp-serde v1.3.0
+   Compiling blowfish v0.9.1
+   Compiling salsa20 v0.10.2
+   Compiling roaring v0.10.12
+   Compiling quick_cache v0.6.18
+   Compiling revision-derive v0.11.0
+   Compiling pem v3.0.6
+   Compiling async-channel v2.5.0
+   Compiling onig v6.5.1
+   Compiling blake2 v0.10.6
+   Compiling noisy_float v0.2.0
+   Compiling async-graphql-derive v7.0.17
+   Compiling futures-lite v2.6.1
+   Compiling nibble_vec v0.1.0
+   Compiling vart v0.9.3
+   Compiling psl-types v2.0.11
+   Compiling futures-timer v3.0.3
+   Compiling maplit v1.0.2
+   Compiling double-ended-peekable v0.1.0
+   Compiling tokenizers v0.22.1
+   Compiling surrealdb-core v2.3.10
+   Compiling anstyle v1.0.13
+   Compiling any_ascii v0.3.3
+   Compiling humantime v2.3.0
+   Compiling trice v0.4.0
+   Compiling static_assertions_next v1.1.2
+   Compiling async-task v4.7.1
+   Compiling litrs v0.4.2
+   Compiling endian-type v0.1.2
+   Compiling urlencoding v2.1.3
+   Compiling revision v0.11.0
+   Compiling object_store v0.12.4
+   Compiling async-executor v1.13.3
+   Compiling radix_trie v0.2.1
+   Compiling dmp v0.2.3
+   Compiling lexicmp v0.1.0
+   Compiling surrealkv v0.9.3
+   Compiling document-features v0.2.11
+   Compiling ammonia v4.1.2
+   Compiling addr v0.15.6
+   Compiling argon2 v0.5.3
+   Compiling ndarray-stats v0.5.1
+   Compiling affinitypool v0.3.1
+   Compiling jsonwebtoken v9.3.1
+   Compiling ext-sort v0.1.5
+   Compiling scrypt v0.11.0
+   Compiling bcrypt v0.15.1
+   Compiling linfa-linalg v0.1.0
+   Compiling rmpv v1.3.0
+   Compiling tungstenite v0.23.0
+   Compiling nanoid v0.4.0
+   Compiling quick_cache v0.5.2
+   Compiling fuzzy-matcher v0.3.7
+   Compiling ulid v1.2.1
+   Compiling sysinfo v0.33.1
+   Compiling storekey v0.5.0
+   Compiling cedar-policy-validator v2.4.2
+   Compiling rust-stemmers v1.2.0
+   Compiling bincode v1.3.3
+   Compiling serde-content v0.1.2
+   Compiling dashmap v5.5.3
+   Compiling md-5 v0.10.6
+   Compiling semver v1.0.27
+   Compiling reblessive v0.4.3
+   Compiling deunicode v1.6.2
+   Compiling vart v0.8.1
+   Compiling surrealdb v2.3.10
+   Compiling tokio-tungstenite v0.23.1
+   Compiling crossterm v0.29.0
+   Compiling utf8parse v0.2.2
+   Compiling path-clean v1.0.1
+   Compiling anstyle-parse v0.2.7
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling colorchoice v1.0.4
+   Compiling anstyle-query v1.1.4
+   Compiling clap_lex v0.7.6
+   Compiling clap_derive v4.5.49
+   Compiling anstream v0.6.21
+   Compiling bstr v1.12.0
+   Compiling proc-macro-error-attr v1.0.4
+   Compiling rustix v0.38.44
+   Compiling syn v1.0.109
+   Compiling fastembed v5.2.0
+   Compiling cedar-policy v2.4.2
+   Compiling comfy-table v7.2.1
+   Compiling clap_builder v4.5.50
+   Compiling globset v0.4.18
+   Compiling proc-macro-error v1.0.4
+   Compiling linux-raw-sys v0.4.15
+   Compiling assert-json-diff v2.0.2
+   Compiling filedescriptor v0.8.3
+   Compiling wait-timeout v0.2.1
+   Compiling async-graphql v7.0.17
+   Compiling crucible-llm v0.1.0 (/home/user/crucible/crates/crucible-llm)
+   Compiling cast v0.3.0
+   Compiling plotters-backend v0.3.7
+   Compiling instability v0.3.9
+   Compiling crucible-pipeline v0.1.0 (/home/user/crucible/crates/crucible-pipeline)
+   Compiling nucleo-matcher v0.3.1
+   Compiling vte v0.14.1
+   Compiling plotters-svg v0.3.7
+   Compiling bytecount v0.6.9
+   Compiling heck v0.4.1
+   Compiling clap v4.5.50
+   Compiling indoc v2.0.7
+warning: unused variable: `idx`
+   --> crates/crucible-pipeline/src/note_pipeline.rs:201:14
+    |
+201 |         for (idx, section) in diff.changed_sections.iter().enumerate() {
+    |              ^^^ help: if this is intentional, prefix it with an underscore: `_idx`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling predicates-core v1.0.9
+   Compiling sdd v3.0.10
+   Compiling scc v2.4.0
+   Compiling nucleo v0.5.0
+   Compiling papergrid v0.11.0
+   Compiling tabled_derive v0.7.0
+   Compiling plotters v0.3.7
+   Compiling strip-ansi-escapes v0.2.1
+   Compiling crossterm v0.28.1
+warning: `crucible-pipeline` (lib) generated 1 warning
+   Compiling unicode-truncate v1.1.0
+   Compiling agent-client-protocol-schema v0.5.0
+   Compiling crossterm v0.27.0
+   Compiling compact_str v0.8.1
+   Compiling console v0.16.1
+   Compiling tinytemplate v1.2.1
+   Compiling serial_test_derive v3.2.0
+   Compiling fd-lock v4.0.4
+   Compiling async-broadcast v0.7.2
+   Compiling float-cmp v0.10.0
+   Compiling csv-core v0.1.13
+   Compiling difflib v0.4.0
+   Compiling termtree v0.5.1
+   Compiling doc-comment v0.3.3
+   Compiling cassowary v0.3.0
+   Compiling unit-prefix v0.5.1
+   Compiling normalize-line-endings v0.3.0
+   Compiling anes v0.1.6
+   Compiling oorandom v11.1.5
+   Compiling csv v1.4.0
+   Compiling indicatif v0.18.2
+   Compiling predicates v3.1.3
+   Compiling predicates-tree v1.0.12
+   Compiling ratatui v0.29.0
+   Compiling reedline v0.34.0
+   Compiling tabled v0.15.0
+   Compiling serial_test v3.2.0
+   Compiling nucleo-picker v0.9.0
+   Compiling ignore v0.4.25
+   Compiling colored v2.2.0
+   Compiling notify-debouncer-mini v0.7.0
+   Compiling assert_cmd v2.0.17
+   Compiling deadpool-runtime v0.1.4
+   Compiling mockall_derive v0.12.1
+   Compiling proc-macro-error-attr2 v2.0.0
+   Compiling fragile v2.0.1
+   Compiling deadpool v0.12.3
+   Compiling downcast v0.11.0
+   Compiling criterion-plot v0.6.0
+   Compiling tracing-test-macro v0.2.5
+   Compiling nix v0.27.1
+   Compiling fs2 v0.4.3
+   Compiling agent-client-protocol v0.6.0
+   Compiling wiremock v0.6.5
+   Compiling proc-macro-error2 v2.0.1
+   Compiling criterion v0.7.0
+   Compiling tungstenite v0.28.0
+   Compiling tracing-test v0.2.5
+   Compiling validator_derive v0.20.0
+   Compiling nanorand v0.7.0
+   Compiling quick-error v1.2.3
+   Compiling colored v3.0.0
+   Compiling bit-vec v0.8.0
+   Compiling file-id v0.2.3
+   Compiling similar v2.7.0
+   Compiling bit-set v0.8.0
+   Compiling notify-debouncer-full v0.5.0
+   Compiling tokio-tungstenite v0.28.0
+   Compiling rusty-fork v0.3.1
+   Compiling flume v0.11.1
+   Compiling criterion-plot v0.5.0
+   Compiling mockito v1.7.0
+   Compiling rand_xorshift v0.4.0
+   Compiling is-terminal v0.4.17
+   Compiling unarray v0.1.4
+   Compiling fixedbitset v0.5.7
+   Compiling crucible-sync v0.1.0 (/home/user/crucible/crates/crucible-sync)
+   Compiling validator v0.20.0
+   Compiling criterion v0.5.1
+   Compiling proptest v1.9.0
+   Compiling mockall v0.12.1
+   Compiling crucible-a2a v0.1.0 (/home/user/crucible/crates/crucible-a2a)
+warning: unused import: `StorageManagement`
+  --> crates/crucible-core/examples/test_mocks_demo.rs:12:55
+   |
+12 | use crucible_core::storage::traits::{BlockOperations, StorageManagement};
+   |                                                       ^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `HashAlgorithm`
+  --> crates/crucible-core/examples/content_hasher_demo.rs:22:46
+   |
+22 |     types::hashing::{FileHash, FileHashInfo, HashAlgorithm, HashError},
+   |                                              ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `stored`
+   --> crates/crucible-core/examples/content_hasher_demo.rs:225:21
+    |
+225 |         if let Some(stored) = lookup_result.found_files.get(path) {
+    |                     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_stored`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `change_detector`
+   --> crates/crucible-pipeline/tests/pipeline_integration_tests.rs:433:20
+    |
+433 |     let (pipeline, change_detector, _merkle_store, enrichment_service, storage) =
+    |                    ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_change_detector`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `change_detector`
+   --> crates/crucible-pipeline/tests/pipeline_integration_tests.rs:478:20
+    |
+478 |     let (pipeline, change_detector, _merkle_store, enrichment_service, storage) =
+    |                    ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_change_detector`
+
+warning: unused variable: `merkle_store`
+   --> crates/crucible-pipeline/tests/pipeline_integration_tests.rs:655:38
+    |
+655 |     let (pipeline, _change_detector, merkle_store, enrichment_service, storage) =
+    |                                      ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_merkle_store`
+
+warning: unused variable: `storage`
+   --> crates/crucible-pipeline/tests/pipeline_integration_tests.rs:655:72
+    |
+655 |     let (pipeline, _change_detector, merkle_store, enrichment_service, storage) =
+    |                                                                        ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_storage`
+
+warning: unused variable: `storage`
+   --> crates/crucible-pipeline/tests/pipeline_integration_tests.rs:696:72
+    |
+696 |     let (pipeline, _change_detector, merkle_store, enrichment_service, storage) =
+    |                                                                        ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_storage`
+
+warning: unused variable: `initial_enrich_count`
+   --> crates/crucible-pipeline/tests/pipeline_integration_tests.rs:711:9
+    |
+711 |     let initial_enrich_count = enrichment_service.enrich_with_tree_count();
+    |         ^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_initial_enrich_count`
+
+warning: methods `set_simulate_errors`, `add_file_state`, and `clear` are never used
+  --> crates/crucible-pipeline/tests/pipeline_integration_tests.rs:46:8
+   |
+35 | impl MockChangeDetectionStore {
+   | ----------------------------- methods in this implementation
+...
+46 |     fn set_simulate_errors(&self, enabled: bool, message: &str) {
+   |        ^^^^^^^^^^^^^^^^^^^
+...
+52 |     fn add_file_state(&self, path: &str, file_state: FileState) {
+   |        ^^^^^^^^^^^^^^
+...
+57 |     fn clear(&self) {
+   |        ^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `set_simulate_errors`, `add_tree`, and `clear` are never used
+   --> crates/crucible-pipeline/tests/pipeline_integration_tests.rs:138:8
+    |
+127 | impl MockMerkleStore {
+    | -------------------- methods in this implementation
+...
+138 |     fn set_simulate_errors(&self, enabled: bool, message: &str) {
+    |        ^^^^^^^^^^^^^^^^^^^
+...
+144 |     fn add_tree(&self, id: &str, tree: HybridMerkleTree) {
+    |        ^^^^^^^^
+...
+149 |     fn clear(&self) {
+    |        ^^^^^
+
+warning: method `clear` is never used
+   --> crates/crucible-pipeline/tests/pipeline_integration_tests.rs:268:8
+    |
+242 | impl MockEnrichedNoteStore {
+    | -------------------------- method in this implementation
+...
+268 |     fn clear(&self) {
+    |        ^^^^^
+
+warning: unused import: `tokio::fs`
+   --> crates/crucible-core/src/hashing/file_hasher.rs:300:9
+    |
+300 |     use tokio::fs;
+    |         ^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::collections::HashMap`
+   --> crates/crucible-core/src/hashing/sha256.rs:129:9
+    |
+129 |     use std::collections::HashMap;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `crucible-core` (example "test_mocks_demo") generated 1 warning (run `cargo fix --example "test_mocks_demo"` to apply 1 suggestion)
+warning: unused import: `super::*`
+   --> crates/crucible-pipeline/src/note_pipeline.rs:366:9
+    |
+366 |     use super::*;
+    |         ^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `tempfile::NamedTempFile`
+   --> crates/crucible-pipeline/src/note_pipeline.rs:370:9
+    |
+370 |     use tempfile::NamedTempFile;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::io::Write`
+   --> crates/crucible-pipeline/src/note_pipeline.rs:371:9
+    |
+371 |     use std::io::Write;
+    |         ^^^^^^^^^^^^^^
+
+warning: unused variable: `change_detector`
+   --> crates/crucible-pipeline/src/note_pipeline.rs:377:13
+    |
+377 |         let change_detector = Arc::new(InMemoryChangeDetectionStore::new());
+    |             ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_change_detector`
+
+warning: unused variable: `merkle_store`
+   --> crates/crucible-pipeline/src/note_pipeline.rs:378:13
+    |
+378 |         let merkle_store = Arc::new(InMemoryMerkleStore::new());
+    |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_merkle_store`
+
+warning: `crucible-pipeline` (test "pipeline_integration_tests") generated 9 warnings
+warning: unused variable: `updates`
+   --> crates/crucible-sync/src/note.rs:178:13
+    |
+178 |         let updates = doc1.get_updates_since(sv.clone()).await.unwrap();
+    |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_updates`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `crucible-core` (example "content_hasher_demo") generated 2 warnings (run `cargo fix --example "content_hasher_demo"` to apply 1 suggestion)
+warning: `crucible-pipeline` (lib test) generated 6 warnings (1 duplicate) (run `cargo fix --lib -p crucible-pipeline --tests` to apply 3 suggestions)
+warning: unused import: `crucible_parser::types::ParsedNote`
+ --> crates/crucible-parser/tests/heading_hierarchy.rs:7:5
+  |
+7 | use crucible_parser::types::ParsedNote;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `PathBuf`
+ --> crates/crucible-parser/tests/heading_hierarchy.rs:8:23
+  |
+8 | use std::path::{Path, PathBuf};
+  |                       ^^^^^^^
+
+warning: unused variable: `parsed`
+   --> crates/crucible-parser/tests/wikilink_edge_cases.rs:131:9
+    |
+131 |     let parsed = parse_note(content, "test.md").await.unwrap();
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_parsed`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ListType`
+   --> crates/crucible-parser/src/block_hasher.rs:228:38
+    |
+228 |     use crate::types::{ASTBlockType, ListType};
+    |                                      ^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `crucible-sync` (lib test) generated 1 warning
+warning: unused variable: `errors`
+   --> crates/crucible-parser/src/enhanced_tags.rs:605:13
+    |
+605 |         let errors = extension.parse(content, &mut doc_content).await;
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_errors`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `block`
+    --> crates/crucible-core/src/hashing/block_hasher.rs:1522:23
+     |
+1522 |             .map(|(i, block)| {
+     |                       ^^^^^ help: if this is intentional, prefix it with an underscore: `_block`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `i`
+    --> crates/crucible-core/src/hashing/block_hasher.rs:1676:14
+     |
+1676 |         for (i, (hashed_block, original_block)) in
+     |              ^
+     |
+help: if this is intentional, prefix it with an underscore
+     |
+1676 |         for (_i, (hashed_block, original_block)) in
+     |              +
+help: you might have meant to pattern match on the similarly named constant `MAX_SERIALIZATION_SIZE`
+     |
+1676 -         for (i, (hashed_block, original_block)) in
+1676 +         for (hashing::block_hasher::MAX_SERIALIZATION_SIZE, (hashed_block, original_block)) in
+     |
+
+warning: unused variable: `block`
+    --> crates/crucible-core/src/hashing/block_hasher.rs:1823:17
+     |
+1823 |         for (i, block) in blocks.iter().enumerate() {
+     |                 ^^^^^ help: if this is intentional, prefix it with an underscore: `_block`
+
+warning: unused variable: `is_valid`
+    --> crates/crucible-core/src/hashing/block_hasher.rs:1824:17
+     |
+1824 |             let is_valid = hasher
+     |                 ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_is_valid`
+
+warning: `crucible-parser` (test "heading_hierarchy") generated 2 warnings (run `cargo fix --test "heading_hierarchy"` to apply 2 suggestions)
+warning: `crucible-parser` (test "wikilink_edge_cases") generated 1 warning
+warning: unused variable: `coordinator`
+    --> crates/crucible-core/src/parser/coordinator.rs:1086:13
+     |
+1086 |         let coordinator = factory::create_coordinator_with_config(
+     |             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_coordinator`
+
+warning: unused variable: `storage_builder`
+   --> crates/crucible-core/src/parser/storage_bridge.rs:274:9
+    |
+274 |         storage_builder: &ContentAddressedStorageBuilder,
+    |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_storage_builder`
+
+warning: unused variable: `now`
+    --> crates/crucible-core/src/storage/eav_graph_traits.rs:1425:13
+     |
+1425 |         let now = Utc::now();
+     |             ^^^ help: if this is intentional, prefix it with an underscore: `_now`
+
+warning: unused variable: `hasher`
+   --> crates/crucible-core/src/storage/merkle.rs:779:13
+    |
+779 |         let hasher = MockHasher::new();
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_hasher`
+
+warning: unused variable: `hasher`
+    --> crates/crucible-core/src/storage/merkle.rs:1102:13
+     |
+1102 |         let hasher = MockHasher::new();
+     |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_hasher`
+
+warning: unused variable: `blocks2`
+    --> crates/crucible-core/src/storage/merkle.rs:1156:13
+     |
+1156 |         let blocks2: Vec<HashedBlock> = vec![]; // Empty
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_blocks2`
+
+warning: field `name` is never read
+   --> crates/crucible-core/src/storage/builder.rs:561:9
+    |
+560 |     struct MockStorageBackend {
+    |            ------------------ field in this struct
+561 |         name: String,
+    |         ^^^^
+    |
+    = note: `MockStorageBackend` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: comparison is useless due to type limits
+  --> crates/crucible-core/src/crdt.rs:51:17
+   |
+51 |         assert!(manager.get_document().client_id() >= 0);
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_comparisons)]` on by default
+
+warning: comparison is useless due to type limits
+  --> crates/crucible-core/src/crdt.rs:57:17
+   |
+57 |         assert!(manager.get_document().client_id() >= 0);
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: comparison is useless due to type limits
+    --> crates/crucible-core/src/storage/memory.rs:1447:17
+     |
+1447 |         assert!(evicted_count >= 0);
+     |                 ^^^^^^^^^^^^^^^^^^
+
+warning: `crucible-parser` (lib test) generated 2 warnings (run `cargo fix --lib -p crucible-parser --tests` to apply 1 suggestion)
+warning: `crucible-core` (lib test) generated 16 warnings (run `cargo fix --lib -p crucible-core --tests` to apply 3 suggestions)
+   Compiling rocksdb v0.23.0
+   Compiling crucible-surrealdb v0.1.0 (/home/user/crucible/crates/crucible-surrealdb)
+warning: unused import: `RecordId`
+  --> crates/crucible-surrealdb/src/merkle_persistence.rs:14:32
+   |
+14 | use crate::{DbError, DbResult, RecordId, SurrealClient};
+   |                                ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `crucible_core::parser::ParsedNote`
+  --> crates/crucible-surrealdb/src/merkle_persistence.rs:16:5
+   |
+16 | use crucible_core::parser::ParsedNote;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crucible_enrichment::{
+         }`
+  --> crates/crucible-surrealdb/src/lib.rs:96:9
+   |
+96 |   pub use crucible_enrichment::{
+   |  _________^
+97 | | };
+   | |_^
+
+warning: value assigned to `last_error` is never read
+   --> crates/crucible-surrealdb/src/transaction_consumer.rs:495:17
+    |
+495 |         let mut last_error = None;
+    |                 ^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `last_error` is never read
+   --> crates/crucible-surrealdb/src/transaction_consumer.rs:765:21
+    |
+765 |             let mut last_error = None;
+    |                     ^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: unused import: `crucible_core::merkle::MerkleStore`
+    --> crates/crucible-surrealdb/src/eav_graph/ingest.rs:1039:17
+     |
+1039 |             use crucible_core::merkle::MerkleStore;
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `merge_state_with_pending` is never used
+   --> crates/crucible-surrealdb/src/batch_aware_client.rs:118:14
+    |
+ 87 | impl BatchAwareSurrealClient {
+    | ---------------------------- method in this implementation
+...
+118 |     async fn merge_state_with_pending(
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: methods `add_embed_variant_metadata`, `get_render_hints`, `extract_external_url_metadata`, and `extract_youtube_video_id` are never used
+    --> crates/crucible-surrealdb/src/eav_graph/ingest.rs:674:8
+     |
+ 134 | impl<'a> NoteIngestor<'a> {
+     | ------------------------- methods in this implementation
+...
+ 674 |     fn add_embed_variant_metadata(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 864 |     fn get_render_hints(&self, wikilink: &crucible_core::parser::Wikilink) -> serde_json::Value {
+     |        ^^^^^^^^^^^^^^^^
+...
+1952 |     fn extract_external_url_metadata(
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2028 |     fn extract_youtube_video_id(&self, url: &str) -> Option<String> {
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `entity_record_id` is never used
+  --> crates/crucible-surrealdb/src/hash_lookup.rs:72:4
+   |
+72 | fn entity_record_id(relative_path: &str) -> String {
+   |    ^^^^^^^^^^^^^^^^
+
+warning: function `ensure_tag_exists` is never used
+   --> crates/crucible-surrealdb/src/kiln_integration.rs:795:10
+    |
+795 | async fn ensure_tag_exists(client: &SurrealClient, tag_name: &str) -> Result<()> {
+    |          ^^^^^^^^^^^^^^^^^
+
+warning: function `normalize_tag_name` is never used
+   --> crates/crucible-surrealdb/src/kiln_integration.rs:810:4
+    |
+810 | fn normalize_tag_name(tag: &str) -> String {
+    |    ^^^^^^^^^^^^^^^^^^
+
+warning: field `received_at` is never read
+   --> crates/crucible-surrealdb/src/transaction_consumer.rs:144:5
+    |
+141 | struct BatchableTransaction {
+    |        -------------------- field in this struct
+...
+144 |     received_at: Instant,
+    |     ^^^^^^^^^^^
+    |
+    = note: `BatchableTransaction` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `config` is never read
+   --> crates/crucible-surrealdb/src/transaction_queue.rs:262:5
+    |
+254 | pub struct TransactionQueue {
+    |            ---------------- field in this struct
+...
+262 |     config: TransactionQueueConfig,
+    |     ^^^^^^
+
+warning: creating a shared reference to mutable static
+   --> crates/crucible-surrealdb/src/metrics.rs:443:9
+    |
+443 |         GLOBAL_METRICS.as_ref().unwrap().clone()
+    |         ^^^^^^^^^^^^^^^^^^^^^^^ shared reference to mutable static
+    |
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+    = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a mutable reference is created for it while the shared reference lives
+    = note: `#[warn(static_mut_refs)]` (part of `#[warn(rust_2024_compatibility)]`) on by default
+
+warning: unused variable: `storage`
+    --> crates/crucible-surrealdb/src/content_addressed_storage.rs:1498:13
+     |
+1498 |         let storage = create_test_storage().await;
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_storage`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `entity_id`
+    --> crates/crucible-surrealdb/src/eav_graph/ingest.rs:2952:13
+     |
+2952 |         let entity_id = ingestor.ingest(&doc, "notes/test-tags.md").await.unwrap();
+     |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_entity_id`
+
+warning: unused variable: `expected_type`
+    --> crates/crucible-surrealdb/src/eav_graph/ingest.rs:4917:26
+     |
+4917 |         for (i, (target, expected_type, _ext)) in embed_types.iter().enumerate() {
+     |                          ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected_type`
+
+warning: unused variable: `expected_type`
+    --> crates/crucible-surrealdb/src/eav_graph/ingest.rs:5382:26
+     |
+5382 |         for (i, (target, expected_type, expected_metadata)) in content_cases.iter().enumerate() {
+     |                          ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected_type`
+
+warning: unused variable: `expected_metadata`
+    --> crates/crucible-surrealdb/src/eav_graph/ingest.rs:5382:41
+     |
+5382 |         for (i, (target, expected_type, expected_metadata)) in content_cases.iter().enumerate() {
+     |                                         ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected_metadata`
+
+warning: unused variable: `expected_embed_type`
+    --> crates/crucible-surrealdb/src/eav_graph/ingest.rs:5798:23
+     |
+5798 |         for (i, (url, expected_embed_type, is_external)) in test_cases.iter().enumerate() {
+     |                       ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected_embed_type`
+
+warning: unused variable: `is_external`
+    --> crates/crucible-surrealdb/src/eav_graph/ingest.rs:5798:44
+     |
+5798 |         for (i, (url, expected_embed_type, is_external)) in test_cases.iter().enumerate() {
+     |                                            ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_is_external`
+
+warning: unused variable: `expected_embed_type`
+    --> crates/crucible-surrealdb/src/eav_graph/ingest.rs:5944:26
+     |
+5944 |         for (i, (target, expected_embed_type)) in metadata_test_cases.iter().enumerate() {
+     |                          ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected_embed_type`
+
+warning: unused variable: `expected_embed_type`
+    --> crates/crucible-surrealdb/src/eav_graph/ingest.rs:6062:28
+     |
+6062 |         for (i, (filename, expected_embed_type)) in case_test_cases.iter().enumerate() {
+     |                            ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected_embed_type`
+
+warning: unused variable: `expected_embed_type`
+    --> crates/crucible-surrealdb/src/eav_graph/ingest.rs:6564:38
+     |
+6564 |             let (alias, heading_ref, expected_embed_type) = if i < 5 {
+     |                                      ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected_embed_type`
+
+warning: unused variable: `expected_embed_type_or_alias`
+    --> crates/crucible-surrealdb/src/eav_graph/ingest.rs:6608:26
+     |
+6608 |         for (i, (target, expected_embed_type_or_alias)) in unicode_test_cases.iter().enumerate() {
+     |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected_embed_type_or_alias`
+
+warning: unused variable: `expected_embed_type`
+    --> crates/crucible-surrealdb/src/eav_graph/ingest.rs:6783:26
+     |
+6783 |         for (i, (target, expected_embed_type)) in edge_case_test_cases.iter().enumerate() {
+     |                          ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected_embed_type`
+
+warning: unused variable: `entity_id`
+   --> crates/crucible-surrealdb/src/eav_graph/relation_tag_edge_case_tests.rs:433:13
+    |
+433 |         let entity_id = ingestor.ingest(&doc, "test.md").await.unwrap();
+    |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_entity_id`
+
+warning: unused variable: `entity_id1`
+   --> crates/crucible-surrealdb/src/eav_graph/relation_tag_edge_case_tests.rs:482:13
+    |
+482 |         let entity_id1 = ingestor.ingest(&doc1, "doc1.md").await.unwrap();
+    |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_entity_id1`
+
+warning: unused variable: `entity_id2`
+   --> crates/crucible-surrealdb/src/eav_graph/relation_tag_edge_case_tests.rs:484:13
+    |
+484 |         let entity_id2 = ingestor.ingest(&doc2, "doc2.md").await.unwrap();
+    |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_entity_id2`
+
+warning: unused variable: `entity1`
+   --> crates/crucible-surrealdb/src/eav_graph/relation_tag_edge_case_tests.rs:620:13
+    |
+620 |         let entity1 = ingestor.ingest(&doc1, "doc1.md").await.unwrap();
+    |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_entity1`
+
+warning: unused variable: `doc_id`
+    --> crates/crucible-surrealdb/src/kiln_integration.rs:2283:13
+     |
+2283 |         let doc_id = store_parsed_document(&client, &doc, &kiln_root)
+     |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_doc_id`
+
+   Compiling crucible-cli v0.1.0 (/home/user/crucible/crates/crucible-cli)
+   Compiling crucible-tools v0.1.0 (/home/user/crucible/crates/crucible-tools)
+   Compiling crucible-watch v0.1.0 (/home/user/crucible/crates/crucible-watch)
+warning: unused variable: `results`
+   --> crates/crucible-surrealdb/src/query.rs:717:13
+    |
+717 |         let results = execute_query(&db, query).await.unwrap();
+    |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_results`
+
+warning: unused import: `std::path::Path`
+ --> crates/crucible-cli/src/acp/client.rs:6:5
+  |
+6 | use std::path::Path;
+  |     ^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `ChildStdin` and `ChildStdout`
+ --> crates/crucible-cli/src/acp/client.rs:9:29
+  |
+9 | use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+  |                             ^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused imports: `error` and `warn`
+  --> crates/crucible-cli/src/acp/client.rs:11:22
+   |
+11 | use tracing::{debug, error, info, warn};
+   |                      ^^^^^        ^^^^
+
+warning: unused import: `error`
+ --> crates/crucible-cli/src/commands/chat.rs:8:15
+  |
+8 | use tracing::{error, info};
+  |               ^^^^^
+
+warning: unused variable: `warnings`
+   --> crates/crucible-watch/src/file_scanner.rs:515:13
+    |
+515 |         let warnings = if cfg!(target_os = "windows") {
+    |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_warnings`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `batch_id`
+   --> crates/crucible-watch/src/message_channel_infrastructure.rs:319:25
+    |
+319 |             if let Some(batch_id) = batch_id {
+    |                         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_batch_id`
+
+warning: unused variable: `core`
+   --> crates/crucible-cli/src/commands/chat.rs:123:5
+    |
+123 |     core: Arc<CrucibleCoreFacade>,
+    |     ^^^^ help: if this is intentional, prefix it with an underscore: `_core`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `client`
+   --> crates/crucible-cli/src/commands/chat.rs:124:5
+    |
+124 |     client: &CrucibleAcpClient,
+    |     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_client`
+
+warning: unused variable: `no_context`
+   --> crates/crucible-cli/src/commands/chat.rs:126:5
+    |
+126 |     no_context: bool,
+    |     ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_no_context`
+
+warning: unused variable: `context_size`
+   --> crates/crucible-cli/src/commands/chat.rs:127:5
+    |
+127 |     context_size: Option<usize>,
+    |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_context_size`
+
+warning: variable does not need to be mutable
+   --> crates/crucible-cli/src/commands/chat.rs:131:9
+    |
+131 |     let mut current_mode = initial_mode;
+    |         ----^^^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `result_receiver`
+   --> crates/crucible-surrealdb/src/transaction_queue.rs:457:13
+    |
+457 |         let result_receiver = queue.enqueue(transaction).await.unwrap();
+    |             ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_result_receiver`
+
+warning: unused variable: `format`
+   --> crates/crucible-cli/src/commands/storage.rs:335:5
+    |
+335 |     format: String,
+    |     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_format`
+
+warning: unused variable: `backup_data`
+   --> crates/crucible-cli/src/commands/storage.rs:350:9
+    |
+350 |     let backup_data: serde_json::Value =
+    |         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_backup_data`
+
+warning: unused variable: `storage`
+   --> crates/crucible-cli/src/commands/storage.rs:359:9
+    |
+359 |     let storage = create_storage_backend(&config)?;
+    |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_storage`
+
+warning: unused variable: `storage`
+   --> crates/crucible-cli/src/commands/storage.rs:397:5
+    |
+397 |     storage: &Arc<dyn ContentAddressedStorage>,
+    |     ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_storage`
+
+warning: unused variable: `storage`
+   --> crates/crucible-cli/src/commands/storage.rs:413:5
+    |
+413 |     storage: &Arc<dyn ContentAddressedStorage>,
+    |     ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_storage`
+
+warning: unused variable: `storage`
+   --> crates/crucible-cli/src/commands/storage.rs:421:5
+    |
+421 |     storage: &Arc<dyn ContentAddressedStorage>,
+    |     ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_storage`
+
+warning: unused variable: `stored_hash`
+   --> crates/crucible-watch/src/change_detector.rs:570:22
+    |
+570 |                 Some(stored_hash) => {
+    |                      ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_stored_hash`
+
+warning: unused variable: `show_unchanged`
+   --> crates/crucible-cli/src/commands/diff.rs:195:56
+    |
+195 | fn output_plain_format(changes: &[EnhancedTreeChange], show_unchanged: bool) {
+    |                                                        ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_show_unchanged`
+
+warning: unused variable: `show_unchanged`
+   --> crates/crucible-cli/src/commands/diff.rs:323:5
+    |
+323 |     show_unchanged: bool,
+    |     ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_show_unchanged`
+
+warning: using `.clone()` on a double reference, which returns `&str` instead of cloning the inner type
+    --> crates/crucible-surrealdb/src/eav_graph/ingest.rs:5828:55
+     |
+5828 |             .map(|(url, embed_type, is_external)| (url.clone(), (*embed_type, *is_external)))
+     |                                                       ^^^^^^^^
+     |
+     = note: `#[warn(suspicious_double_ref_op)]` on by default
+
+warning: unused variable: `by_backend`
+   --> crates/crucible-cli/src/commands/storage.rs:430:45
+    |
+430 | fn output_stats_table(stats: &StorageStats, by_backend: bool, deduplication: bool) -> Result<()> {
+    |                                             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_by_backend`
+
+warning: unused variable: `deduplication`
+   --> crates/crucible-cli/src/commands/storage.rs:430:63
+    |
+430 | fn output_stats_table(stats: &StorageStats, by_backend: bool, deduplication: bool) -> Result<()> {
+    |                                                               ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_deduplication`
+
+warning: `crucible-surrealdb` (lib) generated 14 warnings (run `cargo fix --lib -p crucible-surrealdb` to apply 3 suggestions)
+warning: methods `file_info_to_hash_info` and `hash_info_to_file_info` are never used
+   --> crates/crucible-watch/src/change_detector.rs:184:8
+    |
+130 | impl ChangeDetector {
+    | ------------------- methods in this implementation
+...
+184 |     fn file_info_to_hash_info(&self, file_info: &FileInfo) -> FileHashInfo {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+...
+198 |     fn hash_info_to_file_info(&self, file_hash_info: FileHashInfo, root_path: &Path) -> FileInfo {
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `name` is never read
+  --> crates/crucible-watch/src/handlers/composite.rs:61:5
+   |
+59 | pub struct HandlerState {
+   |            ------------ field in this struct
+60 |     /// Handler name
+61 |     name: String,
+   |     ^^^^
+   |
+   = note: `HandlerState` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `processing_events` is never read
+  --> crates/crucible-watch/src/message_channel_infrastructure.rs:52:5
+   |
+41 | struct ChannelState {
+   |        ------------ field in this struct
+...
+52 |     processing_events: HashMap<uuid::Uuid, Instant>,
+   |     ^^^^^^^^^^^^^^^^^
+   |
+   = note: `ChannelState` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: missing documentation for a struct field
+  --> crates/crucible-watch/src/error.rs:62:23
+   |
+62 |     ValidationError { field: String, message: String },
+   |                       ^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> crates/crucible-watch/src/lib.rs:38:9
+   |
+38 | #![warn(missing_docs)]
+   |         ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/crucible-watch/src/error.rs:62:38
+   |
+62 |     ValidationError { field: String, message: String },
+   |                                      ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/crucible-watch/src/error.rs:67:9
+   |
+67 |         path: std::path::PathBuf,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/crucible-watch/src/error.rs:68:9
+   |
+68 |         error: String,
+   |         ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/crucible-watch/src/types.rs:913:5
+    |
+913 |     pub total_files: usize,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/crucible-watch/src/types.rs:914:5
+    |
+914 |     pub successful_files: usize,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/crucible-watch/src/types.rs:915:5
+    |
+915 |     pub skipped_files: usize,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/crucible-watch/src/types.rs:916:5
+    |
+916 |     pub error_count: usize,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/crucible-watch/src/types.rs:917:5
+    |
+917 |     pub scan_duration: std::time::Duration,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/crucible-watch/src/types.rs:918:5
+    |
+918 |     pub total_size: u64,
+    |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/crucible-watch/src/types.rs:919:5
+    |
+919 |     pub success_rate: f64,
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/crucible-watch/src/types.rs:925:5
+    |
+925 |     pub path: PathBuf,
+    |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/crucible-watch/src/types.rs:926:5
+    |
+926 |     pub reason: SkipType,
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/crucible-watch/src/types.rs:951:5
+    |
+951 |     pub path: PathBuf,
+    |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/crucible-watch/src/types.rs:952:5
+    |
+952 |     pub error_type: ScanErrorType,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `print_enriched_prompt` is never used
+   --> crates/crucible-cli/src/commands/chat.rs:170:4
+    |
+170 | fn print_enriched_prompt(prompt: &str) {
+    |    ^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: missing documentation for a struct field
+   --> crates/crucible-watch/src/types.rs:953:5
+    |
+953 |     pub message: String,
+    |     ^^^^^^^^^^^^^^^^^^^
+
+warning: function `format_bytes` is never used
+   --> crates/crucible-cli/src/commands/diff.rs:439:4
+    |
+439 | fn format_bytes(bytes: u64) -> String {
+    |    ^^^^^^^^^^^^
+
+warning: function `extract_snippet` is never used
+   --> crates/crucible-cli/src/commands/search.rs:515:4
+    |
+515 | fn extract_snippet(content: &str, query: &str, include_full: bool) -> String {
+    |    ^^^^^^^^^^^^^^^
+
+warning: function `calculate_relevance_score` is never used
+   --> crates/crucible-cli/src/commands/search.rs:544:4
+    |
+544 | fn calculate_relevance_score(content: &str, query_lower: &str) -> f64 {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated associated function `crucible_surrealdb::eav_graph::NoteIngestor::<'a>::with_merkle_persistence`: Use `with_merkle_store` instead for better abstraction
+   --> crates/crucible-surrealdb/tests/merkle_integration_tests.rs:347:34
+    |
+347 |     let ingestor = NoteIngestor::with_merkle_persistence(&store, persistence.clone());
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: unused import: `std::collections::HashMap`
+   --> crates/crucible-tools/src/kiln_tools.rs:345:13
+    |
+345 |         use std::collections::HashMap;
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `super::*`
+   --> crates/crucible-cli/src/acp/context.rs:145:9
+    |
+145 |     use super::*;
+    |         ^^^^^^^^
+
+warning: unused import: `super::super::*`
+   --> crates/crucible-cli/src/acp/tests.rs:130:9
+    |
+130 |     use super::super::*;
+    |         ^^^^^^^^^^^^^^^
+
+warning: `crucible-watch` (lib) generated 22 warnings
+warning: unused variable: `client`
+   --> crates/crucible-cli/src/acp/tests.rs:153:13
+    |
+153 |         let client = CrucibleAcpClient::new(agent, true);
+    |             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_client`
+
+warning: unused variable: `client_readonly`
+   --> crates/crucible-cli/src/acp/tests.rs:165:13
+    |
+165 |         let client_readonly = CrucibleAcpClient::new(agent.clone(), true);
+    |             ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_client_readonly`
+
+warning: unused variable: `client_write`
+   --> crates/crucible-cli/src/acp/tests.rs:166:13
+    |
+166 |         let client_write = CrucibleAcpClient::new(agent, false);
+    |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_client_write`
+
+warning: unused variable: `style`
+   --> crates/crucible-cli/src/commands/repl/highlighter.rs:389:45
+    |
+389 |         let has_string = parts.iter().any(|(style, text)| text.contains("'test'"));
+    |                                             ^^^^^ help: if this is intentional, prefix it with an underscore: `_style`
+
+warning: unused variable: `path`
+   --> crates/crucible-cli/src/commands/secure_filesystem.rs:458:40
+    |
+458 |     fn is_absolute_path_allowed(&self, path: &Path) -> bool {
+    |                                        ^^^^ help: if this is intentional, prefix it with an underscore: `_path`
+
+warning: `crucible-cli` (lib) generated 23 warnings (run `cargo fix --lib -p crucible-cli` to apply 5 suggestions)
+warning: `crucible-watch` (lib test) generated 22 warnings (22 duplicates)
+warning: unused import: `Level`
+ --> crates/crucible-cli/src/main.rs:4:41
+  |
+4 | use tracing::{debug, error, info, warn, Level};
+  |                                         ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `types::hashing::HashAlgorithm`
+  --> crates/crucible-cli/src/main.rs:10:21
+   |
+10 | use crucible_core::{types::hashing::HashAlgorithm, CrucibleCore};
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `timeout_err`
+  --> crates/crucible-cli/src/main.rs:95:25
+   |
+95 |                     Err(timeout_err) => {
+   |                         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_timeout_err`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+

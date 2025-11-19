@@ -28,6 +28,7 @@
 
 pub mod agent;
 pub mod change_detection;
+pub mod knowledge;
 pub mod parser;
 pub mod storage;
 pub mod tools;
@@ -35,6 +36,7 @@ pub mod tools;
 // Re-export key traits
 pub use agent::AgentProvider;
 pub use change_detection::{ChangeDetector, ContentHasher, HashLookupStorage};
+pub use knowledge::{KnowledgeRepository, NoteMetadata};
 pub use parser::MarkdownParser;
 pub use storage::Storage;
 pub use tools::ToolExecutor;
