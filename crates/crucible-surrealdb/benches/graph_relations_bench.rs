@@ -6,8 +6,9 @@
 //! - Deterministic chunk ID generation
 
 use chrono::Utc;
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use crucible_core::parser::ParsedNote;
+use std::hint::black_box;
 use crucible_surrealdb::{
     kiln_integration::{
         get_document_embeddings, initialize_kiln_schema, retrieve_parsed_document, store_embedding,
@@ -89,7 +90,7 @@ fn bench_graph_traversal(c: &mut Criterion) {
                     // Store embeddings
                     for i in 0..count {
                         let vector = vec![0.1 * i as f32; 384];
-                        store_embedding(&client, &note_id, vector, "bench-model", 512, i)
+                        store_embedding(&client, &note_id, vector, "bench-model", 512, i, None, None)
                             .await
                             .unwrap();
                     }
@@ -187,6 +188,8 @@ fn bench_embedding_storage(c: &mut Criterion) {
                             "bench-model",
                             512,
                             chunk_idx,
+                            None,
+                            None,
                         )
                         .await;
                         black_box(result.unwrap());
