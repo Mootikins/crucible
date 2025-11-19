@@ -42,8 +42,8 @@ uuid = { workspace = true }
 # System information
 num_cpus = "1.16"
 
-# SurrealDB for database operations
-crucible-surrealdb = { workspace = true }
+# SurrealDB for database operations (moved to dev-dependencies for testing)
+# crucible-surrealdb = { workspace = true }
 
 # HTTP client for external integrations
 reqwest = { workspace = true }
@@ -86,12 +86,17 @@ ndarray = "0.16"
 # Additional dependencies for migration
 futures = "0.3"
 
+# Search tools
+grep = "0.3"
+ignore = "0.4"
+
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3.8"
 tracing-subscriber = "0.3"
 tokio-util = "0.7"
 encoding_rs = "0.8"
+crucible-surrealdb = { workspace = true }
 
 [features]
 default = ["embeddings"]
