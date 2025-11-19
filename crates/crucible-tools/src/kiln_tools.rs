@@ -5,8 +5,16 @@
 //! parsing system via the `KilnRepository` to provide kiln data access.
 
 use crate::kiln_operations::KilnRepository;
-use crate::types::{ToolError, ToolFunction, ToolResult};
+use crate::types::{
+    get_embedding_provider_from_context, get_kiln_path_from_context,
+    get_knowledge_repo_from_context, ToolDefinition, ToolError, ToolFunction, ToolResult,
+};
+use grep::regex::RegexMatcher;
+use grep::searcher::sinks::UTF8;
+use grep::searcher::Searcher;
+use ignore::WalkBuilder;
 use serde_json::{json, Value};
+use std::path::Path;
 use tracing::info;
 
 /// Search notes by frontmatter properties - Implementation using Phase 1A parsing
@@ -334,6 +342,248 @@ pub fn list_tags() -> ToolFunction {
     }
 }
 
+/// Read a note by name - Definition
+pub fn read_note_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "read_note".to_string(),
+        description: "Read the content and metadata of a note by its name".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "The name of the note to read (including extension)"
+                }
+            },
+            "required": ["name"]
+        }),
+        enabled: true,
+    }
+}
+
+/// Read a note by name - Implementation using KnowledgeRepository
+#[must_use]
+pub fn read_note() -> ToolFunction {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+        Box::pin(async move {
+            let start_time = std::time::Instant::now();
+
+            let name = parameters
+                .get("name")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| ToolError::Other("Missing 'name' parameter".to_string()))?;
+
+            info!("Reading note: {}", name);
+
+            let repo = get_knowledge_repo_from_context()?;
+            let note = repo
+                .get_note_by_name(name)
+                .await
+                .map_err(|e| ToolError::Other(format!("Failed to read note: {e}")))?;
+
+            match note {
+                Some(note) => {
+                    let result_data = json!({
+                        "name": note.path.file_name().unwrap_or_default().to_string_lossy(),
+                        "path": note.path.to_string_lossy(),
+                        "title": note.title(),
+                        "content": note.content.plain_text,
+                        "frontmatter": note.frontmatter.as_ref().map(|f| &f.raw),
+                        "tags": note.tags.iter().map(|t| &t.name).collect::<Vec<_>>(),
+                        "user_id": user_id,
+                        "session_id": session_id
+                    });
+
+                    Ok(ToolResult::success_with_duration(
+                        tool_name,
+                        result_data,
+                        start_time.elapsed().as_millis() as u64,
+                    ))
+                }
+                None => Err(ToolError::Other(format!("Note not found: {name}"))),
+            }
+        })
+    }
+}
+
+/// List notes - Definition
+pub fn list_notes_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "list_notes".to_string(),
+        description: "List notes in the kiln, optionally filtering by path".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Optional path to filter notes by directory"
+                }
+            }
+        }),
+        enabled: true,
+    }
+}
+
+/// List notes - Implementation using KnowledgeRepository
+#[must_use]
+pub fn list_notes() -> ToolFunction {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+        Box::pin(async move {
+            let start_time = std::time::Instant::now();
+
+            let path = parameters
+                .get("path")
+                .and_then(|v| v.as_str());
+
+            info!("Listing notes (path filter: {:?})", path);
+
+            let repo = get_knowledge_repo_from_context()?;
+            let notes = repo
+                .list_notes(path)
+                .await
+                .map_err(|e| ToolError::Other(format!("Failed to list notes: {e}")))?;
+
+            let result_data = json!({
+                "notes": notes,
+                "count": notes.len(),
+                "user_id": user_id,
+                "session_id": session_id
+            });
+
+            Ok(ToolResult::success_with_duration(
+                tool_name,
+                result_data,
+                start_time.elapsed().as_millis() as u64,
+            ))
+        })
+    }
+}
+
+/// Search notes - Definition
+pub fn search_notes_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "search_notes".to_string(),
+        description: "Search for notes using semantic search".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of results to return (default: 10)"
+                }
+            },
+            "required": ["query"]
+        }),
+        enabled: true,
+    }
+}
+
+/// Search notes - Implementation using KnowledgeRepository (semantic) and grep (text)
+#[must_use]
+pub fn search_notes() -> ToolFunction {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>| {
+        Box::pin(async move {
+            let start_time = std::time::Instant::now();
+
+            let query = parameters
+                .get("query")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| ToolError::Other("Missing 'query' parameter".to_string()))?;
+
+            let search_type = parameters
+                .get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("semantic");
+
+            info!("Searching notes: '{}' (type: {})", query, search_type);
+
+            let results = if search_type == "text" {
+                // Text search using grep
+                let kiln_path = get_kiln_path_from_context()?;
+                let matcher = RegexMatcher::new(query)
+                    .map_err(|e| ToolError::Other(format!("Invalid regex: {e}")))?;
+
+                let mut matches = Vec::new();
+                let walker = WalkBuilder::new(&kiln_path)
+                    .hidden(false)
+                    .git_ignore(true)
+                    .build();
+
+                for result in walker {
+                    match result {
+                        Ok(entry) => {
+                            if !entry.file_type().map_or(false, |ft| ft.is_file()) {
+                                continue;
+                            }
+                            let path = entry.path();
+                            if path.extension().map_or(false, |ext| ext == "md") {
+                                let mut searcher = Searcher::new();
+                                let mut found = false;
+                                let _ = searcher.search_path(
+                                    &matcher,
+                                    path,
+                                    UTF8(|_, _| {
+                                        found = true;
+                                        Ok(false) // Stop after first match per file
+                                    }),
+                                );
+                                if found {
+                                    let rel_path = path.strip_prefix(&kiln_path).unwrap_or(path);
+                                    matches.push(json!({
+                                        "path": rel_path.to_string_lossy(),
+                                        "score": 1.0
+                                    }));
+                                }
+                            }
+                        }
+                        Err(err) => tracing::warn!("Error walking directory: {}", err),
+                    }
+                }
+                matches
+            } else {
+                // Semantic search
+                let repo = get_knowledge_repo_from_context()?;
+                let embedding_provider = get_embedding_provider_from_context()?;
+
+                let embedding_response = embedding_provider
+                    .embed(query)
+                    .await
+                    .map_err(|e| ToolError::Other(format!("Failed to generate embedding: {e}")))?;
+
+                let search_results = repo
+                    .search_vectors(embedding_response.embedding)
+                    .await
+                    .map_err(|e| ToolError::Other(format!("Failed to search vectors: {e}")))?;
+
+                serde_json::to_value(search_results)
+                    .map_err(|e| ToolError::Other(format!("Failed to serialize results: {e}")))?
+                    .as_array()
+                    .unwrap_or(&Vec::new())
+                    .clone()
+            };
+
+            let result_data = json!({
+                "results": results,
+                "count": results.len(),
+                "query": query,
+                "type": search_type,
+                "user_id": user_id,
+                "session_id": session_id
+            });
+
+            Ok(ToolResult::success_with_duration(
+                tool_name,
+                result_data,
+                start_time.elapsed().as_millis() as u64,
+            ))
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,7 +710,7 @@ Some content here."#,
         .unwrap();
 
         // Set kiln path in registry
-        crate::types::set_tool_context(crate::types::ToolConfigContext::with_kiln_path(
+        crate::types::set_tool_context(crate::types::ToolConfigContext::new().with_kiln_path(
             temp_dir.path().to_path_buf(),
         ));
 
@@ -498,7 +748,7 @@ tags: [ai, research, testing]
         .unwrap();
 
         // Set kiln path in registry
-        crate::types::set_tool_context(crate::types::ToolConfigContext::with_kiln_path(
+        crate::types::set_tool_context(crate::types::ToolConfigContext::new().with_kiln_path(
             temp_dir.path().to_path_buf(),
         ));
 
