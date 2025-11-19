@@ -31,7 +31,10 @@ use tokio::sync::{oneshot, watch};
 use tracing::{debug, error, info};
 
 use crucible_core::CrucibleCore;
+use crucible_core::traits::KnowledgeRepository;
+use crucible_llm::embeddings::EmbeddingProvider;
 use crucible_surrealdb::{SurrealClient, SurrealDbConfig};
+use crucible_tools::types::ToolConfigContext;
 
 pub mod command;
 pub mod completer;
@@ -40,7 +43,7 @@ pub mod formatter;
 pub mod highlighter;
 pub mod history;
 pub mod input;
-mod tools; // Stub implementation - Rune tools removed from MVP
+pub mod tools; // Stub implementation - Rune tools removed from MVP
 
 use crate::config::CliConfig;
 use tools::UnifiedToolRegistry;
@@ -89,7 +92,12 @@ pub struct Repl {
 
 impl Repl {
     /// Create a new REPL instance
-    pub async fn new(core: Arc<CrucibleCore>, cli_config: &CliConfig) -> Result<Self> {
+    pub async fn new(
+        core: Arc<CrucibleCore>, 
+        cli_config: &CliConfig,
+        knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
+        embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    ) -> Result<Self> {
         info!("Initializing REPL with Core");
 
         // Create simple REPL config (just UI settings, no DB path)
@@ -103,7 +111,17 @@ impl Repl {
 
         // Initialize unified tool registry
         let tool_dir = config.tool_dir.clone();
-        let tools = UnifiedToolRegistry::new(tool_dir).await?;
+        
+        // Create tool context
+        let mut context = ToolConfigContext::new().with_kiln_path(config.kiln_path.clone());
+        if let Some(repo) = knowledge_repo {
+            context = context.with_knowledge_repo(repo);
+        }
+        if let Some(provider) = embedding_provider {
+            context = context.with_embedding_provider(provider);
+        }
+        
+        let tools = UnifiedToolRegistry::new(tool_dir, context).await?;
 
         info!("Initialized unified tool registry");
 
@@ -814,7 +832,13 @@ impl Repl {
 
         let history = CommandHistory::new(config.history_file.clone())?;
         let highlighter = SurrealQLHighlighter::new();
-        let tools = Arc::new(UnifiedToolRegistry::new(config.tool_dir.clone()).await?);
+        
+        // Create tool context for test
+        let context = ToolConfigContext::new().with_kiln_path(config.kiln_path.clone());
+        // Note: Test REPL doesn't fully wire up knowledge repo/embeddings yet
+        // This could be enhanced if tests need tool access
+        
+        let tools = Arc::new(UnifiedToolRegistry::new(config.tool_dir.clone(), context).await?);
 
         // Create completer with Core and tools
         let completer = ReplCompleter::new(core.clone(), tools.clone());
@@ -1054,8 +1078,10 @@ pub async fn execute(
     core: Arc<CrucibleCore>,
     cli_config: crate::config::CliConfig,
     non_interactive: bool,
+    knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
+    embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
 ) -> Result<()> {
-    let mut repl = Repl::new(core, &cli_config).await?;
+    let mut repl = Repl::new(core, &cli_config, knowledge_repo, embedding_provider).await?;
 
     if non_interactive {
         repl.run_non_interactive().await
