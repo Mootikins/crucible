@@ -363,7 +363,8 @@ impl EditorWatcher {
             #[cfg(windows)]
             {
                 use std::os::windows::fs::MetadataExt;
-                metadata.file_index()
+                // metadata.file_index() is unstable
+                None
             }
             #[cfg(not(windows))]
             {
