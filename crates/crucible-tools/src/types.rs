@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock, OnceLock};
 use uuid::Uuid;
+use crate::permission::PermissionManager;
 
 /// Simple tool definition for basic tool registration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -225,6 +226,10 @@ pub type ToolFunction = fn(
 /// Maps tool names to their executable functions
 pub type ToolFunctionRegistry = HashMap<String, ToolFunction>;
 
+/// Tool definition registry
+/// Maps tool names to their definitions
+pub type ToolDefinitionRegistry = HashMap<String, ToolDefinition>;
+
 /// Simplified async tool executor function for Phase 3.1
 /// This is the unified interface that all tools should use
 pub async fn execute_tool(
@@ -243,6 +248,18 @@ pub async fn execute_tool(
     let tool_fn = reg
         .get(&tool_name)
         .ok_or_else(|| ToolError::ToolNotFound(tool_name.clone()))?;
+
+    // Check permissions if manager is configured
+    if let Some(context) = get_tool_context() {
+        if let Some(pm) = &context.permission_manager {
+            let request = ToolExecutionRequest::new(
+                tool_name.clone(),
+                parameters.clone(),
+                ToolExecutionContext::with_user_session(user_id.clone(), session_id.clone()),
+            );
+            pm.check_permission(&request)?;
+        }
+    }
 
     // Execute the tool
     let result = tool_fn(tool_name.clone(), parameters, user_id, session_id).await?;
@@ -264,10 +281,18 @@ pub async fn execute_tool(
 /// Simplified global tool registry for Phase 3.1
 static GLOBAL_TOOL_REGISTRY: OnceLock<std::sync::Arc<tokio::sync::RwLock<ToolFunctionRegistry>>> = OnceLock::new();
 
+/// Global tool definition registry
+static GLOBAL_TOOL_DEFINITIONS: OnceLock<std::sync::Arc<tokio::sync::RwLock<ToolDefinitionRegistry>>> = OnceLock::new();
+
 /// Initialize the global tool registry
 pub async fn initialize_tool_registry() {
     GLOBAL_TOOL_REGISTRY.get_or_init(|| {
         let registry: ToolFunctionRegistry = HashMap::new();
+        std::sync::Arc::new(tokio::sync::RwLock::new(registry))
+    });
+    
+    GLOBAL_TOOL_DEFINITIONS.get_or_init(|| {
+        let registry: ToolDefinitionRegistry = HashMap::new();
         std::sync::Arc::new(tokio::sync::RwLock::new(registry))
     });
 }
@@ -286,6 +311,34 @@ pub async fn register_tool_function(name: String, function: ToolFunction) -> Res
     Ok(())
 }
 
+/// Get the global tool definition registry
+pub async fn get_tool_definitions() -> std::sync::Arc<tokio::sync::RwLock<ToolDefinitionRegistry>> {
+    initialize_tool_registry().await;
+    GLOBAL_TOOL_DEFINITIONS.get().unwrap().clone()
+}
+
+/// Register a tool definition
+pub async fn register_tool_definition(definition: ToolDefinition) -> Result<(), ToolError> {
+    let registry = get_tool_definitions().await;
+    let mut reg = registry.write().await;
+    reg.insert(definition.name.clone(), definition);
+    Ok(())
+}
+
+/// Get a tool definition by name
+pub async fn get_tool_definition(name: &str) -> Result<ToolDefinition, ToolError> {
+    let registry = get_tool_definitions().await;
+    let reg = registry.read().await;
+    reg.get(name).cloned().ok_or_else(|| ToolError::ToolNotFound(name.to_string()))
+}
+
+/// Register a tool with both function and definition
+pub async fn register_tool(name: String, function: ToolFunction, definition: ToolDefinition) -> Result<(), ToolError> {
+    register_tool_function(name, function).await?;
+    register_tool_definition(definition).await?;
+    Ok(())
+}
+
 /// Get a list of all registered tool names
 pub async fn list_registered_tools() -> Vec<String> {
     let registry = get_tool_registry().await;
@@ -296,31 +349,77 @@ pub async fn list_registered_tools() -> Vec<String> {
 // ===== GLOBAL TOOL CONFIGURATION CONTEXT =====
 // Thread-safe global configuration for tools (separate from per-request context)
 
+use crucible_core::traits::KnowledgeRepository;
+use crucible_llm::embeddings::EmbeddingProvider;
+
 /// Global configuration context for tools
 ///
 /// This provides shared configuration that tools can access without
 /// requiring parameters on every call. Managed by `CrucibleToolManager`.
 /// This is distinct from the per-request `ToolExecutionContext` which handles
 /// user sessions and environment variables.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ToolConfigContext {
     /// Path to the kiln directory
     pub kiln_path: Option<PathBuf>,
+    /// Knowledge repository for database access
+    pub knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
+    /// Embedding provider for semantic search
+    pub embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    /// Permission manager for tool execution
+    pub permission_manager: Option<Arc<PermissionManager>>,
+}
+
+// Manual Debug impl because KnowledgeRepository/EmbeddingProvider don't implement Debug
+impl std::fmt::Debug for ToolConfigContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ToolConfigContext")
+            .field("kiln_path", &self.kiln_path)
+            .field("knowledge_repo", &if self.knowledge_repo.is_some() { "Some(KnowledgeRepository)" } else { "None" })
+            .field("embedding_provider", &if self.embedding_provider.is_some() { "Some(EmbeddingProvider)" } else { "None" })
+            .field("permission_manager", &self.permission_manager)
+            .finish()
+    }
 }
 
 impl ToolConfigContext {
     /// Create empty context
     #[must_use]
     pub fn new() -> Self {
-        Self { kiln_path: None }
+        Self {
+            kiln_path: None,
+            knowledge_repo: None,
+            embedding_provider: None,
+            permission_manager: None,
+        }
     }
 
-    /// Create context with kiln path
+    /// Set the kiln path
     #[must_use]
-    pub fn with_kiln_path(kiln_path: PathBuf) -> Self {
-        Self {
-            kiln_path: Some(kiln_path),
-        }
+    pub fn with_kiln_path(mut self, kiln_path: PathBuf) -> Self {
+        self.kiln_path = Some(kiln_path);
+        self
+    }
+
+    /// Set the knowledge repository
+    #[must_use]
+    pub fn with_knowledge_repo(mut self, repo: Arc<dyn KnowledgeRepository>) -> Self {
+        self.knowledge_repo = Some(repo);
+        self
+    }
+
+    /// Set the embedding provider
+    #[must_use]
+    pub fn with_embedding_provider(mut self, provider: Arc<dyn EmbeddingProvider>) -> Self {
+        self.embedding_provider = Some(provider);
+        self
+    }
+
+    /// Set the permission manager
+    #[must_use]
+    pub fn with_permission_manager(mut self, manager: Arc<PermissionManager>) -> Self {
+        self.permission_manager = Some(manager);
+        self
     }
 }
 
@@ -363,6 +462,32 @@ pub fn get_kiln_path_from_context() -> Result<PathBuf, ToolError> {
         .kiln_path
         .clone()
         .ok_or_else(|| ToolError::Other("No kiln path configured in execution context".to_string()))
+}
+
+/// Get the knowledge repository from the global context
+///
+/// Returns an error if no context is set or no repository is configured.
+pub fn get_knowledge_repo_from_context() -> Result<Arc<dyn KnowledgeRepository>, ToolError> {
+    let context = get_tool_context()
+        .ok_or_else(|| ToolError::Other("Tool execution context not initialized".to_string()))?;
+
+    context
+        .knowledge_repo
+        .clone()
+        .ok_or_else(|| ToolError::Other("No knowledge repository configured in execution context".to_string()))
+}
+
+/// Get the embedding provider from the global context
+///
+/// Returns an error if no context is set or no provider is configured.
+pub fn get_embedding_provider_from_context() -> Result<Arc<dyn EmbeddingProvider>, ToolError> {
+    let context = get_tool_context()
+        .ok_or_else(|| ToolError::Other("Tool execution context not initialized".to_string()))?;
+
+    context
+        .embedding_provider
+        .clone()
+        .ok_or_else(|| ToolError::Other("No embedding provider configured in execution context".to_string()))
 }
 
 // ===== SIMPLE TOOL LOADER (PHASE 3.1) =====
@@ -422,6 +547,29 @@ async fn register_system_tools() -> Result<(), ToolError> {
 async fn register_kiln_tools() -> Result<(), ToolError> {
     use crate::kiln_tools;
 
+    // Register tools with definitions
+    register_tool(
+        "read_note".to_string(),
+        kiln_tools::read_note(),
+        kiln_tools::read_note_definition(),
+    )
+    .await?;
+
+    register_tool(
+        "list_notes".to_string(),
+        kiln_tools::list_notes(),
+        kiln_tools::list_notes_definition(),
+    )
+    .await?;
+
+    register_tool(
+        "search_notes".to_string(),
+        kiln_tools::search_notes(),
+        kiln_tools::search_notes_definition(),
+    )
+    .await?;
+
+    // Register legacy tools without definitions
     let tools = vec![
         ("search_by_properties", kiln_tools::search_by_properties()),
         ("search_by_tags", kiln_tools::search_by_tags()),

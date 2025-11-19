@@ -83,6 +83,7 @@
 
 pub mod database_tools;
 pub mod kiln_tools;
+pub mod permission;
 pub mod search_tools;
 pub mod system_tools;
 pub mod types;
