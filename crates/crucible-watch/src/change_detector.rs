@@ -567,7 +567,7 @@ impl ChangeDetectorTrait for ChangeDetector {
 
         for path in paths {
             match lookup_result.found_files.get(path) {
-                Some(stored_hash) => {
+                Some(_stored_hash) => {
                     // File exists in storage - we'd need to compare with current state
                     // For this simplified implementation, we'll assume files exist and are unchanged
                     // In a real implementation, you'd read the current file and compute its hash
