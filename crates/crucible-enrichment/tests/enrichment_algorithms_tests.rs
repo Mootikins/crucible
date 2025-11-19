@@ -142,9 +142,9 @@ async fn test_enrichment_preserves_original_data() {
     let service = DefaultEnrichmentService::without_embeddings();
 
     let content = "# Original Content\n\nThis should be preserved.";
-    let parsed = parse_note(content, "test.md").unwrap();
+    let parsed = parse_note(content, "test.md").await.unwrap();
     let original_path = parsed.path.clone();
-    let merkle_tree = HybridMerkleTree::from_parsed_note(&parsed).unwrap();
+    let merkle_tree = HybridMerkleTree::from_document(&parsed);
 
     let result = service.enrich_internal(parsed, merkle_tree, vec![]).await;
     assert!(result.is_ok());
@@ -152,7 +152,7 @@ async fn test_enrichment_preserves_original_data() {
     let enriched = result.unwrap();
     // Original data should be preserved
     assert_eq!(enriched.parsed.path, original_path);
-    assert!(!enriched.parsed.blocks.is_empty());
+    assert!(!enriched.parsed.content.paragraphs.is_empty());
 }
 
 #[tokio::test]

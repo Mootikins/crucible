@@ -16,11 +16,8 @@ use std::path::PathBuf;
 /// Create a test SurrealDB client with in-memory storage
 async fn create_test_client() -> SurrealClient {
     let config = SurrealDbConfig {
-        address: "memory".to_string(),
-        namespace: "test_integration".to_string(),
-        database: "test_integration".to_string(),
-        username: "root".to_string(),
-        password: "root".to_string(),
+        path: ":memory:".to_string(),
+        ..Default::default()
     };
     SurrealClient::new(config)
         .await
@@ -58,7 +55,7 @@ fn create_complex_document() -> ParsedNote {
             offset,
             id: Some(heading_text.to_lowercase().replace(' ', "-")),
         });
-        offset += heading_text.len() + level + 2; // Account for # markers and newline
+        offset += heading_text.len() + (level as usize) + 2; // Account for # markers and newline
 
         // Add content paragraph
         doc.content
@@ -258,7 +255,7 @@ async fn test_large_document_virtualization() {
 
     // 2. Build tree with auto-virtualization
     let config = VirtualizationConfig::default(); // threshold = 100
-    let tree = HybridMerkleTree::from_document_with_config(&doc, config);
+    let tree = HybridMerkleTree::from_document_with_config(&doc, &config);
 
     // 3. Verify virtualization occurred
     assert!(
