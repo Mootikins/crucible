@@ -512,7 +512,7 @@ impl FileScanner {
 
         // This is a placeholder implementation
         // In a real implementation, this would integrate with the file watching backend
-        let warnings = if cfg!(target_os = "windows") {
+        let _warnings = if cfg!(target_os = "windows") {
             vec![
                 "File watching may have limited functionality on Windows".to_string(),
                 "Consider using the Notify backend for better Windows support".to_string(),
