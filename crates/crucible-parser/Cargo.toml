@@ -29,6 +29,7 @@ chrono = { workspace = true, features = ["serde"] }
 
 # Parsing
 pulldown-cmark = { workspace = true }
+markdown-it = { workspace = true, optional = true }
 serde_yaml = { workspace = true }
 toml = { workspace = true }
 
@@ -38,10 +39,20 @@ hex = "0.4"
 
 [dev-dependencies]
 tokio-test = "0.4"
+criterion = { workspace = true }
+
+[[bench]]
+name = "parser_comparison"
+harness = false
+
+[[bench]]
+name = "poc_wikilink_benchmark"
+harness = false
 
 [features]
 default = ["full-featured"]
 full-featured = []
+markdown-it-parser = ["markdown-it"]
 
 [lib]
 name = "crucible_parser"
