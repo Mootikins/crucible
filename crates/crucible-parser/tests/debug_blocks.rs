@@ -1,6 +1,6 @@
 //! Debug test to check if blocks are being extracted
 
-use crucible_parser::{BlockExtractor, MarkdownParserImplementation};
+use crucible_parser::{BlockExtractor, MarkdownParser};
 use std::path::Path;
 
 #[tokio::test]

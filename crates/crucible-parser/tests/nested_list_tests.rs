@@ -2,7 +2,7 @@
 //!
 //! Tests for parsing nested and complex list structures.
 
-use crucible_parser::{CrucibleParser, MarkdownParserImplementation, ParsedNote};
+use crucible_parser::{CrucibleParser, MarkdownParser, ParsedNote};
 use std::path::Path;
 
 async fn parse_note(content: &str, path: &str) -> Result<ParsedNote, Box<dyn std::error::Error>> {
