@@ -9,10 +9,10 @@ use crate::block_extractor::{BlockExtractor, ExtractionConfig};
 use crate::block_hasher::SimpleBlockHasher;
 use crate::error::{ParserError, ParserResult};
 use crate::extensions::ExtensionRegistry;
-use crate::traits::{MarkdownParserImplementation, ParserCapabilities};
+use crate::traits::{MarkdownParser, ParserCapabilities};
 use crate::types::{Callout, FootnoteMap, LatexExpression, NoteContent, ParsedNote, ParsedNoteMetadata};
 
-/// Default implementation of the MarkdownParserImplementation trait
+/// Default implementation of the MarkdownParser trait
 ///
 /// This parser supports:
 /// - Obsidian-compatible wikilinks and transclusions
@@ -66,7 +66,7 @@ impl BlockProcessingConfig {
     }
 }
 
-/// Default implementation of the MarkdownParserImplementation trait
+/// Default implementation of the MarkdownParser trait
 ///
 /// This parser supports:
 /// - Obsidian-compatible wikilinks and transclusions
@@ -299,7 +299,7 @@ impl Default for CrucibleParser {
 }
 
 #[async_trait]
-impl MarkdownParserImplementation for CrucibleParser {
+impl MarkdownParser for CrucibleParser {
     async fn parse_file(&self, path: &Path) -> ParserResult<ParsedNote> {
         // Read file contents
         let mut file = fs::File::open(path).await.map_err(ParserError::Io)?;
@@ -413,6 +413,12 @@ impl MarkdownParserImplementation for CrucibleParser {
             tags: true,
             headings: true,
             code_blocks: true,
+            tables: true,
+            callouts: true,
+            latex_expressions: true,
+            footnotes: true,
+            blockquotes: true,
+            horizontal_rules: true,
             full_content: true,
             max_file_size: self.max_file_size,
             extensions: vec!["md", "markdown"],

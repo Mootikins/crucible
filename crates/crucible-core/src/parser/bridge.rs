@@ -7,7 +7,7 @@ use crate::parser::error::ParserResult;
 use crate::parser::traits::{MarkdownParser, ParserCapabilities};
 use async_trait::async_trait;
 use crucible_parser::types::ParsedNote;
-use crucible_parser::MarkdownParserImplementation;
+use crucible_parser::MarkdownParser as ParserMarkdownParser;
 use std::path::Path;
 
 /// Convert a parser crate ParsedNote to a core ParsedNote
@@ -48,6 +48,53 @@ impl Default for ParserAdapter {
     }
 }
 
+/// Convert parser crate capabilities to core capabilities
+fn convert_capabilities(parser_caps: crucible_parser::ParserCapabilities) -> ParserCapabilities {
+    ParserCapabilities {
+        name: parser_caps.name,
+        version: parser_caps.version,
+        yaml_frontmatter: parser_caps.yaml_frontmatter,
+        toml_frontmatter: parser_caps.toml_frontmatter,
+        wikilinks: parser_caps.wikilinks,
+        tags: parser_caps.tags,
+        headings: parser_caps.headings,
+        code_blocks: parser_caps.code_blocks,
+        full_content: parser_caps.full_content,
+        max_file_size: parser_caps.max_file_size,
+        extensions: parser_caps.extensions,
+    }
+}
+
+/// Convert parser crate error to core error
+fn convert_parser_error(e: crucible_parser::ParserError) -> crate::parser::error::ParserError {
+    match e {
+        crucible_parser::ParserError::Io(io_err) => {
+            crate::parser::error::ParserError::Io(io_err)
+        }
+        crucible_parser::ParserError::FrontmatterError(msg) => {
+            crate::parser::error::ParserError::FrontmatterError(msg)
+        }
+        crucible_parser::ParserError::FrontmatterTooLarge { size, max } => {
+            crate::parser::error::ParserError::FrontmatterTooLarge { size, max }
+        }
+        crucible_parser::ParserError::FileTooLarge { size, max } => {
+            crate::parser::error::ParserError::FileTooLarge { size, max }
+        }
+        crucible_parser::ParserError::EncodingError => {
+            crate::parser::error::ParserError::EncodingError
+        }
+        crucible_parser::ParserError::ParseFailed(msg) => {
+            crate::parser::error::ParserError::ParseFailed(msg)
+        }
+        crucible_parser::ParserError::Unsupported(msg) => {
+            crate::parser::error::ParserError::Unsupported(msg)
+        }
+        crucible_parser::ParserError::InvalidPath(msg) => {
+            crate::parser::error::ParserError::InvalidPath(msg)
+        }
+    }
+}
+
 #[async_trait]
 impl MarkdownParser for ParserAdapter {
     async fn parse_file(&self, path: &Path) -> ParserResult<ParsedNote> {
@@ -55,32 +102,7 @@ impl MarkdownParser for ParserAdapter {
             .parse_file(path)
             .await
             .map(convert_parsed_document)
-            .map_err(|e| {
-                // Convert crucible_parser::ParserError to crucible_core::parser::error::ParserError
-                match e {
-                    crucible_parser::ParserError::Io(io_err) => {
-                        crate::parser::error::ParserError::Io(io_err)
-                    }
-                    crucible_parser::ParserError::FrontmatterError(msg) => {
-                        crate::parser::error::ParserError::FrontmatterError(msg)
-                    }
-                    crucible_parser::ParserError::FileTooLarge { size, max } => {
-                        crate::parser::error::ParserError::FileTooLarge { size, max }
-                    }
-                    crucible_parser::ParserError::EncodingError => {
-                        crate::parser::error::ParserError::EncodingError
-                    }
-                    crucible_parser::ParserError::ParseFailed(msg) => {
-                        crate::parser::error::ParserError::ParseFailed(msg)
-                    }
-                    crucible_parser::ParserError::Unsupported(msg) => {
-                        crate::parser::error::ParserError::Unsupported(msg)
-                    }
-                    crucible_parser::ParserError::InvalidPath(msg) => {
-                        crate::parser::error::ParserError::InvalidPath(msg)
-                    }
-                }
-            })
+            .map_err(convert_parser_error)
     }
 
     fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote> {
@@ -91,45 +113,13 @@ impl MarkdownParser for ParserAdapter {
                     .parse_content(content, source_path)
                     .await
                     .map(convert_parsed_document)
-                    .map_err(|e| {
-                        // Convert error types
-                        match e {
-                            crucible_parser::ParserError::FrontmatterError(msg) => {
-                                crate::parser::error::ParserError::FrontmatterError(msg)
-                            }
-                            crucible_parser::ParserError::ParseFailed(msg) => {
-                                crate::parser::error::ParserError::ParseFailed(msg)
-                            }
-                            crucible_parser::ParserError::Unsupported(msg) => {
-                                crate::parser::error::ParserError::Unsupported(msg)
-                            }
-                            _ => crate::parser::error::ParserError::ParseFailed(format!(
-                                "Parser error: {:?}",
-                                e
-                            )),
-                        }
-                    })
+                    .map_err(convert_parser_error)
             })
         })
     }
 
     fn capabilities(&self) -> ParserCapabilities {
-        let parser_caps = self.inner.capabilities();
-
-        // Convert from parser crate capabilities to core capabilities
-        ParserCapabilities {
-            name: parser_caps.name,
-            version: parser_caps.version,
-            yaml_frontmatter: parser_caps.yaml_frontmatter,
-            toml_frontmatter: parser_caps.toml_frontmatter,
-            wikilinks: parser_caps.wikilinks,
-            tags: parser_caps.tags,
-            headings: parser_caps.headings,
-            code_blocks: parser_caps.code_blocks,
-            full_content: parser_caps.full_content,
-            max_file_size: parser_caps.max_file_size,
-            extensions: parser_caps.extensions,
-        }
+        convert_capabilities(self.inner.capabilities())
     }
 
     fn can_parse(&self, path: &Path) -> bool {
