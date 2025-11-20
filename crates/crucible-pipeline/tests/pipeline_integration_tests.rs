@@ -472,6 +472,7 @@ async fn test_pipeline_skip_unchanged_files() {
 async fn test_pipeline_force_reprocess() {
     // Create pipeline with force_reprocess enabled
     let config = NotePipelineConfig {
+        parser: Default::default(),
         skip_enrichment: false,
         force_reprocess: true,
     };
@@ -515,6 +516,7 @@ async fn test_pipeline_force_reprocess() {
 async fn test_pipeline_skip_enrichment_mode() {
     // Create pipeline with skip_enrichment enabled
     let config = NotePipelineConfig {
+        parser: Default::default(),
         skip_enrichment: true,
         force_reprocess: false,
     };
@@ -718,6 +720,7 @@ async fn test_pipeline_no_changes_after_merkle_diff() {
     // Actually, to properly test NoChanges, we need to force reprocess
     // but have identical content - this would be detected at Merkle phase
     let config = NotePipelineConfig {
+        parser: Default::default(),
         skip_enrichment: false,
         force_reprocess: true, // Force past Phase 1
     };
