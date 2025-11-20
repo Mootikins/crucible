@@ -23,10 +23,9 @@ impl AstConverter {
     }
 
     fn walk_node(node: &Node, content: &mut NoteContent) -> ParserResult<()> {
-        // For PoC, just extract wikilinks - simplified implementation
-        // Full implementation would properly handle all markdown-it node types
+        // Extract custom Obsidian-style syntax nodes
 
-        // Check for custom wikilink nodes
+        // 1. Wikilinks
         if let Some(wikilink) = node.cast::<super::plugins::wikilink::WikilinkNode>() {
             content.wikilinks.push(Wikilink {
                 target: wikilink.target.clone(),
@@ -36,6 +35,24 @@ impl AstConverter {
                 block_ref: wikilink.block_ref.clone(),
                 heading_ref: wikilink.heading_ref.clone(),
             });
+        }
+
+        // 2. Tags
+        if let Some(tag) = node.cast::<super::plugins::tag::TagNode>() {
+            content.tags.push(Tag::new(tag.name.clone(), tag.offset));
+        }
+
+        // 3. Callouts - TODO: Implement after fixing block rule API
+        // if let Some(callout) = node.cast::<super::plugins::callout::CalloutNode>() { ... }
+
+        // 4. LaTeX expressions
+        if let Some(latex) = node.cast::<super::plugins::latex::LatexNode>() {
+            content.latex_expressions.push(LatexExpression::new(
+                latex.expression.clone(),
+                latex.is_block,
+                latex.offset,
+                latex.expression.len() + if latex.is_block { 4 } else { 2 }, // Include delimiters
+            ));
         }
 
         // Extract text for paragraphs (very simplified)
