@@ -28,7 +28,7 @@ impl MarkdownItParser {
         // Add custom plugins for Obsidian-style syntax
         plugins::add_wikilink_plugin(&mut md);
         plugins::add_tag_plugin(&mut md);
-        // plugins::add_callout_plugin(&mut md); // TODO: Fix block rule API
+        plugins::add_callout_plugin(&mut md);
         plugins::add_latex_plugin(&mut md);
 
         Self {
