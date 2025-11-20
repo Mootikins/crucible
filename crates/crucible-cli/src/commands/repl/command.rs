@@ -1,6 +1,6 @@
 // Command parsing for REPL built-in commands
 //
-// All built-in commands start with ':' prefix (e.g., :tools, :run, :quit)
+// All built-in commands start with ':' prefix (e.g., :stats, :config, :quit)
 
 use thiserror::Error;
 use tracing::level_filters::LevelFilter;
@@ -10,15 +10,6 @@ use super::OutputFormat;
 /// Built-in REPL commands
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
-    /// :tools - List available tools
-    ListTools,
-
-    /// :run <tool> <args...> - Execute a tool
-    RunTool {
-        tool_name: String,
-        args: Vec<String>,
-    },
-
     /// :stats - Show kiln and REPL statistics
     ShowStats,
 
@@ -64,24 +55,6 @@ impl Command {
         let args = &parts[1..];
 
         match cmd {
-            "tools" => {
-                Self::no_args_expected(cmd, args)?;
-                Ok(Command::ListTools)
-            }
-
-            "run" => {
-                if args.is_empty() {
-                    return Err(CommandParseError::MissingArgument {
-                        command: cmd.to_string(),
-                        expected: "tool name".to_string(),
-                    });
-                }
-                Ok(Command::RunTool {
-                    tool_name: args[0].to_string(),
-                    args: args[1..].iter().map(|s| s.to_string()).collect(),
-                })
-            }
-
             "stats" => {
                 Self::no_args_expected(cmd, args)?;
                 Ok(Command::ShowStats)
@@ -197,12 +170,6 @@ impl Command {
 ║                    Crucible REPL Commands                        ║
 ╚══════════════════════════════════════════════════════════════════╝
 
-TOOLS:
-  :tools                      List all available tools
-  :run <tool> [args...]       Execute a tool with arguments
-  :help <tool>                Show detailed help for a specific tool
-  :h <tool>                   (shorthand)
-
 INFORMATION:
   :stats                      Show kiln and REPL statistics
   :config                     Display current configuration
@@ -238,48 +205,6 @@ TIP: Use :help <command> for detailed help on a specific command.
     /// Get help text for a specific command
     pub fn help_for_command(cmd: &str) -> Option<&'static str> {
         match cmd {
-            ":tools" | "tools" => Some(
-                r#"
-:tools - List Available Tools
-
-USAGE:
-  :tools
-
-DESCRIPTION:
-  Displays all available tools with their descriptions.
-  These tools can be executed using :run.
-
-EXAMPLES:
-  :tools
-
-SEE ALSO:
-  :run
-                "#,
-            ),
-
-            ":run" | "run" => Some(
-                r#"
-:run - Execute Tool
-
-USAGE:
-  :run <tool_name> [args...]
-
-DESCRIPTION:
-  Executes a tool by name with optional arguments.
-
-ARGUMENTS:
-  tool_name     Name of the tool to execute (required)
-  args          Tool-specific arguments (optional)
-
-EXAMPLES:
-  :run search_by_tags project ai
-  :run metadata Projects/crucible.md
-  :run semantic_search "agent orchestration"
-
-SEE ALSO:
-  :tools
-                "#,
-            ),
 
             ":log" | "log" => Some(
                 r#"
@@ -349,7 +274,6 @@ DESCRIPTION:
   - Number of commands/queries executed
   - Average query time
   - History size
-  - Number of tools loaded
   - Database connection status
 
 EXAMPLES:
@@ -417,21 +341,9 @@ mod tests {
 
     #[test]
     fn test_parse_simple_commands() {
-        assert_eq!(Command::parse(":tools").unwrap(), Command::ListTools);
         assert_eq!(Command::parse(":stats").unwrap(), Command::ShowStats);
         assert_eq!(Command::parse(":config").unwrap(), Command::ShowConfig);
         assert_eq!(Command::parse(":quit").unwrap(), Command::Quit);
-    }
-
-    #[test]
-    fn test_parse_run_tool() {
-        match Command::parse(":run search_by_tags project ai").unwrap() {
-            Command::RunTool { tool_name, args } => {
-                assert_eq!(tool_name, "search_by_tags");
-                assert_eq!(args, vec!["project", "ai"]);
-            }
-            _ => panic!("Expected RunTool"),
-        }
     }
 
     #[test]
@@ -495,18 +407,6 @@ mod tests {
         assert!(matches!(
             Command::parse(":unknown"),
             Err(CommandParseError::UnknownCommand(_))
-        ));
-
-        // Missing arguments
-        assert!(matches!(
-            Command::parse(":run"),
-            Err(CommandParseError::MissingArgument { .. })
-        ));
-
-        // Unexpected arguments
-        assert!(matches!(
-            Command::parse(":tools extra"),
-            Err(CommandParseError::UnexpectedArguments { .. })
         ));
     }
 }

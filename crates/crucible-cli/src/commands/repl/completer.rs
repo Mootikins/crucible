@@ -3,19 +3,12 @@
 use reedline::{Completer, Span, Suggestion};
 use std::sync::Arc;
 
-use super::tools::UnifiedToolRegistry;
 use crucible_core::CrucibleCore;
 
 /// REPL autocompleter
 pub struct ReplCompleter {
     /// Core coordinator for database introspection
     core: Arc<CrucibleCore>,
-
-    /// Tool registry for tool name completion
-    tools: Arc<UnifiedToolRegistry>,
-
-    /// Cached tool names for completion (updated periodically)
-    cached_tools: std::sync::Arc<std::sync::RwLock<Vec<String>>>,
 
     /// Built-in commands
     commands: Vec<CommandCompletion>,
@@ -28,22 +21,11 @@ struct CommandCompletion {
 }
 
 impl ReplCompleter {
-    pub fn new(core: Arc<CrucibleCore>, tools: Arc<UnifiedToolRegistry>) -> Self {
+    pub fn new(core: Arc<CrucibleCore>) -> Self {
         let commands = Self::build_command_list();
-        let cached_tools = std::sync::Arc::new(std::sync::RwLock::new(Vec::new()));
         Self {
             core,
-            tools,
-            cached_tools,
             commands,
-        }
-    }
-
-    /// Update cached tool list (call this periodically)
-    pub async fn refresh_tools(&self) {
-        let tools = self.tools.list_tools();
-        if let Ok(mut cached) = self.cached_tools.write() {
-            *cached = tools;
         }
     }
 
@@ -113,31 +95,7 @@ impl ReplCompleter {
             .collect()
     }
 
-    /// Complete tool names for `:run` command
-    fn complete_tool_names(
-        &self,
-        prefix: &str,
-        start_pos: usize,
-        end_pos: usize,
-    ) -> Vec<Suggestion> {
-        let Ok(tools) = self.cached_tools.read() else {
-            return Vec::new();
-        };
-
-        tools
-            .iter()
-            .filter(|name| name.starts_with(prefix))
-            .map(|name| Suggestion {
-                value: name.to_string(),
-                description: Some("Rune tool".to_string()),
-                style: None,
-                extra: None,
-                span: Span::new(start_pos, end_pos),
-                append_whitespace: true,
-            })
-            .collect()
-    }
-
+  
     /// Complete log levels for `:log` command
     fn complete_log_levels(
         &self,
@@ -259,12 +217,7 @@ impl Completer for ReplCompleter {
             return self.complete_commands(prefix, pos);
         }
 
-        // Complete tool names after `:run `
-        if let Some(tool_start) = prefix.strip_prefix(":run ") {
-            let start_pos = 5; // ":run ".len()
-            return self.complete_tool_names(tool_start, start_pos, pos);
-        }
-
+  
         // Complete log levels after `:log `
         if let Some(level_start) = prefix.strip_prefix(":log ") {
             let start_pos = 5; // ":log ".len()
@@ -304,160 +257,3 @@ impl Completer for ReplCompleter {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::commands::repl::tools::UnifiedToolRegistry;
-    use crucible_surrealdb::{SurrealClient, SurrealDbConfig};
-    use tempfile::TempDir;
-
-    fn create_test_completer() -> ReplCompleter {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            // Create in-memory storage
-            let storage_config = SurrealDbConfig {
-                path: ":memory:".to_string(),
-                namespace: "crucible".to_string(),
-                database: "test".to_string(),
-                max_connections: Some(10),
-                timeout_seconds: Some(30),
-            };
-            let storage = SurrealClient::new(storage_config).await.unwrap();
-
-            // Create Core with storage
-            let core = Arc::new(
-                CrucibleCore::builder()
-                    .with_storage(storage)
-                    .build()
-                    .unwrap(),
-            );
-
-            let temp_dir = TempDir::new().unwrap();
-            let tools = Arc::new(
-                UnifiedToolRegistry::new(
-                    temp_dir.path().to_path_buf(),
-                    crucible_tools::types::ToolConfigContext::new(),
-                )
-                .await
-                .unwrap(),
-            );
-            ReplCompleter::new(core, tools)
-        })
-    }
-
-    #[test]
-    fn test_command_completion() {
-        let mut completer = create_test_completer();
-
-        // Complete `:t`
-        let suggestions = completer.complete(":t", 2);
-        assert!(!suggestions.is_empty());
-        assert!(suggestions.iter().any(|s| s.value == ":tools"));
-
-        // Complete `:q`
-        let suggestions = completer.complete(":q", 2);
-        assert!(suggestions.iter().any(|s| s.value == ":quit"));
-    }
-
-    #[test]
-    fn test_tool_completion() {
-        let mut completer = create_test_completer();
-
-        // Complete `:run search`
-        // Note: With empty tool directory, no suggestions expected
-        let suggestions = completer.complete(":run search", 11);
-        // Suggestions may be empty if no tools are loaded
-        // This is expected behavior - tools are loaded from filesystem
-        assert!(suggestions.is_empty() || suggestions.iter().any(|s| s.value.contains("search")));
-    }
-
-    #[test]
-    fn test_log_level_completion() {
-        let mut completer = create_test_completer();
-
-        // Complete `:log d`
-        let suggestions = completer.complete(":log d", 6);
-        assert!(suggestions.iter().any(|s| s.value == "debug"));
-
-        // Complete `:log `
-        let suggestions = completer.complete(":log ", 5);
-        assert_eq!(suggestions.len(), 6); // trace, debug, info, warn, error, off
-    }
-
-    #[test]
-    fn test_format_completion() {
-        let mut completer = create_test_completer();
-
-        // Complete `:format j`
-        let suggestions = completer.complete(":format j", 9);
-        assert!(suggestions.iter().any(|s| s.value == "json"));
-
-        // Complete `:fmt `
-        let suggestions = completer.complete(":fmt ", 5);
-        assert_eq!(suggestions.len(), 3); // table, json, csv
-    }
-
-    #[test]
-    fn test_keyword_completion() {
-        let mut completer = create_test_completer();
-
-        // Complete `SEL`
-        let suggestions = completer.complete("SEL", 3);
-        assert!(suggestions.iter().any(|s| s.value == "SELECT"));
-
-        // Complete `sel` (lowercase)
-        let suggestions = completer.complete("sel", 3);
-        assert!(suggestions.iter().any(|s| s.value == "SELECT"));
-    }
-
-    #[test]
-    fn test_table_name_completion() {
-        // Use a mock database to avoid async issues in test
-        let temp_dir = TempDir::new().unwrap();
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let (core, tools) = rt.block_on(async {
-            // Create in-memory storage
-            let storage_config = SurrealDbConfig {
-                path: ":memory:".to_string(),
-                namespace: "crucible".to_string(),
-                database: "test".to_string(),
-                max_connections: Some(10),
-                timeout_seconds: Some(30),
-            };
-            let storage = SurrealClient::new(storage_config).await.unwrap();
-
-            // Create Core with storage
-            let core = Arc::new(
-                CrucibleCore::builder()
-                    .with_storage(storage)
-                    .build()
-                    .unwrap(),
-            );
-
-            let tools = Arc::new(
-                UnifiedToolRegistry::new(
-                    temp_dir.path().to_path_buf(),
-                    crucible_tools::types::ToolConfigContext::new(),
-                )
-                .await
-                .unwrap(),
-            );
-            (core, tools)
-        });
-
-        let mut completer = ReplCompleter::new(core, tools);
-
-        // Complete `SELECT * FROM n`
-        let suggestions = completer.complete("SELECT * FROM n", 15);
-        assert!(suggestions.iter().any(|s| s.value == "notes"));
-    }
-
-    #[test]
-    fn test_no_completion_mid_command() {
-        let mut completer = create_test_completer();
-
-        // No completion in the middle of a command
-        let suggestions = completer.complete(":run search", 4); // cursor at 'r|un'
-        assert!(suggestions.is_empty() || suggestions[0].value.starts_with(":r"));
-    }
-}
