@@ -203,10 +203,10 @@ impl EnhancedTagsExtension {
                     // We'll handle this gracefully without adding to errors for now
                 }
 
-                let item = ListItem {
-                    content: item_content.to_string(),
-                    level,
-                    task_status,
+                let item = if let Some(status) = task_status {
+                    ListItem::new_task(item_content.to_string(), level, status == TaskStatus::Completed)
+                } else {
+                    ListItem::new(item_content.to_string(), level)
                 };
 
                 // Handle list context switching and nesting
@@ -219,12 +219,9 @@ impl EnhancedTagsExtension {
                             // Close current list and start new one
                             if !items.is_empty() {
                                 let item_count = items.len();
-                                let list_block = ListBlock {
-                                    list_type: *current_list_type,
-                                    items: std::mem::take(items),
-                                    offset: line_offset - line.len(), // Approximate start offset
-                                    item_count,
-                                };
+                                let mut list_block = ListBlock::new(*current_list_type, line_offset - line.len()); // Approximate start offset
+                                list_block.items = std::mem::take(items);
+                                list_block.item_count = item_count;
                                 doc_content.lists.push(list_block);
                             }
                             current_list = Some((vec![item], offset, list_type));
@@ -243,12 +240,9 @@ impl EnhancedTagsExtension {
                 if let Some((items, list_offset, list_type)) = current_list.take() {
                     if !items.is_empty() {
                         let item_count = items.len();
-                        let list_block = ListBlock {
-                            list_type,
-                            items,
-                            offset: list_offset,
-                            item_count,
-                        };
+                        let mut list_block = ListBlock::new(list_type, list_offset);
+                        list_block.items = items;
+                        list_block.item_count = item_count;
                         doc_content.lists.push(list_block);
                     }
                 }
@@ -259,12 +253,9 @@ impl EnhancedTagsExtension {
                 if let Some((items, list_offset, list_type)) = current_list.take() {
                     if !items.is_empty() {
                         let item_count = items.len();
-                        let list_block = ListBlock {
-                            list_type,
-                            items,
-                            offset: list_offset,
-                            item_count,
-                        };
+                        let mut list_block = ListBlock::new(list_type, list_offset);
+                        list_block.items = items;
+                        list_block.item_count = item_count;
                         doc_content.lists.push(list_block);
                     }
                 }
@@ -277,12 +268,9 @@ impl EnhancedTagsExtension {
         if let Some((items, list_offset, list_type)) = current_list {
             if !items.is_empty() {
                 let item_count = items.len();
-                let list_block = ListBlock {
-                    list_type,
-                    items,
-                    offset: list_offset,
-                    item_count,
-                };
+                let mut list_block = ListBlock::new(list_type, list_offset);
+                list_block.items = items;
+                list_block.item_count = item_count;
                 doc_content.lists.push(list_block);
             }
         }

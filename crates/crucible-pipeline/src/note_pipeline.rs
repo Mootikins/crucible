@@ -22,7 +22,7 @@ use anyhow::{Context, Result};
 use crucible_core::processing::{ChangeDetectionStore, FileState, NotePipelineOrchestrator, PipelineMetrics, ProcessingResult};
 use crucible_core::{EnrichedNoteStore, EnrichmentService};
 use crucible_merkle::{HybridMerkleTree, MerkleStore};
-use crucible_parser::{CrucibleParser, traits::MarkdownParserImplementation};
+use crucible_parser::{CrucibleParser, traits::MarkdownParser};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -84,7 +84,7 @@ impl Default for NotePipelineConfig {
 ///
 pub struct NotePipeline {
     /// Markdown parser (Phase 2) - supports multiple backends
-    parser: Arc<dyn MarkdownParserImplementation>,
+    parser: Arc<dyn MarkdownParser>,
 
     /// Storage for file state tracking (Phase 1)
     change_detector: Arc<dyn ChangeDetectionStore>,
@@ -104,7 +104,7 @@ pub struct NotePipeline {
 
 impl NotePipeline {
     /// Create a parser instance based on the configured backend
-    fn create_parser(backend: ParserBackend) -> Arc<dyn MarkdownParserImplementation> {
+    fn create_parser(backend: ParserBackend) -> Arc<dyn MarkdownParser> {
         match backend {
             ParserBackend::Pulldown => Arc::new(CrucibleParser::new()),
             #[cfg(feature = "markdown-it-parser")]

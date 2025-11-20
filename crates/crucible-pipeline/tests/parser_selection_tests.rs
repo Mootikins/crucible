@@ -375,7 +375,7 @@ Nested tag: #work/review/urgent
 }
 
 #[tokio::test]
-#[ignore = "Pulldown parser has known issues with callout extraction - only extracts first callout"]
+// Fixed: Pulldown parser now properly extracts multiple callouts
 async fn test_parity_callouts_extraction() {
     let test_content = r#"# Test
 
@@ -458,7 +458,7 @@ Another text section.
 }
 
 #[tokio::test]
-#[ignore = "Pulldown parser has known issues with LaTeX extraction"]
+// Fixed: Pulldown parser LaTeX extraction has been enhanced
 async fn test_parity_latex_extraction() {
     let test_content = r#"# Test
 
