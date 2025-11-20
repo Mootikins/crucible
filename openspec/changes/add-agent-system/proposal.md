@@ -21,6 +21,9 @@ This system learns from successful patterns in Claude Code, Gemini Code Assist, 
 - Permission inheritance system (subagents cannot exceed parent permissions)
 - Execution queue for sequential agent processing (designed for future concurrency)
 - Progress observability showing subagent actions to users
+- **Reflection system** for self-improvement (optional, Reflexion pattern)
+- **Human approval gates** for sensitive operations (HITL pattern)
+- **Distributed tracing** with trace IDs and parent chain tracking
 
 **Architecture:**
 - Maximum agent depth: 2 levels (User → Primary Agent → Subagents)
@@ -53,6 +56,9 @@ This system learns from successful patterns in Claude Code, Gemini Code Assist, 
   - `src/queue.rs` - Execution queue (sequential for now)
   - `src/permissions.rs` - Permission inheritance and validation
   - `src/observer.rs` - Progress reporting to users
+  - `src/reflection.rs` - Self-evaluation and retry logic (NEW)
+  - `src/approval.rs` - Human-in-the-loop approval gates (NEW)
+  - `src/tracing.rs` - Trace ID and parent chain tracking (NEW)
 
 **Integration Points:**
 - `crates/crucible-cli/src/commands/chat.rs` - Primary agent can spawn subagents
@@ -70,9 +76,13 @@ This system learns from successful patterns in Claude Code, Gemini Code Assist, 
 - **Session History**: Sessions saved to `.crucible/sessions/` for review and learning
 - **Progress Visibility**: Users see abbreviated subagent actions during execution
 - **Debugging**: Wikilink-based session structure enables easy navigation and debugging
+- **Quality Improvement**: Optional reflection enables agents to self-critique and improve outputs
+- **Safety Controls**: Approval gates prevent destructive actions without user permission
+- **Trace Visibility**: `cru sessions trace` command visualizes execution flow for debugging
 
 ### Timeline
-- **Week 1**: Agent definition format, registry, basic spawning
-- **Week 2**: Session management, queue, permissions
-- **Week 3**: Integration with CLI chat mode, observability
-- **Estimated effort**: 2-3 weeks for working MVP
+- **Week 1**: Agent definition format, registry, basic spawning, permissions
+- **Week 2**: Session management, queue, reflection system, tracing
+- **Week 3**: Approval gates, CLI integration, observability
+- **Week 4**: Testing, documentation, default system agents
+- **Estimated effort**: 3-4 weeks for working MVP with advanced features
