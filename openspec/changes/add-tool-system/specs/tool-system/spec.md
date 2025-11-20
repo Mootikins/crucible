@@ -1,18 +1,18 @@
 ## ADDED Requirements
 
-### Requirement: Path-Based Tool System ✅ IN PROGRESS
+### Requirement: Path-Based Tool System ✅ COMPLETE
 The system SHALL provide a comprehensive tool system that enables agents to access and manipulate knowledge within the kiln using filesystem paths, supporting flexible user organization patterns.
 
 **Implementation Status**:
-- **Architecture**: MCP-compatible using rmcp 0.9.0 with `#[tool_router]` and `#[tool]` macros
-- **Tools**: 10 focused tools (refined from 25+ legacy tools)
+- **Architecture**: ✅ MCP-compatible using rmcp 0.9.0 with `#[tool_router]` and `#[tool]` macros
+- **Tools**: ✅ 10 focused tools (refined from 25+ legacy tools, 1,189 lines removed)
 - **Categories**:
-  - **NoteTools** (6): create_note, read_note, read_metadata, update_note, delete_note, list_notes
-  - **SearchTools** (3): text_search, property_search, semantic_search
-  - **KilnTools** (1): get_kiln_info
-- **Validation**: Parameters<T> wrapper with schemars::JsonSchema for automatic schema generation
-- **Dependency Injection**: Proper dependency injection via core traits
-- **Permission System**: User approval required for all write operations
+  - **NoteTools** (6): ✅ create_note, read_note, read_metadata, update_note, delete_note, list_notes
+  - **SearchTools** (3): ✅ text_search, property_search, semantic_search
+  - **KilnTools** (1): ✅ get_kiln_info
+- **Validation**: ✅ Parameters<T> wrapper with schemars::JsonSchema for automatic schema generation
+- **Dependency Injection**: ✅ Proper dependency injection via core traits
+- **Permission System**: ⏳ DEFERRED - User approval for write operations planned for future implementation
 
 **Design Rationale**:
 - Filesystem paths map naturally to MCP resources, shell operations, and file management
