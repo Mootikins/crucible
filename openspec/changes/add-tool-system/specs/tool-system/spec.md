@@ -1,99 +1,128 @@
 ## ADDED Requirements
 
-### Requirement: Kiln-Agnostic Tool System ✅ IMPLEMENTED
-The system SHALL provide a comprehensive tool system that enables agents to access and manipulate knowledge within the kiln using note names and wikilinks, independent of underlying storage implementation.
+### Requirement: Path-Based Tool System ✅ IN PROGRESS
+The system SHALL provide a comprehensive tool system that enables agents to access and manipulate knowledge within the kiln using filesystem paths, supporting flexible user organization patterns.
 
 **Implementation Status**:
 - **Architecture**: MCP-compatible using rmcp 0.9.0 with `#[tool_router]` and `#[tool]` macros
-- **Tools**: 11 focused tools consolidated from 25+ previous tools
+- **Tools**: 10 focused tools (refined from 25+ legacy tools)
 - **Categories**:
-  - **NoteTools** (5): create_note, read_note, update_note, delete_note, list_notes
-  - **SearchTools** (4): semantic_search, text_search, metadata_search, tag_search
-  - **KilnTools** (2): get_roots, get_stats
+  - **NoteTools** (6): create_note, read_note, read_metadata, update_note, delete_note, list_notes
+  - **SearchTools** (3): text_search, property_search, semantic_search
+  - **KilnTools** (1): get_kiln_info
 - **Validation**: Parameters<T> wrapper with schemars::JsonSchema for automatic schema generation
 - **Dependency Injection**: Proper dependency injection via core traits
+- **Permission System**: User approval required for all write operations
 
-#### Scenario: Agent reads note by name
-- **WHEN** agent requests note content using note name or wikilink
-- **THEN** system SHALL locate and return note content regardless of storage backend
-- **AND** note resolution SHALL follow Obsidian-style reference patterns
-- **AND** system SHALL handle name conflicts and disambiguation
+**Design Rationale**:
+- Filesystem paths map naturally to MCP resources, shell operations, and file management
+- Supports diverse organizational patterns (by project, date, topic, etc.)
+- Line range support enables efficient handling of large files
+- Separate metadata reads prevent unnecessary content loading
 
-#### Scenario: Storage backend abstraction
-- **WHEN** tools access notes
-- **THEN** storage implementation SHALL be transparent to the agent
-- **AND** tools SHALL work with file-based or database storage
-- **AND** future storage backends SHALL work without tool changes
+#### Scenario: Agent reads note by path
+- **WHEN** agent requests note content using relative path from kiln root
+- **THEN** system SHALL return full note content or specified line range
+- **AND** agent MAY request only metadata without loading content
+- **AND** system SHALL support partial reads via start_line and end_line parameters
+
+#### Scenario: Efficient metadata access
+- **WHEN** agent calls `read_metadata` with path
+- **THEN** system SHALL return frontmatter properties and structural statistics
+- **AND** SHALL NOT load full note content
+- **AND** response SHALL include word count, heading count, wikilink count, etc.
 
 ### Requirement: Knowledge Access Tools
-The system SHALL provide tools for reading, listing, and discovering kiln content using natural note references.
+The system SHALL provide tools for reading, listing, and discovering kiln content using filesystem paths.
 
-#### Scenario: Read note content
-- **WHEN** agent calls `read_note` with note name or wikilink
-- **THEN** system SHALL return full note content in structured format
-- **AND** metadata SHALL include title, tags, creation date, and backlinks
+#### Scenario: Read note content with line ranges
+- **WHEN** agent calls `read_note` with path and optional line range
+- **THEN** system SHALL return requested content in structured format
+- **AND** SHALL support full file read, first N lines, last N lines, or range
+- **AND** response SHALL include total_lines and lines_returned counts
 - **AND** content SHALL be suitable for agent processing and analysis
 
-#### Scenario: List notes in context
-- **WHEN** agent calls `list_notes` with optional directory context
-- **THEN** system SHALL return available notes within scope
-- **AND** results SHALL include note names, titles, and preview snippets
-- **AND** results SHALL respect permission boundaries
+#### Scenario: Read metadata without content
+- **WHEN** agent calls `read_metadata` with path
+- **THEN** system SHALL parse frontmatter and return properties
+- **AND** SHALL return structural statistics (word count, headings, wikilinks)
+- **AND** SHALL NOT load or return full note content
+- **AND** operation SHALL be fast enough for bulk metadata queries
+
+#### Scenario: List notes in directory
+- **WHEN** agent calls `list_notes` with optional folder parameter
+- **THEN** system SHALL return all markdown files in specified scope
+- **AND** results SHALL include paths, word counts, and modification dates
+- **AND** MAY optionally include frontmatter properties
+- **AND** SHALL support recursive and non-recursive listing
+
+#### Scenario: Fast text search
+- **WHEN** agent calls `text_search` with query string
+- **THEN** system SHALL use ripgrep for fast full-text search
+- **AND** SHALL return matching lines with context
+- **AND** SHALL support case-sensitive and case-insensitive modes
+- **AND** MAY limit search to specific folder
+
+#### Scenario: Property and tag search
+- **WHEN** agent calls `property_search` with property filters
+- **THEN** system SHALL search frontmatter properties across all notes
+- **AND** SHALL support AND logic for multiple properties
+- **AND** SHALL support OR logic for array values (e.g., tags)
+- **AND** tags SHALL be treated as frontmatter properties
 
 #### Scenario: Semantic search discovery
-- **WHEN** agent calls `semantic_search` with query and optional filters
-- **THEN** system SHALL return ranked results based on semantic similarity
+- **WHEN** agent calls `semantic_search` with natural language query
+- **THEN** system SHALL return ranked results based on embedding similarity
 - **AND** results SHALL include relevance scores and content snippets
-- **AND** search SHALL work across entire accessible kiln scope
-- **AND** agent SHALL discover notes beyond auto-enriched context
-
-#### Scenario: Find related knowledge
-- **WHEN** agent calls `find_related_notes` with note reference
-- **THEN** system SHALL return notes linked by wikilinks or semantic similarity
-- **AND** results SHALL include bidirectional link relationships
-- **AND** discovery SHALL surface potentially relevant but unconnected notes
+- **AND** MAY filter by frontmatter properties before semantic search
+- **AND** SHALL work across entire accessible kiln scope
 
 ### Requirement: Knowledge Manipulation Tools
 The system SHALL provide tools for creating, updating, and deleting notes with appropriate permission controls.
 
-#### Scenario: Create new note with permission
-- **WHEN** agent calls `create_note` with content and metadata
+#### Scenario: Create note with frontmatter
+- **WHEN** agent calls `create_note` with path, content, and optional frontmatter
 - **THEN** system SHALL prompt user for approval before creation
-- **AND** upon approval SHALL create note with proper file naming
-- **AND** SHALL return success confirmation with note reference
+- **AND** upon approval SHALL create note at specified path
+- **AND** IF frontmatter provided, SHALL serialize as YAML frontmatter block
+- **AND** SHALL return success with path and word count statistics
 
-#### Scenario: Update existing note
-- **WHEN** agent calls `update_note` with note reference and changes
+#### Scenario: Update note content or frontmatter
+- **WHEN** agent calls `update_note` with path and content or frontmatter
 - **THEN** system SHALL prompt user for approval before modification
-- **AND** SHALL preserve note history and metadata
-- **AND** SHALL return confirmation of changes made
+- **AND** MAY update content only, frontmatter only, or both
+- **AND** IF frontmatter provided, SHALL replace existing frontmatter entirely
+- **AND** SHALL return confirmation of which fields were updated
 
-#### Scenario: Delete note safely
-- **WHEN** agent calls `delete_note` with note reference
+#### Scenario: Delete note with backlink warning
+- **WHEN** agent calls `delete_note` with path
 - **THEN** system SHALL require explicit user confirmation
-- **AND** SHALL warn about incoming links before deletion
-- **AND** SHALL provide backup option before deletion
+- **AND** SHALL detect and warn about incoming wikilinks
+- **AND** SHALL include backlink count in approval prompt
+- **AND** upon approval SHALL delete file from filesystem
 
-### Requirement: Metadata and Property Management
-The system SHALL provide tools for managing note metadata, tags, and relationships.
+### Requirement: Frontmatter-Based Metadata Management
+The system SHALL manage note metadata through frontmatter properties, treating tags as first-class properties.
 
-#### Scenario: Tag management
-- **WHEN** agent calls `add_tag` or `remove_tag` with note and tag
-- **THEN** system SHALL update tag assignments with permission prompts
-- **AND** SHALL maintain hierarchical tag relationships
-- **AND** SHALL update search indexes appropriately
+#### Scenario: Frontmatter as single source of truth
+- **WHEN** agent needs to add/remove tags or update properties
+- **THEN** agent SHALL use `update_note` with frontmatter parameter
+- **AND** frontmatter SHALL be serialized as YAML
+- **AND** tags SHALL be stored as array property in frontmatter
+- **AND** system SHALL support arbitrary JSON-compatible properties
 
-#### Scenario: Wikilink management
-- **WHEN** agent creates or removes wikilinks between notes
-- **THEN** system SHALL validate target note existence
-- **AND** SHALL update bidirectional link tracking
-- **AND** SHALL maintain link graph integrity
+#### Scenario: Metadata-only updates
+- **WHEN** agent calls `update_note` with frontmatter but no content
+- **THEN** system SHALL update frontmatter without modifying note content
+- **AND** SHALL preserve existing content exactly
+- **AND** SHALL replace frontmatter block entirely
 
-#### Scenario: Metadata queries
-- **WHEN** agent calls `get_note_metadata` with note reference
-- **THEN** system SHALL return comprehensive metadata
-- **AND** SHALL include tags, links, creation dates, and custom properties
-- **AND** SHALL provide statistical information about note connections
+#### Scenario: Wikilink detection
+- **WHEN** system reads note content
+- **THEN** parser SHALL automatically detect wikilinks in content
+- **AND** wikilink information SHALL be included in metadata response
+- **AND** agents SHALL modify wikilinks by updating note content
+- **AND** backlink tracking SHALL be handled by storage layer
 
 ### Requirement: Permission and Safety Model
 The system SHALL implement a permission model that ensures users maintain control over their kiln content.
@@ -116,25 +145,14 @@ The system SHALL implement a permission model that ensures users maintain contro
 - **AND** system SHALL provide context about requested access
 
 ### Requirement: Administrative and System Tools
-The system SHALL provide tools for kiln management, indexing, and system status.
+The system SHALL provide tools for kiln information and status reporting.
 
-#### Scenario: Kiln statistics and health
-- **WHEN** agent calls `get_kiln_stats`
-- **THEN** system SHALL return note counts, indexing status, and storage information
-- **AND** SHALL identify any issues requiring attention
-- **AND** SHALL provide performance metrics
-
-#### Scenario: Index management
-- **WHEN** agent calls `rebuild_index` or similar administrative functions
-- **THEN** system SHALL require explicit permission for disruptive operations
-- **AND** SHALL provide progress feedback during operations
-- **AND** SHALL validate index integrity after completion
-
-#### Scenario: System validation
-- **WHEN** agent calls `validate_kiln`
-- **THEN** system SHALL check for data integrity issues
-- **AND** SHALL report broken links, orphaned notes, or corruption
-- **AND** SHALL suggest corrective actions
+#### Scenario: Kiln information and statistics
+- **WHEN** agent calls `get_kiln_info` with optional detailed flag
+- **THEN** system SHALL return kiln root URIs for MCP resource access
+- **AND** SHALL return basic statistics (note count, total size, word count)
+- **AND** IF detailed flag set, SHALL include indexing status and health metrics
+- **AND** response SHALL be fast enough for frequent polling
 
 ### Requirement: Agent Integration and Discovery
 The system SHALL provide standardized interfaces for agent tool discovery and usage.
@@ -159,24 +177,11 @@ The system SHALL provide standardized interfaces for agent tool discovery and us
 
 ## MODIFIED Requirements
 
-### Requirement: Tool Executor Integration
-The existing `ToolExecutor` trait SHALL be enhanced to support kiln-specific tools and agent integration patterns.
-
-#### Scenario: Native tool execution
-- **WHEN** ACP client bridges agent tool calls to native execution
-- **THEN** `ToolExecutor` implementations SHALL handle kiln operations
-- **AND** execution SHALL maintain security boundaries and permissions
-- **AND** results SHALL be formatted for agent consumption
-
-#### Scenario: Tool registration
-- **WHEN** system initializes or tools are added
-- **THEN** kiln tools SHALL be registered with `ToolExecutor` registry
-- **AND** metadata SHALL include tool categories and permission requirements
-- **AND** discovery SHALL support both static and dynamic registration patterns
+None - This is a greenfield implementation using rmcp library patterns.
 
 ## REMOVED Requirements
 
-### Requirement: File System Tool Dependencies
-**Reason**: Agents should not directly access filesystem paths as this creates storage dependencies and violates kiln-agnostic principles.
+### Requirement: Note Name Resolution System
+**Reason**: After analysis of use cases and MCP patterns, filesystem paths provide better integration with existing tools (shell, MCP resources, file operations). Wikilink resolution remains internal to parser for backlink tracking.
 
-**Migration**: All file access tools SHALL use note names and wikilinks, with storage backend abstraction handling path resolution.
+**Decision**: Tools use relative filesystem paths from kiln root. User organizational patterns (folders, naming) are respected rather than abstracted.
