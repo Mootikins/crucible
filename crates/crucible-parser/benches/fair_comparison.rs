@@ -1,7 +1,7 @@
 //! Fair comparison: Full parsing + tree building for both approaches
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use crucible_parser::{MarkdownParserImplementation, CrucibleParser};
+use crucible_parser::{MarkdownParser, CrucibleParser};
 use std::path::PathBuf;
 
 #[cfg(feature = "markdown-it-parser")]

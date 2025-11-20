@@ -1,7 +1,7 @@
 //! Benchmark comparing pulldown-cmark vs markdown-it-rust parsers
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use crucible_parser::{MarkdownParserImplementation, CrucibleParser};
+use crucible_parser::{MarkdownParser, CrucibleParser};
 use std::path::PathBuf;
 
 #[cfg(feature = "markdown-it-parser")]
