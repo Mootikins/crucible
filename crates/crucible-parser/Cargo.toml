@@ -49,6 +49,10 @@ harness = false
 name = "poc_wikilink_benchmark"
 harness = false
 
+[[bench]]
+name = "fair_comparison"
+harness = false
+
 [features]
 default = ["full-featured"]
 full-featured = []
