@@ -98,7 +98,14 @@ impl MarkdownParser for PulldownParser {
         let tables = extract_tables(body)?;
 
         // Parse content structure with pulldown-cmark
-        let doc_content = parse_content_structure(body, tables)?;
+        let mut doc_content = parse_content_structure(body, tables)?;
+
+        // Populate NoteContent with extracted data for API consistency
+        // This ensures content.wikilinks, content.tags, etc. match the markdown-it parser behavior
+        doc_content.wikilinks = wikilinks.clone();
+        doc_content.tags = tags.clone();
+        doc_content.callouts = callouts.clone();
+        doc_content.latex_expressions = latex_expressions.clone();
 
         // Calculate content hash using BLAKE3 on raw bytes (matches FileScanner behavior)
         // This ensures parser and scanner produce identical hashes for the same file
@@ -597,7 +604,22 @@ fn extract_latex(content: &str) -> ParserResult<Vec<LatexExpression>> {
     }
 
     // Sort expressions by their original document order
+    use std::io::Write;
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/latex_debug.txt") {
+        writeln!(file, "\n=== Before sort ===").ok();
+        for (i, expr) in expressions.iter().enumerate() {
+            writeln!(file, "[{}] offset={}, is_block={}", i, expr.offset, expr.is_block).ok();
+        }
+    }
+
     expressions.sort_by_key(|expr| expr.offset);
+
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/latex_debug.txt") {
+        writeln!(file, "=== After sort ===").ok();
+        for (i, expr) in expressions.iter().enumerate() {
+            writeln!(file, "[{}] offset={}, is_block={}", i, expr.offset, expr.is_block).ok();
+        }
+    }
 
     Ok(expressions)
 }

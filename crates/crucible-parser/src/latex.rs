@@ -59,6 +59,10 @@ impl SyntaxExtension for LatexExtension {
             errors.push(err);
         }
 
+        // Sort expressions by offset to maintain document order
+        // (Block math is extracted before inline, so order may not match document flow)
+        doc_content.latex_expressions.sort_by_key(|expr| expr.offset);
+
         errors
     }
 
