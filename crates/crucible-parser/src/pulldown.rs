@@ -170,8 +170,9 @@ fn extract_wikilinks(content: &str) -> ParserResult<Vec<Wikilink>> {
 /// Extract tags from content using regex
 fn extract_tags(content: &str) -> ParserResult<Vec<Tag>> {
     use regex::Regex;
-    // Simple regex that matches tags, we'll filter out false positives
-    let re = Regex::new(r"#([\w/]+)").unwrap();
+    // Match tags including nested tags with slashes
+    // Use explicit character class to ensure slashes are included
+    let re = Regex::new(r"#([a-zA-Z0-9_/]+)").unwrap();
 
     let mut tags = Vec::new();
     for cap in re.captures_iter(content) {
