@@ -2,7 +2,7 @@
 //!
 //! Tests for graceful handling of malformed markdown and edge cases.
 
-use crucible_parser::{CrucibleParser, MarkdownParserImplementation, ParsedNote};
+use crucible_parser::{CrucibleParser, MarkdownParser, ParsedNote};
 use std::path::Path;
 
 async fn parse_note(content: &str, path: &str) -> Result<ParsedNote, Box<dyn std::error::Error>> {
