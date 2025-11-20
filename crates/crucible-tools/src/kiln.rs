@@ -96,8 +96,8 @@ mod tests {
 
         // Check response structure
         if let Some(content) = call_result.content.first() {
-            let json_str = content.as_text().unwrap();
-            let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            let raw_text = content.as_text().unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
             assert!(parsed["roots"].is_array());
             let roots = parsed["roots"].as_array().unwrap();
             assert_eq!(roots.len(), 1);
@@ -113,15 +113,15 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
-        let kiln_tools = KilnTools::new(kiln_path);
+        let kiln_tools = KilnTools::new(kiln_path.clone());
 
         let result = kiln_tools.get_kiln_stats().await;
         assert!(result.is_ok());
 
         let call_result = result.unwrap();
         if let Some(content) = call_result.content.first() {
-            let json_str = content.as_text().unwrap();
-            let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            let raw_text = content.as_text().unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
             assert_eq!(parsed["total_files"], 0);
             assert_eq!(parsed["markdown_files"], 0);
             assert_eq!(parsed["total_size_bytes"], 0);
@@ -134,7 +134,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
-        let kiln_tools = KilnTools::new(kiln_path);
+        let kiln_tools = KilnTools::new(kiln_path.clone());
 
         // Create some test files
         std::fs::write(temp_dir.path().join("test1.md"), "# Test Note 1").unwrap();
@@ -146,8 +146,8 @@ mod tests {
 
         let call_result = result.unwrap();
         if let Some(content) = call_result.content.first() {
-            let json_str = content.as_text().unwrap();
-            let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            let raw_text = content.as_text().unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
             assert_eq!(parsed["total_files"], 3);
             assert_eq!(parsed["markdown_files"], 2); // Only .md files
             assert!(parsed["total_size_bytes"].as_u64().unwrap() > 0);
@@ -160,9 +160,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let kiln_path = temp_dir.path().to_string_lossy().to_string();
 
-        let kiln_tools = KilnTools::new(kiln_path);
+        let _kiln_tools = KilnTools::new(kiln_path);
 
         // This should compile and not panic - the tool_router macro generates the router
-        let _router = Self::tool_router();
+        let _router = KilnTools::tool_router();
     }
 }

@@ -266,7 +266,7 @@ pub fn get_system_info() -> ToolFunction {
 /// Execute shell command - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn execute_command() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, _context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -303,7 +303,7 @@ pub fn execute_command() -> ToolFunction {
 /// List files in directory - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn list_files() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, _context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -367,7 +367,7 @@ pub fn list_files() -> ToolFunction {
 /// Read file content - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn read_file() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, _context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 
@@ -407,7 +407,7 @@ pub fn read_file() -> ToolFunction {
 /// Get environment variables - Phase 2.1 `ToolFunction`
 #[must_use]
 pub fn get_environment() -> ToolFunction {
-    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, context: std::sync::Arc<crate::types::ToolConfigContext>| {
+    |tool_name: String, parameters: Value, user_id: Option<String>, session_id: Option<String>, _context: std::sync::Arc<crate::types::ToolConfigContext>| {
         Box::pin(async move {
             let start_time = std::time::Instant::now();
 

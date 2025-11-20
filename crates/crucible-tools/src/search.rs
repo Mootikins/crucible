@@ -394,8 +394,8 @@ mod tests {
 
         let call_result = result.unwrap();
         if let Some(content) = call_result.content.first() {
-            if let Some(json_str) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
                 assert_eq!(parsed["query"], "TODO");
                 assert_eq!(parsed["count"], 1);
 
@@ -428,8 +428,8 @@ mod tests {
 
         let result = search_tools.text_search(params).await.unwrap();
         if let Some(content) = result.content.first() {
-            if let Some(json_str) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
                 assert_eq!(parsed["count"], 2);
             }
         }
@@ -444,8 +444,8 @@ mod tests {
 
         let result = search_tools.text_search(params).await.unwrap();
         if let Some(content) = result.content.first() {
-            if let Some(json_str) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
                 assert_eq!(parsed["count"], 1);
             }
         }
@@ -480,8 +480,8 @@ mod tests {
 
         let result = search_tools.text_search(params).await.unwrap();
         if let Some(content) = result.content.first() {
-            if let Some(json_str) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
                 assert_eq!(parsed["count"], 1);
                 let matches = parsed["matches"].as_array().unwrap();
                 assert!(matches[0]["path"].as_str().unwrap().contains("subfolder"));
@@ -511,8 +511,8 @@ mod tests {
 
         let result = search_tools.text_search(params).await.unwrap();
         if let Some(content) = result.content.first() {
-            if let Some(json_str) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
                 let matches = parsed["matches"].as_array().unwrap();
                 assert_eq!(matches.len(), 3); // Limited to 3
                 assert_eq!(parsed["truncated"], true);
@@ -547,8 +547,8 @@ mod tests {
 
         let result = search_tools.property_search(params).await.unwrap();
         if let Some(content) = result.content.first() {
-            if let Some(json_str) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
                 assert_eq!(parsed["count"], 1);
                 let matches = parsed["matches"].as_array().unwrap();
                 assert!(matches[0]["path"].as_str().unwrap().contains("draft"));
@@ -580,8 +580,8 @@ mod tests {
 
         let result = search_tools.property_search(params).await.unwrap();
         if let Some(content) = result.content.first() {
-            if let Some(json_str) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
                 assert_eq!(parsed["count"], 1);
             }
         }
@@ -612,8 +612,8 @@ mod tests {
 
         let result = search_tools.property_search(params).await.unwrap();
         if let Some(content) = result.content.first() {
-            if let Some(json_str) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
                 assert_eq!(parsed["count"], 2); // Both should match
             }
         }
@@ -638,8 +638,8 @@ mod tests {
 
         let result = search_tools.property_search(params).await.unwrap();
         if let Some(content) = result.content.first() {
-            if let Some(json_str) = content.as_text() {
-                let parsed: serde_json::Value = serde_json::from_str(json_str).unwrap();
+            if let Some(raw_text) = content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
                 assert_eq!(parsed["count"], 0); // No matches
             }
         }
