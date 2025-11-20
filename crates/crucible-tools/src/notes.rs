@@ -18,6 +18,8 @@ pub struct NoteTools {
 struct CreateNoteParams {
     path: String,
     content: String,
+    #[serde(default)]
+    frontmatter: Option<serde_json::Value>,
 }
 
 /// Parameters for reading a note
@@ -40,7 +42,10 @@ struct ReadMetadataParams {
 #[derive(Deserialize, JsonSchema)]
 struct UpdateNoteParams {
     path: String,
-    content: String,
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    frontmatter: Option<serde_json::Value>,
 }
 
 /// Parameters for deleting a note
@@ -80,10 +85,20 @@ impl NoteTools {
         let params = params.0;
         let path = params.path;
         let content = params.content;
+        let frontmatter = params.frontmatter;
 
         let full_path = std::path::Path::new(&self.kiln_path).join(&path);
 
-        std::fs::write(&full_path, &content)
+        // Build final content with optional frontmatter
+        let final_content = if let Some(fm) = frontmatter {
+            let fm_str = serialize_frontmatter_to_yaml(&fm)
+                .map_err(|e| rmcp::ErrorData::internal_error(e, None))?;
+            format!("{}{}", fm_str, content)
+        } else {
+            content
+        };
+
+        std::fs::write(&full_path, &final_content)
             .map_err(|e| rmcp::ErrorData::internal_error(format!("Failed to write file: {e}"), None))?;
 
         // TODO: Notify parser for reprocessing
@@ -205,14 +220,60 @@ impl NoteTools {
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let params = params.0;
         let path = params.path;
-        let content = params.content;
+        let new_content = params.content;
+        let new_frontmatter = params.frontmatter;
         let full_path = std::path::Path::new(&self.kiln_path).join(&path);
 
         if !full_path.exists() {
             return Err(rmcp::ErrorData::invalid_params(format!("File not found: {}", path), None));
         }
 
-        std::fs::write(&full_path, &content)
+        // Read existing file
+        let existing_content = std::fs::read_to_string(&full_path)
+            .map_err(|e| rmcp::ErrorData::internal_error(format!("Failed to read file: {e}"), None))?;
+
+        // Track what fields are being updated
+        let mut updated_fields = Vec::new();
+
+        // Determine the final frontmatter and content
+        let (final_frontmatter, final_content) = match (new_frontmatter, new_content) {
+            (Some(fm), Some(content)) => {
+                // Update both frontmatter and content
+                updated_fields.push("frontmatter");
+                updated_fields.push("content");
+                (Some(fm), content)
+            }
+            (Some(fm), None) => {
+                // Update frontmatter only, preserve content
+                updated_fields.push("frontmatter");
+                let content = extract_content_without_frontmatter(&existing_content);
+                (Some(fm), content)
+            }
+            (None, Some(content)) => {
+                // Update content only, preserve frontmatter
+                updated_fields.push("content");
+                let fm = parse_yaml_frontmatter(&existing_content);
+                (fm, content)
+            }
+            (None, None) => {
+                // Nothing to update
+                return Err(rmcp::ErrorData::invalid_params(
+                    "Must provide either content or frontmatter to update".to_string(),
+                    None
+                ));
+            }
+        };
+
+        // Build final file content
+        let final_file_content = if let Some(fm) = final_frontmatter {
+            let fm_str = serialize_frontmatter_to_yaml(&fm)
+                .map_err(|e| rmcp::ErrorData::internal_error(e, None))?;
+            format!("{}{}", fm_str, final_content)
+        } else {
+            final_content
+        };
+
+        std::fs::write(&full_path, &final_file_content)
             .map_err(|e| rmcp::ErrorData::internal_error(format!("Failed to update file: {e}"), None))?;
 
         // TODO: Notify parser for reprocessing
@@ -221,7 +282,8 @@ impl NoteTools {
             rmcp::model::Content::json(serde_json::json!({
                 "path": path,
                 "full_path": full_path.to_string_lossy(),
-                "status": "updated"
+                "status": "updated",
+                "updated_fields": updated_fields
             }))?
         ]))
     }
@@ -376,6 +438,43 @@ fn parse_yaml_frontmatter(content: &str) -> Option<serde_json::Value> {
     serde_yaml::from_str(yaml_str).ok()
 }
 
+/// Serialize frontmatter to YAML format with delimiters
+fn serialize_frontmatter_to_yaml(frontmatter: &serde_json::Value) -> Result<String, String> {
+    // If frontmatter is empty object, return empty string
+    if let Some(obj) = frontmatter.as_object() {
+        if obj.is_empty() {
+            return Ok(String::new());
+        }
+    }
+
+    // Serialize to YAML
+    let yaml_str = serde_yaml::to_string(frontmatter)
+        .map_err(|e| format!("Failed to serialize frontmatter: {}", e))?;
+
+    // Add delimiters
+    Ok(format!("---\n{}---\n", yaml_str))
+}
+
+/// Extract content without frontmatter
+fn extract_content_without_frontmatter(content: &str) -> String {
+    // Check if starts with ---
+    if !content.starts_with("---\n") && !content.starts_with("---\r\n") {
+        return content.to_string();
+    }
+
+    // Find closing ---
+    let rest = &content[4..]; // Skip opening ---\n
+    if let Some(end_pos) = rest.find("\n---\n") {
+        // Return content after closing ---
+        rest[end_pos + 5..].to_string()
+    } else if let Some(end_pos) = rest.find("\r\n---\r\n") {
+        rest[end_pos + 7..].to_string()
+    } else {
+        // No closing delimiter found, return original
+        content.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -401,6 +500,7 @@ mod tests {
             Parameters(CreateNoteParams {
                 path: "test.md".to_string(),
                 content: "# Test Note\n\nThis is a test note.".to_string(),
+                frontmatter: None,
             })
         ).await;
 
@@ -433,6 +533,7 @@ mod tests {
             Parameters(CreateNoteParams {
                 path: "test.md".to_string(),
                 content: content.to_string(),
+                frontmatter: None,
             })
         ).await;
         assert!(create_result.is_ok());
@@ -486,12 +587,14 @@ mod tests {
         note_tools.create_note(Parameters(CreateNoteParams {
             path: "update.md".to_string(),
             content: initial_content.to_string(),
+            frontmatter: None,
         })).await.unwrap();
 
         // Update note
         let result = note_tools.update_note(Parameters(UpdateNoteParams {
             path: "update.md".to_string(),
-            content: updated_content.to_string(),
+            content: Some(updated_content.to_string()),
+            frontmatter: None,
         })).await;
         assert!(result.is_ok());
 
@@ -527,7 +630,8 @@ mod tests {
 
         let result = note_tools.update_note(Parameters(UpdateNoteParams {
             path: "nonexistent.md".to_string(),
-            content: "content".to_string(),
+            content: Some("content".to_string()),
+            frontmatter: None,
         })).await;
         assert!(result.is_err());
     }
@@ -543,6 +647,7 @@ mod tests {
         note_tools.create_note(Parameters(CreateNoteParams {
             path: "delete.md".to_string(),
             content: "content".to_string(),
+            frontmatter: None,
         })).await.unwrap();
 
         // Delete note
@@ -604,10 +709,12 @@ mod tests {
         note_tools.create_note(Parameters(CreateNoteParams {
             path: "test1.md".to_string(),
             content: "content1".to_string(),
+            frontmatter: None,
         })).await.unwrap();
         note_tools.create_note(Parameters(CreateNoteParams {
             path: "test2.md".to_string(),
             content: "content2".to_string(),
+            frontmatter: None,
         })).await.unwrap();
 
         // Create a non-md file (should be ignored)
@@ -650,6 +757,7 @@ mod tests {
         note_tools.create_note(Parameters(CreateNoteParams {
             path: "test.md".to_string(),
             content: content.to_string(),
+            frontmatter: None,
         })).await.unwrap();
 
         // Read metadata
@@ -687,6 +795,7 @@ mod tests {
         note_tools.create_note(Parameters(CreateNoteParams {
             path: "test.md".to_string(),
             content: content.to_string(),
+            frontmatter: None,
         })).await.unwrap();
 
         // Read metadata
@@ -719,6 +828,7 @@ mod tests {
         note_tools.create_note(Parameters(CreateNoteParams {
             path: "test.md".to_string(),
             content: content.to_string(),
+            frontmatter: None,
         })).await.unwrap();
 
         // Read full file (no line range)
@@ -748,6 +858,7 @@ mod tests {
         note_tools.create_note(Parameters(CreateNoteParams {
             path: "test.md".to_string(),
             content: content.to_string(),
+            frontmatter: None,
         })).await.unwrap();
 
         // Read first 3 lines
@@ -777,6 +888,7 @@ mod tests {
         note_tools.create_note(Parameters(CreateNoteParams {
             path: "test.md".to_string(),
             content: content.to_string(),
+            frontmatter: None,
         })).await.unwrap();
 
         // Read lines 2-4 (1-indexed)
@@ -806,6 +918,7 @@ mod tests {
         note_tools.create_note(Parameters(CreateNoteParams {
             path: "test.md".to_string(),
             content: content.to_string(),
+            frontmatter: None,
         })).await.unwrap();
 
         // Read from line 3 to end
@@ -835,11 +948,13 @@ mod tests {
         note_tools.create_note(Parameters(CreateNoteParams {
             path: "note1.md".to_string(),
             content: "---\ntitle: Note 1\nstatus: draft\n---\n\nContent".to_string(),
+            frontmatter: None,
         })).await.unwrap();
 
         note_tools.create_note(Parameters(CreateNoteParams {
             path: "note2.md".to_string(),
             content: "---\ntitle: Note 2\nstatus: published\n---\n\nContent".to_string(),
+            frontmatter: None,
         })).await.unwrap();
 
         // List with frontmatter
@@ -875,6 +990,7 @@ mod tests {
         note_tools.create_note(Parameters(CreateNoteParams {
             path: "root.md".to_string(),
             content: "Root note".to_string(),
+            frontmatter: None,
         })).await.unwrap();
 
         // Create subfolder with note
@@ -882,6 +998,7 @@ mod tests {
         note_tools.create_note(Parameters(CreateNoteParams {
             path: "subfolder/nested.md".to_string(),
             content: "Nested note".to_string(),
+            frontmatter: None,
         })).await.unwrap();
 
         // List non-recursively (should only find root.md)
@@ -898,6 +1015,229 @@ mod tests {
                 assert_eq!(parsed["recursive"], false);
             }
         }
+    }
+
+    #[tokio::test]
+    async fn test_create_note_with_frontmatter() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let note_tools = NoteTools::new(kiln_path.clone());
+
+        let frontmatter = serde_json::json!({
+            "title": "Test Note",
+            "tags": ["test", "example"],
+            "status": "draft"
+        });
+
+        let result = note_tools.create_note(Parameters(CreateNoteParams {
+            path: "test_frontmatter.md".to_string(),
+            content: "This is the content".to_string(),
+            frontmatter: Some(frontmatter.clone()),
+        })).await.unwrap();
+
+        if let Some(response_content) = result.content.first() {
+            if let Some(raw_text) = response_content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+                assert_eq!(parsed["status"], "created");
+            }
+        }
+
+        // Verify file content has frontmatter
+        let file_path = temp_dir.path().join("test_frontmatter.md");
+        let content = std::fs::read_to_string(file_path).unwrap();
+
+        assert!(content.starts_with("---\n"));
+        assert!(content.contains("title: Test Note"));
+        assert!(content.contains("tags:"));
+        assert!(content.contains("- test"));
+        assert!(content.contains("- example"));
+        assert!(content.contains("status: draft"));
+        assert!(content.contains("---\nThis is the content"));
+    }
+
+    #[tokio::test]
+    async fn test_create_note_without_frontmatter() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let note_tools = NoteTools::new(kiln_path.clone());
+
+        let result = note_tools.create_note(Parameters(CreateNoteParams {
+            path: "test_no_frontmatter.md".to_string(),
+            content: "Just content".to_string(),
+            frontmatter: None,
+        })).await.unwrap();
+
+        if let Some(response_content) = result.content.first() {
+            if let Some(raw_text) = response_content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+                assert_eq!(parsed["status"], "created");
+            }
+        }
+
+        // Verify file content has NO frontmatter
+        let file_path = temp_dir.path().join("test_no_frontmatter.md");
+        let content = std::fs::read_to_string(file_path).unwrap();
+
+        assert_eq!(content, "Just content");
+    }
+
+    #[tokio::test]
+    async fn test_update_note_content_only() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let note_tools = NoteTools::new(kiln_path.clone());
+
+        // Create initial note with frontmatter
+        let initial_frontmatter = serde_json::json!({
+            "title": "Original",
+            "tags": ["original"]
+        });
+
+        note_tools.create_note(Parameters(CreateNoteParams {
+            path: "update_test.md".to_string(),
+            content: "Original content".to_string(),
+            frontmatter: Some(initial_frontmatter),
+        })).await.unwrap();
+
+        // Update content only (frontmatter should remain)
+        let result = note_tools.update_note(Parameters(UpdateNoteParams {
+            path: "update_test.md".to_string(),
+            content: Some("New content".to_string()),
+            frontmatter: None,
+        })).await.unwrap();
+
+        if let Some(response_content) = result.content.first() {
+            if let Some(raw_text) = response_content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+                assert_eq!(parsed["status"], "updated");
+                assert_eq!(parsed["updated_fields"], serde_json::json!(["content"]));
+            }
+        }
+
+        // Verify frontmatter preserved, content updated
+        let file_path = temp_dir.path().join("update_test.md");
+        let content = std::fs::read_to_string(file_path).unwrap();
+
+        assert!(content.contains("title: Original"));
+        assert!(content.contains("- original"));
+        assert!(content.contains("---\nNew content"));
+    }
+
+    #[tokio::test]
+    async fn test_update_note_frontmatter_only() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let note_tools = NoteTools::new(kiln_path.clone());
+
+        // Create initial note
+        note_tools.create_note(Parameters(CreateNoteParams {
+            path: "update_fm_test.md".to_string(),
+            content: "Original content".to_string(),
+            frontmatter: Some(serde_json::json!({"title": "Original"})),
+        })).await.unwrap();
+
+        // Update frontmatter only (content should remain)
+        let new_frontmatter = serde_json::json!({
+            "title": "Updated",
+            "tags": ["new"]
+        });
+
+        let result = note_tools.update_note(Parameters(UpdateNoteParams {
+            path: "update_fm_test.md".to_string(),
+            content: None,
+            frontmatter: Some(new_frontmatter),
+        })).await.unwrap();
+
+        if let Some(response_content) = result.content.first() {
+            if let Some(raw_text) = response_content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+                assert_eq!(parsed["status"], "updated");
+                assert_eq!(parsed["updated_fields"], serde_json::json!(["frontmatter"]));
+            }
+        }
+
+        // Verify frontmatter updated, content preserved
+        let file_path = temp_dir.path().join("update_fm_test.md");
+        let content = std::fs::read_to_string(file_path).unwrap();
+
+        assert!(content.contains("title: Updated"));
+        assert!(content.contains("- new"));
+        assert!(content.contains("---\nOriginal content"));
+    }
+
+    #[tokio::test]
+    async fn test_update_note_both_content_and_frontmatter() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let note_tools = NoteTools::new(kiln_path.clone());
+
+        // Create initial note
+        note_tools.create_note(Parameters(CreateNoteParams {
+            path: "update_both_test.md".to_string(),
+            content: "Original content".to_string(),
+            frontmatter: Some(serde_json::json!({"title": "Original"})),
+        })).await.unwrap();
+
+        // Update both
+        let result = note_tools.update_note(Parameters(UpdateNoteParams {
+            path: "update_both_test.md".to_string(),
+            content: Some("New content".to_string()),
+            frontmatter: Some(serde_json::json!({"title": "New", "status": "published"})),
+        })).await.unwrap();
+
+        if let Some(response_content) = result.content.first() {
+            if let Some(raw_text) = response_content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+                assert_eq!(parsed["status"], "updated");
+                // Should contain both fields
+                let updated_fields = parsed["updated_fields"].as_array().unwrap();
+                assert!(updated_fields.contains(&serde_json::json!("content")));
+                assert!(updated_fields.contains(&serde_json::json!("frontmatter")));
+            }
+        }
+
+        // Verify both updated
+        let file_path = temp_dir.path().join("update_both_test.md");
+        let content = std::fs::read_to_string(file_path).unwrap();
+
+        assert!(content.contains("title: New"));
+        assert!(content.contains("status: published"));
+        assert!(content.contains("---\nNew content"));
+    }
+
+    #[tokio::test]
+    async fn test_update_note_remove_frontmatter() {
+        let temp_dir = TempDir::new().unwrap();
+        let kiln_path = temp_dir.path().to_string_lossy().to_string();
+        let note_tools = NoteTools::new(kiln_path.clone());
+
+        // Create note with frontmatter
+        note_tools.create_note(Parameters(CreateNoteParams {
+            path: "remove_fm_test.md".to_string(),
+            content: "Content".to_string(),
+            frontmatter: Some(serde_json::json!({"title": "Test"})),
+        })).await.unwrap();
+
+        // Update with content only and empty frontmatter to remove it
+        let result = note_tools.update_note(Parameters(UpdateNoteParams {
+            path: "remove_fm_test.md".to_string(),
+            content: Some("Just content".to_string()),
+            frontmatter: Some(serde_json::json!({})),
+        })).await.unwrap();
+
+        if let Some(response_content) = result.content.first() {
+            if let Some(raw_text) = response_content.as_text() {
+                let parsed: serde_json::Value = serde_json::from_str(&raw_text.text).unwrap();
+                assert_eq!(parsed["status"], "updated");
+            }
+        }
+
+        // Verify frontmatter removed
+        let file_path = temp_dir.path().join("remove_fm_test.md");
+        let content = std::fs::read_to_string(file_path).unwrap();
+
+        // Should be just content, no frontmatter block
+        assert_eq!(content, "Just content");
     }
 
     #[test]
