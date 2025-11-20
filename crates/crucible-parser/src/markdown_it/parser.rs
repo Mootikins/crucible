@@ -5,7 +5,7 @@ use markdown_it::MarkdownIt;
 use std::path::Path;
 
 use crate::error::{ParserError, ParserResult};
-use crate::traits::{MarkdownParserImplementation, ParserCapabilities};
+use crate::traits::{MarkdownParser, ParserCapabilities};
 use crate::types::{FrontmatterFormat, Frontmatter, ParsedNote};
 use super::converter::AstConverter;
 use super::plugins;
@@ -87,7 +87,7 @@ impl Default for MarkdownItParser {
 }
 
 #[async_trait]
-impl MarkdownParserImplementation for MarkdownItParser {
+impl MarkdownParser for MarkdownItParser {
     async fn parse_file(&self, path: &Path) -> ParserResult<ParsedNote> {
         // Read file content
         let content = tokio::fs::read_to_string(path)
