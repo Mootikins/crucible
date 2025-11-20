@@ -14,9 +14,6 @@ pub enum ReplError {
     #[error("Query error: {0}")]
     Query(String),
 
-    #[error("Tool execution error: {0}")]
-    Tool(String),
-
     #[error("Rune script error: {0}")]
     Rune(String),
 
@@ -67,16 +64,6 @@ impl ReplError {
                         "💡".cyan()
                     )
                 }
-            }
-
-            ReplError::Tool(msg) => {
-                format!(
-                    "{} Tool Execution Failed: {}\n{} Use {} to list available tools",
-                    "❌".red(),
-                    msg.red(),
-                    "💡".cyan(),
-                    ":tools".green(),
-                )
             }
 
             ReplError::Rune(msg) => {
@@ -175,13 +162,5 @@ mod tests {
         let display = error.display_pretty();
         assert!(display.contains("Command Error"));
         assert!(display.contains(":help"));
-    }
-
-    #[test]
-    fn test_tool_error_display() {
-        let error = ReplError::Tool("Tool not found".to_string());
-        let display = error.display_pretty();
-        assert!(display.contains("Tool Execution Failed"));
-        assert!(display.contains(":tools"));
     }
 }
