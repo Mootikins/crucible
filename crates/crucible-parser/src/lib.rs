@@ -16,9 +16,11 @@ pub mod enhanced_tags;
 pub mod error;
 pub mod extensions;
 pub mod footnotes;
+pub mod frontmatter_extractor;
 pub mod implementation;
 pub mod inline_links;
 pub mod latex;
+pub mod pulldown;
 pub mod traits;
 pub mod types;
 pub mod wikilinks;
@@ -34,12 +36,19 @@ pub use error::{ParseError, ParseErrorType, ParserError, ParserResult};
 pub use extensions::{
     ExtensionRegistry, ExtensionRegistryBuilder, ExtensionRegistryStats, SyntaxExtension,
 };
+pub use frontmatter_extractor::{
+    extract_frontmatter, ExtractionStats, FrontmatterExtractor, FrontmatterExtractorConfig,
+    FrontmatterResult, LineEndingStyle,
+};
 pub use implementation::{BlockProcessingConfig, CrucibleParser};
-pub use traits::{MarkdownParserImplementation, ParserCapabilities};
+pub use traits::{MarkdownParser, ParserCapabilities};
 
 // Re-export markdown-it parser when feature is enabled
 #[cfg(feature = "markdown-it-parser")]
 pub use markdown_it::MarkdownItParser;
+
+// Re-export pulldown parser
+pub use pulldown::PulldownParser;
 pub use types::{
     ASTBlock, ASTBlockMetadata, ASTBlockType, BlockHash, Blockquote, Callout, CodeBlock,
     NoteContent, FootnoteDefinition, FootnoteMap, FootnoteReference, Frontmatter,

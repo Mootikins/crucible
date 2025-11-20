@@ -8,10 +8,10 @@ use std::path::Path;
 /// Core trait for parsing markdown documents
 ///
 /// This trait defines the interface for parsing markdown files into structured
-/// `ParsedNote` instances. This is the implementation trait that the
-/// crucible-core crate can use through dependency injection.
+/// `ParsedNote` instances. This is the main parser trait used throughout
+/// the crucible system.
 #[async_trait]
-pub trait MarkdownParserImplementation: Send + Sync {
+pub trait MarkdownParser: Send + Sync {
     /// Parse a markdown file from the filesystem
     async fn parse_file(&self, path: &Path) -> ParserResult<ParsedNote>;
 
@@ -40,6 +40,12 @@ pub struct ParserCapabilities {
     pub tags: bool,
     pub headings: bool,
     pub code_blocks: bool,
+    pub tables: bool,
+    pub callouts: bool,
+    pub latex_expressions: bool,
+    pub footnotes: bool,
+    pub blockquotes: bool,
+    pub horizontal_rules: bool,
     pub full_content: bool,
     pub max_file_size: Option<usize>,
     pub extensions: Vec<&'static str>,
@@ -56,6 +62,12 @@ impl ParserCapabilities {
             tags: true,
             headings: true,
             code_blocks: true,
+            tables: true,
+            callouts: true,
+            latex_expressions: true,
+            footnotes: true,
+            blockquotes: true,
+            horizontal_rules: true,
             full_content: true,
             max_file_size: Some(10 * 1024 * 1024),
             extensions: vec!["md", "markdown"],
