@@ -28,9 +28,27 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use tracing::{debug, info};
 
+/// Parser backend selection
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParserBackend {
+    /// Use pulldown-cmark based parser (default, stable)
+    Pulldown,
+    /// Use markdown-it-rust based parser (faster, requires feature flag)
+    #[cfg(feature = "markdown-it-parser")]
+    MarkdownIt,
+}
+
+impl Default for ParserBackend {
+    fn default() -> Self {
+        Self::Pulldown
+    }
+}
+
 /// Configuration for pipeline behavior
 #[derive(Debug, Clone)]
 pub struct NotePipelineConfig {
+    /// Which markdown parser to use
+    pub parser: ParserBackend,
     /// Skip enrichment phase (useful for testing or when embeddings not needed)
     pub skip_enrichment: bool,
     /// Force full reprocessing even if file hash matches
@@ -40,6 +58,7 @@ pub struct NotePipelineConfig {
 impl Default for NotePipelineConfig {
     fn default() -> Self {
         Self {
+            parser: ParserBackend::default(),
             skip_enrichment: false,
             force_reprocess: false,
         }
@@ -64,8 +83,8 @@ impl Default for NotePipelineConfig {
 /// ```
 ///
 pub struct NotePipeline {
-    /// Markdown parser (Phase 2)
-    parser: CrucibleParser,
+    /// Markdown parser (Phase 2) - supports multiple backends
+    parser: Arc<dyn MarkdownParserImplementation>,
 
     /// Storage for file state tracking (Phase 1)
     change_detector: Arc<dyn ChangeDetectionStore>,
@@ -84,20 +103,35 @@ pub struct NotePipeline {
 }
 
 impl NotePipeline {
-    /// Create a new pipeline with dependencies
+    /// Create a parser instance based on the configured backend
+    fn create_parser(backend: ParserBackend) -> Arc<dyn MarkdownParserImplementation> {
+        match backend {
+            ParserBackend::Pulldown => Arc::new(CrucibleParser::new()),
+            #[cfg(feature = "markdown-it-parser")]
+            ParserBackend::MarkdownIt => {
+                use crucible_parser::MarkdownItParser;
+                Arc::new(MarkdownItParser::new())
+            }
+        }
+    }
+
+    /// Create a new pipeline with dependencies (uses default config)
     pub fn new(
         change_detector: Arc<dyn ChangeDetectionStore>,
         merkle_store: Arc<dyn MerkleStore>,
         enrichment_service: Arc<dyn EnrichmentService>,
         storage: Arc<dyn EnrichedNoteStore>,
     ) -> Self {
+        let config = NotePipelineConfig::default();
+        let parser = Self::create_parser(config.parser);
+
         Self {
-            parser: CrucibleParser::new(),
+            parser,
             change_detector,
             merkle_store,
             enrichment_service,
             storage,
-            config: NotePipelineConfig::default(),
+            config,
         }
     }
 
@@ -109,8 +143,10 @@ impl NotePipeline {
         storage: Arc<dyn EnrichedNoteStore>,
         config: NotePipelineConfig,
     ) -> Self {
+        let parser = Self::create_parser(config.parser);
+
         Self {
-            parser: CrucibleParser::new(),
+            parser,
             change_detector,
             merkle_store,
             enrichment_service,

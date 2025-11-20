@@ -1797,6 +1797,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "blake3",
+ "chrono",
  "crucible-core",
  "crucible-enrichment",
  "crucible-merkle",

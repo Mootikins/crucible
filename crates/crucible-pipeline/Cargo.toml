@@ -3,6 +3,10 @@ name = "crucible-pipeline"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# Optional markdown-it parser support (propagated from crucible-parser)
+markdown-it-parser = ["crucible-parser/markdown-it-parser"]
+
 [dependencies]
 # Core types and traits
 crucible-core = { path = "../crucible-core" }
@@ -27,3 +31,4 @@ blake3 = "1.5"
 [dev-dependencies]
 # Testing
 tempfile = "3.14"
+chrono = "0.4"

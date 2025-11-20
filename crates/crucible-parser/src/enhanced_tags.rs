@@ -87,9 +87,10 @@ impl EnhancedTagsExtension {
         content: &str,
         doc_content: &mut NoteContent,
     ) -> Result<(), ParseError> {
-        // Pattern to match #hashtags (excluding URLs like http:// and # in code blocks)
+        // Pattern to match #hashtags including nested tags with slashes
+        // (excluding URLs like http:// and # in code blocks)
         // Note: Rust's regex crate doesn't support lookbehind, so we'll filter matches manually
-        let re = Regex::new(r"#([a-zA-Z0-9_-]+)").map_err(|e| {
+        let re = Regex::new(r"#([a-zA-Z0-9_/-]+)").map_err(|e| {
             ParseError::error(
                 format!("Failed to compile hashtag regex: {}", e),
                 ParseErrorType::SyntaxError,
