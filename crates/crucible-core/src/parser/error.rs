@@ -15,6 +15,15 @@ pub enum ParserError {
     #[error("Frontmatter parse error: {0}")]
     FrontmatterError(String),
 
+    /// Frontmatter exceeds size limit
+    #[error("Frontmatter too large: {size} bytes (max {max} bytes)")]
+    FrontmatterTooLarge {
+        /// Actual frontmatter size
+        size: usize,
+        /// Maximum allowed size
+        max: usize,
+    },
+
     /// File exceeds size limit
     #[error("File too large: {size} bytes (max {max} bytes)")]
     FileTooLarge {
