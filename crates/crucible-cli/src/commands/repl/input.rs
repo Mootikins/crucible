@@ -75,14 +75,14 @@ mod tests {
 
     #[test]
     fn test_command_routing() {
-        let input = Input::parse(":tools").unwrap();
+        let input = Input::parse(":stats").unwrap();
         assert!(input.is_command());
         assert!(!input.is_query());
         assert!(!input.is_empty());
 
         match input {
             Input::Command(cmd) => {
-                assert_eq!(cmd, Command::ListTools);
+                assert_eq!(cmd, Command::ShowStats);
             }
             _ => panic!("Expected Command"),
         }
@@ -131,7 +131,7 @@ mod tests {
     fn test_whitespace_handling() {
         // Leading/trailing whitespace should be trimmed
         assert!(matches!(
-            Input::parse("  :tools  ").unwrap(),
+            Input::parse("  :stats  ").unwrap(),
             Input::Command(_)
         ));
 
@@ -144,7 +144,7 @@ mod tests {
     #[test]
     fn test_command_vs_query_distinction() {
         // Command
-        assert!(Input::parse(":run tool").unwrap().is_command());
+        assert!(Input::parse(":log debug").unwrap().is_command());
 
         // Query with colon but not at start
         let query = "SELECT * FROM notes WHERE path = 'foo:bar'";
