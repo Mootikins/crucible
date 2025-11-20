@@ -23,6 +23,10 @@ pub mod traits;
 pub mod types;
 pub mod wikilinks;
 
+// markdown-it based parser (optional feature)
+#[cfg(feature = "markdown-it-parser")]
+pub mod markdown_it;
+
 // Re-export main types for convenience
 pub use block_extractor::{BlockExtractor, ExtractionConfig};
 pub use block_hasher::SimpleBlockHasher;
@@ -32,6 +36,10 @@ pub use extensions::{
 };
 pub use implementation::{BlockProcessingConfig, CrucibleParser};
 pub use traits::{MarkdownParserImplementation, ParserCapabilities};
+
+// Re-export markdown-it parser when feature is enabled
+#[cfg(feature = "markdown-it-parser")]
+pub use markdown_it::MarkdownItParser;
 pub use types::{
     ASTBlock, ASTBlockMetadata, ASTBlockType, BlockHash, Blockquote, Callout, CodeBlock,
     NoteContent, FootnoteDefinition, FootnoteMap, FootnoteReference, Frontmatter,
