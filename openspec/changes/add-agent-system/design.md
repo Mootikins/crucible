@@ -539,6 +539,314 @@ pub async fn spawn_agent(request: AgentSpawnRequest) -> Result<AgentResult> {
 - Depth 3+: Added complexity without clear use cases yet
 - Dynamic based on task: Too complex to determine automatically
 
+### Decision 9: Optional Reflection for Self-Improvement
+
+**Choice**: Support optional reflection via frontmatter flag, disabled by default
+
+**Implementation**:
+```yaml
+---
+name: code-reviewer
+description: Reviews code for bugs and security issues
+model: sonnet
+enable_reflection: true
+max_retries: 2
+reflection_criteria: |
+  - Did I identify all critical bugs?
+  - Did I provide specific line references?
+  - Did I suggest concrete fixes?
+  - Did I check for security vulnerabilities?
+permissions:
+  - FilesystemRead
+  - SemanticSearch
+---
+```
+
+```rust
+pub struct AgentDefinition {
+    pub name: String,
+    pub description: String,
+    pub model: String,
+    pub permissions: Vec<Permission>,
+    pub prompt: String,
+    pub enabled: bool,
+
+    // Reflection fields
+    pub enable_reflection: bool,
+    pub max_retries: usize,  // default 1
+    pub reflection_criteria: Option<String>,
+}
+
+async fn execute_with_reflection(
+    agent: &AgentDefinition,
+    task: &str,
+) -> Result<AgentResult> {
+    let mut attempts = 0;
+    let mut best_result = None;
+
+    while attempts <= agent.max_retries {
+        // Execute agent
+        let result = execute_agent(agent, task).await?;
+
+        // If reflection disabled, return immediately
+        if !agent.enable_reflection {
+            return Ok(result);
+        }
+
+        // Self-evaluate using reflection criteria
+        let evaluation = self_evaluate(&result, &agent.reflection_criteria).await?;
+
+        // If passes evaluation, return
+        if evaluation.passed {
+            return Ok(result.with_reflection_history(evaluation));
+        }
+
+        // Store best attempt
+        if best_result.is_none() || evaluation.score > best_result.score {
+            best_result = Some((result, evaluation));
+        }
+
+        attempts += 1;
+
+        // Refine approach based on critique
+        task = refine_task_with_critique(task, &evaluation.critique).await?;
+    }
+
+    // Return best attempt with reflection metadata
+    Ok(best_result.with_metadata("reflection_failed", true))
+}
+```
+
+**Why**:
+- **Research-Backed**: Reflexion improved GPT-4 from 80% → 91% on coding benchmarks
+- **Industry Pattern**: Reflection is foundational agentic pattern (Andrew Ng, DeepLearning.AI)
+- **Optional**: Not all agents need reflection (cost vs. quality tradeoff)
+- **Simple Start**: Self-critique via LLM, no complex episodic memory needed for MVP
+- **Quality Improvement**: Catches errors before returning to parent
+
+**Alternatives Considered**:
+- Always-on reflection: Too expensive for simple tasks (2-3x token cost)
+- No reflection: Misses proven quality improvement pattern
+- Complex Reflexion implementation: Requires episodic memory, premature for MVP
+- Fixed retry count: Not configurable per agent type
+
+**Trade-offs**:
+- **Pro**: Significantly improves output quality for complex tasks (10-15% better)
+- **Pro**: Catches errors before parent agent receives result
+- **Pro**: Self-correcting agents reduce manual iteration
+- **Con**: 2-3x token cost per agent (runs multiple iterations)
+- **Con**: Increased latency (sequential retries)
+- **Mitigation**: Optional flag, configurable max_retries, disabled by default
+
+**References**:
+- Reflexion paper: https://arxiv.org/abs/2303.11366
+- LangChain reflection agents: https://blog.langchain.com/reflection-agents/
+
+### Decision 10: Human-in-the-Loop Approval Gates
+
+**Choice**: Support approval requests via frontmatter configuration and runtime tool
+
+**Implementation**:
+```yaml
+---
+name: refactoring-assistant
+description: Refactors code for better structure and maintainability
+model: sonnet
+requires_approval:
+  - FilesystemWrite  # Always ask before writing files
+  - DatabaseWrite    # Always ask before DB changes
+approval_timeout: 300  # 5 minutes, then abort
+permissions:
+  - FilesystemRead
+  - FilesystemWrite
+  - SemanticSearch
+---
+```
+
+```rust
+pub struct AgentDefinition {
+    // ... existing fields
+    pub requires_approval: Vec<Permission>,
+    pub approval_timeout: u64,  // seconds
+}
+
+// Agents can also request approval at runtime
+async fn request_approval(
+    action: &str,
+    impact: &str,
+    reversible: bool,
+) -> Result<ApprovalResponse> {
+    let prompt = format!(
+        "Agent requests approval:\n\
+         Action: {}\n\
+         Impact: {}\n\
+         Reversible: {}\n\n\
+         [A]pprove / [D]eny / [M]odify parameters?",
+        action, impact, reversible
+    );
+
+    let response = prompt_user_with_timeout(prompt, approval_timeout).await?;
+
+    match response {
+        UserResponse::Approve => Ok(ApprovalResponse::Approved),
+        UserResponse::Deny(reason) => Ok(ApprovalResponse::Denied(reason)),
+        UserResponse::Modify(params) => {
+            // Validate modified params
+            validate_params(params)?;
+            Ok(ApprovalResponse::ApprovedWithModifications(params))
+        }
+        UserResponse::Timeout => Err(anyhow!("Approval timeout")),
+    }
+}
+
+// Pre-execution approval check
+async fn execute_agent(agent: &AgentDefinition, task: &str) -> Result<AgentResult> {
+    // Check if agent needs approval for any permissions
+    for permission in &agent.permissions {
+        if agent.requires_approval.contains(permission) {
+            let approved = request_approval(
+                &format!("Execute {} with {:?}", agent.name, permission),
+                task,
+                permission.is_reversible(),
+            ).await?;
+
+            if !approved.is_approved() {
+                return Err(anyhow!("User denied approval"));
+            }
+        }
+    }
+
+    // ... execute agent
+}
+```
+
+**Why**:
+- **Industry Consensus**: Google, OpenAI emphasize HITL as essential for production agents
+- **User Safety**: Prevents destructive actions without oversight
+- **Return of Control**: Users can modify parameters before execution (more nuanced than yes/no)
+- **Flexibility**: Configured at agent level + runtime requests for dynamic needs
+- **Compliance**: Audit trail of approvals/denials for governance
+
+**Alternatives Considered**:
+- No approval gates: Too risky for write operations, violates user agency
+- Always prompt: Too much friction for read-only tasks
+- Permission-only system: Too coarse-grained, can't differentiate between reads/writes
+- Auto-approve after timeout: Too risky, could execute destructive actions unattended
+
+**Trade-offs**:
+- **Pro**: User maintains control over sensitive operations
+- **Pro**: Clear audit trail for compliance
+- **Pro**: Return of control enables collaborative refinement
+- **Con**: Adds latency to agent execution (wait for human)
+- **Con**: Requires user to be present (can't run fully unattended)
+- **Mitigation**: Configurable per agent, timeout aborts (fail safe), approval caching for session
+
+**References**:
+- Microsoft Magentic-UI: https://www.microsoft.com/en-us/research/wp-content/uploads/2025/07/magentic-ui-report.pdf
+- OpenAI Agents SDK HITL: https://openai.github.io/openai-agents-js/guides/human-in-the-loop/
+
+### Decision 11: Enhanced Observability with Distributed Tracing
+
+**Choice**: Add trace IDs, parent chain tracking, and session trace visualization
+
+**Implementation**:
+```rust
+pub struct AgentSpawnRequest {
+    pub agent_name: String,
+    pub task_description: String,
+    pub permissions: PermissionSet,
+    pub parent_session_id: String,
+    pub depth: usize,
+
+    // Tracing fields
+    pub trace_id: Uuid,  // Unique per spawn
+    pub parent_chain: Vec<String>,  // ["user", "primary-agent", "code-reviewer"]
+}
+
+pub struct AgentResult {
+    pub content: String,
+    pub metadata: AgentMetadata,
+    pub status: ExecutionStatus,
+
+    // Tracing
+    pub trace_id: Uuid,
+    pub parent_chain: Vec<String>,
+}
+
+// Session metadata enhancement
+pub struct SessionMetadata {
+    pub session_id: String,
+    pub started_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub primary_agent: String,
+
+    // Tracing
+    pub execution_trace: Vec<TraceEntry>,
+}
+
+pub struct TraceEntry {
+    pub trace_id: Uuid,
+    pub agent_name: String,
+    pub parent_chain: Vec<String>,
+    pub spawned_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub duration_ms: u64,
+    pub status: ExecutionStatus,
+    pub error: Option<String>,
+}
+
+// CLI command for visualization
+async fn trace_session(session_id: &str) -> Result<()> {
+    let metadata = load_session_metadata(session_id)?;
+
+    // Build tree from trace entries
+    let tree = build_trace_tree(&metadata.execution_trace);
+
+    // ASCII visualization
+    println!("Session: {}", session_id);
+    println!("Duration: {}ms", metadata.duration_ms());
+    println!("\nExecution Trace:");
+    print_trace_tree(&tree, 0);
+
+    /*
+    Output example:
+    Session: 2025-01-20-refactor-auth
+    Duration: 12,847ms
+
+    Execution Trace:
+    ├─ [primary] claude-sonnet-4 (8,234ms) ✓
+    │  ├─ [code-reviewer] code-reviewer (2,156ms) ✓
+    │  ├─ [test-generator] test-generator (1,987ms) ✓
+    │  └─ [documentation-writer] documentation-writer (470ms) ✗ Error: Timeout
+    */
+}
+```
+
+**Why**:
+- **Debugging**: Multi-agent workflows are hard to debug without execution flow visibility
+- **Error Attribution**: Trace IDs enable correlating errors to specific agent in chain
+- **Performance**: Parent chain shows where bottlenecks occur
+- **Industry Standard**: AutoGen uses OpenTelemetry, distributed tracing is common pattern
+- **Post-Mortem**: Session traces enable understanding what happened after failures
+
+**Alternatives Considered**:
+- No tracing: Hard to debug multi-agent failures, poor developer experience
+- Log-only tracing: Not structured, hard to query and visualize
+- Full OpenTelemetry: Overkill for MVP, can add later
+- Trace to database only: Loses plaintext-first benefits
+
+**Trade-offs**:
+- **Pro**: Significantly improves debugging experience
+- **Pro**: Enables performance optimization (find slow agents)
+- **Pro**: Audit trail for understanding agent behavior
+- **Con**: Small metadata overhead per agent spawn
+- **Con**: Additional CLI command to implement
+- **Mitigation**: Minimal overhead (just UUIDs and timestamps), trace command is optional
+
+**References**:
+- AutoGen observability: https://microsoft.github.io/autogen/0.2/docs/Use-Cases/agent_chat/
+- Distributed tracing patterns: https://opentelemetry.io/docs/concepts/observability-primer/
+
 ## Risks / Trade-offs
 
 ### Risk 1: Token Usage with Separate LLM Calls
