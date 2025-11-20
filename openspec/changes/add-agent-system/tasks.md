@@ -63,6 +63,17 @@
 - [ ] 2.4.3 Ensure queue continues after agent failure (graceful degradation)
 - [ ] 2.4.4 Write tests for various error scenarios (timeout, invalid agent, permission error)
 
+### 2.5 Reflection System
+- [ ] 2.5.1 Add reflection fields to AgentDefinition (enable_reflection, max_retries, reflection_criteria)
+- [ ] 2.5.2 Implement self_evaluate() function with LLM-based critique
+- [ ] 2.5.3 Parse reflection_criteria from frontmatter (YAML multiline string)
+- [ ] 2.5.4 Implement execute_with_reflection() retry loop
+- [ ] 2.5.5 Implement refine_task_with_critique() to incorporate feedback
+- [ ] 2.5.6 Track best attempt when max_retries exceeded
+- [ ] 2.5.7 Capture reflection history in result metadata
+- [ ] 2.5.8 Write tests for reflection success, failure, and max retries
+- [ ] 2.5.9 Document reflection patterns and best practices
+
 ## 3. Session Management
 
 ### 3.1 Session Folder Creation
@@ -89,6 +100,17 @@
 - [ ] 3.3.4 Add total token usage calculation
 - [ ] 3.3.5 Write tests for metadata collection and serialization
 
+### 3.4 Tracing and Observability
+- [ ] 3.4.1 Add trace_id (Uuid) to AgentSpawnRequest and AgentResult
+- [ ] 3.4.2 Add parent_chain (Vec<String>) to track spawning hierarchy
+- [ ] 3.4.3 Generate unique trace_id on each spawn
+- [ ] 3.4.4 Propagate parent_chain from parent to child (+append child name)
+- [ ] 3.4.5 Add TraceEntry struct to SessionMetadata
+- [ ] 3.4.6 Capture trace entries during execution (spawn, complete, error)
+- [ ] 3.4.7 Include trace_id in all log messages
+- [ ] 3.4.8 Write tests for trace ID generation and propagation
+- [ ] 3.4.9 Write tests for parent chain tracking
+
 ## 4. Observability
 
 ### 4.1 Progress Observer
@@ -105,6 +127,29 @@
 - [ ] 4.2.3 Call on_agent_complete with abbreviated summary
 - [ ] 4.2.4 Call on_agent_error on failures
 - [ ] 4.2.5 Ensure thread-safety for future concurrent execution
+
+### 4.3 Human Approval Gates
+- [ ] 4.3.1 Add requires_approval and approval_timeout fields to AgentDefinition
+- [ ] 4.3.2 Parse requires_approval from frontmatter (list of Permission)
+- [ ] 4.3.3 Implement request_approval() function with user prompt
+- [ ] 4.3.4 Add ApprovalResponse enum (Approved, Denied, ApprovedWithModifications)
+- [ ] 4.3.5 Implement approval UI in CLI observer (approve/deny/modify)
+- [ ] 4.3.6 Add approval timeout with configurable behavior (abort/auto-approve)
+- [ ] 4.3.7 Implement parameter modification and validation at approval gate
+- [ ] 4.3.8 Log approvals/denials in session metadata
+- [ ] 4.3.9 Add pre-execution approval check for configured permissions
+- [ ] 4.3.10 Write tests for approval workflows (approve, deny, modify, timeout)
+- [ ] 4.3.11 Add diff/preview for destructive operations (FilesystemWrite, DatabaseWrite)
+
+### 4.4 Session Trace Visualization
+- [ ] 4.4.1 Implement build_trace_tree() to convert trace entries to tree structure
+- [ ] 4.4.2 Implement print_trace_tree() for ASCII visualization
+- [ ] 4.4.3 Add `cru sessions trace {session-id}` command
+- [ ] 4.4.4 Display execution flow with timing and status
+- [ ] 4.4.5 Visually distinguish failed agents in tree output
+- [ ] 4.4.6 Include token usage and duration per agent in trace
+- [ ] 4.4.7 Add option for JSON output (`--json` flag)
+- [ ] 4.4.8 Write tests for trace tree building and visualization
 
 ## 5. CLI Integration
 

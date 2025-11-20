@@ -348,6 +348,105 @@ The system SHALL integrate agent spawning seamlessly into the primary agent's ch
 - **AND** primary agent SHALL synthesize results across all steps
 - **AND** user SHALL see coherent response incorporating all subagent outputs
 
+### Requirement: Agent Reflection and Self-Improvement
+The system SHALL support optional reflection capabilities enabling agents to self-evaluate outputs and retry with improved approaches, following the Reflexion pattern proven to improve output quality.
+
+#### Scenario: Agent with reflection enabled
+- **WHEN** agent definition has `enable_reflection: true` in frontmatter
+- **THEN** agent SHALL self-evaluate output before returning to parent
+- **AND** if evaluation indicates failure or low quality, agent SHALL retry with refined approach
+- **AND** maximum retries SHALL be limited by `max_retries` (default 1)
+- **AND** reflection SHALL be optional and disabled by default
+
+#### Scenario: Reflection loop with improvement
+- **WHEN** agent completes execution with reflection enabled
+- **THEN** agent SHALL critique own output via LLM-based evaluation
+- **AND** critique SHALL use criteria specified in `reflection_criteria` frontmatter field
+- **AND** if critique identifies issues, agent SHALL generate improved output
+- **AND** reflection history SHALL be included in result metadata
+- **AND** each iteration SHALL be logged with critique and improvement
+
+#### Scenario: Reflection disabled (default)
+- **WHEN** agent definition omits `enable_reflection` or sets to false
+- **THEN** agent SHALL execute once and return result immediately
+- **AND** no self-evaluation SHALL occur
+- **AND** no additional token cost SHALL be incurred
+
+#### Scenario: Max retries reached without success
+- **WHEN** agent with reflection exceeds `max_retries` without passing self-evaluation
+- **THEN** agent SHALL return best attempt with metadata indicating partial success
+- **AND** all reflection iterations SHALL be included in result for debugging
+- **AND** parent agent SHALL receive indication that reflection failed to achieve criteria
+
+### Requirement: Human-in-the-Loop Approval Gates
+The system SHALL support approval gates for agents to request user permission before executing sensitive or irreversible actions, ensuring user control over agent operations.
+
+#### Scenario: Agent requires approval for action types
+- **WHEN** agent definition has `requires_approval` list in frontmatter
+- **THEN** agent SHALL pause execution before performing listed action types
+- **AND** user SHALL see clear description of proposed action and impact
+- **AND** user SHALL have options to approve, deny, or modify parameters
+- **AND** approval timeout SHALL be configurable (default 300 seconds)
+
+#### Scenario: User approves with modifications
+- **WHEN** agent requests approval and user modifies parameters
+- **THEN** agent SHALL execute with modified parameters
+- **AND** modifications SHALL be logged in session metadata
+- **AND** agent SHALL acknowledge parameter changes in result
+- **AND** modified parameters SHALL be validated before execution
+
+#### Scenario: User denies approval
+- **WHEN** agent requests approval and user denies
+- **THEN** agent SHALL abort action and return failure result
+- **AND** denial reason SHALL be captured in result metadata
+- **AND** primary agent SHALL receive denial to adjust strategy
+- **AND** session SHALL record denial for audit trail
+
+#### Scenario: Request approval mid-execution
+- **WHEN** agent calls `request_approval(action, reason)` tool during execution
+- **THEN** system SHALL pause agent and prompt user with action details
+- **AND** agent execution SHALL resume after user responds
+- **AND** timeout SHALL abort action if no response within configured period
+- **AND** timeout behavior SHALL be configurable (abort or auto-approve)
+
+#### Scenario: Approval for destructive operations
+- **WHEN** agent attempts FilesystemWrite or DatabaseWrite with approval required
+- **THEN** system SHALL show diff or preview of changes
+- **AND** user SHALL see reversibility status (reversible/irreversible)
+- **AND** irreversible actions SHALL require explicit confirmation
+- **AND** user SHALL have option to request additional context before deciding
+
+### Requirement: Enhanced Observability and Tracing
+The system SHALL provide comprehensive tracing and debugging capabilities for multi-agent workflows, enabling developers to understand execution flow and diagnose failures.
+
+#### Scenario: Trace ID generation and propagation
+- **WHEN** subagent spawns
+- **THEN** system SHALL generate unique trace_id for the request
+- **AND** trace_id SHALL propagate to all logging and error messages
+- **AND** trace_id SHALL be included in session metadata
+- **AND** trace_id SHALL enable correlation across agent executions
+
+#### Scenario: Parent chain tracking
+- **WHEN** subagent executes
+- **THEN** metadata SHALL include parent_chain array showing full spawning hierarchy
+- **AND** parent_chain SHALL show [user → primary → subagent] path
+- **AND** parent_chain SHALL enable tracing errors to root cause
+- **AND** parent_chain SHALL be visible in session files
+
+#### Scenario: Session trace visualization
+- **WHEN** user runs `cru sessions trace {session-id}`
+- **THEN** system SHALL display execution flow as tree structure
+- **AND** tree SHALL show all agents with spawn order and timing
+- **AND** failed agents SHALL be visually distinct in tree
+- **AND** trace SHALL include execution duration and token usage per agent
+
+#### Scenario: Error attribution in traces
+- **WHEN** subagent encounters error during execution
+- **THEN** error message SHALL include trace_id and parent_chain
+- **AND** error SHALL clearly indicate which agent failed
+- **AND** error SHALL show context of what parent was attempting
+- **AND** trace SHALL enable debugging without full session replay
+
 ## MODIFIED Requirements
 
 _No existing requirements modified - this is a new capability_
