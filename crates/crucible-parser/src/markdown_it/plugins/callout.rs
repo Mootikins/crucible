@@ -67,24 +67,24 @@ fn callout_regex() -> &'static Regex {
 impl BlockRule for CalloutScanner {
     fn check(state: &mut BlockState) -> Option<()> {
         let line = state.get_line(state.line);
-        if callout_regex().is_match(line.as_str()) {
+        if callout_regex().is_match(&line) {
             Some(())
         } else {
             None
         }
     }
 
-    fn run(state: &mut BlockState) -> Option<()> {
+    fn run(state: &mut BlockState) -> Option<(Node, usize)> {
         let start_line = state.line;
         let first_line = state.get_line(start_line);
 
         // Parse the first line to extract type and title
-        let caps = callout_regex().captures(first_line.as_str())?;
+        let caps = callout_regex().captures(&first_line)?;
         let callout_type = caps.get(1)?.as_str().to_string();
         let title = caps.get(2).map(|m| m.as_str().trim().to_string());
 
-        // Calculate offset
-        let offset = state.line_offsets[start_line];
+        // Calculate offset (start of the block)
+        let offset = start_line; // Use line number as offset for now
 
         // Collect content lines (subsequent lines starting with >)
         let mut content_lines = Vec::new();
@@ -92,7 +92,7 @@ impl BlockRule for CalloutScanner {
 
         while current_line < state.line_offsets.len() - 1 {
             let line = state.get_line(current_line);
-            let line_str = line.as_str();
+            let line_str = &*line;
 
             // Check if line starts with >
             if let Some(stripped) = line_str.strip_prefix('>') {
@@ -104,7 +104,7 @@ impl BlockRule for CalloutScanner {
                 // Empty line might be part of callout, check next line
                 if current_line + 1 < state.line_offsets.len() - 1 {
                     let next_line = state.get_line(current_line + 1);
-                    if next_line.as_str().starts_with('>') {
+                    if next_line.starts_with('>') {
                         content_lines.push(String::new());
                         current_line += 1;
                         continue;
@@ -130,10 +130,9 @@ impl BlockRule for CalloutScanner {
         let mut node = Node::new(callout);
         node.srcmap = state.get_map(start_line, current_line);
 
-        state.push_node(node);
-        state.line = current_line;
-
-        Some(())
+        // Return the node and number of lines consumed
+        let lines_consumed = current_line - start_line;
+        Some((node, lines_consumed))
     }
 }
 

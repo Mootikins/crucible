@@ -42,8 +42,24 @@ impl AstConverter {
             content.tags.push(Tag::new(tag.name.clone(), tag.offset));
         }
 
-        // 3. Callouts - TODO: Implement after fixing block rule API
-        // if let Some(callout) = node.cast::<super::plugins::callout::CalloutNode>() { ... }
+        // 3. Callouts
+        if let Some(callout) = node.cast::<super::plugins::callout::CalloutNode>() {
+            let crucible_callout = if let Some(title) = &callout.title {
+                Callout::with_title(
+                    callout.callout_type.clone(),
+                    title.clone(),
+                    callout.content.clone(),
+                    callout.offset,
+                )
+            } else {
+                Callout::new(
+                    callout.callout_type.clone(),
+                    callout.content.clone(),
+                    callout.offset,
+                )
+            };
+            content.callouts.push(crucible_callout);
+        }
 
         // 4. LaTeX expressions
         if let Some(latex) = node.cast::<super::plugins::latex::LatexNode>() {

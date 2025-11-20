@@ -84,6 +84,12 @@ impl MarkdownParser for PulldownParser {
         // Parse tags with regex
         let tags = extract_tags(body)?;
 
+        // Parse callouts with regex
+        let callouts = extract_callouts(body)?;
+
+        // Parse LaTeX expressions with regex
+        let latex_expressions = extract_latex(body)?;
+
         // Parse content structure with pulldown-cmark
         let doc_content = parse_content_structure(body)?;
 
@@ -102,8 +108,8 @@ impl MarkdownParser for PulldownParser {
             wikilinks,
             tags,
             content: doc_content,
-            callouts: Vec::new(),
-            latex_expressions: Vec::new(),
+            callouts,
+            latex_expressions,
             footnotes: FootnoteMap::new(),
             parsed_at: Utc::now(),
             content_hash,
@@ -198,6 +204,131 @@ fn should_include_tag(match_text: &str, content: &str, offset: usize) -> bool {
     }
 
     true
+}
+
+/// Extract callouts from content using regex
+fn extract_callouts(content: &str) -> ParserResult<Vec<Callout>> {
+    use regex::Regex;
+
+    // Pattern matches: > [!type] optional title
+    // Followed by optional continuation lines starting with >
+    let re = Regex::new(r"(?m)^>\s*\[!([a-zA-Z][a-zA-Z0-9-]*)\](?:\s+([^\n]*))?\s*$").unwrap();
+
+    let mut callouts = Vec::new();
+
+    for cap in re.captures_iter(content) {
+        let full_match = cap.get(0).unwrap();
+        let offset = full_match.start();
+        let callout_type = cap.get(1).unwrap().as_str();
+        let title = cap.get(2).map(|m| m.as_str().trim().to_string()).filter(|s| !s.is_empty());
+
+        // Extract continuation lines (lines starting with > after the header)
+        let content_start = full_match.end();
+        let remaining = &content[content_start..];
+        let mut content_lines = Vec::new();
+
+        for line in remaining.lines() {
+            if let Some(stripped) = line.trim_start().strip_prefix('>') {
+                let content_line = stripped.strip_prefix(' ').unwrap_or(stripped);
+                content_lines.push(content_line.to_string());
+            } else if !line.trim().is_empty() {
+                break; // End of callout
+            }
+        }
+
+        let callout_content = content_lines.join("\n");
+
+        let callout = if let Some(title_text) = title {
+            Callout::with_title(callout_type, title_text, callout_content, offset)
+        } else {
+            Callout::new(callout_type, callout_content, offset)
+        };
+
+        callouts.push(callout);
+    }
+
+    Ok(callouts)
+}
+
+/// Extract LaTeX expressions from content using regex
+fn extract_latex(content: &str) -> ParserResult<Vec<LatexExpression>> {
+    use regex::Regex;
+
+    let mut expressions = Vec::new();
+
+    // Match block math: $$...$$
+    let block_re = Regex::new(r"\$\$([^\$]+)\$\$").unwrap();
+    for cap in block_re.captures_iter(content) {
+        let full_match = cap.get(0).unwrap();
+        let offset = full_match.start();
+        let expr = cap.get(1).unwrap().as_str().trim();
+
+        // Basic validation: check balanced braces
+        if has_balanced_braces(expr) && !has_dangerous_latex_commands(expr) {
+            expressions.push(LatexExpression::new(
+                expr.to_string(),
+                true, // is_block
+                offset,
+                full_match.len(),
+            ));
+        }
+    }
+
+    // Match inline math: $...$  (but not $$)
+    let inline_re = Regex::new(r"(?<!\$)\$([^\$\n]+?)\$(?!\$)").unwrap();
+    for cap in inline_re.captures_iter(content) {
+        let full_match = cap.get(0).unwrap();
+        let offset = full_match.start();
+        let expr = cap.get(1).unwrap().as_str().trim();
+
+        // Basic validation
+        if has_balanced_braces(expr) && !has_dangerous_latex_commands(expr) {
+            expressions.push(LatexExpression::new(
+                expr.to_string(),
+                false, // is_inline
+                offset,
+                full_match.len(),
+            ));
+        }
+    }
+
+    Ok(expressions)
+}
+
+/// Check if LaTeX expression has balanced braces
+fn has_balanced_braces(expr: &str) -> bool {
+    let mut depth = 0;
+    let mut chars = expr.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' => { chars.next(); } // Skip escaped character
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth < 0 { return false; }
+            }
+            _ => {}
+        }
+    }
+
+    depth == 0
+}
+
+/// Check for dangerous LaTeX commands
+fn has_dangerous_latex_commands(expr: &str) -> bool {
+    const DANGEROUS: &[&str] = &[
+        "\\input", "\\include", "\\write", "\\openout", "\\closeout",
+        "\\loop", "\\def", "\\edef", "\\xdef", "\\gdef", "\\let",
+        "\\futurelet", "\\newcommand", "\\renewcommand", "\\catcode",
+    ];
+
+    for cmd in DANGEROUS {
+        if expr.contains(cmd) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Parse note structure with pulldown-cmark
