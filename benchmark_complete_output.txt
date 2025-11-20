@@ -1,0 +1,92 @@
+   Compiling crucible-parser v0.1.0 (/home/user/crucible/crates/crucible-parser)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 1m 17s
+     Running benches/fair_comparison.rs (target/release/deps/fair_comparison-a9da032b0065b303)
+Gnuplot not found, using plotters backend
+Benchmarking pulldown_full/parse/small
+Benchmarking pulldown_full/parse/small: Warming up for 3.0000 s
+Benchmarking pulldown_full/parse/small: Collecting 100 samples in estimated 6.5460 s (15k iterations)
+Benchmarking pulldown_full/parse/small: Analyzing
+pulldown_full/parse/small
+                        time:   [426.88 µs 430.42 µs 435.01 µs]
+                        change: [-0.1109% +1.0729% +2.5143%] (p = 0.09 > 0.05)
+                        No change in performance detected.
+Found 5 outliers among 100 measurements (5.00%)
+  2 (2.00%) high mild
+  3 (3.00%) high severe
+Benchmarking pulldown_full/parse/medium
+Benchmarking pulldown_full/parse/medium: Warming up for 3.0000 s
+Benchmarking pulldown_full/parse/medium: Collecting 100 samples in estimated 6.8031 s (15k iterations)
+Benchmarking pulldown_full/parse/medium: Analyzing
+pulldown_full/parse/medium
+                        time:   [436.41 µs 438.23 µs 440.49 µs]
+                        change: [-4.3795% -2.8949% -1.4218%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high mild
+Benchmarking pulldown_full/parse/large
+Benchmarking pulldown_full/parse/large: Warming up for 3.0000 s
+Benchmarking pulldown_full/parse/large: Collecting 100 samples in estimated 7.4804 s (15k iterations)
+Benchmarking pulldown_full/parse/large: Analyzing
+pulldown_full/parse/large
+                        time:   [503.35 µs 510.99 µs 519.84 µs]
+                        change: [+6.5161% +8.0661% +9.6600%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 5 outliers among 100 measurements (5.00%)
+  3 (3.00%) high mild
+  2 (2.00%) high severe
+Benchmarking pulldown_full/parse/wikilink_heavy
+Benchmarking pulldown_full/parse/wikilink_heavy: Warming up for 3.0000 s
+Benchmarking pulldown_full/parse/wikilink_heavy: Collecting 100 samples in estimated 6.8865 s (15k iterations)
+Benchmarking pulldown_full/parse/wikilink_heavy: Analyzing
+pulldown_full/parse/wikilink_heavy
+                        time:   [472.44 µs 479.72 µs 487.07 µs]
+                        change: [-2.3007% -1.1475% +0.0521%] (p = 0.06 > 0.05)
+                        No change in performance detected.
+Found 7 outliers among 100 measurements (7.00%)
+  4 (4.00%) high mild
+  3 (3.00%) high severe
+
+Benchmarking markdown_it_full/parse/small
+Benchmarking markdown_it_full/parse/small: Warming up for 3.0000 s
+Benchmarking markdown_it_full/parse/small: Collecting 100 samples in estimated 5.0159 s (1.3M iterations)
+Benchmarking markdown_it_full/parse/small: Analyzing
+markdown_it_full/parse/small
+                        time:   [3.9698 µs 3.9920 µs 4.0160 µs]
+                        change: [+0.6638% +3.3552% +5.5403%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 8 outliers among 100 measurements (8.00%)
+  7 (7.00%) high mild
+  1 (1.00%) high severe
+Benchmarking markdown_it_full/parse/medium
+Benchmarking markdown_it_full/parse/medium: Warming up for 3.0000 s
+Benchmarking markdown_it_full/parse/medium: Collecting 100 samples in estimated 5.0245 s (414k iterations)
+Benchmarking markdown_it_full/parse/medium: Analyzing
+markdown_it_full/parse/medium
+                        time:   [12.075 µs 12.263 µs 12.553 µs]
+                        change: [+10.052% +11.691% +13.787%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 9 outliers among 100 measurements (9.00%)
+  5 (5.00%) high mild
+  4 (4.00%) high severe
+Benchmarking markdown_it_full/parse/large
+Benchmarking markdown_it_full/parse/large: Warming up for 3.0000 s
+Benchmarking markdown_it_full/parse/large: Collecting 100 samples in estimated 5.1276 s (146k iterations)
+Benchmarking markdown_it_full/parse/large: Analyzing
+markdown_it_full/parse/large
+                        time:   [35.163 µs 35.481 µs 35.799 µs]
+                        change: [+15.843% +17.027% +18.272%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high severe
+Benchmarking markdown_it_full/parse/wikilink_heavy
+Benchmarking markdown_it_full/parse/wikilink_heavy: Warming up for 3.0000 s
+Benchmarking markdown_it_full/parse/wikilink_heavy: Collecting 100 samples in estimated 5.0741 s (217k iterations)
+Benchmarking markdown_it_full/parse/wikilink_heavy: Analyzing
+markdown_it_full/parse/wikilink_heavy
+                        time:   [23.375 µs 23.481 µs 23.604 µs]
+                        change: [+13.820% +15.307% +16.844%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 10 outliers among 100 measurements (10.00%)
+  6 (6.00%) high mild
+  4 (4.00%) high severe
+
