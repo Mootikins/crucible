@@ -1,24 +1,32 @@
-//! Crucible Tools - Simple async function composition for knowledge management
+//! Crucible Tools - MCP-compatible tools for knowledge management
 //!
-//! This crate provides a collection of async function tools for the Crucible knowledge management system.
-//! The architecture focuses on simple async function composition without complex enterprise patterns.
+//! This crate provides 10 focused tools for the Crucible knowledge management system,
+//! designed following SOLID principles and MCP (Model Context Protocol) compatibility.
 //!
-//! ## Quick Start
+//! ## Tool Categories
 //!
-//! ### Using Individual Tool Functions
+//! - **NoteTools** (6): create_note, read_note, read_metadata, update_note, delete_note, list_notes
+//! - **SearchTools** (3): text_search, property_search, semantic_search
+//! - **KilnTools** (1): get_kiln_info
+//!
+//! ## Architecture
+//!
+//! Each tool category is implemented as a separate struct with async methods decorated
+//! with `#[tool]` attributes for MCP compatibility. Tools operate directly on the
+//! filesystem for maximum simplicity and transparency.
+//!
+//! ## Example
 //!
 //! ```rust
-//! // Examples have been removed as they are being updated to the new API.
+//! use crucible_tools::{NoteTools, SearchTools, KilnTools};
+//!
+//! // Initialize tool modules
+//! let note_tools = NoteTools::new("/path/to/kiln".to_string());
+//! let kiln_tools = KilnTools::new("/path/to/kiln".to_string());
+//!
+//! // Use tools (requires async runtime)
+//! // let result = note_tools.create_note(...).await;
 //! ```
-//!
-//! ## Available Tools
-//!
-//! The library provides 25 tools across 4 categories:
-//!
-//! - **System Tools** (5): `system_info`, `execute_command`, `list_files`, `read_file`, `get_environment`
-//! - **Kiln Tools** (8): `search_by_properties`, `search_by_tags`, `search_by_folder`, `create_note`, `update_note`, `delete_note`, `get_kiln_stats`, `list_tags`
-//! - **Database Tools** (7): `semantic_search`, `search_by_content`, `search_by_filename`, `update_note_properties`, `index_document`, `get_document_stats`, `sync_metadata`
-//! - **Search Tools** (5): `search_documents`, `rebuild_index`, `get_index_stats`, `optimize_index`, `advanced_search`
 
 #![warn(missing_docs)]
 #![warn(clippy::all)]
@@ -27,31 +35,19 @@
 pub mod notes;
 pub mod search;
 pub mod kiln;
-pub mod system_tools;
-pub mod types;
-
-
 
 // ===== PUBLIC API EXPORTS =====
 
-// Tool modules
 pub use notes::NoteTools;
 pub use search::SearchTools;
 pub use kiln::KilnTools;
-pub use system_tools::*;
-
-// Core types for tool composition
-pub use types::{
-    ToolDefinition, ToolError, ToolExecutionContext, ToolExecutionRequest, ToolFunction, ToolResult,
-};
 
 /// Crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Initialize the crucible-tools library
 ///
-/// This function initializes the simplified tool registry. Tool loading is handled
-/// asynchronously by the `load_all_tools()` function when needed.
+/// This function logs initialization information about the tool system.
 ///
 /// # Example
 ///
@@ -63,8 +59,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// ```
 pub fn init() {
     tracing::info!("Initializing crucible-tools v{}", VERSION);
-    tracing::info!("Simple async function composition interface ready");
-    tracing::info!("Tools will be loaded on-demand via load_all_tools()");
+    tracing::info!("10 tools available: 6 NoteTools, 3 SearchTools, 1 KilnTools");
 }
 
 /// Get library information
@@ -75,18 +70,15 @@ pub fn library_info() -> LibraryInfo {
     LibraryInfo {
         version: VERSION.to_string(),
         name: "crucible-tools".to_string(),
-        description: "Simple async function composition for Crucible knowledge management"
-            .to_string(),
+        description: "MCP-compatible tools for Crucible knowledge management".to_string(),
         features: vec![
-            "simple_composition".to_string(),
-            "direct_async_functions".to_string(),
-            "database_tools".to_string(),
+            "mcp_compatible".to_string(),
+            "note_tools".to_string(),
             "search_tools".to_string(),
             "kiln_tools".to_string(),
-            "system_tools".to_string(),
-            "unified_interface".to_string(),
-            "25_tools_registered".to_string(),
-            "direct_tool_registration".to_string(),
+            "filesystem_based".to_string(),
+            "10_focused_tools".to_string(),
+            "solid_principles".to_string(),
         ],
     }
 }
