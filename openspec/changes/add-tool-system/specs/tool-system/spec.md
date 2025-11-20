@@ -1,7 +1,17 @@
 ## ADDED Requirements
 
-### Requirement: Kiln-Agnostic Tool System
+### Requirement: Kiln-Agnostic Tool System ✅ IMPLEMENTED
 The system SHALL provide a comprehensive tool system that enables agents to access and manipulate knowledge within the kiln using note names and wikilinks, independent of underlying storage implementation.
+
+**Implementation Status**:
+- **Architecture**: MCP-compatible using rmcp 0.9.0 with `#[tool_router]` and `#[tool]` macros
+- **Tools**: 11 focused tools consolidated from 25+ previous tools
+- **Categories**:
+  - **NoteTools** (5): create_note, read_note, update_note, delete_note, list_notes
+  - **SearchTools** (4): semantic_search, text_search, metadata_search, tag_search
+  - **KilnTools** (2): get_roots, get_stats
+- **Validation**: Parameters<T> wrapper with schemars::JsonSchema for automatic schema generation
+- **Dependency Injection**: Proper dependency injection via core traits
 
 #### Scenario: Agent reads note by name
 - **WHEN** agent requests note content using note name or wikilink
