@@ -153,6 +153,7 @@ impl SearchTools {
 
         let mut matches = Vec::new();
         let mut searcher = Searcher::new();
+        let mut stopped_early = false;
 
         // Walk files
         for entry in WalkBuilder::new(&search_path)
@@ -197,6 +198,7 @@ impl SearchTools {
             if result.is_ok() {
                 matches.extend(file_matches);
                 if matches.len() >= limit {
+                    stopped_early = true;
                     break;
                 }
             }
@@ -210,7 +212,7 @@ impl SearchTools {
                 "query": query,
                 "matches": matches,
                 "count": count,
-                "truncated": count > limit
+                "truncated": stopped_early
             }))?
         ]))
     }
