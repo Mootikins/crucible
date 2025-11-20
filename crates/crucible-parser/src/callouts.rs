@@ -50,14 +50,15 @@ impl SyntaxExtension for CalloutExtension {
         let mut errors = Vec::new();
 
         // Pattern to match callout blocks starting with > [!type] possibly with title
-        let re = Regex::new(r"(?m)^(>\s*\[!(\w+)\](?:\s+([^\\n]*))?)\s*\n((?:[^\n]*\n?)*)")
+        // Only match the first line - extract_nested_content handles continuation lines
+        // Use [ \t] instead of \s to avoid matching newlines in the title
+        let re = Regex::new(r"(?m)^>[ \t]*\[!(\w+)\](?:[ \t]+([^\n]*))?")
             .expect("Callout regex is a compile-time constant and should never fail to compile");
 
         for cap in re.captures_iter(content) {
             let full_match = cap.get(0).unwrap();
-            let callout_type = cap.get(2).unwrap().as_str().trim().to_lowercase();
-            let title = cap.get(3).map(|m| m.as_str().trim());
-            let _callout_content = cap.get(4).unwrap().as_str().trim_end();
+            let callout_type = cap.get(1).unwrap().as_str().trim().to_lowercase();
+            let title = cap.get(2).map(|m| m.as_str().trim());
 
             // Validate callout type
             if !self.is_valid_callout_type(&callout_type) {

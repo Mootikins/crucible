@@ -31,8 +31,11 @@ impl WikilinkExtension {
             // Group 1: optional ! for embeds
             // Group 2: content inside [[...]]
             wikilink_regex: Regex::new(r"(!?)\[\[([^\]]+)\]\]").unwrap(),
-            // Matches code blocks (fenced or indented)
-            code_block_regex: Regex::new(r"(?m)^```[\s\S]*?^```|(?m)^    .*$").unwrap(),
+            // Matches code blocks (fenced, indented, or inline)
+            // Pattern 1: Fenced code blocks ```...```
+            // Pattern 2: Indented code blocks (4 spaces)
+            // Pattern 3: Inline code `...`
+            code_block_regex: Regex::new(r"(?m)^```[\s\S]*?^```|^    .*$|`[^`]+`").unwrap(),
         }
     }
 
