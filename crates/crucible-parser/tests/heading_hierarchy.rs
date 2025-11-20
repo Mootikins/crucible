@@ -3,7 +3,7 @@
 //! This module tests that the BlockExtractor correctly assigns parent_block_id
 //! and depth to blocks based on heading hierarchy.
 
-use crucible_parser::{BlockExtractor, MarkdownParserImplementation};
+use crucible_parser::{BlockExtractor, MarkdownParser};
 use crucible_parser::types::ParsedNote;
 use std::path::{Path, PathBuf};
 

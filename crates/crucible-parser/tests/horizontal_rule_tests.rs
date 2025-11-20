@@ -1,4 +1,4 @@
-use crucible_parser::{CrucibleParser, MarkdownParserImplementation};
+use crucible_parser::{CrucibleParser, MarkdownParser};
 use std::path::Path;
 
 #[tokio::test]

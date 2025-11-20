@@ -3,7 +3,7 @@
 //! Verifies that the parser correctly extracts all structural metadata
 //! (word counts, element counts) without computing derived metadata.
 
-use crucible_parser::{CrucibleParser, MarkdownParserImplementation};
+use crucible_parser::{CrucibleParser, MarkdownParser};
 use std::path::PathBuf;
 
 #[tokio::test]
