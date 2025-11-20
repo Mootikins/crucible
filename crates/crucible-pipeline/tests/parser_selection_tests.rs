@@ -375,7 +375,6 @@ Nested tag: #work/review/urgent
 }
 
 #[tokio::test]
-#[ignore = "Pulldown parser still has issues extracting multiple callouts - only extracts first one"]
 async fn test_parity_callouts_extraction() {
     let test_content = r#"# Test
 
@@ -402,12 +401,6 @@ Another text section.
     let notes_pulldown = storage_pulldown.get_stored_notes();
 
     let callouts_pulldown = &notes_pulldown[0].parsed.content.callouts;
-
-    // Debug output
-    eprintln!("\n=== Pulldown extracted {} callouts:", callouts_pulldown.len());
-    for (i, callout) in callouts_pulldown.iter().enumerate() {
-        eprintln!("  [{}] type='{}', title={:?}", i, callout.callout_type, callout.title);
-    }
 
     // Verify Pulldown extracted callouts correctly
     assert_eq!(callouts_pulldown.len(), 3, "Should extract 3 callouts");
@@ -458,7 +451,6 @@ Another text section.
 }
 
 #[tokio::test]
-#[ignore = "Pulldown parser LaTeX extraction still has issues - block/inline detection incorrect"]
 async fn test_parity_latex_extraction() {
     let test_content = r#"# Test
 
@@ -480,6 +472,14 @@ More inline: $\alpha + \beta = \gamma$
     let notes_pulldown = storage_pulldown.get_stored_notes();
 
     let latex_pulldown = &notes_pulldown[0].parsed.content.latex_expressions;
+
+    // Debug output
+    eprintln!("=== EXTRACTED LATEX EXPRESSIONS ===");
+    for (i, expr) in latex_pulldown.iter().enumerate() {
+        eprintln!("[{}] is_block={}, offset={}, length={}, content={:?}",
+                  i, expr.is_block, expr.offset, expr.length, expr.expression);
+    }
+    eprintln!("===================================");
 
     // Verify Pulldown extracted LaTeX correctly
     assert_eq!(
@@ -520,7 +520,6 @@ More inline: $\alpha + \beta = \gamma$
 }
 
 #[tokio::test]
-#[ignore = "Depends on callout/LaTeX extraction which has known issues in pulldown parser"]
 async fn test_parity_complex_document() {
     let test_content = r#"---
 title: Complex Test Document
@@ -637,7 +636,6 @@ Regular text with [[actual link]] and #actual-tag.
 // ============================================================================
 
 #[tokio::test]
-#[ignore = "Pulldown parser extracts wikilinks from code blocks - known limitation"]
 async fn test_wikilinks_not_in_code_blocks() {
     let test_content = r#"# Test
 
