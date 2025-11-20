@@ -24,35 +24,26 @@
 #![warn(clippy::all)]
 #![deny(clippy::pedantic)]
 
-pub mod database_tools;
-pub mod kiln_tools;
-pub mod permission;
-pub mod search_tools;
+pub mod notes;
+pub mod search;
+pub mod kiln;
 pub mod system_tools;
 pub mod types;
 
-// Kiln parsing modules - Phase 1A TDD Implementation
-pub mod kiln_change_detection;
-pub mod kiln_parser;
-pub mod kiln_scanner;
-pub mod kiln_types;
 
-// Real kiln operations - Phase 1B Implementation
-pub mod kiln_operations;
 
 // ===== PUBLIC API EXPORTS =====
-// Simple async function composition interface
+
+// Tool modules
+pub use notes::NoteTools;
+pub use search::SearchTools;
+pub use kiln::KilnTools;
+pub use system_tools::*;
 
 // Core types for tool composition
 pub use types::{
     ToolDefinition, ToolError, ToolExecutionContext, ToolExecutionRequest, ToolFunction, ToolResult,
 };
-
-// Unified tool interface
-pub use types::ToolRegistry;
-
-// Tool loading utilities
-pub use types::{load_all_tools, tool_loader_info, ToolLoaderInfo};
 
 /// Crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

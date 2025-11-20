@@ -12,6 +12,9 @@ crucible-core = { workspace = true }
 crucible-config = { workspace = true }
 crucible-llm = { workspace = true, features = ["test-utils"] }
 
+# MCP support
+rmcp = { version = "0.9.0", features = ["macros", "server"] }
+
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }

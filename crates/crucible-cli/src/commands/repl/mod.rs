@@ -34,7 +34,6 @@ use crucible_core::CrucibleCore;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_llm::embeddings::EmbeddingProvider;
 use crucible_surrealdb::{SurrealClient, SurrealDbConfig};
-use crucible_tools::types::ToolConfigContext;
 
 pub mod command;
 pub mod completer;
@@ -43,10 +42,8 @@ pub mod formatter;
 pub mod highlighter;
 pub mod history;
 pub mod input;
-pub mod tools; // Stub implementation - Rune tools removed from MVP
 
 use crate::config::CliConfig;
-use tools::UnifiedToolRegistry;
 
 use command::Command;
 use completer::ReplCompleter;
@@ -67,9 +64,6 @@ pub struct Repl {
 
     /// Line editor with history and completion
     editor: Reedline,
-
-    /// Tool registry for `:run` commands
-    tools: Arc<UnifiedToolRegistry>,
 
     /// Configuration (for UI settings like history file, format)
     config: ReplConfig,
@@ -93,10 +87,10 @@ pub struct Repl {
 impl Repl {
     /// Create a new REPL instance
     pub async fn new(
-        core: Arc<CrucibleCore>, 
+        core: Arc<CrucibleCore>,
         cli_config: &CliConfig,
-        knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
-        embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+        _knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
+        _embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
     ) -> Result<Self> {
         info!("Initializing REPL with Core");
 
@@ -109,26 +103,8 @@ impl Repl {
         // Setup editor with custom highlighter
         let highlighter = SurrealQLHighlighter::new();
 
-        // Initialize unified tool registry
-        let tool_dir = config.tool_dir.clone();
-        
-        // Create tool context
-        let mut context = ToolConfigContext::new().with_kiln_path(config.kiln_path.clone());
-        if let Some(repo) = knowledge_repo {
-            context = context.with_knowledge_repo(repo);
-        }
-        if let Some(provider) = embedding_provider {
-            context = context.with_embedding_provider(provider);
-        }
-        
-        let tools = UnifiedToolRegistry::new(tool_dir, context).await?;
-
-        info!("Initialized unified tool registry");
-
-        let tools_arc = Arc::new(tools);
-
-        // Create completer with Core and tools
-        let completer = ReplCompleter::new(core.clone(), tools_arc.clone());
+        // Create completer with Core only
+        let completer = ReplCompleter::new(core.clone());
 
         let editor = Reedline::create()
             .with_highlighter(Box::new(highlighter))
@@ -148,7 +124,6 @@ impl Repl {
         Ok(Self {
             core,
             editor,
-            tools: tools_arc,
             config,
             formatter,
             history,
@@ -274,11 +249,6 @@ impl Repl {
     /// This method is public to enable direct testing of individual command handlers.
     pub async fn execute_command(&mut self, cmd: Command) -> Result<(), ReplError> {
         match cmd {
-            Command::ListTools => {
-                self.list_tools();
-                Ok(())
-            }
-            Command::RunTool { tool_name, args } => self.run_tool(&tool_name, args).await,
             Command::ShowStats => {
                 self.show_stats().await;
                 Ok(())
@@ -295,23 +265,9 @@ impl Repl {
                 self.set_output_format(format);
                 Ok(())
             }
-            Command::Help(topic) => match topic {
-                Some(topic_str) => {
-                    // Check if it's a command or a tool
-                    // First, try as a command
-                    if Command::help_for_command(&topic_str).is_some() {
-                        self.show_help(Some(&topic_str));
-                        Ok(())
-                    } else {
-                        // Try as a tool
-                        self.show_tool_help(&topic_str).await
-                    }
-                }
-                None => {
-                    // Show general help
-                    self.show_help(None);
-                    Ok(())
-                }
+            Command::Help(topic) => {
+                self.show_help(topic.as_deref());
+                Ok(())
             },
             Command::ShowHistory(limit) => {
                 self.show_history(limit);
@@ -413,180 +369,7 @@ impl Repl {
         }
     }
 
-    /// List available tools by group
-    async fn list_tools(&self) {
-        use colored::Colorize;
-
-        let grouped_tools = self.tools.list_tools_by_group();
-
-        if grouped_tools.is_empty() {
-            println!("\n{} No tools found.\n", "ℹ".blue());
-            return;
-        }
-
-        let total_tools: usize = grouped_tools.values().map(|v| v.len()).sum();
-        println!(
-            "\n{} Available Tools ({}) - Grouped by Source:\n",
-            "📦".green(),
-            total_tools
-        );
-
-        for (group_name, tools) in grouped_tools {
-            let group_color = match group_name.as_str() {
-                "system" => colored::Color::Magenta,
-                _ => colored::Color::White,
-            };
-
-            println!(
-                "  {} ({}) [{} tools]:",
-                group_name.to_uppercase().color(group_color),
-                match group_name.as_str() {
-                    "system" => "crucible-tools",
-                    _ => "external tools",
-                },
-                tools.len()
-            );
-
-            // Calculate column width for this group based on longest tool name
-            let max_name_len = tools.iter().map(|name| name.len()).max().unwrap_or(0);
-            let column_width = max_name_len.max(20); // Minimum 20 chars for alignment
-
-            // Fetch schemas for all tools in this group in parallel
-            let schema_futures: Vec<_> = tools
-                .iter()
-                .map(|tool_name| async {
-                    let schema = self.tools.get_tool_schema(tool_name).ok().flatten();
-                    (tool_name.clone(), schema)
-                })
-                .collect();
-
-            let tool_schemas = futures::future::join_all(schema_futures).await;
-
-            // Display tools with descriptions
-            for (tool_name, schema_opt) in tool_schemas {
-                let description = schema_opt
-                    .as_ref()
-                    .map(|schema| {
-                        // Truncate description to 60 chars if needed
-                        let desc = &schema.description;
-                        if desc.len() > 60 {
-                            format!("{}...", &desc[..57])
-                        } else {
-                            desc.to_string()
-                        }
-                    })
-                    .unwrap_or_else(String::new);
-
-                if !description.is_empty() {
-                    println!(
-                        "    {:<width$} - {}",
-                        tool_name.cyan(),
-                        description.white(),
-                        width = column_width
-                    );
-                } else {
-                    println!("    {}", tool_name.cyan());
-                }
-            }
-            println!();
-        }
-
-        println!(
-            "{} :run <tool> [args...] | :help <tool> for details",
-            "Tip:".yellow()
-        );
-        println!();
-    }
-
-    /// Run a tool by name
-    async fn run_tool(&mut self, tool_name: &str, args: Vec<String>) -> Result<(), ReplError> {
-        use colored::Colorize;
-
-        info!("Running tool: {} with args: {:?}", tool_name, args);
-        debug!(
-            "Tool execution context - name: {}, arg_count: {}",
-            tool_name,
-            args.len()
-        );
-
-        // Execute the tool
-        let result = self
-            .tools
-            .execute_tool(tool_name, &args)
-            .await
-            .map_err(|e| {
-                let err_str = e.to_string();
-
-                // Enhanced error reporting with context
-                if err_str.contains("Parameter error:") {
-                    // Parameter validation error (from unified_registry)
-                    eprintln!(
-                        "\n{} {}\n\n{} Tool '{}' parameter requirements:",
-                        "❌ Parameter Error:".red().bold(),
-                        err_str.strip_prefix("Parameter error: ").unwrap_or(&err_str),
-                        "💡".cyan(),
-                        tool_name.green()
-                    );
-
-                    // Provide tool-specific help
-                    if tool_name == "create_note" {
-                        eprintln!("  Usage: {}",
-                            ":run create_note <path> <title> <content> [properties_json] [tags]".yellow());
-                        eprintln!("  Example: {}",
-                            ":run create_note /tmp/test.md \"My Note\" \"Content here\" '{{\"type\":\"note\"}}' \"tag1,tag2\"".cyan());
-                    } else {
-                        eprintln!("  Use {} to see tool details", ":tools".green());
-                    }
-                } else if err_str.contains("not found or execution failed in all registries") {
-                    // Tool not found error (from unified_registry)
-                    eprintln!(
-                        "\n{} Tool '{}' not found\n\n{} Available tools:",
-                        "❌".red(),
-                        tool_name.yellow(),
-                        "💡".cyan()
-                    );
-                    eprintln!("  Use {} to list all available tools", ":tools".green());
-                    eprintln!("  Use {} to see detailed logs", "RUST_LOG=debug".yellow());
-                } else if err_str.contains("Parameter conversion failed:") {
-                    // Legacy parameter conversion error
-                    let clean_msg = err_str
-                        .strip_prefix("Parameter conversion failed: ")
-                        .unwrap_or(&err_str);
-                    eprintln!(
-                        "\n{} {}\n\n{} Check parameter format and count",
-                        "❌ Tool Execution Failed:".red().bold(),
-                        clean_msg,
-                        "💡".cyan()
-                    );
-                } else {
-                    // Generic error with context
-                    eprintln!("\n{} Tool '{}' execution failed", "❌".red(), tool_name.yellow());
-                    eprintln!("{}\n", err_str);
-                    eprintln!("{} Debugging tips:", "💡".cyan());
-                    eprintln!("  • Run with {} for detailed logs", "RUST_LOG=debug".yellow());
-                    eprintln!("  • Use {} to verify tool availability", ":tools".green());
-                    eprintln!("  • Check parameter format and requirements");
-                }
-
-                ReplError::Tool(e.to_string())
-            })?;
-
-        // Display result based on status
-        match result.status {
-            tools::ToolStatus::Success => {
-                println!("\n{}", result.output);
-                Ok(())
-            }
-            tools::ToolStatus::Error(ref error_msg) => {
-                eprintln!("\n{} {}", "❌ Tool Error:".red(), error_msg);
-                if !result.output.is_empty() {
-                    eprintln!("\nPartial output:\n{}", result.output);
-                }
-                Err(ReplError::Tool(error_msg.clone()))
-            }
-        }
-    }
-
+  
     /// Show REPL and database statistics
     async fn show_stats(&self) {
         println!("\n📊 Statistics:\n");
@@ -594,10 +377,6 @@ impl Repl {
         println!("  Queries executed:  {}", self.stats.query_count);
         println!("  Avg query time:    {:?}", self.stats.avg_query_time());
         println!("  History size:      {}", self.history.len());
-        println!(
-            "  Tools loaded:      {}",
-            self.tools.list_tools().len()
-        );
         println!();
     }
 
@@ -661,48 +440,7 @@ impl Repl {
         }
     }
 
-    /// Show detailed help for a specific tool
-    async fn show_tool_help(&self, tool_name: &str) -> Result<(), ReplError> {
-        use colored::Colorize;
-
-        // Fetch the tool schema
-        match self.tools.get_tool_schema(tool_name) {
-            Ok(Some(schema)) => {
-                // Format and display the schema
-                let formatted = format_tool_schema(&schema);
-                println!("{}", formatted);
-                Ok(())
-            }
-            Ok(None) => {
-                // Tool exists but has no schema
-                println!(
-                    "\n{} Tool '{}' found, but no schema information is available.",
-                    "ℹ".yellow(),
-                    tool_name.cyan()
-                );
-                Ok(())
-            }
-            Err(e) => {
-                // Tool not found or error retrieving schema
-                println!(
-                    "\n{} Tool '{}' not found or error retrieving schema: {}",
-                    "❌".red(),
-                    tool_name.cyan(),
-                    e
-                );
-                println!(
-                    "{} Use {} to see all available tools.",
-                    "💡".cyan(),
-                    ":tools".green()
-                );
-                Err(ReplError::Tool(format!(
-                    "Tool '{}' not found or schema unavailable",
-                    tool_name
-                )))
-            }
-        }
-    }
-
+    
     /// Show command history
     fn show_history(&self, limit: Option<usize>) {
         let limit = limit.unwrap_or(20);
@@ -753,13 +491,6 @@ impl Repl {
             ":quit".red()
         );
         println!("Connected to real SurrealDB - execute actual queries!\n");
-    }
-
-    /// Get access to the tool registry (for testing)
-    ///
-    /// This is available for both unit tests and integration tests.
-    pub fn get_tools(&self) -> &Arc<UnifiedToolRegistry> {
-        &self.tools
     }
 
     /// Get access to the Core (for testing)
@@ -832,16 +563,9 @@ impl Repl {
 
         let history = CommandHistory::new(config.history_file.clone())?;
         let highlighter = SurrealQLHighlighter::new();
-        
-        // Create tool context for test
-        let context = ToolConfigContext::new().with_kiln_path(config.kiln_path.clone());
-        // Note: Test REPL doesn't fully wire up knowledge repo/embeddings yet
-        // This could be enhanced if tests need tool access
-        
-        let tools = Arc::new(UnifiedToolRegistry::new(config.tool_dir.clone(), context).await?);
 
-        // Create completer with Core and tools
-        let completer = ReplCompleter::new(core.clone(), tools.clone());
+        // Create completer with Core only
+        let completer = ReplCompleter::new(core.clone());
 
         let editor = Reedline::create()
             .with_highlighter(Box::new(highlighter))
@@ -854,7 +578,6 @@ impl Repl {
         Ok(Self {
             core,
             editor,
-            tools,
             config,
             formatter,
             history,
@@ -983,105 +706,16 @@ impl OutputFormat {
     }
 }
 
-/// Format a tool schema for display in the REPL
-fn format_tool_schema(schema: &tools::ToolSchema) -> String {
-    use colored::Colorize;
-
-    let mut output = String::new();
-
-    // Title box
-    let title_line = format!(" {} ", schema.name);
-    let border_len = title_line.len() + 2;
-    let top_border = format!("╭─{}─╮", "─".repeat(border_len));
-    let bottom_border = format!("╰─{}─╯", "─".repeat(border_len));
-
-    output.push_str(&format!("\n{}\n", top_border.cyan()));
-    output.push_str(&format!("│ {} │\n", schema.name.bold().cyan()));
-    output.push_str(&format!("│ {} │\n", " ".repeat(border_len)));
-    output.push_str(&format!("│ {} │\n", schema.description.white()));
-    output.push_str(&format!("{}\n", bottom_border.cyan()));
-
-    // Parameters section
-    if let Some(properties) = schema
-        .input_schema
-        .get("properties")
-        .and_then(|p| p.as_object())
-    {
-        output.push_str(&format!("\n{}:\n", "Parameters".bold().green()));
-
-        // Get required fields
-        let required: Vec<String> = schema
-            .input_schema
-            .get("required")
-            .and_then(|r| r.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        for (param_name, param_schema) in properties {
-            let param_type = param_schema
-                .get("type")
-                .and_then(|t| t.as_str())
-                .unwrap_or("unknown");
-
-            let is_required = required.contains(param_name);
-            let required_str = if is_required {
-                "required".red()
-            } else {
-                "optional".yellow()
-            };
-
-            output.push_str(&format!(
-                "  {} {} ({}, {})\n",
-                "•".cyan(),
-                param_name.bold(),
-                param_type.italic(),
-                required_str
-            ));
-
-            // Add description if available
-            if let Some(description) = param_schema.get("description").and_then(|d| d.as_str()) {
-                output.push_str(&format!("    {}\n", description.white()));
-            }
-
-            output.push('\n');
-        }
-    } else {
-        output.push_str(&format!(
-            "\n{}\n",
-            "No parameters required.".italic().white()
-        ));
-    }
-
-    // Usage example
-    output.push_str(&format!("\n{}:\n", "Usage".bold().green()));
-    output.push_str(&format!(
-        "  :run {} {}\n",
-        schema.name.cyan(),
-        "[args...]".italic().white()
-    ));
-
-    // Additional usage tip
-    output.push_str(&format!(
-        "\n{} Arguments should be space-separated. Use quotes for strings with spaces.\n",
-        "Tip:".yellow()
-    ));
-
-    output
-}
 
 /// Main entry point for REPL command
 pub async fn execute(
     core: Arc<CrucibleCore>,
     cli_config: crate::config::CliConfig,
     non_interactive: bool,
-    knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
-    embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    _knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
+    _embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
 ) -> Result<()> {
-    let mut repl = Repl::new(core, &cli_config, knowledge_repo, embedding_provider).await?;
+    let mut repl = Repl::new(core, &cli_config, None, None).await?;
 
     if non_interactive {
         repl.run_non_interactive().await
