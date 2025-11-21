@@ -161,6 +161,51 @@ Note: ACP is NOT a layer - it's how CLI spawns/communicates with external agents
 - **Strategy selection**: Incremental vs full enrichment approaches
 - **Error handling**: Simple error bubbling with clear boundaries
 
+**Dependency Inversion Pattern (Tower-Style)**:
+
+Crucible uses the **Tower-style** dependency inversion pattern for infrastructure components,
+inspired by Tower's Service trait and Diesel's Backend trait. This pattern enables:
+
+- **Zero infrastructure→infrastructure dependencies**: Services don't depend on concrete implementations
+- **Testability**: Easy to create mock implementations for testing
+- **Flexibility**: Swap implementations without changing service code
+- **Performance**: Zero-cost abstraction with compile-time dispatch
+
+**Example: MerkleTreeBuilder Trait**
+
+```rust
+// Core defines the abstraction (crucible-core/src/merkle/traits.rs)
+pub trait MerkleTreeBuilder: Send + Sync + Clone {
+    type Tree: Clone + Send + Sync;
+    fn from_document(&self, doc: &ParsedNote) -> Self::Tree;
+}
+
+// Infrastructure provides implementation (crucible-merkle/src/builder.rs)
+#[derive(Clone, Copy)]  // Zero-sized type
+pub struct HybridMerkleTreeBuilder;
+
+impl MerkleTreeBuilder for HybridMerkleTreeBuilder {
+    type Tree = HybridMerkleTree;
+    fn from_document(&self, doc: &ParsedNote) -> Self::Tree {
+        HybridMerkleTree::from_document(doc)
+    }
+}
+
+// Service uses the trait (crucible-enrichment/src/service.rs)
+pub struct DefaultEnrichmentService<M: MerkleTreeBuilder> {
+    merkle_builder: M,  // Dependency injected
+    // ...
+}
+```
+
+This pattern is used throughout the codebase for:
+- **Merkle tree builders**: `MerkleTreeBuilder` trait with `HybridMerkleTreeBuilder`
+- **Embedding providers**: `EmbeddingProvider` trait with concrete implementations
+- **Storage backends**: `EnrichedNoteStore`, `MerkleStore` traits with SurrealDB impl
+
+See `examples/custom_merkle_builder.rs` for a complete example of implementing
+a custom builder.
+
 **Query → Response**:
 ```
 1. User query via CLI chat or ACP client
