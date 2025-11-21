@@ -1,7 +1,7 @@
 use anyhow::Result;
 use blake3::Hasher;
 use crucible_core::content_category::ContentCategory;
-use crucible_core::merkle::{HybridMerkleTree, MerkleStore};
+use crucible_merkle::{HybridMerkleTree, MerkleStore};
 use crucible_core::parser::ParsedNote;
 use crucible_core::storage::{Relation as CoreRelation, RelationStorage};
 use serde_json::{Map, Value};
@@ -148,7 +148,7 @@ impl<'a> NoteIngestor<'a> {
     ///
     pub fn with_merkle_store(
         store: &'a EAVGraphStore,
-        merkle_store: Box<dyn crucible_core::merkle::MerkleStore>,
+        merkle_store: Box<dyn crucible_merkle::MerkleStore>,
     ) -> Self {
         Self {
             store,
@@ -248,13 +248,13 @@ impl<'a> NoteIngestor<'a> {
     ///
     pub async fn ingest_enriched(
         &self,
-        enriched: &crucible_core::enrichment::EnrichedNote,
+        enriched: &crucible_enrichment::EnrichedNoteWithTree,
         relative_path: &str,
     ) -> Result<RecordId<EntityRecord>> {
         use crate::kiln_integration::store_embedding_with_chunk_id;
 
         // Step 1: Ingest the parsed note using existing logic
-        let entity_id = self.ingest(&enriched.parsed, relative_path).await?;
+        let entity_id = self.ingest(&enriched.core.parsed, relative_path).await?;
 
         // Step 2: Store Merkle tree (if merkle_store is configured)
         if let Some(merkle_store) = &self.merkle_store {
@@ -266,8 +266,8 @@ impl<'a> NoteIngestor<'a> {
 
         // Step 3: Store embeddings for each block
         let note_id = &entity_id.id;
-        if !enriched.embeddings.is_empty() {
-            for embedding in &enriched.embeddings {
+        if !enriched.core.embeddings.is_empty() {
+            for embedding in &enriched.core.embeddings {
                 store_embedding_with_chunk_id(
                     &self.store.client,
                     note_id,
@@ -296,7 +296,7 @@ impl<'a> NoteIngestor<'a> {
                 entity_id: entity_id.clone(),
                 namespace: metadata_namespace.clone(),
                 key: "reading_time".to_string(),
-                value: PropertyValue::Number(enriched.metadata.reading_time_minutes as f64),
+                value: PropertyValue::Number(enriched.core.metadata.reading_time_minutes as f64),
                 source: "enrichment_service".to_string(),
                 confidence: 1.0,
                 created_at: chrono::Utc::now(),
@@ -311,7 +311,7 @@ impl<'a> NoteIngestor<'a> {
                 entity_id: entity_id.clone(),
                 namespace: metadata_namespace.clone(),
                 key: "complexity_score".to_string(),
-                value: PropertyValue::Number(enriched.metadata.complexity_score as f64),
+                value: PropertyValue::Number(enriched.core.metadata.complexity_score as f64),
                 source: "enrichment_service".to_string(),
                 confidence: 1.0,
                 created_at: chrono::Utc::now(),
@@ -320,7 +320,7 @@ impl<'a> NoteIngestor<'a> {
             .await?;
 
         // Store language if detected
-        if let Some(language) = &enriched.metadata.language {
+        if let Some(language) = &enriched.core.metadata.language {
             self.store
                 .upsert_property(&Property {
                     id: None,
@@ -2751,9 +2751,17 @@ impl<'a> crucible_core::EnrichedNoteStore for NoteIngestor<'a> {
         enriched: &crucible_core::enrichment::EnrichedNote,
         relative_path: &str,
     ) -> Result<()> {
+        // Build merkle tree from parsed note (infrastructure concern)
+        let merkle_tree = crucible_merkle::HybridMerkleTree::from_document(&enriched.parsed);
+
+        // Wrap core type with infrastructure-specific merkle tree
+        let enriched_with_tree = crucible_enrichment::EnrichedNoteWithTree {
+            core: enriched.clone(),
+            merkle_tree,
+        };
+
         // Delegate to existing ingest_enriched implementation
-        // Convert result to () (discard entity ID)
-        self.ingest_enriched(enriched, relative_path).await?;
+        self.ingest_enriched(&enriched_with_tree, relative_path).await?;
         Ok(())
     }
 
