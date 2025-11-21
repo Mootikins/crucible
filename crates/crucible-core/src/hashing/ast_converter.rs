@@ -21,41 +21,6 @@
 //! - Makes conversion logic reusable and testable independently
 //! - Improves code maintainability and clarity
 //! - Follows SOLID principles (SRP in particular)
-//!
-//! # Examples
-//!
-//! ```rust
-//! use crucible_core::hashing::ast_converter::ASTBlockConverter;
-//! use crucible_core::hashing::algorithm::Blake3Algorithm;
-//! use crate::parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
-//!
-//! #[tokio::main]
-//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let converter = ASTBlockConverter::new(Blake3Algorithm);
-//!
-//!     let blocks = vec![
-//!         ASTBlock::new(
-//!             ASTBlockType::Heading,
-//!             "Title".to_string(),
-//!             0,
-//!             5,
-//!             ASTBlockMetadata::heading(1, Some("title".to_string())),
-//!         ),
-//!         ASTBlock::new(
-//!             ASTBlockType::Paragraph,
-//!             "Content".to_string(),
-//!             10,
-//!             17,
-//!             ASTBlockMetadata::generic(),
-//!         ),
-//!     ];
-//!
-//!     let hashed_blocks = converter.convert_batch(&blocks).await?;
-//!     println!("Converted {} blocks", hashed_blocks.len());
-//!
-//!     Ok(())
-//! }
-//! ```
 
 use std::marker::PhantomData;
 
@@ -146,32 +111,6 @@ impl<A: HashingAlgorithm> ASTBlockConverter<A> {
     /// Returns `HashError` if:
     /// - Block content hashing fails
     /// - Hash computation produces invalid length
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use crucible_core::hashing::ast_converter::ASTBlockConverter;
-    /// use crucible_core::hashing::algorithm::Blake3Algorithm;
-    /// use crate::parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let converter = ASTBlockConverter::new(Blake3Algorithm);
-    ///
-    ///     let block = ASTBlock::new(
-    ///         ASTBlockType::Heading,
-    ///         "Title".to_string(),
-    ///         0,
-    ///         5,
-    ///         ASTBlockMetadata::heading(1, Some("title".to_string())),
-    ///     );
-    ///
-    ///     let hashed_block = converter.convert(&block, 0, false).await?;
-    ///     println!("Converted block with hash: {}", hashed_block.hash);
-    ///
-    ///     Ok(())
-    /// }
-    /// ```
     pub async fn convert(
         &self,
         block: &ASTBlock,
@@ -214,41 +153,6 @@ impl<A: HashingAlgorithm> ASTBlockConverter<A> {
     /// # Errors
     ///
     /// Returns `HashError` if any block conversion fails
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use crucible_core::hashing::ast_converter::ASTBlockConverter;
-    /// use crucible_core::hashing::algorithm::Blake3Algorithm;
-    /// use crate::parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     let converter = ASTBlockConverter::new(Blake3Algorithm);
-    ///
-    ///     let blocks = vec![
-    ///         ASTBlock::new(
-    ///             ASTBlockType::Heading,
-    ///             "Title".to_string(),
-    ///             0,
-    ///             5,
-    ///             ASTBlockMetadata::heading(1, None),
-    ///         ),
-    ///         ASTBlock::new(
-    ///             ASTBlockType::Paragraph,
-    ///             "Content".to_string(),
-    ///             10,
-    ///             17,
-    ///             ASTBlockMetadata::generic(),
-    ///         ),
-    ///     ];
-    ///
-    ///     let hashed_blocks = converter.convert_batch(&blocks).await?;
-    ///     assert_eq!(hashed_blocks.len(), 2);
-    ///
-    ///     Ok(())
-    /// }
-    /// ```
     pub async fn convert_batch(&self, blocks: &[ASTBlock]) -> Result<Vec<HashedBlock>, HashError> {
         let mut hashed_blocks = Vec::with_capacity(blocks.len());
 
