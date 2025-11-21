@@ -5,7 +5,7 @@
 //! Responsibility Principle.
 
 use crucible_core::hashing::{ASTBlockConverter, Blake3Algorithm};
-use crucible_parser::types::{ASTBlock, ASTBlockMetadata, ASTBlockType};
+use crucible_core::parser::{ASTBlock, ASTBlockMetadata, ASTBlockType};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
