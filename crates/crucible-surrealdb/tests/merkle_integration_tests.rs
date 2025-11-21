@@ -7,8 +7,7 @@
 //! - Large notes with virtualization
 
 use crucible_merkle::{HybridMerkleTree, VirtualizationConfig};
-use crucible_core::parser::ParsedNote;
-use crucible_parser::types::{Heading, NoteContent, Paragraph};
+use crucible_core::parser::{ParsedNote, Heading, NoteContent, Paragraph};
 use crucible_surrealdb::eav_graph::{EAVGraphStore, NoteIngestor};
 use crucible_surrealdb::{MerklePersistence, SurrealClient, SurrealDbConfig};
 use std::path::PathBuf;
