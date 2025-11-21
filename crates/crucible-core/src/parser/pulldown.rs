@@ -1,7 +1,7 @@
 //! Pulldown-cmark based markdown parser implementation
 
-use super::error::ParserResult;
-use super::traits::{MarkdownParser, ParserCapabilities};
+use crucible_parser::error::ParserResult;
+use crucible_parser::traits::{MarkdownParser, ParserCapabilities};
 use async_trait::async_trait;
 use chrono::Utc;
 use crucible_parser::types::*;
@@ -55,7 +55,7 @@ impl MarkdownParser for PulldownParser {
         // Check file size limit
         if let Some(max_size) = self.capabilities.max_file_size {
             if content.len() > max_size {
-                return Err(super::error::ParserError::FileTooLarge {
+                return Err(crucible_parser::ParserError::FileTooLarge {
                     size: content.len(),
                     max: max_size,
                 });

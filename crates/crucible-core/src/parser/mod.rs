@@ -25,7 +25,10 @@ pub use coordinator::{
     OperationResult, OperationType, ParserStorageCoordinator, ParsingOperation, TransactionContext,
 };
 pub use eav_document::{EAVDocument, EAVDocumentBuilder, ValidationError};
-pub use error::{ErrorSeverity, ParseError, ParseErrorType, ParserError, ParserResult};
+// Re-export ParserError and ParserResult from crucible-parser (canonical source)
+pub use crucible_parser::error::{ParserError, ParserResult};
+// Core-specific error types
+pub use error::{ErrorSeverity, ParseError, ParseErrorType};
 pub use extensions::{
     ExtensionRegistry, ExtensionRegistryBuilder, ExtensionRegistryStats, SyntaxExtension,
 };
