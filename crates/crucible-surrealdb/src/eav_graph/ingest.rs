@@ -248,7 +248,7 @@ impl<'a> NoteIngestor<'a> {
     ///
     pub async fn ingest_enriched(
         &self,
-        enriched: &crucible_enrichment::EnrichedNoteWithTree,
+        enriched: &crucible_enrichment::EnrichedNoteWithTree<HybridMerkleTree>,
         relative_path: &str,
     ) -> Result<RecordId<EntityRecord>> {
         use crate::kiln_integration::store_embedding_with_chunk_id;
