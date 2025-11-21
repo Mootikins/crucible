@@ -774,7 +774,7 @@ mod tests {
     use super::*;
     use crate::SurrealDbConfig;
     use crucible_core::parser::ParsedNote;
-    use crucible_parser::types::{Heading, NoteContent, Paragraph};
+    use crucible_core::parser::{Heading, NoteContent, Paragraph};
     use std::path::PathBuf;
 
     fn create_test_note(content: &str) -> ParsedNote {

@@ -31,7 +31,7 @@ pub mod types;
 
 // Re-export enrichment types (now defined in crucible-core)
 pub use types::{
-    BlockEmbedding, EnrichedNote, InferredRelation, NoteMetadata, RelationType,
+    BlockEmbedding, EnrichedNote, EnrichedNoteWithTree, InferredRelation, NoteMetadata, RelationType,
 };
 
 // Re-export service
