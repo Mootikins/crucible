@@ -1,0 +1,17 @@
+[package]
+name = "crucible-examples"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[example]]
+name = "custom_merkle_builder"
+path = "custom_merkle_builder.rs"
+
+[dependencies]
+crucible-core = { path = "../crates/crucible-core" }
+crucible-enrichment = { path = "../crates/crucible-enrichment" }
+md5 = "0.7"
+
+[dev-dependencies]
