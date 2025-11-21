@@ -5,11 +5,10 @@
 //! principles with dependency injection.
 
 use crate::types::{
-    BlockEmbedding, EnrichedNote, InferredRelation, NoteMetadata,
+    BlockEmbedding, EnrichedNoteWithTree, InferredRelation, NoteMetadata,
 };
 use crucible_core::enrichment::EmbeddingProvider;
-use crucible_merkle::HybridMerkleTree;
-use crucible_core::ParsedNote;
+use crucible_core::{MerkleTreeBuilder, ParsedNote};
 use anyhow::Result;
 use std::sync::Arc;
 use tracing::{debug, info};
@@ -29,9 +28,12 @@ pub const DEFAULT_MAX_BATCH_SIZE: usize = 10;
 /// - Relation inference (semantic similarity, clustering)
 ///
 /// Returns an EnrichedNote ready for storage.
-pub struct DefaultEnrichmentService {
+pub struct DefaultEnrichmentService<M: MerkleTreeBuilder> {
     /// Embedding provider (dependency injected)
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+
+    /// Merkle tree builder (dependency injected)
+    merkle_builder: M,
 
     /// Minimum word count for embedding generation
     min_words_for_embedding: usize,
@@ -40,65 +42,34 @@ pub struct DefaultEnrichmentService {
     max_batch_size: usize,
 }
 
-impl Default for DefaultEnrichmentService {
-    fn default() -> Self {
+impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
+    /// Create a new enrichment service with an embedding provider
+    pub fn new(merkle_builder: M, embedding_provider: Arc<dyn EmbeddingProvider>) -> Self {
         Self {
-            embedding_provider: None,
+            embedding_provider: Some(embedding_provider),
+            merkle_builder,
             min_words_for_embedding: DEFAULT_MIN_WORDS_FOR_EMBEDDING,
             max_batch_size: DEFAULT_MAX_BATCH_SIZE,
         }
     }
-}
 
-impl DefaultEnrichmentService {
-    /// Create a new enrichment service with an embedding provider
-    pub fn new(embedding_provider: Arc<dyn EmbeddingProvider>) -> Self {
+    /// Create an enrichment service without embeddings (metadata/relations only)
+    pub fn without_embeddings(merkle_builder: M) -> Self {
         Self {
-            embedding_provider: Some(embedding_provider),
-            ..Default::default()
+            embedding_provider: None,
+            merkle_builder,
+            min_words_for_embedding: DEFAULT_MIN_WORDS_FOR_EMBEDDING,
+            max_batch_size: DEFAULT_MAX_BATCH_SIZE,
         }
     }
 
-    /// Create an enrichment service without embeddings (metadata/relations only)
-    ///
-    /// This is equivalent to `EnrichmentService::default()`.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use crucible_enrichment::DefaultEnrichmentService;
-    ///
-    /// let service = DefaultEnrichmentService::without_embeddings();
-    /// ```
-    pub fn without_embeddings() -> Self {
-        Self::default()
-    }
-
     /// Set the minimum word count for embedding generation (builder pattern)
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use crucible_enrichment::DefaultEnrichmentService;
-    ///
-    /// let service = DefaultEnrichmentService::without_embeddings()
-    ///     .with_min_words(10);
-    /// ```
     pub fn with_min_words(mut self, min_words: usize) -> Self {
         self.min_words_for_embedding = min_words;
         self
     }
 
     /// Set the maximum batch size for embedding generation (builder pattern)
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use crucible_enrichment::DefaultEnrichmentService;
-    ///
-    /// let service = DefaultEnrichmentService::without_embeddings()
-    ///     .with_max_batch_size(20);
-    /// ```
     pub fn with_max_batch_size(mut self, max_batch_size: usize) -> Self {
         self.max_batch_size = max_batch_size;
         self
@@ -116,9 +87,9 @@ impl DefaultEnrichmentService {
     pub async fn enrich_internal(
         &self,
         parsed: ParsedNote,
-        merkle_tree: HybridMerkleTree,
+        merkle_tree: M::Tree,
         changed_blocks: Vec<String>,
-    ) -> Result<EnrichedNote> {
+    ) -> Result<EnrichedNoteWithTree<M::Tree>> {
         info!(
             "Enriching note: {} ({} changed blocks)",
             parsed.path.display(),
@@ -132,7 +103,7 @@ impl DefaultEnrichmentService {
             self.infer_relations(&parsed),
         );
 
-        Ok(EnrichedNote::new(
+        Ok(EnrichedNoteWithTree::new(
             parsed,
             merkle_tree,
             embeddings?,
@@ -477,14 +448,14 @@ fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, St
 // Trait implementation for SOLID principles (Dependency Inversion)
 // Returns core::EnrichedNote (without merkle_tree) to match trait signature
 #[async_trait]
-impl crucible_core::enrichment::EnrichmentService for DefaultEnrichmentService {
+impl<M: MerkleTreeBuilder> crucible_core::enrichment::EnrichmentService for DefaultEnrichmentService<M> {
     async fn enrich(
         &self,
         parsed: ParsedNote,
         changed_block_ids: Vec<String>,
     ) -> Result<crucible_core::enrichment::EnrichedNote> {
-        // Build Merkle tree from parsed note
-        let merkle_tree = HybridMerkleTree::from_document(&parsed);
+        // Build Merkle tree from parsed note using injected builder
+        let merkle_tree = self.merkle_builder.from_document(&parsed);
 
         // Delegate to internal method
         let enriched_with_tree = self.enrich_internal(parsed, merkle_tree, changed_block_ids).await?;
@@ -496,11 +467,10 @@ impl crucible_core::enrichment::EnrichmentService for DefaultEnrichmentService {
     async fn enrich_with_tree(
         &self,
         parsed: ParsedNote,
-        // merkle_tree parameter removed from trait
         changed_block_ids: Vec<String>,
     ) -> Result<crucible_core::enrichment::EnrichedNote> {
-        // Build merkle tree internally
-        let merkle_tree = HybridMerkleTree::from_document(&parsed);
+        // Build merkle tree internally using injected builder
+        let merkle_tree = self.merkle_builder.from_document(&parsed);
 
         // Delegate to internal method
         let enriched_with_tree = self.enrich_internal(parsed, merkle_tree, changed_block_ids).await?;

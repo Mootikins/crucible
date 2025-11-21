@@ -14,6 +14,7 @@
 //! - crucible-core: Storage traits (MerkleStore)
 //! - Infrastructure crates: Persistence implementations
 
+pub mod builder;
 pub mod hash;
 pub mod hybrid;
 pub mod storage;
@@ -21,6 +22,7 @@ pub mod thread_safe;
 pub mod virtual_section;
 
 // Re-export main types
+pub use builder::*;
 pub use hash::*;
 pub use hybrid::*;
 pub use storage::*;
