@@ -12,7 +12,7 @@
 //! - **Incremental Updates**: Support for partial tree updates
 
 use crate::{DbError, DbResult, RecordId, SurrealClient};
-use crucible_core::merkle::{HybridMerkleTree, NodeHash, SectionNode, VirtualSection};
+use crucible_merkle::{HybridMerkleTree, NodeHash, SectionNode, VirtualSection};
 use crucible_core::parser::ParsedNote;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -393,7 +393,7 @@ impl MerklePersistence {
                             hash: NodeHash::from_hex(&record.hash)
                                 .map_err(|e| DbError::Internal(format!("Invalid hash: {}", e)))?,
                             primary_heading: record.primary_heading.map(|text| {
-                                crucible_core::merkle::HeadingSummary {
+                                crucible_merkle::HeadingSummary {
                                     text,
                                     level: record.min_depth,
                                 }
@@ -679,40 +679,40 @@ fn sanitize_id(id: &str) -> String {
 
 // Implement the MerkleStore trait for SurrealDB backend
 #[async_trait::async_trait]
-impl crucible_core::merkle::MerkleStore for MerklePersistence {
+impl crucible_merkle::MerkleStore for MerklePersistence {
     async fn store(
         &self,
         id: &str,
         tree: &HybridMerkleTree,
-    ) -> crucible_core::merkle::StorageResult<()> {
+    ) -> crucible_merkle::StorageResult<()> {
         self.store_tree(id, tree)
             .await
-            .map_err(|e| crucible_core::merkle::StorageError::Storage(e.to_string()))
+            .map_err(|e| crucible_merkle::StorageError::Storage(e.to_string()))
     }
 
-    async fn retrieve(&self, id: &str) -> crucible_core::merkle::StorageResult<HybridMerkleTree> {
+    async fn retrieve(&self, id: &str) -> crucible_merkle::StorageResult<HybridMerkleTree> {
         self.retrieve_tree(id).await.map_err(|e| match e {
-            DbError::NotFound(_) => crucible_core::merkle::StorageError::NotFound(id.to_string()),
-            _ => crucible_core::merkle::StorageError::Storage(e.to_string()),
+            DbError::NotFound(_) => crucible_merkle::StorageError::NotFound(id.to_string()),
+            _ => crucible_merkle::StorageError::Storage(e.to_string()),
         })
     }
 
-    async fn delete(&self, id: &str) -> crucible_core::merkle::StorageResult<()> {
+    async fn delete(&self, id: &str) -> crucible_merkle::StorageResult<()> {
         self.delete_tree(id)
             .await
-            .map_err(|e| crucible_core::merkle::StorageError::Storage(e.to_string()))
+            .map_err(|e| crucible_merkle::StorageError::Storage(e.to_string()))
     }
 
     async fn get_metadata(
         &self,
         id: &str,
-    ) -> crucible_core::merkle::StorageResult<Option<crucible_core::merkle::TreeMetadata>> {
+    ) -> crucible_merkle::StorageResult<Option<crucible_merkle::TreeMetadata>> {
         let meta = self
             .get_tree_metadata(id)
             .await
-            .map_err(|e| crucible_core::merkle::StorageError::Storage(e.to_string()))?;
+            .map_err(|e| crucible_merkle::StorageError::Storage(e.to_string()))?;
 
-        Ok(meta.map(|m| crucible_core::merkle::TreeMetadata {
+        Ok(meta.map(|m| crucible_merkle::TreeMetadata {
             id: m.id,
             root_hash: m.root_hash,
             section_count: m.section_count,
@@ -730,31 +730,31 @@ impl crucible_core::merkle::MerkleStore for MerklePersistence {
         id: &str,
         tree: &HybridMerkleTree,
         changed_sections: &[usize],
-    ) -> crucible_core::merkle::StorageResult<()> {
+    ) -> crucible_merkle::StorageResult<()> {
         self.update_tree_incremental(id, tree, changed_sections)
             .await
             .map_err(|e| match e {
                 DbError::InvalidOperation(_) => {
-                    crucible_core::merkle::StorageError::InvalidOperation(e.to_string())
+                    crucible_merkle::StorageError::InvalidOperation(e.to_string())
                 }
                 DbError::NotFound(_) => {
-                    crucible_core::merkle::StorageError::NotFound(id.to_string())
+                    crucible_merkle::StorageError::NotFound(id.to_string())
                 }
-                _ => crucible_core::merkle::StorageError::Storage(e.to_string()),
+                _ => crucible_merkle::StorageError::Storage(e.to_string()),
             })
     }
 
     async fn list_trees(
         &self,
-    ) -> crucible_core::merkle::StorageResult<Vec<crucible_core::merkle::TreeMetadata>> {
+    ) -> crucible_merkle::StorageResult<Vec<crucible_merkle::TreeMetadata>> {
         let trees = self
             .list_trees()
             .await
-            .map_err(|e| crucible_core::merkle::StorageError::Storage(e.to_string()))?;
+            .map_err(|e| crucible_merkle::StorageError::Storage(e.to_string()))?;
 
         Ok(trees
             .into_iter()
-            .map(|m| crucible_core::merkle::TreeMetadata {
+            .map(|m| crucible_merkle::TreeMetadata {
                 id: m.id,
                 root_hash: m.root_hash,
                 section_count: m.section_count,

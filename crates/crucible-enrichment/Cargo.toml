@@ -12,9 +12,8 @@ name = "crucible_enrichment"
 path = "src/lib.rs"
 
 [dependencies]
-# Core types and traits
+# Dependency Inversion: Only depend on crucible-core for abstractions
 crucible-core = { path = "../crucible-core" }
-crucible-parser = { path = "../crucible-parser" }
 crucible-merkle = { path = "../crucible-merkle" }
 
 # Async
