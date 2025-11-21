@@ -5,6 +5,16 @@
 
 ---
 
+> **⚠️ SUPERSEDED**: This analysis was based on a misunderstanding of Crucible's purpose. It treats Crucible as a "multi-agent chat platform" similar to ElizaOS, when Crucible is actually **memory infrastructure for reasoning-focused AI agents**.
+>
+> **See instead**: `memory-architecture-analysis.md` for the correct framing.
+>
+> **Key insight**: ElizaOS builds autonomous social/crypto bots. Crucible builds persistent memory systems for reasoning agents. These are fundamentally different problems.
+>
+> This document is retained for historical context and because some patterns (Worlds/Rooms, Events) remain relevant when reinterpreted for memory contexts.
+
+---
+
 ## Executive Summary
 
 This document analyzes ElizaOS's multi-agent architecture and identifies patterns applicable to Crucible. While both systems support multi-agent coordination, they take fundamentally different architectural approaches:
