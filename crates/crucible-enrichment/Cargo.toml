@@ -14,7 +14,6 @@ path = "src/lib.rs"
 [dependencies]
 # Dependency Inversion: Only depend on crucible-core for abstractions
 crucible-core = { path = "../crucible-core" }
-crucible-merkle = { path = "../crucible-merkle" }
 
 # Async
 tokio = { workspace = true }
