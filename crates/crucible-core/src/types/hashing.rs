@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 // Re-export BlockHash from parser to avoid duplication
-pub use crucible_parser::types::BlockHash;
+pub use crate::parser::types::BlockHash;
 
 /// A BLAKE3 hash used for content addressing
 ///

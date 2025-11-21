@@ -35,7 +35,7 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 // Re-export ParsedNote from parser for convenience
-pub use crucible_parser::types::ParsedNote;
+pub use crate::parser::types::ParsedNote;
 
 /// A processed note ready for database transaction building
 ///
@@ -394,7 +394,7 @@ impl NoteProcessingJob {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_parser::types::{FootnoteMap, NoteContent, ParsedNote};
+    use crate::parser::types::{FootnoteMap, NoteContent, ParsedNote};
 
     fn create_test_document(path: &str) -> ParsedNote {
         ParsedNote {

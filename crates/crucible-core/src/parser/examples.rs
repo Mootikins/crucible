@@ -384,7 +384,7 @@ pub async fn performance_optimization_example() -> Result<(), Box<dyn std::error
 
     // Create parser with custom hasher
     let custom_hasher = Arc::new(Blake3Hasher::new());
-    let base_parser = Box::new(crate::parser::bridge::ParserAdapter::new());
+    let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
     let parser = Arc::new(
         crate::parser::storage_bridge::StorageAwareParser::with_config(
             base_parser,
