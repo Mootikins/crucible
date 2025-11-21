@@ -35,9 +35,9 @@ tokio = { workspace = true, features = ["full", "tracing"] }
 # Core now defines parser traits/types; parser crate depends on core
 # This breaks the circular dependency and follows SOLID principles
 
-# NOTE: crucible-merkle dependency REMOVED - Dependency Inversion applied
-# Merkle tree implementations now depend on core for parser types
-# Higher-level crates (CLI, Tauri) depend on merkle directly when needed
+# EnrichedNote no longer includes merkle_tree to avoid the cycle
+# NOTE: crucible-merkle dependency REMOVED - Would create circular dependency
+# Core defines abstractions, merkle depends on core for parser types
 
 # Configuration management (for enrichment config types)
 crucible-config = { path = "../crucible-config" }

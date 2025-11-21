@@ -72,7 +72,7 @@ pub trait EnrichmentService: Send + Sync {
     async fn enrich_with_tree(
         &self,
         parsed: ParsedNote,
-        // merkle_tree: HybridMerkleTree,
+        // merkle_tree: see EnrichedNoteWithTree in crucible-enrichment
         changed_block_ids: Vec<String>,
     ) -> Result<EnrichedNote>;
 
