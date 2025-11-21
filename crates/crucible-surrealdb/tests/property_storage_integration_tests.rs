@@ -6,9 +6,8 @@
 //! 3. PropertyStorage trait (Phase 1.3)
 
 use chrono::Utc;
-use crucible_core::parser::FrontmatterPropertyMapper;
+use crucible_core::parser::{FrontmatterPropertyMapper, Frontmatter, FrontmatterFormat};
 use crucible_core::storage::{PropertyNamespace, PropertyStorage, PropertyValue};
-use crucible_parser::{Frontmatter, FrontmatterFormat};
 use crucible_surrealdb::eav_graph::{apply_eav_graph_schema, EAVGraphStore};
 use crucible_surrealdb::SurrealClient;
 use serde_json::json;
