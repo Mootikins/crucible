@@ -64,7 +64,7 @@ mod tests {
     #[derive(Clone)]
     struct MockTreeBuilder;
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     struct MockTree {
         word_count: usize,
     }
