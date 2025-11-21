@@ -7,9 +7,10 @@ edition.workspace = true
 description = "SurrealDB backend for the Crucible knowledge management system"
 
 [dependencies]
-# Now depends on crucible-core for trait definitions (Dependency Inversion)
+# Dependency Inversion: Only depend on crucible-core for abstractions
+# Parser implementations are injected by higher-level crates
 crucible-core = { path = "../crucible-core" }
-crucible-parser = { path = "../crucible-parser" }
+crucible-merkle = { path = "../crucible-merkle" }
 
 # Optional: Only needed for embedding functionality, not core database operations
 crucible-enrichment = { path = "../crucible-enrichment", optional = true }

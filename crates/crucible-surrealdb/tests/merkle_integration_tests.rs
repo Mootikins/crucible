@@ -6,7 +6,7 @@
 //! - Incremental updates with change detection
 //! - Large notes with virtualization
 
-use crucible_core::merkle::{HybridMerkleTree, VirtualizationConfig};
+use crucible_merkle::{HybridMerkleTree, VirtualizationConfig};
 use crucible_core::parser::ParsedNote;
 use crucible_parser::types::{Heading, NoteContent, Paragraph};
 use crucible_surrealdb::eav_graph::{EAVGraphStore, NoteIngestor};

@@ -9,7 +9,7 @@ use crate::types::{
 };
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_merkle::HybridMerkleTree;
-use crucible_parser::ParsedNote;
+use crucible_core::ParsedNote;
 use anyhow::Result;
 use std::sync::Arc;
 use tracing::{debug, info};
@@ -640,7 +640,7 @@ mod tests {
 
     /// Helper to create a minimal ParsedNote for testing
     fn create_test_parsed_note() -> ParsedNote {
-        use crucible_parser::ParsedNoteBuilder;
+        use crucible_core::parser::ParsedNoteBuilder;
 
         ParsedNoteBuilder::new(PathBuf::from("/test/note.md")).build()
     }
