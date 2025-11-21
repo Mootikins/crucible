@@ -39,9 +39,9 @@ use crate::parser::ParsedNote;
 ///     // ... other fields
 /// }
 /// ```
-pub trait MerkleTreeBuilder: Send + Sync + Clone {
+pub trait MerkleTreeBuilder: Send + Sync + Clone + 'static {
     /// The type of merkle tree produced by this builder
-    type Tree: Clone + Send + Sync;
+    type Tree: Clone + Send + Sync + std::fmt::Debug + 'static;
 
     /// Build a merkle tree from a parsed document
     ///

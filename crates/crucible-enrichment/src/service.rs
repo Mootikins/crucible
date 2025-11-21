@@ -543,8 +543,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_enrichment_service_with_provider() {
+        use crucible_merkle::HybridMerkleTreeBuilder;
+
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = DefaultEnrichmentService::new(provider);
+        let service = DefaultEnrichmentService::new(HybridMerkleTreeBuilder, provider);
 
         assert!(service.embedding_provider.is_some());
         assert_eq!(service.min_words_for_embedding, 5);
@@ -552,22 +554,28 @@ mod tests {
 
     #[tokio::test]
     async fn test_enrichment_service_without_provider() {
-        let service = DefaultEnrichmentService::without_embeddings();
+        use crucible_merkle::HybridMerkleTreeBuilder;
+
+        let service = DefaultEnrichmentService::without_embeddings(HybridMerkleTreeBuilder);
 
         assert!(service.embedding_provider.is_none());
     }
 
     #[tokio::test]
     async fn test_enrichment_service_with_custom_min_words() {
+        use crucible_merkle::HybridMerkleTreeBuilder;
+
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = DefaultEnrichmentService::new(provider).with_min_words(10);
+        let service = DefaultEnrichmentService::new(HybridMerkleTreeBuilder, provider).with_min_words(10);
 
         assert_eq!(service.min_words_for_embedding, 10);
     }
 
     #[tokio::test]
     async fn test_generate_embeddings_without_provider() {
-        let service = DefaultEnrichmentService::without_embeddings();
+        use crucible_merkle::HybridMerkleTreeBuilder;
+
+        let service = DefaultEnrichmentService::without_embeddings(HybridMerkleTreeBuilder);
 
         // Create a minimal ParsedNote for testing
         let parsed = create_test_parsed_note();
@@ -583,7 +591,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_extract_metadata() {
-        let service = DefaultEnrichmentService::without_embeddings();
+        use crucible_merkle::HybridMerkleTreeBuilder;
+
+        let service = DefaultEnrichmentService::without_embeddings(HybridMerkleTreeBuilder);
         let parsed = create_test_parsed_note();
 
         let metadata = service.extract_metadata(&parsed).await.unwrap();
@@ -599,7 +609,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_infer_relations() {
-        let service = DefaultEnrichmentService::without_embeddings();
+        use crucible_merkle::HybridMerkleTreeBuilder;
+
+        let service = DefaultEnrichmentService::without_embeddings(HybridMerkleTreeBuilder);
         let parsed = create_test_parsed_note();
 
         let relations = service.infer_relations(&parsed).await.unwrap();
