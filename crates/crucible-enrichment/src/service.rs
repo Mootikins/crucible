@@ -8,7 +8,7 @@ use crate::types::{
     BlockEmbedding, EnrichedNote, InferredRelation, NoteMetadata,
 };
 use crucible_core::enrichment::EmbeddingProvider;
-use crucible_core::merkle::HybridMerkleTree;
+use crucible_merkle::HybridMerkleTree;
 use crucible_parser::ParsedNote;
 use anyhow::Result;
 use std::sync::Arc;
@@ -475,33 +475,43 @@ fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, St
 
 
 // Trait implementation for SOLID principles (Dependency Inversion)
+// Returns core::EnrichedNote (without merkle_tree) to match trait signature
 #[async_trait]
 impl crucible_core::enrichment::EnrichmentService for DefaultEnrichmentService {
     async fn enrich(
         &self,
         parsed: ParsedNote,
         changed_block_ids: Vec<String>,
-    ) -> Result<EnrichedNote> {
+    ) -> Result<crucible_core::enrichment::EnrichedNote> {
         // Build Merkle tree from parsed note
         let merkle_tree = HybridMerkleTree::from_document(&parsed);
 
-        // Delegate to enrich_with_tree
-        self.enrich_with_tree(parsed, merkle_tree, changed_block_ids).await
+        // Delegate to internal method
+        let enriched_with_tree = self.enrich_internal(parsed, merkle_tree, changed_block_ids).await?;
+
+        // Return core enriched note (without merkle tree)
+        Ok(enriched_with_tree.core)
     }
 
     async fn enrich_with_tree(
         &self,
         parsed: ParsedNote,
-        merkle_tree: HybridMerkleTree,
+        // merkle_tree parameter removed from trait
         changed_block_ids: Vec<String>,
-    ) -> Result<EnrichedNote> {
-        // Delegate to existing enrich method (which takes merkle_tree)
-        self.enrich_internal(parsed, merkle_tree, changed_block_ids).await
+    ) -> Result<crucible_core::enrichment::EnrichedNote> {
+        // Build merkle tree internally
+        let merkle_tree = HybridMerkleTree::from_document(&parsed);
+
+        // Delegate to internal method
+        let enriched_with_tree = self.enrich_internal(parsed, merkle_tree, changed_block_ids).await?;
+
+        // Return core enriched note (without merkle tree)
+        Ok(enriched_with_tree.core)
     }
 
     async fn infer_relations(
         &self,
-        _enriched: &EnrichedNote,
+        _enriched: &crucible_core::enrichment::EnrichedNote,
         _threshold: f64,
     ) -> Result<Vec<InferredRelation>> {
         // Delegate to existing infer_relations method
