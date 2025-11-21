@@ -22,8 +22,8 @@
 //! - **Dependency Inversion**: Flexible trait-based architecture
 
 use crate::hashing::blake3::Blake3Hasher;
-use crate::parser::error::ParserResult;
-use crate::parser::traits::{MarkdownParser, ParserCapabilities};
+use crucible_parser::error::ParserResult;
+use crucible_parser::traits::{MarkdownParser, ParserCapabilities};
 use crate::storage::builder::ContentAddressedStorageBuilder;
 use crate::storage::diff::EnhancedChangeDetector;
 use crate::storage::{
@@ -300,7 +300,7 @@ impl StorageAwareParser {
             .calculate_optimal(content_bytes.len());
 
         if content_bytes.is_empty() {
-            return Err(crate::parser::error::ParserError::ParseFailed(
+            return Err(crucible_parser::ParserError::ParseFailed(
                 "Cannot create blocks from empty content".to_string(),
             ));
         }
@@ -319,7 +319,7 @@ impl StorageAwareParser {
             let block =
                 HashedBlock::from_data(chunk_data, blocks.len(), offset, is_last, &*self.hasher)
                     .map_err(|e| {
-                        crate::parser::error::ParserError::ParseFailed(format!(
+                        crucible_parser::ParserError::ParseFailed(format!(
                             "Failed to create hashed block: {}",
                             e
                         ))
@@ -341,13 +341,13 @@ impl StorageAwareParser {
     /// Merkle tree or error if creation fails
     fn create_merkle_tree(&self, blocks: &[HashedBlock]) -> ParserResult<MerkleTree> {
         if blocks.is_empty() {
-            return Err(crate::parser::error::ParserError::ParseFailed(
+            return Err(crucible_parser::ParserError::ParseFailed(
                 "Cannot create Merkle tree from empty blocks".to_string(),
             ));
         }
 
         MerkleTree::from_blocks(blocks, &*self.hasher).map_err(|e| {
-            crate::parser::error::ParserError::ParseFailed(format!(
+            crucible_parser::ParserError::ParseFailed(format!(
                 "Failed to create Merkle tree: {}",
                 e
             ))
@@ -382,7 +382,7 @@ impl StorageAwareParser {
                 Ok(exists) => {
                     if !exists {
                         if let Err(e) = storage.store_block(&block.hash, &block.data).await {
-                            return Err(crate::parser::error::ParserError::ParseFailed(format!(
+                            return Err(crucible_parser::ParserError::ParseFailed(format!(
                                 "Failed to store block: {}",
                                 e
                             )));
@@ -393,7 +393,7 @@ impl StorageAwareParser {
                     }
                 }
                 Err(e) => {
-                    return Err(crate::parser::error::ParserError::ParseFailed(format!(
+                    return Err(crucible_parser::ParserError::ParseFailed(format!(
                         "Failed to check block existence: {}",
                         e
                     )));
@@ -403,7 +403,7 @@ impl StorageAwareParser {
 
         // Store Merkle tree
         let tree_stored = if let Err(e) = storage.store_tree(&tree.root_hash, tree).await {
-            return Err(crate::parser::error::ParserError::ParseFailed(format!(
+            return Err(crucible_parser::ParserError::ParseFailed(format!(
                 "Failed to store Merkle tree: {}",
                 e
             )));
@@ -448,7 +448,7 @@ impl StorageAwareParser {
             let changes = new_tree
                 .compare_enhanced(previous_tree, &*self.hasher, ChangeSource::UserEdit)
                 .map_err(|e| {
-                    crate::parser::error::ParserError::ParseFailed(format!(
+                    crucible_parser::ParserError::ParseFailed(format!(
                         "Failed to detect changes: {}",
                         e
                     ))
