@@ -15,7 +15,7 @@ fn contract_builder_must_be_send_sync() {
     #[derive(Clone)]
     struct TestBuilder;
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     struct TestTree;
 
     impl MerkleTreeBuilder for TestBuilder {
@@ -37,7 +37,7 @@ fn contract_builder_must_be_cloneable() {
     #[derive(Clone)]
     struct TestBuilder;
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     struct TestTree;
 
     impl MerkleTreeBuilder for TestBuilder {
@@ -101,7 +101,7 @@ fn contract_tree_must_be_send_sync() {
     #[derive(Clone)]
     struct ThreadSafeBuilder;
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     struct ThreadSafeTree {
         data: String,
     }
@@ -129,7 +129,7 @@ fn contract_builder_can_be_shared() {
     #[derive(Clone)]
     struct SharedBuilder;
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     struct SharedTree;
 
     impl MerkleTreeBuilder for SharedBuilder {
@@ -156,7 +156,7 @@ fn contract_builder_works_with_generic_services() {
     #[derive(Clone)]
     struct GenericBuilder;
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     struct GenericTree {
         block_count: usize,
     }
@@ -250,7 +250,7 @@ fn contract_builder_handles_empty_documents() {
     #[derive(Clone)]
     struct RobustBuilder;
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     struct RobustTree {
         is_empty: bool,
     }
@@ -283,7 +283,7 @@ async fn contract_builder_works_in_async_context() {
     #[derive(Clone)]
     struct AsyncBuilder;
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     struct AsyncTree;
 
     impl MerkleTreeBuilder for AsyncBuilder {
@@ -314,10 +314,10 @@ fn contract_multiple_builders_coexist() {
     #[derive(Clone)]
     struct Builder2;
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     struct Tree1;
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     struct Tree2;
 
     impl MerkleTreeBuilder for Builder1 {
