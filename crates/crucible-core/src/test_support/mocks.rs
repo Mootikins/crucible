@@ -1624,7 +1624,7 @@ impl crate::enrichment::EnrichmentService for MockEnrichmentService {
         changed_block_ids: Vec<String>,
     ) -> anyhow::Result<crate::enrichment::EnrichedNote> {
         use crate::enrichment::EnrichedNote;
-        // use crucible_merkle::HybridMerkleTree;
+        // use crucible_merkle::HybridMerkleTree; // moved to infrastructure layer
 
         let mut state = self.state.lock().unwrap();
 
@@ -1665,7 +1665,7 @@ impl crate::enrichment::EnrichmentService for MockEnrichmentService {
     async fn enrich_with_tree(
         &self,
         parsed: crate::parser::ParsedNote,
-        // merkle_tree: crucible_merkle::HybridMerkleTree,
+        // merkle_tree: see enrichment crate,
         changed_block_ids: Vec<String>,
     ) -> anyhow::Result<crate::enrichment::EnrichedNote> {
         use crate::enrichment::EnrichedNote;

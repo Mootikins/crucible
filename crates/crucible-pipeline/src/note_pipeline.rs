@@ -263,7 +263,7 @@ impl NotePipeline {
 
             // Call enrichment service with Merkle tree (avoids recomputation)
             self.enrichment_service
-                .enrich_with_tree(parsed.clone(), new_tree.clone(), changed_block_ids)
+                .enrich_with_tree(parsed.clone(), changed_block_ids)
                 .await
                 .context("Phase 4: Failed to enrich note")?
         } else {
@@ -273,7 +273,6 @@ impl NotePipeline {
             use crucible_core::enrichment::{EnrichedNote, NoteMetadata};
             EnrichedNote::new(
                 parsed.clone(),
-                new_tree.clone(),
                 Vec::new(),  // No embeddings
                 NoteMetadata::default(),
                 Vec::new(),  // No inferred relations

@@ -15,6 +15,7 @@ path = "src/lib.rs"
 # Core types and traits
 crucible-core = { path = "../crucible-core" }
 crucible-parser = { path = "../crucible-parser" }
+crucible-merkle = { path = "../crucible-merkle" }
 
 # Async
 tokio = { workspace = true }
