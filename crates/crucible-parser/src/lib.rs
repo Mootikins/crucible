@@ -1,11 +1,19 @@
 //! Crucible Markdown Parser
 //!
 //! A modular, extensible markdown parser for knowledge management systems.
+//! This crate provides implementations of the parser traits defined in crucible-core.
+//!
+//! # Dependency Inversion
+//!
+//! This crate depends on `crucible-core` for:
+//! - Parser trait definitions (MarkdownParser, ParserCapabilities)
+//! - Parser type definitions (ParsedNote, Wikilink, Tag, etc.)
+//! - Parser error types (ParserError, ParseError, etc.)
+//!
 //! This crate provides:
-//! - Obsidian-compatible syntax extensions
-//! - Plugin-based architecture
-//! - Dependency inversion support for testing
-//! - High-performance parsing with sub-100ms target
+//! - Concrete parser implementations (PulldownParser, MarkdownItParser)
+//! - Extension system for syntax features
+//! - Block extraction and processing utilities
 
 pub mod basic_markdown;
 pub mod block_extractor;
@@ -29,10 +37,54 @@ pub mod wikilinks;
 #[cfg(feature = "markdown-it-parser")]
 pub mod markdown_it;
 
-// Re-export main types for convenience
+// Re-export core parser types and traits (canonical definitions in crucible-core)
+pub use crucible_core::parser::{
+    // Error types
+    ErrorSeverity,
+    ParseError,
+    ParseErrorType,
+    ParserError,
+    ParserResult,
+    // Trait definitions
+    MarkdownParser,
+    ParserCapabilities,
+    ParserCapabilitiesExt,
+    ParserRequirements,
+    // Core types
+    ASTBlock,
+    ASTBlockMetadata,
+    ASTBlockType,
+    BlockHash,
+    Blockquote,
+    Callout,
+    CodeBlock,
+    FootnoteDefinition,
+    FootnoteMap,
+    FootnoteReference,
+    Frontmatter,
+    FrontmatterFormat,
+    Heading,
+    HorizontalRule,
+    InlineLink,
+    LatexExpression,
+    ListBlock,
+    ListItem,
+    ListMarkerStyle,
+    ListType,
+    NoteContent,
+    Paragraph,
+    ParsedNote,
+    ParsedNoteBuilder,
+    ParsedNoteMetadata,
+    Table,
+    Tag,
+    TaskStatus,
+    Wikilink,
+};
+
+// Re-export implementation types
 pub use block_extractor::{BlockExtractor, ExtractionConfig};
 pub use block_hasher::SimpleBlockHasher;
-pub use error::{ParseError, ParseErrorType, ParserError, ParserResult};
 pub use extensions::{
     ExtensionRegistry, ExtensionRegistryBuilder, ExtensionRegistryStats, SyntaxExtension,
 };
@@ -41,20 +93,13 @@ pub use frontmatter_extractor::{
     FrontmatterResult, LineEndingStyle,
 };
 pub use implementation::{BlockProcessingConfig, CrucibleParser};
-pub use traits::{MarkdownParser, ParserCapabilities};
 
 // Re-export markdown-it parser when feature is enabled
 #[cfg(feature = "markdown-it-parser")]
 pub use markdown_it::MarkdownItParser;
 
-// Re-export pulldown parser
+// Re-export parser implementations
 pub use pulldown::PulldownParser;
-pub use types::{
-    ASTBlock, ASTBlockMetadata, ASTBlockType, BlockHash, Blockquote, Callout, CodeBlock,
-    NoteContent, FootnoteDefinition, FootnoteMap, FootnoteReference, Frontmatter,
-    FrontmatterFormat, Heading, HorizontalRule, InlineLink, LatexExpression, ListBlock, ListItem,
-    ListType, ParsedNote, ParsedNoteBuilder, Table, Tag, TaskStatus, Wikilink,
-};
 
 // Convenience factory functions
 pub use basic_markdown::create_basic_markdown_extension;

@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Parser types (ParsedNote, BlockHash, etc.)
-crucible-parser = { path = "../crucible-parser" }
+# Parser types (ParsedNote, BlockHash, etc.) - now from crucible-core (Dependency Inversion)
+crucible-core = { path = "../crucible-core" }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

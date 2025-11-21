@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{NodeHash, VirtualSection, VirtualizationConfig};
-use crucible_parser::types::{BlockHash, Heading, Paragraph, ParsedNote};
+use crucible_core::parser::types::{BlockHash, Heading, Paragraph, ParsedNote};
 
 /// Hybrid Merkle tree that groups note content into semantic sections and
 /// stores block-level hashing inside each section.
@@ -452,7 +452,7 @@ impl SectionBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_parser::types::{Heading, NoteContent, Paragraph};
+    use crucible_core::parser::types::{Heading, NoteContent, Paragraph};
     use std::path::PathBuf;
 
     fn build_document() -> ParsedNote {

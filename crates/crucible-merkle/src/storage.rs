@@ -416,7 +416,7 @@ impl MerkleStore for InMemoryMerkleStore {
 mod tests {
     use super::*;
     use crate::HybridMerkleTree;
-    use crucible_parser::ParsedNote;
+    use crucible_core::parser::ParsedNote;
 
     #[tokio::test]
     async fn test_store_and_retrieve() {

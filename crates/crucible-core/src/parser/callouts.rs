@@ -5,7 +5,7 @@
 //! - `> [!warning] Warning with title\nContent continues here`
 
 use super::extensions::SyntaxExtension;
-use crucible_parser::types::{NoteContent, Callout};
+use crate::parser::types::{NoteContent, Callout};
 use super::error::{ParseError, ParseErrorType};
 use async_trait::async_trait;
 use regex::Regex;

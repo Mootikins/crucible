@@ -2,9 +2,20 @@
 //!
 //! This module provides the core parsing traits and types for extracting structured
 //! data from markdown files in the kiln.
+//!
+//! # Dependency Inversion Principle
+//!
+//! This module defines the **canonical** parser abstractions and types:
+//! - `traits::MarkdownParser` - Core parser trait
+//! - `types::*` - All parser data types (ParsedNote, Wikilink, Tag, etc.)
+//! - `error::*` - Parser error types
+//!
+//! The `crucible-parser` crate depends on these types and provides implementations.
 
 pub mod adapter;
-pub mod bridge;
+// TODO: bridge module disabled - it depends on crucible_parser implementation
+// Should be moved to a higher-level crate that depends on both core and parser
+// pub mod bridge;
 pub mod coordinator;
 pub mod eav_document;
 pub mod error;
@@ -16,19 +27,18 @@ pub mod pulldown;
 pub mod query_blocks;
 pub mod storage_bridge;
 pub mod traits;
+pub mod types;
 
 pub use adapter::SurrealDBAdapter;
-pub use bridge::{create_parser, create_parser_with_config, ParserAdapter, ParserConfig};
+// pub use bridge::{create_parser, create_parser_with_config, ParserAdapter, ParserConfig};
 pub use coordinator::{
     factory as coordinator_factory, BatchOperationResult, BatchStatistics, CoordinatorConfig,
     CoordinatorStatistics, DefaultParserStorageCoordinator, OperationMetadata, OperationPriority,
     OperationResult, OperationType, ParserStorageCoordinator, ParsingOperation, TransactionContext,
 };
 pub use eav_document::{EAVDocument, EAVDocumentBuilder, ValidationError};
-// Re-export ParserError and ParserResult from crucible-parser (canonical source)
-pub use crucible_parser::error::{ParserError, ParserResult};
-// Core-specific error types
-pub use error::{ErrorSeverity, ParseError, ParseErrorType};
+// Re-export error types from canonical source (this module)
+pub use error::{ErrorSeverity, ParseError, ParseErrorType, ParserError, ParserResult};
 pub use extensions::{
     ExtensionRegistry, ExtensionRegistryBuilder, ExtensionRegistryStats, SyntaxExtension,
 };
@@ -40,17 +50,15 @@ pub use storage_bridge::{
     factory as parser_factory, ParseStatistics, StorageAwareMarkdownParser,
     StorageAwareParseResult, StorageAwareParser, StorageAwareParserConfig, StorageOperationResult,
 };
-pub use traits::{MarkdownParser, ParserCapabilities};
+pub use traits::{MarkdownParser, ParserCapabilities, ParserCapabilitiesExt, ParserRequirements};
 
-// Re-export parser types for convenience
-// Canonical definitions are in crucible-parser crate
-pub use crucible_parser::types::{
-    // AST types (new in parser, not previously in core)
+// Re-export parser types from canonical source (this module)
+pub use types::{
+    // AST types
     ASTBlock,
     ASTBlockMetadata,
     ASTBlockType,
-
-    // Hash type (parser's local copy to avoid circular dependency)
+    // Hash type
     BlockHash,
     Blockquote,
     // Enhanced content types
@@ -60,31 +68,27 @@ pub use crucible_parser::types::{
     // Footnote types
     FootnoteMap,
     FootnoteReference,
-
     Frontmatter,
     FrontmatterFormat,
-
     // Content structure types
     Heading,
     HorizontalRule,
-
     InlineLink,
     LatexExpression,
-
     ListBlock,
     ListItem,
+    ListMarkerStyle,
     ListType,
     NoteContent,
     Paragraph,
     // Core note types
     ParsedNote,
     ParsedNoteBuilder,
-    // Additional content types (new in parser)
+    ParsedNoteMetadata,
+    // Additional content types
     Table,
     Tag,
-
     TaskStatus,
-
     // Link and tag types
     Wikilink,
 };

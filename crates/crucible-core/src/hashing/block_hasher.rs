@@ -26,7 +26,7 @@
 //! use crucible_core::hashing::block_hasher::BlockHasher;
 //! use crucible_core::traits::change_detection::ContentHasher;
 //! use crucible_core::types::hashing::HashAlgorithm;
-//! use crucible_parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
+//! use crate::parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -62,10 +62,10 @@ use crate::types::hashing::{
 };
 
 // Import AST block types from the parser crate
-use crucible_parser::types::{ASTBlock, ASTBlockMetadata};
+use crate::parser::types::{ASTBlock, ASTBlockMetadata};
 
 #[cfg(test)]
-use crucible_parser::types::ASTBlockType;
+use crate::parser::types::ASTBlockType;
 
 /// Maximum serialization buffer size for block content
 const MAX_SERIALIZATION_SIZE: usize = 10 * 1024 * 1024; // 10MB
@@ -402,7 +402,7 @@ impl<A: HashingAlgorithm> BlockHasher<A> {
     ///
     /// ```rust
     /// use crucible_core::hashing::block_hasher::BlockHasher;
-    /// use crucible_parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
+    /// use crate::parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -1042,7 +1042,7 @@ pub const SHA256_BLOCK_HASHER: fn() -> Sha256BlockHasher = new_sha256_block_hash
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_parser::types::ListType;
+    use crate::parser::types::ListType;
 
     #[tokio::test]
     async fn test_block_hasher_creation() {
@@ -1803,7 +1803,7 @@ mod tests {
                 "- Item 1\n- Item 2\n- Item 3".to_string(),
                 75,
                 103,
-                ASTBlockMetadata::list(crucible_parser::types::ListType::Unordered, 3),
+                ASTBlockMetadata::list(crate::parser::types::ListType::Unordered, 3),
             ),
             ASTBlock::new(
                 ASTBlockType::Latex,

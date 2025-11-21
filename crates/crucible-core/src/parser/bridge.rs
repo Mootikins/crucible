@@ -3,10 +3,10 @@
 //! This module provides the dependency inversion bridge that allows
 //! crucible-core to use the parser implementation without circular dependencies.
 
-use crucible_parser::error::ParserResult;
-use crucible_parser::traits::{MarkdownParser, ParserCapabilities};
+use crate::parser::error::ParserResult;
+use crate::parser::traits::{MarkdownParser, ParserCapabilities};
 use async_trait::async_trait;
-use crucible_parser::types::ParsedNote;
+use crate::parser::types::ParsedNote;
 use std::path::Path;
 
 

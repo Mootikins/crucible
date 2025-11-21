@@ -7,7 +7,6 @@ pub mod crucible_core;
 pub mod database;
 pub mod enrichment;
 pub mod hashing;
-pub mod merkle;
 pub mod note;
 pub mod parser;
 pub mod processing;
@@ -142,13 +141,19 @@ pub use database::{
 };
 pub use note::{NoteNode, ViewportState};
 pub use parser::{
+    // Parser types (canonical definitions in crucible-core::parser::types)
     CodeBlock,
     Frontmatter,
     FrontmatterFormat,
     Heading,
     NoteContent,
     ParsedNote,
+    ParsedNoteMetadata,
+    // Parser traits and capabilities
     ParserCapabilities,
+    ParserCapabilitiesExt,
+    ParserRequirements,
+    // Error types (canonical definitions in crucible-core::parser::error)
     ParserError,
     ParserResult,
     Tag,

@@ -140,6 +140,15 @@ pub enum ParseErrorType {
     /// Broken footnote reference
     BrokenFootnoteReference,
 
+    /// Orphaned footnote reference (no definition found)
+    OrphanedFootnoteReference,
+
+    /// Unused footnote definition (no references found)
+    UnusedFootnoteDefinition,
+
+    /// Duplicate footnote definition
+    DuplicateFootnoteDefinition,
+
     /// Invalid callout syntax
     InvalidCallout,
 

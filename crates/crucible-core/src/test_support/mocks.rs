@@ -1624,7 +1624,7 @@ impl crate::enrichment::EnrichmentService for MockEnrichmentService {
         changed_block_ids: Vec<String>,
     ) -> anyhow::Result<crate::enrichment::EnrichedNote> {
         use crate::enrichment::EnrichedNote;
-        use crate::merkle::HybridMerkleTree;
+        // use crucible_merkle::HybridMerkleTree;
 
         let mut state = self.state.lock().unwrap();
 
@@ -1638,7 +1638,7 @@ impl crate::enrichment::EnrichmentService for MockEnrichmentService {
         drop(state);
 
         // Build Merkle tree
-        let merkle_tree = HybridMerkleTree::from_document(&parsed);
+        // let merkle_tree = HybridMerkleTree::from_document(&parsed);
 
         // Generate mock embeddings if enabled
         let embeddings = if generate_embeddings {
@@ -1655,7 +1655,7 @@ impl crate::enrichment::EnrichmentService for MockEnrichmentService {
 
         Ok(EnrichedNote::new(
             parsed,
-            merkle_tree,
+            // merkle_tree,
             embeddings,
             metadata,
             inferred_relations,
@@ -1665,7 +1665,7 @@ impl crate::enrichment::EnrichmentService for MockEnrichmentService {
     async fn enrich_with_tree(
         &self,
         parsed: crate::parser::ParsedNote,
-        merkle_tree: crate::merkle::HybridMerkleTree,
+        // merkle_tree: crucible_merkle::HybridMerkleTree,
         changed_block_ids: Vec<String>,
     ) -> anyhow::Result<crate::enrichment::EnrichedNote> {
         use crate::enrichment::EnrichedNote;
@@ -1696,7 +1696,7 @@ impl crate::enrichment::EnrichmentService for MockEnrichmentService {
 
         Ok(EnrichedNote::new(
             parsed,
-            merkle_tree,
+            // merkle_tree,
             embeddings,
             metadata,
             inferred_relations,

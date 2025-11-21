@@ -1,11 +1,111 @@
 //! Traits for markdown parsing
 //!
-//! This module re-exports the canonical MarkdownParser trait from crucible-parser.
-//! Since crucible-core depends on crucible-parser (not vice versa), we re-export
-//! to avoid duplication while maintaining API compatibility.
+//! This module defines the core MarkdownParser trait that all parser implementations must follow.
+//! This is the canonical location for parser traits (Dependency Inversion Principle).
 
-// Re-export the canonical traits from crucible-parser
-pub use crucible_parser::traits::{MarkdownParser, ParserCapabilities};
+use crate::parser::error::ParserResult;
+use crate::parser::types::ParsedNote;
+use async_trait::async_trait;
+use std::path::Path;
+
+/// Core trait for parsing markdown documents
+///
+/// This trait defines the interface for parsing markdown files into structured
+/// `ParsedNote` instances. This is the main parser trait used throughout
+/// the crucible system.
+#[async_trait]
+pub trait MarkdownParser: Send + Sync {
+    /// Parse a markdown file from the filesystem
+    async fn parse_file(&self, path: &Path) -> ParserResult<ParsedNote>;
+
+    /// Parse markdown content from a string
+    async fn parse_content(
+        &self,
+        content: &str,
+        source_path: &Path,
+    ) -> ParserResult<ParsedNote>;
+
+    /// Get parser capabilities
+    fn capabilities(&self) -> ParserCapabilities;
+
+    /// Validate if the parser can handle this file
+    fn can_parse(&self, path: &Path) -> bool;
+}
+
+/// Parser capabilities and configuration
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParserCapabilities {
+    pub name: &'static str,
+    pub version: &'static str,
+    pub yaml_frontmatter: bool,
+    pub toml_frontmatter: bool,
+    pub wikilinks: bool,
+    pub tags: bool,
+    pub headings: bool,
+    pub code_blocks: bool,
+    pub tables: bool,
+    pub callouts: bool,
+    pub latex_expressions: bool,
+    pub footnotes: bool,
+    pub blockquotes: bool,
+    pub horizontal_rules: bool,
+    pub full_content: bool,
+    pub max_file_size: Option<usize>,
+    pub extensions: Vec<&'static str>,
+}
+
+impl ParserCapabilities {
+    pub fn full() -> Self {
+        Self {
+            name: "crucible-parser",
+            version: env!("CARGO_PKG_VERSION"),
+            yaml_frontmatter: true,
+            toml_frontmatter: true,
+            wikilinks: true,
+            tags: true,
+            headings: true,
+            code_blocks: true,
+            tables: true,
+            callouts: true,
+            latex_expressions: true,
+            footnotes: true,
+            blockquotes: true,
+            horizontal_rules: true,
+            full_content: true,
+            max_file_size: Some(10 * 1024 * 1024),
+            extensions: vec!["md", "markdown"],
+        }
+    }
+
+    /// Create capabilities for a minimal parser
+    pub fn minimal() -> Self {
+        Self {
+            name: "minimal",
+            version: "0.0.0",
+            yaml_frontmatter: false,
+            toml_frontmatter: false,
+            wikilinks: true,
+            tags: true,
+            headings: false,
+            code_blocks: false,
+            tables: false,
+            callouts: false,
+            latex_expressions: false,
+            footnotes: false,
+            blockquotes: false,
+            horizontal_rules: false,
+            full_content: true,
+            max_file_size: Some(1024 * 1024), // 1 MB
+            extensions: vec!["md"],
+        }
+    }
+}
+
+impl Default for ParserCapabilities {
+    fn default() -> Self {
+        Self::full()
+    }
+}
 
 /// Requirements for parser selection
 ///
@@ -63,10 +163,9 @@ impl ParserRequirements {
     }
 }
 
-// Helper methods for ParserCapabilities (can't impl on foreign type)
+/// Extension trait for ParserCapabilities
 pub trait ParserCapabilitiesExt {
     fn supports_all(&self, requirements: &ParserRequirements) -> bool;
-    fn minimal() -> ParserCapabilities;
 }
 
 impl ParserCapabilitiesExt for ParserCapabilities {
@@ -78,29 +177,6 @@ impl ParserCapabilitiesExt for ParserCapabilities {
             && (!requirements.tags || self.tags)
             && (!requirements.headings || self.headings)
             && (!requirements.code_blocks || self.code_blocks)
-    }
-
-    /// Create capabilities for a minimal parser
-    fn minimal() -> ParserCapabilities {
-        ParserCapabilities {
-            name: "minimal",
-            version: "0.0.0",
-            yaml_frontmatter: false,
-            toml_frontmatter: false,
-            wikilinks: true,
-            tags: true,
-            headings: false,
-            code_blocks: false,
-            tables: false,
-            callouts: false,
-            latex_expressions: false,
-            footnotes: false,
-            blockquotes: false,
-            horizontal_rules: false,
-            full_content: true,
-            max_file_size: Some(1024 * 1024), // 1 MB
-            extensions: vec!["md"],
-        }
     }
 }
 
