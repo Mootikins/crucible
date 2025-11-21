@@ -9,7 +9,7 @@ use crate::{SurrealClient, SurrealDbConfig};
 use async_trait::async_trait;
 use crucible_core::storage::traits::{BlockOperations, StorageStats, TreeOperations};
 use crucible_core::storage::{ContentAddressedStorage, MerkleTree, StorageError, StorageResult};
-use crucible_parser::types::{ASTBlock, ASTBlockMetadata, ASTBlockType};
+use crucible_core::parser::{ASTBlock, ASTBlockMetadata, ASTBlockType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

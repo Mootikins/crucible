@@ -9,9 +9,8 @@ use crucible_merkle::HybridMerkleTree;
 use std::path::PathBuf;
 
 // Create a minimal test note without needing parser implementation
-fn create_test_note(content: &str, path: &str) -> ParsedNote {
+fn create_test_note(_content: &str, path: &str) -> ParsedNote {
     ParsedNoteBuilder::new(PathBuf::from(path))
-        .with_raw_content(content.to_string())
         .build()
 }
 
