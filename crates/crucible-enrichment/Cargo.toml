@@ -37,3 +37,4 @@ num_cpus = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+crucible-merkle = { path = "../crucible-merkle" }
