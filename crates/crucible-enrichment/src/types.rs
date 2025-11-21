@@ -3,7 +3,6 @@
 //! This module defines additional enrichment types needed by the implementation
 //! that may have dependencies not suitable for the core domain layer.
 
-use crucible_merkle::HybridMerkleTree;
 use crucible_core::parser::ParsedNote;
 
 // Re-export core enrichment types
@@ -15,22 +14,26 @@ pub use crucible_core::enrichment::{
 /// Infrastructure-layer enriched note with Merkle tree
 ///
 /// This type extends the core EnrichedNote with a Merkle tree for change detection.
-/// The Merkle tree is stored separately to avoid circular dependencies between
-/// core and merkle crates.
+/// The generic `T` parameter allows using any merkle tree implementation.
+///
+/// ## Generic Pattern
+///
+/// This follows the Tower-style generic pattern where the tree type is determined
+/// by the `MerkleTreeBuilder` used by the enrichment service.
 #[derive(Debug, Clone)]
-pub struct EnrichedNoteWithTree {
+pub struct EnrichedNoteWithTree<T: Clone + Send + Sync> {
     /// The core enriched note
     pub core: CoreEnrichedNote,
 
-    /// Merkle tree for change detection
-    pub merkle_tree: HybridMerkleTree,
+    /// Merkle tree for change detection (generic over tree type)
+    pub merkle_tree: T,
 }
 
-impl EnrichedNoteWithTree {
+impl<T: Clone + Send + Sync> EnrichedNoteWithTree<T> {
     /// Create a new enriched note with tree
     pub fn new(
         parsed: ParsedNote,
-        merkle_tree: HybridMerkleTree,
+        merkle_tree: T,
         embeddings: Vec<BlockEmbedding>,
         metadata: NoteMetadata,
         inferred_relations: Vec<InferredRelation>,
@@ -52,5 +55,3 @@ impl EnrichedNoteWithTree {
     }
 }
 
-// Re-export as EnrichedNote for backward compatibility within this crate
-pub use EnrichedNoteWithTree as EnrichedNote;

@@ -1719,7 +1719,6 @@ dependencies = [
  "async-trait",
  "chrono",
  "crucible-core",
- "crucible-merkle",
  "num_cpus",
  "serde",
  "tempfile",
