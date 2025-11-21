@@ -3,20 +3,12 @@
 //! This module provides the dependency inversion bridge that allows
 //! crucible-core to use the parser implementation without circular dependencies.
 
-use crate::parser::error::ParserResult;
-use crate::parser::traits::{MarkdownParser, ParserCapabilities};
+use crucible_parser::error::ParserResult;
+use crucible_parser::traits::{MarkdownParser, ParserCapabilities};
 use async_trait::async_trait;
 use crucible_parser::types::ParsedNote;
-use crucible_parser::MarkdownParser as ParserMarkdownParser;
 use std::path::Path;
 
-/// Convert a parser crate ParsedNote to a core ParsedNote
-///
-/// NOTE: After type consolidation, ParsedNote is the same type in both crates.
-/// This function is now a no-op that just returns the input directly.
-fn convert_parsed_document(parser_doc: crucible_parser::ParsedNote) -> ParsedNote {
-    parser_doc
-}
 
 /// Adapter that implements core's MarkdownParser trait using the parser crate implementation
 pub struct ParserAdapter {
@@ -48,79 +40,19 @@ impl Default for ParserAdapter {
     }
 }
 
-/// Convert parser crate capabilities to core capabilities
-fn convert_capabilities(parser_caps: crucible_parser::ParserCapabilities) -> ParserCapabilities {
-    ParserCapabilities {
-        name: parser_caps.name,
-        version: parser_caps.version,
-        yaml_frontmatter: parser_caps.yaml_frontmatter,
-        toml_frontmatter: parser_caps.toml_frontmatter,
-        wikilinks: parser_caps.wikilinks,
-        tags: parser_caps.tags,
-        headings: parser_caps.headings,
-        code_blocks: parser_caps.code_blocks,
-        tables: parser_caps.tables,
-        callouts: parser_caps.callouts,
-        latex_expressions: parser_caps.latex_expressions,
-        footnotes: parser_caps.footnotes,
-        blockquotes: parser_caps.blockquotes,
-        horizontal_rules: parser_caps.horizontal_rules,
-        full_content: parser_caps.full_content,
-        max_file_size: parser_caps.max_file_size,
-        extensions: parser_caps.extensions,
-    }
-}
-
-/// Convert parser crate error to core error
-fn convert_parser_error(e: crucible_parser::ParserError) -> crate::parser::error::ParserError {
-    match e {
-        crucible_parser::ParserError::Io(io_err) => {
-            crate::parser::error::ParserError::Io(io_err)
-        }
-        crucible_parser::ParserError::FrontmatterError(msg) => {
-            crate::parser::error::ParserError::FrontmatterError(msg)
-        }
-        crucible_parser::ParserError::FrontmatterTooLarge { size, max } => {
-            crate::parser::error::ParserError::FrontmatterTooLarge { size, max }
-        }
-        crucible_parser::ParserError::FileTooLarge { size, max } => {
-            crate::parser::error::ParserError::FileTooLarge { size, max }
-        }
-        crucible_parser::ParserError::EncodingError => {
-            crate::parser::error::ParserError::EncodingError
-        }
-        crucible_parser::ParserError::ParseFailed(msg) => {
-            crate::parser::error::ParserError::ParseFailed(msg)
-        }
-        crucible_parser::ParserError::Unsupported(msg) => {
-            crate::parser::error::ParserError::Unsupported(msg)
-        }
-        crucible_parser::ParserError::InvalidPath(msg) => {
-            crate::parser::error::ParserError::InvalidPath(msg)
-        }
-    }
-}
 
 #[async_trait]
 impl MarkdownParser for ParserAdapter {
     async fn parse_file(&self, path: &Path) -> ParserResult<ParsedNote> {
-        self.inner
-            .parse_file(path)
-            .await
-            .map(convert_parsed_document)
-            .map_err(convert_parser_error)
+        self.inner.parse_file(path).await
     }
 
     async fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote> {
-        self.inner
-            .parse_content(content, source_path)
-            .await
-            .map(convert_parsed_document)
-            .map_err(convert_parser_error)
+        self.inner.parse_content(content, source_path).await
     }
 
     fn capabilities(&self) -> ParserCapabilities {
-        convert_capabilities(self.inner.capabilities())
+        self.inner.capabilities()
     }
 
     fn can_parse(&self, path: &Path) -> bool {
