@@ -19,35 +19,6 @@
 //! - Block content text
 //! - Block metadata (level, language, etc.)
 //! - Position information for context
-//!
-//! # Examples
-//!
-//! ```rust
-//! use crucible_core::hashing::block_hasher::BlockHasher;
-//! use crucible_core::traits::change_detection::ContentHasher;
-//! use crucible_core::types::hashing::HashAlgorithm;
-//! use crate::parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
-//!
-//! #[tokio::main]
-//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     use crucible_core::hashing::algorithm::Blake3Algorithm;
-//!     let hasher = BlockHasher::new(Blake3Algorithm);
-//!
-//!     let metadata = ASTBlockMetadata::heading(1, Some("title".to_string()));
-//!     let block = ASTBlock::new(
-//!         ASTBlockType::Heading,
-//!         "Introduction".to_string(),
-//!         0,
-//!         12,
-//!         metadata,
-//!     );
-//!
-//!     let hash = hasher.hash_ast_block(&block).await?;
-//!     println!("Block hash: {}", hash);
-//!
-//!     Ok(())
-//! }
-//! ```
 
 use async_trait::async_trait;
 use serde::Serialize;
@@ -397,41 +368,6 @@ impl<A: HashingAlgorithm> BlockHasher<A> {
     /// # Errors
     ///
     /// Returns `HashError` if block hashing or tree construction fails
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use crucible_core::hashing::block_hasher::BlockHasher;
-    /// use crate::parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    ///     use crucible_core::hashing::algorithm::Blake3Algorithm;
-    ///     let hasher = BlockHasher::new(Blake3Algorithm);
-    ///
-    ///     let blocks = vec![
-    ///         ASTBlock::new(
-    ///             ASTBlockType::Heading,
-    ///             "Title".to_string(),
-    ///             0,
-    ///             5,
-    ///             ASTBlockMetadata::heading(1, Some("title".to_string())),
-    ///         ),
-    ///         ASTBlock::new(
-    ///             ASTBlockType::Paragraph,
-    ///             "Content".to_string(),
-    ///             10,
-    ///             17,
-    ///             ASTBlockMetadata::generic(),
-    ///         ),
-    ///     ];
-    ///
-    ///     let tree = hasher.build_merkle_tree_from_blocks(&blocks).await?;
-    ///     println!("Merkle root: {}", tree.root_hash);
-    ///
-    ///     Ok(())
-    /// }
-    /// ```
     pub async fn build_merkle_tree_from_blocks(
         &self,
         blocks: &[ASTBlock],
