@@ -22,8 +22,8 @@
 //! - **Dependency Inversion**: Flexible trait-based architecture
 
 use crate::hashing::blake3::Blake3Hasher;
-use crucible_parser::error::ParserResult;
-use crucible_parser::traits::{MarkdownParser, ParserCapabilities};
+use crate::parser::error::ParserResult;
+use crate::parser::traits::{MarkdownParser, ParserCapabilities};
 use crate::storage::builder::ContentAddressedStorageBuilder;
 use crate::storage::diff::EnhancedChangeDetector;
 use crate::storage::{
@@ -32,7 +32,7 @@ use crate::storage::{
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use crucible_parser::types::ParsedNote;
+use crate::parser::types::ParsedNote;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
@@ -300,7 +300,7 @@ impl StorageAwareParser {
             .calculate_optimal(content_bytes.len());
 
         if content_bytes.is_empty() {
-            return Err(crucible_parser::ParserError::ParseFailed(
+            return Err(crate::parser::ParserError::ParseFailed(
                 "Cannot create blocks from empty content".to_string(),
             ));
         }
@@ -319,7 +319,7 @@ impl StorageAwareParser {
             let block =
                 HashedBlock::from_data(chunk_data, blocks.len(), offset, is_last, &*self.hasher)
                     .map_err(|e| {
-                        crucible_parser::ParserError::ParseFailed(format!(
+                        crate::parser::ParserError::ParseFailed(format!(
                             "Failed to create hashed block: {}",
                             e
                         ))
@@ -341,13 +341,13 @@ impl StorageAwareParser {
     /// Merkle tree or error if creation fails
     fn create_merkle_tree(&self, blocks: &[HashedBlock]) -> ParserResult<MerkleTree> {
         if blocks.is_empty() {
-            return Err(crucible_parser::ParserError::ParseFailed(
+            return Err(crate::parser::ParserError::ParseFailed(
                 "Cannot create Merkle tree from empty blocks".to_string(),
             ));
         }
 
         MerkleTree::from_blocks(blocks, &*self.hasher).map_err(|e| {
-            crucible_parser::ParserError::ParseFailed(format!(
+            crate::parser::ParserError::ParseFailed(format!(
                 "Failed to create Merkle tree: {}",
                 e
             ))
@@ -382,7 +382,7 @@ impl StorageAwareParser {
                 Ok(exists) => {
                     if !exists {
                         if let Err(e) = storage.store_block(&block.hash, &block.data).await {
-                            return Err(crucible_parser::ParserError::ParseFailed(format!(
+                            return Err(crate::parser::ParserError::ParseFailed(format!(
                                 "Failed to store block: {}",
                                 e
                             )));
@@ -393,7 +393,7 @@ impl StorageAwareParser {
                     }
                 }
                 Err(e) => {
-                    return Err(crucible_parser::ParserError::ParseFailed(format!(
+                    return Err(crate::parser::ParserError::ParseFailed(format!(
                         "Failed to check block existence: {}",
                         e
                     )));
@@ -403,7 +403,7 @@ impl StorageAwareParser {
 
         // Store Merkle tree
         let tree_stored = if let Err(e) = storage.store_tree(&tree.root_hash, tree).await {
-            return Err(crucible_parser::ParserError::ParseFailed(format!(
+            return Err(crate::parser::ParserError::ParseFailed(format!(
                 "Failed to store Merkle tree: {}",
                 e
             )));
@@ -448,7 +448,7 @@ impl StorageAwareParser {
             let changes = new_tree
                 .compare_enhanced(previous_tree, &*self.hasher, ChangeSource::UserEdit)
                 .map_err(|e| {
-                    crucible_parser::ParserError::ParseFailed(format!(
+                    crate::parser::ParserError::ParseFailed(format!(
                         "Failed to detect changes: {}",
                         e
                     ))
@@ -786,14 +786,14 @@ impl StorageAwareMarkdownParser for StorageAwareParser {
 /// Factory functions for creating storage-aware parsers
 pub mod factory {
     use super::*;
-    use crate::parser::bridge::ParserAdapter;
+    // use crate::parser::bridge::ParserAdapter; // disabled
 
     /// Create a storage-aware parser with default configuration
     ///
     /// # Returns
     /// New storage-aware parser instance
     pub fn create_storage_aware_parser() -> impl StorageAwareMarkdownParser {
-        let base_parser = Box::new(ParserAdapter::new());
+        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
         StorageAwareParser::new(base_parser)
     }
 
@@ -807,7 +807,7 @@ pub mod factory {
     pub fn create_storage_aware_parser_with_config(
         config: StorageAwareParserConfig,
     ) -> impl StorageAwareMarkdownParser {
-        let base_parser = Box::new(ParserAdapter::new());
+        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
         let hasher = Arc::new(Blake3Hasher::new());
         StorageAwareParser::with_config(base_parser, config, hasher)
     }
@@ -822,7 +822,7 @@ pub mod factory {
     pub fn create_storage_aware_parser_with_hasher(
         hasher: Arc<dyn ContentHasher>,
     ) -> impl StorageAwareMarkdownParser {
-        let base_parser = Box::new(ParserAdapter::new());
+        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
         StorageAwareParser::with_config(base_parser, StorageAwareParserConfig::default(), hasher)
     }
 
@@ -843,7 +843,7 @@ pub mod factory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::bridge::ParserAdapter;
+    // use crate::parser::bridge::ParserAdapter; // disabled
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
@@ -900,7 +900,7 @@ mod tests {
 
     #[test]
     fn test_storage_aware_parser_creation() {
-        let base_parser = Box::new(ParserAdapter::new());
+        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
         let parser = StorageAwareParser::new(base_parser);
 
         assert!(parser.config.enable_storage);
@@ -910,7 +910,7 @@ mod tests {
 
     #[test]
     fn test_storage_aware_parser_with_config() {
-        let base_parser = Box::new(ParserAdapter::new());
+        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
         let config = StorageAwareParserConfig {
             enable_storage: false,
             enable_merkle_trees: false,
@@ -931,8 +931,8 @@ mod tests {
 
     #[test]
     fn test_create_hashed_blocks() {
-        use crate::parser::bridge::ParserAdapter;
-        let base_parser = Box::new(ParserAdapter::new());
+        // use crate::parser::bridge::ParserAdapter; // disabled
+        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
         let parser = StorageAwareParser::new(base_parser);
         let content = "Hello, World! This is a test.";
 
@@ -955,8 +955,8 @@ mod tests {
 
     #[test]
     fn test_create_hashed_blocks_empty_content() {
-        use crate::parser::bridge::ParserAdapter;
-        let base_parser = Box::new(ParserAdapter::new());
+        // use crate::parser::bridge::ParserAdapter; // disabled
+        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
         let parser = StorageAwareParser::new(base_parser);
         let content = "";
 
@@ -966,8 +966,8 @@ mod tests {
 
     #[test]
     fn test_create_merkle_tree() {
-        use crate::parser::bridge::ParserAdapter;
-        let base_parser = Box::new(ParserAdapter::new());
+        // use crate::parser::bridge::ParserAdapter; // disabled
+        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
         let parser = StorageAwareParser::new(base_parser);
         let content = "Hello, World! This is a test for Merkle tree creation.";
 
@@ -984,8 +984,8 @@ mod tests {
 
     #[test]
     fn test_create_merkle_tree_empty_blocks() {
-        use crate::parser::bridge::ParserAdapter;
-        let base_parser = Box::new(ParserAdapter::new());
+        // use crate::parser::bridge::ParserAdapter; // disabled
+        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
         let parser = StorageAwareParser::new(base_parser);
         let blocks: Vec<HashedBlock> = vec![];
 
@@ -1081,8 +1081,8 @@ mod tests {
 
     #[test]
     fn test_calculate_statistics() {
-        use crate::parser::bridge::ParserAdapter;
-        let base_parser = Box::new(ParserAdapter::new());
+        // use crate::parser::bridge::ParserAdapter; // disabled
+        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
         let parser = StorageAwareParser::new(base_parser);
         let content = "Test content for statistics calculation.";
         let blocks = parser.create_hashed_blocks(content).unwrap();

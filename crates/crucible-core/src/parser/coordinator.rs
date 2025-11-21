@@ -382,7 +382,7 @@ impl DefaultParserStorageCoordinator {
     /// New coordinator instance or error
     pub async fn with_default_components(config: CoordinatorConfig) -> ParserResult<Self> {
         // Create default parser
-        let base_parser = Box::new(crate::parser::bridge::ParserAdapter::new());
+        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
         let parser = Arc::new(
             crate::parser::storage_bridge::StorageAwareParser::with_config(
                 base_parser,

@@ -31,11 +31,13 @@ tempfile = { workspace = true }
 # Enhanced async runtime
 tokio = { workspace = true, features = ["full", "tracing"] }
 
-# Parser dependency (now separate crate with dependency inversion)
-crucible-parser = { workspace = true }
+# NOTE: crucible-parser dependency REMOVED - Dependency Inversion applied
+# Core now defines parser traits/types; parser crate depends on core
+# This breaks the circular dependency and follows SOLID principles
 
-# Merkle tree (extracted to separate crate)
-crucible-merkle = { path = "../crucible-merkle" }
+# NOTE: crucible-merkle dependency REMOVED - Dependency Inversion applied
+# Merkle tree implementations now depend on core for parser types
+# Higher-level crates (CLI, Tauri) depend on merkle directly when needed
 
 # Configuration management (for enrichment config types)
 crucible-config = { path = "../crucible-config" }
