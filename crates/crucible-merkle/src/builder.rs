@@ -24,7 +24,7 @@ use crucible_core::MerkleTreeBuilder;
 /// let note = crucible_core::parser::ParsedNoteBuilder::new(PathBuf::from("test.md")).build();
 /// let tree = builder.from_document(&note);
 /// ```
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct HybridMerkleTreeBuilder;
 
 impl MerkleTreeBuilder for HybridMerkleTreeBuilder {
