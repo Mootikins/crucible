@@ -26,6 +26,12 @@ impl PulldownParser {
                 tags: true,
                 headings: true,
                 code_blocks: true,
+                tables: false,
+                callouts: false,
+                latex_expressions: false,
+                footnotes: false,
+                blockquotes: false,
+                horizontal_rules: false,
                 full_content: true,
                 max_file_size: Some(10 * 1024 * 1024), // 10 MB
                 extensions: vec!["md", "markdown"],
@@ -56,10 +62,10 @@ impl MarkdownParser for PulldownParser {
             }
         }
 
-        self.parse_content(&content, path)
+        self.parse_content(&content, path).await
     }
 
-    fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote> {
+    async fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote> {
         // Extract frontmatter (YAML between --- delimiters)
         let (frontmatter, body) = extract_frontmatter(content)?;
 
@@ -102,6 +108,13 @@ impl MarkdownParser for PulldownParser {
 
     fn capabilities(&self) -> ParserCapabilities {
         self.capabilities.clone()
+    }
+
+    fn can_parse(&self, path: &Path) -> bool {
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| matches!(ext, "md" | "markdown"))
+            .unwrap_or(false)
     }
 }
 
@@ -514,7 +527,7 @@ mod tests {
         let content = "# Hello World\n\nThis is a test.";
         let path = PathBuf::from("test.md");
 
-        let doc = parser.parse_content(content, &path).unwrap();
+        let doc = parser.parse_content(content, &path).await.unwrap();
         assert_eq!(doc.content.headings.len(), 1);
         assert_eq!(doc.content.headings[0].text, "Hello World");
 
@@ -534,7 +547,7 @@ tags: [rust, testing]
 Body text here."#;
         let path = PathBuf::from("test.md");
 
-        let doc = parser.parse_content(content, &path).unwrap();
+        let doc = parser.parse_content(content, &path).await.unwrap();
         assert!(doc.frontmatter.is_some());
         let fm = doc.frontmatter.unwrap();
         assert_eq!(fm.get_string("title"), Some("Test Note".to_string()));
@@ -546,7 +559,7 @@ Body text here."#;
         let content = "See [[Other Note]] and [[Reference|alias]].";
         let path = PathBuf::from("test.md");
 
-        let doc = parser.parse_content(content, &path).unwrap();
+        let doc = parser.parse_content(content, &path).await.unwrap();
         assert_eq!(doc.wikilinks.len(), 2);
         assert_eq!(doc.wikilinks[0].target, "Other Note");
         assert_eq!(doc.wikilinks[1].target, "Reference");
@@ -559,7 +572,7 @@ Body text here."#;
         let content = "This has #rust and #testing tags, plus #project/ai.";
         let path = PathBuf::from("test.md");
 
-        let doc = parser.parse_content(content, &path).unwrap();
+        let doc = parser.parse_content(content, &path).await.unwrap();
         assert_eq!(doc.tags.len(), 3);
         assert_eq!(doc.tags[0].name, "rust");
         assert_eq!(doc.tags[1].name, "testing");

@@ -59,6 +59,12 @@ fn convert_capabilities(parser_caps: crucible_parser::ParserCapabilities) -> Par
         tags: parser_caps.tags,
         headings: parser_caps.headings,
         code_blocks: parser_caps.code_blocks,
+        tables: parser_caps.tables,
+        callouts: parser_caps.callouts,
+        latex_expressions: parser_caps.latex_expressions,
+        footnotes: parser_caps.footnotes,
+        blockquotes: parser_caps.blockquotes,
+        horizontal_rules: parser_caps.horizontal_rules,
         full_content: parser_caps.full_content,
         max_file_size: parser_caps.max_file_size,
         extensions: parser_caps.extensions,
@@ -105,17 +111,12 @@ impl MarkdownParser for ParserAdapter {
             .map_err(convert_parser_error)
     }
 
-    fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote> {
-        // Use tokio runtime handle to block on the async implementation
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                self.inner
-                    .parse_content(content, source_path)
-                    .await
-                    .map(convert_parsed_document)
-                    .map_err(convert_parser_error)
-            })
-        })
+    async fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote> {
+        self.inner
+            .parse_content(content, source_path)
+            .await
+            .map(convert_parsed_document)
+            .map_err(convert_parser_error)
     }
 
     fn capabilities(&self) -> ParserCapabilities {
@@ -162,7 +163,7 @@ mod tests {
         let content = "# Test Note\n\nThis is a test.";
         let source_path = Path::new("test.md");
 
-        let result = adapter.parse_content(content, source_path);
+        let result = adapter.parse_content(content, source_path).await;
 
         assert!(result.is_ok());
         let doc = result.unwrap();
