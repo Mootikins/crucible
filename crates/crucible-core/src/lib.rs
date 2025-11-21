@@ -7,6 +7,7 @@ pub mod crucible_core;
 pub mod database;
 pub mod enrichment;
 pub mod hashing;
+pub mod merkle;
 pub mod note;
 pub mod parser;
 pub mod processing;
@@ -33,6 +34,9 @@ pub use enrichment::{
     BlockEmbedding, EmbeddingProvider, EnrichedNote, EnrichedNoteStore, EnrichmentService,
     InferredRelation, NoteMetadata, RelationType,
 };
+
+// Re-export merkle tree abstractions
+pub use merkle::MerkleTreeBuilder;
 
 // Re-export processing handoff types, change detection, and pipeline trait
 pub use processing::{
