@@ -27,7 +27,7 @@
 //! ```rust
 //! use crucible_core::hashing::ast_converter::ASTBlockConverter;
 //! use crucible_core::hashing::algorithm::Blake3Algorithm;
-//! use crucible_parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
+//! use crate::parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -64,7 +64,7 @@ use crate::storage::HashedBlock;
 use crate::types::hashing::HashError;
 
 // Import AST block types from the parser crate
-use crucible_parser::types::ASTBlock;
+use crate::parser::types::ASTBlock;
 
 /// Converter for transforming AST blocks into HashedBlock format
 ///
@@ -152,7 +152,7 @@ impl<A: HashingAlgorithm> ASTBlockConverter<A> {
     /// ```rust
     /// use crucible_core::hashing::ast_converter::ASTBlockConverter;
     /// use crucible_core::hashing::algorithm::Blake3Algorithm;
-    /// use crucible_parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
+    /// use crate::parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -220,7 +220,7 @@ impl<A: HashingAlgorithm> ASTBlockConverter<A> {
     /// ```rust
     /// use crucible_core::hashing::ast_converter::ASTBlockConverter;
     /// use crucible_core::hashing::algorithm::Blake3Algorithm;
-    /// use crucible_parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
+    /// use crate::parser::types::{ASTBlock, ASTBlockType, ASTBlockMetadata};
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -346,27 +346,27 @@ impl<A: HashingAlgorithm> ASTBlockConverter<A> {
         }
 
         let metadata = match &block.metadata {
-            crucible_parser::types::ASTBlockMetadata::Heading { level, id } => {
+            crate::parser::types::ASTBlockMetadata::Heading { level, id } => {
                 SerializableMetadata::Heading {
                     level: *level,
                     id: id.as_deref(),
                 }
             }
-            crucible_parser::types::ASTBlockMetadata::Code {
+            crate::parser::types::ASTBlockMetadata::Code {
                 language,
                 line_count,
             } => SerializableMetadata::Code {
                 language: language.as_deref(),
                 line_count: *line_count,
             },
-            crucible_parser::types::ASTBlockMetadata::List {
+            crate::parser::types::ASTBlockMetadata::List {
                 list_type,
                 item_count,
             } => SerializableMetadata::List {
                 list_type: format!("{:?}", list_type),
                 item_count: *item_count,
             },
-            crucible_parser::types::ASTBlockMetadata::Callout {
+            crate::parser::types::ASTBlockMetadata::Callout {
                 callout_type,
                 title,
                 is_standard_type,
@@ -375,12 +375,12 @@ impl<A: HashingAlgorithm> ASTBlockConverter<A> {
                 title: title.as_deref(),
                 is_standard_type: *is_standard_type,
             },
-            crucible_parser::types::ASTBlockMetadata::Latex { is_block } => {
+            crate::parser::types::ASTBlockMetadata::Latex { is_block } => {
                 SerializableMetadata::Latex {
                     is_block: *is_block,
                 }
             }
-            crucible_parser::types::ASTBlockMetadata::Table {
+            crate::parser::types::ASTBlockMetadata::Table {
                 rows,
                 columns,
                 headers,
@@ -389,7 +389,7 @@ impl<A: HashingAlgorithm> ASTBlockConverter<A> {
                 columns: *columns,
                 headers,
             },
-            crucible_parser::types::ASTBlockMetadata::Generic => SerializableMetadata::Generic,
+            crate::parser::types::ASTBlockMetadata::Generic => SerializableMetadata::Generic,
         };
 
         let serializable = SerializableBlock {
@@ -547,7 +547,7 @@ pub type Sha256ASTBlockConverter = ASTBlockConverter<crate::hashing::algorithm::
 mod tests {
     use super::*;
     use crate::hashing::algorithm::{Blake3Algorithm, Sha256Algorithm};
-    use crucible_parser::types::{ASTBlockMetadata, ASTBlockType, ListType};
+    use crate::parser::types::{ASTBlockMetadata, ASTBlockType, ListType};
 
     #[tokio::test]
     async fn test_converter_creation() {

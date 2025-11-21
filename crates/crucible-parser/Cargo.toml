@@ -4,9 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Note: crucible-core dependency removed to break circular dependency
-# Parser uses local BlockHash copy, core re-exports parser types
-# This establishes parser as the canonical source for parser types
+# Dependency Inversion: Parser depends on core for trait and type definitions
+crucible-core = { path = "../crucible-core" }
 
 # Async runtime
 async-trait = { workspace = true }

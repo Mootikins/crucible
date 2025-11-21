@@ -1,10 +1,10 @@
 //! Pulldown-cmark based markdown parser implementation
 
-use crucible_parser::error::ParserResult;
-use crucible_parser::traits::{MarkdownParser, ParserCapabilities};
+use crate::parser::error::ParserResult;
+use crate::parser::traits::{MarkdownParser, ParserCapabilities};
 use async_trait::async_trait;
 use chrono::Utc;
-use crucible_parser::types::*;
+use crate::parser::types::*;
 use pulldown_cmark::{Event, HeadingLevel, Parser as CmarkParser, Tag as CmarkTag, TagEnd};
 use std::path::Path;
 
@@ -55,7 +55,7 @@ impl MarkdownParser for PulldownParser {
         // Check file size limit
         if let Some(max_size) = self.capabilities.max_file_size {
             if content.len() > max_size {
-                return Err(crucible_parser::ParserError::FileTooLarge {
+                return Err(crate::parser::ParserError::FileTooLarge {
                     size: content.len(),
                     max: max_size,
                 });

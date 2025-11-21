@@ -14,7 +14,7 @@ use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::sync::Arc;
 
 use crate::{HybridMerkleTree, NodeHash, VirtualizationConfig};
-use crucible_parser::types::ParsedNote;
+use crucible_core::parser::types::ParsedNote;
 
 /// Thread-safe wrapper around HybridMerkleTree
 ///
@@ -284,7 +284,7 @@ pub struct TreeStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_parser::types::{Heading, NoteContent, Paragraph};
+    use crucible_core::parser::types::{Heading, NoteContent, Paragraph};
     use std::path::PathBuf;
     use std::sync::Arc;
     use std::thread;

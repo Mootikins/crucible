@@ -7,7 +7,7 @@
 use super::error::{ParseError, ParseErrorType};
 use super::extensions::SyntaxExtension;
 use async_trait::async_trait;
-use crucible_parser::types::{LatexExpression, NoteContent};
+use crate::parser::types::{LatexExpression, NoteContent};
 use regex::Regex;
 use std::sync::Arc;
 

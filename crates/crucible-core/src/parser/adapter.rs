@@ -4,7 +4,7 @@
 //! into SurrealDB-compatible data structures for indexing.
 
 use anyhow::Result;
-use crucible_parser::types::ParsedNote;
+use crate::parser::types::ParsedNote;
 use serde_json::{Map, Value};
 
 /// Adapter for converting parsed documents to SurrealDB records
@@ -165,7 +165,7 @@ impl Default for SurrealDBAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crucible_parser::types::{
+    use crate::parser::types::{
         FootnoteMap, Frontmatter, FrontmatterFormat, Heading, NoteContent, Tag, Wikilink,
     };
 

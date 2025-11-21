@@ -5,7 +5,7 @@
 //! concrete implementations.
 
 use super::types::{EnrichedNote, InferredRelation};
-use crate::merkle::HybridMerkleTree;
+// use crucible_merkle::HybridMerkleTree;
 use crate::parser::ParsedNote;
 use anyhow::Result;
 
@@ -72,7 +72,7 @@ pub trait EnrichmentService: Send + Sync {
     async fn enrich_with_tree(
         &self,
         parsed: ParsedNote,
-        merkle_tree: HybridMerkleTree,
+        // merkle_tree: HybridMerkleTree,
         changed_block_ids: Vec<String>,
     ) -> Result<EnrichedNote>;
 
