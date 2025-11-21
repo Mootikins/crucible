@@ -505,8 +505,8 @@ impl MarkdownParser for StorageAwareParser {
         self.base_parser.parse_file(path).await
     }
 
-    fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote> {
-        self.base_parser.parse_content(content, source_path)
+    async fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote> {
+        self.base_parser.parse_content(content, source_path).await
     }
 
     fn capabilities(&self) -> ParserCapabilities {
@@ -612,7 +612,7 @@ impl StorageAwareMarkdownParser for StorageAwareParser {
         let start_time = SystemTime::now();
 
         // Parse the content using base parser
-        let note = self.base_parser.parse_content(content, source_path)?;
+        let note = self.base_parser.parse_content(content, source_path).await?;
 
         // Create hashed blocks
         let blocks = if self.config.enable_storage || self.config.enable_merkle_trees {
@@ -694,7 +694,7 @@ impl StorageAwareMarkdownParser for StorageAwareParser {
         let start_time = SystemTime::now();
 
         // Parse the new content
-        let note = self.base_parser.parse_content(new_content, source_path)?;
+        let note = self.base_parser.parse_content(new_content, source_path).await?;
 
         // Create hashed blocks
         let blocks = if self.config.enable_storage || self.config.enable_merkle_trees {
