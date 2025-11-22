@@ -33,11 +33,17 @@
 6. **Tool integration**: ACP tool calls not bridged to Crucible tools
 7. **Permission system**: No enforcement of plan (read-only) vs act (write) modes
 
-### 📊 Completion Status
-- **Overall**: 35% complete
-- **Foundation**: 80% (discovery, context, basic structure)
-- **Protocol**: 0% (no JSON-RPC implementation)
-- **Features**: 20% (one-shot works, interactive missing)
+### 📊 Completion Status (Updated 2025-11-22)
+- **Overall**: 50% complete (Phases 0-2 done, Phases 3-6 remaining)
+- **Phase 0 - Planning**: 100% ✅
+- **Phase 1 - Core Infrastructure**: 100% ✅
+- **Phase 2 - Filesystem & Tools**: 100% ✅
+- **Phase 3 - Context & Streaming**: 0%
+- **Phase 4 - Interactive Chat**: 0%
+- **Phase 5 - Real Agent Integration**: 0%
+- **Phase 6 - Polish**: 0%
+
+**Latest**: TDD Cycles 9-10 complete - Tool discovery and execution working (41/41 tests passing)
 
 ## Architecture Decisions
 
@@ -200,18 +206,18 @@ All critical questions answered (see Decision Log above).
 - ✅ REFACTOR: Extract permission enforcement
 - ✅ CHECKPOINT: Plan mode blocks writes, act mode allows (29/29 tests passing)
 
-#### 2.2: Tool System Bridge ⏳ NEXT
-**TDD Cycle 9**: Tool discovery and registration
-- [ ] RED: Test expects tool catalog to include Crucible tools
-- [ ] GREEN: Implement tool registration from crucible-tools
-- [ ] REFACTOR: Create tool descriptor conversion utilities
-- [ ] CHECKPOINT: Agent sees all available Crucible tools
+#### 2.2: Tool System Bridge ✅
+**TDD Cycle 9**: Tool discovery and registration ✅
+- ✅ RED: Test expects tool catalog to include Crucible tools
+- ✅ GREEN: Implement tool registration from crucible-tools
+- ✅ REFACTOR: Create tool descriptor conversion utilities
+- ✅ CHECKPOINT: Agent sees all available Crucible tools (36/36 tests passing)
 
-**TDD Cycle 10**: Tool execution
-- [ ] RED: Test expects tool call to execute and return result
-- [ ] GREEN: Implement tool call routing to crucible-tools
-- [ ] REFACTOR: Add result formatting and error handling
-- [ ] CHECKPOINT: Tools execute successfully from ACP
+**TDD Cycle 10**: Tool execution ✅
+- ✅ RED: Test expects tool call to execute and return result
+- ✅ GREEN: Implement tool call routing to crucible-tools
+- ✅ REFACTOR: Add result formatting and error handling
+- ✅ CHECKPOINT: Tools execute successfully from ACP (41/41 tests passing)
 
 ### Phase 3: Context Enrichment & Streaming
 **Goal**: Integrate semantic search and implement response streaming
