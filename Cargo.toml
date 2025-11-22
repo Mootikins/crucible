@@ -12,6 +12,7 @@ members = [
     "crates/crucible-surrealdb",
     "crates/crucible-config",
     "crates/crucible-a2a",
+    "crates/crucible-acp",
     "crates/crucible-llm",
     "crates/crucible-tools",
     "crates/crucible-watch",
@@ -156,6 +157,7 @@ nucleo-picker = "0.9"
 # Internal workspace crates
 crucible-core = { path = "crates/crucible-core" }
 crucible-config = { path = "crates/crucible-config" }
+crucible-acp = { path = "crates/crucible-acp" }
 # crucible-rune-macros = { path = "crates/crucible-rune-macros" }
 crucible-tools = { path = "crates/crucible-tools" }
 crucible-llm = { path = "crates/crucible-llm" }
