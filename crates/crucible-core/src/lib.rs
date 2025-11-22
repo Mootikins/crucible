@@ -49,12 +49,23 @@ pub use processing::{
 
 // Re-export core traits (abstractions for Dependency Inversion)
 pub use traits::{
-    AgentProvider, ChangeDetector, ContentHasher, HashLookupStorage, MarkdownParser, Storage,
-    ToolExecutor,
+    AgentProvider, ChangeDetector, ContentHasher, FilesystemHandler, HashLookupStorage,
+    MarkdownParser, SessionManager, Storage, StreamHandler, ToolBridge, ToolExecutor,
 };
 
 // Re-export key types used across module boundaries
 pub use types::{
+    // ACP types
+    ChatMode,
+    ChunkType,
+    FileMetadata,
+    SessionConfig,
+    SessionId,
+    StreamChunk,
+    StreamMetadata,
+    ToolDescriptor,
+    ToolInvocation,
+    ToolOutput,
     // Hashing types
     BlockHash,
     BlockHashInfo,

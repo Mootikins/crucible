@@ -1,0 +1,46 @@
+[package]
+name = "crucible-acp"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Agent Client Protocol integration for Crucible - MCP-compatible agent communication"
+
+[lib]
+name = "crucible_acp"
+path = "src/lib.rs"
+
+[dependencies]
+# Core types and traits
+crucible-core = { path = "../crucible-core" }
+
+# Agent Client Protocol
+agent-client-protocol = "0.7.0"
+
+# Async runtime
+tokio = { workspace = true, features = ["full", "tracing"] }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+# Traits
+async-trait = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+tempfile = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[features]
+default = []
+# Enable test utilities (MockAgent) for integration tests in other crates
+test-utils = []

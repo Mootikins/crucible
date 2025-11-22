@@ -6,6 +6,7 @@
 //! ## Organization
 //!
 //! Domain types are currently defined in their respective modules:
+//! - ACP types: `acp` (SessionConfig, SessionId, ChatMode, ToolDescriptor, etc.)
 //! - Parser types: `parser::types` (ParsedNote, Wikilink, Tag, etc.)
 //! - Database types: `database` (Record, QueryResult, Node, Edge, Note, etc.)
 //! - Note types: `note` (NoteNode, ViewportState)
@@ -14,6 +15,7 @@
 //!
 //! This module serves as a central re-export point for types that cross module boundaries.
 
+pub mod acp;
 pub mod hashing;
 
 // Re-export parser domain types
@@ -59,6 +61,12 @@ pub use crate::types::hashing::{
 
 // Re-export change detection types
 pub use crate::traits::change_detection::{ChangeSet, ChangeSummary};
+
+// Re-export ACP types
+pub use crate::types::acp::{
+    ChatMode, ChunkType, FileMetadata, SessionConfig, SessionId, StreamChunk, StreamMetadata,
+    ToolDescriptor, ToolExample as AcpToolExample, ToolInvocation, ToolOutput,
+};
 
 // Re-export trait types (these are associated with traits but used as data)
 pub use crate::traits::storage::{Record as StorageRecord, RecordId as StorageRecordId};
