@@ -16,6 +16,7 @@
 //! - **Open/Closed**: New tool types can be added without modification
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::{AcpError, Result};
@@ -273,6 +274,141 @@ pub fn discover_crucible_tools(registry: &mut ToolRegistry, _kiln_path: &str) ->
     Ok(count)
 }
 
+/// Executes tool calls by routing to the appropriate crucible-tools implementation
+#[derive(Debug)]
+pub struct ToolExecutor {
+    kiln_path: PathBuf,
+}
+
+impl ToolExecutor {
+    /// Create a new tool executor
+    ///
+    /// # Arguments
+    ///
+    /// * `kiln_path` - Path to the kiln for tool operations
+    pub fn new(kiln_path: PathBuf) -> Self {
+        Self { kiln_path }
+    }
+
+    /// Execute a tool by name with the given parameters
+    ///
+    /// # Arguments
+    ///
+    /// * `tool_name` - Name of the tool to execute
+    /// * `params` - JSON parameters for the tool
+    ///
+    /// # Returns
+    ///
+    /// The tool execution result as JSON
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the tool doesn't exist or execution fails
+    pub async fn execute(&self, tool_name: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+        // TDD Cycle 10 - GREEN: Implement tool routing to crucible-tools
+        //
+        // Route tool calls to the appropriate tool implementation based on category
+        match tool_name {
+            // NoteTools (6 tools)
+            "create_note" => self.execute_note_tool(tool_name, params).await,
+            "read_note" => self.execute_note_tool(tool_name, params).await,
+            "read_metadata" => self.execute_note_tool(tool_name, params).await,
+            "update_note" => self.execute_note_tool(tool_name, params).await,
+            "delete_note" => self.execute_note_tool(tool_name, params).await,
+            "list_notes" => self.execute_note_tool(tool_name, params).await,
+
+            // SearchTools (3 tools)
+            "text_search" => self.execute_search_tool(tool_name, params).await,
+            "property_search" => self.execute_search_tool(tool_name, params).await,
+            "semantic_search" => self.execute_search_tool(tool_name, params).await,
+
+            // KilnTools (1 tool)
+            "get_kiln_info" => self.execute_kiln_tool(tool_name, params).await,
+
+            // Unknown tool
+            _ => Err(AcpError::NotFound(format!("Unknown tool: {}", tool_name))),
+        }
+    }
+
+    /// Helper to extract a required string parameter
+    fn get_required_param(params: &serde_json::Value, name: &str) -> Result<String> {
+        params.get(name)
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .ok_or_else(|| AcpError::InvalidConfig(format!("Missing required parameter: {}", name)))
+    }
+
+    /// Execute a note tool
+    async fn execute_note_tool(&self, tool_name: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+        // For TDD purposes, we manually implement the tool logic
+        // In a full implementation, this would use the rmcp tool router from crucible-tools
+        match tool_name {
+            "create_note" => {
+                // Extract parameters
+                let path = Self::get_required_param(&params, "path")?;
+                let content = Self::get_required_param(&params, "content")?;
+
+                // Execute the tool by directly writing the file
+                let full_path = self.kiln_path.join(&path);
+                tokio::fs::write(&full_path, &content).await
+                    .map_err(|e| AcpError::FileSystem(format!("Failed to create note: {}", e)))?;
+
+                Ok(serde_json::json!({
+                    "path": path,
+                    "full_path": full_path.to_string_lossy(),
+                    "status": "created"
+                }))
+            },
+            "read_note" => {
+                // Extract parameters
+                let path = Self::get_required_param(&params, "path")?;
+
+                // Read the file
+                let full_path = self.kiln_path.join(&path);
+                if !full_path.exists() {
+                    return Err(AcpError::NotFound(format!("File not found: {}", path)));
+                }
+
+                let content = tokio::fs::read_to_string(&full_path).await
+                    .map_err(|e| AcpError::FileSystem(format!("Failed to read note: {}", e)))?;
+
+                Ok(serde_json::json!({
+                    "path": path,
+                    "content": content,
+                    "lines": content.lines().count()
+                }))
+            },
+            _ => Err(AcpError::NotFound(format!("Note tool not implemented: {}", tool_name))),
+        }
+    }
+
+    /// Execute a search tool
+    async fn execute_search_tool(&self, tool_name: &str, _params: serde_json::Value) -> Result<serde_json::Value> {
+        // For now, return a placeholder for search tools
+        // Full implementation would integrate with crucible-tools search
+        Ok(serde_json::json!({
+            "tool": tool_name,
+            "results": [],
+            "count": 0
+        }))
+    }
+
+    /// Execute a kiln tool
+    async fn execute_kiln_tool(&self, _tool_name: &str, _params: serde_json::Value) -> Result<serde_json::Value> {
+        // Return basic kiln information
+        Ok(serde_json::json!({
+            "kiln_path": self.kiln_path.to_string_lossy(),
+            "exists": self.kiln_path.exists(),
+            "is_directory": self.kiln_path.is_dir()
+        }))
+    }
+
+    /// Get the kiln path
+    pub fn kiln_path(&self) -> &PathBuf {
+        &self.kiln_path
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -405,5 +541,84 @@ mod tests {
         let read_note = registry.get("read_note");
         assert!(read_note.is_some());
         assert!(!read_note.unwrap().description.is_empty());
+    }
+
+    // TDD Cycle 10 - RED: Test expects tool executor creation
+    #[test]
+    fn test_tool_executor_creation() {
+        let executor = ToolExecutor::new(PathBuf::from("/test/kiln"));
+        assert_eq!(executor.kiln_path(), &PathBuf::from("/test/kiln"));
+    }
+
+    // TDD Cycle 10 - RED: Test expects tool execution to work
+    #[tokio::test]
+    async fn test_execute_get_kiln_info() {
+        let executor = ToolExecutor::new(PathBuf::from("/test/kiln"));
+
+        // Execute get_kiln_info tool (simplest tool with no parameters)
+        let params = serde_json::json!({});
+        let result = executor.execute("get_kiln_info", params).await;
+
+        // Should succeed and return kiln information
+        assert!(result.is_ok(), "get_kiln_info should execute successfully");
+
+        let value = result.unwrap();
+        assert!(value.is_object(), "Result should be a JSON object");
+    }
+
+    // TDD Cycle 10 - RED: Test expects tool execution with parameters
+    #[tokio::test]
+    async fn test_execute_read_note() {
+        // Create a temporary test kiln
+        let temp_dir = std::env::temp_dir().join("crucible-test-kiln");
+        std::fs::create_dir_all(&temp_dir).ok();
+
+        // Create a test note
+        let test_note = temp_dir.join("test.md");
+        std::fs::write(&test_note, "# Test Note\n\nThis is a test.").ok();
+
+        let executor = ToolExecutor::new(temp_dir.clone());
+
+        // Execute read_note tool
+        let params = serde_json::json!({
+            "path": "test.md"
+        });
+        let result = executor.execute("read_note", params).await;
+
+        // Should succeed and return the note content
+        assert!(result.is_ok(), "read_note should execute successfully");
+
+        let value = result.unwrap();
+        assert!(value.is_object(), "Result should be a JSON object");
+
+        // Cleanup
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    // TDD Cycle 10 - RED: Test expects error for unknown tool
+    #[tokio::test]
+    async fn test_execute_unknown_tool() {
+        let executor = ToolExecutor::new(PathBuf::from("/test/kiln"));
+
+        let params = serde_json::json!({});
+        let result = executor.execute("nonexistent_tool", params).await;
+
+        // Should fail with NotFound error
+        assert!(result.is_err(), "Unknown tool should return error");
+        let err = result.unwrap_err();
+        assert!(matches!(err, AcpError::NotFound(_)));
+    }
+
+    // TDD Cycle 10 - RED: Test expects error handling for invalid parameters
+    #[tokio::test]
+    async fn test_execute_invalid_parameters() {
+        let executor = ToolExecutor::new(PathBuf::from("/test/kiln"));
+
+        // Try to call read_note without required path parameter
+        let params = serde_json::json!({});
+        let result = executor.execute("read_note", params).await;
+
+        // Should fail due to missing required parameter
+        assert!(result.is_err(), "Invalid parameters should return error");
     }
 }
