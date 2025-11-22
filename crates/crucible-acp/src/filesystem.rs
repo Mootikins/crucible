@@ -75,10 +75,68 @@ impl FileSystemHandler {
     /// # Returns
     ///
     /// `true` if the path is within an allowed root, `false` otherwise
-    pub fn is_path_allowed(&self, _path: &Path) -> bool {
-        // TODO: Implement path validation
-        // This is a stub - will be implemented in TDD cycles
-        false
+    pub fn is_path_allowed(&self, path: &Path) -> bool {
+        // TDD Cycle 7 - GREEN: Implement path validation
+
+        // If no allowed roots configured, deny all access
+        if self.config.allowed_roots.is_empty() {
+            return false;
+        }
+
+        // Try to canonicalize the path to resolve any symlinks or .. components
+        let canonical_path = match path.canonicalize() {
+            Ok(p) => p,
+            Err(_) => {
+                // If we can't canonicalize (file doesn't exist), we need to resolve
+                // .. components manually to prevent traversal attacks
+                let abs_path = if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    match std::env::current_dir() {
+                        Ok(cwd) => cwd.join(path),
+                        Err(_) => return false,
+                    }
+                };
+
+                // Manually resolve path components to handle .. correctly
+                let mut resolved = PathBuf::new();
+                for component in abs_path.components() {
+                    match component {
+                        std::path::Component::ParentDir => {
+                            resolved.pop();
+                        }
+                        std::path::Component::Normal(part) => {
+                            resolved.push(part);
+                        }
+                        std::path::Component::RootDir => {
+                            resolved.push(component);
+                        }
+                        std::path::Component::CurDir => {
+                            // Skip current directory components
+                        }
+                        std::path::Component::Prefix(_) => {
+                            resolved.push(component);
+                        }
+                    }
+                }
+
+                // Check if this resolved path would be under any allowed root
+                return self.config.allowed_roots.iter().any(|root| {
+                    match root.canonicalize() {
+                        Ok(canonical_root) => resolved.starts_with(&canonical_root),
+                        Err(_) => resolved.starts_with(root),
+                    }
+                });
+            }
+        };
+
+        // Check if the canonical path is under any of the allowed roots
+        self.config.allowed_roots.iter().any(|root| {
+            match root.canonicalize() {
+                Ok(canonical_root) => canonical_path.starts_with(&canonical_root),
+                Err(_) => false,
+            }
+        })
     }
 
     /// Read a file's contents
@@ -98,10 +156,47 @@ impl FileSystemHandler {
     /// - The file doesn't exist
     /// - The file is too large
     /// - IO errors occur
-    pub async fn read_file(&self, _path: &Path) -> Result<String> {
-        // TODO: Implement file reading
-        // This is a stub - will be implemented in TDD cycles
-        Err(AcpError::FileSystem("Not yet implemented".to_string()))
+    pub async fn read_file(&self, path: &Path) -> Result<String> {
+        // TDD Cycle 7 - GREEN: Implement file reading with validation
+
+        // Check if path is allowed
+        if !self.is_path_allowed(path) {
+            return Err(AcpError::PermissionDenied(format!(
+                "Access denied to path: {}",
+                path.display()
+            )));
+        }
+
+        // Check if file exists
+        if !path.exists() {
+            return Err(AcpError::NotFound(format!(
+                "File not found: {}",
+                path.display()
+            )));
+        }
+
+        // Check if it's a file (not a directory)
+        if !path.is_file() {
+            return Err(AcpError::FileSystem(format!(
+                "Path is not a file: {}",
+                path.display()
+            )));
+        }
+
+        // Check file size
+        let metadata = tokio::fs::metadata(path).await?;
+        if metadata.len() > self.config.max_read_size as u64 {
+            return Err(AcpError::FileSystem(format!(
+                "File too large: {} bytes (max: {})",
+                metadata.len(),
+                self.config.max_read_size
+            )));
+        }
+
+        // Read the file
+        let content = tokio::fs::read_to_string(path).await?;
+
+        Ok(content)
     }
 
     /// Write content to a file
@@ -149,6 +244,8 @@ impl FileSystemHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn test_handler_creation() {
@@ -164,5 +261,131 @@ mod tests {
         assert!(!config.allow_write);
         assert!(!config.allow_create_dirs);
         assert_eq!(config.max_read_size, 10 * 1024 * 1024);
+    }
+
+    // TDD Cycle 7 - RED: Test expects path validation
+    #[test]
+    fn test_path_validation() {
+        let temp_dir = TempDir::new().unwrap();
+        let allowed_root = temp_dir.path().to_path_buf();
+
+        let config = FileSystemConfig {
+            allowed_roots: vec![allowed_root.clone()],
+            allow_write: false,
+            allow_create_dirs: false,
+            max_read_size: 10 * 1024 * 1024,
+        };
+        let handler = FileSystemHandler::new(config);
+
+        // Path within allowed root should be allowed
+        let allowed_path = allowed_root.join("test.txt");
+        assert!(handler.is_path_allowed(&allowed_path));
+
+        // Path outside allowed root should not be allowed
+        let disallowed_path = PathBuf::from("/tmp/outside/test.txt");
+        assert!(!handler.is_path_allowed(&disallowed_path));
+
+        // Parent directory traversal should not be allowed
+        let traversal_path = allowed_root.join("../outside.txt");
+        assert!(!handler.is_path_allowed(&traversal_path));
+    }
+
+    // TDD Cycle 7 - RED: Test expects file reading to work
+    #[tokio::test]
+    async fn test_read_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let allowed_root = temp_dir.path().to_path_buf();
+
+        // Create a test file
+        let test_file = allowed_root.join("test.txt");
+        let test_content = "Hello, World!";
+        fs::write(&test_file, test_content).unwrap();
+
+        let config = FileSystemConfig {
+            allowed_roots: vec![allowed_root],
+            allow_write: false,
+            allow_create_dirs: false,
+            max_read_size: 10 * 1024 * 1024,
+        };
+        let handler = FileSystemHandler::new(config);
+
+        // Should successfully read the file
+        let result = handler.read_file(&test_file).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), test_content);
+    }
+
+    // TDD Cycle 7 - RED: Test expects permission denied for disallowed paths
+    #[tokio::test]
+    async fn test_read_file_permission_denied() {
+        let temp_dir = TempDir::new().unwrap();
+        let allowed_root = temp_dir.path().to_path_buf();
+
+        let config = FileSystemConfig {
+            allowed_roots: vec![allowed_root],
+            allow_write: false,
+            allow_create_dirs: false,
+            max_read_size: 10 * 1024 * 1024,
+        };
+        let handler = FileSystemHandler::new(config);
+
+        // Try to read a file outside allowed root
+        let disallowed_path = PathBuf::from("/tmp/outside/test.txt");
+        let result = handler.read_file(&disallowed_path).await;
+        assert!(result.is_err());
+
+        match result {
+            Err(AcpError::PermissionDenied(_)) => {},
+            _ => panic!("Expected PermissionDenied error"),
+        }
+    }
+
+    // TDD Cycle 7 - RED: Test expects file size limit enforcement
+    #[tokio::test]
+    async fn test_read_file_size_limit() {
+        let temp_dir = TempDir::new().unwrap();
+        let allowed_root = temp_dir.path().to_path_buf();
+
+        // Create a file that exceeds the limit
+        let test_file = allowed_root.join("large.txt");
+        let large_content = "x".repeat(100); // 100 bytes
+        fs::write(&test_file, &large_content).unwrap();
+
+        let config = FileSystemConfig {
+            allowed_roots: vec![allowed_root],
+            allow_write: false,
+            allow_create_dirs: false,
+            max_read_size: 50, // Only allow 50 bytes
+        };
+        let handler = FileSystemHandler::new(config);
+
+        // Should fail due to size limit
+        let result = handler.read_file(&test_file).await;
+        assert!(result.is_err());
+    }
+
+    // TDD Cycle 7 - RED: Test expects not found error for missing files
+    #[tokio::test]
+    async fn test_read_nonexistent_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let allowed_root = temp_dir.path().to_path_buf();
+
+        let config = FileSystemConfig {
+            allowed_roots: vec![allowed_root.clone()],
+            allow_write: false,
+            allow_create_dirs: false,
+            max_read_size: 10 * 1024 * 1024,
+        };
+        let handler = FileSystemHandler::new(config);
+
+        // Try to read a non-existent file
+        let missing_file = allowed_root.join("doesnotexist.txt");
+        let result = handler.read_file(&missing_file).await;
+        assert!(result.is_err());
+
+        match result {
+            Err(AcpError::NotFound(_)) => {},
+            _ => panic!("Expected NotFound error"),
+        }
     }
 }
