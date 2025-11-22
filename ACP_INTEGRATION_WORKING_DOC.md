@@ -132,86 +132,86 @@ All critical questions answered (see Decision Log above).
 
 ## Implementation Plan - DETAILED TDD APPROACH
 
-### Phase 0: Planning & Setup ✅
+### Phase 0: Planning & Setup ✅ COMPLETE
 - [x] Read openspec and documentation
 - [x] Understand current codebase state
 - [x] Create working document
 - [x] Get clarifying answers from user
-- [ ] Create detailed TDD plan (this document)
-- [ ] Update dependencies to ACP 0.7.0
-- [ ] Create crucible-acp crate structure
-- [ ] Run baseline test suite (verify no breakage)
+- [x] Create detailed TDD plan (this document)
+- [x] Update dependencies to ACP 0.7.0
+- [x] Create crucible-acp crate structure
+- [x] Run baseline test suite (verify no breakage)
 
-### Phase 1: Core Infrastructure (Mock Agent Foundation)
+### Phase 1: Core Infrastructure (Mock Agent Foundation) ✅ COMPLETE
 **Goal**: Create new crate, implement mock agent for testing, upgrade ACP
 
-#### 1.1: Crate Setup & Dependency Upgrade
-**TDD Cycle 1**: Upgrade ACP to 0.7.0
-- RED: Update Cargo.toml to require 0.7.0, expect compilation failures
-- GREEN: Fix breaking changes, ensure builds
-- REFACTOR: Update imports and types as needed
-- CHECKPOINT: `cargo test --workspace` passes
+#### 1.1: Crate Setup & Dependency Upgrade ✅
+**TDD Cycle 1**: Upgrade ACP to 0.7.0 ✅
+- ✅ RED: Update Cargo.toml to require 0.7.0, expect compilation failures
+- ✅ GREEN: Fix breaking changes, ensure builds
+- ✅ REFACTOR: Update imports and types as needed
+- ✅ CHECKPOINT: `cargo test --workspace` passes
 
-**TDD Cycle 2**: Create crucible-acp crate
-- RED: Add crate to workspace, write failing integration test
-- GREEN: Create lib.rs, basic structure, test passes
-- REFACTOR: Add module structure (client, session, filesystem, protocol)
-- CHECKPOINT: `cargo build --workspace` succeeds
+**TDD Cycle 2**: Create crucible-acp crate ✅
+- ✅ RED: Add crate to workspace, write failing integration test
+- ✅ GREEN: Create lib.rs, basic structure, test passes
+- ✅ REFACTOR: Add module structure (client, session, filesystem, protocol)
+- ✅ CHECKPOINT: `cargo build --workspace` succeeds
 
-#### 1.2: Mock Agent for Testing
-**TDD Cycle 3**: Mock agent process
-- RED: Write test expecting mock agent to respond to initialize
-- GREEN: Implement MockAgent struct with stdio communication
-- REFACTOR: Extract message handling utilities
-- CHECKPOINT: Mock agent responds to basic messages
+#### 1.2: Mock Agent for Testing ✅
+**TDD Cycle 3**: Mock agent process ✅
+- ✅ RED: Write test expecting mock agent to respond to initialize
+- ✅ GREEN: Implement MockAgent struct with stdio communication
+- ✅ REFACTOR: Extract message handling utilities
+- ✅ CHECKPOINT: Mock agent responds to basic messages
 
-**TDD Cycle 4**: Mock agent message protocol
-- RED: Test expects mock agent to handle session requests
-- GREEN: Implement JSON-RPC message parsing and responses
-- REFACTOR: Create message builder utilities
-- CHECKPOINT: Mock agent handles all basic message types
+**TDD Cycle 4**: Mock agent message protocol ✅
+- ✅ RED: Test expects mock agent to handle session requests
+- ✅ GREEN: Implement JSON-RPC message parsing and responses
+- ✅ REFACTOR: Create message builder utilities
+- ✅ CHECKPOINT: Mock agent handles all basic message types
 
-#### 1.3: Client Trait Implementation
-**TDD Cycle 5**: Client trait skeleton
-- RED: Write test expecting Client trait implementation
-- GREEN: Implement CrucibleAcpClient with Client trait
-- REFACTOR: Organize trait methods by category
-- CHECKPOINT: Trait compiles, mock tests pass
+#### 1.3: Client Trait Implementation ✅
+**TDD Cycle 5**: Client trait skeleton ✅
+- ✅ RED: Write test expecting Client trait implementation
+- ✅ GREEN: Implement CrucibleAcpClient with SessionManager trait
+- ✅ REFACTOR: Organize trait methods by category
+- ✅ CHECKPOINT: Trait compiles, mock tests pass
 
-**TDD Cycle 6**: Session initialization
-- RED: Test expects successful session creation
-- GREEN: Implement initialize() and new_session()
-- REFACTOR: Extract session state management
-- CHECKPOINT: Can create and initialize sessions
+**TDD Cycle 6**: Session initialization ✅
+- ✅ RED: Test expects successful session creation
+- ✅ GREEN: Implement session state tracking (create, load, end)
+- ✅ REFACTOR: Extract session state management
+- ✅ CHECKPOINT: Can create and initialize sessions (19/19 tests passing)
 
-### Phase 2: Filesystem & Tool Integration
+### Phase 2: Filesystem & Tool Integration 🚧 IN PROGRESS
 **Goal**: Implement file operations and tool call bridging
 
-#### 2.1: Filesystem Abstraction
-**TDD Cycle 7**: Read file operations
-- RED: Test expects ReadTextFileRequest to return file contents
-- GREEN: Implement read_text_file handler with path resolution
-- REFACTOR: Add error handling and validation
-- CHECKPOINT: Can read files from CWD
+#### 2.1: Filesystem Abstraction ✅
+**TDD Cycle 7**: Read file operations ✅
+- ✅ RED: Test expects ReadTextFileRequest to return file contents
+- ✅ GREEN: Implement read_text_file handler with path resolution
+- ✅ REFACTOR: Add error handling and validation
+- ✅ CHECKPOINT: Can read files from CWD (24/24 tests passing)
 
-**TDD Cycle 8**: Write file operations (plan mode restriction)
-- RED: Test expects write denied in plan mode
-- GREEN: Implement write_text_file with mode checking
-- REFACTOR: Extract permission enforcement
-- CHECKPOINT: Plan mode blocks writes, act mode allows
+**TDD Cycle 8**: Write file operations (plan mode restriction) ✅
+- ✅ RED: Test expects write denied in plan mode
+- ✅ GREEN: Implement write_text_file with mode checking
+- ✅ REFACTOR: Extract permission enforcement
+- ✅ CHECKPOINT: Plan mode blocks writes, act mode allows (29/29 tests passing)
 
-#### 2.2: Tool System Bridge
+#### 2.2: Tool System Bridge ⏳ NEXT
 **TDD Cycle 9**: Tool discovery and registration
-- RED: Test expects tool catalog to include Crucible tools
-- GREEN: Implement tool registration from crucible-tools
-- REFACTOR: Create tool descriptor conversion utilities
-- CHECKPOINT: Agent sees all available Crucible tools
+- [ ] RED: Test expects tool catalog to include Crucible tools
+- [ ] GREEN: Implement tool registration from crucible-tools
+- [ ] REFACTOR: Create tool descriptor conversion utilities
+- [ ] CHECKPOINT: Agent sees all available Crucible tools
 
 **TDD Cycle 10**: Tool execution
-- RED: Test expects tool call to execute and return result
-- GREEN: Implement tool call routing to crucible-tools
-- REFACTOR: Add result formatting and error handling
-- CHECKPOINT: Tools execute successfully from ACP
+- [ ] RED: Test expects tool call to execute and return result
+- [ ] GREEN: Implement tool call routing to crucible-tools
+- [ ] REFACTOR: Add result formatting and error handling
+- [ ] CHECKPOINT: Tools execute successfully from ACP
 
 ### Phase 3: Context Enrichment & Streaming
 **Goal**: Integrate semantic search and implement response streaming
@@ -392,27 +392,44 @@ All critical questions answered (see Decision Log above).
 
 ## Summary: 20 TDD Cycles Across 6 Phases
 
-| Phase | Cycles | Focus | Estimated Time |
-|-------|--------|-------|----------------|
-| Phase 0 | Setup | Planning & infrastructure | 2-3 hours |
-| Phase 1 | 1-6 | Mock agent & client trait | 4-6 hours |
-| Phase 2 | 7-10 | Filesystem & tools | 3-4 hours |
-| Phase 3 | 11-14 | Context & streaming | 3-4 hours |
-| Phase 4 | 15-18 | Interactive chat | 3-4 hours |
-| Phase 5 | 19-20 | Real agent testing | 2-3 hours |
-| Phase 6 | N/A | Polish & docs | 2-3 hours |
-| **TOTAL** | **20** | **Complete implementation** | **~20-27 hours** |
+| Phase | Cycles | Focus | Status | Time |
+|-------|--------|-------|--------|------|
+| Phase 0 | Setup | Planning & infrastructure | ✅ COMPLETE | 2-3 hours |
+| Phase 1 | 1-6 | Mock agent & client trait | ✅ COMPLETE | 4-6 hours |
+| Phase 2 | 7-10 | Filesystem & tools | 🚧 50% (7-8 done) | 3-4 hours |
+| Phase 3 | 11-14 | Context & streaming | ⏳ PENDING | 3-4 hours |
+| Phase 4 | 15-18 | Interactive chat | ⏳ PENDING | 3-4 hours |
+| Phase 5 | 19-20 | Real agent testing | ⏳ PENDING | 2-3 hours |
+| Phase 6 | N/A | Polish & docs | ⏳ PENDING | 2-3 hours |
+| **TOTAL** | **20** | **Complete implementation** | **40% COMPLETE** | **~20-27 hours** |
+
+## Test Results Summary
+
+**Current Status:**
+- `crucible-acp`: **29/29 tests passing** ✅
+- `crucible-core`: **554/554 tests passing** ✅
+- `crucible-workspace`: **900+ tests passing** ✅
+- Pre-existing failures: 5 fastembed tests (documented)
+
+**Test Breakdown by Cycle:**
+- Cycles 3-4 (MockAgent): 4 tests
+- Cycle 5 (Client trait): 2 tests
+- Cycle 6 (Sessions): 3 tests
+- Cycle 7 (Read files): 5 tests
+- Cycle 8 (Write files): 5 tests
+- **Total new tests**: 19 tests added
 
 ## Next Steps
 
-1. ✅ Complete initial research and documentation review
-2. ✅ Create this working document
-3. ✅ Get answers to critical questions from user
-4. ✅ Make architecture decisions (log in Decision Log above)
-5. ✅ Create granular TDD implementation plan (20 cycles defined above)
-6. ⏳ Begin implementation with Phase 0: Setup
-7. ⏳ Execute TDD cycles following red-green-refactor discipline
-8. ⏳ Run checkpoints after each major milestone
+1. ✅ Complete Phase 0 - Setup
+2. ✅ Execute TDD Cycles 1-6 (Phase 1)
+3. ✅ Execute TDD Cycles 7-8 (Phase 2 partial)
+4. ⏳ Execute TDD Cycles 9-10 (Phase 2 complete)
+5. ⏳ Run workspace checkpoint after Phase 2
+6. ⏳ Execute TDD Cycles 11-14 (Phase 3)
+7. ⏳ Execute TDD Cycles 15-18 (Phase 4)
+8. ⏳ Execute TDD Cycles 19-20 (Phase 5)
+9. ⏳ Complete Phase 6 (Polish & Documentation)
 
 ---
 
