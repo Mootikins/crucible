@@ -15,6 +15,9 @@ path = "src/lib.rs"
 # Core types and traits
 crucible-core = { path = "../crucible-core" }
 
+# Crucible tools for execution
+crucible-tools = { path = "../crucible-tools" }
+
 # Agent Client Protocol
 agent-client-protocol = "0.7.0"
 

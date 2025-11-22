@@ -60,7 +60,7 @@ pub use client::CrucibleAcpClient;
 pub use session::{AcpSession, SessionConfig};
 pub use filesystem::FileSystemHandler;
 pub use protocol::MessageHandler;
-pub use tools::{ToolRegistry, ToolDescriptor, discover_crucible_tools};
+pub use tools::{ToolRegistry, ToolDescriptor, ToolExecutor, discover_crucible_tools};
 
 // Re-export test utilities when feature is enabled
 #[cfg(feature = "test-utils")]
