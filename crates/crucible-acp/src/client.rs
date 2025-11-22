@@ -18,9 +18,12 @@
 
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use async_trait::async_trait;
 
 use crate::{AcpError, Result};
 use crate::session::AcpSession;
+use crucible_core::traits::acp::{SessionManager, AcpResult};
+use crucible_core::types::acp::{SessionConfig, SessionId};
 
 /// Configuration for the ACP client
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,9 +103,40 @@ impl CrucibleAcpClient {
     }
 }
 
+// TDD Cycle 5 - GREEN: Implement SessionManager trait
+#[async_trait]
+impl SessionManager for CrucibleAcpClient {
+    type Session = SessionId;
+    type Config = SessionConfig;
+
+    async fn create_session(&mut self, _config: Self::Config) -> AcpResult<Self::Session> {
+        // TODO: Implement actual agent connection and session creation
+        // For now, return an error since we haven't implemented the connection logic
+        Err(crucible_core::traits::acp::AcpError::Session(
+            "Session creation not yet implemented - need agent connection".to_string()
+        ))
+    }
+
+    async fn load_session(&mut self, _session: Self::Session) -> AcpResult<()> {
+        // TODO: Implement session loading from storage/agent
+        Err(crucible_core::traits::acp::AcpError::Session(
+            "Session loading not yet implemented".to_string()
+        ))
+    }
+
+    async fn end_session(&mut self, _session: Self::Session) -> AcpResult<()> {
+        // TODO: Implement session cleanup
+        Err(crucible_core::traits::acp::AcpError::Session(
+            "Session cleanup not yet implemented".to_string()
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crucible_core::traits::acp::SessionManager;
+    use crucible_core::types::acp::{SessionConfig, SessionId};
 
     #[test]
     fn test_client_creation() {
@@ -115,5 +149,70 @@ mod tests {
         };
         let client = CrucibleAcpClient::new(config);
         assert_eq!(client.config().agent_path, PathBuf::from("/test/agent"));
+    }
+
+    // TDD Cycle 5 - RED: Test expecting Client trait implementation
+    #[tokio::test]
+    async fn test_client_implements_session_manager() {
+        let config = ClientConfig {
+            agent_path: PathBuf::from("/test/agent"),
+            working_dir: Some(PathBuf::from("/test/workspace")),
+            env_vars: None,
+            timeout_ms: Some(5000),
+            max_retries: Some(3),
+        };
+        let mut client = CrucibleAcpClient::new(config);
+
+        // Should implement SessionManager trait
+        let session_config = SessionConfig {
+            cwd: PathBuf::from("/test/workspace"),
+            mode: crucible_core::types::acp::ChatMode::Plan,
+            context_size: 5,
+            enable_enrichment: true,
+            enrichment_count: 5,
+            metadata: std::collections::HashMap::new(),
+        };
+
+        // This should compile and work (test trait implementation)
+        let result = client.create_session(session_config).await;
+
+        // For now, we expect it to fail since we haven't connected to an agent yet
+        // But the trait implementation should exist
+        assert!(result.is_err(), "Should fail without agent connection");
+    }
+
+    #[tokio::test]
+    async fn test_session_lifecycle() {
+        let config = ClientConfig {
+            agent_path: PathBuf::from("/test/agent"),
+            working_dir: Some(PathBuf::from("/test/workspace")),
+            env_vars: None,
+            timeout_ms: Some(5000),
+            max_retries: Some(3),
+        };
+        let mut client = CrucibleAcpClient::new(config);
+
+        let session_config = SessionConfig {
+            cwd: PathBuf::from("/test/workspace"),
+            mode: crucible_core::types::acp::ChatMode::Plan,
+            context_size: 5,
+            enable_enrichment: true,
+            enrichment_count: 5,
+            metadata: std::collections::HashMap::new(),
+        };
+
+        // Try to create, load, and end sessions
+        // These should fail gracefully without an agent but the interface should exist
+        let create_result = client.create_session(session_config).await;
+        assert!(create_result.is_err());
+
+        // Test load_session interface
+        let session_id = SessionId::new();
+        let load_result = client.load_session(session_id.clone()).await;
+        assert!(load_result.is_err());
+
+        // Test end_session interface
+        let end_result = client.end_session(session_id).await;
+        assert!(end_result.is_err());
     }
 }
