@@ -49,6 +49,7 @@ pub mod client;
 pub mod session;
 pub mod filesystem;
 pub mod protocol;
+pub mod tools;
 
 // Mock agent for testing (only included in test builds)
 #[cfg(any(test, feature = "test-utils"))]
@@ -59,6 +60,7 @@ pub use client::CrucibleAcpClient;
 pub use session::{AcpSession, SessionConfig};
 pub use filesystem::FileSystemHandler;
 pub use protocol::MessageHandler;
+pub use tools::{ToolRegistry, ToolDescriptor, discover_crucible_tools};
 
 // Re-export test utilities when feature is enabled
 #[cfg(feature = "test-utils")]
