@@ -45,70 +45,252 @@
 
 | # | Decision | Rationale | Date | Status |
 |---|----------|-----------|------|--------|
-| D1 | TBD: Use agent-client-protocol 0.6 or upgrade to 0.7? | Docs reference 0.7, but we have 0.6 | 2025-11-22 | PENDING |
-| D2 | TBD: Separate crucible-acp crate vs keep in crucible-cli? | Spec mentions new crate, but scaffolding in CLI | 2025-11-22 | PENDING |
-| D3 | TBD: Chat-only first (read) vs full read/write? | MVP scope definition | 2025-11-22 | PENDING |
-| D4 | TBD: Which parser to use for frontmatter? | serde_yaml, toml, or both? | 2025-11-22 | PENDING |
-| D5 | TBD: Testing strategy - mock agent or real claude-code? | Test coverage approach | 2025-11-22 | PENDING |
-| D6 | TBD: Session persistence - where to store? | .crucible/sessions/ or kiln-relative? | 2025-11-22 | PENDING |
+| D1 | ✅ Upgrade to agent-client-protocol 0.7.0 | Latest version with newest features | 2025-11-22 | APPROVED |
+| D2 | ✅ Create new crucible-acp crate | Clean separation, reusable component | 2025-11-22 | APPROVED |
+| D3 | ✅ Incremental: Chat + context insertion first | Baseline functionality, then iterate | 2025-11-22 | APPROVED |
+| D4 | ✅ Hybrid file operations model | ACP fs → project files, Tools → kiln ops | 2025-11-22 | APPROVED |
+| D5 | ✅ Mock agent first, then Claude Code | Controlled testing, then real integration | 2025-11-22 | APPROVED |
+| D6 | ⏳ Session persistence TBD | Will decide during session implementation | 2025-11-22 | DEFERRED |
 
-## Open Questions
+### Key Architecture: Dual-Path File Access
 
-### Critical Questions for User
+**ACP Filesystem Operations** (ReadTextFileRequest/WriteTextFileRequest):
+- Map to actual filesystem paths relative to CWD
+- Agent reads project files, configs, code
+- Standard ACP file abstraction
 
-1. **Version**: Should we upgrade to `agent-client-protocol = "0.7.0"` (docs reference) or stick with `0.6`?
+**Tool Calls** (via MCP):
+- Access kiln operations (semantic_search, read_note, etc.)
+- Query knowledge base
+- Specialized knowledge management operations
 
-2. **Scope**: What's the MVP scope for this work?
-   - Option A: Chat-only (read-only mode, no agent file writes)
-   - Option B: Full implementation (both plan and act modes)
-   - Option C: Incremental (chat first, then add file ops)
+**Rationale**: Separates concerns - workspace files (ACP fs) vs knowledge base (tools). Follows ACP design patterns while leveraging our tool system.
 
-3. **Crate structure**: Should we:
-   - Keep ACP code in `crucible-cli/src/acp/`
-   - Create new `crucible-acp` crate (per spec proposal)
+### SOLID Principles - Design Constraints
 
-4. **Testing priorities**: Which agent(s) to prioritize?
-   - Claude Code (Anthropic)
-   - Gemini CLI (Google)
-   - Mock agent for CI/CD
-   - All of the above
+**CRITICAL**: All cross-crate boundaries MUST use traits, not concrete types.
 
-5. **File operations**: For agent file read/write:
-   - Map directly to filesystem (simple but less abstract)
-   - Map through kiln operations (more abstract, respects boundaries)
-   - Hybrid approach
+**Single Responsibility**:
+- Each module handles one concern (session, filesystem, protocol, tools)
+- Separate traits for read vs write operations
 
-6. **Timeline**: What's acceptable for this work?
-   - Spec estimates 2 weeks for full implementation
-   - MVP could be done in ~1 week
-   - Should we target MVP or complete implementation?
+**Open/Closed**:
+- Extensible via traits (e.g., new agent types, new tool adapters)
+- Closed to modification of core protocol handling
 
-## Implementation Plan (DRAFT - Pending Decisions)
+**Liskov Substitution**:
+- Any `impl Client` must be swappable
+- Tool adapters must be interchangeable
 
-### Phase 0: Planning ✅ (Current)
+**Interface Segregation**:
+- Separate traits for different capabilities
+- Don't force clients to depend on unused methods
+- Example: `FilesystemReader`, `FilesystemWriter`, `ToolExecutor` as separate traits
+
+**Dependency Inversion**:
+- crucible-acp depends on traits, not concrete implementations
+- CLI provides concrete implementations
+- Use dependency injection for all services
+
+**Design Pattern**:
+```rust
+// ✅ GOOD: Trait boundaries across crates
+pub trait SessionManager {
+    async fn create_session(&mut self, config: SessionConfig) -> Result<SessionId>;
+}
+
+pub trait ToolBridge {
+    async fn execute_tool(&self, call: ToolCall) -> Result<ToolResult>;
+}
+
+// crucible-acp exports traits
+// crucible-cli implements traits
+// No concrete types leak across crate boundaries
+```
+
+## Open Questions - ✅ RESOLVED
+
+All critical questions answered (see Decision Log above).
+
+## Implementation Plan - DETAILED TDD APPROACH
+
+### Phase 0: Planning & Setup ✅
 - [x] Read openspec and documentation
 - [x] Understand current codebase state
 - [x] Create working document
-- [ ] Get clarifying answers from user
-- [ ] Create detailed TDD plan
+- [x] Get clarifying answers from user
+- [ ] Create detailed TDD plan (this document)
+- [ ] Update dependencies to ACP 0.7.0
+- [ ] Create crucible-acp crate structure
+- [ ] Run baseline test suite (verify no breakage)
 
-### Phase 1: Core Protocol Implementation (TBD)
-*Will be detailed after decisions are made*
+### Phase 1: Core Infrastructure (Mock Agent Foundation)
+**Goal**: Create new crate, implement mock agent for testing, upgrade ACP
 
-Key areas:
-- Implement `agent_client_protocol::Client` trait
-- JSON-RPC message handling
-- Session initialization and negotiation
-- Basic tool registration
+#### 1.1: Crate Setup & Dependency Upgrade
+**TDD Cycle 1**: Upgrade ACP to 0.7.0
+- RED: Update Cargo.toml to require 0.7.0, expect compilation failures
+- GREEN: Fix breaking changes, ensure builds
+- REFACTOR: Update imports and types as needed
+- CHECKPOINT: `cargo test --workspace` passes
 
-### Phase 2: File Operations & Streaming (TBD)
-*Will be detailed after decisions are made*
+**TDD Cycle 2**: Create crucible-acp crate
+- RED: Add crate to workspace, write failing integration test
+- GREEN: Create lib.rs, basic structure, test passes
+- REFACTOR: Add module structure (client, session, filesystem, protocol)
+- CHECKPOINT: `cargo build --workspace` succeeds
 
-### Phase 3: Interactive Chat Loop (TBD)
-*Will be detailed after decisions are made*
+#### 1.2: Mock Agent for Testing
+**TDD Cycle 3**: Mock agent process
+- RED: Write test expecting mock agent to respond to initialize
+- GREEN: Implement MockAgent struct with stdio communication
+- REFACTOR: Extract message handling utilities
+- CHECKPOINT: Mock agent responds to basic messages
 
-### Phase 4: Testing & QA (TBD)
-*Will be detailed after decisions are made*
+**TDD Cycle 4**: Mock agent message protocol
+- RED: Test expects mock agent to handle session requests
+- GREEN: Implement JSON-RPC message parsing and responses
+- REFACTOR: Create message builder utilities
+- CHECKPOINT: Mock agent handles all basic message types
+
+#### 1.3: Client Trait Implementation
+**TDD Cycle 5**: Client trait skeleton
+- RED: Write test expecting Client trait implementation
+- GREEN: Implement CrucibleAcpClient with Client trait
+- REFACTOR: Organize trait methods by category
+- CHECKPOINT: Trait compiles, mock tests pass
+
+**TDD Cycle 6**: Session initialization
+- RED: Test expects successful session creation
+- GREEN: Implement initialize() and new_session()
+- REFACTOR: Extract session state management
+- CHECKPOINT: Can create and initialize sessions
+
+### Phase 2: Filesystem & Tool Integration
+**Goal**: Implement file operations and tool call bridging
+
+#### 2.1: Filesystem Abstraction
+**TDD Cycle 7**: Read file operations
+- RED: Test expects ReadTextFileRequest to return file contents
+- GREEN: Implement read_text_file handler with path resolution
+- REFACTOR: Add error handling and validation
+- CHECKPOINT: Can read files from CWD
+
+**TDD Cycle 8**: Write file operations (plan mode restriction)
+- RED: Test expects write denied in plan mode
+- GREEN: Implement write_text_file with mode checking
+- REFACTOR: Extract permission enforcement
+- CHECKPOINT: Plan mode blocks writes, act mode allows
+
+#### 2.2: Tool System Bridge
+**TDD Cycle 9**: Tool discovery and registration
+- RED: Test expects tool catalog to include Crucible tools
+- GREEN: Implement tool registration from crucible-tools
+- REFACTOR: Create tool descriptor conversion utilities
+- CHECKPOINT: Agent sees all available Crucible tools
+
+**TDD Cycle 10**: Tool execution
+- RED: Test expects tool call to execute and return result
+- GREEN: Implement tool call routing to crucible-tools
+- REFACTOR: Add result formatting and error handling
+- CHECKPOINT: Tools execute successfully from ACP
+
+### Phase 3: Context Enrichment & Streaming
+**Goal**: Integrate semantic search and implement response streaming
+
+#### 3.1: Context Injection
+**TDD Cycle 11**: Context enrichment integration
+- RED: Test expects enriched prompt to include search results
+- GREEN: Integrate ContextEnricher with session prompts
+- REFACTOR: Make context size configurable
+- CHECKPOINT: Prompts include relevant knowledge base context
+
+**TDD Cycle 12**: Context caching
+- RED: Test expects repeated queries to reuse context
+- GREEN: Implement context cache with TTL
+- REFACTOR: Add cache invalidation logic
+- CHECKPOINT: Context queries are cached efficiently
+
+#### 3.2: Response Streaming
+**TDD Cycle 13**: Stream handler
+- RED: Test expects streaming responses to UI
+- GREEN: Implement session_update handler for streaming
+- REFACTOR: Extract formatting utilities
+- CHECKPOINT: Agent responses stream to terminal
+
+**TDD Cycle 14**: Multi-turn conversation
+- RED: Test expects conversation history to persist
+- GREEN: Implement session history management
+- REFACTOR: Add history pruning for token limits
+- CHECKPOINT: Multi-turn conversations work
+
+### Phase 4: Interactive Chat Interface
+**Goal**: Replace placeholder with working interactive loop
+
+#### 4.1: REPL Integration
+**TDD Cycle 15**: Interactive input loop
+- RED: Test expects continuous input/output cycle
+- GREEN: Implement chat loop with rustyline/reedline
+- REFACTOR: Extract input handling utilities
+- CHECKPOINT: Interactive chat accepts continuous input
+
+**TDD Cycle 16**: Mode toggle commands
+- RED: Test expects /plan and /act commands to work
+- GREEN: Implement mode switching with client updates
+- REFACTOR: Add status indicators and confirmations
+- CHECKPOINT: Can toggle between plan and act modes
+
+#### 4.2: Enhanced UX
+**TDD Cycle 17**: Progress indicators
+- RED: Test expects loading indicators during operations
+- GREEN: Implement spinners for context search and agent calls
+- REFACTOR: Clean up terminal output formatting
+- CHECKPOINT: User sees clear feedback during operations
+
+**TDD Cycle 18**: Error recovery
+- RED: Test expects graceful handling of agent crashes
+- GREEN: Implement reconnection logic and error messages
+- REFACTOR: Add retry logic with backoff
+- CHECKPOINT: Handles errors without crashing
+
+### Phase 5: Real Agent Integration
+**Goal**: Test with actual Claude Code agent
+
+#### 5.1: Claude Code Integration
+**TDD Cycle 19**: Agent spawning
+- RED: Test expects claude-code to spawn and initialize
+- GREEN: Update agent discovery to detect claude-code
+- REFACTOR: Handle agent-specific quirks
+- CHECKPOINT: Claude Code spawns successfully
+
+**TDD Cycle 20**: End-to-end workflow
+- RED: Test expects complete conversation flow
+- GREEN: Fix any issues discovered with real agent
+- REFACTOR: Optimize performance and UX
+- CHECKPOINT: Full chat workflow works with Claude Code
+
+### Phase 6: Polish & Documentation
+**Goal**: Production readiness
+
+#### 6.1: Testing & Validation
+- Comprehensive unit test coverage (>80%)
+- Integration tests for all major flows
+- Error case coverage
+- Performance testing
+- CHECKPOINT: `cargo test --workspace` passes, coverage report
+
+#### 6.2: Documentation
+- Update crate README
+- API documentation
+- Usage examples
+- Troubleshooting guide
+- CHECKPOINT: Documentation complete and accurate
+
+#### 6.3: Migration
+- Move agent discovery from CLI to crucible-acp
+- Update CLI to use new crate
+- Remove placeholder code
+- CHECKPOINT: CLI cleanly integrated with crucible-acp
 
 ## Technical Notes
 
@@ -190,16 +372,32 @@ Key areas:
 - Breaking changes in agent-client-protocol 0.7.0 (if we upgrade)
 - Permission model design (integration with Crucible's access control)
 
+## Summary: 20 TDD Cycles Across 6 Phases
+
+| Phase | Cycles | Focus | Estimated Time |
+|-------|--------|-------|----------------|
+| Phase 0 | Setup | Planning & infrastructure | 2-3 hours |
+| Phase 1 | 1-6 | Mock agent & client trait | 4-6 hours |
+| Phase 2 | 7-10 | Filesystem & tools | 3-4 hours |
+| Phase 3 | 11-14 | Context & streaming | 3-4 hours |
+| Phase 4 | 15-18 | Interactive chat | 3-4 hours |
+| Phase 5 | 19-20 | Real agent testing | 2-3 hours |
+| Phase 6 | N/A | Polish & docs | 2-3 hours |
+| **TOTAL** | **20** | **Complete implementation** | **~20-27 hours** |
+
 ## Next Steps
 
 1. ✅ Complete initial research and documentation review
 2. ✅ Create this working document
-3. ⏳ Get answers to critical questions from user
-4. ⏳ Make architecture decisions (log in Decision Log above)
-5. ⏳ Create granular TDD implementation plan
-6. ⏳ Begin implementation with first red test
+3. ✅ Get answers to critical questions from user
+4. ✅ Make architecture decisions (log in Decision Log above)
+5. ✅ Create granular TDD implementation plan (20 cycles defined above)
+6. ⏳ Begin implementation with Phase 0: Setup
+7. ⏳ Execute TDD cycles following red-green-refactor discipline
+8. ⏳ Run checkpoints after each major milestone
 
 ---
 
 **Last Updated**: 2025-11-22
-**Next Review**: After receiving user feedback on questions
+**Status**: Ready to begin implementation
+**Next Action**: Phase 0 - Setup (upgrade ACP, create crate)
