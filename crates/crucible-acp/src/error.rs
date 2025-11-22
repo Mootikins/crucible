@@ -40,6 +40,14 @@ pub enum AcpError {
     #[error("File system error: {0}")]
     FileSystem(String),
 
+    /// Permission denied errors
+    #[error("Permission denied: {0}")]
+    PermissionDenied(String),
+
+    /// Resource not found errors
+    #[error("Not found: {0}")]
+    NotFound(String),
+
     /// General errors
     #[error(transparent)]
     Other(#[from] anyhow::Error),
