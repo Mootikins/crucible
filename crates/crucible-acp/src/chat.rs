@@ -15,6 +15,7 @@ use crate::{
     StreamHandler, StreamConfig,
     AcpError, Result,
 };
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Configuration for chat sessions
 #[derive(Debug, Clone)]
@@ -47,12 +48,67 @@ impl Default for ChatConfig {
     }
 }
 
+/// Metadata about the conversation state
+#[derive(Debug, Clone)]
+pub struct ConversationState {
+    /// Total number of turns (user message + agent response = 1 turn)
+    pub turn_count: usize,
+
+    /// Timestamp when the session started (Unix epoch seconds)
+    pub started_at: u64,
+
+    /// Timestamp of the last message (Unix epoch seconds)
+    pub last_message_at: Option<u64>,
+
+    /// Total number of tokens used in the conversation
+    pub total_tokens_used: usize,
+
+    /// Number of times history was pruned
+    pub prune_count: usize,
+}
+
+impl ConversationState {
+    /// Create a new conversation state
+    fn new() -> Self {
+        Self {
+            turn_count: 0,
+            started_at: current_timestamp(),
+            last_message_at: None,
+            total_tokens_used: 0,
+            prune_count: 0,
+        }
+    }
+
+    /// Get the duration of the conversation in seconds
+    pub fn duration_secs(&self) -> u64 {
+        current_timestamp() - self.started_at
+    }
+
+    /// Get the average tokens per turn
+    pub fn avg_tokens_per_turn(&self) -> f64 {
+        if self.turn_count == 0 {
+            0.0
+        } else {
+            self.total_tokens_used as f64 / self.turn_count as f64
+        }
+    }
+}
+
+/// Get the current Unix timestamp in seconds
+fn current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
 /// Manages an interactive chat session
 pub struct ChatSession {
     config: ChatConfig,
     history: ConversationHistory,
     enricher: PromptEnricher,
     stream_handler: StreamHandler,
+    state: ConversationState,
 }
 
 impl ChatSession {
@@ -65,12 +121,14 @@ impl ChatSession {
         let history = ConversationHistory::new(config.history.clone());
         let enricher = PromptEnricher::new(config.context.clone());
         let stream_handler = StreamHandler::new(config.streaming.clone());
+        let state = ConversationState::new();
 
         Self {
             config,
             history,
             enricher,
             stream_handler,
+            state,
         }
     }
 
@@ -111,10 +169,29 @@ impl ChatSession {
 
         // Step 5: Auto-prune if enabled
         if self.config.auto_prune {
-            self.history.prune()?;
+            let pruned = self.history.prune()?;
+            if pruned > 0 {
+                // TDD Cycle 16 - GREEN: Track prune count
+                self.state.prune_count += 1;
+            }
         }
 
+        // TDD Cycle 16 - GREEN: Update conversation state
+        self.update_state();
+
         Ok(agent_response)
+    }
+
+    /// Update conversation state after a turn
+    fn update_state(&mut self) {
+        // Increment turn count
+        self.state.turn_count += 1;
+
+        // Update timestamp
+        self.state.last_message_at = Some(current_timestamp());
+
+        // Update total tokens
+        self.state.total_tokens_used = self.history.total_tokens();
     }
 
     /// Generate a mock response (placeholder for real agent integration)
@@ -139,6 +216,11 @@ impl ChatSession {
     /// Get the configuration
     pub fn config(&self) -> &ChatConfig {
         &self.config
+    }
+
+    /// Get the conversation state
+    pub fn state(&self) -> &ConversationState {
+        &self.state
     }
 }
 
@@ -288,5 +370,139 @@ mod tests {
 
         assert!(response.is_ok());
         // When enrichment is disabled, the original query should be used directly
+    }
+
+    // TDD Cycle 16 - RED: Test expects state tracking initialization
+    #[test]
+    fn test_conversation_state_initialization() {
+        let session = ChatSession::new(ChatConfig::default());
+        let state = session.state();
+
+        assert_eq!(state.turn_count, 0, "Should start with zero turns");
+        assert_eq!(state.total_tokens_used, 0, "Should start with zero tokens");
+        assert_eq!(state.prune_count, 0, "Should start with zero prunes");
+        assert!(state.last_message_at.is_none(), "Should have no last message initially");
+        assert!(state.started_at > 0, "Should have a start timestamp");
+    }
+
+    // TDD Cycle 16 - RED: Test expects turn counting
+    #[tokio::test]
+    async fn test_turn_counting() {
+        let mut session = ChatSession::new(ChatConfig::default());
+
+        // Initial state
+        assert_eq!(session.state().turn_count, 0);
+
+        // Send first message
+        session.send_message("First message").await.unwrap();
+        assert_eq!(session.state().turn_count, 1, "Should have 1 turn after first exchange");
+
+        // Send second message
+        session.send_message("Second message").await.unwrap();
+        assert_eq!(session.state().turn_count, 2, "Should have 2 turns after second exchange");
+
+        // Send third message
+        session.send_message("Third message").await.unwrap();
+        assert_eq!(session.state().turn_count, 3, "Should have 3 turns after third exchange");
+    }
+
+    // TDD Cycle 16 - RED: Test expects token tracking
+    #[tokio::test]
+    async fn test_token_tracking() {
+        let mut session = ChatSession::new(ChatConfig::default());
+
+        // Initial tokens
+        assert_eq!(session.state().total_tokens_used, 0);
+
+        // Send messages
+        session.send_message("Hello").await.unwrap();
+
+        // Tokens should be tracked from history
+        let tokens_after_turn1 = session.state().total_tokens_used;
+        assert!(tokens_after_turn1 > 0, "Should track tokens after first turn");
+
+        session.send_message("How are you?").await.unwrap();
+        let tokens_after_turn2 = session.state().total_tokens_used;
+        assert!(tokens_after_turn2 > tokens_after_turn1, "Tokens should increase with more turns");
+    }
+
+    // TDD Cycle 16 - RED: Test expects timestamp tracking
+    #[tokio::test]
+    async fn test_timestamp_tracking() {
+        let mut session = ChatSession::new(ChatConfig::default());
+
+        // Initially no last message
+        assert!(session.state().last_message_at.is_none());
+
+        // After first message, should have timestamp
+        session.send_message("Test").await.unwrap();
+        let timestamp1 = session.state().last_message_at;
+        assert!(timestamp1.is_some(), "Should have timestamp after first message");
+
+        // Wait a tiny bit and send another
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        session.send_message("Another test").await.unwrap();
+        let timestamp2 = session.state().last_message_at;
+
+        assert!(timestamp2.is_some(), "Should have timestamp after second message");
+        assert!(timestamp2.unwrap() >= timestamp1.unwrap(), "Timestamp should not go backwards");
+    }
+
+    // TDD Cycle 16 - RED: Test expects prune count tracking
+    #[tokio::test]
+    async fn test_prune_count_tracking() {
+        let config = ChatConfig {
+            history: HistoryConfig {
+                max_messages: 4, // Very small to trigger pruning
+                max_tokens: 10000,
+                enable_persistence: false,
+            },
+            auto_prune: true,
+            ..Default::default()
+        };
+
+        let mut session = ChatSession::new(config);
+        assert_eq!(session.state().prune_count, 0);
+
+        // Send messages to trigger pruning
+        session.send_message("Message 1").await.unwrap();
+        session.send_message("Message 2").await.unwrap();
+        session.send_message("Message 3").await.unwrap(); // Should trigger prune
+
+        assert!(session.state().prune_count > 0, "Should have pruned at least once");
+    }
+
+    // TDD Cycle 16 - RED: Test expects duration calculation
+    #[tokio::test]
+    async fn test_conversation_duration() {
+        let mut session = ChatSession::new(ChatConfig::default());
+
+        // Duration should be very small initially
+        let initial_duration = session.state().duration_secs();
+        assert!(initial_duration < 5, "Initial duration should be very small");
+
+        // Send a message
+        session.send_message("Test").await.unwrap();
+
+        // Duration should still be small but non-zero
+        let duration_after = session.state().duration_secs();
+        assert!(duration_after >= initial_duration, "Duration should not decrease");
+    }
+
+    // TDD Cycle 16 - RED: Test expects average tokens per turn
+    #[tokio::test]
+    async fn test_avg_tokens_per_turn() {
+        let mut session = ChatSession::new(ChatConfig::default());
+
+        // No turns yet
+        assert_eq!(session.state().avg_tokens_per_turn(), 0.0);
+
+        // After some turns
+        session.send_message("Short").await.unwrap();
+        session.send_message("A longer message here").await.unwrap();
+
+        let avg = session.state().avg_tokens_per_turn();
+        assert!(avg > 0.0, "Should have positive average");
+        assert_eq!(session.state().turn_count, 2);
     }
 }
