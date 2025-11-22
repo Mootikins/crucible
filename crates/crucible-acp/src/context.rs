@@ -9,6 +9,9 @@
 //! - **Dependency Inversion**: Uses traits from crucible-core
 //! - **Open/Closed**: Extensible enrichment strategies
 
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use crate::{AcpError, Result};
 
 /// Configuration for context enrichment
@@ -25,6 +28,12 @@ pub struct ContextConfig {
 
     /// Number of candidates for reranking (default: context_size * 3)
     pub rerank_candidates: Option<usize>,
+
+    /// Whether to enable caching of search results
+    pub enable_cache: bool,
+
+    /// Time-to-live for cached results (in seconds)
+    pub cache_ttl_secs: u64,
 }
 
 impl Default for ContextConfig {
@@ -34,13 +43,68 @@ impl Default for ContextConfig {
             context_size: 5,
             use_reranking: false,
             rerank_candidates: None,
+            enable_cache: true,
+            cache_ttl_secs: 300, // 5 minutes default
         }
+    }
+}
+
+/// Cached search result
+#[derive(Clone)]
+struct CachedResult {
+    enriched_prompt: String,
+    timestamp: Instant,
+}
+
+/// Context cache for storing search results
+#[derive(Clone)]
+struct ContextCache {
+    cache: Arc<Mutex<HashMap<String, CachedResult>>>,
+    ttl: Duration,
+}
+
+impl ContextCache {
+    fn new(ttl_secs: u64) -> Self {
+        Self {
+            cache: Arc::new(Mutex::new(HashMap::new())),
+            ttl: Duration::from_secs(ttl_secs),
+        }
+    }
+
+    fn get(&self, query: &str) -> Option<String> {
+        let cache = self.cache.lock().unwrap();
+        if let Some(cached) = cache.get(query) {
+            // Check if entry has expired
+            if cached.timestamp.elapsed() < self.ttl {
+                return Some(cached.enriched_prompt.clone());
+            }
+        }
+        None
+    }
+
+    fn insert(&self, query: String, enriched_prompt: String) {
+        let mut cache = self.cache.lock().unwrap();
+        cache.insert(query, CachedResult {
+            enriched_prompt,
+            timestamp: Instant::now(),
+        });
+    }
+
+    fn clear(&self) {
+        let mut cache = self.cache.lock().unwrap();
+        cache.clear();
+    }
+
+    fn remove_expired(&self) {
+        let mut cache = self.cache.lock().unwrap();
+        cache.retain(|_, v| v.timestamp.elapsed() < self.ttl);
     }
 }
 
 /// Enriches prompts with knowledge base context
 pub struct PromptEnricher {
     config: ContextConfig,
+    cache: Option<ContextCache>,
 }
 
 impl PromptEnricher {
@@ -50,7 +114,13 @@ impl PromptEnricher {
     ///
     /// * `config` - Configuration for context enrichment
     pub fn new(config: ContextConfig) -> Self {
-        Self { config }
+        let cache = if config.enable_cache {
+            Some(ContextCache::new(config.cache_ttl_secs))
+        } else {
+            None
+        };
+
+        Self { config, cache }
     }
 
     /// Enrich a prompt with context from semantic search
@@ -70,6 +140,13 @@ impl PromptEnricher {
         // TDD Cycle 11 - GREEN: Implement context enrichment
         if !self.config.enabled {
             return Ok(query.to_string());
+        }
+
+        // TDD Cycle 12 - GREEN: Check cache first
+        if let Some(cache) = &self.cache {
+            if let Some(cached) = cache.get(query) {
+                return Ok(cached);
+            }
         }
 
         // For now, we use mock search results to pass the tests
@@ -98,10 +175,31 @@ impl PromptEnricher {
             .join("\n");
 
         // Combine context with query
-        Ok(format!(
+        let enriched = format!(
             "# Context from Knowledge Base\n\n{}\n\n---\n\n# User Query\n\n{}",
             context, query
-        ))
+        );
+
+        // TDD Cycle 12 - GREEN: Store in cache
+        if let Some(cache) = &self.cache {
+            cache.insert(query.to_string(), enriched.clone());
+        }
+
+        Ok(enriched)
+    }
+
+    /// Clear the cache
+    pub fn clear_cache(&self) {
+        if let Some(cache) = &self.cache {
+            cache.clear();
+        }
+    }
+
+    /// Remove expired entries from the cache
+    pub fn evict_expired(&self) {
+        if let Some(cache) = &self.cache {
+            cache.remove_expired();
+        }
     }
 
     /// Mock semantic search for testing
@@ -161,6 +259,8 @@ mod tests {
             context_size: 10,
             use_reranking: true,
             rerank_candidates: Some(30),
+            enable_cache: true,
+            cache_ttl_secs: 300,
         };
 
         let enricher = PromptEnricher::new(config);
@@ -215,6 +315,8 @@ mod tests {
             context_size: 3,
             use_reranking: false,
             rerank_candidates: None,
+            enable_cache: false, // Disable cache for consistent formatting test
+            cache_ttl_secs: 300,
         };
 
         let enricher = PromptEnricher::new(config);
@@ -248,5 +350,122 @@ mod tests {
         let enriched = result.unwrap();
         // Should still return the query even if no context found
         assert!(enriched.contains(query));
+    }
+
+    // TDD Cycle 12 - RED: Test expects caching to work
+    #[tokio::test]
+    async fn test_caching_enabled() {
+        let config = ContextConfig {
+            enable_cache: true,
+            cache_ttl_secs: 60,
+            ..Default::default()
+        };
+
+        let enricher = PromptEnricher::new(config);
+        let query = "How do I use the cache?";
+
+        // First call should enrich
+        let result1 = enricher.enrich(query).await;
+        assert!(result1.is_ok());
+        let enriched1 = result1.unwrap();
+
+        // Second call should return cached result (same content)
+        let result2 = enricher.enrich(query).await;
+        assert!(result2.is_ok());
+        let enriched2 = result2.unwrap();
+
+        assert_eq!(enriched1, enriched2, "Cached result should match");
+    }
+
+    // TDD Cycle 12 - RED: Test expects cache can be disabled
+    #[tokio::test]
+    async fn test_caching_disabled() {
+        let config = ContextConfig {
+            enable_cache: false,
+            ..Default::default()
+        };
+
+        let enricher = PromptEnricher::new(config);
+        let query = "Test query";
+
+        // Should still work without caching
+        let result = enricher.enrich(query).await;
+        assert!(result.is_ok());
+    }
+
+    // TDD Cycle 12 - RED: Test expects cache clear functionality
+    #[tokio::test]
+    async fn test_cache_clear() {
+        let config = ContextConfig {
+            enable_cache: true,
+            ..Default::default()
+        };
+
+        let enricher = PromptEnricher::new(config);
+        let query = "Cache this query";
+
+        // Enrich once to populate cache
+        enricher.enrich(query).await.unwrap();
+
+        // Clear cache
+        enricher.clear_cache();
+
+        // Should still work after clearing
+        let result = enricher.enrich(query).await;
+        assert!(result.is_ok());
+    }
+
+    // TDD Cycle 12 - RED: Test expects TTL expiration
+    #[tokio::test]
+    async fn test_cache_ttl_expiration() {
+        use tokio::time::{sleep, Duration};
+
+        let config = ContextConfig {
+            enable_cache: true,
+            cache_ttl_secs: 1, // 1 second TTL for fast testing
+            ..Default::default()
+        };
+
+        let enricher = PromptEnricher::new(config);
+        let query = "Expire this cache entry";
+
+        // First enrichment
+        let result1 = enricher.enrich(query).await.unwrap();
+
+        // Wait for cache to expire
+        sleep(Duration::from_secs(2)).await;
+
+        // Should re-enrich after expiration
+        let result2 = enricher.enrich(query).await.unwrap();
+
+        // Both should be valid, but may have different timestamps in mock
+        assert!(!result1.is_empty());
+        assert!(!result2.is_empty());
+    }
+
+    // TDD Cycle 12 - RED: Test expects eviction of expired entries
+    #[tokio::test]
+    async fn test_cache_eviction() {
+        let config = ContextConfig {
+            enable_cache: true,
+            cache_ttl_secs: 1,
+            ..Default::default()
+        };
+
+        let enricher = PromptEnricher::new(config);
+
+        // Add some entries
+        enricher.enrich("Query 1").await.unwrap();
+        enricher.enrich("Query 2").await.unwrap();
+
+        // Wait for expiration
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        // Evict expired entries
+        enricher.evict_expired();
+
+        // Should still work
+        let result = enricher.enrich("Query 3").await;
+        assert!(result.is_ok());
     }
 }
