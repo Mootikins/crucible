@@ -51,6 +51,44 @@ impl Default for ChatConfig {
     }
 }
 
+/// Session metadata for identification and tracking
+#[derive(Debug, Clone)]
+pub struct SessionMetadata {
+    /// Unique session identifier
+    pub id: String,
+
+    /// Optional human-readable session title
+    pub title: Option<String>,
+
+    /// Session tags for categorization
+    pub tags: Vec<String>,
+
+    /// Timestamp when session was created (Unix epoch seconds)
+    pub created_at: u64,
+
+    /// Timestamp when session was last updated (Unix epoch seconds)
+    pub updated_at: u64,
+}
+
+impl SessionMetadata {
+    /// Create new session metadata with a generated ID
+    fn new() -> Self {
+        let now = current_timestamp();
+        Self {
+            id: generate_session_id(),
+            title: None,
+            tags: Vec::new(),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    /// Update the last updated timestamp
+    fn touch(&mut self) {
+        self.updated_at = current_timestamp();
+    }
+}
+
 /// Metadata about the conversation state
 #[derive(Debug, Clone)]
 pub struct ConversationState {
@@ -105,6 +143,18 @@ fn current_timestamp() -> u64 {
         .as_secs()
 }
 
+/// Generate a unique session ID
+fn generate_session_id() -> String {
+    // Use timestamp + random component for uniqueness
+    let timestamp = current_timestamp();
+    let random: u32 = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .subsec_nanos();
+
+    format!("session-{}-{:x}", timestamp, random)
+}
+
 /// Validate a user message
 ///
 /// # Errors
@@ -145,6 +195,7 @@ pub struct ChatSession {
     enricher: PromptEnricher,
     stream_handler: StreamHandler,
     state: ConversationState,
+    metadata: SessionMetadata,
 }
 
 impl ChatSession {
@@ -158,6 +209,7 @@ impl ChatSession {
         let enricher = PromptEnricher::new(config.context.clone());
         let stream_handler = StreamHandler::new(config.streaming.clone());
         let state = ConversationState::new();
+        let metadata = SessionMetadata::new();
 
         Self {
             config,
@@ -165,6 +217,7 @@ impl ChatSession {
             enricher,
             stream_handler,
             state,
+            metadata,
         }
     }
 
@@ -218,6 +271,9 @@ impl ChatSession {
         // TDD Cycle 16 - GREEN: Update conversation state
         self.update_state();
 
+        // TDD Cycle 18 - GREEN: Update metadata timestamp
+        self.metadata.touch();
+
         Ok(agent_response)
     }
 
@@ -260,6 +316,42 @@ impl ChatSession {
     /// Get the conversation state
     pub fn state(&self) -> &ConversationState {
         &self.state
+    }
+
+    /// Get the session metadata
+    pub fn metadata(&self) -> &SessionMetadata {
+        &self.metadata
+    }
+
+    /// Set the session title
+    pub fn set_title(&mut self, title: impl Into<String>) {
+        self.metadata.title = Some(title.into());
+        self.metadata.touch();
+    }
+
+    /// Add a tag to the session
+    pub fn add_tag(&mut self, tag: impl Into<String>) {
+        let tag = tag.into();
+        if !self.metadata.tags.contains(&tag) {
+            self.metadata.tags.push(tag);
+            self.metadata.touch();
+        }
+    }
+
+    /// Remove a tag from the session
+    pub fn remove_tag(&mut self, tag: &str) -> bool {
+        if let Some(pos) = self.metadata.tags.iter().position(|t| t == tag) {
+            self.metadata.tags.remove(pos);
+            self.metadata.touch();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Get the session ID
+    pub fn session_id(&self) -> &str {
+        &self.metadata.id
     }
 }
 
@@ -659,5 +751,148 @@ mod tests {
         let result = session.send_message("Valid message after errors").await;
         assert!(result.is_ok(), "Should recover and process valid messages after errors");
         assert_eq!(session.state().turn_count, 1);
+    }
+
+    // TDD Cycle 18 - RED: Test expects session ID generation
+    #[test]
+    fn test_session_id_generation() {
+        let session1 = ChatSession::new(ChatConfig::default());
+        let session2 = ChatSession::new(ChatConfig::default());
+
+        // Each session should have a unique ID
+        assert!(!session1.session_id().is_empty(), "Session ID should not be empty");
+        assert!(!session2.session_id().is_empty(), "Session ID should not be empty");
+        assert_ne!(session1.session_id(), session2.session_id(), "Session IDs should be unique");
+
+        // ID should have expected format
+        assert!(session1.session_id().starts_with("session-"), "Session ID should start with 'session-'");
+    }
+
+    // TDD Cycle 18 - RED: Test expects metadata initialization
+    #[test]
+    fn test_metadata_initialization() {
+        let session = ChatSession::new(ChatConfig::default());
+        let metadata = session.metadata();
+
+        assert!(metadata.title.is_none(), "Title should initially be None");
+        assert!(metadata.tags.is_empty(), "Tags should initially be empty");
+        assert!(metadata.created_at > 0, "Created timestamp should be set");
+        assert!(metadata.updated_at > 0, "Updated timestamp should be set");
+        assert_eq!(metadata.created_at, metadata.updated_at, "Initially created_at should equal updated_at");
+    }
+
+    // TDD Cycle 18 - RED: Test expects title setting
+    #[test]
+    fn test_set_title() {
+        let mut session = ChatSession::new(ChatConfig::default());
+
+        let initial_updated = session.metadata().updated_at;
+
+        // Set title
+        session.set_title("My Chat Session");
+
+        assert_eq!(session.metadata().title, Some("My Chat Session".to_string()));
+        assert!(session.metadata().updated_at >= initial_updated, "Updated timestamp should advance");
+
+        // Update title
+        session.set_title("Updated Title");
+        assert_eq!(session.metadata().title, Some("Updated Title".to_string()));
+    }
+
+    // TDD Cycle 18 - RED: Test expects tag management
+    #[test]
+    fn test_tag_management() {
+        let mut session = ChatSession::new(ChatConfig::default());
+
+        // Add tags
+        session.add_tag("project-alpha");
+        session.add_tag("important");
+        session.add_tag("customer-support");
+
+        let tags = &session.metadata().tags;
+        assert_eq!(tags.len(), 3);
+        assert!(tags.contains(&"project-alpha".to_string()));
+        assert!(tags.contains(&"important".to_string()));
+        assert!(tags.contains(&"customer-support".to_string()));
+
+        // Adding duplicate should be ignored
+        session.add_tag("important");
+        assert_eq!(session.metadata().tags.len(), 3, "Duplicate tags should not be added");
+
+        // Remove tag
+        let removed = session.remove_tag("important");
+        assert!(removed, "Should return true when tag is removed");
+        assert_eq!(session.metadata().tags.len(), 2);
+        assert!(!session.metadata().tags.contains(&"important".to_string()));
+
+        // Remove non-existent tag
+        let removed = session.remove_tag("non-existent");
+        assert!(!removed, "Should return false when tag doesn't exist");
+    }
+
+    // TDD Cycle 18 - RED: Test expects metadata updates on activity
+    #[tokio::test]
+    async fn test_metadata_updates_on_activity() {
+        let mut session = ChatSession::new(ChatConfig::default());
+
+        let initial_updated = session.metadata().updated_at;
+
+        // Wait enough time for timestamp to change (1 second resolution)
+        tokio::time::sleep(tokio::time::Duration::from_millis(1100)).await;
+
+        // Send a message
+        session.send_message("Hello").await.unwrap();
+
+        // Metadata should be updated
+        assert!(session.metadata().updated_at > initial_updated,
+            "Updated timestamp should advance after message");
+    }
+
+    // TDD Cycle 18 - RED: Test expects session persistence data
+    #[test]
+    fn test_session_has_complete_metadata() {
+        let mut session = ChatSession::new(ChatConfig::default());
+
+        // Set up session metadata
+        session.set_title("Test Session");
+        session.add_tag("test");
+        session.add_tag("automated");
+
+        let metadata = session.metadata();
+
+        // Should have all necessary data for persistence
+        assert!(!metadata.id.is_empty());
+        assert!(metadata.title.is_some());
+        assert!(!metadata.tags.is_empty());
+        assert!(metadata.created_at > 0);
+        assert!(metadata.updated_at >= metadata.created_at);
+    }
+
+    // TDD Cycle 18 - RED: Test expects metadata timestamp precision
+    #[tokio::test]
+    async fn test_metadata_timestamp_updates() {
+        let mut session = ChatSession::new(ChatConfig::default());
+
+        let created = session.metadata().created_at;
+        let initial_updated = session.metadata().updated_at;
+
+        // Wait enough time for timestamp to change (1 second resolution)
+        tokio::time::sleep(tokio::time::Duration::from_millis(1100)).await;
+
+        // Update title
+        session.set_title("New Title");
+        let after_title_update = session.metadata().updated_at;
+
+        assert!(after_title_update > initial_updated, "Timestamp should update on title change");
+
+        // Add tag
+        tokio::time::sleep(tokio::time::Duration::from_millis(1100)).await;
+        session.add_tag("test");
+        let after_tag_add = session.metadata().updated_at;
+
+        assert!(after_tag_add >= after_title_update, "Timestamp should update on tag add");
+
+        // Created timestamp should never change
+        assert_eq!(session.metadata().created_at, created, "Created timestamp should never change");
     }
 }
