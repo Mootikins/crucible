@@ -212,10 +212,43 @@ impl FileSystemHandler {
     /// - The path is not allowed
     /// - Write operations are disabled
     /// - IO errors occur
-    pub async fn write_file(&self, _path: &Path, _content: &str) -> Result<()> {
-        // TODO: Implement file writing
-        // This is a stub - will be implemented in TDD cycles
-        Err(AcpError::FileSystem("Not yet implemented".to_string()))
+    pub async fn write_file(&self, path: &Path, content: &str) -> Result<()> {
+        // TDD Cycle 8 - GREEN: Implement file writing with permission checks
+
+        // Check if write operations are enabled
+        if !self.config.allow_write {
+            return Err(AcpError::PermissionDenied(
+                "Write operations are disabled".to_string()
+            ));
+        }
+
+        // Check if path is allowed
+        if !self.is_path_allowed(path) {
+            return Err(AcpError::PermissionDenied(format!(
+                "Access denied to path: {}",
+                path.display()
+            )));
+        }
+
+        // Check if parent directory exists
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                // If directory creation is allowed, create parent directories
+                if self.config.allow_create_dirs {
+                    tokio::fs::create_dir_all(parent).await?;
+                } else {
+                    return Err(AcpError::FileSystem(format!(
+                        "Parent directory does not exist: {}",
+                        parent.display()
+                    )));
+                }
+            }
+        }
+
+        // Write the file
+        tokio::fs::write(path, content).await?;
+
+        Ok(())
     }
 
     /// List files in a directory
@@ -387,5 +420,124 @@ mod tests {
             Err(AcpError::NotFound(_)) => {},
             _ => panic!("Expected NotFound error"),
         }
+    }
+
+    // TDD Cycle 8 - RED: Test expects write to succeed when allowed
+    #[tokio::test]
+    async fn test_write_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let allowed_root = temp_dir.path().to_path_buf();
+
+        let config = FileSystemConfig {
+            allowed_roots: vec![allowed_root.clone()],
+            allow_write: true,
+            allow_create_dirs: false,
+            max_read_size: 10 * 1024 * 1024,
+        };
+        let handler = FileSystemHandler::new(config);
+
+        // Should be able to write a file
+        let test_file = allowed_root.join("output.txt");
+        let test_content = "Written content";
+        let result = handler.write_file(&test_file, test_content).await;
+        assert!(result.is_ok());
+
+        // Verify the file was actually written
+        let read_content = fs::read_to_string(&test_file).unwrap();
+        assert_eq!(read_content, test_content);
+    }
+
+    // TDD Cycle 8 - RED: Test expects write to fail when disabled
+    #[tokio::test]
+    async fn test_write_file_disabled() {
+        let temp_dir = TempDir::new().unwrap();
+        let allowed_root = temp_dir.path().to_path_buf();
+
+        let config = FileSystemConfig {
+            allowed_roots: vec![allowed_root.clone()],
+            allow_write: false, // Write disabled
+            allow_create_dirs: false,
+            max_read_size: 10 * 1024 * 1024,
+        };
+        let handler = FileSystemHandler::new(config);
+
+        // Should fail due to write being disabled
+        let test_file = allowed_root.join("output.txt");
+        let result = handler.write_file(&test_file, "content").await;
+        assert!(result.is_err());
+
+        match result {
+            Err(AcpError::PermissionDenied(_)) => {},
+            _ => panic!("Expected PermissionDenied error"),
+        }
+    }
+
+    // TDD Cycle 8 - RED: Test expects write to fail for disallowed paths
+    #[tokio::test]
+    async fn test_write_file_permission_denied() {
+        let temp_dir = TempDir::new().unwrap();
+        let allowed_root = temp_dir.path().to_path_buf();
+
+        let config = FileSystemConfig {
+            allowed_roots: vec![allowed_root],
+            allow_write: true,
+            allow_create_dirs: false,
+            max_read_size: 10 * 1024 * 1024,
+        };
+        let handler = FileSystemHandler::new(config);
+
+        // Try to write outside allowed root
+        let disallowed_path = PathBuf::from("/tmp/outside/test.txt");
+        let result = handler.write_file(&disallowed_path, "content").await;
+        assert!(result.is_err());
+
+        match result {
+            Err(AcpError::PermissionDenied(_)) => {},
+            _ => panic!("Expected PermissionDenied error"),
+        }
+    }
+
+    // TDD Cycle 8 - RED: Test expects write to create parent directories if allowed
+    #[tokio::test]
+    async fn test_write_file_create_dirs() {
+        let temp_dir = TempDir::new().unwrap();
+        let allowed_root = temp_dir.path().to_path_buf();
+
+        let config = FileSystemConfig {
+            allowed_roots: vec![allowed_root.clone()],
+            allow_write: true,
+            allow_create_dirs: true,
+            max_read_size: 10 * 1024 * 1024,
+        };
+        let handler = FileSystemHandler::new(config);
+
+        // Should be able to write to a nested path, creating directories
+        let nested_file = allowed_root.join("dir1/dir2/file.txt");
+        let result = handler.write_file(&nested_file, "content").await;
+        assert!(result.is_ok());
+
+        // Verify the directories were created
+        assert!(nested_file.parent().unwrap().exists());
+        assert!(nested_file.exists());
+    }
+
+    // TDD Cycle 8 - RED: Test expects write to fail when directories don't exist and creation disabled
+    #[tokio::test]
+    async fn test_write_file_no_create_dirs() {
+        let temp_dir = TempDir::new().unwrap();
+        let allowed_root = temp_dir.path().to_path_buf();
+
+        let config = FileSystemConfig {
+            allowed_roots: vec![allowed_root.clone()],
+            allow_write: true,
+            allow_create_dirs: false,
+            max_read_size: 10 * 1024 * 1024,
+        };
+        let handler = FileSystemHandler::new(config);
+
+        // Should fail because parent directory doesn't exist
+        let nested_file = allowed_root.join("nonexistent/file.txt");
+        let result = handler.write_file(&nested_file, "content").await;
+        assert!(result.is_err());
     }
 }
