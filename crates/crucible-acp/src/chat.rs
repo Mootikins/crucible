@@ -17,6 +17,9 @@ use crate::{
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Maximum allowed message length (50K characters)
+const MAX_MESSAGE_LENGTH: usize = 50_000;
+
 /// Configuration for chat sessions
 #[derive(Debug, Clone)]
 pub struct ChatConfig {
@@ -102,6 +105,39 @@ fn current_timestamp() -> u64 {
         .as_secs()
 }
 
+/// Validate a user message
+///
+/// # Errors
+///
+/// Returns `AcpError::Validation` if:
+/// - Message is empty or whitespace-only
+/// - Message exceeds maximum length
+/// - Message contains null bytes
+fn validate_message(message: &str) -> Result<()> {
+    // Check for empty or whitespace-only messages
+    if message.trim().is_empty() {
+        return Err(AcpError::Validation(
+            "Message cannot be empty or whitespace-only".to_string()
+        ));
+    }
+
+    // Check maximum length
+    if message.len() > MAX_MESSAGE_LENGTH {
+        return Err(AcpError::Validation(
+            format!("Message exceeds maximum length of {} characters", MAX_MESSAGE_LENGTH)
+        ));
+    }
+
+    // Check for null bytes
+    if message.contains('\0') {
+        return Err(AcpError::Validation(
+            "Message cannot contain null bytes".to_string()
+        ));
+    }
+
+    Ok(())
+}
+
 /// Manages an interactive chat session
 pub struct ChatSession {
     config: ChatConfig,
@@ -146,6 +182,9 @@ impl ChatSession {
     ///
     /// Returns an error if message processing fails
     pub async fn send_message(&mut self, user_message: &str) -> Result<String> {
+        // TDD Cycle 17 - GREEN: Validate message before processing
+        validate_message(user_message)?;
+
         // TDD Cycle 15 - GREEN: Implement message sending
 
         // Step 1: Add user message to history
@@ -504,5 +543,121 @@ mod tests {
         let avg = session.state().avg_tokens_per_turn();
         assert!(avg > 0.0, "Should have positive average");
         assert_eq!(session.state().turn_count, 2);
+    }
+
+    // TDD Cycle 17 - RED: Test expects empty message handling
+    #[tokio::test]
+    async fn test_empty_message_handling() {
+        let mut session = ChatSession::new(ChatConfig::default());
+
+        // Empty string should be rejected
+        let result = session.send_message("").await;
+        assert!(result.is_err(), "Should reject empty messages");
+
+        // Whitespace-only should also be rejected
+        let result = session.send_message("   ").await;
+        assert!(result.is_err(), "Should reject whitespace-only messages");
+
+        // State should not be updated on error
+        assert_eq!(session.state().turn_count, 0, "Turn count should not increase on error");
+    }
+
+    // TDD Cycle 17 - RED: Test expects very long message handling
+    #[tokio::test]
+    async fn test_long_message_handling() {
+        let mut session = ChatSession::new(ChatConfig::default());
+
+        // Create a very long message (100k characters)
+        let long_message = "x".repeat(100_000);
+
+        // Should be rejected
+        let result = session.send_message(&long_message).await;
+        assert!(result.is_err(), "Should reject messages exceeding max length");
+
+        // State should not be updated
+        assert_eq!(session.state().turn_count, 0);
+    }
+
+    // TDD Cycle 17 - RED: Test expects state rollback on error
+    #[tokio::test]
+    async fn test_state_rollback_on_error() {
+        let mut session = ChatSession::new(ChatConfig::default());
+
+        // Send a valid message
+        session.send_message("Valid message").await.unwrap();
+        assert_eq!(session.state().turn_count, 1);
+        let history_count = session.history().message_count();
+
+        // Try to send an invalid message
+        let _ = session.send_message("").await;
+
+        // State should be unchanged (rollback happened)
+        assert_eq!(session.state().turn_count, 1, "Turn count should not change on error");
+        assert_eq!(session.history().message_count(), history_count, "History should be unchanged on error");
+    }
+
+    // TDD Cycle 17 - RED: Test expects graceful degradation when enrichment fails
+    #[tokio::test]
+    async fn test_enrichment_failure_fallback() {
+        // This test would verify that if enrichment fails, we fall back to
+        // using the original message without enrichment
+        // For now, since our mock enricher doesn't fail, this is a placeholder
+        // In a real implementation with dependency injection, we'd inject a
+        // failing enricher and verify the fallback behavior
+        let session = ChatSession::new(ChatConfig::default());
+
+        // Verify the session was created successfully
+        assert_eq!(session.state().turn_count, 0);
+    }
+
+    // TDD Cycle 17 - RED: Test expects message validation
+    #[tokio::test]
+    async fn test_message_validation() {
+        let mut session = ChatSession::new(ChatConfig::default());
+
+        // Null bytes should be rejected
+        let result = session.send_message("Hello\0World").await;
+        assert!(result.is_err(), "Should reject messages with null bytes");
+
+        // Control characters should be handled
+        let result = session.send_message("Hello\x01World").await;
+        // This might be allowed with sanitization, so we just verify it doesn't panic
+        let _ = result;
+    }
+
+    // TDD Cycle 17 - RED: Test expects history consistency after errors
+    #[tokio::test]
+    async fn test_history_consistency_after_errors() {
+        let mut session = ChatSession::new(ChatConfig::default());
+
+        // Send valid message
+        session.send_message("Message 1").await.unwrap();
+
+        // Try invalid message
+        let _ = session.send_message("").await;
+
+        // Send another valid message
+        session.send_message("Message 2").await.unwrap();
+
+        // History should only contain valid messages
+        // 2 valid user messages + 2 agent responses = 4 messages
+        assert_eq!(session.history().message_count(), 4);
+        assert_eq!(session.state().turn_count, 2);
+    }
+
+    // TDD Cycle 17 - RED: Test expects session recovery after multiple errors
+    #[tokio::test]
+    async fn test_session_recovery_after_errors() {
+        let mut session = ChatSession::new(ChatConfig::default());
+
+        // Multiple error attempts
+        let _ = session.send_message("").await;
+        let _ = session.send_message("   ").await;
+        let _ = session.send_message("x".repeat(100_000).as_str()).await;
+
+        // Should still be able to send valid messages
+        let result = session.send_message("Valid message after errors").await;
+        assert!(result.is_ok(), "Should recover and process valid messages after errors");
+        assert_eq!(session.state().turn_count, 1);
     }
 }

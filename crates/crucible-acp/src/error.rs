@@ -48,6 +48,10 @@ pub enum AcpError {
     #[error("Not found: {0}")]
     NotFound(String),
 
+    /// Input validation errors
+    #[error("Validation error: {0}")]
+    Validation(String),
+
     /// General errors
     #[error(transparent)]
     Other(#[from] anyhow::Error),
