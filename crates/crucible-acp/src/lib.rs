@@ -18,8 +18,13 @@
 //!
 //! - `client`: Main ACP client implementation for agent communication
 //! - `session`: Session management and lifecycle handling
+//! - `chat`: Interactive chat interface with history and context enrichment
+//! - `context`: Prompt enrichment with semantic search
+//! - `streaming`: Response streaming and formatting
+//! - `history`: Conversation history management
 //! - `filesystem`: File operation handlers for agent file access
 //! - `protocol`: Message handling utilities and protocol helpers
+//! - `tools`: Tool discovery and execution
 //! - `mock_agent`: Mock agent implementation for testing (test-only)
 //!
 //! ## Usage
@@ -53,6 +58,7 @@ pub mod tools;
 pub mod context;
 pub mod streaming;
 pub mod history;
+pub mod chat;
 
 // Mock agent for testing (only included in test builds)
 #[cfg(any(test, feature = "test-utils"))]
@@ -67,6 +73,7 @@ pub use tools::{ToolRegistry, ToolDescriptor, ToolExecutor, discover_crucible_to
 pub use context::{PromptEnricher, ContextConfig};
 pub use streaming::{StreamHandler, StreamConfig};
 pub use history::{ConversationHistory, HistoryConfig, HistoryMessage, MessageRole};
+pub use chat::{ChatSession, ChatConfig};
 
 // Re-export test utilities when feature is enabled
 #[cfg(feature = "test-utils")]
