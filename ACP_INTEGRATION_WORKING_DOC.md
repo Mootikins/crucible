@@ -68,7 +68,7 @@
 
 ### SOLID Principles - Design Constraints
 
-**CRITICAL**: All cross-crate boundaries MUST use traits, not concrete types.
+**CRITICAL**: Traits and associated types defined in crucible-core. Concrete types OK for handoff/associated types.
 
 **Single Responsibility**:
 - Each module handles one concern (session, filesystem, protocol, tools)
@@ -88,24 +88,42 @@
 - Example: `FilesystemReader`, `FilesystemWriter`, `ToolExecutor` as separate traits
 
 **Dependency Inversion**:
-- crucible-acp depends on traits, not concrete implementations
-- CLI provides concrete implementations
+- **crucible-core** defines traits and associated types
+- **crucible-acp** implements ACP-specific logic using core traits
+- **crucible-cli** provides concrete implementations
 - Use dependency injection for all services
 
 **Design Pattern**:
 ```rust
-// ✅ GOOD: Trait boundaries across crates
+// crucible-core/src/traits/acp.rs
 pub trait SessionManager {
-    async fn create_session(&mut self, config: SessionConfig) -> Result<SessionId>;
+    type Session;
+    type Config;
+    async fn create_session(&mut self, config: Self::Config) -> Result<Self::Session>;
 }
 
 pub trait ToolBridge {
-    async fn execute_tool(&self, call: ToolCall) -> Result<ToolResult>;
+    type Call;
+    type Result;
+    async fn execute_tool(&self, call: Self::Call) -> Result<Self::Result>;
 }
 
-// crucible-acp exports traits
-// crucible-cli implements traits
-// No concrete types leak across crate boundaries
+// crucible-core/src/types/acp.rs (concrete types for handoff)
+pub struct SessionConfig { /* fields */ }
+pub struct SessionId { /* fields */ }
+pub struct ToolCall { /* fields */ }
+pub struct ToolResult { /* fields */ }
+
+// crucible-acp/src/client.rs (implements traits from core)
+impl SessionManager for AcpClient {
+    type Session = SessionId;
+    type Config = SessionConfig;
+    // implementation
+}
+
+// crucible-cli (uses both core and acp)
+use crucible_core::traits::SessionManager;
+use crucible_acp::AcpClient;
 ```
 
 ## Open Questions - ✅ RESOLVED
