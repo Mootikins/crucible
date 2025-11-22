@@ -73,7 +73,7 @@ pub use tools::{ToolRegistry, ToolDescriptor, ToolExecutor, discover_crucible_to
 pub use context::{PromptEnricher, ContextConfig};
 pub use streaming::{StreamHandler, StreamConfig};
 pub use history::{ConversationHistory, HistoryConfig, HistoryMessage, MessageRole};
-pub use chat::{ChatSession, ChatConfig};
+pub use chat::{ChatSession, ChatConfig, ConversationState};
 
 // Re-export test utilities when feature is enabled
 #[cfg(feature = "test-utils")]
