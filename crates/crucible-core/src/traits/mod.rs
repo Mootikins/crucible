@@ -26,6 +26,7 @@
 //! └─────────────────┘
 //! ```
 
+pub mod acp;
 pub mod agent;
 pub mod change_detection;
 pub mod knowledge;
@@ -34,6 +35,7 @@ pub mod storage;
 pub mod tools;
 
 // Re-export key traits
+pub use acp::{FilesystemHandler, SessionManager, StreamHandler, ToolBridge};
 pub use agent::AgentProvider;
 pub use change_detection::{ChangeDetector, ContentHasher, HashLookupStorage};
 pub use knowledge::{KnowledgeRepository, NoteMetadata};

@@ -52,7 +52,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 # ACP (Agent Client Protocol) integration
-agent-client-protocol = "0.6"
+agent-client-protocol = "0.7.0"
 
 # File system utilities
 walkdir = "2.4"
