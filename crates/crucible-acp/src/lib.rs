@@ -52,6 +52,7 @@ pub mod protocol;
 pub mod tools;
 pub mod context;
 pub mod streaming;
+pub mod history;
 
 // Mock agent for testing (only included in test builds)
 #[cfg(any(test, feature = "test-utils"))]
@@ -65,6 +66,7 @@ pub use protocol::MessageHandler;
 pub use tools::{ToolRegistry, ToolDescriptor, ToolExecutor, discover_crucible_tools};
 pub use context::{PromptEnricher, ContextConfig};
 pub use streaming::{StreamHandler, StreamConfig};
+pub use history::{ConversationHistory, HistoryConfig, HistoryMessage, MessageRole};
 
 // Re-export test utilities when feature is enabled
 #[cfg(feature = "test-utils")]
