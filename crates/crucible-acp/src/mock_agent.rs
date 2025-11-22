@@ -133,6 +133,8 @@ impl Default for MockAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use agent_client_protocol::{ClientRequest, InitializeRequest, NewSessionRequest, ProtocolVersion, ClientCapabilities};
+    use std::path::PathBuf;
 
     #[test]
     fn test_mock_agent_creation() {
@@ -164,5 +166,80 @@ mod tests {
 
         agent.reset_count();
         assert_eq!(agent.request_count(), 0);
+    }
+
+    // TDD Cycle 3 - RED: Test expecting mock agent to respond to initialize
+    #[tokio::test]
+    async fn test_mock_agent_responds_to_initialize() {
+        let agent = MockAgent::default();
+
+        // Create an initialize request
+        let request = ClientRequest::InitializeRequest(InitializeRequest {
+            protocol_version: ProtocolVersion::default(),
+            client_info: None,
+            client_capabilities: ClientCapabilities::default(),
+            meta: None,
+        });
+
+        // This should succeed and not error
+        let result = agent.handle_request(request).await;
+        assert!(result.is_ok(), "Mock agent should respond to initialize request");
+        assert_eq!(agent.request_count(), 1);
+    }
+
+    // TDD Cycle 4 - RED: Test expecting mock agent to handle session requests
+    #[tokio::test]
+    async fn test_mock_agent_handles_new_session() {
+        let agent = MockAgent::default();
+
+        // Create a new session request
+        let request = ClientRequest::NewSessionRequest(NewSessionRequest {
+            cwd: PathBuf::from("/test"),
+            mcp_servers: vec![],
+            meta: None,
+        });
+
+        // Should handle session creation
+        let result = agent.handle_request(request).await;
+        assert!(result.is_ok(), "Mock agent should handle new session request");
+        assert_eq!(agent.request_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_mock_agent_error_simulation() {
+        let mut config = MockAgentConfig::default();
+        config.simulate_errors = true;
+        let agent = MockAgent::new(config);
+
+        let request = ClientRequest::InitializeRequest(InitializeRequest {
+            protocol_version: ProtocolVersion::default(),
+            client_info: None,
+            client_capabilities: ClientCapabilities::default(),
+            meta: None,
+        });
+
+        let result = agent.handle_request(request).await;
+        assert!(result.is_err(), "Should simulate errors when configured");
+    }
+
+    #[tokio::test]
+    async fn test_mock_agent_delay_simulation() {
+        let mut config = MockAgentConfig::default();
+        config.simulate_delay = true;
+        config.delay_ms = 50;
+        let agent = MockAgent::new(config);
+
+        let request = ClientRequest::InitializeRequest(InitializeRequest {
+            protocol_version: ProtocolVersion::default(),
+            client_info: None,
+            client_capabilities: ClientCapabilities::default(),
+            meta: None,
+        });
+
+        let start = std::time::Instant::now();
+        let _result = agent.handle_request(request).await;
+        let elapsed = start.elapsed();
+
+        assert!(elapsed.as_millis() >= 50, "Should simulate delay");
     }
 }
