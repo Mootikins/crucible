@@ -133,6 +133,39 @@ fn create_tool(
     }
 }
 
+/// Get the system prompt for Crucible tools
+///
+/// This provides context to agents about available tools and how to use them.
+pub fn get_crucible_tools_prompt() -> String {
+    r#"# Crucible Knowledge Management Tools
+
+You have access to 10 specialized tools for working with a Crucible knowledge base (kiln):
+
+## Note Tools (6)
+- **read_note**: Read note content. Supports: note names ("My Note"), wikilinks ("[[My Note]]"), or paths ("folder/note.md")
+- **create_note**: Create a new note. Use simple names ("New Note") or paths ("folder/New Note.md")
+- **update_note**: Update existing note content or frontmatter
+- **delete_note**: Delete a note
+- **list_notes**: List all notes in the kiln or a specific folder
+- **read_metadata**: Read only the YAML frontmatter metadata of a note
+
+## Search Tools (3)
+- **text_search**: Search for notes by text content
+- **property_search**: Search for notes by frontmatter properties
+- **semantic_search**: Find semantically similar notes using embeddings
+
+## Kiln Tools (1)
+- **get_kiln_info**: Get metadata about the kiln
+
+## Important Note Name Resolution
+When referencing notes, you can use:
+- **Note names**: "My Note" or "My Note.md" - automatically finds the note anywhere in the kiln
+- **Wikilinks**: "[[My Note]]" - works just like note names
+- **Paths**: "folder/subfolder/note.md" - when you need to specify location
+
+The system will automatically resolve note names to their actual paths, so you don't need to know the folder structure."#.to_string()
+}
+
 /// Discover and register all Crucible tools
 ///
 /// This function scans the crucible-tools crate and registers all available
@@ -336,18 +369,102 @@ impl ToolExecutor {
             .ok_or_else(|| AcpError::InvalidConfig(format!("Missing required parameter: {}", name)))
     }
 
+    /// Resolve a note name or path to a full path
+    ///
+    /// Supports:
+    /// - Full paths: "folder/note.md" → kiln_path/folder/note.md
+    /// - Note names: "Note Name" → finds first matching note
+    /// - Note names with extension: "Note Name.md" → finds first matching note
+    /// - Wikilink format: "[[Note Name]]" → strips brackets and finds note
+    async fn resolve_note_path(&self, name_or_path: &str) -> Result<PathBuf> {
+        let name_or_path = name_or_path.trim();
+
+        // Strip wikilink brackets if present
+        let cleaned = if name_or_path.starts_with("[[") && name_or_path.ends_with("]]") {
+            &name_or_path[2..name_or_path.len()-2]
+        } else {
+            name_or_path
+        };
+
+        // If it looks like a path (contains / or \), use it directly
+        if cleaned.contains('/') || cleaned.contains('\\') {
+            let full_path = self.kiln_path.join(cleaned);
+            if full_path.exists() {
+                return Ok(full_path);
+            }
+            return Err(AcpError::NotFound(format!("Note not found at path: {}", cleaned)));
+        }
+
+        // Otherwise, search for the note by name
+        let search_name = if cleaned.ends_with(".md") {
+            cleaned.to_string()
+        } else {
+            format!("{}.md", cleaned)
+        };
+
+        // Search the kiln for matching note
+        self.find_note_by_name(&search_name).await
+    }
+
+    /// Find a note by name (recursively searches kiln)
+    async fn find_note_by_name(&self, name: &str) -> Result<PathBuf> {
+        use tokio::fs;
+
+        // Try direct path first (most common case)
+        let direct_path = self.kiln_path.join(name);
+        if direct_path.exists() {
+            return Ok(direct_path);
+        }
+
+        // Recursively search for the note
+        let mut stack = vec![self.kiln_path.clone()];
+
+        while let Some(dir) = stack.pop() {
+            let mut entries = fs::read_dir(&dir).await
+                .map_err(|e| AcpError::FileSystem(format!("Failed to read directory: {}", e)))?;
+
+            while let Some(entry) = entries.next_entry().await
+                .map_err(|e| AcpError::FileSystem(format!("Failed to read entry: {}", e)))? {
+
+                let path = entry.path();
+
+                if path.is_dir() {
+                    // Add subdirectory to search
+                    stack.push(path);
+                } else if let Some(file_name) = path.file_name() {
+                    if file_name == name {
+                        return Ok(path);
+                    }
+                }
+            }
+        }
+
+        Err(AcpError::NotFound(format!("Note not found: {}", name)))
+    }
+
     /// Execute a note tool
     async fn execute_note_tool(&self, tool_name: &str, params: serde_json::Value) -> Result<serde_json::Value> {
-        // For TDD purposes, we manually implement the tool logic
-        // In a full implementation, this would use the rmcp tool router from crucible-tools
         match tool_name {
             "create_note" => {
                 // Extract parameters
                 let path = Self::get_required_param(&params, "path")?;
                 let content = Self::get_required_param(&params, "content")?;
 
+                // Resolve the path (supports note names)
+                let full_path = if path.contains('/') || path.contains('\\') {
+                    // Looks like a path, use directly
+                    self.kiln_path.join(&path)
+                } else {
+                    // Note name - create in root with .md extension
+                    let file_name = if path.ends_with(".md") {
+                        path.clone()
+                    } else {
+                        format!("{}.md", path)
+                    };
+                    self.kiln_path.join(file_name)
+                };
+
                 // Execute the tool by directly writing the file
-                let full_path = self.kiln_path.join(&path);
                 tokio::fs::write(&full_path, &content).await
                     .map_err(|e| AcpError::FileSystem(format!("Failed to create note: {}", e)))?;
 
@@ -361,17 +478,15 @@ impl ToolExecutor {
                 // Extract parameters
                 let path = Self::get_required_param(&params, "path")?;
 
-                // Read the file
-                let full_path = self.kiln_path.join(&path);
-                if !full_path.exists() {
-                    return Err(AcpError::NotFound(format!("File not found: {}", path)));
-                }
+                // Resolve note name to path
+                let full_path = self.resolve_note_path(&path).await?;
 
                 let content = tokio::fs::read_to_string(&full_path).await
                     .map_err(|e| AcpError::FileSystem(format!("Failed to read note: {}", e)))?;
 
                 Ok(serde_json::json!({
                     "path": path,
+                    "full_path": full_path.to_string_lossy(),
                     "content": content,
                     "lines": content.lines().count()
                 }))

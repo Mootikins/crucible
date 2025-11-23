@@ -69,7 +69,7 @@ pub use client::CrucibleAcpClient;
 pub use session::{AcpSession, SessionConfig};
 pub use filesystem::FileSystemHandler;
 pub use protocol::MessageHandler;
-pub use tools::{ToolRegistry, ToolDescriptor, ToolExecutor, discover_crucible_tools};
+pub use tools::{ToolRegistry, ToolDescriptor, ToolExecutor, discover_crucible_tools, get_crucible_tools_prompt};
 pub use context::{PromptEnricher, ContextConfig};
 pub use streaming::{StreamHandler, StreamConfig};
 pub use history::{ConversationHistory, HistoryConfig, HistoryMessage, MessageRole};
