@@ -2,7 +2,7 @@
 
 ## Progress Summary
 
-**Completed**: Phases 3-4 (TDD Cycles 11-18)
+**Completed**: Phases 3-5 (TDD Cycles 11-20 + Baseline Tests)
 - ✅ Context enrichment with semantic search (Cycle 11)
 - ✅ TTL-based context caching (Cycle 12)
 - ✅ Response streaming infrastructure (Cycle 13)
@@ -11,9 +11,14 @@
 - ✅ Multi-turn conversation state tracking (Cycle 16)
 - ✅ Error handling and recovery (Cycle 17)
 - ✅ Session metadata and management (Cycle 18)
+- ✅ Agent lifecycle methods (Cycle 19)
+- ✅ ACP protocol handshake (Cycle 20)
+- ✅ Comprehensive baseline integration tests (27 tests)
+- ✅ MockAgent implementation
 
-**Test Coverage**: 97/97 tests passing (100%)
+**Test Coverage**: 155/155 tests passing (116 unit + 39 integration) - 100%
 **SOLID Compliance**: Verified
+**Protocol Compliance**: ACP 0.7.0
 **Branch**: `claude/acp-planning-baseline-tests-01EBcv3F9FjBfUC9pNEFyrcM`
 
 See [PROGRESS_REPORT.md](./PROGRESS_REPORT.md) for detailed implementation documentation.
@@ -21,11 +26,11 @@ See [PROGRESS_REPORT.md](./PROGRESS_REPORT.md) for detailed implementation docum
 ---
 
 ## 1. ACP Client Foundation
-- [ ] 1.1 Set up agent-client-protocol dependency and integration
-- [ ] 1.2 Implement basic ACP client class and connection handling
-- [ ] 1.3 Create agent process spawning and management
-- [ ] 1.4 Implement protocol message handling and routing
-- [ ] 1.5 Add connection error handling and recovery
+- [x] 1.1 Set up agent-client-protocol dependency and integration
+- [x] 1.2 Implement basic ACP client class and connection handling
+- [x] 1.3 Create agent process spawning and management
+- [x] 1.4 Implement protocol message handling and routing
+- [x] 1.5 Add connection error handling and recovery
 
 ## 2. Filesystem Abstraction Layer
 - [ ] 2.1 Map ACP filesystem calls to kiln operations
@@ -35,11 +40,11 @@ See [PROGRESS_REPORT.md](./PROGRESS_REPORT.md) for detailed implementation docum
 - [ ] 2.5 Implement file/directory listing with note metadata
 
 ## 3. Session Management and Context
-- [ ] 3.1 Implement ACP session creation and lifecycle management
-- [ ] 3.2 Create session context persistence and restoration
-- [ ] 3.3 Add multi-session support for concurrent agent usage
-- [ ] 3.4 Implement session isolation and security boundaries
-- [ ] 3.5 Create session cleanup and resource management
+- [x] 3.1 Implement ACP session creation and lifecycle management
+- [x] 3.2 Create session context persistence and restoration
+- [x] 3.3 Add multi-session support for concurrent agent usage
+- [x] 3.4 Implement session isolation and security boundaries
+- [x] 3.5 Create session cleanup and resource management
 
 ## 4. Tool System Integration
 - [ ] 4.1 Bridge ACP tool calls to native tool system
@@ -84,11 +89,11 @@ See [PROGRESS_REPORT.md](./PROGRESS_REPORT.md) for detailed implementation docum
 - [ ] 9.5 Implement resource cleanup and memory management
 
 ## 10. Testing and Validation
-- [ ] 10.1 Write unit tests for ACP client components
-- [ ] 10.2 Create integration tests with multiple agent types
-- [ ] 10.3 Test context enrichment quality with real queries
+- [x] 10.1 Write unit tests for ACP client components
+- [x] 10.2 Create integration tests with multiple agent types (MockAgent)
+- [x] 10.3 Test context enrichment quality with real queries
 - [ ] 10.4 Validate permission model and security boundaries
-- [ ] 10.5 Perform end-to-end testing with chat workflows
+- [x] 10.5 Perform end-to-end testing with chat workflows
 
 ## 11. Monitoring and Analytics
 - [ ] 11.1 Implement ACP usage monitoring and metrics
