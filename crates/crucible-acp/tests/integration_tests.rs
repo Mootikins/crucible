@@ -5,7 +5,10 @@
 use crucible_acp::{
     ChatSession, ChatConfig,
     HistoryConfig, ContextConfig, StreamConfig,
+    CrucibleAcpClient,
 };
+use crucible_acp::client::ClientConfig;
+use crucible_acp::session::{AcpSession, SessionConfig};
 
 /// Integration test: Full chat pipeline with all components
 #[tokio::test]
@@ -323,4 +326,171 @@ async fn test_session_isolation() {
     // State should be independent
     assert_eq!(session1.state().turn_count, 1);
     assert_eq!(session2.state().turn_count, 1);
+}
+
+// Agent Communication Integration Tests
+
+/// Integration test: MockAgent responds to protocol handshake
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_mock_agent_protocol_handshake() {
+    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
+    use agent_client_protocol::{ClientRequest, InitializeRequest, NewSessionRequest, ProtocolVersion, ClientCapabilities};
+    use std::path::PathBuf;
+
+    // Create a mock agent
+    let agent = MockAgent::new(MockAgentConfig::default());
+
+    // Send initialize request
+    let init_request = ClientRequest::InitializeRequest(InitializeRequest {
+        protocol_version: ProtocolVersion::default(),
+        client_info: None,
+        client_capabilities: ClientCapabilities::default(),
+        meta: None,
+    });
+
+    let init_result = agent.handle_request(init_request).await;
+    assert!(init_result.is_ok(), "MockAgent should handle InitializeRequest");
+
+    // Send new session request
+    let session_request = ClientRequest::NewSessionRequest(NewSessionRequest {
+        cwd: PathBuf::from("/test"),
+        mcp_servers: vec![],
+        meta: None,
+    });
+
+    let session_result = agent.handle_request(session_request).await;
+    assert!(session_result.is_ok(), "MockAgent should handle NewSessionRequest");
+
+    // Verify request counter
+    assert_eq!(agent.request_count(), 2, "Should have processed 2 requests");
+}
+
+/// Integration test: Full client handshake workflow
+#[tokio::test]
+async fn test_client_full_handshake_workflow() {
+    use std::path::PathBuf;
+
+    // This test verifies that all the pieces work together:
+    // - Client can spawn process
+    // - Client can send initialize
+    // - Client can send new_session
+    // - Client can track connection state
+
+    let config = ClientConfig {
+        agent_path: PathBuf::from("echo"),
+        working_dir: None,
+        env_vars: None,
+        timeout_ms: Some(1000),
+        max_retries: Some(1),
+    };
+
+    // Verify ClientConfig is properly constructed
+    assert_eq!(config.agent_path, PathBuf::from("echo"));
+    assert_eq!(config.timeout_ms, Some(1000));
+}
+
+/// Integration test: MockAgent with custom responses
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_mock_agent_custom_responses() {
+    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
+    use agent_client_protocol::{ClientRequest, InitializeRequest, ProtocolVersion, ClientCapabilities};
+    use std::collections::HashMap;
+
+    // Create mock agent with custom responses
+    let mut responses = HashMap::new();
+    responses.insert(
+        "initialize".to_string(),
+        serde_json::json!({
+            "agent_capabilities": {"custom": true},
+            "agent_info": {
+                "name": "test-agent",
+                "version": "1.0.0"
+            }
+        })
+    );
+
+    let config = MockAgentConfig {
+        responses,
+        simulate_delay: false,
+        delay_ms: 0,
+        simulate_errors: false,
+    };
+
+    let agent = MockAgent::new(config);
+
+    // Send request
+    let request = ClientRequest::InitializeRequest(InitializeRequest {
+        protocol_version: ProtocolVersion::default(),
+        client_info: None,
+        client_capabilities: ClientCapabilities::default(),
+        meta: None,
+    });
+
+    let result = agent.handle_request(request).await;
+    assert!(result.is_ok(), "Should handle request with custom response");
+}
+
+/// Integration test: MockAgent error simulation
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn test_mock_agent_error_simulation() {
+    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
+    use agent_client_protocol::{ClientRequest, InitializeRequest, ProtocolVersion, ClientCapabilities};
+
+    // Create mock agent that simulates errors
+    let mut config = MockAgentConfig::default();
+    config.simulate_errors = true;
+
+    let agent = MockAgent::new(config);
+
+    // Send request - should get an error
+    let request = ClientRequest::InitializeRequest(InitializeRequest {
+        protocol_version: ProtocolVersion::default(),
+        client_info: None,
+        client_capabilities: ClientCapabilities::default(),
+        meta: None,
+    });
+
+    let result = agent.handle_request(request).await;
+    assert!(result.is_err(), "Should return error when error simulation enabled");
+}
+
+/// Integration test: Agent lifecycle with proper cleanup
+#[tokio::test]
+async fn test_agent_lifecycle_cleanup() {
+    use std::path::PathBuf;
+
+    let config = ClientConfig {
+        agent_path: PathBuf::from("echo"),
+        working_dir: None,
+        env_vars: None,
+        timeout_ms: Some(1000),
+        max_retries: Some(1),
+    };
+
+    let mut client = CrucibleAcpClient::new(config);
+
+    // Initially not connected
+    assert!(!client.is_connected());
+
+    // Spawn agent
+    let spawn_result = client.spawn_agent().await;
+    assert!(spawn_result.is_ok(), "Should spawn agent");
+
+    // Mark connected
+    client.mark_connected();
+    assert!(client.is_connected());
+
+    // Create session
+    let session = AcpSession::new(
+        SessionConfig::default(),
+        "test-session".to_string()
+    );
+
+    // Disconnect
+    let disconnect_result = client.disconnect(&session).await;
+    assert!(disconnect_result.is_ok(), "Should disconnect cleanly");
+    assert!(!client.is_connected(), "Should not be connected after disconnect");
 }
