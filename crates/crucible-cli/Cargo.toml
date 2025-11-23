@@ -56,7 +56,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 agent-client-protocol = "0.7.0"
 
 # MCP support
-rmcp = { version = "0.9.0", features = ["server", "transport-io"] }
+rmcp = { version = "0.9.0", features = ["server", "client", "transport-io", "transport-child-process"] }
 
 # File system utilities
 walkdir = "2.4"

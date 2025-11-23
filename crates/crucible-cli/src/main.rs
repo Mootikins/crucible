@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn, Level};
+use tracing_subscriber::prelude::*;  // For SubscriberExt trait
 
 use crucible_cli::{
     cli::{Cli, Commands},
@@ -26,12 +27,52 @@ async fn process_files_with_change_detection(_config: &crate::config::CliConfig)
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Initialize logging
+    // Initialize logging based on command type
+    // MCP and Chat use stdio (stdin/stdout) for JSON-RPC, so we must avoid stderr output
+    // These commands log to file instead to preserve debugging capability
+    let uses_stdio = matches!(
+        &cli.command,
+        Some(Commands::Mcp) | Some(Commands::Chat { .. })
+    );
+
     let log_level = if cli.verbose { "debug" } else { "info" };
     let env_filter = format!("crucible_cli={},crucible_services={}", log_level, log_level);
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::new(env_filter))
-        .init();
+
+    if uses_stdio {
+        // File-only logging for stdio-based commands (MCP, Chat)
+        // Default to ~/.crucible/mcp.log, override with CRUCIBLE_MCP_LOG_FILE
+        let log_file_path = std::env::var("CRUCIBLE_MCP_LOG_FILE")
+            .unwrap_or_else(|_| {
+                let home = dirs::home_dir().expect("Failed to get home directory");
+                home.join(".crucible").join("mcp.log").to_string_lossy().to_string()
+            });
+
+        // Create parent directory if it doesn't exist
+        if let Some(parent) = std::path::Path::new(&log_file_path).parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let log_file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_file_path)?;
+
+        let file_layer = tracing_subscriber::fmt::layer()
+            .with_writer(std::sync::Arc::new(log_file))
+            .with_ansi(false)  // No ANSI codes in log files
+            .with_target(true)
+            .with_thread_ids(true);
+
+        tracing_subscriber::registry()
+            .with(file_layer)
+            .with(tracing_subscriber::EnvFilter::new(env_filter))
+            .init();
+    } else {
+        // Normal stderr logging for other commands
+        tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::new(env_filter))
+            .init();
+    }
 
     // Load configuration with CLI overrides
     let mut config = config::CliConfig::load(cli.config, cli.embedding_url, cli.embedding_model)?;
