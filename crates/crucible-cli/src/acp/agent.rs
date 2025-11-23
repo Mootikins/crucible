@@ -15,7 +15,8 @@ pub struct AgentInfo {
 
 /// Known ACP-compatible agents
 const KNOWN_AGENTS: &[(&str, &str)] = &[
-    ("claude-code", "claude-code"),
+    ("opencode", "opencode acp"),
+    ("claude-acp", "npx @zed-industries/claude-code-acp"),
     ("gemini", "gemini-cli"),
     ("codex", "codex"),
 ];
@@ -59,8 +60,8 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
     // None found - provide helpful error message
     Err(anyhow!(
         "No compatible ACP agent found.\n\
-         Compatible agents: claude-code, gemini-cli, codex\n\
-         Install one with: npm install -g @anthropic/claude-code\n\
+         Compatible agents: opencode, claude-acp, gemini-cli, codex\n\
+         Install one with: npm install @zed-industries/claude-code-acp\n\
          Or specify a custom agent with: --agent <command>"
     ))
 }
