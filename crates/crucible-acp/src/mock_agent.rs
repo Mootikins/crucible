@@ -168,7 +168,6 @@ mod tests {
         assert_eq!(agent.request_count(), 0);
     }
 
-    // TDD Cycle 3 - RED: Test expecting mock agent to respond to initialize
     #[tokio::test]
     async fn test_mock_agent_responds_to_initialize() {
         let agent = MockAgent::default();
@@ -187,7 +186,6 @@ mod tests {
         assert_eq!(agent.request_count(), 1);
     }
 
-    // TDD Cycle 4 - RED: Test expecting mock agent to handle session requests
     #[tokio::test]
     async fn test_mock_agent_handles_new_session() {
         let agent = MockAgent::default();
