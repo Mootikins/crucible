@@ -379,6 +379,7 @@ async fn test_client_full_handshake_workflow() {
 
     let config = ClientConfig {
         agent_path: PathBuf::from("echo"),
+        agent_args: None,
         working_dir: None,
         env_vars: None,
         timeout_ms: Some(1000),
@@ -464,6 +465,7 @@ async fn test_agent_lifecycle_cleanup() {
 
     let config = ClientConfig {
         agent_path: PathBuf::from("echo"),
+        agent_args: None,
         working_dir: None,
         env_vars: None,
         timeout_ms: Some(1000),
@@ -559,6 +561,7 @@ async fn baseline_client_configuration_variants() {
     // Test minimal configuration
     let config_minimal = ClientConfig {
         agent_path: PathBuf::from("echo"),
+        agent_args: None,
         working_dir: None,
         env_vars: None,
         timeout_ms: None,
@@ -575,6 +578,7 @@ async fn baseline_client_configuration_variants() {
 
     let config_full = ClientConfig {
         agent_path: PathBuf::from("cat"),
+        agent_args: None,
         working_dir: Some(PathBuf::from("/tmp")),
         env_vars: Some(env_vars),
         timeout_ms: Some(5000),
@@ -1302,6 +1306,7 @@ async fn integration_chat_with_agent_config() {
 
     let client_config = ClientConfig {
         agent_path: PathBuf::from("echo"),
+        agent_args: None,
         working_dir: None,
         env_vars: None,
         timeout_ms: Some(5000),
@@ -1331,6 +1336,7 @@ async fn integration_chat_agent_lifecycle() {
 
     let client_config = ClientConfig {
         agent_path: PathBuf::from("cat"),
+        agent_args: None,
         working_dir: None,
         env_vars: None,
         timeout_ms: Some(1000),
@@ -1397,6 +1403,7 @@ async fn integration_chat_agent_config_variants() {
     let configs = vec![
         ClientConfig {
             agent_path: PathBuf::from("echo"),
+        agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(1000),
@@ -1404,6 +1411,7 @@ async fn integration_chat_agent_config_variants() {
         },
         ClientConfig {
             agent_path: PathBuf::from("cat"),
+        agent_args: None,
             working_dir: Some(PathBuf::from("/tmp")),
             env_vars: None,
             timeout_ms: Some(5000),

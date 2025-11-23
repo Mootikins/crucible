@@ -34,8 +34,9 @@ async fn test_opencode_complete_handshake() {
 
     let client_config = ClientConfig {
         agent_path: mock_agent_path,
+        agent_args: None,  // OpenCode is default behavior, no args needed
         working_dir: None,  // Don't set working dir for test
-        env_vars: None,  // Not needed - we'll use --behavior arg instead
+        env_vars: None,
         timeout_ms: Some(5000),
         max_retries: Some(1),
     };
