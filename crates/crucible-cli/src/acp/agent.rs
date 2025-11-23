@@ -11,14 +11,15 @@ use tracing::{debug, info, warn};
 pub struct AgentInfo {
     pub name: String,
     pub command: String,
+    pub args: Vec<String>,
 }
 
-/// Known ACP-compatible agents
-const KNOWN_AGENTS: &[(&str, &str)] = &[
-    ("opencode", "opencode acp"),
-    ("claude-acp", "npx @zed-industries/claude-code-acp"),
-    ("gemini", "gemini-cli"),
-    ("codex", "codex"),
+/// Known ACP-compatible agents (name, command, args)
+const KNOWN_AGENTS: &[(&str, &str, &[&str])] = &[
+    ("opencode", "opencode", &["acp"]),
+    ("claude-acp", "npx", &["@zed-industries/claude-code-acp"]),
+    ("gemini", "gemini-cli", &[]),
+    ("codex", "codex", &[]),
 ];
 
 /// Discover an available ACP agent
@@ -35,24 +36,29 @@ pub async fn discover_agent(preferred: Option<&str>) -> Result<AgentInfo> {
     // Try user's preferred agent first
     if let Some(agent_name) = preferred {
         debug!("Trying preferred agent: {}", agent_name);
-        if is_agent_available(agent_name).await? {
-            info!("Using preferred agent: {}", agent_name);
-            return Ok(AgentInfo {
-                name: agent_name.to_string(),
-                command: agent_name.to_string(),
-            });
+        // Try to find in known agents list
+        if let Some((name, cmd, args)) = KNOWN_AGENTS.iter().find(|(n, _, _)| *n == agent_name) {
+            if is_agent_available(cmd).await? {
+                info!("Using preferred agent: {}", agent_name);
+                return Ok(AgentInfo {
+                    name: name.to_string(),
+                    command: cmd.to_string(),
+                    args: args.iter().map(|s| s.to_string()).collect(),
+                });
+            }
         }
         warn!("Preferred agent '{}' not found, trying fallbacks", agent_name);
     }
 
     // Fallback: try all known agents
-    for (name, cmd) in KNOWN_AGENTS {
-        debug!("Trying agent: {} ({})", name, cmd);
+    for (name, cmd, args) in KNOWN_AGENTS {
+        debug!("Trying agent: {} {} {:?}", name, cmd, args);
         if is_agent_available(cmd).await? {
-            info!("Discovered agent: {} ({})", name, cmd);
+            info!("Discovered agent: {} ({} {:?})", name, cmd, args);
             return Ok(AgentInfo {
                 name: name.to_string(),
                 command: cmd.to_string(),
+                args: args.iter().map(|s| s.to_string()).collect(),
             });
         }
     }
