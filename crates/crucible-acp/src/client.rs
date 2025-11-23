@@ -369,10 +369,25 @@ impl CrucibleAcpClient {
 
         let _init_response = self.initialize(init_request).await?;
 
-        // 3. Send NewSessionRequest
+        // 3. Send NewSessionRequest with MCP server configuration
+        use agent_client_protocol::{McpServer, EnvVariable};
+
+        // Configure Crucible MCP server via stdio transport
+        // The agent will spawn `cru mcp` which starts the MCP server
+        let crucible_mcp_server = McpServer::Stdio {
+            name: "crucible".to_string(),
+            command: std::env::current_exe()
+                .unwrap_or_else(|_| PathBuf::from("cru"))
+                .parent()
+                .map(|p| p.join("cru"))
+                .unwrap_or_else(|| PathBuf::from("cru")),
+            args: vec!["mcp".to_string()],
+            env: vec![],
+        };
+
         let session_request = NewSessionRequest {
             cwd: self.config.working_dir.clone().unwrap_or_else(|| PathBuf::from("/")),
-            mcp_servers: vec![],
+            mcp_servers: vec![crucible_mcp_server],
             meta: None,
         };
 
