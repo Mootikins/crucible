@@ -17,14 +17,21 @@
 - ✅ MockAgent implementation
 - ✅ ChatSession connected to real ACP agent (daec1ca)
 
-**In Progress**: Phase 6 - CLI Integration & Tool System
-- ⏳ Connect CLI to crucible-acp ChatSession
-- ⏳ Implement ACP tool registration for MCP tools
-- ⏳ Wire up filesystem abstraction for kiln operations
-- ⏳ Implement interactive chat loop with reedline
+**Completed**: Phase 6 - ACP Client Implementation (Corrected Architecture)
+- ✅ Implemented CrucibleClient (Client trait from agent-client-protocol)
+- ✅ File operations (read_text_file, write_text_file) for general coding
+- ✅ Permission handling with option selection
+- ✅ Agent spawning with ClientSideConnection
+- ✅ Session notification handling
+
+**In Progress**: Phase 7 - Embedded MCP Server & CLI Integration
+- ⏳ Create embedded MCP server for Crucible tools
+- ⏳ Expose 10 Crucible tools via MCP (read_note, create_note, etc.)
+- ⏳ Wire up MCP server in NewSessionRequest
+- ⏳ Update CLI to use new CrucibleClient
 - ⏳ End-to-end testing with real agent
 
-**Test Coverage**: 159/159 tests passing (116 unit + 43 integration) - 100%
+**Test Coverage**: 148/148 tests passing (117 acp + 26 cli + 5 client) - 100%
 **SOLID Compliance**: Verified
 **Protocol Compliance**: ACP 0.7.0
 **Current Branch**: `claude/acp-cli-integration-01JRpdf8Lzjo3GWzu2mCDiKJ`
@@ -41,12 +48,14 @@ See [PROGRESS_REPORT.md](./PROGRESS_REPORT.md) for detailed implementation docum
 - [x] 1.4 Implement protocol message handling and routing
 - [x] 1.5 Add connection error handling and recovery
 
-## 2. Filesystem Abstraction Layer
-- [ ] 2.1 Map ACP filesystem calls to kiln operations
-- [ ] 2.2 Implement note name/wikilink resolution for agent requests
-- [ ] 2.3 Create virtual filesystem interface for agents
-- [ ] 2.4 Handle agent file creation and modification requests
-- [ ] 2.5 Implement file/directory listing with note metadata
+## 2. File Operations (ACP Client Implementation)
+- [x] 2.1 Implement read_text_file for general file reading ✅
+- [x] 2.2 Implement write_text_file for general file writing ✅
+- [x] 2.3 Handle read-only mode enforcement ✅
+- [x] 2.4 Provide file operations relative to current directory ✅
+- [x] 2.5 Separate from kiln operations (handled by MCP tools) ✅
+
+**Note**: ACP file operations are general-purpose (not kiln-specific). Crucible-specific note operations are provided via embedded MCP server (see Task 4).
 
 ## 3. Session Management and Context
 - [x] 3.1 Implement ACP session creation and lifecycle management
@@ -55,12 +64,14 @@ See [PROGRESS_REPORT.md](./PROGRESS_REPORT.md) for detailed implementation docum
 - [x] 3.4 Implement session isolation and security boundaries
 - [x] 3.5 Create session cleanup and resource management
 
-## 4. Tool System Integration
-- [ ] 4.1 Bridge ACP tool calls to native tool system
-- [ ] 4.2 Implement tool discovery and registration for agents
-- [ ] 4.3 Create tool permission mapping and enforcement
-- [ ] 4.4 Handle tool execution and result formatting
-- [ ] 4.5 Add tool execution timeout and error handling
+## 4. Embedded MCP Server for Crucible Tools
+- [ ] 4.1 Create embedded MCP server within Crucible binary
+- [ ] 4.2 Expose 10 Crucible tools via MCP (read_note, create_note, etc.)
+- [ ] 4.3 Implement stdio transport for MCP server
+- [ ] 4.4 Provide MCP server config in NewSessionRequest
+- [ ] 4.5 Agent discovers and uses tools through MCP protocol
+
+**Note**: Standard approach per web research - editors embed MCP servers to expose their tools to agents. Agent connects to our MCP server and discovers tools automatically.
 
 ## 5. Context Enrichment Pipeline
 - [x] 5.1 Integrate query system for automatic context discovery (TDD Cycle 11)

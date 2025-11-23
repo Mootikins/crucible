@@ -1,4 +1,4 @@
-# Add Agent Context Protocol Integration
+# Add Agent Client Protocol Integration
 
 ## Why
 
@@ -6,28 +6,44 @@ The ACP-MVP requires seamless integration with the Agent Client Protocol to enab
 
 Current gaps include:
 
-1. **No ACP Integration Layer**: Missing the bridge between ACP protocol messages and Crucible's tool/query systems
-2. **Filesystem Abstraction Missing**: ACP expects filesystem interfaces but Crucible needs kiln-agnostic access patterns
+1. **No ACP Client Implementation**: Missing implementation of ACP Client trait for Crucible as an IDE/editor
+2. **MCP Server Not Embedded**: Crucible tools need to be exposed as embedded MCP server for agent discovery
 3. **Session Management Undefined**: No specification for managing agent sessions and context persistence
-4. **Permission Integration**: ACP permission model needs integration with Crucible's kiln access controls
+4. **Permission Integration**: ACP permission model needs integration with Crucible's read-only/write modes
 
-The ACP integration specification will define how external agents connect, authenticate, and interact with Crucible knowledge through the Agent Client Protocol while maintaining security, performance, and the philosophy of "agents should respect your mental model."
+The ACP integration specification will define how Crucible acts as an ACP client, spawns agents, provides file access and tools, while maintaining security, performance, and the philosophy of "agents should respect your mental model."
+
+## Architecture Clarification
+
+**Crucible's Role in ACP:**
+- Crucible implements the **Client** trait (IDE/editor side)
+- Crucible **spawns** external agents (claude-code, codex) as child processes
+- Agents call back to Crucible for file operations and permissions
+- Crucible provides tools via **embedded MCP server**
+
+**Key Insight:** In ACP terminology, the IDE is the "Client" and the AI agent is the "Agent". This is the opposite of typical client/server naming but matches the protocol's perspective.
 
 ## What Changes
 
 **NEW CAPABILITY:**
 
-**ACP Client Integration:**
-- Implement ACP client using official `agent-client-protocol` crate
-- Define filesystem abstraction mapping (ACP calls → kiln operations)
-- Create session management and context persistence
-- Implement multi-agent support (Claude Code, Gemini, etc.)
+**ACP Client Implementation:**
+- Implement ACP Client trait from `agent-client-protocol` crate
+- Handle file operations (read_text_file, write_text_file) for general coding
+- Implement permission handling with option selection
+- Spawn and manage agent child processes
+- Handle session notifications and updates
 
-**Kiln Access Abstraction:**
-- Map ACP filesystem operations to kiln note access patterns
-- Implement note name/wikilink resolution for agent requests
-- Create permission boundary enforcement for ACP sessions
-- Provide agent-friendly error handling and recovery
+**Embedded MCP Server:**
+- Create embedded MCP server within Crucible binary
+- Expose 10 Crucible tools (read_note, create_note, etc.) via MCP
+- Provide MCP server config in NewSessionRequest
+- Agent discovers and uses Crucible tools through MCP protocol
+
+**File Access Separation:**
+- ACP file operations: General-purpose read/write in current directory
+- Crucible tools (MCP): Kiln-specific note operations with wikilink support
+- Agents can use both: ACP for code files, MCP for knowledge management
 
 **Context Enrichment Pipeline:**
 - Integrate query system with ACP prompt enrichment
@@ -36,14 +52,14 @@ The ACP integration specification will define how external agents connect, authe
 - Implement agent feedback and learning mechanisms
 
 **Security and Permissions:**
-- Integrate ACP permission model with kiln access controls
+- Integrate ACP permission model with read-only/write modes
 - Define session scoping and isolation
 - Implement approval workflows for sensitive operations
 - Create audit logging for agent interactions
 
 **Performance and Optimization:**
 - Optimize ACP message handling for low-latency interactions
-- Implement connection pooling and resource management
+- Implement LocalSet for non-Send futures from agent-client-protocol
 - Create caching strategies for frequent agent operations
 - Add monitoring and analytics for ACP usage
 
