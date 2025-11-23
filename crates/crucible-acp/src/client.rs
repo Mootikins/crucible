@@ -360,8 +360,10 @@ impl CrucibleAcpClient {
         let _process = self.spawn_agent().await?;
 
         // 2. Send InitializeRequest
+        // Use protocol version 1 instead of default (0) for opencode compatibility
+        // Based on ACP spec: https://agentclientprotocol.com/protocol/initialization
         let init_request = InitializeRequest {
-            protocol_version: ProtocolVersion::default(),
+            protocol_version: 1u16.into(), // Uses From<u16> for ProtocolVersion
             client_info: None,
             client_capabilities: ClientCapabilities::default(),
             meta: None,
