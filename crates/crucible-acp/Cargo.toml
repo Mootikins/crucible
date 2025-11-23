@@ -23,6 +23,7 @@ agent-client-protocol = "0.7.0"
 
 # Async runtime
 tokio = { workspace = true, features = ["full", "tracing"] }
+tokio-util = { version = "0.7", features = ["compat"] }
 
 # Error handling
 anyhow = { workspace = true }
