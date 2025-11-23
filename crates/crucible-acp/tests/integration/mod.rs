@@ -1,0 +1,16 @@
+//! Integration tests for ACP client with mock agents
+//!
+//! These tests use mock stdio agents to verify the complete handshake
+//! and communication flow without requiring real agent binaries.
+
+#![allow(unused)]
+
+// Test support utilities
+#[path = "../support/mod.rs"]
+mod support;
+
+// Test modules
+mod mock_agent_framework;
+
+// Re-export support for use in test modules
+pub use support::*;
