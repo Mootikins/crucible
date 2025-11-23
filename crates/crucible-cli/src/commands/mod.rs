@@ -1,5 +1,6 @@
 // New CLI commands (ACP-based)
 pub mod chat;
+pub mod mcp;
 pub mod process;
 
 // Existing commands (kept for compatibility)
