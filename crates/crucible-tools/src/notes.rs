@@ -15,7 +15,7 @@ pub struct NoteTools {
 
 /// Parameters for creating a note
 #[derive(Deserialize, JsonSchema)]
-struct CreateNoteParams {
+pub struct CreateNoteParams {
     path: String,
     content: String,
     #[serde(default)]
@@ -24,7 +24,7 @@ struct CreateNoteParams {
 
 /// Parameters for reading a note
 #[derive(Deserialize, JsonSchema)]
-struct ReadNoteParams {
+pub struct ReadNoteParams {
     path: String,
     #[serde(default)]
     start_line: Option<usize>,
@@ -34,13 +34,13 @@ struct ReadNoteParams {
 
 /// Parameters for reading metadata
 #[derive(Deserialize, JsonSchema)]
-struct ReadMetadataParams {
+pub struct ReadMetadataParams {
     path: String,
 }
 
 /// Parameters for updating a note
 #[derive(Deserialize, JsonSchema)]
-struct UpdateNoteParams {
+pub struct UpdateNoteParams {
     path: String,
     #[serde(default)]
     content: Option<String>,
@@ -50,13 +50,13 @@ struct UpdateNoteParams {
 
 /// Parameters for deleting a note
 #[derive(Deserialize, JsonSchema)]
-struct DeleteNoteParams {
+pub struct DeleteNoteParams {
     path: String,
 }
 
 /// Parameters for listing notes
 #[derive(Deserialize, JsonSchema)]
-struct ListNotesParams {
+pub struct ListNotesParams {
     #[serde(default)]
     folder: Option<String>,
     #[serde(default)]
@@ -78,7 +78,7 @@ impl NoteTools {
 #[tool_router]
 impl NoteTools {
     #[tool(description = "Create a new note in the kiln")]
-    async fn create_note(
+    pub async fn create_note(
         &self,
         params: Parameters<CreateNoteParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
@@ -113,7 +113,7 @@ impl NoteTools {
     }
 
     #[tool(description = "Read note content with optional line range")]
-    async fn read_note(
+    pub async fn read_note(
         &self,
         params: Parameters<ReadNoteParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
@@ -165,7 +165,7 @@ impl NoteTools {
     }
 
     #[tool(description = "Read note metadata without loading full content")]
-    async fn read_metadata(
+    pub async fn read_metadata(
         &self,
         params: Parameters<ReadMetadataParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
@@ -214,7 +214,7 @@ impl NoteTools {
     }
 
     #[tool(description = "Update an existing note")]
-    async fn update_note(
+    pub async fn update_note(
         &self,
         params: Parameters<UpdateNoteParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
@@ -289,7 +289,7 @@ impl NoteTools {
     }
 
     #[tool(description = "Delete a note from the kiln")]
-    async fn delete_note(
+    pub async fn delete_note(
         &self,
         params: Parameters<DeleteNoteParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
@@ -316,7 +316,7 @@ impl NoteTools {
     }
 
     #[tool(description = "List notes in a directory")]
-    async fn list_notes(
+    pub async fn list_notes(
         &self,
         params: Parameters<ListNotesParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
