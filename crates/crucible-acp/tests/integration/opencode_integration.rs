@@ -23,13 +23,19 @@ async fn test_opencode_complete_handshake() {
     // and use it as the agent_path
 
     // Create a client configuration pointing to our mock agent
-    // This will fail because we don't have the binary yet
+    // Get the workspace root and build the path to the mock agent
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let workspace_root = PathBuf::from(&manifest_dir).parent().unwrap().parent().unwrap().to_path_buf();
+    let mock_agent_path = workspace_root.join("target/debug/mock-acp-agent");
+
+    println!("Using mock agent at: {}", mock_agent_path.display());
+    println!("Mock agent exists: {}", mock_agent_path.exists());
+    println!("Mock agent is absolute: {}", mock_agent_path.is_absolute());
+
     let client_config = ClientConfig {
-        agent_path: PathBuf::from("target/debug/mock-acp-agent"),
-        working_dir: Some(PathBuf::from("/tmp/test-workspace")),
-        env_vars: Some(vec![
-            ("MOCK_BEHAVIOR".to_string(), "opencode".to_string()),
-        ]),
+        agent_path: mock_agent_path,
+        working_dir: None,  // Don't set working dir for test
+        env_vars: None,  // Not needed - we'll use --behavior arg instead
         timeout_ms: Some(5000),
         max_retries: Some(1),
     };
@@ -40,7 +46,10 @@ async fn test_opencode_complete_handshake() {
     let result = client.connect_with_handshake().await;
 
     // This should succeed but currently might fail or hang
-    assert!(result.is_ok(), "Should complete handshake successfully");
+    if let Err(ref e) = result {
+        eprintln!("Handshake failed with error: {:?}", e);
+    }
+    assert!(result.is_ok(), "Should complete handshake successfully: {:?}", result.err());
 
     let session = result.unwrap();
     assert!(!session.id().is_empty(), "Should have valid session ID");

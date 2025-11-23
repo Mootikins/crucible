@@ -21,7 +21,8 @@ use mock_stdio_agent::{MockStdioAgent, MockStdioAgentConfig, AgentBehavior};
 fn main() {
     // Parse command-line arguments
     let args: Vec<String> = env::args().collect();
-    let mut config = MockStdioAgentConfig::default();
+    // Default to OpenCode behavior (most common for testing)
+    let mut config = MockStdioAgentConfig::opencode();
 
     let mut i = 1;
     while i < args.len() {
