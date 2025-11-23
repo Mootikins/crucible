@@ -34,6 +34,10 @@ pub struct ClientConfig {
     /// Path to the agent executable or script
     pub agent_path: PathBuf,
 
+    /// Command-line arguments to pass to the agent
+    #[serde(default)]
+    pub agent_args: Option<Vec<String>>,
+
     /// Working directory for the agent process
     pub working_dir: Option<PathBuf>,
 
@@ -187,6 +191,11 @@ impl CrucibleAcpClient {
     /// - Permissions are insufficient
     pub async fn spawn_agent(&mut self) -> Result<AgentProcess> {
         let mut cmd = Command::new(&self.config.agent_path);
+
+        // Add command-line arguments if specified
+        if let Some(ref args) = self.config.agent_args {
+            cmd.args(args);
+        }
 
         // Set working directory if specified
         if let Some(ref working_dir) = self.config.working_dir {
@@ -609,6 +618,7 @@ mod tests {
     fn test_client_creation() {
         let config = ClientConfig {
             agent_path: PathBuf::from("/test/agent"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(5000),
@@ -622,6 +632,7 @@ mod tests {
     async fn test_client_implements_session_manager() {
         let config = ClientConfig {
             agent_path: PathBuf::from("/test/agent"),
+            agent_args: None,
             working_dir: Some(PathBuf::from("/test/workspace")),
             env_vars: None,
             timeout_ms: Some(5000),
@@ -656,6 +667,7 @@ mod tests {
     async fn test_session_lifecycle() {
         let config = ClientConfig {
             agent_path: PathBuf::from("/test/agent"),
+            agent_args: None,
             working_dir: Some(PathBuf::from("/test/workspace")),
             env_vars: None,
             timeout_ms: Some(5000),
@@ -741,6 +753,7 @@ mod tests {
         // Use a simple echo script as test agent
         let config = ClientConfig {
             agent_path: PathBuf::from("echo"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(5000),
@@ -763,6 +776,7 @@ mod tests {
     async fn test_connection_establishment() {
         let config = ClientConfig {
             agent_path: PathBuf::from("/test/agent"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(5000),
@@ -782,6 +796,7 @@ mod tests {
     async fn test_message_sending() {
         let config = ClientConfig {
             agent_path: PathBuf::from("/test/agent"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(5000),
@@ -808,6 +823,7 @@ mod tests {
     async fn test_connection_cleanup() {
         let config = ClientConfig {
             agent_path: PathBuf::from("/test/agent"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(5000),
@@ -832,6 +848,7 @@ mod tests {
     async fn test_bad_agent_path_error() {
         let config = ClientConfig {
             agent_path: PathBuf::from("/nonexistent/agent"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(1000),
@@ -855,6 +872,7 @@ mod tests {
     async fn test_connection_timeout() {
         let config = ClientConfig {
             agent_path: PathBuf::from("/test/hanging-agent"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(100), // Very short timeout
@@ -882,6 +900,7 @@ mod tests {
         // Use 'cat' as a simple echo agent for testing
         let config = ClientConfig {
             agent_path: PathBuf::from("cat"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(1000),
@@ -915,6 +934,7 @@ mod tests {
     async fn test_read_agent_response() {
         let config = ClientConfig {
             agent_path: PathBuf::from("echo"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(500), // Short timeout
@@ -938,6 +958,7 @@ mod tests {
     async fn test_write_agent_request() {
         let config = ClientConfig {
             agent_path: PathBuf::from("cat"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(1000),
@@ -966,6 +987,7 @@ mod tests {
     async fn test_read_timeout() {
         let config = ClientConfig {
             agent_path: PathBuf::from("sleep"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(100), // Very short timeout
@@ -987,6 +1009,7 @@ mod tests {
     async fn test_connection_state_tracking() {
         let config = ClientConfig {
             agent_path: PathBuf::from("cat"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(1000),
@@ -1015,6 +1038,7 @@ mod tests {
 
         let config = ClientConfig {
             agent_path: PathBuf::from("cat"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(2000),
@@ -1051,6 +1075,7 @@ mod tests {
     async fn test_connect_spawns_and_establishes_session() {
         let config = ClientConfig {
             agent_path: PathBuf::from("cat"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(5000),
@@ -1074,6 +1099,7 @@ mod tests {
     async fn test_send_message_with_json() {
         let config = ClientConfig {
             agent_path: PathBuf::from("cat"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(1000),
@@ -1103,6 +1129,7 @@ mod tests {
     async fn test_disconnect_cleanup() {
         let config = ClientConfig {
             agent_path: PathBuf::from("cat"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(1000),
@@ -1134,6 +1161,7 @@ mod tests {
     async fn test_full_agent_lifecycle() {
         let config = ClientConfig {
             agent_path: PathBuf::from("cat"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(2000),
@@ -1167,6 +1195,7 @@ mod tests {
 
         let config = ClientConfig {
             agent_path: PathBuf::from("cat"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(1000),
@@ -1199,6 +1228,7 @@ mod tests {
 
         let config = ClientConfig {
             agent_path: PathBuf::from("cat"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(1000),
@@ -1227,6 +1257,7 @@ mod tests {
     async fn test_connect_performs_protocol_handshake() {
         let config = ClientConfig {
             agent_path: PathBuf::from("cat"),
+            agent_args: None,
             working_dir: None,
             env_vars: None,
             timeout_ms: Some(2000),

@@ -12,6 +12,7 @@ async fn test_mcp_server_configuration_in_handshake() {
     // Create a client with basic configuration
     let config = ClientConfig {
         agent_path: PathBuf::from("cru"),
+        agent_args: None,
         working_dir: Some(PathBuf::from("/test")),
         env_vars: None,
         timeout_ms: Some(5000),
