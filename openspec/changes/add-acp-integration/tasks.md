@@ -24,12 +24,13 @@
 - ✅ Agent spawning with ClientSideConnection
 - ✅ Session notification handling
 
-**In Progress**: Phase 7 - Embedded MCP Server & CLI Integration
-- ⏳ Create embedded MCP server for Crucible tools
-- ⏳ Expose 10 Crucible tools via MCP (read_note, create_note, etc.)
-- ⏳ Wire up MCP server in NewSessionRequest
-- ⏳ Update CLI to use new CrucibleClient
-- ⏳ End-to-end testing with real agent
+**In Progress**: Phase 7 - MCP Server Integration via ACP Protocol
+- ⏳ TDD Cycle 1: Create unified MCP ServerHandler combining tool routers
+- ⏳ TDD Cycle 2: Add CLI `mcp-server` subcommand with stdio transport
+- ⏳ TDD Cycle 3: Populate `mcp_servers` field in NewSessionRequest
+- ⏳ TDD Cycle 4: Wire MCP server spawning into chat command
+- ⏳ TDD Cycle 5: MockAgent verification of MCP configuration
+- ⏳ End-to-end testing with MockAgent and real agent (if available)
 
 **Test Coverage**: 148/148 tests passing (117 acp + 26 cli + 5 client) - 100%
 **SOLID Compliance**: Verified
