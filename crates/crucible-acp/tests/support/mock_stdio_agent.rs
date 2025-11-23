@@ -8,6 +8,13 @@ use std::io::{self, BufRead, Write};
 use std::collections::HashMap;
 use serde_json::{json, Value};
 
+// Import ACP protocol types for proper response construction
+use agent_client_protocol::{
+    InitializeResponse, NewSessionResponse, PromptResponse,
+    ProtocolVersion, AgentCapabilities, AuthMethod, Implementation,
+    SessionId, StopReason, SessionModeState,
+};
+
 /// Defines the behavior profile of a mock agent
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentBehavior {
@@ -211,27 +218,38 @@ impl MockStdioAgent {
             AgentBehavior::Custom(_) => ("mock-custom", "1.0.0"),
         };
 
-        // Build capabilities as JSON
+        // Construct proper InitializeResponse using ACP types
+        let response = InitializeResponse {
+            protocol_version: ProtocolVersion::from(self.config.protocol_version),
+            agent_capabilities: AgentCapabilities::default(),
+            auth_methods: vec![],
+            agent_info: Some(Implementation {
+                name: name.to_string(),
+                version: version.to_string(),
+                title: None,
+            }),
+            meta: None,
+        };
+
+        // Serialize to JSON value
+        let mut result = serde_json::to_value(&response).unwrap();
+
+        // Add custom MCP capabilities (non-standard extension for testing)
+        // This supports the legacy capability format expected by tests
         let mut capabilities_map = serde_json::Map::new();
         for cap in &self.config.capabilities {
             capabilities_map.insert(cap.clone(), json!({}));
         }
 
-        // Build JSON-RPC response directly
+        if let Some(agent_caps) = result.get_mut("agentCapabilities") {
+            agent_caps["mcpCapabilities"] = json!(capabilities_map);
+        }
+
+        // Wrap in JSON-RPC 2.0 response format
         json!({
             "jsonrpc": "2.0",
             "id": request.get("id"),
-            "result": {
-                "protocolVersion": self.config.protocol_version,
-                "agentInfo": {
-                    "name": name,
-                    "version": version,
-                },
-                "agentCapabilities": {
-                    "mcpCapabilities": capabilities_map,
-                },
-                "authMethods": [],
-            }
+            "result": result
         })
     }
 
@@ -245,14 +263,21 @@ impl MockStdioAgent {
         let session_id = format!("mock-session-{}", uuid::Uuid::new_v4());
         self.session_id = Some(session_id.clone());
 
-        // Build JSON-RPC response directly
+        // Construct proper NewSessionResponse using ACP types
+        let response = NewSessionResponse {
+            session_id: SessionId::from(session_id),
+            modes: None,
+            meta: None,
+        };
+
+        // Serialize response to JSON value (respects serde attributes)
+        let result = serde_json::to_value(&response).unwrap();
+
+        // Wrap in JSON-RPC 2.0 response format
         json!({
             "jsonrpc": "2.0",
             "id": request.get("id"),
-            "result": {
-                "sessionId": session_id,
-                "modes": [],
-            }
+            "result": result
         })
     }
 
@@ -262,15 +287,17 @@ impl MockStdioAgent {
             return self.error_response(request, -32000, "Simulated prompt error");
         }
 
-        // For now, return a simple mock response
-        // In a full implementation, this would process the prompt
+        // Construct proper PromptResponse using ACP types
+        let response = PromptResponse {
+            stop_reason: StopReason::EndTurn,
+            meta: None,
+        };
+
+        // Wrap in JSON-RPC 2.0 response format
         json!({
             "jsonrpc": "2.0",
             "id": request.get("id"),
-            "result": {
-                "response": "Mock agent response",
-                "meta": {}
-            }
+            "result": response
         })
     }
 
@@ -374,7 +401,18 @@ mod tests {
         assert_eq!(response["jsonrpc"], "2.0");
         assert_eq!(response["id"], 1);
         assert!(response.get("result").is_some());
-        assert!(response["result"].get("agentInfo").is_some());
+
+        // Verify proper ACP response structure (camelCase in JSON)
+        let result = &response["result"];
+        assert!(result.get("protocolVersion").is_some());
+        assert!(result.get("agentCapabilities").is_some());
+        assert!(result.get("authMethods").is_some());
+        assert!(result.get("agentInfo").is_some());
+
+        // Verify agent info structure
+        let agent_info = &result["agentInfo"];
+        assert_eq!(agent_info["name"], "mock-opencode");
+        assert_eq!(agent_info["version"], "1.0.0");
     }
 
     #[test]
@@ -397,8 +435,17 @@ mod tests {
         assert_eq!(response["jsonrpc"], "2.0");
         assert_eq!(response["id"], 2);
         assert!(response.get("result").is_some());
-        assert!(response["result"].get("sessionId").is_some());
+
+        // Verify proper ACP response structure (camelCase in JSON)
+        let result = &response["result"];
+        assert!(result.get("sessionId").is_some());
+
+        // Verify session ID was stored in agent
         assert!(agent.session_id.is_some());
+
+        // Verify session ID format
+        let session_id = result["sessionId"].as_str().unwrap();
+        assert!(session_id.starts_with("mock-session-"));
     }
 
     #[test]
