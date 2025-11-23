@@ -111,7 +111,7 @@ pub async fn execute(
     } else {
         // Interactive mode
         info!("Interactive chat mode");
-        run_interactive_session(core, &client, initial_mode, no_context, context_size).await?;
+        run_interactive_session(core, &mut client, initial_mode, no_context, context_size).await?;
 
         // Cleanup
         client.shutdown().await?;
@@ -123,14 +123,17 @@ pub async fn execute(
 /// Run an interactive chat session with mode toggling support
 async fn run_interactive_session(
     core: Arc<CrucibleCoreFacade>,
-    client: &CrucibleAcpClient,
+    client: &mut CrucibleAcpClient,
     initial_mode: ChatMode,
     no_context: bool,
     context_size: Option<usize>,
 ) -> Result<()> {
     use colored::Colorize;
+    use reedline::{DefaultPrompt, Reedline, Signal};
 
     let mut current_mode = initial_mode;
+    let mut line_editor = Reedline::create();
+    let enricher = ContextEnricher::new(core.clone(), context_size);
 
     println!("\n{}", "🤖 Crucible Chat".bright_blue().bold());
     println!("{}", "=================".bright_blue());
@@ -145,25 +148,98 @@ async fn run_interactive_session(
     println!("  {} - Exit chat", "/exit".green());
     println!();
 
-    // TODO: Implement interactive loop with rustyline/reedline
-    // For MVP, just show what would happen
-    println!("{}", "🚧 Interactive chat loop - MVP placeholder".yellow());
-    println!("In full implementation, this would:");
-    println!("  1. Accept user input with line editing (rustyline/reedline)");
-    println!("  2. Handle mode toggle commands:");
-    println!("     - /plan → switch to plan mode");
-    println!("     - /act → switch to act mode");
-    println!("  3. Enrich each query with context (unless --no-context)");
-    println!("  4. Send to agent and stream responses");
-    println!("  5. Update client permissions when mode changes");
-    println!();
-    println!("Example session:");
-    println!("  {} What notes do I have about Rust?", "> ".bright_green());
-    println!("  {} [Agent responds with search results]", "│".dimmed());
-    println!("  {} /act", "> ".bright_green());
-    println!("  {} Mode switched to: act (write-enabled)", "│".bright_cyan());
-    println!("  {} Create a new note about async Rust", "> ".bright_green());
-    println!("  {} [Agent creates file]", "│".dimmed());
+    loop {
+        // Create simple prompt based on current mode
+        let prompt_indicator = format!(
+            "{} {} ",
+            current_mode.display_name(),
+            if current_mode == ChatMode::Plan { "📖" } else { "✏️" }
+        );
+        let prompt = DefaultPrompt::new(
+            reedline::DefaultPromptSegment::Basic(prompt_indicator),
+            reedline::DefaultPromptSegment::Empty,
+        );
+
+        // Read user input
+        let sig = line_editor.read_line(&prompt);
+
+        match sig {
+            Ok(Signal::Success(buffer)) => {
+                let input = buffer.trim();
+
+                // Handle empty input
+                if input.is_empty() {
+                    continue;
+                }
+
+                // Handle commands
+                if input == "/exit" || input == "/quit" {
+                    println!("{}", "👋 Goodbye!".bright_blue());
+                    break;
+                } else if input == "/plan" {
+                    current_mode = ChatMode::Plan;
+                    println!("{} Mode switched to: {} (read-only)",
+                        "→".bright_cyan(),
+                        "plan".bright_cyan().bold()
+                    );
+                    // Note: In full implementation, would update client permissions here
+                    continue;
+                } else if input == "/act" {
+                    current_mode = ChatMode::Act;
+                    println!("{} Mode switched to: {} (write-enabled)",
+                        "→".bright_cyan(),
+                        "act".bright_cyan().bold()
+                    );
+                    // Note: In full implementation, would update client permissions here
+                    continue;
+                }
+
+                // Prepare the message (with or without context enrichment)
+                let message = if no_context {
+                    input.to_string()
+                } else {
+                    match enricher.enrich(input).await {
+                        Ok(enriched) => enriched,
+                        Err(e) => {
+                            error!("Context enrichment failed: {}", e);
+                            info!("Falling back to original message");
+                            input.to_string()
+                        }
+                    }
+                };
+
+                // Send to agent
+                println!(); // Blank line before response
+                match client.send_message(&message).await {
+                    Ok(response) => {
+                        // Print agent response
+                        println!("{}", "╭─ Agent Response ──────────────────────────╮".bright_blue());
+                        for line in response.lines() {
+                            println!("│ {}", line);
+                        }
+                        println!("{}", "╰────────────────────────────────────────────╯".bright_blue());
+                        println!(); // Blank line after response
+                    }
+                    Err(e) => {
+                        error!("Failed to send message: {}", e);
+                        println!("{} Error: {}", "✗".red(), e);
+                    }
+                }
+            }
+            Ok(Signal::CtrlC) => {
+                println!("\n{}", "Interrupted. Type /exit to quit.".yellow());
+                continue;
+            }
+            Ok(Signal::CtrlD) => {
+                println!("\n{}", "👋 Goodbye!".bright_blue());
+                break;
+            }
+            Err(err) => {
+                error!("Error reading input: {}", err);
+                break;
+            }
+        }
+    }
 
     Ok(())
 }
