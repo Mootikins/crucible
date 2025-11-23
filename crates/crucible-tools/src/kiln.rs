@@ -18,7 +18,7 @@ impl KilnTools {
 #[tool_router]
 impl KilnTools {
     #[tool(description = "Get comprehensive kiln information including root path and statistics")]
-    async fn get_kiln_info(
+    pub async fn get_kiln_info(
         &self,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         // Get canonical path for URI
@@ -65,7 +65,7 @@ impl KilnTools {
     }
 
     #[tool(description = "Get kiln roots information")]
-    async fn get_kiln_roots(
+    pub async fn get_kiln_roots(
         &self,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let roots = vec![serde_json::json!({
@@ -81,7 +81,7 @@ impl KilnTools {
     }
 
     #[tool(description = "Get kiln statistics")]
-    async fn get_kiln_stats(
+    pub async fn get_kiln_stats(
         &self,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         let mut total_files = 0;
