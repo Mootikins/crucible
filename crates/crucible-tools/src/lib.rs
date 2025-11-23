@@ -35,12 +35,14 @@
 pub mod notes;
 pub mod search;
 pub mod kiln;
+pub mod mcp_server;
 
 // ===== PUBLIC API EXPORTS =====
 
 pub use notes::NoteTools;
 pub use search::SearchTools;
 pub use kiln::KilnTools;
+pub use mcp_server::CrucibleMcpServer;
 
 /// Crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
