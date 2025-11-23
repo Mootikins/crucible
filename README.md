@@ -30,8 +30,10 @@ This project is guided by user-focused principles that ensure technology serves 
 - 🔧 **Clean Architecture**: Trait-based design with dependency injection for extensibility
 
 ### AI Agent Integration
-- 🤖 **Agent Context Protocol**: Standardized protocol for AI agent communication
+- 🤖 **Agent Context Protocol (ACP)**: Standardized protocol for AI agent communication
+- 🔌 **MCP Server**: Model Context Protocol server exposing 12 tools for knowledge management
 - 📊 **Context Enrichment**: Automatically gather relevant notes and graph structure for agents
+- 🛠️ **Tool Discovery**: Agents automatically discover and use Crucible's tools via MCP
 - 🛡️ **Sandboxed Execution**: Rune-based scripting with security controls
 
 ## 🚀 Quick Start
@@ -77,7 +79,40 @@ cru search "query"           # Text search
 cru fuzzy "concept"          # Fuzzy matching
 cru semantic "ml"            # Semantic search
 cru note create path.md      # Note management
+cru chat                     # Interactive chat with AI agent
+cru mcp                      # Start MCP server for tool exposure
 ```
+
+### AI Agent Integration
+
+Crucible includes a built-in MCP (Model Context Protocol) server that exposes knowledge management tools to AI agents:
+
+```bash
+# Start the MCP server (typically invoked by agents automatically)
+cru mcp
+```
+
+The MCP server exposes **12 tools** organized into three categories:
+
+**Note Tools (6 tools):**
+- `create_note` - Create new notes with YAML frontmatter
+- `read_note` - Read note content with optional line ranges
+- `read_metadata` - Get note metadata without loading full content
+- `update_note` - Update note content and/or frontmatter
+- `delete_note` - Remove notes from the kiln
+- `list_notes` - List notes in a directory (recursive or non-recursive)
+
+**Search Tools (3 tools):**
+- `semantic_search` - Find semantically similar notes using embeddings
+- `text_search` - Fast full-text search across all notes
+- `property_search` - Search by frontmatter properties and tags
+
+**Kiln Tools (3 tools):**
+- `get_kiln_info` - Get kiln path and statistics
+- `get_kiln_roots` - Get kiln root directory information
+- `get_kiln_stats` - Get detailed kiln statistics
+
+When using the `cru chat` command with an ACP-compatible agent (like Claude Code), the agent automatically receives access to these tools and can use them to help you manage your knowledge base.
 
 ## 🏗️ Architecture
 
