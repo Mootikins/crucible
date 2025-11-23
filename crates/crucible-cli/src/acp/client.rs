@@ -86,10 +86,17 @@ impl CrucibleAcpClient {
     pub async fn spawn(&mut self) -> Result<()> {
         info!("Spawning agent: {} ({})", self.agent.name, self.agent.command);
 
-        // Create the ACP client with the agent command path
+        // Create the ACP client with the agent command path and args
         let agent_path = PathBuf::from(&self.agent.command);
+        let agent_args = if self.agent.args.is_empty() {
+            None
+        } else {
+            Some(self.agent.args.clone())
+        };
+
         let client_config = crucible_acp::client::ClientConfig {
             agent_path,
+            agent_args,
             working_dir: None,
             env_vars: None,
             timeout_ms: None,
