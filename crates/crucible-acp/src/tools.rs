@@ -133,37 +133,21 @@ fn create_tool(
     }
 }
 
-/// Get the system prompt for Crucible tools
+/// Get the system prompt for Crucible
 ///
-/// This provides context to agents about available tools and how to use them.
-pub fn get_crucible_tools_prompt() -> String {
-    r#"# Crucible Knowledge Management Tools
+/// Provides concise context about the knowledge base and tools.
+/// Designed to be low-token while covering essential information.
+pub fn get_crucible_system_prompt() -> String {
+    "You are working with Crucible, a knowledge management system. \
+You have 10 tools for working with markdown notes in a 'kiln' (knowledge repository):
 
-You have access to 10 specialized tools for working with a Crucible knowledge base (kiln):
+Notes: read_note, create_note, update_note, delete_note, list_notes, read_metadata
+Search: text_search, property_search, semantic_search
+Kiln: get_kiln_info
 
-## Note Tools (6)
-- **read_note**: Read note content. Supports: note names ("My Note"), wikilinks ("[[My Note]]"), or paths ("folder/note.md")
-- **create_note**: Create a new note. Use simple names ("New Note") or paths ("folder/New Note.md")
-- **update_note**: Update existing note content or frontmatter
-- **delete_note**: Delete a note
-- **list_notes**: List all notes in the kiln or a specific folder
-- **read_metadata**: Read only the YAML frontmatter metadata of a note
-
-## Search Tools (3)
-- **text_search**: Search for notes by text content
-- **property_search**: Search for notes by frontmatter properties
-- **semantic_search**: Find semantically similar notes using embeddings
-
-## Kiln Tools (1)
-- **get_kiln_info**: Get metadata about the kiln
-
-## Important Note Name Resolution
-When referencing notes, you can use:
-- **Note names**: "My Note" or "My Note.md" - automatically finds the note anywhere in the kiln
-- **Wikilinks**: "[[My Note]]" - works just like note names
-- **Paths**: "folder/subfolder/note.md" - when you need to specify location
-
-The system will automatically resolve note names to their actual paths, so you don't need to know the folder structure."#.to_string()
+When referencing notes, use simple names (\"My Note\") or wikilinks (\"[[My Note]]\"). \
+The system finds notes anywhere in the kiln. Full paths (\"folder/note.md\") also work. \
+Notes support YAML frontmatter for metadata.".to_string()
 }
 
 /// Discover and register all Crucible tools
