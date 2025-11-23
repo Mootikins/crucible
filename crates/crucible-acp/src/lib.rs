@@ -16,8 +16,8 @@
 //!
 //! ## Module Organization
 //!
-//! - `host`: ACP host/server implementation for serving agents (primary implementation)
-//! - `client`: ACP client implementation for connecting to agents (legacy, for Zed integration)
+//! - `acp_client`: ACP client implementation (Crucible as IDE, spawns agents)
+//! - `client`: Legacy client implementation (will be replaced)
 //! - `session`: Session management and lifecycle handling
 //! - `chat`: Interactive chat interface with history and context enrichment
 //! - `context`: Prompt enrichment with semantic search
@@ -51,7 +51,7 @@ pub use agent_client_protocol::{
 };
 
 // Module declarations
-pub mod host;
+pub mod acp_client;
 pub mod client;
 pub mod session;
 pub mod filesystem;
@@ -67,8 +67,8 @@ pub mod chat;
 pub mod mock_agent;
 
 // Public exports - Export traits and types, following Dependency Inversion
-pub use host::{CrucibleAcpHost, HostConfig, HostState};
-pub use client::CrucibleAcpClient;
+pub use acp_client::CrucibleClient;
+pub use client::CrucibleAcpClient; // Legacy, will be removed
 pub use session::{AcpSession, SessionConfig};
 pub use filesystem::FileSystemHandler;
 pub use protocol::MessageHandler;
