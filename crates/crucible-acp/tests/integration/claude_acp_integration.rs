@@ -26,12 +26,10 @@ async fn test_claude_acp_complete_handshake_with_auth() {
 
     println!("Using mock agent at: {}", mock_agent_path.display());
 
-    // For now, we need to pass --behavior as a command line argument
-    // In the future, the actual Claude-ACP binary won't need this
-    let agent_cmd = format!("{} --behavior claude-acp", mock_agent_path.display());
-
     let client_config = ClientConfig {
         agent_path: mock_agent_path,
+        // Pass --behavior claude-acp to mock agent
+        agent_args: Some(vec!["--behavior".to_string(), "claude-acp".to_string()]),
         working_dir: None,
         // Claude-ACP requires API key authentication
         env_vars: Some(vec![
@@ -40,15 +38,6 @@ async fn test_claude_acp_complete_handshake_with_auth() {
         timeout_ms: Some(5000),
         max_retries: Some(1),
     };
-
-    // Note: The client doesn't currently support passing args to the agent
-    // For RED phase, this test will fail because:
-    // 1. We can't pass --behavior flag yet
-    // 2. Client doesn't handle authentication
-    //
-    // We'll need to either:
-    // - Add agent_args to ClientConfig, OR
-    // - Create a wrapper script that launches with correct behavior
 
     let mut client = CrucibleAcpClient::new(client_config);
 
@@ -86,6 +75,7 @@ async fn test_claude_acp_initialization_auth_detection() {
 
     let client_config = ClientConfig {
         agent_path: mock_agent_path,
+        agent_args: None,
         working_dir: None,
         env_vars: Some(vec![
             ("ANTHROPIC_API_KEY".to_string(), "test-api-key-12345".to_string()),
@@ -140,6 +130,7 @@ async fn test_claude_acp_authentication_failure() {
 
     let client_config = ClientConfig {
         agent_path: mock_agent_path,
+        agent_args: None,
         working_dir: None,
         // Intentionally invalid API key
         env_vars: Some(vec![
@@ -177,6 +168,7 @@ async fn test_claude_acp_capabilities() {
 
     let client_config = ClientConfig {
         agent_path: mock_agent_path,
+        agent_args: None,
         working_dir: None,
         env_vars: Some(vec![
             ("ANTHROPIC_API_KEY".to_string(), "test-api-key-12345".to_string()),
@@ -213,6 +205,7 @@ async fn test_claude_acp_session_after_auth() {
 
     let client_config = ClientConfig {
         agent_path: mock_agent_path,
+        agent_args: None,
         working_dir: None,
         env_vars: Some(vec![
             ("ANTHROPIC_API_KEY".to_string(), "test-api-key-12345".to_string()),
