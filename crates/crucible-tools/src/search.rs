@@ -36,7 +36,7 @@ pub struct SearchTools {
 
 /// Parameters for semantic search
 #[derive(Deserialize, JsonSchema)]
-struct SemanticSearchParams {
+pub struct SemanticSearchParams {
     query: String,
     #[serde(default)]
     filters: Option<serde_json::Value>,
@@ -46,7 +46,7 @@ struct SemanticSearchParams {
 
 /// Parameters for text search
 #[derive(Deserialize, JsonSchema)]
-struct TextSearchParams {
+pub struct TextSearchParams {
     query: String,
     #[serde(default)]
     folder: Option<String>,
@@ -58,7 +58,7 @@ struct TextSearchParams {
 
 /// Parameters for property search
 #[derive(Deserialize, JsonSchema)]
-struct PropertySearchParams {
+pub struct PropertySearchParams {
     properties: serde_json::Value,
     #[serde(default = "default_limit")]
     limit: usize,
@@ -81,7 +81,7 @@ impl SearchTools {
 #[tool_router]
 impl SearchTools {
     #[tool(description = "Search notes using semantic similarity")]
-    async fn semantic_search(
+    pub async fn semantic_search(
         &self,
         params: Parameters<SemanticSearchParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
@@ -120,7 +120,7 @@ impl SearchTools {
     }
 
     #[tool(description = "Fast full-text search across notes")]
-    async fn text_search(
+    pub async fn text_search(
         &self,
         params: Parameters<TextSearchParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
@@ -218,7 +218,7 @@ impl SearchTools {
     }
 
     #[tool(description = "Search notes by frontmatter properties (includes tags)")]
-    async fn property_search(
+    pub async fn property_search(
         &self,
         params: Parameters<PropertySearchParams>,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
