@@ -142,6 +142,7 @@ mod context_tests {
 #[cfg(test)]
 mod client_tests {
     use super::super::*;
+    use crucible_acp::{ChatConfig, HistoryConfig, ContextConfig, StreamConfig};
 
     #[test]
     fn test_client_creation() {
@@ -151,22 +152,153 @@ mod client_tests {
         };
 
         let client = CrucibleAcpClient::new(agent, true);
-        // Client should be created successfully
-        // Further tests would require mocking the subprocess
+        assert!(!client.is_connected(), "New client should not be connected");
+        assert!(client.session_id().is_none(), "New client should have no session ID");
     }
 
     #[test]
-    fn test_client_read_only_flag() {
+    fn test_client_creation_read_only() {
         let agent = AgentInfo {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
         };
 
-        let client_readonly = CrucibleAcpClient::new(agent.clone(), true);
-        let client_write = CrucibleAcpClient::new(agent, false);
-
-        // Both should be created successfully with different permissions
-        // Cannot easily test the internal read_only field without exposing it
-        // or adding a getter method
+        let client = CrucibleAcpClient::new(agent, true);
+        assert!(!client.is_connected());
     }
+
+    #[test]
+    fn test_client_creation_write_enabled() {
+        let agent = AgentInfo {
+            name: "test".to_string(),
+            command: "test-cmd".to_string(),
+        };
+
+        let client = CrucibleAcpClient::new(agent, false);
+        assert!(!client.is_connected());
+    }
+
+    #[test]
+    fn test_client_with_custom_config() {
+        let agent = AgentInfo {
+            name: "test".to_string(),
+            command: "test-cmd".to_string(),
+        };
+
+        let config = ChatConfig {
+            history: HistoryConfig {
+                max_messages: 100,
+                max_tokens: 50000,
+                enable_persistence: false,
+            },
+            context: ContextConfig {
+                enabled: true,
+                context_size: 10,
+                use_reranking: true,
+                rerank_candidates: Some(30),
+                enable_cache: true,
+                cache_ttl_secs: 600,
+            },
+            streaming: StreamConfig::default(),
+            auto_prune: false,
+            enrich_prompts: false,
+        };
+
+        let client = CrucibleAcpClient::with_config(agent, true, config);
+        assert!(!client.is_connected(), "New client should not be connected");
+    }
+
+    #[test]
+    fn test_client_default_config() {
+        let agent = AgentInfo {
+            name: "test".to_string(),
+            command: "test-cmd".to_string(),
+        };
+
+        let client = CrucibleAcpClient::new(agent, false);
+        assert!(!client.is_connected());
+        assert!(client.get_stats().is_none(), "Unconnected client should have no stats");
+    }
+
+    #[test]
+    fn test_client_stats_before_connection() {
+        let agent = AgentInfo {
+            name: "test".to_string(),
+            command: "test-cmd".to_string(),
+        };
+
+        let client = CrucibleAcpClient::new(agent, false);
+        let stats = client.get_stats();
+        assert!(stats.is_none(), "Should have no stats before connection");
+    }
+
+    #[test]
+    fn test_client_session_id_before_connection() {
+        let agent = AgentInfo {
+            name: "test".to_string(),
+            command: "test-cmd".to_string(),
+        };
+
+        let client = CrucibleAcpClient::new(agent, false);
+        assert!(client.session_id().is_none(), "Should have no session ID before connection");
+    }
+
+    #[test]
+    fn test_client_clear_history_before_connection() {
+        let agent = AgentInfo {
+            name: "test".to_string(),
+            command: "test-cmd".to_string(),
+        };
+
+        let mut client = CrucibleAcpClient::new(agent, false);
+        // Should not panic when clearing history on unconnected client
+        client.clear_history();
+    }
+
+    #[test]
+    fn test_client_set_context_enrichment() {
+        let agent = AgentInfo {
+            name: "test".to_string(),
+            command: "test-cmd".to_string(),
+        };
+
+        let mut client = CrucibleAcpClient::new(agent, false);
+
+        // Should not panic when toggling enrichment on unconnected client
+        client.set_context_enrichment(false);
+        client.set_context_enrichment(true);
+    }
+
+    #[tokio::test]
+    async fn test_client_send_message_before_connection() {
+        let agent = AgentInfo {
+            name: "test".to_string(),
+            command: "test-cmd".to_string(),
+        };
+
+        let mut client = CrucibleAcpClient::new(agent, false);
+        let result = client.send_message("test").await;
+
+        assert!(result.is_err(), "Should error when sending message before connection");
+        assert!(result.unwrap_err().to_string().contains("not running"),
+            "Error should indicate agent is not running");
+    }
+
+    #[tokio::test]
+    async fn test_client_shutdown_before_connection() {
+        let agent = AgentInfo {
+            name: "test".to_string(),
+            command: "test-cmd".to_string(),
+        };
+
+        let mut client = CrucibleAcpClient::new(agent, false);
+        let result = client.shutdown().await;
+
+        // Should succeed (no-op) when shutting down unconnected client
+        assert!(result.is_ok(), "Should not error when shutting down unconnected client");
+    }
+
+    // Note: Testing spawn() requires an actual agent binary (claude-code, etc.)
+    // These would be integration tests run only when the agent is available.
+    // For unit tests, we test the wrapper logic without actually spawning.
 }

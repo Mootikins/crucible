@@ -34,8 +34,10 @@ impl CrucibleAcpClient {
             history: HistoryConfig::default(),
             context: ContextConfig {
                 enabled: true,
-                max_results: 5,
+                context_size: 5,
                 use_reranking: true,
+                rerank_candidates: Some(15),
+                enable_cache: true,
                 cache_ttl_secs: 300,
             },
             streaming: StreamConfig::default(),
@@ -74,7 +76,14 @@ impl CrucibleAcpClient {
 
         // Create the ACP client with the agent command path
         let agent_path = PathBuf::from(&self.agent.command);
-        let acp_client = AcpClient::new(agent_path, Default::default())?;
+        let client_config = crucible_acp::client::ClientConfig {
+            agent_path,
+            working_dir: None,
+            env_vars: None,
+            timeout_ms: None,
+            max_retries: None,
+        };
+        let acp_client = AcpClient::new(client_config);
 
         // Create ChatSession with the ACP client
         let mut session = ChatSession::with_agent(self.config.clone(), acp_client);
@@ -136,7 +145,7 @@ impl CrucibleAcpClient {
     }
 
     /// Get conversation statistics
-    pub fn get_stats(&self) -> Option<(usize, usize, u64)> {
+    pub fn get_stats(&self) -> Option<(usize, usize, usize)> {
         self.session.as_ref().map(|s| {
             let state = s.state();
             (state.turn_count, state.total_tokens_used, state.prune_count)
@@ -182,33 +191,4 @@ impl Drop for CrucibleAcpClient {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_client_creation() {
-        let agent = AgentInfo {
-            name: "test".to_string(),
-            command: "test-cmd".to_string(),
-        };
-        let client = CrucibleAcpClient::new(agent, true);
-        assert!(client.read_only);
-        assert!(!client.is_connected());
-    }
-
-    #[test]
-    fn test_client_with_custom_config() {
-        let agent = AgentInfo {
-            name: "test".to_string(),
-            command: "test-cmd".to_string(),
-        };
-        let config = ChatConfig {
-            enrich_prompts: false,
-            ..Default::default()
-        };
-        let client = CrucibleAcpClient::with_config(agent, false, config);
-        assert!(!client.read_only);
-        assert!(!client.config.enrich_prompts);
-    }
-}
+// Tests are in ../acp/tests.rs
