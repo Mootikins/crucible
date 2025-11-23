@@ -22,6 +22,7 @@ use crate::core_facade::CrucibleCoreFacade;
 /// - Exposes 12 Crucible tools (6 note + 3 search + 3 kiln operations)
 /// - Communicates via stdio transport
 /// - Blocks until the server is shut down (Ctrl+C or EOF)
+/// - Logs to file at `~/.crucible/mcp.log` (configurable via CRUCIBLE_MCP_LOG_FILE)
 ///
 /// The server is typically invoked by AI agents through the ACP protocol's
 /// `mcp_servers` field in NewSessionRequest.
@@ -34,7 +35,6 @@ pub async fn execute(config: CliConfig) -> Result<()> {
 
     // Get embedding config and create provider
     let embedding_config = core.config().to_embedding_config()?;
-    debug!("Creating embedding provider: {}", embedding_config.model_name());
     let llm_provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
 
     // Wrap in adapter to implement core EmbeddingProvider trait
@@ -54,10 +54,12 @@ pub async fn execute(config: CliConfig) -> Result<()> {
     info!("Server ready - waiting for stdio connection...");
 
     // Serve via stdio (blocks until shutdown)
-    let _service = server.serve((tokio::io::stdin(), tokio::io::stdout())).await?;
+    // Keep the service alive - it needs to stay in scope to handle requests
+    let service = server.serve((tokio::io::stdin(), tokio::io::stdout())).await?;
 
-    // Wait indefinitely - the service will handle shutdown on EOF or Ctrl+C
+    // Wait forever - the service will handle requests until EOF or error
+    std::future::pending::<()>().await;
+
     info!("MCP server terminated");
-
     Ok(())
 }
