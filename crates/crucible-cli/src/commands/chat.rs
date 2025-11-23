@@ -80,10 +80,12 @@ pub async fn execute(
     let agent = discover_agent(agent_name.as_deref()).await?;
     info!("Using agent: {} ({})", agent.name, agent.command);
 
-    // Create ACP client
-    let mut client = CrucibleAcpClient::new(agent, initial_mode.is_read_only());
+    // Create ACP client with kiln path for tool initialization
+    let kiln_path = core.config().kiln.path.clone();
+    let mut client = CrucibleAcpClient::new(agent, initial_mode.is_read_only())
+        .with_kiln_path(kiln_path);
 
-    // Spawn agent
+    // Spawn agent (tools will be initialized automatically)
     client.spawn().await?;
 
     // Handle query
