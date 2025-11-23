@@ -13,8 +13,10 @@ use crate::{
     ConversationHistory, HistoryConfig, HistoryMessage,
     PromptEnricher, ContextConfig,
     StreamHandler, StreamConfig,
+    CrucibleAcpClient,
     AcpError, Result,
 };
+use crate::session::AcpSession;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Maximum allowed message length (50K characters)
@@ -196,10 +198,12 @@ pub struct ChatSession {
     stream_handler: StreamHandler,
     state: ConversationState,
     metadata: SessionMetadata,
+    agent_client: Option<CrucibleAcpClient>,
+    agent_session: Option<AcpSession>,
 }
 
 impl ChatSession {
-    /// Create a new chat session
+    /// Create a new chat session (mock mode - no real agent)
     ///
     /// # Arguments
     ///
@@ -218,6 +222,70 @@ impl ChatSession {
             stream_handler,
             state,
             metadata,
+            agent_client: None,
+            agent_session: None,
+        }
+    }
+
+    /// Create a new chat session with a real agent connection
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Configuration for the chat session
+    /// * `agent_client` - ACP client for agent communication
+    ///
+    /// # Returns
+    ///
+    /// A new chat session ready to connect to an agent
+    pub fn with_agent(config: ChatConfig, agent_client: CrucibleAcpClient) -> Self {
+        let history = ConversationHistory::new(config.history.clone());
+        let enricher = PromptEnricher::new(config.context.clone());
+        let stream_handler = StreamHandler::new(config.streaming.clone());
+        let state = ConversationState::new();
+        let metadata = SessionMetadata::new();
+
+        Self {
+            config,
+            history,
+            enricher,
+            stream_handler,
+            state,
+            metadata,
+            agent_client: Some(agent_client),
+            agent_session: None,
+        }
+    }
+
+    /// Connect to the agent and establish a session
+    ///
+    /// This performs the full ACP protocol handshake.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the agent connection fails or handshake fails
+    pub async fn connect(&mut self) -> Result<()> {
+        if let Some(client) = &mut self.agent_client {
+            // Perform full protocol handshake
+            let session = client.connect_with_handshake().await?;
+            self.agent_session = Some(session);
+            Ok(())
+        } else {
+            Err(AcpError::Connection("No agent client configured".to_string()))
+        }
+    }
+
+    /// Disconnect from the agent
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if disconnection fails
+    pub async fn disconnect(&mut self) -> Result<()> {
+        if let (Some(client), Some(session)) = (&mut self.agent_client, &self.agent_session) {
+            client.disconnect(session).await?;
+            self.agent_session = None;
+            Ok(())
+        } else {
+            Ok(()) // Already disconnected or never connected
         }
     }
 
@@ -249,9 +317,8 @@ impl ChatSession {
             user_message.to_string()
         };
 
-        // Step 3: Generate agent response (mock for now)
-        // In a real implementation, this would call the actual agent
-        let agent_response = self.generate_mock_response(&prompt).await?;
+        // Step 3: Generate agent response (real agent if connected, mock otherwise)
+        let agent_response = self.generate_agent_response(&prompt).await?;
 
         // Step 4: Add agent response to history
         let agent_msg = HistoryMessage::agent(agent_response.clone());
@@ -284,13 +351,36 @@ impl ChatSession {
         self.state.total_tokens_used = self.history.total_tokens();
     }
 
-    /// Generate a mock response (placeholder for real agent integration)
+    /// Generate a response from the agent (or mock if no agent connected)
     ///
-    /// In a real implementation, this would send the prompt to an actual
-    /// agent and stream back the response.
-    async fn generate_mock_response(&self, _prompt: &str) -> Result<String> {
-        // Simple mock response for testing
-        Ok("This is a mock agent response. In a real implementation, this would come from the actual agent.".to_string())
+    /// If an agent is connected, sends the prompt via ACP protocol.
+    /// Otherwise, returns a mock response for testing.
+    async fn generate_agent_response(&mut self, prompt: &str) -> Result<String> {
+        if let (Some(client), Some(_session)) = (&mut self.agent_client, &self.agent_session) {
+            // Real agent mode: Send message via ACP protocol
+            // For now, we'll use send_message which handles JSON communication
+            // TODO: In the future, we may want to use a higher-level API
+            // that specifically handles SendMessageRequest
+
+            let message = serde_json::json!({
+                "type": "message",
+                "content": prompt
+            });
+
+            let response = client.send_message(message).await?;
+
+            // Extract response content
+            let response_text = response
+                .get("content")
+                .and_then(|v| v.as_str())
+                .unwrap_or("No response content")
+                .to_string();
+
+            Ok(response_text)
+        } else {
+            // Mock mode: Return mock response for testing
+            Ok("This is a mock agent response. In a real implementation, this would come from the actual agent.".to_string())
+        }
     }
 
     /// Get the conversation history
