@@ -76,7 +76,6 @@ impl FileSystemHandler {
     ///
     /// `true` if the path is within an allowed root, `false` otherwise
     pub fn is_path_allowed(&self, path: &Path) -> bool {
-        // TDD Cycle 7 - GREEN: Implement path validation
 
         // If no allowed roots configured, deny all access
         if self.config.allowed_roots.is_empty() {
@@ -157,7 +156,6 @@ impl FileSystemHandler {
     /// - The file is too large
     /// - IO errors occur
     pub async fn read_file(&self, path: &Path) -> Result<String> {
-        // TDD Cycle 7 - GREEN: Implement file reading with validation
 
         // Check if path is allowed
         if !self.is_path_allowed(path) {
@@ -213,7 +211,6 @@ impl FileSystemHandler {
     /// - Write operations are disabled
     /// - IO errors occur
     pub async fn write_file(&self, path: &Path, content: &str) -> Result<()> {
-        // TDD Cycle 8 - GREEN: Implement file writing with permission checks
 
         // Check if write operations are enabled
         if !self.config.allow_write {
@@ -296,7 +293,6 @@ mod tests {
         assert_eq!(config.max_read_size, 10 * 1024 * 1024);
     }
 
-    // TDD Cycle 7 - RED: Test expects path validation
     #[test]
     fn test_path_validation() {
         let temp_dir = TempDir::new().unwrap();
@@ -323,7 +319,6 @@ mod tests {
         assert!(!handler.is_path_allowed(&traversal_path));
     }
 
-    // TDD Cycle 7 - RED: Test expects file reading to work
     #[tokio::test]
     async fn test_read_file() {
         let temp_dir = TempDir::new().unwrap();
@@ -348,7 +343,6 @@ mod tests {
         assert_eq!(result.unwrap(), test_content);
     }
 
-    // TDD Cycle 7 - RED: Test expects permission denied for disallowed paths
     #[tokio::test]
     async fn test_read_file_permission_denied() {
         let temp_dir = TempDir::new().unwrap();
@@ -373,7 +367,6 @@ mod tests {
         }
     }
 
-    // TDD Cycle 7 - RED: Test expects file size limit enforcement
     #[tokio::test]
     async fn test_read_file_size_limit() {
         let temp_dir = TempDir::new().unwrap();
@@ -397,7 +390,6 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // TDD Cycle 7 - RED: Test expects not found error for missing files
     #[tokio::test]
     async fn test_read_nonexistent_file() {
         let temp_dir = TempDir::new().unwrap();
@@ -422,7 +414,6 @@ mod tests {
         }
     }
 
-    // TDD Cycle 8 - RED: Test expects write to succeed when allowed
     #[tokio::test]
     async fn test_write_file() {
         let temp_dir = TempDir::new().unwrap();
@@ -447,7 +438,6 @@ mod tests {
         assert_eq!(read_content, test_content);
     }
 
-    // TDD Cycle 8 - RED: Test expects write to fail when disabled
     #[tokio::test]
     async fn test_write_file_disabled() {
         let temp_dir = TempDir::new().unwrap();
@@ -472,7 +462,6 @@ mod tests {
         }
     }
 
-    // TDD Cycle 8 - RED: Test expects write to fail for disallowed paths
     #[tokio::test]
     async fn test_write_file_permission_denied() {
         let temp_dir = TempDir::new().unwrap();
@@ -497,7 +486,6 @@ mod tests {
         }
     }
 
-    // TDD Cycle 8 - RED: Test expects write to create parent directories if allowed
     #[tokio::test]
     async fn test_write_file_create_dirs() {
         let temp_dir = TempDir::new().unwrap();
@@ -521,7 +509,6 @@ mod tests {
         assert!(nested_file.exists());
     }
 
-    // TDD Cycle 8 - RED: Test expects write to fail when directories don't exist and creation disabled
     #[tokio::test]
     async fn test_write_file_no_create_dirs() {
         let temp_dir = TempDir::new().unwrap();

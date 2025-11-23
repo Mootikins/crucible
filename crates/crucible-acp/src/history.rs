@@ -110,7 +110,6 @@ impl ConversationHistory {
     ///
     /// * `message` - The message to add
     pub fn add_message(&mut self, message: HistoryMessage) -> Result<()> {
-        // TDD Cycle 14 - GREEN: Implement message addition
         self.messages.push(message);
         Ok(())
     }
@@ -139,7 +138,6 @@ impl ConversationHistory {
     ///
     /// Number of messages pruned
     pub fn prune(&mut self) -> Result<usize> {
-        // TDD Cycle 14 - GREEN: Implement pruning logic
         let original_count = self.messages.len();
 
         // Prune by message count first
@@ -181,7 +179,6 @@ fn estimate_tokens(text: &str) -> usize {
 mod tests {
     use super::*;
 
-    // TDD Cycle 14 - RED: Test expects history creation
     #[test]
     fn test_history_creation() {
         let config = HistoryConfig::default();
@@ -191,7 +188,6 @@ mod tests {
         assert_eq!(history.total_tokens(), 0);
     }
 
-    // TDD Cycle 14 - RED: Test expects message addition
     #[test]
     fn test_add_message() {
         let mut history = ConversationHistory::new(HistoryConfig::default());
@@ -204,7 +200,6 @@ mod tests {
         assert_eq!(history.messages()[0], message);
     }
 
-    // TDD Cycle 14 - RED: Test expects multiple messages
     #[test]
     fn test_multiple_messages() {
         let mut history = ConversationHistory::new(HistoryConfig::default());
@@ -219,7 +214,6 @@ mod tests {
         assert_eq!(history.messages()[2].role, MessageRole::User);
     }
 
-    // TDD Cycle 14 - RED: Test expects token counting
     #[test]
     fn test_token_counting() {
         let mut history = ConversationHistory::new(HistoryConfig::default());
@@ -234,7 +228,6 @@ mod tests {
         assert!(history.total_tokens() < 20, "Token estimate should be reasonable");
     }
 
-    // TDD Cycle 14 - RED: Test expects history pruning by message count
     #[test]
     fn test_prune_by_message_count() {
         let config = HistoryConfig {
@@ -262,7 +255,6 @@ mod tests {
         assert_eq!(history.messages()[2].content, "Message 4");
     }
 
-    // TDD Cycle 14 - RED: Test expects history pruning by token count
     #[test]
     fn test_prune_by_token_count() {
         let config = HistoryConfig {
@@ -289,7 +281,6 @@ mod tests {
         assert!(history.total_tokens() <= 50, "Should be under token limit after pruning");
     }
 
-    // TDD Cycle 14 - RED: Test expects clear functionality
     #[test]
     fn test_clear_history() {
         let mut history = ConversationHistory::new(HistoryConfig::default());
@@ -304,7 +295,6 @@ mod tests {
         assert_eq!(history.total_tokens(), 0);
     }
 
-    // TDD Cycle 14 - RED: Test expects message role helpers
     #[test]
     fn test_message_role_helpers() {
         let user_msg = HistoryMessage::user("User message".to_string());

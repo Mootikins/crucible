@@ -235,10 +235,8 @@ impl ChatSession {
     ///
     /// Returns an error if message processing fails
     pub async fn send_message(&mut self, user_message: &str) -> Result<String> {
-        // TDD Cycle 17 - GREEN: Validate message before processing
         validate_message(user_message)?;
 
-        // TDD Cycle 15 - GREEN: Implement message sending
 
         // Step 1: Add user message to history
         let user_msg = HistoryMessage::user(user_message.to_string());
@@ -263,15 +261,12 @@ impl ChatSession {
         if self.config.auto_prune {
             let pruned = self.history.prune()?;
             if pruned > 0 {
-                // TDD Cycle 16 - GREEN: Track prune count
                 self.state.prune_count += 1;
             }
         }
 
-        // TDD Cycle 16 - GREEN: Update conversation state
         self.update_state();
 
-        // TDD Cycle 18 - GREEN: Update metadata timestamp
         self.metadata.touch();
 
         Ok(agent_response)
@@ -359,7 +354,6 @@ impl ChatSession {
 mod tests {
     use super::*;
 
-    // TDD Cycle 15 - RED: Test expects chat session creation
     #[test]
     fn test_chat_session_creation() {
         let config = ChatConfig::default();
@@ -370,7 +364,6 @@ mod tests {
         assert!(session.config().enrich_prompts);
     }
 
-    // TDD Cycle 15 - RED: Test expects custom configuration
     #[test]
     fn test_custom_chat_config() {
         let config = ChatConfig {
@@ -384,7 +377,6 @@ mod tests {
         assert!(!session.config().enrich_prompts);
     }
 
-    // TDD Cycle 15 - RED: Test expects message sending
     #[tokio::test]
     async fn test_send_message() {
         let mut session = ChatSession::new(ChatConfig::default());
@@ -407,7 +399,6 @@ mod tests {
         assert_eq!(session.history().message_count(), 2);
     }
 
-    // TDD Cycle 15 - RED: Test expects context enrichment
     #[tokio::test]
     async fn test_context_enrichment_in_chat() {
         let config = ChatConfig {
@@ -423,7 +414,6 @@ mod tests {
         // (We can't easily verify this without mocking, but the integration should work)
     }
 
-    // TDD Cycle 15 - RED: Test expects history auto-pruning
     #[tokio::test]
     async fn test_auto_prune() {
         let config = ChatConfig {
@@ -450,7 +440,6 @@ mod tests {
             "Should auto-prune to stay within message limit");
     }
 
-    // TDD Cycle 15 - RED: Test expects no auto-pruning when disabled
     #[tokio::test]
     async fn test_no_auto_prune() {
         let config = ChatConfig {
@@ -474,7 +463,6 @@ mod tests {
             "Should not auto-prune when disabled");
     }
 
-    // TDD Cycle 15 - RED: Test expects history clearing
     #[tokio::test]
     async fn test_clear_history() {
         let mut session = ChatSession::new(ChatConfig::default());
@@ -488,7 +476,6 @@ mod tests {
         assert_eq!(session.history().message_count(), 0);
     }
 
-    // TDD Cycle 15 - RED: Test expects enrichment can be disabled
     #[tokio::test]
     async fn test_enrichment_disabled() {
         let config = ChatConfig {
@@ -503,7 +490,6 @@ mod tests {
         // When enrichment is disabled, the original query should be used directly
     }
 
-    // TDD Cycle 16 - RED: Test expects state tracking initialization
     #[test]
     fn test_conversation_state_initialization() {
         let session = ChatSession::new(ChatConfig::default());
@@ -516,7 +502,6 @@ mod tests {
         assert!(state.started_at > 0, "Should have a start timestamp");
     }
 
-    // TDD Cycle 16 - RED: Test expects turn counting
     #[tokio::test]
     async fn test_turn_counting() {
         let mut session = ChatSession::new(ChatConfig::default());
@@ -537,7 +522,6 @@ mod tests {
         assert_eq!(session.state().turn_count, 3, "Should have 3 turns after third exchange");
     }
 
-    // TDD Cycle 16 - RED: Test expects token tracking
     #[tokio::test]
     async fn test_token_tracking() {
         let mut session = ChatSession::new(ChatConfig::default());
@@ -557,7 +541,6 @@ mod tests {
         assert!(tokens_after_turn2 > tokens_after_turn1, "Tokens should increase with more turns");
     }
 
-    // TDD Cycle 16 - RED: Test expects timestamp tracking
     #[tokio::test]
     async fn test_timestamp_tracking() {
         let mut session = ChatSession::new(ChatConfig::default());
@@ -579,7 +562,6 @@ mod tests {
         assert!(timestamp2.unwrap() >= timestamp1.unwrap(), "Timestamp should not go backwards");
     }
 
-    // TDD Cycle 16 - RED: Test expects prune count tracking
     #[tokio::test]
     async fn test_prune_count_tracking() {
         let config = ChatConfig {
@@ -603,7 +585,6 @@ mod tests {
         assert!(session.state().prune_count > 0, "Should have pruned at least once");
     }
 
-    // TDD Cycle 16 - RED: Test expects duration calculation
     #[tokio::test]
     async fn test_conversation_duration() {
         let mut session = ChatSession::new(ChatConfig::default());
@@ -620,7 +601,6 @@ mod tests {
         assert!(duration_after >= initial_duration, "Duration should not decrease");
     }
 
-    // TDD Cycle 16 - RED: Test expects average tokens per turn
     #[tokio::test]
     async fn test_avg_tokens_per_turn() {
         let mut session = ChatSession::new(ChatConfig::default());
@@ -637,7 +617,6 @@ mod tests {
         assert_eq!(session.state().turn_count, 2);
     }
 
-    // TDD Cycle 17 - RED: Test expects empty message handling
     #[tokio::test]
     async fn test_empty_message_handling() {
         let mut session = ChatSession::new(ChatConfig::default());
@@ -654,7 +633,6 @@ mod tests {
         assert_eq!(session.state().turn_count, 0, "Turn count should not increase on error");
     }
 
-    // TDD Cycle 17 - RED: Test expects very long message handling
     #[tokio::test]
     async fn test_long_message_handling() {
         let mut session = ChatSession::new(ChatConfig::default());
@@ -670,7 +648,6 @@ mod tests {
         assert_eq!(session.state().turn_count, 0);
     }
 
-    // TDD Cycle 17 - RED: Test expects state rollback on error
     #[tokio::test]
     async fn test_state_rollback_on_error() {
         let mut session = ChatSession::new(ChatConfig::default());
@@ -688,7 +665,6 @@ mod tests {
         assert_eq!(session.history().message_count(), history_count, "History should be unchanged on error");
     }
 
-    // TDD Cycle 17 - RED: Test expects graceful degradation when enrichment fails
     #[tokio::test]
     async fn test_enrichment_failure_fallback() {
         // This test would verify that if enrichment fails, we fall back to
@@ -702,7 +678,6 @@ mod tests {
         assert_eq!(session.state().turn_count, 0);
     }
 
-    // TDD Cycle 17 - RED: Test expects message validation
     #[tokio::test]
     async fn test_message_validation() {
         let mut session = ChatSession::new(ChatConfig::default());
@@ -717,7 +692,6 @@ mod tests {
         let _ = result;
     }
 
-    // TDD Cycle 17 - RED: Test expects history consistency after errors
     #[tokio::test]
     async fn test_history_consistency_after_errors() {
         let mut session = ChatSession::new(ChatConfig::default());
@@ -737,7 +711,6 @@ mod tests {
         assert_eq!(session.state().turn_count, 2);
     }
 
-    // TDD Cycle 17 - RED: Test expects session recovery after multiple errors
     #[tokio::test]
     async fn test_session_recovery_after_errors() {
         let mut session = ChatSession::new(ChatConfig::default());
@@ -753,7 +726,6 @@ mod tests {
         assert_eq!(session.state().turn_count, 1);
     }
 
-    // TDD Cycle 18 - RED: Test expects session ID generation
     #[test]
     fn test_session_id_generation() {
         let session1 = ChatSession::new(ChatConfig::default());
@@ -768,7 +740,6 @@ mod tests {
         assert!(session1.session_id().starts_with("session-"), "Session ID should start with 'session-'");
     }
 
-    // TDD Cycle 18 - RED: Test expects metadata initialization
     #[test]
     fn test_metadata_initialization() {
         let session = ChatSession::new(ChatConfig::default());
@@ -781,7 +752,6 @@ mod tests {
         assert_eq!(metadata.created_at, metadata.updated_at, "Initially created_at should equal updated_at");
     }
 
-    // TDD Cycle 18 - RED: Test expects title setting
     #[test]
     fn test_set_title() {
         let mut session = ChatSession::new(ChatConfig::default());
@@ -799,7 +769,6 @@ mod tests {
         assert_eq!(session.metadata().title, Some("Updated Title".to_string()));
     }
 
-    // TDD Cycle 18 - RED: Test expects tag management
     #[test]
     fn test_tag_management() {
         let mut session = ChatSession::new(ChatConfig::default());
@@ -830,7 +799,6 @@ mod tests {
         assert!(!removed, "Should return false when tag doesn't exist");
     }
 
-    // TDD Cycle 18 - RED: Test expects metadata updates on activity
     #[tokio::test]
     async fn test_metadata_updates_on_activity() {
         let mut session = ChatSession::new(ChatConfig::default());
@@ -848,7 +816,6 @@ mod tests {
             "Updated timestamp should advance after message");
     }
 
-    // TDD Cycle 18 - RED: Test expects session persistence data
     #[test]
     fn test_session_has_complete_metadata() {
         let mut session = ChatSession::new(ChatConfig::default());
@@ -868,7 +835,6 @@ mod tests {
         assert!(metadata.updated_at >= metadata.created_at);
     }
 
-    // TDD Cycle 18 - RED: Test expects metadata timestamp precision
     #[tokio::test]
     async fn test_metadata_timestamp_updates() {
         let mut session = ChatSession::new(ChatConfig::default());
