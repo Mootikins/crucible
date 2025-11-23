@@ -257,7 +257,7 @@ async fn test_state_tracking_accuracy() {
 async fn test_complete_session_lifecycle() {
     // Create session
     let mut session = ChatSession::new(ChatConfig::default());
-    let session_id = session.session_id().to_string();
+    let session_id = session.metadata().id.clone();
 
     // Configure session
     session.set_title("Lifecycle Test");
@@ -277,7 +277,7 @@ async fn test_complete_session_lifecycle() {
     assert_eq!(session.history().message_count(), 0);
 
     // Session ID should be unchanged
-    assert_eq!(session.session_id(), session_id);
+    assert_eq!(session.metadata().id, session_id);
 
     // Metadata should be unchanged
     assert_eq!(session.metadata().title, Some("Lifecycle Test".to_string()));
@@ -317,7 +317,7 @@ async fn test_session_isolation() {
     session2.send_message("Message to session 2").await.unwrap();
 
     // Sessions should have different IDs
-    assert_ne!(session1.session_id(), session2.session_id());
+    assert_ne!(session1.metadata().id, session2.metadata().id);
 
     // Each should only have their own messages
     assert_eq!(session1.history().message_count(), 2); // user + agent
@@ -493,4 +493,275 @@ async fn test_agent_lifecycle_cleanup() {
     let disconnect_result = client.disconnect(&session).await;
     assert!(disconnect_result.is_ok(), "Should disconnect cleanly");
     assert!(!client.is_connected(), "Should not be connected after disconnect");
+}
+
+// Baseline Tests - Request/Response Handling
+
+/// Baseline test: Protocol message serialization
+#[tokio::test]
+async fn baseline_protocol_message_serialization() {
+    use agent_client_protocol::{ClientRequest, InitializeRequest, NewSessionRequest};
+    use agent_client_protocol::{ProtocolVersion, ClientCapabilities};
+    use std::path::PathBuf;
+
+    // Test InitializeRequest serialization
+    let init_req = ClientRequest::InitializeRequest(InitializeRequest {
+        protocol_version: ProtocolVersion::default(),
+        client_info: None,
+        client_capabilities: ClientCapabilities::default(),
+        meta: None,
+    });
+
+    let serialized = serde_json::to_string(&init_req);
+    assert!(serialized.is_ok(), "InitializeRequest should serialize");
+
+    let deserialized: Result<ClientRequest, _> = serde_json::from_str(&serialized.unwrap());
+    assert!(deserialized.is_ok(), "InitializeRequest should deserialize");
+
+    // Test NewSessionRequest serialization
+    let session_req = ClientRequest::NewSessionRequest(NewSessionRequest {
+        cwd: PathBuf::from("/test"),
+        mcp_servers: vec![],
+        meta: None,
+    });
+
+    let serialized = serde_json::to_string(&session_req);
+    assert!(serialized.is_ok(), "NewSessionRequest should serialize");
+
+    let deserialized: Result<ClientRequest, _> = serde_json::from_str(&serialized.unwrap());
+    assert!(deserialized.is_ok(), "NewSessionRequest should deserialize");
+}
+
+/// Baseline test: Session configuration variants
+#[tokio::test]
+async fn baseline_session_configuration_variants() {
+    // Test default configuration
+    let config_default = SessionConfig::default();
+    let session_default = AcpSession::new(config_default, "session-1".to_string());
+    assert_eq!(session_default.id(), "session-1");
+
+    // Test with custom timeout
+    let mut config_custom = SessionConfig::default();
+    config_custom.timeout_ms = 60000; // 60 seconds
+    config_custom.debug = true;
+    let session_custom = AcpSession::new(config_custom, "session-2".to_string());
+    assert_eq!(session_custom.id(), "session-2");
+
+    // Sessions should be independent
+    assert_ne!(session_default.id(), session_custom.id());
+}
+
+/// Baseline test: Client configuration variants
+#[tokio::test]
+async fn baseline_client_configuration_variants() {
+    use std::path::PathBuf;
+
+    // Test minimal configuration
+    let config_minimal = ClientConfig {
+        agent_path: PathBuf::from("echo"),
+        working_dir: None,
+        env_vars: None,
+        timeout_ms: None,
+        max_retries: None,
+    };
+    let client_minimal = CrucibleAcpClient::new(config_minimal);
+    assert!(!client_minimal.is_connected());
+
+    // Test full configuration
+    let env_vars = vec![
+        ("TEST_VAR".to_string(), "test_value".to_string()),
+        ("ANOTHER_VAR".to_string(), "another_value".to_string()),
+    ];
+
+    let config_full = ClientConfig {
+        agent_path: PathBuf::from("cat"),
+        working_dir: Some(PathBuf::from("/tmp")),
+        env_vars: Some(env_vars),
+        timeout_ms: Some(5000),
+        max_retries: Some(3),
+    };
+    let client_full = CrucibleAcpClient::new(config_full);
+    assert!(!client_full.is_connected());
+}
+
+/// Baseline test: Tool discovery integration
+#[tokio::test]
+async fn baseline_tool_discovery() {
+    use crucible_acp::ToolRegistry;
+
+    // Create a tool registry and discover tools
+    let mut registry = ToolRegistry::new();
+    let result = crucible_acp::discover_crucible_tools(&mut registry, "/test/kiln");
+
+    // Should discover at least the core tools
+    assert!(result.is_ok(), "Tool discovery should succeed");
+    let count = result.unwrap();
+    assert!(count > 0, "Should discover at least one tool");
+
+    // Verify registry has tools
+    assert!(registry.count() > 0, "Registry should contain tools");
+}
+
+/// Baseline test: Error type conversions
+#[tokio::test]
+async fn baseline_error_type_conversions() {
+    use crucible_acp::AcpError;
+    use std::io;
+
+    // Test IO error conversion
+    let io_error = io::Error::new(io::ErrorKind::NotFound, "file not found");
+    let acp_error: AcpError = io_error.into();
+    assert!(matches!(acp_error, AcpError::Io(_)));
+
+    // Test JSON error conversion
+    let json_error = serde_json::from_str::<serde_json::Value>("invalid json");
+    assert!(json_error.is_err());
+    let acp_error: AcpError = json_error.unwrap_err().into();
+    assert!(matches!(acp_error, AcpError::Serialization(_)));
+
+    // Test custom error creation
+    let session_error = AcpError::Session("test error".to_string());
+    assert_eq!(session_error.to_string(), "Session error: test error");
+
+    let connection_error = AcpError::Connection("connection failed".to_string());
+    assert_eq!(connection_error.to_string(), "Connection error: connection failed");
+}
+
+/// Baseline test: Session state consistency
+#[tokio::test]
+async fn baseline_session_state_consistency() {
+    let config = SessionConfig::default();
+    let session1 = AcpSession::new(config.clone(), "session-1".to_string());
+    let session2 = AcpSession::new(config, "session-2".to_string());
+
+    // Different sessions should have different IDs
+    assert_ne!(session1.id(), session2.id());
+
+    // Session IDs should be stable
+    assert_eq!(session1.id(), "session-1");
+    assert_eq!(session2.id(), "session-2");
+}
+
+/// Baseline test: Chat configuration with all options
+#[tokio::test]
+async fn baseline_chat_configuration_comprehensive() {
+    // Test with all features enabled
+    let config_full = ChatConfig {
+        history: HistoryConfig {
+            max_messages: 100,
+            max_tokens: 10000,
+            enable_persistence: true,
+        },
+        context: ContextConfig {
+            enabled: true,
+            context_size: 10,
+            use_reranking: true,
+            rerank_candidates: Some(20),
+            enable_cache: true,
+            cache_ttl_secs: 600,
+        },
+        streaming: StreamConfig {
+            show_thoughts: true,
+            show_tool_calls: true,
+            use_colors: true,
+        },
+        auto_prune: true,
+        enrich_prompts: true,
+    };
+
+    let session_full = ChatSession::new(config_full);
+    assert_eq!(session_full.state().turn_count, 0);
+
+    // Test with minimal configuration
+    let config_minimal = ChatConfig {
+        history: HistoryConfig {
+            max_messages: 10,
+            max_tokens: 1000,
+            enable_persistence: false,
+        },
+        context: ContextConfig {
+            enabled: false,
+            context_size: 0,
+            use_reranking: false,
+            rerank_candidates: None,
+            enable_cache: false,
+            cache_ttl_secs: 0,
+        },
+        streaming: StreamConfig {
+            show_thoughts: false,
+            show_tool_calls: false,
+            use_colors: false,
+        },
+        auto_prune: false,
+        enrich_prompts: false,
+    };
+
+    let session_minimal = ChatSession::new(config_minimal);
+    assert_eq!(session_minimal.state().turn_count, 0);
+}
+
+/// Baseline test: History message structure
+#[tokio::test]
+async fn baseline_history_message_structure() {
+    use crucible_acp::{HistoryMessage, MessageRole};
+
+    // Create user message using constructor
+    let user_msg = HistoryMessage::user("Hello".to_string());
+
+    assert!(matches!(user_msg.role, MessageRole::User));
+    assert_eq!(user_msg.content, "Hello");
+    assert!(user_msg.token_count > 0);
+
+    // Create agent message using constructor
+    let agent_msg = HistoryMessage::agent("Hi there".to_string());
+
+    assert!(matches!(agent_msg.role, MessageRole::Agent));
+    assert_eq!(agent_msg.content, "Hi there");
+    assert!(agent_msg.token_count > 0);
+
+    // Create system message using constructor
+    let system_msg = HistoryMessage::system("Context info".to_string());
+
+    assert!(matches!(system_msg.role, MessageRole::System));
+    assert_eq!(system_msg.content, "Context info");
+    assert!(system_msg.token_count > 0);
+}
+
+/// Baseline test: Conversation history operations
+#[tokio::test]
+async fn baseline_conversation_history_operations() {
+    use crucible_acp::HistoryMessage;
+
+    let config = HistoryConfig {
+        max_messages: 10,
+        max_tokens: 1000,
+        enable_persistence: false,
+    };
+
+    let mut history = crucible_acp::ConversationHistory::new(config);
+
+    // Initially empty
+    assert_eq!(history.message_count(), 0);
+    assert_eq!(history.total_tokens(), 0);
+
+    // Add messages using the add_message API
+    let user_msg = HistoryMessage::user("First message".to_string());
+    history.add_message(user_msg).unwrap();
+    assert_eq!(history.message_count(), 1);
+    assert!(history.total_tokens() > 0);
+
+    let agent_msg = HistoryMessage::agent("First response".to_string());
+    let tokens_before = history.total_tokens();
+    history.add_message(agent_msg).unwrap();
+    assert_eq!(history.message_count(), 2);
+    assert!(history.total_tokens() > tokens_before);
+
+    // Get all messages
+    let messages = history.messages();
+    assert_eq!(messages.len(), 2);
+
+    // Clear history
+    history.clear();
+    assert_eq!(history.message_count(), 0);
+    assert_eq!(history.total_tokens(), 0);
 }
