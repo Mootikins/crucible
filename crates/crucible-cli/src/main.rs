@@ -128,6 +128,10 @@ async fn main() -> Result<()> {
             .await?
         }
 
+        Some(Commands::Mcp) => {
+            commands::mcp::execute(config).await?
+        }
+
         Some(Commands::Process { path, force, watch }) => {
             commands::process::execute(config, path, force, watch).await?
         }
