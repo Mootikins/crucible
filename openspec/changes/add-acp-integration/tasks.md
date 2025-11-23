@@ -2,7 +2,7 @@
 
 ## Progress Summary
 
-**Completed**: Phases 3-5 (TDD Cycles 11-20 + Baseline Tests)
+**Completed**: Phases 3-5 (TDD Cycles 11-20 + Baseline Tests + ChatSession Agent Connection)
 - ✅ Context enrichment with semantic search (Cycle 11)
 - ✅ TTL-based context caching (Cycle 12)
 - ✅ Response streaming infrastructure (Cycle 13)
@@ -13,13 +13,22 @@
 - ✅ Session metadata and management (Cycle 18)
 - ✅ Agent lifecycle methods (Cycle 19)
 - ✅ ACP protocol handshake (Cycle 20)
-- ✅ Comprehensive baseline integration tests (27 tests)
+- ✅ Comprehensive baseline integration tests (43 tests)
 - ✅ MockAgent implementation
+- ✅ ChatSession connected to real ACP agent (daec1ca)
 
-**Test Coverage**: 155/155 tests passing (116 unit + 39 integration) - 100%
+**In Progress**: Phase 6 - CLI Integration & Tool System
+- ⏳ Connect CLI to crucible-acp ChatSession
+- ⏳ Implement ACP tool registration for MCP tools
+- ⏳ Wire up filesystem abstraction for kiln operations
+- ⏳ Implement interactive chat loop with reedline
+- ⏳ End-to-end testing with real agent
+
+**Test Coverage**: 159/159 tests passing (116 unit + 43 integration) - 100%
 **SOLID Compliance**: Verified
 **Protocol Compliance**: ACP 0.7.0
-**Branch**: `claude/acp-planning-baseline-tests-01EBcv3F9FjBfUC9pNEFyrcM`
+**Current Branch**: `claude/acp-cli-integration-01JRpdf8Lzjo3GWzu2mCDiKJ`
+**Previous Branch**: `claude/acp-planning-baseline-tests-01EBcv3F9FjBfUC9pNEFyrcM`
 
 See [PROGRESS_REPORT.md](./PROGRESS_REPORT.md) for detailed implementation documentation.
 
