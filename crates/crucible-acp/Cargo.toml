@@ -42,6 +42,9 @@ tracing = { workspace = true }
 # Random ID generation
 rand = { workspace = true }
 
+# UUID generation (used in tests and mock agent)
+uuid = { version = "1.11", features = ["v4"], optional = true }
+
 [dev-dependencies]
 tokio-test = { workspace = true }
 tempfile = { workspace = true }
@@ -54,7 +57,14 @@ name = "integration"
 path = "tests/integration/mod.rs"
 harness = true
 
+# Mock agent binary for integration tests
+[[bin]]
+name = "mock-acp-agent"
+path = "tests/bin/mock-acp-agent.rs"
+required-features = ["test-utils"]
+test = false
+
 [features]
 default = []
 # Enable test utilities (MockAgent) for integration tests in other crates
-test-utils = []
+test-utils = ["uuid"]
