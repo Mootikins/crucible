@@ -16,8 +16,9 @@
 //! - Easy testing of individual tool categories
 //! - Future composition of additional tool routers
 
-use rmcp::{tool, tool_router, model::CallToolResult, transport::stdio, ServiceExt};
+use rmcp::{tool, tool_router, tool_handler, model::CallToolResult, ServerHandler};
 use rmcp::handler::server::wrapper::Parameters;
+use rmcp::handler::server::tool::ToolRouter;
 use crate::{NoteTools, SearchTools, KilnTools};
 use std::sync::Arc;
 use crucible_core::traits::KnowledgeRepository;
@@ -43,6 +44,7 @@ pub struct CrucibleMcpServer {
     note_tools: NoteTools,
     search_tools: SearchTools,
     kiln_tools: KilnTools,
+    tool_router: ToolRouter<Self>,
 }
 
 impl CrucibleMcpServer {
@@ -66,11 +68,9 @@ impl CrucibleMcpServer {
                 embedding_provider,
             ),
             kiln_tools: KilnTools::new(kiln_path),
+            tool_router: Self::tool_router(),
         }
     }
-
-    // TODO: Implement serve_stdio in CLI - the router is created via Self::tool_router()
-    // and can be served directly by the CLI using rmcp::ServiceExt
 }
 
 // ===== MCP Server Implementation =====
@@ -169,6 +169,32 @@ impl CrucibleMcpServer {
     #[tool(description = "Get kiln statistics")]
     pub async fn get_kiln_stats(&self) -> Result<CallToolResult, rmcp::ErrorData> {
         self.kiln_tools.get_kiln_stats().await
+    }
+}
+
+// ===== ServerHandler Implementation =====
+// Automatically implements call_tool and list_tools using the tool_router field
+
+#[tool_handler]
+impl ServerHandler for CrucibleMcpServer {
+    fn get_info(&self) -> rmcp::model::ServerInfo {
+        rmcp::model::ServerInfo {
+            protocol_version: rmcp::model::ProtocolVersion::default(),
+            capabilities: rmcp::model::ServerCapabilities {
+                tools: Some(rmcp::model::ToolsCapability {
+                    list_changed: None,
+                }),
+                ..Default::default()
+            },
+            server_info: rmcp::model::Implementation {
+                name: "crucible-mcp-server".into(),
+                version: env!("CARGO_PKG_VERSION").into(),
+                title: Some("Crucible MCP Server".into()),
+                icons: None,
+                website_url: None,
+            },
+            instructions: Some("Crucible MCP server exposing 12 tools for knowledge management: 6 note operations, 3 search capabilities, and 3 kiln metadata functions.".into()),
+        }
     }
 }
 
