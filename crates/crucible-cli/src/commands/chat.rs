@@ -81,7 +81,7 @@ pub async fn execute(
     info!("Using agent: {} ({})", agent.name, agent.command);
 
     // Create ACP client
-    let client = CrucibleAcpClient::new(agent, initial_mode.is_read_only());
+    let mut client = CrucibleAcpClient::new(agent, initial_mode.is_read_only());
 
     // Spawn agent
     client.spawn().await?;

@@ -586,6 +586,25 @@ mod tests {
     }
 
     #[test]
+    fn test_set_enrichment_enabled() {
+        let config = ChatConfig {
+            enrich_prompts: true,
+            ..Default::default()
+        };
+
+        let mut session = ChatSession::new(config);
+        assert!(session.config().enrich_prompts, "Should start with enrichment enabled");
+
+        // Disable enrichment
+        session.set_enrichment_enabled(false);
+        assert!(!session.config().enrich_prompts, "Should disable enrichment");
+
+        // Re-enable enrichment
+        session.set_enrichment_enabled(true);
+        assert!(session.config().enrich_prompts, "Should re-enable enrichment");
+    }
+
+    #[test]
     fn test_conversation_state_initialization() {
         let session = ChatSession::new(ChatConfig::default());
         let state = session.state();
