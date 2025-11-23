@@ -305,8 +305,12 @@ impl CrucibleAcpClient {
         // Send the initialize request
         let response = self.send_request(ClientRequest::InitializeRequest(request)).await?;
 
-        // Parse the response
-        let init_response: agent_client_protocol::InitializeResponse = serde_json::from_value(response)?;
+        // Extract the result field from JSON-RPC response
+        let result = response.get("result")
+            .ok_or_else(|| AcpError::Session("Missing result field in initialize response".to_string()))?;
+
+        // Parse the result as InitializeResponse
+        let init_response: agent_client_protocol::InitializeResponse = serde_json::from_value(result.clone())?;
 
         Ok(init_response)
     }
@@ -332,8 +336,12 @@ impl CrucibleAcpClient {
         // Send the new session request
         let response = self.send_request(ClientRequest::NewSessionRequest(request)).await?;
 
-        // Parse the response
-        let session_response: agent_client_protocol::NewSessionResponse = serde_json::from_value(response)?;
+        // Extract the result field from JSON-RPC response
+        let result = response.get("result")
+            .ok_or_else(|| AcpError::Session("Missing result field in new session response".to_string()))?;
+
+        // Parse the result as NewSessionResponse
+        let session_response: agent_client_protocol::NewSessionResponse = serde_json::from_value(result.clone())?;
 
         Ok(session_response)
     }
@@ -480,8 +488,44 @@ impl CrucibleAcpClient {
     ///
     /// Returns an error if communication fails
     pub async fn send_request(&mut self, request: agent_client_protocol::ClientRequest) -> Result<serde_json::Value> {
-        // Serialize the request to JSON
-        let json_request = serde_json::to_value(&request)?; // Auto-converts to AcpError::Serialization
+        use serde_json::json;
+
+        // Determine method name and params from ClientRequest
+        let (method, params) = match &request {
+            agent_client_protocol::ClientRequest::InitializeRequest(req) => {
+                ("initialize", serde_json::to_value(req)?)
+            },
+            agent_client_protocol::ClientRequest::AuthenticateRequest(req) => {
+                ("authenticate", serde_json::to_value(req)?)
+            },
+            agent_client_protocol::ClientRequest::NewSessionRequest(req) => {
+                ("session/new", serde_json::to_value(req)?)
+            },
+            agent_client_protocol::ClientRequest::LoadSessionRequest(req) => {
+                ("session/load", serde_json::to_value(req)?)
+            },
+            agent_client_protocol::ClientRequest::SetSessionModeRequest(req) => {
+                ("session/set_mode", serde_json::to_value(req)?)
+            },
+            agent_client_protocol::ClientRequest::PromptRequest(req) => {
+                ("session/prompt", serde_json::to_value(req)?)
+            },
+            agent_client_protocol::ClientRequest::ExtMethodRequest(req) => {
+                ("ext", serde_json::to_value(req)?)
+            },
+        };
+
+        // Generate a unique request ID
+        static REQUEST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let id = REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // Wrap in JSON-RPC 2.0 format
+        let json_request = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params
+        });
 
         // Write to agent stdin
         self.write_request(&json_request).await?;
