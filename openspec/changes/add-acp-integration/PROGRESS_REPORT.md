@@ -2,11 +2,13 @@
 
 ## Executive Summary
 
-**Status**: Phase 5 Complete - Agent Integration & Baseline Tests (Complete)
-**Test Coverage**: 155 tests passing (116 unit + 39 integration) - 100%
+**Status**: Phase 6 In Progress - CLI Integration & Tool System
+**Test Coverage**: 159 tests passing (116 unit + 43 integration) - 100%
 **SOLID Compliance**: Verified across all 5 principles
 **Technical Debt**: Zero
-**Session ID**: `claude/acp-planning-baseline-tests-01EBcv3F9FjBfUC9pNEFyrcM`
+**Current Branch**: `claude/acp-cli-integration-01JRpdf8Lzjo3GWzu2mCDiKJ`
+**Previous Sessions**:
+- Phase 3-5: `claude/acp-planning-baseline-tests-01EBcv3F9FjBfUC9pNEFyrcM`
 
 We have successfully completed **Phases 3, 4, and 5** of the ACP integration, delivering a production-ready foundation with:
 - Interactive chat with context enrichment and streaming
@@ -612,29 +614,137 @@ All commits pushed to: `claude/acp-planning-baseline-tests-01EBcv3F9FjBfUC9pNEFy
 
 ---
 
-## Next Steps (Phase 6: Live Agent Integration & CLI)
+## Phase 6: CLI Integration & Tool System (In Progress)
 
-### Live Agent Connection
-- Connect `ChatSession` to real `CrucibleAcpClient`
-- Replace `generate_mock_response()` with actual agent communication
-- Wire up `connect_with_handshake()` for real agents
-- Test with Claude Code agent
+### Status Summary
+- ✅ ChatSession connected to real ACP agent (159 tests passing)
+- ✅ crucible-tools crate complete with 10 MCP tools (95%)
+- ✅ CLI skeleton with chat command and ACP module
+- ⏳ **IN PROGRESS**: Connect CLI to crucible-acp ChatSession
+- ⏳ **IN PROGRESS**: Wire up MCP tools for ACP agents
+- ⏳ **IN PROGRESS**: Implement filesystem abstraction for kiln operations
+- ⏳ **PENDING**: Interactive chat loop with reedline
+- ⏳ **PENDING**: End-to-end testing with real agent
 
-### CLI Chat Command Integration
-- Integrate `ChatSession` into `crucible chat` command
-- Add agent selection flags (--agent claude-code, etc.)
-- Wire up real-time streaming output to terminal
-- Add session persistence and restoration
+### Current State Analysis
 
-### Tool System Bridge
-- Map ACP tool calls to native Crucible tool system
-- Implement tool permission enforcement
-- Test tool execution through agent requests
+**crucible-acp crate (Complete)**:
+- Full ACP protocol implementation with 159 passing tests
+- `ChatSession::with_agent()` constructor for agent-enabled sessions
+- `connect()` method performs full ACP handshake
+- `send_message()` uses real agent when connected
+- Backward compatible with mock mode for testing
 
-### Performance Optimization
-- Measure and optimize ACP message handling
-- Implement connection pooling if needed
-- Optimize context enrichment latency
+**crucible-tools crate (95% Complete)**:
+- 10 production-ready MCP tools using rmcp 0.9.0
+- Tools: read_note, list_notes, create_note, update_note, delete_note, read_metadata, semantic_search, text_search, property_search, get_kiln_info
+- Missing: Permission prompts (deferred to post-MVP)
+- Missing: ACP tool registration bridge
+
+**crucible-cli integration (Partial)**:
+- Has `acp/` module with client.rs, agent.rs, context.rs
+- Has chat command skeleton with mode toggling (plan/act)
+- Client spawns agents but doesn't use full ACP protocol yet
+- Missing: Connection to crucible-acp's ChatSession
+- Missing: Interactive loop implementation (placeholder only)
+- Missing: Tool registration for agent access
+
+### Phase 6 Implementation Tasks
+
+#### Task 6.1: Connect CLI to crucible-acp ChatSession ⏳
+**Goal**: Replace CLI's simplified ACP client with full ChatSession integration
+
+**Work Items**:
+1. Add crucible-acp dependency to crucible-cli/Cargo.toml
+2. Update `crates/crucible-cli/src/acp/client.rs`:
+   - Import `ChatSession` and `ChatConfig` from crucible-acp
+   - Replace process management with ChatSession lifecycle
+   - Use `ChatSession::with_agent()` and `connect()`
+   - Route messages through `send_message()` instead of raw stdio
+3. Update `crates/crucible-cli/src/commands/chat.rs`:
+   - Initialize ChatSession with proper config
+   - Use ChatSession for all agent communication
+   - Wire up streaming responses to terminal output
+
+**Success Criteria**:
+- CLI can create and connect to ChatSession
+- Messages flow through ChatSession.send_message()
+- Tests verify CLI → ChatSession → Agent pipeline
+
+#### Task 6.2: Implement ACP Tool Registration ⏳
+**Goal**: Make crucible-tools accessible to ACP agents
+
+**Work Items**:
+1. Create `crates/crucible-acp/src/tools.rs`:
+   - Bridge ACP tool calls to crucible-tools MCP tools
+   - Implement tool discovery and registration
+   - Convert ACP tool parameters to MCP tool inputs
+   - Format MCP tool results for ACP agents
+2. Add tool registration to ChatSession initialization
+3. Handle tool calls in agent message processing
+4. Add permission checks (defer full implementation to post-MVP)
+
+**Success Criteria**:
+- Agent can discover available tools
+- Agent can call tools through ACP protocol
+- Tool results are properly formatted and returned
+- Basic permission validation (read-only vs. write-enabled)
+
+#### Task 6.3: Filesystem Abstraction for Kiln Operations ⏳
+**Goal**: Map ACP filesystem calls to kiln note operations
+
+**Work Items**:
+1. Create `crates/crucible-acp/src/filesystem.rs`:
+   - Implement ACP filesystem interface
+   - Map file paths to kiln note references
+   - Resolve wikilinks and note names
+   - Bridge to crucible-tools for actual operations
+2. Integrate with ChatSession's file handling
+3. Add read-only mode enforcement
+4. Handle errors gracefully
+
+**Success Criteria**:
+- Agent can read files through ACP filesystem interface
+- File paths map correctly to kiln notes
+- Write operations respect read-only mode
+- Errors provide helpful user feedback
+
+#### Task 6.4: Interactive Chat Loop ⏳
+**Goal**: Implement full interactive chat experience
+
+**Work Items**:
+1. Replace placeholder in `run_interactive_session()`:
+   - Use reedline for line editing (already a dependency)
+   - Implement mode toggle commands (/plan, /act)
+   - Handle exit command (/exit)
+   - Stream agent responses to terminal
+2. Add context enrichment per message (unless --no-context)
+3. Display mode changes and confirmations
+4. Handle Ctrl+C and graceful shutdown
+
+**Success Criteria**:
+- Users can type messages with line editing
+- Mode toggles work (/plan, /act)
+- Agent responses stream in real-time
+- Session cleanup on exit
+
+#### Task 6.5: End-to-End Testing ⏳
+**Goal**: Verify complete CLI → ACP → Tools pipeline
+
+**Work Items**:
+1. Test with real kiln and Claude Code agent
+2. Verify all tool types work (read, search, create, update, delete)
+3. Test mode switching (plan ↔ act)
+4. Test context enrichment with real semantic search
+5. Performance testing (startup time, response latency)
+6. Error handling (network failures, agent crashes, etc.)
+
+**Success Criteria**:
+- Chat works end-to-end with real agent
+- All tools accessible and functional
+- Mode switching prevents writes in plan mode
+- Context enrichment provides relevant information
+- Errors are handled gracefully
 
 ---
 

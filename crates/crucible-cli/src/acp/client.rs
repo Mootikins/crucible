@@ -1,24 +1,26 @@
-//! ACP Client Implementation
+//! ACP Client Implementation for CLI
 //!
-//! Implements the Agent Client Protocol client for Crucible.
+//! Wraps crucible-acp's ChatSession for use in the CLI.
 
 use anyhow::{anyhow, Result};
-use std::path::Path;
-use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, ChildStdout, Command};
-use tokio::sync::Mutex;
-use tracing::{debug, error, info, warn};
+use std::path::PathBuf;
+use tracing::{debug, info};
+
+use crucible_acp::{
+    ChatSession, ChatConfig, CrucibleAcpClient as AcpClient,
+    HistoryConfig, ContextConfig, StreamConfig,
+};
 
 use crate::acp::agent::AgentInfo;
 
-/// ACP Client for Crucible
+/// ACP Client wrapper for CLI
 ///
-/// Manages communication with an external ACP agent process.
+/// Provides a CLI-friendly interface to crucible-acp's ChatSession.
 pub struct CrucibleAcpClient {
+    session: Option<ChatSession>,
     agent: AgentInfo,
-    process: Arc<Mutex<Option<Child>>>,
     read_only: bool,
+    config: ChatConfig,
 }
 
 impl CrucibleAcpClient {
@@ -28,72 +30,81 @@ impl CrucibleAcpClient {
     /// * `agent` - Information about the agent to spawn
     /// * `read_only` - If true, deny all write operations
     pub fn new(agent: AgentInfo, read_only: bool) -> Self {
+        let config = ChatConfig {
+            history: HistoryConfig::default(),
+            context: ContextConfig {
+                enabled: true,
+                max_results: 5,
+                use_reranking: true,
+                cache_ttl_secs: 300,
+            },
+            streaming: StreamConfig::default(),
+            auto_prune: true,
+            enrich_prompts: true, // Enable context enrichment by default
+        };
+
         Self {
+            session: None,
             agent,
-            process: Arc::new(Mutex::new(None)),
             read_only,
+            config,
         }
     }
 
-    /// Spawn the agent process
-    pub async fn spawn(&self) -> Result<()> {
+    /// Create a new ACP client with custom configuration
+    ///
+    /// # Arguments
+    /// * `agent` - Information about the agent to spawn
+    /// * `read_only` - If true, deny all write operations
+    /// * `config` - Custom chat configuration
+    pub fn with_config(agent: AgentInfo, read_only: bool, config: ChatConfig) -> Self {
+        Self {
+            session: None,
+            agent,
+            read_only,
+            config,
+        }
+    }
+
+    /// Spawn and connect to the agent
+    ///
+    /// Performs the full ACP protocol handshake.
+    pub async fn spawn(&mut self) -> Result<()> {
         info!("Spawning agent: {} ({})", self.agent.name, self.agent.command);
 
-        let child = Command::new(&self.agent.command)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| anyhow!("Failed to spawn agent '{}': {}", self.agent.command, e))?;
+        // Create the ACP client with the agent command path
+        let agent_path = PathBuf::from(&self.agent.command);
+        let acp_client = AcpClient::new(agent_path, Default::default())?;
 
-        let mut process = self.process.lock().await;
-        *process = Some(child);
+        // Create ChatSession with the ACP client
+        let mut session = ChatSession::with_agent(self.config.clone(), acp_client);
 
-        info!("Agent spawned successfully");
+        // Connect to the agent (performs protocol handshake)
+        session.connect().await
+            .map_err(|e| anyhow!("Failed to connect to agent: {}", e))?;
+
+        info!("Agent connected successfully");
+
+        // Store the session
+        self.session = Some(session);
+
         Ok(())
     }
 
     /// Send a message to the agent
     ///
     /// # Arguments
-    /// * `message` - The message to send (JSON-RPC format)
-    pub async fn send_message(&self, message: &str) -> Result<()> {
-        let mut process = self.process.lock().await;
-
-        if let Some(child) = process.as_mut() {
-            if let Some(stdin) = child.stdin.as_mut() {
-                debug!("Sending message to agent: {}", message);
-                stdin.write_all(message.as_bytes()).await?;
-                stdin.write_all(b"\n").await?;
-                stdin.flush().await?;
-                Ok(())
-            } else {
-                Err(anyhow!("Agent stdin not available"))
-            }
-        } else {
-            Err(anyhow!("Agent not running"))
-        }
-    }
-
-    /// Read a response from the agent
+    /// * `message` - The user message to send
     ///
     /// # Returns
-    /// The response message (JSON-RPC format)
-    pub async fn read_response(&self) -> Result<String> {
-        let mut process = self.process.lock().await;
-
-        if let Some(child) = process.as_mut() {
-            if let Some(stdout) = child.stdout.as_mut() {
-                let mut reader = BufReader::new(stdout);
-                let mut line = String::new();
-                reader.read_line(&mut line).await?;
-                debug!("Received response from agent: {}", line.trim());
-                Ok(line)
-            } else {
-                Err(anyhow!("Agent stdout not available"))
-            }
+    /// The agent's response
+    pub async fn send_message(&mut self, message: &str) -> Result<String> {
+        if let Some(session) = &mut self.session {
+            debug!("Sending message to agent: {}", message);
+            session.send_message(message).await
+                .map_err(|e| anyhow!("Failed to send message: {}", e))
         } else {
-            Err(anyhow!("Agent not running"))
+            Err(anyhow!("Agent not running. Call spawn() first."))
         }
     }
 
@@ -101,73 +112,79 @@ impl CrucibleAcpClient {
     ///
     /// # Arguments
     /// * `enriched_prompt` - The initial prompt (potentially enriched with context)
-    pub async fn start_chat(&self, enriched_prompt: &str) -> Result<()> {
+    pub async fn start_chat(&mut self, enriched_prompt: &str) -> Result<()> {
         info!("Starting chat session");
-        info!("Mode: {}", if self.read_only { "Read-only (chat)" } else { "Write-enabled (act)" });
+        info!("Mode: {}", if self.read_only { "Read-only (plan)" } else { "Write-enabled (act)" });
 
-        // For MVP, we'll implement a simplified version
-        // A full implementation would use the agent-client-protocol crate's
-        // JSON-RPC message handling
+        // Send the initial prompt
+        let response = self.send_message(enriched_prompt).await?;
 
-        // Print the enriched prompt for the user to see what context was added
-        println!("\n--- Enriched Prompt ---");
-        println!("{}", enriched_prompt);
-        println!("--- End Enriched Prompt ---\n");
-
-        // TODO: Implement full ACP protocol integration
-        // For now, just indicate what would happen
-        println!("🚧 ACP Integration - MVP Placeholder");
-        println!("In full implementation, this would:");
-        println!("  1. Send enriched prompt to agent");
-        println!("  2. Stream responses back to user");
-        println!("  3. Handle file read/write requests");
-        println!("  4. Manage permissions (read-only: {})", self.read_only);
+        // Print the response
+        println!("\n{}", response);
 
         Ok(())
     }
 
-    /// Check if the process is still running
-    pub async fn is_running(&self) -> bool {
-        let process = self.process.lock().await;
-        if let Some(child) = process.as_ref() {
-            child.id().is_some()
-        } else {
-            false
+    /// Check if the session is connected
+    pub fn is_connected(&self) -> bool {
+        self.session.is_some()
+    }
+
+    /// Get the session ID
+    pub fn session_id(&self) -> Option<&str> {
+        self.session.as_ref().map(|s| s.session_id())
+    }
+
+    /// Get conversation statistics
+    pub fn get_stats(&self) -> Option<(usize, usize, u64)> {
+        self.session.as_ref().map(|s| {
+            let state = s.state();
+            (state.turn_count, state.total_tokens_used, state.prune_count)
+        })
+    }
+
+    /// Clear conversation history
+    pub fn clear_history(&mut self) {
+        if let Some(session) = &mut self.session {
+            session.clear_history();
+            info!("Conversation history cleared");
         }
     }
 
-    /// Shutdown the agent process
-    pub async fn shutdown(&self) -> Result<()> {
-        let mut process = self.process.lock().await;
+    /// Set context enrichment enabled/disabled
+    pub fn set_context_enrichment(&mut self, enabled: bool) {
+        self.config.enrich_prompts = enabled;
+        if let Some(session) = &mut self.session {
+            session.set_enrichment_enabled(enabled);
+        }
+        info!("Context enrichment {}", if enabled { "enabled" } else { "disabled" });
+    }
 
-        if let Some(mut child) = process.take() {
+    /// Shutdown the agent process
+    pub async fn shutdown(&mut self) -> Result<()> {
+        if let Some(mut session) = self.session.take() {
             info!("Shutting down agent");
-            child.kill().await.ok(); // Ignore errors on kill
-            child.wait().await?;
+            session.disconnect().await
+                .map_err(|e| anyhow!("Failed to disconnect: {}", e))?;
             info!("Agent shut down successfully");
         }
-
         Ok(())
     }
 }
 
 impl Drop for CrucibleAcpClient {
     fn drop(&mut self) {
-        // Best effort cleanup
-        if let Some(mut child) = self.process.try_lock().ok().and_then(|mut p| p.take()) {
-            let _ = child.start_kill();
+        // Best effort cleanup - session will be dropped and its Drop impl
+        // will handle cleanup
+        if self.session.is_some() {
+            debug!("CrucibleAcpClient dropped with active session");
         }
     }
 }
 
-// NOTE: Full ACP protocol implementation would implement the
-// agent_client_protocol::Client trait here. For MVP, we have
-// a simplified version to demonstrate the architecture.
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::acp::agent::AgentInfo;
 
     #[test]
     fn test_client_creation() {
@@ -177,5 +194,21 @@ mod tests {
         };
         let client = CrucibleAcpClient::new(agent, true);
         assert!(client.read_only);
+        assert!(!client.is_connected());
+    }
+
+    #[test]
+    fn test_client_with_custom_config() {
+        let agent = AgentInfo {
+            name: "test".to_string(),
+            command: "test-cmd".to_string(),
+        };
+        let config = ChatConfig {
+            enrich_prompts: false,
+            ..Default::default()
+        };
+        let client = CrucibleAcpClient::with_config(agent, false, config);
+        assert!(!client.read_only);
+        assert!(!client.config.enrich_prompts);
     }
 }

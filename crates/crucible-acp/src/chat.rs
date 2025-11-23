@@ -393,6 +393,11 @@ impl ChatSession {
         self.history.clear();
     }
 
+    /// Set whether to enrich prompts with context
+    pub fn set_enrichment_enabled(&mut self, enabled: bool) {
+        self.config.enrich_prompts = enabled;
+    }
+
     /// Get the configuration
     pub fn config(&self) -> &ChatConfig {
         &self.config
