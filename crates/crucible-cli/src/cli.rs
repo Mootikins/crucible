@@ -78,6 +78,9 @@ pub enum Commands {
         act: bool,
     },
 
+    /// Start MCP server exposing Crucible tools via stdio
+    Mcp,
+
     /// Process files through the pipeline (parse, enrich, store)
     Process {
         /// Specific file or directory to process (if omitted, processes entire kiln)
