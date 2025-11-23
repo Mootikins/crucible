@@ -11,8 +11,8 @@ use serde_json::{json, Value};
 // Import ACP protocol types for proper response construction
 use agent_client_protocol::{
     InitializeResponse, NewSessionResponse, PromptResponse,
-    ProtocolVersion, AgentCapabilities, AuthMethod, Implementation,
-    SessionId, StopReason, SessionModeState,
+    ProtocolVersion, AgentCapabilities, AuthMethod, AuthMethodId, Implementation,
+    SessionId, StopReason,
 };
 
 /// Defines the behavior profile of a mock agent
@@ -218,11 +218,23 @@ impl MockStdioAgent {
             AgentBehavior::Custom(_) => ("mock-custom", "1.0.0"),
         };
 
+        // Determine auth methods based on behavior
+        let auth_methods = if self.config.requires_auth {
+            vec![AuthMethod {
+                id: AuthMethodId("api_key".into()),
+                name: "API Key".to_string(),
+                description: Some("Authenticate using an API key".to_string()),
+                meta: None,
+            }]
+        } else {
+            vec![]
+        };
+
         // Construct proper InitializeResponse using ACP types
         let response = InitializeResponse {
             protocol_version: ProtocolVersion::from(self.config.protocol_version),
             agent_capabilities: AgentCapabilities::default(),
-            auth_methods: vec![],
+            auth_methods,
             agent_info: Some(Implementation {
                 name: name.to_string(),
                 version: version.to_string(),

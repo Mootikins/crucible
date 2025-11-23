@@ -12,6 +12,7 @@ mod support;
 // Test modules
 mod mock_agent_framework;
 mod opencode_integration;
+mod claude_acp_integration;
 
 // Re-export support for use in test modules
 pub use support::*;
