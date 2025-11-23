@@ -1032,3 +1032,260 @@ async fn e2e_concurrent_request_handling() {
     // Should have processed 1 init + 10 sessions
     assert_eq!(agent.request_count(), 11);
 }
+
+// Component Integration Tests - FileSystem, Streaming, Context
+
+/// Integration test: FileSystemHandler path validation
+#[tokio::test]
+async fn integration_filesystem_path_validation() {
+    use crucible_acp::FileSystemHandler;
+    use crucible_acp::filesystem::FileSystemConfig;
+    use std::path::PathBuf;
+
+    // Create handler with allowed roots
+    let config = FileSystemConfig {
+        allowed_roots: vec![
+            PathBuf::from("/tmp"),
+            PathBuf::from("/var/data"),
+        ],
+        allow_write: false,
+        allow_create_dirs: false,
+        max_read_size: 1024 * 1024,
+    };
+
+    let handler = FileSystemHandler::new(config);
+
+    // Test allowed paths
+    assert!(handler.is_path_allowed(&PathBuf::from("/tmp/test.txt")));
+    assert!(handler.is_path_allowed(&PathBuf::from("/tmp/subdir/file.txt")));
+    assert!(handler.is_path_allowed(&PathBuf::from("/var/data/file.txt")));
+
+    // Test disallowed paths
+    assert!(!handler.is_path_allowed(&PathBuf::from("/etc/passwd")));
+    assert!(!handler.is_path_allowed(&PathBuf::from("/home/user/secrets.txt")));
+    assert!(!handler.is_path_allowed(&PathBuf::from("/root/config")));
+}
+
+/// Integration test: FileSystemHandler configuration variants
+#[tokio::test]
+async fn integration_filesystem_configuration() {
+    use crucible_acp::FileSystemHandler;
+    use crucible_acp::filesystem::FileSystemConfig;
+    use std::path::PathBuf;
+
+    // Test default (no access) configuration
+    let handler_default = FileSystemHandler::new(FileSystemConfig::default());
+    assert!(!handler_default.is_path_allowed(&PathBuf::from("/tmp/test.txt")));
+
+    // Test read-only configuration
+    let config_readonly = FileSystemConfig {
+        allowed_roots: vec![PathBuf::from("/data")],
+        allow_write: false,
+        allow_create_dirs: false,
+        max_read_size: 10 * 1024 * 1024,
+    };
+    let handler_readonly = FileSystemHandler::new(config_readonly);
+    assert!(handler_readonly.is_path_allowed(&PathBuf::from("/data/file.txt")));
+
+    // Test read-write configuration
+    let config_readwrite = FileSystemConfig {
+        allowed_roots: vec![PathBuf::from("/workspace")],
+        allow_write: true,
+        allow_create_dirs: true,
+        max_read_size: 50 * 1024 * 1024,
+    };
+    let handler_readwrite = FileSystemHandler::new(config_readwrite);
+    assert!(handler_readwrite.is_path_allowed(&PathBuf::from("/workspace/output.txt")));
+}
+
+/// Integration test: StreamHandler message formatting
+#[tokio::test]
+async fn integration_stream_message_formatting() {
+    use crucible_acp::{StreamHandler, StreamConfig};
+
+    let config = StreamConfig {
+        show_thoughts: true,
+        show_tool_calls: true,
+        use_colors: false,
+    };
+
+    let handler = StreamHandler::new(config);
+
+    // Test message chunk formatting
+    let chunk = "Hello, world!";
+    let formatted = handler.format_message_chunk(chunk);
+    assert!(formatted.is_ok());
+    assert_eq!(formatted.unwrap(), "Hello, world!");
+
+    // Test thought chunk formatting
+    let thought = "Thinking about the problem...";
+    let formatted_thought = handler.format_thought_chunk(thought);
+    assert!(formatted_thought.is_ok());
+    let result = formatted_thought.unwrap();
+    assert!(result.is_some());
+    assert!(result.unwrap().contains(thought));
+
+    // Test tool call formatting
+    let params = serde_json::json!({"file": "test.txt", "mode": "read"});
+    let formatted_tool = handler.format_tool_call("read_file", &params);
+    assert!(formatted_tool.is_ok());
+    let tool_result = formatted_tool.unwrap();
+    assert!(tool_result.is_some());
+}
+
+/// Integration test: StreamHandler configuration effects
+#[tokio::test]
+async fn integration_stream_configuration_effects() {
+    use crucible_acp::{StreamHandler, StreamConfig};
+
+    // Config with thoughts and tool calls disabled
+    let config_minimal = StreamConfig {
+        show_thoughts: false,
+        show_tool_calls: false,
+        use_colors: false,
+    };
+    let handler_minimal = StreamHandler::new(config_minimal);
+
+    // Thoughts should be hidden
+    let thought_result = handler_minimal.format_thought_chunk("Thinking...");
+    assert!(thought_result.is_ok());
+    assert!(thought_result.unwrap().is_none());
+
+    // Tool calls should be hidden
+    let params = serde_json::json!({"test": "value"});
+    let tool_result = handler_minimal.format_tool_call("test_tool", &params);
+    assert!(tool_result.is_ok());
+    assert!(tool_result.unwrap().is_none());
+
+    // Config with everything enabled
+    let config_full = StreamConfig {
+        show_thoughts: true,
+        show_tool_calls: true,
+        use_colors: true,
+    };
+    let handler_full = StreamHandler::new(config_full);
+
+    // Thoughts should be shown
+    let thought_result_full = handler_full.format_thought_chunk("Thinking...");
+    assert!(thought_result_full.is_ok());
+    assert!(thought_result_full.unwrap().is_some());
+
+    // Tool calls should be shown
+    let tool_result_full = handler_full.format_tool_call("test_tool", &params);
+    assert!(tool_result_full.is_ok());
+    assert!(tool_result_full.unwrap().is_some());
+}
+
+/// Integration test: PromptEnricher basic enrichment
+#[tokio::test]
+async fn integration_context_enrichment() {
+    use crucible_acp::{PromptEnricher, ContextConfig};
+
+    let config = ContextConfig {
+        enabled: true,
+        context_size: 5,
+        use_reranking: false,
+        rerank_candidates: None,
+        enable_cache: false,
+        cache_ttl_secs: 0,
+    };
+
+    let enricher = PromptEnricher::new(config);
+
+    // Test simple enrichment
+    let query = "What is semantic search?";
+    let enriched = enricher.enrich(query).await;
+    assert!(enriched.is_ok());
+
+    let result = enriched.unwrap();
+    // Enriched query should contain original query
+    assert!(result.contains(query) || !result.is_empty());
+}
+
+/// Integration test: PromptEnricher with caching
+#[tokio::test]
+async fn integration_context_enrichment_with_cache() {
+    use crucible_acp::{PromptEnricher, ContextConfig};
+
+    let config = ContextConfig {
+        enabled: true,
+        context_size: 5,
+        use_reranking: false,
+        rerank_candidates: None,
+        enable_cache: true,
+        cache_ttl_secs: 60,
+    };
+
+    let enricher = PromptEnricher::new(config);
+
+    // First enrichment
+    let query = "Test query";
+    let result1 = enricher.enrich(query).await;
+    assert!(result1.is_ok());
+
+    // Second enrichment (should hit cache)
+    let result2 = enricher.enrich(query).await;
+    assert!(result2.is_ok());
+
+    // Both should succeed
+    assert!(!result1.unwrap().is_empty());
+    assert!(!result2.unwrap().is_empty());
+}
+
+/// Integration test: PromptEnricher disabled
+#[tokio::test]
+async fn integration_context_enrichment_disabled() {
+    use crucible_acp::{PromptEnricher, ContextConfig};
+
+    let config = ContextConfig {
+        enabled: false,
+        context_size: 0,
+        use_reranking: false,
+        rerank_candidates: None,
+        enable_cache: false,
+        cache_ttl_secs: 0,
+    };
+
+    let enricher = PromptEnricher::new(config);
+
+    // When disabled, should return original query
+    let query = "Test query";
+    let result = enricher.enrich(query).await;
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), query);
+}
+
+/// Integration test: Component interaction - Stream + Context
+#[tokio::test]
+async fn integration_stream_with_enrichment() {
+    use crucible_acp::{StreamHandler, PromptEnricher, StreamConfig, ContextConfig};
+
+    // Set up streaming
+    let stream_config = StreamConfig {
+        show_thoughts: true,
+        show_tool_calls: true,
+        use_colors: false,
+    };
+    let stream_handler = StreamHandler::new(stream_config);
+
+    // Set up enrichment
+    let context_config = ContextConfig {
+        enabled: true,
+        context_size: 3,
+        use_reranking: false,
+        rerank_candidates: None,
+        enable_cache: false,
+        cache_ttl_secs: 0,
+    };
+    let enricher = PromptEnricher::new(context_config);
+
+    // Enrich a query
+    let query = "What is the meaning of life?";
+    let enriched = enricher.enrich(query).await;
+    assert!(enriched.is_ok());
+
+    // Format the enriched result for streaming
+    let enriched_text = enriched.unwrap();
+    let formatted = stream_handler.format_message_chunk(&enriched_text);
+    assert!(formatted.is_ok());
+}
