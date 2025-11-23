@@ -151,7 +151,6 @@ fn create_tool(
 ///
 /// Returns an error if tool discovery or registration fails
 pub fn discover_crucible_tools(registry: &mut ToolRegistry, _kiln_path: &str) -> Result<usize> {
-    // TDD Cycle 9 - GREEN: Implement tool discovery from crucible-tools
     //
     // Crucible tools are organized into 3 categories:
     // - NoteTools (6 tools): CRUD operations for notes
@@ -305,7 +304,6 @@ impl ToolExecutor {
     ///
     /// Returns an error if the tool doesn't exist or execution fails
     pub async fn execute(&self, tool_name: &str, params: serde_json::Value) -> Result<serde_json::Value> {
-        // TDD Cycle 10 - GREEN: Implement tool routing to crucible-tools
         //
         // Route tool calls to the appropriate tool implementation based on category
         match tool_name {
@@ -413,14 +411,12 @@ impl ToolExecutor {
 mod tests {
     use super::*;
 
-    // TDD Cycle 9 - RED: Test expects tool registry to work
     #[test]
     fn test_tool_registry_creation() {
         let registry = ToolRegistry::new();
         assert_eq!(registry.count(), 0);
     }
 
-    // TDD Cycle 9 - RED: Test expects tool registration
     #[test]
     fn test_tool_registration() {
         let mut registry = ToolRegistry::new();
@@ -442,7 +438,6 @@ mod tests {
         assert_eq!(retrieved.unwrap(), &descriptor);
     }
 
-    // TDD Cycle 9 - RED: Test expects duplicate registration to fail
     #[test]
     fn test_duplicate_registration_fails() {
         let mut registry = ToolRegistry::new();
@@ -459,7 +454,6 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // TDD Cycle 9 - RED: Test expects tool listing
     #[test]
     fn test_tool_listing() {
         let mut registry = ToolRegistry::new();
@@ -485,7 +479,6 @@ mod tests {
         assert_eq!(tools.len(), 2);
     }
 
-    // TDD Cycle 9 - RED: Test expects crucible tools to be discovered
     #[test]
     fn test_discover_crucible_tools() {
         let mut registry = ToolRegistry::new();
@@ -508,7 +501,6 @@ mod tests {
         assert!(registry.contains("get_kiln_info"));
     }
 
-    // TDD Cycle 9 - RED: Test expects tool categories
     #[test]
     fn test_tool_categories() {
         let mut registry = ToolRegistry::new();
@@ -528,7 +520,6 @@ mod tests {
         assert_eq!(kiln_info.unwrap().category, "kiln");
     }
 
-    // TDD Cycle 9 - RED: Test expects tools to have descriptions
     #[test]
     fn test_tool_descriptions() {
         let mut registry = ToolRegistry::new();
@@ -543,14 +534,12 @@ mod tests {
         assert!(!read_note.unwrap().description.is_empty());
     }
 
-    // TDD Cycle 10 - RED: Test expects tool executor creation
     #[test]
     fn test_tool_executor_creation() {
         let executor = ToolExecutor::new(PathBuf::from("/test/kiln"));
         assert_eq!(executor.kiln_path(), &PathBuf::from("/test/kiln"));
     }
 
-    // TDD Cycle 10 - RED: Test expects tool execution to work
     #[tokio::test]
     async fn test_execute_get_kiln_info() {
         let executor = ToolExecutor::new(PathBuf::from("/test/kiln"));
@@ -566,7 +555,6 @@ mod tests {
         assert!(value.is_object(), "Result should be a JSON object");
     }
 
-    // TDD Cycle 10 - RED: Test expects tool execution with parameters
     #[tokio::test]
     async fn test_execute_read_note() {
         // Create a temporary test kiln
@@ -595,7 +583,6 @@ mod tests {
         std::fs::remove_dir_all(&temp_dir).ok();
     }
 
-    // TDD Cycle 10 - RED: Test expects error for unknown tool
     #[tokio::test]
     async fn test_execute_unknown_tool() {
         let executor = ToolExecutor::new(PathBuf::from("/test/kiln"));
@@ -609,7 +596,6 @@ mod tests {
         assert!(matches!(err, AcpError::NotFound(_)));
     }
 
-    // TDD Cycle 10 - RED: Test expects error handling for invalid parameters
     #[tokio::test]
     async fn test_execute_invalid_parameters() {
         let executor = ToolExecutor::new(PathBuf::from("/test/kiln"));

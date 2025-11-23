@@ -137,12 +137,10 @@ impl PromptEnricher {
     ///
     /// Returns an error if semantic search fails
     pub async fn enrich(&self, query: &str) -> Result<String> {
-        // TDD Cycle 11 - GREEN: Implement context enrichment
         if !self.config.enabled {
             return Ok(query.to_string());
         }
 
-        // TDD Cycle 12 - GREEN: Check cache first
         if let Some(cache) = &self.cache {
             if let Some(cached) = cache.get(query) {
                 return Ok(cached);
@@ -180,7 +178,6 @@ impl PromptEnricher {
             context, query
         );
 
-        // TDD Cycle 12 - GREEN: Store in cache
         if let Some(cache) = &self.cache {
             cache.insert(query.to_string(), enriched.clone());
         }
@@ -240,7 +237,6 @@ struct MockSearchResult {
 mod tests {
     use super::*;
 
-    // TDD Cycle 11 - RED: Test expects prompt enricher creation
     #[test]
     fn test_prompt_enricher_creation() {
         let config = ContextConfig::default();
@@ -251,7 +247,6 @@ mod tests {
         assert!(!enricher.config().use_reranking);
     }
 
-    // TDD Cycle 11 - RED: Test expects custom configuration
     #[test]
     fn test_custom_context_config() {
         let config = ContextConfig {
@@ -269,7 +264,6 @@ mod tests {
         assert_eq!(enricher.config().rerank_candidates, Some(30));
     }
 
-    // TDD Cycle 11 - RED: Test expects enrichment to be skippable when disabled
     #[tokio::test]
     async fn test_enrichment_disabled() {
         let config = ContextConfig {
@@ -285,7 +279,6 @@ mod tests {
         assert_eq!(result.unwrap(), query);
     }
 
-    // TDD Cycle 11 - RED: Test expects enriched prompt to include context
     #[tokio::test]
     async fn test_enrich_with_context() {
         let config = ContextConfig::default();
@@ -307,7 +300,6 @@ mod tests {
         assert!(enriched.len() > query.len(), "Enriched prompt should be longer");
     }
 
-    // TDD Cycle 11 - RED: Test expects formatted context results
     #[tokio::test]
     async fn test_enriched_format() {
         let config = ContextConfig {
@@ -335,7 +327,6 @@ mod tests {
             "Should separate context from query");
     }
 
-    // TDD Cycle 11 - RED: Test expects empty context handling
     #[tokio::test]
     async fn test_no_context_found() {
         let config = ContextConfig::default();
@@ -352,7 +343,6 @@ mod tests {
         assert!(enriched.contains(query));
     }
 
-    // TDD Cycle 12 - RED: Test expects caching to work
     #[tokio::test]
     async fn test_caching_enabled() {
         let config = ContextConfig {
@@ -377,7 +367,6 @@ mod tests {
         assert_eq!(enriched1, enriched2, "Cached result should match");
     }
 
-    // TDD Cycle 12 - RED: Test expects cache can be disabled
     #[tokio::test]
     async fn test_caching_disabled() {
         let config = ContextConfig {
@@ -393,7 +382,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // TDD Cycle 12 - RED: Test expects cache clear functionality
     #[tokio::test]
     async fn test_cache_clear() {
         let config = ContextConfig {
@@ -415,7 +403,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // TDD Cycle 12 - RED: Test expects TTL expiration
     #[tokio::test]
     async fn test_cache_ttl_expiration() {
         use tokio::time::{sleep, Duration};
@@ -443,7 +430,6 @@ mod tests {
         assert!(!result2.is_empty());
     }
 
-    // TDD Cycle 12 - RED: Test expects eviction of expired entries
     #[tokio::test]
     async fn test_cache_eviction() {
         let config = ContextConfig {

@@ -158,7 +158,6 @@ impl CrucibleAcpClient {
         self.active_session.as_ref()
     }
 
-    // TDD Cycle 19 - GREEN: Agent process management methods
 
     /// Spawn the agent process
     ///
@@ -256,7 +255,6 @@ impl CrucibleAcpClient {
         self.active_session.is_some()
     }
 
-    // TDD Cycle 20 - GREEN: stdio communication methods
 
     /// Write a JSON request to the agent's stdin
     ///
@@ -367,14 +365,12 @@ impl CrucibleAcpClient {
     }
 }
 
-// TDD Cycle 5 - GREEN: Implement SessionManager trait
 #[async_trait]
 impl SessionManager for CrucibleAcpClient {
     type Session = SessionId;
     type Config = SessionConfig;
 
     async fn create_session(&mut self, config: Self::Config) -> AcpResult<Self::Session> {
-        // TDD Cycle 6 - GREEN: Create session with basic state tracking
         // For now, we create a session ID and track it internally
         // Full agent connection will be implemented in later cycles
 
@@ -399,14 +395,12 @@ impl SessionManager for CrucibleAcpClient {
     }
 
     async fn load_session(&mut self, session: Self::Session) -> AcpResult<()> {
-        // TDD Cycle 6 - GREEN: Track session loading
         // For now, just set it as active (actual restoration comes later)
         self.active_session = Some(session);
         Ok(())
     }
 
     async fn end_session(&mut self, session: Self::Session) -> AcpResult<()> {
-        // TDD Cycle 6 - GREEN: Clean up session state
         if self.active_session.as_ref() == Some(&session) {
             self.active_session = None;
         }
@@ -433,7 +427,6 @@ mod tests {
         assert_eq!(client.config().agent_path, PathBuf::from("/test/agent"));
     }
 
-    // TDD Cycle 6 - Updated: Now expects successful session creation
     #[tokio::test]
     async fn test_client_implements_session_manager() {
         let config = ClientConfig {
@@ -468,7 +461,6 @@ mod tests {
         assert_eq!(client.active_session(), Some(&session_id));
     }
 
-    // TDD Cycle 6 - Updated: Full session lifecycle should work
     #[tokio::test]
     async fn test_session_lifecycle() {
         let config = ClientConfig {
@@ -505,7 +497,6 @@ mod tests {
         assert!(client.active_session().is_none());
     }
 
-    // TDD Cycle 6 - RED: Test expects successful session creation with mock agent
     #[tokio::test]
     async fn test_session_creation_with_mock_agent() {
         use crate::mock_agent::{MockAgent, MockAgentConfig};
@@ -545,7 +536,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_initialization_flow() {
-        // TDD Cycle 6 - RED: This test expects the full initialization flow
         // 1. Connect to agent (or mock)
         // 2. Send initialize request
         // 3. Create new session
@@ -555,7 +545,6 @@ mod tests {
         // but defines the expected behavior
     }
 
-    // TDD Cycle 19 - RED: Test expects real agent process spawning
     #[tokio::test]
     async fn test_agent_process_spawning() {
         // Use a simple echo script as test agent
@@ -579,7 +568,6 @@ mod tests {
         assert!(process.is_running(), "Agent process should be running");
     }
 
-    // TDD Cycle 19 - RED: Test expects connection establishment
     #[tokio::test]
     async fn test_connection_establishment() {
         let config = ClientConfig {
@@ -599,7 +587,6 @@ mod tests {
         assert!(result.is_err(), "Should fail until implementation complete");
     }
 
-    // TDD Cycle 19 - RED: Test expects message sending
     #[tokio::test]
     async fn test_message_sending() {
         let config = ClientConfig {
@@ -626,7 +613,6 @@ mod tests {
         assert!(result.is_err(), "Will fail until implementation");
     }
 
-    // TDD Cycle 19 - RED: Test expects connection cleanup
     #[tokio::test]
     async fn test_connection_cleanup() {
         let config = ClientConfig {
@@ -651,7 +637,6 @@ mod tests {
         }
     }
 
-    // TDD Cycle 19 - RED: Test expects error handling for bad agent path
     #[tokio::test]
     async fn test_bad_agent_path_error() {
         let config = ClientConfig {
@@ -675,7 +660,6 @@ mod tests {
         }
     }
 
-    // TDD Cycle 19 - RED: Test expects timeout handling
     #[tokio::test]
     async fn test_connection_timeout() {
         let config = ClientConfig {
@@ -700,7 +684,6 @@ mod tests {
         }
     }
 
-    // TDD Cycle 20 - GREEN: Test stdio-based message exchange
     #[tokio::test]
     async fn test_stdio_message_exchange() {
         use agent_client_protocol::{ClientRequest, InitializeRequest, ProtocolVersion, ClientCapabilities};
@@ -737,7 +720,6 @@ mod tests {
         let _ = result; // Accept either outcome
     }
 
-    // TDD Cycle 20 - GREEN: Test reading from agent stdout
     #[tokio::test]
     async fn test_read_agent_response() {
         let config = ClientConfig {
@@ -761,7 +743,6 @@ mod tests {
         let _ = result; // Accept either outcome
     }
 
-    // TDD Cycle 20 - GREEN: Test writing to agent stdin
     #[tokio::test]
     async fn test_write_agent_request() {
         let config = ClientConfig {
@@ -790,7 +771,6 @@ mod tests {
         assert!(result.is_ok(), "Should successfully write to cat's stdin");
     }
 
-    // TDD Cycle 20 - RED: Test expects timeout on read operations
     #[tokio::test]
     async fn test_read_timeout() {
         let config = ClientConfig {
@@ -812,7 +792,6 @@ mod tests {
         assert!(result.is_err(), "Should timeout on read");
     }
 
-    // TDD Cycle 20 - RED: Test expects proper connection state management
     #[tokio::test]
     async fn test_connection_state_tracking() {
         let config = ClientConfig {
@@ -839,7 +818,6 @@ mod tests {
         assert!(!client.is_connected(), "Should not be connected after disconnect");
     }
 
-    // TDD Cycle 20 - GREEN: Test full request/response cycle
     #[tokio::test]
     async fn test_full_request_response_cycle() {
         use agent_client_protocol::{ClientRequest, InitializeRequest, ProtocolVersion, ClientCapabilities};

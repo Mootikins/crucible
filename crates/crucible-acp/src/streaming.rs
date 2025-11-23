@@ -59,7 +59,6 @@ impl StreamHandler {
     ///
     /// Formatted string ready for display
     pub fn format_message_chunk(&self, chunk: &str) -> Result<String> {
-        // TDD Cycle 13 - GREEN: Implement message chunk formatting
         // For now, just return the chunk as-is
         // In a full implementation, this could add colors, formatting, etc.
         Ok(chunk.to_string())
@@ -75,8 +74,6 @@ impl StreamHandler {
     ///
     /// Formatted string ready for display, or None if thoughts are disabled
     pub fn format_thought_chunk(&self, chunk: &str) -> Result<Option<String>> {
-        // TDD Cycle 13 - GREEN: Implement thought chunk formatting
-        // TDD Cycle 13 - REFACTOR: Use helper function
         if !self.config.show_thoughts {
             return Ok(None);
         }
@@ -97,8 +94,6 @@ impl StreamHandler {
     ///
     /// Formatted string, or None if tool calls are disabled
     pub fn format_tool_call(&self, tool_name: &str, params: &serde_json::Value) -> Result<Option<String>> {
-        // TDD Cycle 13 - GREEN: Implement tool call formatting
-        // TDD Cycle 13 - REFACTOR: Use helper functions
         if !self.config.show_tool_calls {
             return Ok(None);
         }
@@ -146,7 +141,6 @@ mod formatting {
 mod tests {
     use super::*;
 
-    // TDD Cycle 13 - RED: Test expects stream handler creation
     #[test]
     fn test_stream_handler_creation() {
         let config = StreamConfig::default();
@@ -156,7 +150,6 @@ mod tests {
         assert!(handler.config().show_tool_calls);
     }
 
-    // TDD Cycle 13 - RED: Test expects custom config
     #[test]
     fn test_custom_stream_config() {
         let config = StreamConfig {
@@ -171,7 +164,6 @@ mod tests {
         assert!(handler.config().use_colors);
     }
 
-    // TDD Cycle 13 - RED: Test expects message chunk formatting
     #[test]
     fn test_format_message_chunk() {
         let handler = StreamHandler::new(StreamConfig::default());
@@ -184,7 +176,6 @@ mod tests {
         assert!(formatted.contains(chunk), "Should contain the chunk content");
     }
 
-    // TDD Cycle 13 - RED: Test expects thought chunk formatting
     #[test]
     fn test_format_thought_chunk_enabled() {
         let handler = StreamHandler::new(StreamConfig {
@@ -201,7 +192,6 @@ mod tests {
         assert!(formatted.unwrap().contains(chunk));
     }
 
-    // TDD Cycle 13 - RED: Test expects thoughts can be disabled
     #[test]
     fn test_format_thought_chunk_disabled() {
         let handler = StreamHandler::new(StreamConfig {
@@ -217,7 +207,6 @@ mod tests {
         assert!(formatted.is_none(), "Should return None when thoughts disabled");
     }
 
-    // TDD Cycle 13 - RED: Test expects tool call formatting
     #[test]
     fn test_format_tool_call_enabled() {
         let handler = StreamHandler::new(StreamConfig {
@@ -238,7 +227,6 @@ mod tests {
         assert!(text.contains(tool_name), "Should contain tool name");
     }
 
-    // TDD Cycle 13 - RED: Test expects tool calls can be disabled
     #[test]
     fn test_format_tool_call_disabled() {
         let handler = StreamHandler::new(StreamConfig {
@@ -256,7 +244,6 @@ mod tests {
         assert!(formatted.is_none(), "Should return None when tool calls disabled");
     }
 
-    // TDD Cycle 13 - RED: Test expects consistent formatting
     #[test]
     fn test_multiple_chunks() {
         let handler = StreamHandler::new(StreamConfig::default());
