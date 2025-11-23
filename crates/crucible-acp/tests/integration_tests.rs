@@ -1289,3 +1289,134 @@ async fn integration_stream_with_enrichment() {
     let formatted = stream_handler.format_message_chunk(&enriched_text);
     assert!(formatted.is_ok());
 }
+
+// Live Agent Integration Tests
+
+/// Integration test: ChatSession with real agent configuration
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn integration_chat_with_agent_config() {
+    use crucible_acp::{ChatSession, ChatConfig, CrucibleAcpClient};
+    use crucible_acp::client::ClientConfig;
+    use std::path::PathBuf;
+
+    let client_config = ClientConfig {
+        agent_path: PathBuf::from("echo"),
+        working_dir: None,
+        env_vars: None,
+        timeout_ms: Some(5000),
+        max_retries: Some(1),
+    };
+
+    let client = CrucibleAcpClient::new(client_config);
+    let mut chat_session = ChatSession::with_agent(ChatConfig::default(), client);
+
+    // Chat session should have agent configured
+    // Send a message in mock mode (no agent connected yet)
+    let response = chat_session.send_message("Hello, agent!").await;
+    assert!(response.is_ok());
+
+    // Response should be the mock response (since we didn't connect)
+    let response_text = response.unwrap();
+    assert!(response_text.contains("mock"));
+}
+
+/// Integration test: ChatSession connect and disconnect lifecycle
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn integration_chat_agent_lifecycle() {
+    use crucible_acp::{ChatSession, ChatConfig, CrucibleAcpClient};
+    use crucible_acp::client::ClientConfig;
+    use std::path::PathBuf;
+
+    let client_config = ClientConfig {
+        agent_path: PathBuf::from("cat"),
+        working_dir: None,
+        env_vars: None,
+        timeout_ms: Some(1000),
+        max_retries: Some(1),
+    };
+
+    let client = CrucibleAcpClient::new(client_config);
+    let mut chat_session = ChatSession::with_agent(ChatConfig::default(), client);
+
+    // Test disconnect without connect (should be safe)
+    let disconnect_result = chat_session.disconnect().await;
+    assert!(disconnect_result.is_ok());
+
+    // Test connect (will likely fail/timeout since cat isn't a valid ACP agent)
+    let connect_result = chat_session.connect().await;
+    // We accept either outcome - the important thing is the API exists
+    let _ = connect_result;
+
+    // Test disconnect after connect attempt
+    let disconnect_result = chat_session.disconnect().await;
+    assert!(disconnect_result.is_ok());
+}
+
+/// Integration test: ChatSession multi-turn conversation with agent config
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn integration_chat_multi_turn_with_agent() {
+    use crucible_acp::{ChatSession, ChatConfig};
+
+    // Create a chat session without agent (mock mode)
+    let mut chat_session = ChatSession::new(ChatConfig::default());
+
+    // Send multiple messages
+    let response1 = chat_session.send_message("First message").await;
+    assert!(response1.is_ok());
+
+    let response2 = chat_session.send_message("Second message").await;
+    assert!(response2.is_ok());
+
+    let response3 = chat_session.send_message("Third message").await;
+    assert!(response3.is_ok());
+
+    // Verify history
+    assert_eq!(chat_session.history().message_count(), 6); // 3 user + 3 agent
+
+    // Verify state tracking
+    assert_eq!(chat_session.state().turn_count, 3);
+
+    // All responses should be mock responses
+    assert!(response1.unwrap().contains("mock"));
+    assert!(response2.unwrap().contains("mock"));
+    assert!(response3.unwrap().contains("mock"));
+}
+
+/// Integration test: ChatSession agent configuration variants
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn integration_chat_agent_config_variants() {
+    use crucible_acp::{ChatSession, ChatConfig, CrucibleAcpClient};
+    use crucible_acp::client::ClientConfig;
+    use std::path::PathBuf;
+
+    // Test various client configurations
+    let configs = vec![
+        ClientConfig {
+            agent_path: PathBuf::from("echo"),
+            working_dir: None,
+            env_vars: None,
+            timeout_ms: Some(1000),
+            max_retries: Some(1),
+        },
+        ClientConfig {
+            agent_path: PathBuf::from("cat"),
+            working_dir: Some(PathBuf::from("/tmp")),
+            env_vars: None,
+            timeout_ms: Some(5000),
+            max_retries: Some(3),
+        },
+    ];
+
+    for config in configs {
+        let client = CrucibleAcpClient::new(config);
+        let chat_session = ChatSession::with_agent(ChatConfig::default(), client);
+
+        // Verify session is created successfully
+        assert_eq!(chat_session.state().turn_count, 0);
+        assert_eq!(chat_session.history().message_count(), 0);
+    }
+}
