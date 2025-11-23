@@ -382,7 +382,10 @@ mod tests {
 
         let client = CrucibleClient::new(temp.path().to_path_buf(), false);
         let result = client.read_text_file(ReadTextFileRequest {
+            session_id: "test".into(),
             path: PathBuf::from("test.txt"),
+            line: None,
+            limit: None,
             meta: None,
         }).await;
 
@@ -396,6 +399,7 @@ mod tests {
         let client = CrucibleClient::new(temp.path().to_path_buf(), false);
 
         let result = client.write_text_file(WriteTextFileRequest {
+            session_id: "test".into(),
             path: PathBuf::from("new.txt"),
             content: "new content".to_string(),
             meta: None,
@@ -413,6 +417,7 @@ mod tests {
         let client = CrucibleClient::new(temp.path().to_path_buf(), true);
 
         let result = client.write_text_file(WriteTextFileRequest {
+            session_id: "test".into(),
             path: PathBuf::from("blocked.txt"),
             content: "should fail".to_string(),
             meta: None,
@@ -423,7 +428,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_permission_request() {
-        use agent_client_protocol::{PermissionOption, PermissionOptionId, ToolCallUpdate, ToolCallUpdateFields};
+        use agent_client_protocol::{PermissionOption, PermissionOptionId, ToolCallUpdate, ToolCallUpdateFields, PermissionOptionKind};
 
         let temp = TempDir::new().unwrap();
         let client = CrucibleClient::new(temp.path().to_path_buf(), false);
@@ -437,9 +442,8 @@ mod tests {
             },
             options: vec![PermissionOption {
                 id: PermissionOptionId("allow".into()),
-                label: "Allow".into(),
-                description: None,
-                meta: None,
+                name: "Allow".into(),
+                kind: PermissionOptionKind::Allow,
             }],
             meta: None,
         }).await;
