@@ -765,3 +765,270 @@ async fn baseline_conversation_history_operations() {
     assert_eq!(history.message_count(), 0);
     assert_eq!(history.total_tokens(), 0);
 }
+
+// End-to-End Protocol Tests with MockAgent
+
+/// End-to-end test: Complete protocol flow with MockAgent
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn e2e_complete_protocol_flow() {
+    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
+    use agent_client_protocol::{
+        ClientRequest, InitializeRequest, NewSessionRequest,
+        ProtocolVersion, ClientCapabilities
+    };
+    use std::path::PathBuf;
+
+    // Create mock agent
+    let agent = MockAgent::new(MockAgentConfig::default());
+
+    // Step 1: Initialize
+    let init_request = ClientRequest::InitializeRequest(InitializeRequest {
+        protocol_version: ProtocolVersion::default(),
+        client_info: None,
+        client_capabilities: ClientCapabilities::default(),
+        meta: None,
+    });
+
+    let init_result = agent.handle_request(init_request).await;
+    assert!(init_result.is_ok(), "Initialize should succeed");
+
+    // Step 2: Create session
+    let session_request = ClientRequest::NewSessionRequest(NewSessionRequest {
+        cwd: PathBuf::from("/test"),
+        mcp_servers: vec![],
+        meta: None,
+    });
+
+    let session_result = agent.handle_request(session_request).await;
+    assert!(session_result.is_ok(), "New session should succeed");
+
+    // Verify request count
+    assert_eq!(agent.request_count(), 2, "Should have processed 2 requests");
+}
+
+/// End-to-end test: Multiple session creation
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn e2e_multiple_session_creation() {
+    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
+    use agent_client_protocol::{
+        ClientRequest, InitializeRequest, NewSessionRequest,
+        ProtocolVersion, ClientCapabilities
+    };
+    use std::path::PathBuf;
+
+    let agent = MockAgent::new(MockAgentConfig::default());
+
+    // Initialize once
+    let init_req = ClientRequest::InitializeRequest(InitializeRequest {
+        protocol_version: ProtocolVersion::default(),
+        client_info: None,
+        client_capabilities: ClientCapabilities::default(),
+        meta: None,
+    });
+    agent.handle_request(init_req).await.unwrap();
+
+    // Create multiple sessions
+    for i in 1..=5 {
+        let session_req = ClientRequest::NewSessionRequest(NewSessionRequest {
+            cwd: PathBuf::from(format!("/test/session-{}", i)),
+            mcp_servers: vec![],
+            meta: None,
+        });
+
+        let result = agent.handle_request(session_req).await;
+        assert!(result.is_ok(), "Session {} should succeed", i);
+    }
+
+    // Verify total request count (1 init + 5 sessions)
+    assert_eq!(agent.request_count(), 6);
+}
+
+/// End-to-end test: Protocol error handling
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn e2e_protocol_error_handling() {
+    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
+    use agent_client_protocol::{ClientRequest, InitializeRequest, ProtocolVersion, ClientCapabilities};
+
+    // Create agent with error simulation
+    let mut config = MockAgentConfig::default();
+    config.simulate_errors = true;
+    let agent = MockAgent::new(config);
+
+    // Try to initialize - should fail
+    let init_request = ClientRequest::InitializeRequest(InitializeRequest {
+        protocol_version: ProtocolVersion::default(),
+        client_info: None,
+        client_capabilities: ClientCapabilities::default(),
+        meta: None,
+    });
+
+    let result = agent.handle_request(init_request).await;
+    assert!(result.is_err(), "Should return error when error simulation enabled");
+}
+
+/// End-to-end test: Delay simulation
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn e2e_delay_simulation() {
+    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
+    use agent_client_protocol::{ClientRequest, InitializeRequest, ProtocolVersion, ClientCapabilities};
+    use std::time::Instant;
+
+    // Create agent with delay simulation
+    let config = MockAgentConfig {
+        responses: Default::default(),
+        simulate_delay: true,
+        delay_ms: 100,
+        simulate_errors: false,
+    };
+    let agent = MockAgent::new(config);
+
+    // Send request and measure time
+    let start = Instant::now();
+    let init_request = ClientRequest::InitializeRequest(InitializeRequest {
+        protocol_version: ProtocolVersion::default(),
+        client_info: None,
+        client_capabilities: ClientCapabilities::default(),
+        meta: None,
+    });
+
+    let result = agent.handle_request(init_request).await;
+    let elapsed = start.elapsed();
+
+    assert!(result.is_ok(), "Request should succeed");
+    assert!(elapsed.as_millis() >= 100, "Should have delayed at least 100ms");
+}
+
+/// End-to-end test: Session state across requests
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn e2e_session_state_persistence() {
+    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
+    use agent_client_protocol::{
+        ClientRequest, InitializeRequest, NewSessionRequest,
+        ProtocolVersion, ClientCapabilities
+    };
+    use std::path::PathBuf;
+
+    let agent = MockAgent::new(MockAgentConfig::default());
+
+    // Initialize
+    let init = ClientRequest::InitializeRequest(InitializeRequest {
+        protocol_version: ProtocolVersion::default(),
+        client_info: None,
+        client_capabilities: ClientCapabilities::default(),
+        meta: None,
+    });
+    agent.handle_request(init).await.unwrap();
+
+    // Create multiple sessions
+    for i in 1..=3 {
+        let session_req = ClientRequest::NewSessionRequest(NewSessionRequest {
+            cwd: PathBuf::from(format!("/test/session-{}", i)),
+            mcp_servers: vec![],
+            meta: None,
+        });
+
+        let result = agent.handle_request(session_req).await;
+        assert!(result.is_ok(), "Session {} creation should succeed", i);
+    }
+
+    // Request count should be: 1 init + 3 sessions
+    assert_eq!(agent.request_count(), 4);
+}
+
+/// End-to-end test: Custom response handling
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn e2e_custom_response_handling() {
+    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
+    use agent_client_protocol::{ClientRequest, InitializeRequest, ProtocolVersion, ClientCapabilities};
+    use std::collections::HashMap;
+
+    // Configure custom responses
+    let mut responses = HashMap::new();
+    responses.insert(
+        "initialize".to_string(),
+        serde_json::json!({
+            "agent_info": {
+                "name": "TestAgent",
+                "version": "2.0.0"
+            },
+            "agent_capabilities": {
+                "streaming": true,
+                "tools": true
+            }
+        })
+    );
+
+    let config = MockAgentConfig {
+        responses,
+        simulate_delay: false,
+        delay_ms: 0,
+        simulate_errors: false,
+    };
+
+    let agent = MockAgent::new(config);
+
+    // Send initialize request
+    let init_request = ClientRequest::InitializeRequest(InitializeRequest {
+        protocol_version: ProtocolVersion::default(),
+        client_info: None,
+        client_capabilities: ClientCapabilities::default(),
+        meta: None,
+    });
+
+    let result = agent.handle_request(init_request).await;
+    assert!(result.is_ok(), "Should handle custom response correctly");
+}
+
+/// End-to-end test: Concurrent request handling
+#[cfg(feature = "test-utils")]
+#[tokio::test]
+async fn e2e_concurrent_request_handling() {
+    use crucible_acp::mock_agent::{MockAgent, MockAgentConfig};
+    use agent_client_protocol::{
+        ClientRequest, InitializeRequest, NewSessionRequest,
+        ProtocolVersion, ClientCapabilities
+    };
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    let agent = Arc::new(MockAgent::new(MockAgentConfig::default()));
+
+    // Initialize once
+    let init = ClientRequest::InitializeRequest(InitializeRequest {
+        protocol_version: ProtocolVersion::default(),
+        client_info: None,
+        client_capabilities: ClientCapabilities::default(),
+        meta: None,
+    });
+    agent.handle_request(init).await.unwrap();
+
+    // Spawn multiple concurrent session creation requests
+    let mut handles = vec![];
+    for i in 1..=10 {
+        let agent_clone = Arc::clone(&agent);
+        let handle = tokio::spawn(async move {
+            let session_req = ClientRequest::NewSessionRequest(NewSessionRequest {
+                cwd: PathBuf::from(format!("/test/session-{}", i)),
+                mcp_servers: vec![],
+                meta: None,
+            });
+            agent_clone.handle_request(session_req).await
+        });
+        handles.push(handle);
+    }
+
+    // Wait for all requests to complete
+    for handle in handles {
+        let result = handle.await.unwrap();
+        assert!(result.is_ok(), "Concurrent request should succeed");
+    }
+
+    // Should have processed 1 init + 10 sessions
+    assert_eq!(agent.request_count(), 11);
+}
