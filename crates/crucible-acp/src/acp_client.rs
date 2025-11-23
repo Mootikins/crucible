@@ -383,7 +383,7 @@ mod tests {
         let client = CrucibleClient::new(temp.path().to_path_buf(), false);
         let result = client.read_text_file(ReadTextFileRequest {
             session_id: "test".into(),
-            path: PathBuf::from("test.txt"),
+            path: test_file,  // Use absolute path
             line: None,
             limit: None,
             meta: None,
@@ -397,17 +397,18 @@ mod tests {
     async fn test_write_file() {
         let temp = TempDir::new().unwrap();
         let client = CrucibleClient::new(temp.path().to_path_buf(), false);
+        let new_file = temp.path().join("new.txt");
 
         let result = client.write_text_file(WriteTextFileRequest {
             session_id: "test".into(),
-            path: PathBuf::from("new.txt"),
+            path: new_file.clone(),  // Use absolute path
             content: "new content".to_string(),
             meta: None,
         }).await;
 
         assert!(result.is_ok());
 
-        let content = tokio::fs::read_to_string(temp.path().join("new.txt")).await.unwrap();
+        let content = tokio::fs::read_to_string(&new_file).await.unwrap();
         assert_eq!(content, "new content");
     }
 
@@ -443,7 +444,8 @@ mod tests {
             options: vec![PermissionOption {
                 id: PermissionOptionId("allow".into()),
                 name: "Allow".into(),
-                kind: PermissionOptionKind::Allow,
+                kind: PermissionOptionKind::AllowOnce,
+                meta: None,
             }],
             meta: None,
         }).await;
