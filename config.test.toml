@@ -1,0 +1,39 @@
+# Test Configuration for Crucible CLI + ACP Integration
+# Usage: cru chat --config config.test.toml "your message"
+
+[kiln]
+# Path to your test kiln (replace with actual path)
+path = "./test-kiln"
+
+# Embedding service URL (using mock for testing)
+embedding_url = "mock"
+
+# Embedding model (using mock for testing without embedding service)
+embedding_model = "mock-test-model"
+
+[llm]
+# Default model for chat (adjust based on your agent)
+chat_model = "claude-sonnet-4"
+
+# Temperature for responses
+temperature = 0.7
+
+# Max tokens
+max_tokens = 4096
+
+# Enable streaming
+streaming = true
+
+# System prompt (optional)
+system_prompt = "You are a helpful AI assistant working with Crucible knowledge management system."
+
+[network]
+# Request timeout in seconds
+timeout_secs = 300
+
+# Max retries
+max_retries = 3
+
+[file_watching]
+# Disable file watching for testing
+enabled = false
