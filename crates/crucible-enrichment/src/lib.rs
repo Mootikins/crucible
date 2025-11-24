@@ -15,24 +15,76 @@
 //! 2. Enriches with embeddings, metadata, and relations
 //! 3. Returns `EnrichedNote` for storage in database
 //!
-//! ## Clean Architecture
+//! ## Clean Architecture (SOLID Phase 5)
 //!
 //! - **Dependencies**: Depends on `crucible-core` (traits only) and `crucible-parser` (AST)
 //! - **Inversion**: Uses `EmbeddingProvider` trait from `crucible-core`
+//! - **Private Implementation**: `DefaultEnrichmentService` is private, use factory function
 //! - **Pure functions**: Business logic is testable and reusable
+//!
+//! ## Usage
+//!
+//! ```rust,no_run
+//! use crucible_enrichment::create_default_enrichment_service;
+//! use crucible_core::enrichment::EnrichmentService;
+//!
+//! #[tokio::main]
+//! async fn main() -> anyhow::Result<()> {
+//!     // Use factory function to create service
+//!     let service = create_default_enrichment_service(None)?;
+//!
+//!     // Use via trait interface
+//!     // service.enrich_note(...).await?;
+//!
+//!     Ok(())
+//! }
+//! ```
 //!
 //! ## Modules
 //!
-//! - **types**: EnrichedNote and related types
-//! - **service**: EnrichmentService implementation
+//! - **types**: EnrichedNote and related types (public)
+//! - **service**: EnrichmentService implementation (private, use factory)
 
-pub mod service;
 pub mod types;
 
-// Re-export enrichment types (now defined in crucible-core)
+// Re-export enrichment types (domain types are public)
 pub use types::{
     BlockEmbedding, EnrichedNoteWithTree, InferredRelation, NoteMetadata, RelationType,
 };
 
-// Re-export service
-pub use service::{DefaultEnrichmentService, DEFAULT_MAX_BATCH_SIZE, DEFAULT_MIN_WORDS_FOR_EMBEDDING};
+// Re-export constants (configuration values)
+pub use service::{DEFAULT_MAX_BATCH_SIZE, DEFAULT_MIN_WORDS_FOR_EMBEDDING};
+
+// PRIVATE: Service implementation - use factory function instead
+pub(crate) mod service;
+
+// Factory function - public API for creating the service
+use std::sync::Arc;
+use crucible_core::enrichment::{EmbeddingProvider, EnrichmentService};
+use crucible_merkle::HybridMerkleTreeBuilder;
+
+/// Create a DefaultEnrichmentService with optional embedding provider.
+///
+/// This is the public factory function for creating enrichment services.
+/// It enforces dependency inversion by returning a trait object.
+///
+/// # Arguments
+///
+/// * `embedding_provider` - Optional embedding provider for semantic enrichment
+///
+/// # Returns
+///
+/// A trait object implementing `EnrichmentService`
+pub fn create_default_enrichment_service(
+    embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+) -> anyhow::Result<Arc<dyn EnrichmentService>> {
+    let merkle_builder = HybridMerkleTreeBuilder::default();
+
+    let service = if let Some(provider) = embedding_provider {
+        service::DefaultEnrichmentService::new(merkle_builder, provider)
+    } else {
+        service::DefaultEnrichmentService::without_embeddings(merkle_builder)
+    };
+
+    Ok(Arc::new(service))
+}
