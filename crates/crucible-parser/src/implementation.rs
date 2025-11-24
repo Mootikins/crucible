@@ -369,7 +369,14 @@ impl MarkdownParser for CrucibleParser {
                 if !errors.is_empty() {
                     // Log errors but continue parsing
                     for error in errors {
-                        eprintln!("Parse error: {}", error.message);
+                        eprintln!(
+                            "Parse error in {:?} [{}:{}] (offset {}): {}",
+                            source_path.file_name().unwrap_or_default(),
+                            error.line,
+                            error.column,
+                            error.offset,
+                            error.message
+                        );
                     }
                 }
             }
