@@ -1800,6 +1800,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "crucible-mock-agent"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "crucible-parser"
 version = "0.1.0"
 dependencies = [
