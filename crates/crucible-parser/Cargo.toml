@@ -27,8 +27,8 @@ regex = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 
 # Parsing
-pulldown-cmark = { workspace = true }
-markdown-it = { workspace = true, optional = true }
+pulldown-cmark = { workspace = true, optional = true }
+markdown-it = { workspace = true }
 serde_yaml = { workspace = true }
 toml = { workspace = true }
 
@@ -53,9 +53,10 @@ name = "fair_comparison"
 harness = false
 
 [features]
-default = ["full-featured"]
+default = ["markdown-it-parser"]
 full-featured = []
-markdown-it-parser = ["markdown-it"]
+markdown-it-parser = []
+pulldown-parser = ["pulldown-cmark"]
 
 [lib]
 name = "crucible_parser"

@@ -15,7 +15,10 @@
 //! - Extension system for syntax features
 //! - Block extraction and processing utilities
 
+// pulldown-cmark specific modules
+#[cfg(feature = "pulldown-parser")]
 pub mod basic_markdown;
+
 pub mod block_extractor;
 pub mod block_hasher;
 pub mod blockquotes;
@@ -28,14 +31,17 @@ pub mod frontmatter_extractor;
 pub mod implementation;
 pub mod inline_links;
 pub mod latex;
-pub mod pulldown;
 pub mod traits;
 pub mod types;
 pub mod wikilinks;
 
-// markdown-it based parser (optional feature)
+// markdown-it based parser (default)
 #[cfg(feature = "markdown-it-parser")]
 pub mod markdown_it;
+
+// pulldown-cmark based parser (optional)
+#[cfg(feature = "pulldown-parser")]
+pub mod pulldown;
 
 // Re-export core parser types and traits (canonical definitions in crucible-core)
 pub use crucible_core::parser::{
@@ -94,14 +100,16 @@ pub use frontmatter_extractor::{
 };
 pub use implementation::{BlockProcessingConfig, CrucibleParser};
 
-// Re-export markdown-it parser when feature is enabled
+// Re-export markdown-it parser when feature is enabled (default)
 #[cfg(feature = "markdown-it-parser")]
 pub use markdown_it::MarkdownItParser;
 
-// Re-export parser implementations
+// Re-export pulldown parser when feature is enabled (optional)
+#[cfg(feature = "pulldown-parser")]
 pub use pulldown::PulldownParser;
 
 // Convenience factory functions
+#[cfg(feature = "pulldown-parser")]
 pub use basic_markdown::create_basic_markdown_extension;
 pub use blockquotes::create_blockquote_extension;
 pub use callouts::create_callout_extension;
