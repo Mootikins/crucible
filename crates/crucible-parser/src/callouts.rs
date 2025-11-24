@@ -174,6 +174,7 @@ impl CalloutExtension {
                 | "bug"
                 | "caution"
                 | "attention"
+                | "tbd"
         )
     }
 }
