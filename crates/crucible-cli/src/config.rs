@@ -895,7 +895,7 @@ max_performance_degradation = 20.0
                     key.clone()
                 } else {
                     std::env::var("OPENAI_API_KEY")
-                        .map_err(|_| anyhow::anyhow!("OpenAI API key not configured"))?
+                        .map_err(|_| anyhow::anyhow!("OpenAI API key not configured in config file or OPENAI_API_KEY environment variable"))?
                 };
                 Ok(EmbeddingConfig::openai(api_key, Some(model_string.clone())))
             }
@@ -910,9 +910,9 @@ max_performance_degradation = 20.0
     fn to_embedding_config_from_legacy(&self) -> Result<EmbeddingConfig> {
         let model = self.kiln.embedding_model.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
-                "Embedding model is not configured. Please set it via:\n\
-                - Environment variable: EMBEDDING_MODEL\n\
-                - Config file: embedding_model = \"<model>\""
+                "Embedding model is not configured. Please set it in your config file:\n\
+                [kiln]\n\
+                embedding_model = \"your-model-name\""
             )
         })?;
 

@@ -40,11 +40,17 @@ async fn main() -> Result<()> {
 
     if uses_stdio {
         // File-only logging for stdio-based commands (MCP, Chat)
-        // Default to ~/.crucible/mcp.log, override with CRUCIBLE_MCP_LOG_FILE
-        let log_file_path = std::env::var("CRUCIBLE_MCP_LOG_FILE")
+        // Default to ~/.crucible/<command>.log, override with CRUCIBLE_LOG_FILE
+        let log_file_name = match &cli.command {
+            Some(Commands::Mcp) => "mcp.log",
+            Some(Commands::Chat { .. }) => "chat.log",
+            _ => "crucible.log",
+        };
+
+        let log_file_path = std::env::var("CRUCIBLE_LOG_FILE")
             .unwrap_or_else(|_| {
                 let home = dirs::home_dir().expect("Failed to get home directory");
-                home.join(".crucible").join("mcp.log").to_string_lossy().to_string()
+                home.join(".crucible").join(log_file_name).to_string_lossy().to_string()
             });
 
         // Create parent directory if it doesn't exist
