@@ -521,5 +521,42 @@ DEFINE PERMISSION delete ON TABLE embeds FOR delete WHERE true;
 */
 
 -- ============================================================================
+-- TABLE: file_state
+-- ============================================================================
+-- Stores file state for pipeline change detection (Phase 1 quick filter)
+-- This is a cache table - can be cleared and rebuilt from source files
+
+DEFINE TABLE file_state SCHEMAFULL;
+
+-- Relative path from kiln root (used as primary lookup key)
+DEFINE FIELD relative_path ON TABLE file_state
+    TYPE string
+    ASSERT $value != NONE;
+
+-- BLAKE3 hash of file content
+DEFINE FIELD file_hash ON TABLE file_state
+    TYPE string
+    ASSERT $value != NONE;
+
+-- File modification time (stored as datetime)
+DEFINE FIELD modified_time ON TABLE file_state
+    TYPE datetime
+    ASSERT $value != NONE;
+
+-- File size in bytes
+DEFINE FIELD file_size ON TABLE file_state
+    TYPE int
+    ASSERT $value != NONE;
+
+-- When this state was recorded (for debugging/auditing)
+DEFINE FIELD updated_at ON TABLE file_state
+    TYPE datetime
+    DEFAULT time::now();
+
+-- Indexes for fast lookups
+DEFINE INDEX file_state_path_idx ON TABLE file_state COLUMNS relative_path UNIQUE;
+DEFINE INDEX file_state_hash_idx ON TABLE file_state COLUMNS file_hash;
+
+-- ============================================================================
 -- END OF SCHEMA
 -- ============================================================================
