@@ -211,7 +211,7 @@ pub struct NetworkConfig {
 /// LLM configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmConfig {
-    /// Default ACP agent for chat (opencode, claude-acp, gemini, codex)
+    /// Default ACP agent for chat (opencode, claude, gemini, codex)
     pub default_agent: Option<String>,
 
     /// Default model for chat
