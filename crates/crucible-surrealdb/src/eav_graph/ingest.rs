@@ -291,48 +291,36 @@ impl<'a> NoteIngestor<'a> {
 
         // Store reading time (always present)
         self.store
-            .upsert_property(&Property {
-                id: None,
-                entity_id: entity_id.clone(),
-                namespace: metadata_namespace.clone(),
-                key: "reading_time".to_string(),
-                value: PropertyValue::Number(enriched.core.metadata.reading_time_minutes as f64),
-                source: "enrichment_service".to_string(),
-                confidence: 1.0,
-                created_at: chrono::Utc::now(),
-                updated_at: chrono::Utc::now(),
-            })
+            .upsert_property(&Property::new(
+                self.property_id(&entity_id, "enrichment", "reading_time"),
+                entity_id.clone(),
+                "enrichment",
+                "reading_time",
+                PropertyValue::Number(enriched.core.metadata.reading_time_minutes as f64),
+            ))
             .await?;
 
         // Store complexity score (always present as f32)
         self.store
-            .upsert_property(&Property {
-                id: None,
-                entity_id: entity_id.clone(),
-                namespace: metadata_namespace.clone(),
-                key: "complexity_score".to_string(),
-                value: PropertyValue::Number(enriched.core.metadata.complexity_score as f64),
-                source: "enrichment_service".to_string(),
-                confidence: 1.0,
-                created_at: chrono::Utc::now(),
-                updated_at: chrono::Utc::now(),
-            })
+            .upsert_property(&Property::new(
+                self.property_id(&entity_id, "enrichment", "complexity_score"),
+                entity_id.clone(),
+                "enrichment",
+                "complexity_score",
+                PropertyValue::Number(enriched.core.metadata.complexity_score as f64),
+            ))
             .await?;
 
         // Store language if detected
         if let Some(language) = &enriched.core.metadata.language {
             self.store
-                .upsert_property(&Property {
-                    id: None,
-                    entity_id: entity_id.clone(),
-                    namespace: metadata_namespace,
-                    key: "language".to_string(),
-                    value: PropertyValue::Text(language.clone()),
-                    source: "enrichment_service".to_string(),
-                    confidence: 1.0,
-                    created_at: chrono::Utc::now(),
-                    updated_at: chrono::Utc::now(),
-                })
+                .upsert_property(&Property::new(
+                    self.property_id(&entity_id, "enrichment", "language"),
+                    entity_id.clone(),
+                    "enrichment",
+                    "language",
+                    PropertyValue::Text(language.clone()),
+                ))
                 .await?;
         }
 
