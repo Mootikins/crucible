@@ -125,8 +125,12 @@ impl EnhancedTagsExtension {
 
                 // Skip if preceded by a word character (replaces negative lookbehind)
                 let match_start = cap.get(0).unwrap().start();
-                if match_start > 0 && line.chars().nth(match_start - 1).unwrap().is_alphanumeric() {
-                    continue;
+                if match_start > 0 {
+                    if let Some(prev_char) = line.chars().nth(match_start - 1) {
+                        if prev_char.is_alphanumeric() {
+                            continue;
+                        }
+                    }
                 }
 
                 let tag = Tag::new(hashtag, offset);
