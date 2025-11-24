@@ -11,6 +11,7 @@ use crucible_cli::commands::process;
 use crucible_cli::config::{CliConfig, KilnConfig, LlmConfig};
 use std::path::PathBuf;
 use tempfile::TempDir;
+use tokio::time::{sleep, Duration};
 
 /// Helper to create a test kiln with sample markdown files
 fn create_test_kiln() -> Result<TempDir> {
@@ -93,6 +94,9 @@ async fn test_storage_persists_across_runs() -> Result<()> {
     // When: Running process command the first time
     process::execute(config.clone(), None, false, false).await?;
 
+    // Give time for database to fully close
+    sleep(Duration::from_millis(100)).await;
+
     // And: Running process command a second time (same database)
     let config2 = create_test_config(kiln_path, db_path);
     let result = process::execute(config2, None, false, false).await;
@@ -122,6 +126,9 @@ async fn test_change_detection_skips_unchanged_files() -> Result<()> {
     // When: Processing files initially
     process::execute(config.clone(), None, false, false).await?;
 
+    // Give time for database to fully close
+    sleep(Duration::from_millis(100)).await;
+
     // And: Processing again without any file changes
     let config2 = create_test_config(kiln_path.clone(), db_path.clone());
     let result = process::execute(config2, None, false, false).await;
@@ -132,6 +139,9 @@ async fn test_change_detection_skips_unchanged_files() -> Result<()> {
     // 1. Change detection identified files as unchanged
     // 2. Pipeline quick filter skipped unchanged files
     // 3. No embeddings were regenerated
+
+    // Give time for database to fully close
+    sleep(Duration::from_millis(100)).await;
 
     // When: Modifying one file
     std::fs::write(
@@ -166,6 +176,9 @@ async fn test_force_flag_overrides_change_detection() -> Result<()> {
 
     // When: Processing initially
     process::execute(config.clone(), None, false, false).await?;
+
+    // Give time for database to fully close
+    sleep(Duration::from_millis(100)).await;
 
     // And: Processing again with --force flag
     let config_force = create_test_config(kiln_path, db_path);

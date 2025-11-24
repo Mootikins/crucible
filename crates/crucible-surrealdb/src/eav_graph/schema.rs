@@ -1,4 +1,5 @@
 use anyhow::Result;
+use tracing::trace;
 
 use crate::SurrealClient;
 
@@ -18,13 +19,20 @@ pub async fn apply_eav_graph_schema(client: &SurrealClient) -> Result<()> {
         }
 
         // Run each statement individually so failures are easier to diagnose.
-        let _ = client.query(trimmed, &[]).await.map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to execute EAV+Graph schema statement '{}': {}",
-                trimmed,
-                e
-            )
-        })?;
+        // Ignore "already exists" errors to make schema initialization idempotent
+        let result = client.query(trimmed, &[]).await;
+        if let Err(e) = result {
+            let err_msg = format!("{}", e);
+            if !err_msg.contains("already exists") {
+                return Err(anyhow::anyhow!(
+                    "Failed to execute EAV+Graph schema statement '{}': {}",
+                    trimmed,
+                    e
+                ));
+            }
+            // Ignore "already exists" errors
+            trace!("Schema element already exists (ignoring): {}", trimmed);
+        }
     }
 
     Ok(())

@@ -126,21 +126,21 @@ impl ChangeDetectionStore for SurrealChangeDetectionStore {
 
         trace!("Storing file state for {}: hash={}", record.relative_path, &record.file_hash[..8]);
 
-        // Use UPSERT pattern: UPDATE or CREATE
-        let query = format!(
-            r#"
-            UPDATE file_state:{} CONTENT {{
+        // Use UPSERT pattern with parameterized record ID
+        // Convert path to a safe record ID by URL-encoding
+        let record_id = urlencoding::encode(&record.relative_path).to_string();
+
+        let query = r#"
+            UPDATE type::thing('file_state', $record_id) CONTENT {
                 relative_path: $relative_path,
                 file_hash: $file_hash,
                 modified_time: type::datetime($modified_time),
                 file_size: $file_size
-            }}
-            "#,
-            // Use relative_path as record ID (URL-safe escaped)
-            urlencoding::encode(&record.relative_path)
-        );
+            }
+        "#;
 
         let params = vec![
+            Value::String(record_id),
             Value::String(record.relative_path.clone()),
             Value::String(record.file_hash.clone()),
             Value::Number(record.modified_time.into()),
@@ -148,7 +148,7 @@ impl ChangeDetectionStore for SurrealChangeDetectionStore {
         ];
 
         self.client
-            .query(&query, &params)
+            .query(query, &params)
             .await
             .map_err(|e| ChangeDetectionError::Storage(format!("Failed to store file state: {}", e)))?;
 
@@ -162,13 +162,13 @@ impl ChangeDetectionStore for SurrealChangeDetectionStore {
             .ok_or_else(|| ChangeDetectionError::InvalidPath("Invalid UTF-8 in path".to_string()))?
             .to_string();
 
-        let query = format!(
-            "DELETE file_state:{}",
-            urlencoding::encode(&relative_path)
-        );
+        let record_id = urlencoding::encode(&relative_path).to_string();
+
+        let query = "DELETE type::thing('file_state', $record_id)";
+        let params = vec![Value::String(record_id)];
 
         self.client
-            .query(&query, &[])
+            .query(query, &params)
             .await
             .map_err(|e| ChangeDetectionError::Storage(format!("Failed to delete file state: {}", e)))?;
 
