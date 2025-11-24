@@ -400,27 +400,27 @@ impl ChatSession {
     /// If an agent is connected, sends the prompt via ACP protocol.
     /// Otherwise, returns a mock response for testing.
     async fn generate_agent_response(&mut self, prompt: &str) -> Result<String> {
-        if let (Some(client), Some(_session)) = (&mut self.agent_client, &self.agent_session) {
-            // Real agent mode: Send message via ACP protocol
-            // For now, we'll use send_message which handles JSON communication
-            // TODO: In the future, we may want to use a higher-level API
-            // that specifically handles SendMessageRequest
+        if let (Some(client), Some(session)) = (&mut self.agent_client, &self.agent_session) {
+            // Real agent mode: Send prompt via ACP protocol with streaming
+            use agent_client_protocol::{PromptRequest, ContentBlock, SessionId};
 
-            let message = serde_json::json!({
-                "type": "message",
-                "content": prompt
-            });
+            // Create a proper PromptRequest
+            let prompt_request = PromptRequest {
+                session_id: SessionId::from(session.id().to_string()),
+                prompt: vec![ContentBlock::from(prompt.to_string())],
+                meta: None,
+            };
 
-            let response = client.send_message(message).await?;
+            // Generate unique request ID
+            static REQUEST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+            let request_id = REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-            // Extract response content
-            let response_text = response
-                .get("content")
-                .and_then(|v| v.as_str())
-                .unwrap_or("No response content")
-                .to_string();
+            // Send prompt with streaming and accumulate content
+            let (content, _stop_reason) = client.send_prompt_with_streaming(prompt_request, request_id).await?;
 
-            Ok(response_text)
+            tracing::debug!("Accumulated {} bytes of content from agent", content.len());
+
+            Ok(content)
         } else {
             // Mock mode: Return mock response for testing
             Ok("This is a mock agent response. In a real implementation, this would come from the actual agent.".to_string())
