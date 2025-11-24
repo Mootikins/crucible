@@ -72,18 +72,29 @@ pub async fn execute(
         ChatMode::Act
     };
 
+    use crate::output;
+    use colored::Colorize;
+
+    println!();
+    println!("{}", "╔═══════════════════════════════════════════╗".bright_blue().bold());
+    println!("{}", "║       🤖 Initializing Crucible Chat      ║".bright_blue().bold());
+    println!("{}", "╚═══════════════════════════════════════════╝".bright_blue().bold());
+    println!();
+
     info!("Starting chat command");
     info!("Initial mode: {}", initial_mode.display_name());
 
     // Initialize storage using factory pattern
-    info!("Initializing storage...");
+    output::info("Initializing storage...");
     let storage_client = factories::create_surrealdb_storage(&config).await?;
     factories::initialize_surrealdb_schema(&storage_client).await?;
-    info!("Storage initialized successfully");
+    output::success("Storage initialized");
 
     // Auto-process files to generate embeddings (unless --no-process or --no-context)
     if !no_process && !no_context {
-        info!("Running pipeline to ensure embeddings are up-to-date...");
+        use indicatif::{ProgressBar, ProgressStyle};
+
+        output::info("Running pipeline to ensure embeddings are up-to-date...");
 
         let pipeline = factories::create_pipeline(
             storage_client.clone(),
@@ -98,34 +109,44 @@ pub async fn execute(
         if files.is_empty() {
             warn!("No markdown files found in kiln at {}", kiln_path.display());
         } else {
-            info!("Processing {} markdown files", files.len());
+            let pb = ProgressBar::new(files.len() as u64);
+            pb.set_style(
+                ProgressStyle::default_bar()
+                    .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} files ({eta})")
+                    .unwrap()
+                    .progress_chars("=>-")
+            );
+
+            output::info(&format!("Processing {} markdown files", files.len()));
 
             // Process each file (best effort - don't fail if one file errors)
             for file in files {
+                pb.inc(1);
                 if let Err(e) = pipeline.process(&file).await {
                     warn!("Failed to process {}: {}", file.display(), e);
                 }
             }
 
-            info!("Pipeline processing complete");
+            pb.finish_with_message("Processing complete");
+            output::success("Pipeline processing complete");
         }
     } else if no_process {
-        info!("File processing skipped due to --no-process flag");
+        output::info("File processing skipped due to --no-process flag");
     }
 
     // Initialize core facade (still needed for semantic search in ContextEnricher)
     // Reuse the storage client we created earlier (line 80) instead of creating a new one
-    info!("Initializing Crucible core...");
+    output::info("Initializing core...");
     let core = Arc::new(CrucibleCoreFacade::from_storage(
         storage_client.clone(),
         config
     ));
-    info!("Core initialized successfully");
+    output::success("Core initialized");
 
     // Discover agent
-    info!("Discovering ACP agent...");
+    output::info("Discovering ACP agent...");
     let agent = discover_agent(agent_name.as_deref()).await?;
-    info!("Using agent: {} ({})", agent.name, agent.command);
+    output::success(&format!("Using agent: {} ({})", agent.name, agent.command));
 
     // Create ACP client with kiln path for tool initialization
     let kiln_path = core.config().kiln.path.clone();
@@ -245,7 +266,17 @@ async fn run_interactive_session(
                 let message = if no_context {
                     input.to_string()
                 } else {
-                    match enricher.enrich(input).await {
+                    // Show context enrichment indicator
+                    print!("{} ", "🔍 Finding relevant context...".bright_cyan().dimmed());
+                    io::stdout().flush().unwrap();
+
+                    let enriched_result = enricher.enrich(input).await;
+
+                    // Clear the enrichment indicator
+                    print!("\r{}\r", " ".repeat(35));
+                    io::stdout().flush().unwrap();
+
+                    match enriched_result {
                         Ok(enriched) => enriched,
                         Err(e) => {
                             error!("Context enrichment failed: {}", e);
@@ -257,9 +288,19 @@ async fn run_interactive_session(
 
                 // Send to agent
                 println!(); // Blank line before response
+
+                // Show "thinking" indicator
+                print!("{} ", "🤔 Thinking...".bright_blue().dimmed());
+                use std::io::{self, Write};
+                io::stdout().flush().unwrap();
+
                 match client.send_message(&message).await {
                     Ok(response) => {
-                        // Print agent response
+                        // Clear the "thinking" indicator
+                        print!("\r{}\r", " ".repeat(20));
+                        io::stdout().flush().unwrap();
+
+                        // Print agent response with nice border
                         println!("{}", "╭─ Agent Response ──────────────────────────╮".bright_blue());
                         for line in response.lines() {
                             println!("│ {}", line);
@@ -268,6 +309,10 @@ async fn run_interactive_session(
                         println!(); // Blank line after response
                     }
                     Err(e) => {
+                        // Clear the "thinking" indicator
+                        print!("\r{}\r", " ".repeat(20));
+                        io::stdout().flush().unwrap();
+
                         error!("Failed to send message: {}", e);
                         println!("{} Error: {}", "✗".red(), e);
                     }
