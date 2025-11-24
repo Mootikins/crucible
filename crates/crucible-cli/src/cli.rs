@@ -244,6 +244,13 @@ pub enum ConfigCommands {
         #[arg(short = 'f', long, default_value = "toml")]
         format: String,
     },
+
+    /// Dump default configuration to stdout (useful for creating example config)
+    Dump {
+        /// Output format (toml, json)
+        #[arg(short = 'f', long, default_value = "toml")]
+        format: String,
+    },
 }
 
 #[derive(Subcommand)]

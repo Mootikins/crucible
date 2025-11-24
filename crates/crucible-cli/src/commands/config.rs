@@ -10,6 +10,7 @@ pub async fn execute(cmd: ConfigCommands) -> Result<()> {
     match cmd {
         ConfigCommands::Init { path, force } => init(path, force).await,
         ConfigCommands::Show { format } => show(format).await,
+        ConfigCommands::Dump { format } => dump(format).await,
     }
 }
 
@@ -54,6 +55,25 @@ async fn init(path: Option<PathBuf>, force: bool) -> Result<()> {
 async fn show(format: String) -> Result<()> {
     // Load the current config (with all precedence applied)
     let config = CliConfig::load(None, None, None)?;
+
+    match format.as_str() {
+        "json" => {
+            let json = config.display_as_json()?;
+            println!("{}", json);
+        }
+        "toml" | _ => {
+            let toml = config.display_as_toml()?;
+            println!("{}", toml);
+        }
+    }
+
+    Ok(())
+}
+
+/// Dump default configuration to stdout
+async fn dump(format: String) -> Result<()> {
+    // Create default config
+    let config = CliConfig::default();
 
     match format.as_str() {
         "json" => {
