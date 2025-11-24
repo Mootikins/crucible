@@ -9,15 +9,22 @@
 //! - **Type-safe**: Compile-time safety with trait-based design
 //! - **Async**: Built on tokio for high performance
 //!
+//! ## Architecture (SOLID Phase 5)
+//!
+//! - Concrete provider types (OllamaProvider, OpenAIProvider) are PRIVATE
+//! - Public API provides factory functions that return trait objects
+//! - Configuration types and traits are public
+//!
 //! ## Modules
 //!
 //! - [`embeddings`]: Text embedding generation and management
 //! - [`reranking`]: Note reranking for improved search relevance
+//! - [`text_generation`]: Text generation and completion
 //!
 //! ## Example
 //!
 //! ```rust,no_run
-//! use crucible_llm::embeddings::{EmbeddingConfig, EmbeddingProvider, OllamaProvider};
+//! use crucible_llm::embeddings::{create_provider, EmbeddingConfig};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -26,7 +33,8 @@
 //!         Some("nomic-embed-text-v1.5-q8_0".to_string()),
 //!     );
 //!
-//!     let provider = OllamaProvider::new(config)?;
+//!     // Use factory function - returns trait object
+//!     let provider = create_provider(config).await?;
 //!     let response = provider.embed("Hello, world!").await?;
 //!
 //!     println!("Generated embedding with {} dimensions", response.dimensions);
@@ -46,18 +54,36 @@ pub mod text_generation;
 pub mod text_generation_mock;
 
 // Re-export commonly used types at crate root
+// SOLID Phase 5: Re-export factory functions and traits, NOT concrete types
 pub use embeddings::{
-    EmbeddingConfig, EmbeddingError, EmbeddingProvider, EmbeddingResponse, EmbeddingResult,
-    OllamaProvider, OpenAIProvider,
+    create_provider,  // Factory function
+    CoreProviderAdapter,  // Adapter for core trait
+    EmbeddingConfig,  // Configuration (data type)
+    EmbeddingError,   // Error type
+    EmbeddingProvider, // Trait (abstraction)
+    EmbeddingResponse, // Response type (data)
+    EmbeddingResult,   // Result type alias
+    EmbeddingProviderType, // Enum for provider selection
+    // REMOVED: OllamaProvider, OpenAIProvider - use create_provider() instead
 };
 
 pub use reranking::{FastEmbedReranker, RerankResult, Reranker, RerankerModelInfo};
 
 pub use text_generation::{
-    create_text_provider, ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse,
-    ChatMessage, CompletionChunk, CompletionRequest, CompletionResponse, OllamaConfig,
-    OllamaTextProvider, OpenAIConfig, OpenAITextProvider, TextGenerationProvider,
-    TextProviderConfig, TokenUsage,
+    create_text_provider,  // Factory function
+    ChatCompletionChunk,
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ChatMessage,
+    CompletionChunk,
+    CompletionRequest,
+    CompletionResponse,
+    OllamaConfig,
+    OpenAIConfig,
+    TextGenerationProvider,  // Trait (abstraction)
+    TextProviderConfig,
+    TokenUsage,
+    // REMOVED: OllamaTextProvider, OpenAITextProvider - use create_text_provider() instead
 };
 
 // Re-export mock implementations for testing
