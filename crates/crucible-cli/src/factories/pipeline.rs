@@ -12,7 +12,7 @@ use crate::config::CliConfig;
 /// Create NotePipeline with all dependencies wired together
 ///
 /// This factory assembles a complete NotePipeline by creating and connecting:
-/// 1. Change detection (in-memory for now)
+/// 1. Change detection (SurrealDB-backed for persistence)
 /// 2. Merkle tree storage (SurrealDB-backed)
 /// 3. Enrichment service (with optional embeddings)
 /// 4. Enriched note storage (SurrealDB-backed)
@@ -54,8 +54,10 @@ pub async fn create_pipeline(
     config: &CliConfig,
     force: bool,
 ) -> Result<NotePipeline> {
-    // 1. Change detection (in-memory for now)
-    let change_detector = super::create_inmemory_change_detector();
+    // 1. Change detection (SurrealDB-backed for persistence)
+    let change_detector = crucible_surrealdb::adapters::create_change_detection_store(
+        storage_client.clone()
+    );
 
     // 2. Merkle store (SurrealDB-backed)
     let merkle_store = super::create_surrealdb_merkle_store(storage_client.clone());
