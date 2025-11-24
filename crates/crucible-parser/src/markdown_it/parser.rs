@@ -39,9 +39,15 @@ impl MarkdownItParser {
                 yaml_frontmatter: false, // Not yet implemented in PoC
                 toml_frontmatter: false,
                 wikilinks: true,
-                tags: true,      // ✅ Now implemented
+                tags: true,
                 headings: true,
                 code_blocks: true,
+                tables: false,
+                callouts: true,
+                latex_expressions: true,
+                footnotes: false,
+                blockquotes: false,
+                horizontal_rules: true,
                 full_content: true,
                 max_file_size: Some(10 * 1024 * 1024),
                 extensions: vec!["md", "markdown"],
