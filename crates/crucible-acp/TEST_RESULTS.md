@@ -108,6 +108,61 @@ Hello! How can I help you today?
 - No hangs or timeouts
 - Clean exit
 
+### Test 3b: Claude-ACP Agent ✅
+
+**Test**: Test with Anthropic's official ACP agent
+
+```bash
+$ cargo run -p crucible-cli -- chat --agent claude-acp "What is 2+2?"
+```
+
+**Result**: ✅ SUCCESS - Streaming works correctly
+
+### Test 3c: Gemini Agent ✅
+
+**Test**: Test with Google's Gemini CLI agent
+
+```bash
+$ cargo run -p crucible-cli -- chat --agent gemini "What is 2+2?"
+```
+
+**Result**: ✅ SUCCESS - Streaming works correctly
+
+### Test 3d: Codex Agent ✅
+
+**Test**: Test with OpenAI's Codex agent (requires OPENAI_API_KEY)
+
+```bash
+$ OPENAI_API_KEY=$(cat ~/.keys/openai) cargo run -p crucible-cli -- chat --agent codex "What is 2+2?"
+```
+
+**Result**: ✅ SUCCESS
+
+```
+2+2 equals 4.
+```
+
+**Test 2**: Creative streaming test
+
+```bash
+$ OPENAI_API_KEY=$(cat ~/.keys/openai) cargo run -p crucible-cli -- chat --agent codex "Write a haiku about coding"
+```
+
+**Result**: ✅ SUCCESS - Streaming works perfectly
+
+```
+Midnight screenlight hums
+Logic blooms through silent loops
+Bugs drift into dawn
+```
+
+**All Agents Summary**:
+- ✅ opencode - Works perfectly
+- ✅ claude-acp - Works perfectly
+- ✅ gemini - Works perfectly
+- ✅ codex - Works perfectly (requires OPENAI_API_KEY)
+- ✅ All agents demonstrate correct streaming protocol implementation
+
 ## Protocol Compliance
 
 ### ACP Streaming Flow (Verified)
@@ -229,7 +284,9 @@ All logging works as expected.
 | Timeout protection | Integration | ✅ Pass |
 | CLI with mock | E2E | ⏳ Not tested yet |
 | CLI with opencode | E2E | ✅ Pass |
-| CLI with claude-acp | E2E | ⏳ Not tested yet |
+| CLI with claude-acp | E2E | ✅ Pass |
+| CLI with gemini | E2E | ✅ Pass |
+| CLI with codex | E2E | ✅ Pass |
 
 ## Remaining Work
 
