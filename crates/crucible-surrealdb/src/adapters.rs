@@ -137,6 +137,26 @@ pub fn create_merkle_store(
     Arc::new(MerklePersistence::new((*client.inner()).clone()))
 }
 
+/// Create a SurrealDB-backed change detection store
+///
+/// Returns a trait object implementing `ChangeDetectionStore` for file state tracking.
+/// This is used by the pipeline's Phase 1 quick filter to avoid reprocessing unchanged files.
+///
+/// # Arguments
+///
+/// * `client` - SurrealDB client handle
+///
+/// # Returns
+///
+/// A trait object implementing `ChangeDetectionStore`
+pub fn create_change_detection_store(
+    client: SurrealClientHandle,
+) -> Arc<dyn crucible_core::processing::ChangeDetectionStore> {
+    Arc::new(crate::change_detection_store::SurrealChangeDetectionStore::new(
+        (*client.inner()).clone()
+    ))
+}
+
 // ============================================================================
 // Adapter Implementations
 // ============================================================================

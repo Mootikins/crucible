@@ -30,6 +30,7 @@ surrealdb = { version = "2", features = ["kv-mem", "kv-rocksdb"] }
 chrono = { workspace = true }
 uuid = { workspace = true }
 comfy-table = "7.2"
+urlencoding = "2.1"
 
 # Vector operations
 ndarray = { workspace = true }
