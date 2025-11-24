@@ -548,6 +548,102 @@ impl CrucibleAcpClient {
         Ok(response)
     }
 
+    /// Send a prompt request and handle streaming responses
+    ///
+    /// This method properly handles the ACP streaming protocol where:
+    /// 1. Agent sends `session/update` notifications during processing
+    /// 2. Agent sends final response with `stopReason` when complete
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - The PromptRequest to send
+    /// * `request_id` - The JSON-RPC request ID to match the final response
+    ///
+    /// # Returns
+    ///
+    /// Tuple of (accumulated_content, PromptResponse)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if communication fails
+    pub async fn send_prompt_with_streaming(
+        &mut self,
+        request: agent_client_protocol::PromptRequest,
+        request_id: u64,
+    ) -> Result<(String, agent_client_protocol::PromptResponse)> {
+        use serde_json::json;
+
+        // Wrap in JSON-RPC 2.0 format
+        let json_request = json!({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "session/prompt",
+            "params": serde_json::to_value(&request)?
+        });
+
+        // Write to agent stdin
+        self.write_request(&json_request).await?;
+
+        // Accumulate agent message content from streaming notifications
+        let mut accumulated_content = String::new();
+        let mut final_response: Option<agent_client_protocol::PromptResponse> = None;
+
+        // Read lines until we get the final response (with matching id)
+        loop {
+            let response_line = self.read_response_line().await?;
+            let response: serde_json::Value = serde_json::from_str(&response_line)?;
+
+            tracing::debug!("Received from agent: {}", serde_json::to_string_pretty(&response).unwrap_or_default());
+
+            // Check if this is a notification (no id field) or a response (has id)
+            if let Some(id) = response.get("id") {
+                // This is a JSON-RPC response
+                if id.as_u64() == Some(request_id) {
+                    // This is our final response
+                    let result = response.get("result")
+                        .ok_or_else(|| AcpError::Session("Missing result in prompt response".to_string()))?;
+
+                    final_response = Some(serde_json::from_value(result.clone())?);
+                    break;
+                }
+            } else if let Some(method) = response.get("method") {
+                // This is a notification
+                if method == "session/update" {
+                    // Extract the update from params
+                    if let Some(params) = response.get("params") {
+                        // Try to parse as SessionUpdate
+                        if let Ok(update) = serde_json::from_value::<agent_client_protocol::SessionUpdate>(params.clone()) {
+                            // Extract content from AgentMessageChunk
+                            use agent_client_protocol::SessionUpdate;
+                            match update {
+                                SessionUpdate::AgentMessageChunk(chunk) => {
+                                    // Extract text from ContentBlock
+                                    use agent_client_protocol::ContentBlock;
+                                    match chunk.content {
+                                        ContentBlock::Text(text_block) => {
+                                            accumulated_content.push_str(&text_block.text);
+                                        },
+                                        _ => {
+                                            tracing::debug!("Ignoring non-text content block");
+                                        }
+                                    }
+                                },
+                                _ => {
+                                    tracing::debug!("Ignoring non-AgentMessageChunk update");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let response = final_response
+            .ok_or_else(|| AcpError::Session("Never received final prompt response".to_string()))?;
+
+        Ok((accumulated_content, response))
+    }
+
     /// Mark the client as connected
     ///
     /// This sets an active session to indicate a connection is established
