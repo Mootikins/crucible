@@ -19,7 +19,7 @@ const KNOWN_AGENTS: &[(&str, &str, &[&str])] = &[
     ("opencode", "opencode", &["acp"]),
     ("claude-acp", "npx", &["@zed-industries/claude-code-acp"]),
     ("gemini", "gemini-cli", &[]),
-    ("codex", "codex", &[]),
+    ("codex", "npx", &["@zed-industries/codex-acp"]),
 ];
 
 /// Discover an available ACP agent
