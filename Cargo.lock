@@ -1642,6 +1642,7 @@ dependencies = [
  "crucible-enrichment",
  "crucible-llm",
  "crucible-merkle",
+ "crucible-parser",
  "crucible-pipeline",
  "crucible-surrealdb",
  "crucible-tools",

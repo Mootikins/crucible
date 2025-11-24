@@ -8,7 +8,8 @@ use tabled::Tabled;
 use crate::config::CliConfig;
 use crate::formatting::{format_bytes, get_block_preview, render_table, OutputFormat};
 use crate::output;
-use crucible_core::parser::{PulldownParser, StorageAwareParser};
+use crucible_core::parser::StorageAwareParser;
+use crucible_parser::CrucibleParser;
 use crucible_core::storage::builder::{
     ContentAddressedStorageBuilder, HasherConfig, StorageBackendType,
 };
@@ -81,7 +82,7 @@ pub async fn execute(
     let _storage = Arc::new(storage);
 
     // Create parser
-    let block_parser = PulldownParser::new();
+    let block_parser = CrucibleParser::with_default_extensions();
     let parser = StorageAwareParser::new(Box::new(block_parser));
 
     // Process the path
