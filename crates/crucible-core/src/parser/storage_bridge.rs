@@ -788,44 +788,6 @@ pub mod factory {
     use super::*;
     // use crate::parser::bridge::ParserAdapter; // disabled
 
-    /// Create a storage-aware parser with default configuration
-    ///
-    /// # Returns
-    /// New storage-aware parser instance
-    pub fn create_storage_aware_parser() -> impl StorageAwareMarkdownParser {
-        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
-        StorageAwareParser::new(base_parser)
-    }
-
-    /// Create a storage-aware parser with custom configuration
-    ///
-    /// # Arguments
-    /// * `config` - Parser configuration
-    ///
-    /// # Returns
-    /// New storage-aware parser instance
-    pub fn create_storage_aware_parser_with_config(
-        config: StorageAwareParserConfig,
-    ) -> impl StorageAwareMarkdownParser {
-        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
-        let hasher = Arc::new(Blake3Hasher::new());
-        StorageAwareParser::with_config(base_parser, config, hasher)
-    }
-
-    /// Create a storage-aware parser with custom hasher
-    ///
-    /// # Arguments
-    /// * `hasher` - Custom hasher implementation
-    ///
-    /// # Returns
-    /// New storage-aware parser instance
-    pub fn create_storage_aware_parser_with_hasher(
-        hasher: Arc<dyn ContentHasher>,
-    ) -> impl StorageAwareMarkdownParser {
-        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
-        StorageAwareParser::with_config(base_parser, StorageAwareParserConfig::default(), hasher)
-    }
-
     /// Create a storage-aware parser from a base parser
     ///
     /// # Arguments
