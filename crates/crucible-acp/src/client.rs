@@ -571,7 +571,10 @@ impl CrucibleAcpClient {
         request: agent_client_protocol::PromptRequest,
         request_id: u64,
     ) -> Result<(String, agent_client_protocol::PromptResponse)> {
+        use agent_client_protocol::{SessionNotification, SessionUpdate, ContentBlock};
         use serde_json::json;
+
+        tracing::info!("Starting streaming request with ID {}", request_id);
 
         // Wrap in JSON-RPC 2.0 format
         let json_request = json!({
@@ -587,61 +590,128 @@ impl CrucibleAcpClient {
         // Accumulate agent message content from streaming notifications
         let mut accumulated_content = String::new();
         let mut final_response: Option<agent_client_protocol::PromptResponse> = None;
+        let mut notification_count = 0;
 
-        // Read lines until we get the final response (with matching id)
-        loop {
-            let response_line = self.read_response_line().await?;
-            let response: serde_json::Value = serde_json::from_str(&response_line)?;
+        // Create overall timeout (10x per-read timeout or 30s default)
+        let overall_timeout = self.config.timeout_ms
+            .map(|ms| tokio::time::Duration::from_millis(ms * 10))
+            .unwrap_or(tokio::time::Duration::from_secs(30));
 
-            tracing::debug!("Received from agent: {}", serde_json::to_string_pretty(&response).unwrap_or_default());
+        // Wrap the streaming loop in a timeout
+        let streaming_future = async {
+            // Read lines until we get the final response (with matching id)
+            loop {
+                let response_line = self.read_response_line().await?;
+                let response: serde_json::Value = serde_json::from_str(&response_line)?;
 
-            // Check if this is a notification (no id field) or a response (has id)
-            if let Some(id) = response.get("id") {
-                // This is a JSON-RPC response
-                if id.as_u64() == Some(request_id) {
-                    // This is our final response
-                    let result = response.get("result")
-                        .ok_or_else(|| AcpError::Session("Missing result in prompt response".to_string()))?;
+                tracing::trace!("Received line: {}", response_line);
+                tracing::debug!("Received from agent: {}", serde_json::to_string_pretty(&response).unwrap_or_default());
 
-                    final_response = Some(serde_json::from_value(result.clone())?);
-                    break;
+                // Check for error responses
+                if let Some(error) = response.get("error") {
+                    let error_msg = error.get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("Unknown error");
+                    let error_code = error.get("code")
+                        .and_then(|c| c.as_i64())
+                        .unwrap_or(-1);
+
+                    tracing::error!("Agent returned error: {} (code: {})", error_msg, error_code);
+                    return Err(AcpError::Session(format!(
+                        "Agent error during streaming: {} (code: {}, accumulated {} chars)",
+                        error_msg, error_code, accumulated_content.len()
+                    )));
                 }
-            } else if let Some(method) = response.get("method") {
-                // This is a notification
-                if method == "session/update" {
-                    // Extract the update from params
-                    if let Some(params) = response.get("params") {
-                        // Try to parse as SessionUpdate
-                        if let Ok(update) = serde_json::from_value::<agent_client_protocol::SessionUpdate>(params.clone()) {
-                            // Extract content from AgentMessageChunk
-                            use agent_client_protocol::SessionUpdate;
-                            match update {
-                                SessionUpdate::AgentMessageChunk(chunk) => {
-                                    // Extract text from ContentBlock
-                                    use agent_client_protocol::ContentBlock;
-                                    match chunk.content {
-                                        ContentBlock::Text(text_block) => {
-                                            accumulated_content.push_str(&text_block.text);
+
+                // Check if this is a notification (no id field) or a response (has id)
+                if let Some(id) = response.get("id") {
+                    // This is a JSON-RPC response - check if it matches our request
+                    // Support both numeric and string IDs
+                    let id_matches = match id {
+                        serde_json::Value::Number(n) => n.as_u64() == Some(request_id),
+                        serde_json::Value::String(s) => s.parse::<u64>().ok() == Some(request_id),
+                        _ => false,
+                    };
+
+                    if id_matches {
+                        tracing::info!(
+                            "Final response received (ID: {:?}) after {} notifications, {} chars",
+                            id, notification_count, accumulated_content.len()
+                        );
+
+                        let result = response.get("result")
+                            .ok_or_else(|| AcpError::Session("Missing result in prompt response".to_string()))?;
+
+                        final_response = Some(serde_json::from_value(result.clone())?);
+                        break;
+                    } else {
+                        tracing::warn!("Received response with non-matching ID: {:?} (expected: {})", id, request_id);
+                    }
+                } else if let Some(method) = response.get("method") {
+                    // This is a notification
+                    notification_count += 1;
+                    tracing::debug!("Notification #{}: {}", notification_count, method);
+
+                    if method == "session/update" {
+                        // Extract the params field which contains SessionNotification
+                        if let Some(params) = response.get("params") {
+                            // CORRECT: Parse as SessionNotification first
+                            match serde_json::from_value::<SessionNotification>(params.clone()) {
+                                Ok(notification) => {
+                                    // Extract the update from SessionNotification
+                                    match notification.update {
+                                        SessionUpdate::AgentMessageChunk(chunk) => {
+                                            // Extract text from ContentBlock
+                                            match chunk.content {
+                                                ContentBlock::Text(text_block) => {
+                                                    accumulated_content.push_str(&text_block.text);
+                                                    tracing::trace!("Accumulated chunk: '{}' (total: {} chars)",
+                                                        text_block.text, accumulated_content.len());
+                                                },
+                                                _ => {
+                                                    tracing::debug!("Ignoring non-text content block: {:?}", chunk.content);
+                                                }
+                                            }
                                         },
-                                        _ => {
-                                            tracing::debug!("Ignoring non-text content block");
+                                        SessionUpdate::ToolCall(_tool_call) => {
+                                            tracing::info!("Received tool call notification");
+                                        },
+                                        SessionUpdate::ToolCallUpdate(_update) => {
+                                            tracing::info!("Received tool call update notification");
+                                        },
+                                        other => {
+                                            tracing::debug!("Ignoring update type: {:?}", other);
                                         }
                                     }
                                 },
-                                _ => {
-                                    tracing::debug!("Ignoring non-AgentMessageChunk update");
+                                Err(e) => {
+                                    tracing::warn!("Failed to parse SessionNotification: {}", e);
+                                    tracing::debug!("Raw params: {}", params);
                                 }
                             }
                         }
                     }
+                } else {
+                    tracing::error!("Received response with no id or method: {:?}", response);
                 }
             }
+
+            Ok::<_, AcpError>((accumulated_content, final_response))
+        };
+
+        // Apply overall timeout
+        match tokio::time::timeout(overall_timeout, streaming_future).await {
+            Ok(Ok((content, Some(response)))) => Ok((content, response)),
+            Ok(Ok((content, None))) => Err(AcpError::Session(format!(
+                "Never received final prompt response (accumulated {} chars)",
+                content.len()
+            ))),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err(AcpError::Timeout(format!(
+                "Streaming operation timed out after {}s",
+                overall_timeout.as_secs()
+            ))),
         }
-
-        let response = final_response
-            .ok_or_else(|| AcpError::Session("Never received final prompt response".to_string()))?;
-
-        Ok((accumulated_content, response))
     }
 
     /// Mark the client as connected
