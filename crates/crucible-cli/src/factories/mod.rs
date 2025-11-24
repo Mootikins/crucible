@@ -7,7 +7,6 @@
 pub mod storage;
 pub mod enrichment;
 pub mod merkle;
-pub mod change;
 pub mod pipeline;
 
 pub use storage::{
@@ -17,5 +16,4 @@ pub use storage::{
 };
 pub use enrichment::create_default_enrichment_service;
 pub use merkle::create_surrealdb_merkle_store;
-pub use change::create_inmemory_change_detector;
 pub use pipeline::create_pipeline;
