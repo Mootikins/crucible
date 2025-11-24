@@ -29,8 +29,10 @@ impl FootnoteExtension {
     /// Create a new footnote extension
     pub fn new() -> Self {
         Self {
-            reference_regex: Regex::new(r"\[\^([^\]]+)\]").unwrap(),
-            definition_regex: Regex::new(r"(?m)^[ \t]*\[\^([^\]]+)\]:[ \t]*(.*)$").unwrap(),
+            // Match [^identifier] where identifier is alphanumeric, hyphen, underscore, or space
+            // This avoids matching regex patterns like [^\s] or [^\d]
+            reference_regex: Regex::new(r"\[\^([\w\-\s]+)\]").unwrap(),
+            definition_regex: Regex::new(r"(?m)^[ \t]*\[\^([\w\-\s]+)\]:[ \t]*(.*)$").unwrap(),
         }
     }
 }
