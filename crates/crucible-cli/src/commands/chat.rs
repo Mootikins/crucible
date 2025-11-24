@@ -75,14 +75,15 @@ pub async fn execute(
     use crate::output;
     use colored::Colorize;
 
-    println!();
     println!("{}", "╔═══════════════════════════════════════════╗".bright_blue().bold());
-    println!("{}", "║       🤖 Initializing Crucible Chat      ║".bright_blue().bold());
+    println!("{}", "║       🤖 Initializing Crucible Chat       ║".bright_blue().bold());
     println!("{}", "╚═══════════════════════════════════════════╝".bright_blue().bold());
-    println!();
 
     info!("Starting chat command");
     info!("Initial mode: {}", initial_mode.display_name());
+
+    // Get default agent from config before moving config
+    let default_agent_from_config = config.llm.default_agent.clone();
 
     // Initialize storage using factory pattern
     output::info("Initializing storage...");
@@ -143,9 +144,10 @@ pub async fn execute(
     ));
     output::success("Core initialized");
 
-    // Discover agent
+    // Discover agent (use --agent flag, or fall back to config default)
     output::info("Discovering ACP agent...");
-    let agent = discover_agent(agent_name.as_deref()).await?;
+    let preferred_agent = agent_name.or(default_agent_from_config);
+    let agent = discover_agent(preferred_agent.as_deref()).await?;
     output::success(&format!("Using agent: {} ({})", agent.name, agent.command));
 
     // Create ACP client with kiln path for tool initialization
