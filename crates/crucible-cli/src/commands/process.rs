@@ -9,7 +9,7 @@ use tracing::{info, warn};
 use walkdir::WalkDir;
 
 use crate::config::CliConfig;
-use crate::core_facade::CrucibleCoreFacade;
+use crate::{factories, output};
 
 /// Execute the process command
 ///
@@ -26,14 +26,29 @@ pub async fn execute(
 ) -> Result<()> {
     info!("Starting process command");
 
-    // Initialize core facade
-    let core = CrucibleCoreFacade::from_config(config).await?;
-
-    let target_path = path.as_ref().map(|p| p.as_path()).unwrap_or(core.kiln_root());
+    // Determine target path
+    let target_path = path.as_ref()
+        .map(|p| p.as_path())
+        .unwrap_or(config.kiln.path.as_path());
 
     info!("Processing path: {}", target_path.display());
     info!("Force reprocess: {}", force);
     info!("Watch mode: {}", watch);
+
+    // Initialize storage using factory pattern
+    output::info("Initializing storage...");
+    let storage_client = factories::create_surrealdb_storage(&config).await?;
+    factories::initialize_surrealdb_schema(&storage_client).await?;
+    output::success("Storage initialized");
+
+    // Create pipeline
+    output::info("Creating processing pipeline...");
+    let pipeline = factories::create_pipeline(
+        storage_client.clone(),
+        &config,
+        force,
+    ).await?;
+    output::success("Pipeline ready");
 
     // Discover files to process
     let files = discover_markdown_files(target_path)?;
@@ -52,28 +67,46 @@ pub async fn execute(
             .progress_chars("#>-"),
     );
 
-    // Process files
-    println!("\n🔄 Processing {} files...", files.len());
+    // Process files through pipeline
+    println!("\n🔄 Processing {} files through pipeline...", files.len());
 
-    // TODO: Integrate with NotePipeline
-    // For MVP, this is a placeholder showing the architecture
+    let mut processed_count = 0;
+    let mut skipped_count = 0;
+    let mut error_count = 0;
+
     for file in files {
-        pb.set_message(format!("Processing: {}", file.display()));
+        let file_name = file.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown");
+        pb.set_message(format!("Processing: {}", file_name));
 
-        // In full implementation:
-        // let result = pipeline.process(&file).await?;
-        // - Quick filter (check if changed)
-        // - Parse markdown
-        // - Merkle diff (identify changed blocks)
-        // - Enrich (generate embeddings for changed blocks)
-        // - Store results
+        // Run file through the 5-phase pipeline
+        match pipeline.process(&file).await {
+            Ok(crucible_core::processing::ProcessingResult::Success { .. }) => {
+                processed_count += 1;
+            }
+            Ok(crucible_core::processing::ProcessingResult::Skipped) |
+            Ok(crucible_core::processing::ProcessingResult::NoChanges) => {
+                skipped_count += 1;
+            }
+            Err(e) => {
+                error_count += 1;
+                warn!("Failed to process {}: {}", file.display(), e);
+            }
+        }
 
         pb.inc(1);
     }
 
     pb.finish_with_message("Processing complete!");
 
-    println!("\n✅ Processed {} files", pb.position());
+    // Print summary
+    println!("\n✅ Pipeline processing complete!");
+    println!("   Processed: {} files", processed_count);
+    println!("   Skipped (unchanged): {} files", skipped_count);
+    if error_count > 0 {
+        println!("   ⚠️  Errors: {} files", error_count);
+    }
 
     // Watch mode
     if watch {
