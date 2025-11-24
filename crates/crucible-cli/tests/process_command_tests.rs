@@ -49,7 +49,7 @@ fn create_test_config(kiln_path: PathBuf, db_path: PathBuf) -> CliConfig {
             default_agent: Some("test-agent".to_string()),
             ..Default::default()
         },
-        database_path: Some(db_path),
+        custom_database_path: Some(db_path),
         ..Default::default()
     }
 }
