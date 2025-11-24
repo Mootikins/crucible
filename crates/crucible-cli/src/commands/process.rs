@@ -91,6 +91,7 @@ pub async fn execute(
             }
             Err(e) => {
                 error_count += 1;
+                eprintln!("Error processing {}: {:?}", file.display(), e);
                 warn!("Failed to process {}: {}", file.display(), e);
             }
         }
