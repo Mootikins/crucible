@@ -11,6 +11,35 @@ use super::{
     log_buffer::LogBuffer,
     TuiConfig,
 };
+
+// Stub types for removed REPL functionality (commit 37cd887)
+#[derive(Debug, Clone)]
+pub struct ReplState;
+
+impl ReplState {
+    pub fn new(_capacity: usize) -> Self {
+        Self
+    }
+
+    pub fn set_execution_state(&mut self, _state: ExecutionState) {}
+    pub fn history_prev(&mut self) {}
+    pub fn history_next(&mut self) {}
+    pub fn move_cursor_home(&mut self) {}
+    pub fn move_cursor_end(&mut self) {}
+    pub fn insert_char(&mut self, _c: char) {}
+    pub fn delete_char(&mut self) {}
+    pub fn delete_char_forward(&mut self) {}
+    pub fn move_cursor_left(&mut self) {}
+    pub fn move_cursor_right(&mut self) {}
+    pub fn submit(&mut self) -> String {
+        String::new()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionState {
+    Idle,
+}
 use anyhow::Result;
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use std::path::PathBuf;
