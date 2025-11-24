@@ -9,6 +9,7 @@ pub mod commands;
 pub mod common;
 pub mod config;
 pub mod core_facade;
+pub mod factories;
 pub mod formatting;
 pub mod interactive;
 pub mod output;

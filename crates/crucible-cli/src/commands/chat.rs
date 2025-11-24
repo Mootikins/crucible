@@ -4,12 +4,15 @@
 //! Supports toggleable plan (read-only) and act (write-enabled) modes.
 
 use anyhow::Result;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{error, info, warn};
+use walkdir::WalkDir;
 
 use crate::acp::{discover_agent, ContextEnricher, CrucibleAcpClient};
 use crate::config::CliConfig;
 use crate::core_facade::CrucibleCoreFacade;
+use crate::factories;
 
 /// Chat mode - can be toggled during session
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,6 +54,7 @@ impl ChatMode {
 /// * `query` - Optional one-shot query (if None, starts interactive mode)
 /// * `read_only` - Initial mode: if true, starts in plan mode; if false, starts in act mode
 /// * `no_context` - If true, skip context enrichment
+/// * `no_process` - If true, skip auto-processing of files before context enrichment
 /// * `context_size` - Number of context results to include
 pub async fn execute(
     config: CliConfig,
@@ -58,6 +62,7 @@ pub async fn execute(
     query: Option<String>,
     read_only: bool,
     no_context: bool,
+    no_process: bool,
     context_size: Option<usize>,
 ) -> Result<()> {
     // Determine initial mode
@@ -70,9 +75,51 @@ pub async fn execute(
     info!("Starting chat command");
     info!("Initial mode: {}", initial_mode.display_name());
 
-    // Initialize core facade
+    // Initialize storage using factory pattern
+    info!("Initializing storage...");
+    let storage_client = factories::create_surrealdb_storage(&config).await?;
+    factories::initialize_surrealdb_schema(&storage_client).await?;
+    info!("Storage initialized successfully");
+
+    // Auto-process files to generate embeddings (unless --no-process or --no-context)
+    if !no_process && !no_context {
+        info!("Running pipeline to ensure embeddings are up-to-date...");
+
+        let pipeline = factories::create_pipeline(
+            storage_client.clone(),
+            &config,
+            false, // force=false for incremental processing
+        ).await?;
+
+        // Discover markdown files in kiln
+        let kiln_path = &config.kiln.path;
+        let files = discover_markdown_files(kiln_path)?;
+
+        if files.is_empty() {
+            warn!("No markdown files found in kiln at {}", kiln_path.display());
+        } else {
+            info!("Processing {} markdown files", files.len());
+
+            // Process each file (best effort - don't fail if one file errors)
+            for file in files {
+                if let Err(e) = pipeline.process(&file).await {
+                    warn!("Failed to process {}: {}", file.display(), e);
+                }
+            }
+
+            info!("Pipeline processing complete");
+        }
+    } else if no_process {
+        info!("File processing skipped due to --no-process flag");
+    }
+
+    // Initialize core facade (still needed for semantic search in ContextEnricher)
+    // Reuse the storage client we created earlier (line 80) instead of creating a new one
     info!("Initializing Crucible core...");
-    let core = Arc::new(CrucibleCoreFacade::from_config(config).await?);
+    let core = Arc::new(CrucibleCoreFacade::from_storage(
+        storage_client.clone(),
+        config
+    ));
     info!("Core initialized successfully");
 
     // Discover agent
@@ -259,4 +306,37 @@ fn print_enriched_prompt(prompt: &str) {
         }
     }
     println!("{}", "╰────────────────────────────────────────────╯".blue());
+}
+
+/// Discover markdown files in a directory
+///
+/// This function recursively searches for .md files in the given path.
+/// If the path is a file, returns it if it's a markdown file.
+/// If the path is a directory, walks the tree to find all markdown files.
+fn discover_markdown_files(path: &Path) -> Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+
+    if path.is_file() {
+        if is_markdown_file(path) {
+            files.push(path.to_path_buf());
+        }
+    } else if path.is_dir() {
+        for entry in WalkDir::new(path)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let entry_path = entry.path();
+            if entry_path.is_file() && is_markdown_file(entry_path) {
+                files.push(entry_path.to_path_buf());
+            }
+        }
+    }
+
+    Ok(files)
+}
+
+/// Check if a path is a markdown file
+fn is_markdown_file(path: &Path) -> bool {
+    path.extension().and_then(|s| s.to_str()) == Some("md")
 }
