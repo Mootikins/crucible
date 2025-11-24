@@ -67,7 +67,7 @@ async fn test_process_executes_pipeline() -> Result<()> {
     let config = create_test_config(kiln_path.clone(), db_path);
 
     // When: Running the process command
-    let result = process::execute(config, None, false, false).await;
+    let result = process::execute(config, None, false, false, false).await;
 
     // Then: Command should succeed
     assert!(result.is_ok(), "Process command should execute successfully");
@@ -92,14 +92,14 @@ async fn test_storage_persists_across_runs() -> Result<()> {
     let config = create_test_config(kiln_path.clone(), db_path.clone());
 
     // When: Running process command the first time
-    process::execute(config.clone(), None, false, false).await?;
+    process::execute(config.clone(), None, false, false, false).await?;
 
     // Give time for database to fully close
     sleep(Duration::from_millis(100)).await;
 
     // And: Running process command a second time (same database)
     let config2 = create_test_config(kiln_path, db_path);
-    let result = process::execute(config2, None, false, false).await;
+    let result = process::execute(config2, None, false, false, false).await;
 
     // Then: Second run should succeed
     assert!(result.is_ok(), "Second run should access persisted storage");
@@ -124,14 +124,14 @@ async fn test_change_detection_skips_unchanged_files() -> Result<()> {
     let config = create_test_config(kiln_path.clone(), db_path.clone());
 
     // When: Processing files initially
-    process::execute(config.clone(), None, false, false).await?;
+    process::execute(config.clone(), None, false, false, false).await?;
 
     // Give time for database to fully close
     sleep(Duration::from_millis(100)).await;
 
     // And: Processing again without any file changes
     let config2 = create_test_config(kiln_path.clone(), db_path.clone());
-    let result = process::execute(config2, None, false, false).await;
+    let result = process::execute(config2, None, false, false, false).await;
 
     assert!(result.is_ok());
 
@@ -151,7 +151,7 @@ async fn test_change_detection_skips_unchanged_files() -> Result<()> {
 
     // And: Processing again
     let config3 = create_test_config(kiln_path, db_path);
-    let result2 = process::execute(config3, None, false, false).await;
+    let result2 = process::execute(config3, None, false, false, false).await;
 
     assert!(result2.is_ok());
 
@@ -175,14 +175,14 @@ async fn test_force_flag_overrides_change_detection() -> Result<()> {
     let config = create_test_config(kiln_path.clone(), db_path.clone());
 
     // When: Processing initially
-    process::execute(config.clone(), None, false, false).await?;
+    process::execute(config.clone(), None, false, false, false).await?;
 
     // Give time for database to fully close
     sleep(Duration::from_millis(100)).await;
 
     // And: Processing again with --force flag
     let config_force = create_test_config(kiln_path, db_path);
-    let result = process::execute(config_force, None, true, false).await;
+    let result = process::execute(config_force, None, true, false, false).await;
 
     // Then: Should reprocess all files despite no changes
     assert!(result.is_ok(), "Force flag should cause reprocessing");
@@ -208,7 +208,7 @@ async fn test_process_single_file() -> Result<()> {
     let config = create_test_config(kiln_path, db_path);
 
     // When: Processing only a specific file
-    let result = process::execute(config, Some(target_file.clone()), false, false).await;
+    let result = process::execute(config, Some(target_file.clone()), false, false, false).await;
 
     // Then: Should succeed
     assert!(result.is_ok(), "Processing single file should succeed");
@@ -233,7 +233,7 @@ async fn test_all_pipeline_phases_execute() -> Result<()> {
     let config = create_test_config(kiln_path, db_path);
 
     // When: Processing files
-    let result = process::execute(config, None, false, false).await;
+    let result = process::execute(config, None, false, false, false).await;
 
     // Then: All 5 pipeline phases should execute
     assert!(result.is_ok(), "Pipeline execution should succeed");
@@ -265,6 +265,184 @@ async fn test_output_consistency_with_chat_preprocessing() -> Result<()> {
     // 2. Run chat command with pre-processing on same files
     // 3. Compare results from SurrealDB
     // 4. Assert identical: embeddings, Merkle trees, metadata
+
+    Ok(())
+}
+
+// =============================================================================
+// VERBOSE FLAG TESTS
+// =============================================================================
+
+#[tokio::test]
+async fn test_verbose_without_flag_is_quiet() -> Result<()> {
+    // GIVEN: Test kiln
+    let temp_dir = create_test_kiln()?;
+    let kiln_path = temp_dir.path().join("test-kiln");
+
+    let db_dir = TempDir::new()?;
+    let db_path = db_dir.path().join("test.db");
+
+    let config = create_test_config(kiln_path, db_path);
+
+    // WHEN: Processing without --verbose
+    let result = process::execute(config, None, false, false, false).await;
+
+    // THEN: Should succeed with minimal output
+    // (verbose=false is default, so this tests baseline behavior)
+    assert!(result.is_ok());
+
+    // Note: In actual implementation, we would capture stdout/stderr
+    // and verify it only contains high-level progress messages
+    // For now, we just verify the command succeeds
+
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "Requires verbose flag implementation"]
+async fn test_verbose_shows_phase_timings() -> Result<()> {
+    // GIVEN: Test kiln with files
+    let temp_dir = create_test_kiln()?;
+    let kiln_path = temp_dir.path().join("test-kiln");
+
+    let db_dir = TempDir::new()?;
+    let db_path = db_dir.path().join("test.db");
+
+    let config = create_test_config(kiln_path, db_path);
+
+    // WHEN: Processing with --verbose
+    let result = process::execute(config, None, false, false, true).await;
+
+    // THEN: Should succeed and show timing information
+    assert!(result.is_ok());
+
+    // TODO: After implementation, capture output and verify:
+    // - "Phase 1: Quick filter" with duration
+    // - "Phase 2: Parse" with duration
+    // - "Phase 3: Merkle Diff" with duration
+    // - "Phase 4: Enrich" with duration
+    // - "Phase 5: Store" with duration
+    // - Total pipeline time
+
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "Requires verbose flag implementation"]
+async fn test_verbose_shows_detailed_parse_info() -> Result<()> {
+    // GIVEN: Note with wikilinks, tags, callouts
+    let temp_dir = create_test_kiln()?;
+    let kiln_path = temp_dir.path().join("test-kiln");
+
+    let db_dir = TempDir::new()?;
+    let db_path = db_dir.path().join("test.db");
+
+    let config = create_test_config(kiln_path, db_path);
+
+    // WHEN: Processing with --verbose
+    let result = process::execute(config, None, false, false, true).await;
+
+    // THEN: Should show parse details
+    assert!(result.is_ok());
+
+    // TODO: After implementation, verify output shows:
+    // - Extracted wikilinks with targets
+    // - Found tags (#tag1, #tag2)
+    // - Block count
+    // - File hash (first 8 chars)
+
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "Requires verbose flag implementation"]
+async fn test_verbose_shows_merkle_diff_details() -> Result<()> {
+    // GIVEN: Initially processed file
+    let temp_dir = create_test_kiln()?;
+    let kiln_path = temp_dir.path().join("test-kiln");
+
+    let db_dir = TempDir::new()?;
+    let db_path = db_dir.path().join("test.db");
+
+    let config = create_test_config(kiln_path.clone(), db_path.clone());
+
+    // Process initially
+    process::execute(config.clone(), None, false, false, false).await?;
+
+    sleep(Duration::from_millis(100)).await;
+
+    // Modify a file
+    std::fs::write(
+        kiln_path.join("note1.md"),
+        "# Note 1 Modified\n\nThis content has been updated.",
+    )?;
+
+    // WHEN: Reprocessing with --verbose
+    let config2 = create_test_config(kiln_path, db_path);
+    let result = process::execute(config2, None, false, false, true).await;
+
+    // THEN: Should show Merkle diff details
+    assert!(result.is_ok());
+
+    // TODO: After implementation, verify output shows:
+    // - Old Merkle root hash
+    // - New Merkle root hash
+    // - Changed section indices
+    // - "2 blocks changed" or similar
+
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "Requires verbose flag implementation"]
+async fn test_verbose_shows_enrichment_progress() -> Result<()> {
+    // GIVEN: Files requiring embeddings
+    let temp_dir = create_test_kiln()?;
+    let kiln_path = temp_dir.path().join("test-kiln");
+
+    let db_dir = TempDir::new()?;
+    let db_path = db_dir.path().join("test.db");
+
+    let config = create_test_config(kiln_path, db_path);
+
+    // WHEN: Processing with --verbose
+    let result = process::execute(config, None, false, false, true).await;
+
+    // THEN: Should show enrichment details
+    assert!(result.is_ok());
+
+    // TODO: After implementation, verify output shows:
+    // - Embedding service URL
+    // - Model name (nomic-embed-text-v1.5-q8_0)
+    // - "Generating embeddings for 5 blocks" or similar
+    // - Embedding API call timing
+
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "Requires verbose flag implementation"]
+async fn test_verbose_shows_storage_operations() -> Result<()> {
+    // GIVEN: Processing files
+    let temp_dir = create_test_kiln()?;
+    let kiln_path = temp_dir.path().join("test-kiln");
+
+    let db_dir = TempDir::new()?;
+    let db_path = db_dir.path().join("test.db");
+
+    let config = create_test_config(kiln_path, db_path);
+
+    // WHEN: Running with --verbose
+    let result = process::execute(config, None, false, false, true).await;
+
+    // THEN: Should show storage details
+    assert!(result.is_ok());
+
+    // TODO: After implementation, verify output shows:
+    // - "Updating file_state table"
+    // - "Storing 3 enriched notes"
+    // - "Updating Merkle trees"
+    // - Record counts
 
     Ok(())
 }

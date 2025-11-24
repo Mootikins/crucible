@@ -180,7 +180,7 @@ async fn main() -> Result<()> {
         }
 
         Some(Commands::Process { path, force, watch }) => {
-            commands::process::execute(config, path, force, watch).await?
+            commands::process::execute(config, path, force, watch, cli.verbose).await?
         }
 
         // Existing commands

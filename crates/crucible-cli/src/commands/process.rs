@@ -18,11 +18,13 @@ use crate::{factories, output};
 /// * `path` - Optional specific file/directory to process (if None, processes entire kiln)
 /// * `force` - If true, reprocess all files regardless of changes
 /// * `watch` - If true, continue watching for changes after initial processing
+/// * `verbose` - If true, show detailed progress and timing information
 pub async fn execute(
     config: CliConfig,
     path: Option<PathBuf>,
     force: bool,
     watch: bool,
+    verbose: bool,
 ) -> Result<()> {
     info!("Starting process command");
 
