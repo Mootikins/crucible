@@ -11,7 +11,7 @@ use crucible_cli::{
 use crucible_core::{types::hashing::HashAlgorithm, CrucibleCore};
 use crucible_core::traits::KnowledgeRepository;
 use crucible_llm::embeddings::{create_provider, EmbeddingConfig, EmbeddingProvider};
-use crucible_surrealdb::{SurrealClient, SurrealDbConfig};
+use crucible_surrealdb::{adapters, SurrealDbConfig};
 
 /// Process files using the integrated ChangeDetectionService
 ///
@@ -170,6 +170,7 @@ async fn main() -> Result<()> {
                 query,
                 !act,  // read_only = !act (plan mode is default)
                 no_context,
+                cli.no_process,  // Pass the global --no-process flag
                 Some(context_size),
             )
             .await?
@@ -290,12 +291,12 @@ async fn main() -> Result<()> {
                 timeout_seconds: Some(30),
             };
 
-            let storage = SurrealClient::new(storage_config)
+            let storage_handle = adapters::create_surreal_client(storage_config)
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to create storage: {}", e))?;
 
-            // Create knowledge repository (SurrealClient implements it)
-            let knowledge_repo: Arc<dyn KnowledgeRepository> = Arc::new(storage.clone());
+            // Create knowledge repository from handle
+            let knowledge_repo = storage_handle.as_knowledge_repository();
 
             // Create embedding provider
             let embedding_config = if let Some(section) = &config.embedding {
@@ -331,7 +332,7 @@ async fn main() -> Result<()> {
 
             let core = Arc::new(
                 CrucibleCore::builder()
-                    .with_storage(storage)
+                    .with_storage(storage_handle.inner().clone())
                     .build()
                     .map_err(|e| anyhow::anyhow!("Failed to build CrucibleCore: {}", e))?,
             );

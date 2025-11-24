@@ -33,7 +33,7 @@ use tracing::{debug, error, info};
 use crucible_core::CrucibleCore;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_llm::embeddings::EmbeddingProvider;
-use crucible_surrealdb::{SurrealClient, SurrealDbConfig};
+use crucible_surrealdb::{adapters, SurrealDbConfig};
 
 pub mod command;
 pub mod completer;
@@ -522,7 +522,7 @@ impl Repl {
         let test_kiln_path =
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/test-kiln");
 
-        // Create storage with in-memory database
+        // Create storage with in-memory database using factory
         let storage_config = SurrealDbConfig {
             path: ":memory:".to_string(),
             namespace: "crucible".to_string(),
@@ -530,22 +530,22 @@ impl Repl {
             max_connections: Some(10),
             timeout_seconds: Some(30),
         };
-        let storage = SurrealClient::new(storage_config)
+        let storage_handle = adapters::create_surreal_client(storage_config)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to create test storage: {}", e))?;
 
         // Initialize kiln schema
-        crucible_surrealdb::kiln_integration::initialize_kiln_schema(&storage)
+        crucible_surrealdb::kiln_integration::initialize_kiln_schema(storage_handle.inner())
             .await
             .map_err(|e| anyhow::anyhow!("Failed to initialize kiln schema: {}", e))?;
 
         // Populate database with test-kiln data
-        Self::populate_test_data(&storage, &test_kiln_path).await?;
+        Self::populate_test_data(&storage_handle, &test_kiln_path).await?;
 
         // Build Core with builder pattern
         let core = Arc::new(
             CrucibleCore::builder()
-                .with_storage(storage)
+                .with_storage(storage_handle.inner().clone())
                 .build()
                 .map_err(|e| anyhow::anyhow!(e))?,
         );
@@ -588,8 +588,10 @@ impl Repl {
     }
 
     /// Populate test database with data from test-kiln directory
+    ///
+    /// Takes a SurrealClientHandle to access the private SurrealClient type.
     async fn populate_test_data(
-        storage: &SurrealClient,
+        storage_handle: &adapters::SurrealClientHandle,
         kiln_path: &std::path::Path,
     ) -> Result<()> {
         use crucible_core::ParsedNote;
@@ -624,8 +626,8 @@ impl Repl {
             );
             doc.file_size = content.len() as u64;
 
-            // Store note in database
-            store_parsed_document(storage, &doc, kiln_path)
+            // Store note in database (use inner() to access private SurrealClient)
+            store_parsed_document(storage_handle.inner(), &doc, kiln_path)
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to store note {:?}: {}", file_path, e))?;
         }
