@@ -101,9 +101,8 @@ async fn main() -> Result<()> {
             debug!("Skipping file processing for fuzzy search command");
         }
         None => {
-            // Skip processing for REPL mode to avoid database lock conflicts
-            // REPL will create its own storage client
-            debug!("Skipping file processing for REPL mode");
+            // Chat mode - process files in background like other commands
+            debug!("No command specified, will use chat mode");
         }
         _ => {
             if cli.no_process {
@@ -281,68 +280,14 @@ async fn main() -> Result<()> {
 
         // Commands::Agent(cmd) => commands::agent_management::execute(config, cmd).await?, // Temporarily disabled
         None => {
-            // Default to REPL when no command is provided
-            // Create storage only for REPL to avoid lock conflicts with other commands
-            let storage_config = SurrealDbConfig {
-                path: config.database_path_str()?,
-                namespace: "crucible".to_string(),
-                database: "kiln".to_string(),
-                max_connections: Some(10),
-                timeout_seconds: Some(30),
-            };
-
-            let storage_handle = adapters::create_surreal_client(storage_config)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to create storage: {}", e))?;
-
-            // Create knowledge repository from handle
-            let knowledge_repo = storage_handle.as_knowledge_repository();
-
-            // Create embedding provider
-            let embedding_config = if let Some(section) = &config.embedding {
-                let provider_type = section.provider.as_deref().unwrap_or("ollama");
-                let model = section.model.as_ref().map(|m| m.as_string());
-                
-                match provider_type {
-                    "openai" => {
-                        let api_key = section.openai.api_key.clone().unwrap_or_default();
-                        EmbeddingConfig::openai(api_key, model)
-                    }
-                    "fastembed" => {
-                        EmbeddingConfig::fastembed(model, section.fastembed.cache_dir.as_ref().map(|p| p.to_string_lossy().to_string()), None)
-                    }
-                    _ => {
-                        // Default to Ollama
-                        let url = section.ollama.url.clone().or(section.api.as_ref().and_then(|a| a.base_url.clone()));
-                        EmbeddingConfig::ollama(url, model)
-                    }
-                }
-            } else {
-                // Legacy config
-                EmbeddingConfig::ollama(
-                    Some(config.kiln.embedding_url.clone()),
-                    config.kiln.embedding_model.clone(),
-                )
-            };
-
-            let embedding_provider = create_provider(embedding_config)
-                .await
-                .ok()
-                .map(Arc::from);
-
-            let core = Arc::new(
-                CrucibleCore::builder()
-                    .with_storage(storage_handle.inner().clone())
-                    .build()
-                    .map_err(|e| anyhow::anyhow!("Failed to build CrucibleCore: {}", e))?,
-            );
-
-            commands::repl::execute(
-                core, 
-                config, 
-                cli.non_interactive,
-                Some(knowledge_repo),
-                embedding_provider
+            // Default to chat when no command is provided
+            commands::chat::execute(
+                config,
+                None,  // No query provided - start interactive mode
+                false, // not act mode by default (plan mode)
+                cli.agent,
+                cli.no_context,
+                cli.context_size,
             ).await?
         }
     }
