@@ -25,6 +25,7 @@ mod agent_tests {
         let agent = AgentInfo {
             name: "test-agent".to_string(),
             command: "test-cmd".to_string(),
+            args: vec![],
         };
 
         assert_eq!(agent.name, "test-agent");
@@ -36,6 +37,7 @@ mod agent_tests {
         let agent = AgentInfo {
             name: "test-agent".to_string(),
             command: "test-cmd".to_string(),
+            args: vec![],
         };
 
         let cloned = agent.clone();
@@ -48,6 +50,7 @@ mod agent_tests {
         let agent = AgentInfo {
             name: "test-agent".to_string(),
             command: "test-cmd".to_string(),
+            args: vec![],
         };
 
         let debug_str = format!("{:?}", agent);
@@ -66,7 +69,7 @@ mod agent_tests {
             Ok(agent) => {
                 // Fallback succeeded - should be one of the known agents
                 assert!(
-                    agent.name == "claude-code" || agent.name == "gemini" || agent.name == "codex",
+                    agent.name == "opencode" || agent.name == "claude-acp" || agent.name == "gemini" || agent.name == "codex",
                     "Should fall back to a known agent, got: {}",
                     agent.name
                 );
@@ -149,6 +152,7 @@ mod client_tests {
         let agent = AgentInfo {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
+            args: vec![],
         };
 
         let client = CrucibleAcpClient::new(agent, true);
@@ -161,6 +165,7 @@ mod client_tests {
         let agent = AgentInfo {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
+            args: vec![],
         };
 
         let client = CrucibleAcpClient::new(agent, true);
@@ -172,6 +177,7 @@ mod client_tests {
         let agent = AgentInfo {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
+            args: vec![],
         };
 
         let client = CrucibleAcpClient::new(agent, false);
@@ -183,6 +189,7 @@ mod client_tests {
         let agent = AgentInfo {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
+            args: vec![],
         };
 
         let config = ChatConfig {
@@ -213,6 +220,7 @@ mod client_tests {
         let agent = AgentInfo {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
+            args: vec![],
         };
 
         let client = CrucibleAcpClient::new(agent, false);
@@ -225,6 +233,7 @@ mod client_tests {
         let agent = AgentInfo {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
+            args: vec![],
         };
 
         let client = CrucibleAcpClient::new(agent, false);
@@ -237,6 +246,7 @@ mod client_tests {
         let agent = AgentInfo {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
+            args: vec![],
         };
 
         let client = CrucibleAcpClient::new(agent, false);
@@ -248,6 +258,7 @@ mod client_tests {
         let agent = AgentInfo {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
+            args: vec![],
         };
 
         let mut client = CrucibleAcpClient::new(agent, false);
@@ -260,6 +271,7 @@ mod client_tests {
         let agent = AgentInfo {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
+            args: vec![],
         };
 
         let mut client = CrucibleAcpClient::new(agent, false);
@@ -274,6 +286,7 @@ mod client_tests {
         let agent = AgentInfo {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
+            args: vec![],
         };
 
         let mut client = CrucibleAcpClient::new(agent, false);
@@ -289,6 +302,7 @@ mod client_tests {
         let agent = AgentInfo {
             name: "test".to_string(),
             command: "test-cmd".to_string(),
+            args: vec![],
         };
 
         let mut client = CrucibleAcpClient::new(agent, false);

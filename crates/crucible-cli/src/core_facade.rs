@@ -2,9 +2,10 @@
 //!
 //! Provides a clean, trait-based interface between the CLI and core functionality.
 //! This facade pattern simplifies testing and maintains separation of concerns.
+//! Phase 5: Uses public adapters API instead of importing concrete types.
 
 use anyhow::{anyhow, Result};
-use crucible_surrealdb::{kiln_integration, SurrealClient};
+use crucible_surrealdb::adapters::SurrealClientHandle;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -13,19 +14,19 @@ use crate::config::CliConfig;
 /// Main facade for accessing Crucible core functionality
 ///
 /// This struct provides a clean interface to the underlying systems:
-/// - Storage (SurrealDB)
+/// - Storage (SurrealDB via opaque handle)
 /// - Semantic search
 /// - Configuration
 #[derive(Clone)]
 pub struct CrucibleCoreFacade {
-    storage: Arc<SurrealClient>,
+    storage: SurrealClientHandle,
     config: Arc<CliConfig>,
 }
 
 impl CrucibleCoreFacade {
     /// Create a new facade from configuration
     pub async fn from_config(config: CliConfig) -> Result<Self> {
-        // Initialize storage
+        // Initialize storage using factory function
         let storage_config = crucible_surrealdb::SurrealDbConfig {
             path: config.database_path_str()?,
             namespace: "crucible".to_string(),
@@ -34,21 +35,32 @@ impl CrucibleCoreFacade {
             timeout_seconds: Some(30),
         };
 
-        let storage = SurrealClient::new(storage_config)
+        let storage = crucible_surrealdb::adapters::create_surreal_client(storage_config)
             .await
             .map_err(|e| anyhow!("Failed to create storage client: {}", e))?;
 
         // Initialize schema
-        kiln_integration::initialize_kiln_schema(&storage).await?;
+        crucible_surrealdb::kiln_integration::initialize_kiln_schema(storage.inner()).await?;
 
         Ok(Self {
-            storage: Arc::new(storage),
+            storage,
             config: Arc::new(config),
         })
     }
 
-    /// Get a reference to the storage client
-    pub fn storage(&self) -> &SurrealClient {
+    /// Create a facade from an existing storage client
+    ///
+    /// This constructor reuses an existing storage connection instead of creating a new one.
+    /// Useful when the storage client is already initialized elsewhere (e.g., for pipeline processing).
+    pub fn from_storage(storage: SurrealClientHandle, config: CliConfig) -> Self {
+        Self {
+            storage,
+            config: Arc::new(config),
+        }
+    }
+
+    /// Get a reference to the storage client handle
+    pub fn storage(&self) -> &SurrealClientHandle {
         &self.storage
     }
 
@@ -78,12 +90,12 @@ impl CrucibleCoreFacade {
         // Get embedding config
         let embedding_config = self.config.to_embedding_config()?;
 
-        // Create embedding provider
+        // Create embedding provider using factory function
         let provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
 
         // Perform search using kiln_integration
-        let results = kiln_integration::semantic_search(
-            &self.storage,
+        let results = crucible_surrealdb::kiln_integration::semantic_search(
+            self.storage.inner(),
             query,
             limit,
             provider,
@@ -132,12 +144,12 @@ impl CrucibleCoreFacade {
         // Get embedding config
         let embedding_config = self.config.to_embedding_config()?;
 
-        // Create embedding provider
+        // Create embedding provider using factory function
         let provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
 
         // Perform search with reranking
-        let results = kiln_integration::semantic_search_with_reranking(
-            &self.storage,
+        let results = crucible_surrealdb::kiln_integration::semantic_search_with_reranking(
+            self.storage.inner(),
             query,
             rerank_limit,   // initial_limit (candidates to retrieve)
             None,           // reranker (None for now, TODO: add reranker support)

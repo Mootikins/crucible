@@ -41,7 +41,7 @@ pub async fn execute(config: CliConfig) -> Result<()> {
     let embedding_provider = Arc::new(CoreProviderAdapter::new(llm_provider)) as Arc<dyn EmbeddingProvider>;
 
     // Create knowledge repository from storage
-    let knowledge_repo = Arc::new(core.storage().clone()) as Arc<dyn KnowledgeRepository>;
+    let knowledge_repo = core.storage().as_knowledge_repository();
 
     // Create MCP server
     let server = CrucibleMcpServer::new(
