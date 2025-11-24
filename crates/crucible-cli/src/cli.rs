@@ -8,7 +8,7 @@ use std::path::PathBuf;
 #[command(version)]
 #[command(arg_required_else_help = false)]
 pub struct Cli {
-    /// Subcommand to execute (defaults to REPL if not provided)
+    /// Subcommand to execute (defaults to chat if not provided)
     #[command(subcommand)]
     pub command: Option<Commands>,
 
@@ -40,10 +40,7 @@ pub struct Cli {
     #[arg(short = 'f', long, global = true, default_value = "table")]
     pub format: String,
 
-    /// Run REPL in non-interactive mode (reads from stdin, useful for testing/scripting)
-    #[arg(long, global = true)]
-    pub non_interactive: bool,
-
+  
     /// Skip file processing on startup (useful for quick commands with potentially stale data)
     #[arg(long = "no-process", global = true)]
     pub no_process: bool,
