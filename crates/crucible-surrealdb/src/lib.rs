@@ -139,6 +139,7 @@ pub mod kiln_integration;
 pub(crate) mod surreal_client;
 pub(crate) mod eav_graph;
 pub(crate) mod merkle_persistence;
+pub(crate) mod change_detection_store;
 pub(crate) mod batch_aware_client;
 pub(crate) mod consistency;
 pub(crate) mod migration;
