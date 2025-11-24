@@ -19,12 +19,8 @@ pub mod adapter;
 pub mod coordinator;
 pub mod eav_document;
 pub mod error;
-pub mod examples;
 pub mod extensions;
 pub mod frontmatter_mapper;
-pub mod latex;
-pub mod pulldown;
-pub mod query_blocks;
 pub mod storage_bridge;
 pub mod traits;
 pub mod types;
@@ -43,9 +39,6 @@ pub use extensions::{
     ExtensionRegistry, ExtensionRegistryBuilder, ExtensionRegistryStats, SyntaxExtension,
 };
 pub use frontmatter_mapper::FrontmatterPropertyMapper;
-pub use latex::{create_latex_extension, LatexExtension};
-pub use pulldown::PulldownParser;
-pub use query_blocks::{create_query_block_extension, QueryBlockExtension};
 pub use storage_bridge::{
     factory as parser_factory, ParseStatistics, StorageAwareMarkdownParser,
     StorageAwareParseResult, StorageAwareParser, StorageAwareParserConfig, StorageOperationResult,

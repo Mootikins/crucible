@@ -9,7 +9,8 @@ use crate::config::CliConfig;
 use crate::formatting::{format_bytes, format_timestamp, render_table, OutputFormat};
 use crate::output;
 use crucible_core::hashing::blake3::Blake3Hasher;
-use crucible_core::parser::{PulldownParser, StorageAwareParser};
+use crucible_core::parser::StorageAwareParser;
+use crucible_parser::CrucibleParser;
 use crucible_core::storage::builder::{
     ContentAddressedStorageBuilder, HasherConfig, StorageBackendType,
 };
@@ -75,7 +76,7 @@ pub async fn execute(
     let storage = create_storage_backend(&config)?;
 
     // Create parser with storage integration
-    let block_parser = PulldownParser::new();
+    let block_parser = CrucibleParser::with_default_extensions();
     let parser = StorageAwareParser::new(Box::new(block_parser));
 
     // Gather status information

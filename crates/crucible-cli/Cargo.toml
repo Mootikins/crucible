@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 crucible-core = { path = "../crucible-core" }
+crucible-parser = { path = "../crucible-parser" }
 crucible-surrealdb = { path = "../crucible-surrealdb" }
 crucible-config = { path = "../crucible-config", features = ["toml"] }
 crucible-llm = { path = "../crucible-llm" }
