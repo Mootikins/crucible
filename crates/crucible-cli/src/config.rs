@@ -211,6 +211,9 @@ pub struct NetworkConfig {
 /// LLM configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmConfig {
+    /// Default ACP agent for chat (opencode, claude-acp, gemini, codex)
+    pub default_agent: Option<String>,
+
     /// Default model for chat
     pub chat_model: Option<String>,
 
@@ -428,6 +431,7 @@ impl Default for NetworkConfig {
 impl Default for LlmConfig {
     fn default() -> Self {
         Self {
+            default_agent: None,
             chat_model: Some("llama3.2".to_string()),
             temperature: Some(0.7),
             max_tokens: Some(2048),
