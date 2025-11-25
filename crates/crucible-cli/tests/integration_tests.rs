@@ -254,7 +254,7 @@ fn test_search_help() {
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("Interactive search"));
+        .stdout(predicate::str::contains("Unified search"));
 }
 
 #[test]
@@ -383,19 +383,7 @@ fn test_config_show_with_format_flag() {
     cmd.assert().success();
 }
 
-// ============================================================================
-// Diff Command Tests
-// ============================================================================
-
-#[test]
-fn test_diff_help() {
-    let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("diff").arg("--help");
-
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Show changes between files"));
-}
+// Diff command removed in Phase 1 CLI consolidation
 
 // ============================================================================
 // Status Command Tests
