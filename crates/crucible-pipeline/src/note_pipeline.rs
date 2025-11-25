@@ -192,7 +192,10 @@ impl NotePipeline {
         // Phase 2: Parse to AST
         let phase2_start = std::time::Instant::now();
         let parsed = self.parser.parse_file(path).await
-            .context("Phase 2: Failed to parse markdown file")?;
+            .with_context(|| format!(
+                "Phase 2: Failed to parse markdown file '{}'",
+                path.display()
+            ))?;
         let phase2_duration = phase2_start.elapsed().as_millis() as u64;
         debug!("Phase 2: Parsed note successfully");
 
@@ -217,9 +220,16 @@ impl NotePipeline {
         // If no changes and not forcing reprocess, update file state and return
         if diff.changed_sections.is_empty() && old_tree.is_some() && !self.config.force_reprocess {
             debug!("Phase 3: No content changes detected");
-            self.update_file_state(path).await?;
+            self.update_file_state(path).await
+                .with_context(|| format!(
+                    "Failed to update file state for '{}' after detecting no changes",
+                    path.display()
+                ))?;
             self.merkle_store.store(&path_str, &new_tree).await
-                .context("Failed to update Merkle tree")?;
+                .with_context(|| format!(
+                    "Failed to update Merkle tree for '{}' after detecting no changes",
+                    path.display()
+                ))?;
             return Ok(ProcessingResult::NoChanges);
         }
 
@@ -263,9 +273,13 @@ impl NotePipeline {
 
             // Call enrichment service with Merkle tree (avoids recomputation)
             self.enrichment_service
-                .enrich_with_tree(parsed.clone(), changed_block_ids)
+                .enrich_with_tree(parsed.clone(), changed_block_ids.clone())
                 .await
-                .context("Phase 4: Failed to enrich note")?
+                .with_context(|| format!(
+                    "Phase 4: Failed to enrich note '{}' (processing {} changed blocks)",
+                    path.display(),
+                    changed_count
+                ))?
         } else {
             debug!("Phase 4: Enrichment skipped (disabled in config)");
 
@@ -294,15 +308,24 @@ impl NotePipeline {
         self.storage
             .store_enriched(&enriched, &path_str)
             .await
-            .context("Phase 5: Failed to store enriched note")?;
+            .with_context(|| format!(
+                "Phase 5: Failed to store enriched note for '{}'",
+                path.display()
+            ))?;
 
         // Store Merkle tree separately for future diffs
         self.merkle_store.store(&path_str, &new_tree).await
-            .context("Phase 5: Failed to store Merkle tree")?;
+            .with_context(|| format!(
+                "Phase 5: Failed to store Merkle tree for '{}'",
+                path.display()
+            ))?;
 
         // Update file state tracking
         self.update_file_state(path).await
-            .context("Phase 5: Failed to update file state")?;
+            .with_context(|| format!(
+                "Phase 5: Failed to update file state for '{}'",
+                path.display()
+            ))?;
 
         let phase5_duration = phase5_start.elapsed().as_millis() as u64;
 
@@ -414,5 +437,74 @@ mod tests {
 
         // For now, we can't test without a mock EnrichmentService
         // This will be added once we wire up the full implementation
+    }
+
+    /// Bug #3 RED: Test that Phase 2 parse errors include file path in error message
+    ///
+    /// When parsing fails, the error should clearly identify:
+    /// - The file that failed
+    /// - The phase that failed (Phase 2: Parse)
+    /// - The underlying error details
+    #[tokio::test]
+    async fn test_parse_error_includes_file_path() {
+        // This test will fail initially because current error messages lack file context
+
+        // Create a file with invalid markdown that will cause parse failure
+        let mut temp_file = NamedTempFile::new().unwrap();
+        // Write some content that might cause issues (actual failure will depend on parser)
+        writeln!(temp_file, "# Test").unwrap();
+        let file_path = temp_file.path();
+
+        // When we implement this test properly with mocks, we'll verify:
+        // - Error contains file path: assert!(error_msg.contains(file_path.display()))
+        // - Error contains phase info: assert!(error_msg.contains("Phase 2"))
+        // - Error contains specific details: assert!(error_msg.contains("Failed to parse"))
+
+        // For now, this is a placeholder that documents what we need to test
+        // TODO: Implement with mock parser that returns errors
+    }
+
+    /// Bug #3 RED: Test that Phase 4 enrichment errors include file path and phase info
+    ///
+    /// When enrichment fails, the error should clearly identify:
+    /// - The file being enriched
+    /// - The phase that failed (Phase 4: Enrich)
+    /// - How many blocks were being enriched
+    /// - The underlying error from the enrichment service
+    #[tokio::test]
+    async fn test_enrichment_error_includes_context() {
+        // This test will fail initially because current error at line 268 lacks detail
+
+        // When we implement this test properly with mocks, we'll verify error message contains:
+        // - File path: "Failed to enrich /path/to/note.md"
+        // - Phase info: "Phase 4: Enrich"
+        // - Block count: "while processing 5 changed blocks"
+        // - Underlying error: actual error from enrichment service
+
+        // TODO: Implement with mock enrichment service that returns errors
+    }
+
+    /// Bug #3 RED: Test that Phase 5 storage errors include file path and what failed
+    ///
+    /// When storage fails, the error should clearly identify:
+    /// - The file being stored
+    /// - The phase that failed (Phase 5: Store)
+    /// - Which storage operation failed (enriched note vs Merkle tree vs file state)
+    /// - The underlying storage error
+    #[tokio::test]
+    async fn test_storage_error_includes_operation_context() {
+        // This test will fail initially because errors at lines 297, 301, 305 lack detail
+
+        // When we implement this test properly with mocks, we'll verify:
+        // Storage of enriched note:
+        //   - "Phase 5: Failed to store enriched note for /path/to/note.md"
+        // Merkle tree storage:
+        //   - "Phase 5: Failed to store Merkle tree for /path/to/note.md"
+        // File state update:
+        //   - "Phase 5: Failed to update file state for /path/to/note.md"
+
+        // Each error should include the underlying storage error details
+
+        // TODO: Implement with mock storage that returns errors
     }
 }

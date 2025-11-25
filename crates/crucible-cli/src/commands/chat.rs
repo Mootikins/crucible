@@ -6,13 +6,17 @@
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{error, info, warn, debug, trace};
 use walkdir::WalkDir;
 
 use crate::acp::{discover_agent, ContextEnricher, CrucibleAcpClient};
 use crate::config::CliConfig;
 use crate::core_facade::CrucibleCoreFacade;
 use crate::factories;
+use crucible_pipeline::NotePipeline;
+use crucible_watch::{EventFilter, FileEvent, FileEventKind, WatchMode};
+use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
+use tokio::sync::mpsc;
 
 /// Chat mode - can be toggled during session
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,6 +135,19 @@ pub async fn execute(
             pb.finish_with_message("Processing complete");
             output::success("Pipeline processing complete");
         }
+
+        // Spawn background watch task for auto-reindexing during chat
+        // This runs silently in the background, reprocessing changed files
+        let watch_config = config.clone();
+        let watch_pipeline = Arc::new(pipeline);
+
+        tokio::spawn(async move {
+            if let Err(e) = spawn_background_watch(watch_config, watch_pipeline).await {
+                tracing::error!("Background watch failed: {}", e);
+            }
+        });
+
+        info!("Background watch spawned for chat mode");
     } else if no_process {
         output::info("File processing skipped due to --no-process flag");
     }
@@ -386,4 +403,79 @@ fn discover_markdown_files(path: &Path) -> Result<Vec<PathBuf>> {
 /// Check if a path is a markdown file
 fn is_markdown_file(path: &Path) -> bool {
     path.extension().and_then(|s| s.to_str()) == Some("md")
+}
+
+/// Spawn background watch task for chat mode
+///
+/// This function runs silently in the background, watching for file changes
+/// and reprocessing them automatically. All output goes through tracing
+/// (logged to file) to avoid polluting stdio used for JSON-RPC.
+///
+/// The background task will be automatically cancelled when the chat
+/// command exits (tokio runtime cleanup).
+async fn spawn_background_watch(
+    config: CliConfig,
+    pipeline: Arc<NotePipeline>,
+) -> Result<()> {
+    let kiln_path = config.kiln.path.clone();
+
+    // Create watcher via factory (DIP pattern - depends only on FileWatcher trait)
+    let mut watcher_arc = factories::create_file_watcher(&config)?;
+
+    // Get mutable access to configure the watcher
+    let watcher = Arc::get_mut(&mut watcher_arc)
+        .ok_or_else(|| anyhow::anyhow!("Failed to get mutable watcher reference"))?;
+
+    // Create event channel
+    let (tx, mut rx) = mpsc::unbounded_channel::<FileEvent>();
+    watcher.set_event_sender(tx);
+
+    // Configure watch with markdown file filter and debouncing
+    let filter = EventFilter::new().with_extension("md");
+    let watch_config = WatchConfig {
+        id: "chat-background-watch".to_string(),
+        recursive: true,
+        filter: Some(filter),
+        debounce: DebounceConfig::default(),
+        handler_config: HandlerConfig::default(),
+        mode: WatchMode::Standard, // Standard mode for immediate event processing
+        backend_options: Default::default(),
+    };
+
+    // Start watching the kiln directory
+    let _handle = watcher.watch(kiln_path.clone(), watch_config).await?;
+    info!("Background watch started for chat mode on: {}", kiln_path.display());
+
+    // Event processing loop (runs until chat exits)
+    while let Some(event) = rx.recv().await {
+        match event.kind {
+            FileEventKind::Created | FileEventKind::Modified => {
+                debug!("Background watch detected change: {}", event.path.display());
+
+                // Silently reprocess changed file
+                match pipeline.process(&event.path).await {
+                    Ok(crucible_core::processing::ProcessingResult::Success { .. }) => {
+                        debug!("Background reprocessed: {}", event.path.display());
+                    }
+                    Ok(crucible_core::processing::ProcessingResult::Skipped) |
+                    Ok(crucible_core::processing::ProcessingResult::NoChanges) => {
+                        trace!("Background skipped (unchanged): {}", event.path.display());
+                    }
+                    Err(e) => {
+                        warn!("Background reprocess failed for {}: {}", event.path.display(), e);
+                    }
+                }
+            }
+            FileEventKind::Deleted => {
+                debug!("File deleted: {}", event.path.display());
+                // Could mark as deleted in DB in future
+            }
+            _ => {
+                trace!("Ignoring event: {:?} for {}", event.kind, event.path.display());
+            }
+        }
+    }
+
+    info!("Background watch stopped");
+    Ok(())
 }
