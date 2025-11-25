@@ -135,8 +135,8 @@ impl IndexingHandler {
             file_size
         );
 
-        // Use PulldownParser to parse the file
-        let parser = crucible_core::parser::PulldownParser::new();
+        // Use CrucibleParser to parse the file
+        let parser = crucible_parser::CrucibleParser::new();
 
         let start_time = std::time::Instant::now();
 
