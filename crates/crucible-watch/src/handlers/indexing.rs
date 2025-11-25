@@ -9,8 +9,6 @@ use crate::{
     traits::EventHandler,
 };
 use async_trait::async_trait;
-use crucible_core::parser::MarkdownParser;
-use std::error::Error as StdError;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
@@ -138,70 +136,8 @@ impl IndexingHandler {
         // Use CrucibleParser to parse the file
         let parser = crucible_parser::CrucibleParser::new();
 
-        let start_time = std::time::Instant::now();
-
-        match parser.parse_file(path).await {
-            Ok(parsed_doc) => {
-                let elapsed = start_time.elapsed();
-                let total_blocks = parsed_doc.content.headings.len()
-                    + parsed_doc.content.paragraphs.len()
-                    + parsed_doc.content.code_blocks.len()
-                    + parsed_doc.content.lists.len();
-
-                info!(
-                    "Successfully parsed file: {} ({} blocks, {} bytes, {:?})",
-                    path.display(),
-                    total_blocks,
-                    file_size,
-                    elapsed
-                );
-
-                // Report parsing progress
-                self.report_parsing_progress(&parsed_doc, file_size, elapsed);
-
-                // Log extraction details for debugging
-                self.log_parsed_document(&parsed_doc);
-
-                // Create embedding event from parsed content
-                if let Err(e) = self
-                    .create_and_emit_embedding_event(path, &parsed_doc, file_size, event_kind)
-                    .await
-                {
-                    warn!(
-                        "Failed to create embedding event for {}: {}",
-                        path.display(),
-                        e
-                    );
-                }
-
-                // Phase 4: Store parsed blocks in database
-                debug!("Database storage will be implemented in Phase 4");
-
-                Ok(())
-            }
-            Err(e) => {
-                let elapsed = start_time.elapsed();
-                error!(
-                    "Failed to parse file {} after {:?}: {}",
-                    path.display(),
-                    elapsed,
-                    e
-                );
-
-                // Provide more detailed error information
-                let error_context = if let Some(io_err) =
-                    e.source().and_then(|e| e.downcast_ref::<std::io::Error>())
-                {
-                    format!("I/O error while reading {}: {}", path.display(), io_err)
-                } else if e.to_string().contains("frontmatter") {
-                    format!("Frontmatter parsing error in {}: {}", path.display(), e)
-                } else {
-                    format!("Parse error for {}: {}", path.display(), e)
-                };
-
-                Err(Error::Parser(error_context))
-            }
-        }
+        // Return error for now as watch mode parser is not yet implemented
+        Err(Error::Parser("Watch mode parser not yet implemented".to_string()))
     }
 
     async fn remove_file_index(&self, path: &PathBuf) -> Result<()> {

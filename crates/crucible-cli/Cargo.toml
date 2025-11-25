@@ -21,6 +21,7 @@ crucible-tools = { path = "../crucible-tools" }
 crucible-acp = { path = "../crucible-acp" }
 crucible-enrichment = { path = "../crucible-enrichment" }
 crucible-merkle = { path = "../crucible-merkle" }
+crucible-watch = { path = "../crucible-watch" }
 
 # CLI framework
 clap = { workspace = true, features = ["derive", "env", "string"] }
