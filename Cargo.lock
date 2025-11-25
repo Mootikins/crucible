@@ -1971,6 +1971,7 @@ dependencies = [
  "crucible-config",
  "crucible-core",
  "crucible-llm",
+ "crucible-parser",
  "crucible-surrealdb",
  "crucible-tools",
  "flume",

@@ -8,8 +8,10 @@
 
 use crucible_core::parser::{ParsedNote, ParsedNoteBuilder};
 use crucible_core::MerkleTreeBuilder;
-use crucible_enrichment::DefaultEnrichmentService;
+use crucible_enrichment::create_default_enrichment_service;
+use crucible_core::enrichment::EnrichmentService;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 // ============================================================================
 // Simple Merkle Tree Implementation
@@ -94,15 +96,17 @@ fn main() {
     println!("  Sections: {}", tree.section_count);
     println!("  Words: {}\n", tree.word_count);
 
-    // Example 2: Using with enrichment service
+    // Example 2: Using with enrichment service (via factory function)
     println!("Example 2: Enrichment Service Integration");
     println!("------------------------------------------");
 
-    // Create enrichment service with our custom builder
-    let _service = DefaultEnrichmentService::without_embeddings(SimpleMerkleTreeBuilder);
+    // Create enrichment service using factory function (SOLID compliant)
+    // Note: DefaultEnrichmentService is private; use factory function instead
+    let _service = create_default_enrichment_service(None)
+        .expect("Failed to create enrichment service");
 
-    println!("✓ Created enrichment service with SimpleMerkleTreeBuilder");
-    println!("  Service can now use any MerkleTreeBuilder implementation");
+    println!("✓ Created enrichment service using factory function");
+    println!("  Service is created via dependency injection pattern");
     println!("  This demonstrates dependency inversion in action!\n");
 
     // Example 3: Builder is zero-sized
