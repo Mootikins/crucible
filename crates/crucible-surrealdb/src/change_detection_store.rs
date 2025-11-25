@@ -11,6 +11,7 @@
 //! - **Hash indexing**: Support for hash-based queries
 
 use crate::{DbError, SurrealClient};
+use crate::utils::sanitize_record_id;
 use crucible_core::processing::{ChangeDetectionError, ChangeDetectionResult, ChangeDetectionStore, FileState};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -93,17 +94,18 @@ impl ChangeDetectionStore for SurrealChangeDetectionStore {
 
         trace!("Getting file state for: {}", relative_path);
 
-        // Query by the relative_path field (which is indexed and unique)
-        // We use string interpolation for the value since SurrealDB doesn't
-        // handle parameterized strings in WHERE clauses reliably
-        let query = format!("SELECT * FROM file_state WHERE relative_path = '{}' LIMIT 1",
-            relative_path.replace("'", "\\'"));  // Escape single quotes
+        // Use proper parameter binding to prevent SQL injection and handle special characters
+        let record_id = sanitize_record_id(&relative_path)
+            .map_err(|e| ChangeDetectionError::InvalidPath(format!("Failed to sanitize path: {}", e)))?;
 
-        let params = vec![];
+        let query = "SELECT * FROM file_state WHERE id = type::thing('file_state', $record_id) LIMIT 1";
+        let params = vec![serde_json::json!({
+            "record_id": record_id
+        })];
 
         let result = self
             .client
-            .query(&query, &params)
+            .query(query, &params)
             .await
             .map_err(|e| ChangeDetectionError::Storage(format!("Failed to query file state: {}", e)))?;
 
@@ -155,41 +157,36 @@ impl ChangeDetectionStore for SurrealChangeDetectionStore {
 
         trace!("Storing file state for {}: hash={}", record.relative_path, &record.file_hash[..8]);
 
-        // Use CREATE OR REPLACE (true UPSERT) to ensure record is created if it doesn't exist
-        // Convert path to a safe record ID by URL-encoding
-        let record_id = urlencoding::encode(&record.relative_path).to_string();
+        // Use proper sanitization and parameter binding for secure record creation
+        let safe_record_id = sanitize_record_id(&record.relative_path)
+            .map_err(|e| ChangeDetectionError::InvalidPath(format!("Failed to sanitize path: {}", e)))?;
 
-        // Delete existing record and create new one (true upsert)
-        // SurrealDB doesn't have native UPSERT, so we DELETE then CREATE
-        let delete_query = format!("DELETE file_state:`{}`", record_id);
-        self.client.query(&delete_query, &[]).await.ok(); // Ignore errors if doesn't exist
-
-        // Use CONTENT syntax with inline values (parameters don't work in SET/CONTENT)
         // Convert Unix timestamp to ISO 8601 datetime string for SurrealDB
         use chrono::{DateTime, Utc};
         let dt = DateTime::<Utc>::from_timestamp(record.modified_time, 0)
             .ok_or_else(|| ChangeDetectionError::InvalidPath("Invalid timestamp".to_string()))?;
         let datetime_str = dt.to_rfc3339();
 
-        let query = format!(r#"
-            CREATE file_state:`{}` CONTENT {{
-                relative_path: "{}",
-                file_hash: "{}",
-                modified_time: "{}",
-                file_size: {}
-            }}
-        "#,
-            record_id,
-            record.relative_path.replace("\"", "\\\""), // Escape quotes
-            record.file_hash.replace("\"", "\\\""),
-            datetime_str,
-            record.file_size
-        );
+        // Use parameterized query to prevent SQL injection
+        let query = r#"
+            CREATE type::thing('file_state', $record_id) CONTENT {
+                relative_path: $relative_path,
+                file_hash: $file_hash,
+                modified_time: type::datetime($modified_time),
+                file_size: $file_size
+            }
+        "#;
 
-        let params = vec![];
+        let params = vec![serde_json::json!({
+            "record_id": safe_record_id,
+            "relative_path": record.relative_path,
+            "file_hash": record.file_hash,
+            "modified_time": datetime_str,
+            "file_size": record.file_size
+        })];
 
         self.client
-            .query(&query, &params)
+            .query(query, &params)
             .await
             .map_err(|e| ChangeDetectionError::Storage(format!("Failed to store file state: {}", e)))?;
 
@@ -203,10 +200,13 @@ impl ChangeDetectionStore for SurrealChangeDetectionStore {
             .ok_or_else(|| ChangeDetectionError::InvalidPath("Invalid UTF-8 in path".to_string()))?
             .to_string();
 
-        let record_id = urlencoding::encode(&relative_path).to_string();
+        let safe_record_id = sanitize_record_id(&relative_path)
+            .map_err(|e| ChangeDetectionError::InvalidPath(format!("Failed to sanitize path: {}", e)))?;
 
         let query = "DELETE type::thing('file_state', $record_id)";
-        let params = vec![Value::String(record_id)];
+        let params = vec![serde_json::json!({
+            "record_id": safe_record_id
+        })];
 
         self.client
             .query(query, &params)
@@ -347,5 +347,170 @@ mod tests {
             retrieved_state.file_size, state.file_size,
             "Size should match for unchanged file"
         );
+    }
+
+    /// Test for user's specific SQL escaping issue with spaces and special characters
+    ///
+    /// This test verifies that the fix properly handles file paths with spaces and special characters.
+    /// Previously, this would fail with SQL parsing errors.
+    #[tokio::test]
+    async fn test_file_path_with_spaces_and_special_characters() {
+        // Given: A SurrealDB client with in-memory storage
+        let config = SurrealDbConfig {
+            path: ":memory:".to_string(),
+            namespace: "test_special_chars".to_string(),
+            database: "test_special_chars".to_string(),
+            max_connections: Some(10),
+            timeout_seconds: Some(30),
+        };
+        let client = crate::SurrealClient::new(config).await.unwrap();
+        let store = SurrealChangeDetectionStore::new(client);
+
+        // And: A file path with spaces and special characters that match the user's error case
+        let path = Path::new("Projects/Rune MCP/YouTube Transcript Tool - Rune Implementation Research.md");
+        let state = FileState {
+            file_hash: "abc123def456789".to_string(),
+            modified_time: SystemTime::now(),
+            file_size: 12345,
+        };
+
+        // When: We store and retrieve the file state (this should now work with the fix)
+        let store_result = store.store_file_state(path, state.clone()).await;
+        assert!(
+            store_result.is_ok(),
+            "Store operation should succeed with proper parameter binding, but got error: {:?}",
+            store_result.unwrap_err()
+        );
+
+        let retrieved = store.get_file_state(path).await;
+        assert!(
+            retrieved.is_ok(),
+            "Retrieve operation should succeed with proper parameter binding, but got error: {:?}",
+            retrieved.unwrap_err()
+        );
+
+        // Then: The retrieved state should match the stored state
+        let retrieved_state = retrieved.unwrap();
+        assert!(
+            retrieved_state.is_some(),
+            "Should retrieve the stored file state, but got None"
+        );
+
+        let retrieved_data = retrieved_state.unwrap();
+        assert_eq!(retrieved_data.file_hash, state.file_hash);
+        assert_eq!(retrieved_data.file_size, state.file_size);
+        // Allow small time differences due to conversion precision
+        let time_diff = retrieved_data.modified_time.duration_since(state.modified_time).unwrap_or_default();
+        assert!(time_diff.as_secs() < 1, "Timestamps should be within 1 second");
+    }
+
+    /// Additional test for single quotes in file paths (common issue)
+    ///
+    /// This test verifies that single quotes in file paths are properly handled
+    /// after implementing proper parameter binding and sanitization.
+    #[tokio::test]
+    async fn test_file_path_with_single_quotes() {
+        let config = SurrealDbConfig {
+            path: ":memory:".to_string(),
+            namespace: "test_single_quotes".to_string(),
+            database: "test_single_quotes".to_string(),
+            max_connections: Some(10),
+            timeout_seconds: Some(30),
+        };
+        let client = crate::SurrealClient::new(config).await.unwrap();
+        let store = SurrealChangeDetectionStore::new(client);
+
+        let path = Path::new("User's Guide.md");
+        let state = FileState {
+            file_hash: "single_quote_test".to_string(),
+            modified_time: SystemTime::now(),
+            file_size: 999,
+        };
+
+        // This should now work with proper parameter binding and sanitization
+        let store_result = store.store_file_state(path, state.clone()).await;
+        assert!(
+            store_result.is_ok(),
+            "Store operation should succeed with single quotes, but got error: {:?}",
+            store_result.unwrap_err()
+        );
+
+        // Verify retrieval also works
+        let retrieved = store.get_file_state(path).await;
+        assert!(
+            retrieved.is_ok(),
+            "Retrieve operation should succeed with single quotes, but got error: {:?}",
+            retrieved.unwrap_err()
+        );
+
+        let retrieved_state = retrieved.unwrap();
+        assert!(
+            retrieved_state.is_some(),
+            "Should retrieve stored file state with single quotes, but got None"
+        );
+
+        let retrieved_data = retrieved_state.unwrap();
+        assert_eq!(retrieved_data.file_hash, state.file_hash);
+        assert_eq!(retrieved_data.file_size, state.file_size);
+    }
+
+    /// Test that the exact user error case is now fixed
+    ///
+    /// User reported: "Parse error: Invalid escape character ` `, valid characters are `\`, `'`, `/`, `b`, `f`, `n`, `r`, `t`, or `u`"
+    /// This error occurred when trying to retrieve files with spaces and special characters.
+    /// This test verifies that the fix resolves the exact issue the user encountered.
+    #[tokio::test]
+    async fn test_exact_user_sql_parsing_error_fixed() {
+        let config = SurrealDbConfig {
+            path: ":memory:".to_string(),
+            namespace: "test_user_error_fixed".to_string(),
+            database: "test_user_error_fixed".to_string(),
+            max_connections: Some(10),
+            timeout_seconds: Some(30),
+        };
+        let client = crate::SurrealClient::new(config).await.unwrap();
+        let store = SurrealChangeDetectionStore::new(client);
+
+        // Use the exact file path that caused the user's error
+        let path = Path::new("/home/moot/Documents/crucible-testing/Projects/Rune MCP/YouTube Transcript Tool - Rune Implementation Research.md");
+
+        // The user's error occurred during the chat command processing, specifically when
+        // trying to retrieve file state for files with spaces and special characters
+
+        // First, let's store a file state for this path
+        let state = FileState {
+            file_hash: "user_error_test_fix".to_string(),
+            modified_time: SystemTime::now(),
+            file_size: 7777,
+        };
+
+        let store_result = store.store_file_state(path, state.clone()).await;
+        assert!(
+            store_result.is_ok(),
+            "Store should succeed for the user's problematic path, but got error: {:?}",
+            store_result.unwrap_err()
+        );
+
+        // Now test retrieval (this was the failing case for the user)
+        let retrieved = store.get_file_state(path).await;
+
+        // This should now succeed with the fix
+        assert!(
+            retrieved.is_ok(),
+            "get_file_state should succeed for the user's problematic path after fix, but got error: {:?}",
+            retrieved.unwrap_err()
+        );
+
+        let retrieved_state = retrieved.unwrap();
+        assert!(
+            retrieved_state.is_some(),
+            "Should retrieve file state for the user's problematic path, but got None"
+        );
+
+        let retrieved_data = retrieved_state.unwrap();
+        assert_eq!(retrieved_data.file_hash, state.file_hash);
+        assert_eq!(retrieved_data.file_size, state.file_size);
+
+        println!("Successfully resolved user's SQL parsing error for path: {:?}", path);
     }
 }
