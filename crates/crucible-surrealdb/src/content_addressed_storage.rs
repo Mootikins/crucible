@@ -706,7 +706,7 @@ impl crucible_core::storage::traits::StorageManagement for ContentAddressedStora
         let block_size_bytes = block_count * 1024; // Assume 1KB average size
 
         // Get tree statistics - use proper SurrealDB count query syntax
-        let tree_count_query = "SELECT * FROM merkle_trees";
+        let tree_count_query = "SELECT * FROM hybrid_tree";
         let tree_result = self
             .client
             .query(tree_count_query, &[])
@@ -714,6 +714,24 @@ impl crucible_core::storage::traits::StorageManagement for ContentAddressedStora
             .map_err(|e| StorageError::backend(format!("Failed to get tree count: {}", e)))?;
 
         let tree_count = tree_result.records.len() as u64;
+
+        // Get section count for additional stats
+        let section_count_query = "SELECT * FROM section";
+        let section_result = self
+            .client
+            .query(section_count_query, &[])
+            .await
+            .ok();
+
+        let section_count = section_result.map(|r| r.records.len() as u64).unwrap_or(0);
+
+        // Log Merkle tree stats for debugging
+        tracing::debug!(
+            "Merkle storage stats: {} trees, {} sections, {} blocks",
+            tree_count,
+            section_count,
+            block_count
+        );
 
         // Calculate average and largest block size
         let avg_block_size = if block_count > 0 {
@@ -730,6 +748,7 @@ impl crucible_core::storage::traits::StorageManagement for ContentAddressedStora
             block_count,
             block_size_bytes,
             tree_count,
+            section_count,
             deduplication_savings: 0, // TODO: Implement deduplication tracking
             average_block_size: avg_block_size,
             largest_block_size,
