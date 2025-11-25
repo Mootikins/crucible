@@ -39,20 +39,20 @@
 #![warn(clippy::all)]
 #![deny(unsafe_code)]
 
-mod backends;
+pub mod backends;
 mod change_detector;
-mod config;
+pub mod config;
 mod embedding_events;
-mod error;
+pub mod error;
 // TODO: event_driven_embedding_processor uses EmbeddingThreadPool which no longer exists
 // mod event_driven_embedding_processor;
 mod events;
 mod file_scanner;
-mod handlers;
+pub mod handlers;
 mod manager;
 mod message_channel_infrastructure;
-mod traits;
-mod types;
+pub mod traits;
+pub mod types;
 mod utils;
 
 pub use backends::*;
