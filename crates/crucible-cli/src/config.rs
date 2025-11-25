@@ -1225,7 +1225,8 @@ mod tests {
         // Enable test mode to skip loading user config
         std::env::set_var("CRUCIBLE_TEST_MODE", "1");
 
-        let config = CliConfig::load(None, None, None).unwrap();
+        // Use builder to create clean default config (not loading from user's config file)
+        let config = CliConfig::builder().build().unwrap();
 
         // Should have default LLM settings
         assert_eq!(config.chat_model(), "llama3.2");
