@@ -118,6 +118,16 @@ impl MarkdownParser for MarkdownItParser {
         content: &str,
         source_path: &Path,
     ) -> ParserResult<ParsedNote> {
+        // Check file size limit
+        if let Some(max_size) = self.max_file_size {
+            if content.len() > max_size {
+                return Err(ParserError::FileTooLarge {
+                    size: content.len(),
+                    max: max_size,
+                });
+            }
+        }
+
         // Extract frontmatter (simple version for PoC)
         let frontmatter = Self::extract_frontmatter(content);
 
@@ -138,10 +148,21 @@ impl MarkdownParser for MarkdownItParser {
         // Convert AST to NoteContent
         let note_content = AstConverter::convert(&ast)?;
 
+        // Extract elements from note_content for top-level fields
+        // (ParsedNote has both top-level fields AND content.* fields for backward compatibility)
+        let wikilinks = note_content.wikilinks.clone();
+        let tags = note_content.tags.clone();
+        let callouts = note_content.callouts.clone();
+        let latex_expressions = note_content.latex_expressions.clone();
+
         // Build ParsedNote
         let parsed_note = ParsedNote::builder(source_path.to_path_buf())
             .with_content(note_content)
             .with_frontmatter(frontmatter)
+            .with_wikilinks(wikilinks)
+            .with_tags(tags)
+            .with_callouts(callouts)
+            .with_latex_expressions(latex_expressions)
             .with_content_hash(Self::hash_content(content))
             .with_file_size(content.len() as u64)
             .build();
