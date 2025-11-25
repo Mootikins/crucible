@@ -393,8 +393,14 @@ impl SurrealClient {
                             let id_str = match id_val {
                                 Value::Number(n) => n.to_string(),
                                 Value::String(s) => s,
+                                Value::Object(obj) => {
+                                    // Handle composite IDs like {tree_id: "...", index: 0}
+                                    // Serialize as JSON to preserve structure for composite keys
+                                    serde_json::to_string(&obj)
+                                        .unwrap_or_else(|_| format!("{:?}", obj))
+                                }
                                 other => {
-                                    // Should not happen after unwrapping, but handle gracefully
+                                    // This is now truly unexpected (arrays, bools, etc.)
                                     eprintln!("Unexpected ID type after unwrapping: {:?}", other);
                                     format!("{:?}", other)
                                 }
@@ -614,6 +620,213 @@ mod tests {
             .unwrap();
 
         assert!(!result.records.is_empty(), "Should find related data");
+    }
+
+    #[tokio::test]
+    async fn test_composite_id_storage_and_retrieval() {
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
+
+        // Define the section table schema (simplified for testing)
+        // Note: tree_id and index are part of the composite ID, not fields
+        client
+            .query(
+                "DEFINE TABLE section SCHEMAFULL;
+                 DEFINE FIELD section_hash ON TABLE section TYPE string;
+                 DEFINE FIELD heading ON TABLE section TYPE option<string>;
+                 DEFINE FIELD depth ON TABLE section TYPE int;",
+                &[]
+            )
+            .await
+            .unwrap();
+
+        // Create a record with composite ID structure (like Merkle sections)
+        client
+            .query(
+                "CREATE section:{tree_id: $tree_id, index: $index} CONTENT {
+                    section_hash: $hash,
+                    heading: $heading,
+                    depth: $depth
+                }",
+                &[serde_json::json!({
+                    "tree_id": "test_tree_123",
+                    "index": 0,
+                    "hash": "abc123def456",
+                    "heading": "Introduction",
+                    "depth": 1
+                })],
+            )
+            .await
+            .unwrap();
+
+        // Retrieve the record using the specific composite ID
+        let result = client
+            .query("SELECT * FROM section:{tree_id: $tree_id, index: $index}", &[
+                serde_json::json!({
+                    "tree_id": "test_tree_123",
+                    "index": 0
+                })
+            ])
+            .await
+            .unwrap();
+
+        assert_eq!(result.records.len(), 1);
+        let record = &result.records[0];
+
+        // Verify the record ID was properly deserialized
+        assert!(record.id.is_some(), "Record should have an ID");
+        let id = record.id.as_ref().unwrap();
+
+        // The ID should contain the composite structure as JSON
+        assert!(id.0.contains("tree_id"), "ID should contain tree_id field");
+        assert!(id.0.contains("test_tree_123"), "ID should contain tree_id value");
+
+        // Verify data fields
+        assert_eq!(
+            record.data.get("section_hash").and_then(|v| v.as_str()),
+            Some("abc123def456")
+        );
+        assert_eq!(
+            record.data.get("heading").and_then(|v| v.as_str()),
+            Some("Introduction")
+        );
+        assert_eq!(record.data.get("depth").and_then(|v| v.as_i64()), Some(1));
+    }
+
+    #[tokio::test]
+    async fn test_multiple_composite_ids() {
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
+
+        // Define the section table schema
+        // Note: tree_id and index are part of the composite ID, not fields
+        client
+            .query(
+                "DEFINE TABLE section SCHEMAFULL;
+                 DEFINE FIELD section_hash ON TABLE section TYPE string;
+                 DEFINE FIELD heading ON TABLE section TYPE string;",
+                &[]
+            )
+            .await
+            .unwrap();
+
+        // Create multiple records with composite IDs
+        for i in 0..3 {
+            client
+                .query(
+                    "CREATE section:{tree_id: $tree_id, index: $index} CONTENT {
+                        section_hash: $hash,
+                        heading: $heading
+                    }",
+                    &[serde_json::json!({
+                        "tree_id": "tree_abc",
+                        "index": i,
+                        "hash": format!("hash_{}", i),
+                        "heading": format!("Section {}", i)
+                    })],
+                )
+                .await
+                .unwrap();
+        }
+
+        // Query all sections for this tree (get all and filter in memory for simplicity in test)
+        let result = client
+            .query("SELECT * FROM section", &[])
+            .await
+            .unwrap();
+
+        assert_eq!(result.records.len(), 3, "Should find all three sections");
+
+        // Verify each record has a properly formatted composite ID
+        for (idx, record) in result.records.iter().enumerate() {
+            assert!(record.id.is_some(), "Record {} should have an ID", idx);
+            let id = record.id.as_ref().unwrap();
+            assert!(id.0.contains("tree_id"), "ID {} should contain tree_id", idx);
+            assert!(id.0.contains(&idx.to_string()), "ID {} should contain index {}", idx, idx);
+
+            // Verify data
+            let expected_hash = format!("hash_{}", idx);
+            assert_eq!(
+                record.data.get("section_hash").and_then(|v| v.as_str()),
+                Some(expected_hash.as_str())
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_composite_id_upsert() {
+        let client = SurrealClient::new_isolated_memory().await.unwrap();
+
+        // Define the section table schema
+        // Note: tree_id and index are part of the composite ID, not fields
+        client
+            .query(
+                "DEFINE TABLE section SCHEMAFULL;
+                 DEFINE FIELD section_hash ON TABLE section TYPE string;
+                 DEFINE FIELD version ON TABLE section TYPE int;",
+                &[]
+            )
+            .await
+            .unwrap();
+
+        let tree_id = "tree_xyz";
+        let index = 5;
+
+        // Create initial record
+        client
+            .query(
+                "UPSERT section:{tree_id: $tree_id, index: $index} CONTENT {
+                    section_hash: $hash,
+                    version: $version
+                }",
+                &[serde_json::json!({
+                    "tree_id": tree_id,
+                    "index": index,
+                    "hash": "initial_hash",
+                    "version": 1
+                })],
+            )
+            .await
+            .unwrap();
+
+        // Upsert with updated data
+        client
+            .query(
+                "UPSERT section:{tree_id: $tree_id, index: $index} CONTENT {
+                    section_hash: $hash,
+                    version: $version
+                }",
+                &[serde_json::json!({
+                    "tree_id": tree_id,
+                    "index": index,
+                    "hash": "updated_hash",
+                    "version": 2
+                })],
+            )
+            .await
+            .unwrap();
+
+        // Verify there's only one record and it has the updated data
+        let result = client
+            .query("SELECT * FROM section:{tree_id: $tree_id, index: $index}", &[
+                serde_json::json!({
+                    "tree_id": tree_id,
+                    "index": index
+                })
+            ])
+            .await
+            .unwrap();
+
+        assert_eq!(result.records.len(), 1, "Should have exactly one record after upsert");
+        let record = &result.records[0];
+        assert_eq!(
+            record.data.get("section_hash").and_then(|v| v.as_str()),
+            Some("updated_hash"),
+            "Should have updated hash"
+        );
+        assert_eq!(
+            record.data.get("version").and_then(|v| v.as_i64()),
+            Some(2),
+            "Should have updated version"
+        );
     }
 }
 
