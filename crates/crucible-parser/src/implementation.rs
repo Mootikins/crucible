@@ -104,10 +104,15 @@ impl CrucibleParser {
     pub fn with_default_extensions() -> Self {
         let mut builder = crate::ExtensionRegistryBuilder::new();
 
-        // Add basic markdown extension (pulldown-parser only)
+        // Add basic markdown extension based on parser feature
         #[cfg(feature = "pulldown-parser")]
         {
             builder = builder.with_extension(crate::create_basic_markdown_extension());
+        }
+
+        #[cfg(feature = "markdown-it-parser")]
+        {
+            builder = builder.with_extension(crate::create_basic_markdown_it_extension());
         }
 
         let builder = builder

@@ -2,6 +2,11 @@
 
 use crate::error::ParserResult;
 use crate::types::*;
+use markdown_it::plugins::cmark::block::fence::CodeFence;
+use markdown_it::plugins::cmark::block::heading::ATXHeading;
+use markdown_it::plugins::cmark::block::hr::ThematicBreak;
+use markdown_it::plugins::cmark::block::list::{BulletList, ListItem as MdListItem, OrderedList};
+use markdown_it::plugins::extra::tables::{Table as MdTable, TableCell, TableHead, TableRow};
 use markdown_it::Node;
 
 /// Converts markdown-it AST to NoteContent
@@ -71,11 +76,105 @@ impl AstConverter {
             ));
         }
 
-        // Extract text for paragraphs (very simplified)
-        let text = Self::extract_text(node);
-        if !text.trim().is_empty() && text.len() > 10 {
-            // Rough heuristic for paragraph detection
-            content.paragraphs.push(Paragraph::new(text, 0));
+        // 5. Headings (from CommonMark ATX heading syntax)
+        if let Some(heading) = node.cast::<ATXHeading>() {
+            let text = Self::extract_text(node);
+            if !text.is_empty() {
+                let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
+                content.headings.push(Heading::new(heading.level, text, offset));
+            }
+        }
+
+        // 6. Horizontal rules / thematic breaks (---, ***, ___)
+        if let Some(hr) = node.cast::<ThematicBreak>() {
+            let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
+            let style = match hr.marker {
+                '-' => "dash",
+                '*' => "asterisk",
+                '_' => "underscore",
+                _ => "unknown",
+            }
+            .to_string();
+            // Build raw_content from marker and marker_len
+            let raw_content: String = std::iter::repeat(hr.marker).take(hr.marker_len).collect();
+            content
+                .horizontal_rules
+                .push(HorizontalRule::new(raw_content, style, offset));
+        }
+
+        // 7. Code blocks (fenced code blocks ```language ... ```)
+        if let Some(fence) = node.cast::<CodeFence>() {
+            let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
+            // Extract language from info string (first word)
+            let language = fence
+                .info
+                .split_whitespace()
+                .next()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            content.code_blocks.push(CodeBlock::new(
+                language,
+                fence.content.clone(),
+                offset,
+            ));
+        }
+
+        // 8. Ordered lists
+        if node.cast::<OrderedList>().is_some() {
+            let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
+            let mut list_block = ListBlock::new(ListType::Ordered, offset);
+
+            // Count items by iterating children
+            for child in node.children.iter() {
+                if child.cast::<MdListItem>().is_some() {
+                    let item_text = Self::extract_text(child);
+                    list_block.add_item(ListItem::new(item_text, 0));
+                }
+            }
+
+            content.lists.push(list_block);
+        }
+
+        // 9. Unordered (bullet) lists
+        if node.cast::<BulletList>().is_some() {
+            let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
+            let mut list_block = ListBlock::new(ListType::Unordered, offset);
+
+            // Count items by iterating children
+            for child in node.children.iter() {
+                if child.cast::<MdListItem>().is_some() {
+                    let item_text = Self::extract_text(child);
+                    list_block.add_item(ListItem::new(item_text, 0));
+                }
+            }
+
+            content.lists.push(list_block);
+        }
+
+        // 10. Tables (GFM tables)
+        if node.cast::<MdTable>().is_some() {
+            let offset = node.srcmap.map(|s| s.get_byte_offsets().0).unwrap_or(0);
+            let (rows, columns, headers) = Self::extract_table_structure(node);
+
+            // Build raw content by extracting text from all cells
+            let raw_content = Self::extract_text(node);
+
+            content.tables.push(Table::new(
+                raw_content,
+                headers,
+                columns,
+                rows,
+                offset,
+            ));
+        }
+
+        // Extract text for paragraphs (very simplified) - skip headings
+        if node.cast::<ATXHeading>().is_none() {
+            let text = Self::extract_text(node);
+            if !text.trim().is_empty() && text.len() > 10 {
+                // Rough heuristic for paragraph detection
+                content.paragraphs.push(Paragraph::new(text, 0));
+            }
         }
 
         // Recursively process children
@@ -109,6 +208,49 @@ impl AstConverter {
         }
 
         text
+    }
+
+    /// Extract table structure: (rows, columns, headers)
+    fn extract_table_structure(node: &Node) -> (usize, usize, Vec<String>) {
+        let mut rows = 0;
+        let mut columns = 0;
+        let mut headers = Vec::new();
+
+        // Walk the table to find headers and count rows
+        for child in node.children.iter() {
+            // TableHead contains the header row
+            if child.cast::<TableHead>().is_some() {
+                for row in child.children.iter() {
+                    if row.cast::<TableRow>().is_some() {
+                        for cell in row.children.iter() {
+                            if cell.cast::<TableCell>().is_some() {
+                                let header_text = Self::extract_text(cell);
+                                headers.push(header_text);
+                                columns = columns.max(headers.len());
+                            }
+                        }
+                        rows += 1;
+                    }
+                }
+            }
+            // TableBody contains data rows
+            else {
+                for row in child.children.iter() {
+                    if row.cast::<TableRow>().is_some() {
+                        let mut row_cols = 0;
+                        for cell in row.children.iter() {
+                            if cell.cast::<TableCell>().is_some() {
+                                row_cols += 1;
+                            }
+                        }
+                        columns = columns.max(row_cols);
+                        rows += 1;
+                    }
+                }
+            }
+        }
+
+        (rows, columns, headers)
     }
 
     fn calculate_word_count(content: &NoteContent) -> usize {
