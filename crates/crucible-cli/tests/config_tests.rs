@@ -1,6 +1,7 @@
 //! Configuration and error handling integration tests
 
 use crucible_cli::config::CliConfig;
+use serial_test::serial;
 use std::fs;
 use tempfile::TempDir;
 
@@ -129,7 +130,11 @@ fn test_config_builder_full() {
 // ============================================================================
 
 #[test]
+#[serial]
 fn test_database_path_unique_per_process() {
+    // Set test mode to enable PID suffix for database name
+    std::env::set_var("CRUCIBLE_TEST_MODE", "1");
+
     let temp = TempDir::new().unwrap();
     let kiln_path = temp.path().join("kiln");
 
@@ -145,6 +150,9 @@ fn test_database_path_unique_per_process() {
     let filename = db_path.file_name().unwrap().to_str().unwrap();
     assert!(filename.starts_with("kiln-"));
     assert!(filename.ends_with(".db"));
+
+    // Cleanup
+    std::env::remove_var("CRUCIBLE_TEST_MODE");
 }
 
 #[test]
