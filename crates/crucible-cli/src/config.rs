@@ -1202,9 +1202,11 @@ impl Default for CliConfigBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use tempfile::TempDir;
 
     #[test]
+    #[serial]
     fn test_load_config_with_defaults() {
         // Store original environment variables
         let original_embedding_endpoint = std::env::var("EMBEDDING_ENDPOINT");
@@ -1283,7 +1285,11 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_database_path_derivation() {
+        // Set test mode to enable PID suffix for database name
+        std::env::set_var("CRUCIBLE_TEST_MODE", "1");
+
         let temp = TempDir::new().unwrap();
         let kiln_path = temp.path().join("kiln");
 
@@ -1308,6 +1314,9 @@ mod tests {
             "Database filename should be kiln-{{pid}}.db, got: {}",
             db_filename
         );
+
+        // Cleanup
+        std::env::remove_var("CRUCIBLE_TEST_MODE");
     }
 
     #[test]
@@ -1442,6 +1451,7 @@ timeout_secs = 60
     }
 
     #[test]
+    #[serial]
     fn test_api_key_from_environment() {
         std::env::set_var("OPENAI_API_KEY", "sk-test-openai");
         std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-test-anthropic");
@@ -1595,6 +1605,7 @@ timeout_secs = 60
 
     // Bug #2 Tests: Environment variable support for kiln path
     #[test]
+    #[serial]
     fn test_kiln_path_from_environment_variable() {
         // Store original value
         let original = std::env::var("CRUCIBLE_KILN_PATH").ok();
@@ -1621,6 +1632,7 @@ timeout_secs = 60
     }
 
     #[test]
+    #[serial]
     fn test_kiln_path_env_var_overrides_config_file() {
         // Store original value
         let original = std::env::var("CRUCIBLE_KILN_PATH").ok();
@@ -1658,6 +1670,7 @@ embedding_url = "http://localhost:11434"
     }
 
     #[test]
+    #[serial]
     fn test_kiln_path_priority_order() {
         // Store original value
         let original = std::env::var("CRUCIBLE_KILN_PATH").ok();
