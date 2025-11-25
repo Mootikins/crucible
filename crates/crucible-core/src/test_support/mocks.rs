@@ -459,6 +459,7 @@ impl StorageManagement for MockStorage {
             block_count: state.blocks.len() as u64,
             block_size_bytes: total_block_size,
             tree_count: state.trees.len() as u64,
+            section_count: 0, // Mock storage doesn't track sections
             deduplication_savings: 0,
             average_block_size: avg_block_size,
             largest_block_size: largest_block,

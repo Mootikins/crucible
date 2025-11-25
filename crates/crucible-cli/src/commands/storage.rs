@@ -440,6 +440,11 @@ fn output_stats_table(stats: &StorageStats, by_backend: bool, deduplication: boo
             description: "Number of Merkle trees".to_string(),
         },
         StorageStatsRow {
+            metric: "Total Sections".to_string(),
+            value: stats.section_count.to_string(),
+            description: "Number of tree sections".to_string(),
+        },
+        StorageStatsRow {
             metric: "Storage Size".to_string(),
             value: format_bytes(stats.block_size_bytes),
             description: "Total storage used".to_string(),
@@ -466,6 +471,7 @@ fn output_stats_json(stats: &StorageStats, by_backend: bool, deduplication: bool
         "statistics": {
             "total_blocks": stats.block_count,
             "total_trees": stats.tree_count,
+            "total_sections": stats.section_count,
             "total_size_bytes": stats.block_size_bytes,
             "deduplication_savings": stats.deduplication_savings,
             "average_block_size": stats.average_block_size,
@@ -487,6 +493,7 @@ fn output_stats_plain(stats: &StorageStats, _by_backend: bool, _deduplication: b
     output::header("Storage Statistics");
     println!("Total Blocks: {}", stats.block_count);
     println!("Total Trees: {}", stats.tree_count);
+    println!("Total Sections: {}", stats.section_count);
     println!("Storage Size: {}", format_bytes(stats.block_size_bytes));
     println!(
         "Deduplication Savings: {}",

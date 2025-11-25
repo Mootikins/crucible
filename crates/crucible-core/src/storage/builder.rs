@@ -622,6 +622,7 @@ mod tests {
                 block_count: 0,
                 block_size_bytes: 0,
                 tree_count: 0,
+                section_count: 0,
                 deduplication_savings: 0,
                 average_block_size: 0.0,
                 largest_block_size: 0,
