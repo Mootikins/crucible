@@ -23,6 +23,7 @@ notify-debouncer-full = { workspace = true }
 # Configuration
 crucible-config = { workspace = true }
 crucible-core = { workspace = true }
+crucible-parser = { workspace = true }
 crucible-surrealdb = { workspace = true }
 crucible-llm = { workspace = true }
 
