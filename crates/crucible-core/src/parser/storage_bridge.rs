@@ -786,7 +786,6 @@ impl StorageAwareMarkdownParser for StorageAwareParser {
 /// Factory functions for creating storage-aware parsers
 pub mod factory {
     use super::*;
-    // use crate::parser::bridge::ParserAdapter; // disabled
 
     /// Create a storage-aware parser from a base parser
     ///
@@ -800,14 +799,122 @@ pub mod factory {
     ) -> impl StorageAwareMarkdownParser {
         StorageAwareParser::new(base_parser)
     }
+
+    /// Create a storage-aware parser with custom configuration from a base parser
+    ///
+    /// # Arguments
+    /// * `base_parser` - Base parser implementation
+    /// * `config` - Storage-aware parser configuration
+    pub fn create_storage_aware_parser_with_config_from_base(
+        base_parser: Box<dyn MarkdownParser>,
+        config: StorageAwareParserConfig,
+    ) -> impl StorageAwareMarkdownParser {
+        StorageAwareParser::with_config(base_parser, config, Arc::new(Blake3Hasher::new()))
+    }
+
+    /// Create a storage-aware parser with custom hasher from a base parser
+    ///
+    /// # Arguments
+    /// * `base_parser` - Base parser implementation
+    /// * `hasher` - Content hasher implementation
+    pub fn create_storage_aware_parser_with_hasher_from_base(
+        base_parser: Box<dyn MarkdownParser>,
+        hasher: Arc<dyn ContentHasher>,
+    ) -> impl StorageAwareMarkdownParser {
+        StorageAwareParser::with_config(base_parser, StorageAwareParserConfig::default(), hasher)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    // use crate::parser::bridge::ParserAdapter; // disabled
+    use crate::parser::types::{NoteContent, ParsedNote, ParsedNoteMetadata};
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
+
+    /// Mock parser for testing storage-aware parser functionality.
+    /// This avoids circular dependencies with crucible-parser.
+    struct MockMarkdownParser;
+
+    #[async_trait]
+    impl MarkdownParser for MockMarkdownParser {
+        async fn parse_file(&self, path: &Path) -> ParserResult<ParsedNote> {
+            let content = tokio::fs::read_to_string(path).await?;
+            self.parse_content(&content, path).await
+        }
+
+        async fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote> {
+            let word_count = content.split_whitespace().count();
+            let char_count = content.chars().filter(|c| !c.is_whitespace()).count();
+
+            Ok(ParsedNote {
+                path: source_path.to_path_buf(),
+                frontmatter: None,
+                wikilinks: Vec::new(),
+                tags: Vec::new(),
+                inline_links: Vec::new(),
+                content: NoteContent::new().with_plain_text(content.to_string()),
+                callouts: Vec::new(),
+                latex_expressions: Vec::new(),
+                footnotes: Default::default(),
+                parsed_at: chrono::Utc::now(),
+                content_hash: format!("{:x}", {
+                    let mut h = DefaultHasher::new();
+                    content.hash(&mut h);
+                    h.finish()
+                }),
+                file_size: content.len() as u64,
+                parse_errors: Vec::new(),
+                block_hashes: Vec::new(),
+                merkle_root: None,
+                metadata: ParsedNoteMetadata {
+                    word_count,
+                    char_count,
+                    heading_count: 0,
+                    code_block_count: 0,
+                    list_count: 0,
+                    paragraph_count: 1,
+                    callout_count: 0,
+                    latex_count: 0,
+                    footnote_count: 0,
+                },
+            })
+        }
+
+        fn capabilities(&self) -> ParserCapabilities {
+            ParserCapabilities::minimal()
+        }
+
+        fn can_parse(&self, path: &Path) -> bool {
+            path.extension()
+                .map(|ext| ext == "md" || ext == "markdown")
+                .unwrap_or(false)
+        }
+    }
+
+    /// Create a parser for testing
+    fn create_test_parser() -> Box<dyn MarkdownParser> {
+        Box::new(MockMarkdownParser)
+    }
+
+    /// Create a storage-aware parser for testing
+    fn create_storage_aware_parser() -> impl StorageAwareMarkdownParser {
+        factory::create_storage_aware_parser_from_base(create_test_parser())
+    }
+
+    /// Create a storage-aware parser with config for testing
+    fn create_storage_aware_parser_with_config(
+        config: StorageAwareParserConfig,
+    ) -> impl StorageAwareMarkdownParser {
+        factory::create_storage_aware_parser_with_config_from_base(create_test_parser(), config)
+    }
+
+    /// Create a storage-aware parser with hasher for testing
+    fn create_storage_aware_parser_with_hasher(
+        hasher: Arc<dyn ContentHasher>,
+    ) -> impl StorageAwareMarkdownParser {
+        factory::create_storage_aware_parser_with_hasher_from_base(create_test_parser(), hasher)
+    }
 
     /// Mock hasher for testing
     #[derive(Debug, Clone)]
@@ -862,7 +969,7 @@ mod tests {
 
     #[test]
     fn test_storage_aware_parser_creation() {
-        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
+        let base_parser = create_test_parser();
         let parser = StorageAwareParser::new(base_parser);
 
         assert!(parser.config.enable_storage);
@@ -872,7 +979,7 @@ mod tests {
 
     #[test]
     fn test_storage_aware_parser_with_config() {
-        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
+        let base_parser = create_test_parser();
         let config = StorageAwareParserConfig {
             enable_storage: false,
             enable_merkle_trees: false,
@@ -893,8 +1000,7 @@ mod tests {
 
     #[test]
     fn test_create_hashed_blocks() {
-        // use crate::parser::bridge::ParserAdapter; // disabled
-        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
+        let base_parser = create_test_parser();
         let parser = StorageAwareParser::new(base_parser);
         let content = "Hello, World! This is a test.";
 
@@ -917,8 +1023,7 @@ mod tests {
 
     #[test]
     fn test_create_hashed_blocks_empty_content() {
-        // use crate::parser::bridge::ParserAdapter; // disabled
-        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
+        let base_parser = create_test_parser();
         let parser = StorageAwareParser::new(base_parser);
         let content = "";
 
@@ -928,8 +1033,7 @@ mod tests {
 
     #[test]
     fn test_create_merkle_tree() {
-        // use crate::parser::bridge::ParserAdapter; // disabled
-        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
+        let base_parser = create_test_parser();
         let parser = StorageAwareParser::new(base_parser);
         let content = "Hello, World! This is a test for Merkle tree creation.";
 
@@ -946,8 +1050,7 @@ mod tests {
 
     #[test]
     fn test_create_merkle_tree_empty_blocks() {
-        // use crate::parser::bridge::ParserAdapter; // disabled
-        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
+        let base_parser = create_test_parser();
         let parser = StorageAwareParser::new(base_parser);
         let blocks: Vec<HashedBlock> = vec![];
 
@@ -957,7 +1060,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_parse_content_with_storage_no_backend() {
-        let parser = factory::create_storage_aware_parser();
+        let parser = create_storage_aware_parser();
         let content = "# Test Note\n\nThis is a test note with some content.";
         let source_path = Path::new("test.md");
 
@@ -979,8 +1082,7 @@ mod tests {
         assert!(parse_result.merkle_tree.is_some());
         assert!(!parse_result.content_hash.is_empty());
 
-        // Check statistics
-        assert!(parse_result.statistics.parse_time_ms > 0);
+        // Check statistics (parse_time_ms might be 0 on fast machines)
         assert_eq!(
             parse_result.statistics.block_count,
             parse_result.blocks.len()
@@ -993,7 +1095,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_parse_and_compare() {
-        let parser = factory::create_storage_aware_parser();
+        let parser = create_storage_aware_parser();
         let content1 = "# Version 1\n\nThis is the first version.";
         let content2 = "# Version 2\n\nThis is the second version with changes.";
         let source_path = Path::new("test.md");
@@ -1024,7 +1126,7 @@ mod tests {
     #[test]
     fn test_factory_functions() {
         // Test default factory
-        let parser1 = factory::create_storage_aware_parser();
+        let parser1 = create_storage_aware_parser();
         assert!(parser1.config().enable_storage);
 
         // Test config factory
@@ -1032,19 +1134,18 @@ mod tests {
             enable_storage: false,
             ..Default::default()
         };
-        let parser2 = factory::create_storage_aware_parser_with_config(config);
+        let parser2 = create_storage_aware_parser_with_config(config);
         assert!(!parser2.config().enable_storage);
 
         // Test hasher factory
         let mock_hasher = Arc::new(MockContentHasher::new("factory_test"));
-        let parser3 = factory::create_storage_aware_parser_with_hasher(mock_hasher);
+        let parser3 = create_storage_aware_parser_with_hasher(mock_hasher);
         assert!(parser3.config().enable_storage);
     }
 
     #[test]
     fn test_calculate_statistics() {
-        // use crate::parser::bridge::ParserAdapter; // disabled
-        let base_parser = Box::new(crate::parser::pulldown::PulldownParser::new());
+        let base_parser = create_test_parser();
         let parser = StorageAwareParser::new(base_parser);
         let content = "Test content for statistics calculation.";
         let blocks = parser.create_hashed_blocks(content).unwrap();
@@ -1064,7 +1165,7 @@ mod tests {
         // Test that the implementation satisfies the trait bounds
         fn assert_storage_aware_parser<T: StorageAwareMarkdownParser>(_: T) {}
 
-        let parser = factory::create_storage_aware_parser();
+        let parser = create_storage_aware_parser();
         assert_storage_aware_parser(parser);
     }
 
