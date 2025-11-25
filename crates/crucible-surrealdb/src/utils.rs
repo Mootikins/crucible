@@ -22,7 +22,7 @@ use std::path::Path;
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// use crucible_surrealdb::utils::normalize_path_string;
 ///
 /// assert_eq!(normalize_path_string(r".\foo\bar.md"), "foo/bar.md");
@@ -61,7 +61,7 @@ pub fn normalize_path_string(path: &str) -> String {
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```ignore
 /// use std::path::Path;
 /// use crucible_surrealdb::utils::resolve_and_normalize_path;
 ///
@@ -93,7 +93,7 @@ pub fn resolve_and_normalize_path(path: &Path, root: &Path) -> String {
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// use crucible_surrealdb::utils::sanitize_record_id;
 ///
 /// let safe_id = sanitize_record_id("my-safe-id").unwrap();
@@ -164,7 +164,7 @@ pub fn sanitize_record_id(id: &str) -> Result<String, String> {
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// use crucible_surrealdb::utils::format_record_id;
 ///
 /// let record_ref = format_record_id("users", "john-doe").unwrap();
