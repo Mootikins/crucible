@@ -550,10 +550,10 @@ fn default_embedding_url() -> String {
 }
 
 impl CliConfig {
-    /// Load configuration with precedence: defaults < file < CLI args
+    /// Load configuration with precedence: defaults < file < env vars < CLI args
     ///
-    /// **NOTE:** Environment variable configuration has been removed in v0.2.0.
-    /// Use config files or CLI arguments for configuration.
+    /// Environment variables supported:
+    /// - `CRUCIBLE_KILN_PATH`: Override kiln path
     pub fn load(
         config_file: Option<PathBuf>,
         embedding_url: Option<String>,
@@ -561,6 +561,11 @@ impl CliConfig {
     ) -> Result<Self> {
         // Load from config file (if exists), otherwise use defaults
         let mut config = Self::from_file_or_default(config_file)?;
+
+        // Override with environment variables (higher priority than config file)
+        if let Ok(kiln_path) = std::env::var("CRUCIBLE_KILN_PATH") {
+            config.kiln.path = PathBuf::from(kiln_path);
+        }
 
         // Override with CLI args (highest priority)
         if let Some(url) = embedding_url {
@@ -583,10 +588,14 @@ impl CliConfig {
         if let Some(custom_path) = &self.custom_database_path {
             custom_path.clone()
         } else {
-            // Use process ID to ensure unique database paths for parallel tests
-            // This prevents RocksDB lock collisions when tests run concurrently
-            let pid = std::process::id();
-            let db_name = format!("kiln-{}.db", pid);
+            // Only use PID suffix in test mode to prevent RocksDB lock collisions
+            // In production, use stable path for persistence across runs
+            let db_name = if std::env::var("CRUCIBLE_TEST_MODE").is_ok() {
+                let pid = std::process::id();
+                format!("kiln-{}.db", pid)
+            } else {
+                "kiln.db".to_string()
+            };
             self.kiln.path.join(".crucible").join(db_name)
         }
     }
@@ -1582,5 +1591,99 @@ timeout_secs = 60
 
         let embedding_config = config.to_embedding_config().unwrap();
         assert_eq!(embedding_config.model_name(), "fallback-model");
+    }
+
+    // Bug #2 Tests: Environment variable support for kiln path
+    #[test]
+    fn test_kiln_path_from_environment_variable() {
+        // Store original value
+        let original = std::env::var("CRUCIBLE_KILN_PATH").ok();
+
+        // Given: CRUCIBLE_KILN_PATH environment variable is set
+        let test_path = "/tmp/test-kiln-from-env";
+        std::env::set_var("CRUCIBLE_KILN_PATH", test_path);
+
+        // When: Config is loaded with no overrides
+        let config = CliConfig::load(None, None, None).unwrap();
+
+        // Then: Kiln path should come from environment variable
+        assert_eq!(
+            config.kiln.path,
+            PathBuf::from(test_path),
+            "Kiln path should be set from CRUCIBLE_KILN_PATH environment variable"
+        );
+
+        // Cleanup - restore original value
+        match original {
+            Some(val) => std::env::set_var("CRUCIBLE_KILN_PATH", val),
+            None => std::env::remove_var("CRUCIBLE_KILN_PATH"),
+        }
+    }
+
+    #[test]
+    fn test_kiln_path_env_var_overrides_config_file() {
+        // Store original value
+        let original = std::env::var("CRUCIBLE_KILN_PATH").ok();
+
+        // Given: A config file with a kiln path
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let config_content = r#"
+[kiln]
+path = "/config/file/path"
+embedding_url = "http://localhost:11434"
+"#;
+        std::fs::write(&config_path, config_content).unwrap();
+
+        // And: CRUCIBLE_KILN_PATH environment variable is set
+        let env_path = "/tmp/env-override-path";
+        std::env::set_var("CRUCIBLE_KILN_PATH", env_path);
+
+        // When: Config is loaded from file
+        let config = CliConfig::load(Some(config_path), None, None).unwrap();
+
+        // Then: Environment variable should override config file
+        assert_eq!(
+            config.kiln.path,
+            PathBuf::from(env_path),
+            "CRUCIBLE_KILN_PATH should override config file value"
+        );
+
+        // Cleanup - restore original value
+        match original {
+            Some(val) => std::env::set_var("CRUCIBLE_KILN_PATH", val),
+            None => std::env::remove_var("CRUCIBLE_KILN_PATH"),
+        }
+    }
+
+    #[test]
+    fn test_kiln_path_priority_order() {
+        // Store original value
+        let original = std::env::var("CRUCIBLE_KILN_PATH").ok();
+
+        // Test priority: CLI arg > env var > config file > default
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let config_content = r#"
+[kiln]
+path = "/config/file/path"
+embedding_url = "http://localhost:11434"
+"#;
+        std::fs::write(&config_path, config_content).unwrap();
+
+        // Set environment variable
+        std::env::set_var("CRUCIBLE_KILN_PATH", "/env/var/path");
+
+        // Load config - env var should override config file
+        let config = CliConfig::load(Some(config_path), None, None).unwrap();
+        assert_eq!(config.kiln.path, PathBuf::from("/env/var/path"));
+
+        // Cleanup - restore original value
+        match original {
+            Some(val) => std::env::set_var("CRUCIBLE_KILN_PATH", val),
+            None => std::env::remove_var("CRUCIBLE_KILN_PATH"),
+        }
     }
 }
