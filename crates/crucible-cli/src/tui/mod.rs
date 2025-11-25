@@ -3,15 +3,12 @@
 // This module implements a terminal user interface using ratatui, providing:
 // - Real-time log display from worker threads
 // - Status bar with kiln statistics
-// - REPL for SurrealQL queries and tool execution
 //
 // Architecture: Actor-based with message passing via tokio channels.
-// See /docs/TUI_ARCHITECTURE.md for design details.
 
 pub mod app;
 pub mod events;
 pub mod log_buffer;
-pub mod repl_state;
 pub mod tracing_layer;
 pub mod widgets;
 
@@ -27,9 +24,8 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 pub use app::{App, AppMode, RenderState, ScrollState, StatusBar};
-pub use events::{LogEntry, ReplResult, StatusUpdate, UiEvent};
+pub use events::{LogEntry, StatusUpdate, UiEvent};
 pub use log_buffer::LogBuffer;
-pub use repl_state::{ExecutionState, ReplState};
 pub use tracing_layer::TuiLayer;
 
 /// TUI configuration
@@ -37,11 +33,9 @@ pub use tracing_layer::TuiLayer;
 pub struct TuiConfig {
     /// Log buffer capacity (number of lines)
     pub log_capacity: usize,
-    /// REPL history capacity
-    pub history_capacity: usize,
     /// Status update throttle (milliseconds)
     pub status_throttle_ms: u64,
-    /// Log/REPL split ratio (percentage for logs)
+    /// Log split ratio (percentage for logs)
     pub log_split_ratio: u16,
 }
 
@@ -49,9 +43,8 @@ impl Default for TuiConfig {
     fn default() -> Self {
         Self {
             log_capacity: 20,
-            history_capacity: 100,
             status_throttle_ms: 100,
-            log_split_ratio: 70,
+            log_split_ratio: 100, // 100% logs, no REPL
         }
     }
 }
@@ -116,10 +109,6 @@ pub async fn run_tui(
             app.handle_event(UiEvent::Status(status)).await?;
         }
 
-        while let Ok(result) = app.repl_rx.try_recv() {
-            app.handle_event(UiEvent::ReplResult(result)).await?;
-        }
-
         // Exit on quit
         if app.is_exiting() {
             break;
@@ -162,9 +151,8 @@ mod tests {
         // Test configuration defaults (doesn't require terminal)
         let config = TuiConfig::default();
         assert_eq!(config.log_capacity, 20);
-        assert_eq!(config.history_capacity, 100);
         assert_eq!(config.status_throttle_ms, 100);
-        assert_eq!(config.log_split_ratio, 70);
+        assert_eq!(config.log_split_ratio, 100);
     }
 
     // Note: Terminal setup/teardown tests require a TTY
