@@ -952,6 +952,7 @@ impl StorageManagement for MemoryStorage {
             block_count,
             block_size_bytes: total_size,
             tree_count,
+            section_count: 0, // In-memory storage doesn't track sections separately
             deduplication_savings: deduplication_hits,
             average_block_size,
             largest_block_size,
@@ -1784,6 +1785,7 @@ mod tests {
                 block_count: 1,
                 block_size_bytes: 3,
                 tree_count: 0,
+                section_count: 0,
                 deduplication_savings: 0,
                 average_block_size: 3.0,
                 largest_block_size: 3,

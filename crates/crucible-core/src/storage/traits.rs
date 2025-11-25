@@ -254,6 +254,8 @@ pub struct StorageStats {
     pub block_size_bytes: u64,
     /// Total number of stored trees
     pub tree_count: u64,
+    /// Total number of tree sections (sections + virtual_sections)
+    pub section_count: u64,
     /// Number of deduplicated blocks (same content, same hash)
     pub deduplication_savings: u64,
     /// Average block size in bytes
