@@ -5,8 +5,8 @@
 **Goal**: Fix critical bugs found during manual testing of the process command pipeline.
 
 **Status**:
-- ✅ Bug #4 FIXED and tested
-- 📋 Bug #5 planned and ready for implementation
+- ✅ Bug #4 FIXED, tested, and committed (aaed3e2)
+- ✅ Bug #5 FIXED, tested, and committed (0c68fdc)
 
 ## Bug #4: Change Detection Not Working (FIXED ✅)
 
@@ -98,12 +98,13 @@ drop(watch_handle);
 
 **Branch**: `fix/process-command-pipeline`
 **Base**: Rebased on `origin/master` (includes 3 recent commits)
-**Commits**: 7 commits total
+**Commits**: 8 commits total
   - 6 existing commits (process command implementation)
-  - 1 new commit (Bug #4 fix)
+  - 1 commit: Bug #4 fix (aaed3e2)
+  - 1 commit: Bug #5 fix (0c68fdc)
 
-**Unstaged Changes**: Various WIP files from ongoing work
-**Ready**: Clean state, ready for Bug #5 implementation
+**Status**: Both bugs fixed, tested, and committed
+**Ready**: Need to run full test suite before PR
 
 ## Manual Test Results
 
@@ -119,23 +120,23 @@ From `MANUAL_TEST_PLAN.md`:
 - ✅ Test Suite 3: Dry-Run Flag - 3/3 PASS
 - ✅ Test Suite 7: Error Handling - 1/2 PASS
 
-### Pending Tests (require Bug #5 fix):
-- ⏳ Test Suite 4: Watch Mode - 1/5 (needs Bug #5)
+### Fixed Tests (after Bug #5):
+- ✅ Test Suite 4: Watch Mode - 2/5 verified, 3 pending
   - Test 4.1: Start watch - PASS
-  - Test 4.2: Detect changes - **FAIL** (Bug #5)
-  - Tests 4.3-4.5: Skipped (depend on 4.2)
+  - Test 4.2: Detect changes - **PASS** (Bug #5 fixed!)
+  - Tests 4.3-4.5: Ready for testing
 
-- ⏳ Test Suites 5-6: Skipped (depend on watch mode)
-- ⏳ Test Suite 8: Skipped (depend on change detection, now fixed)
+- ⏳ Test Suites 5-6: Ready for testing (depend on watch mode, now working)
+- ⏳ Test Suite 8: Ready for testing (depend on change detection, now fixed)
 
 ## Next Steps
 
-### Immediate (Next Session):
-1. Implement Bug #5 following TDD plan in `BUG_5_WATCH_MODE_FIX_PLAN.md`
-2. Run full manual test suite (all 22 tests)
-3. Update `BUG_FIX_STATUS.md` to mark both bugs as FIXED
-4. Create final commit for Bug #5
-5. Prepare branch for PR
+### Immediate (This Session - COMPLETED ✅):
+1. ✅ Implemented Bug #5 (much simpler than planned!)
+2. ✅ Verified fix with manual tests (Test 4.2 passing)
+3. ✅ Updated documentation (BUG_5_FIX_SUMMARY.md)
+4. ✅ Created commit for Bug #5 (0c68fdc)
+5. ⏳ Run remaining manual tests (Tests 4.3-4.5, Suites 5-6, 8)
 
 ### Before PR:
 1. Fix 2 pipeline integration test failures (add `CRUCIBLE_TEST_MODE=1`)
@@ -178,9 +179,25 @@ From `MANUAL_TEST_PLAN.md`:
 - `IMPLEMENTATION_SUMMARY.md` - Initial work summary
 - Plus various WIP files
 
+## Session Achievements
+
+### Bugs Fixed
+1. **Bug #4**: Complex SurrealDB persistence issue - 3 root causes, ~100 lines changed
+2. **Bug #5**: Simple handle lifetime issue - 2 lines changed
+
+### Key Learnings
+1. **Always inspect actual code before planning** - Bug #5's plan was completely wrong
+2. **Rust ownership matters** - `_handle` vs `handle` makes all the difference
+3. **Simple is better** - 2-line fix beat 2.5 hour refactor estimate
+4. **SurrealDB quirks** - Parameter binding, datetime formats, UPDATE semantics
+
+### Final Status
+- ✅ Both bugs fixed and committed
+- ✅ Manual verification successful
+- ⏳ Full test suite pending
+- ⏳ PR preparation needed
+
 ## Context Usage
-**Remaining**: ~76K tokens
-**Next session should**:
-- Start fresh with Bug #5 implementation
-- Reference `BUG_5_WATCH_MODE_FIX_PLAN.md` for detailed steps
-- Minimal exploration needed - plan is comprehensive
+**Used**: ~92K tokens
+**Remaining**: ~108K tokens
+**Next steps**: Run full manual test suite, fix pipeline tests, prepare PR
