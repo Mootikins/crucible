@@ -24,15 +24,14 @@ Section 3
         "Should extract 2 horizontal rules"
     );
 
-    // Note: pulldown-cmark doesn't expose the original characters used for horizontal rules,
-    // so all horizontal rules are normalized to "---" with "dash" style
+    // markdown-it preserves the original marker style
     let hr1 = &result.content.horizontal_rules[0];
     assert_eq!(hr1.style, "dash");
     assert_eq!(hr1.raw_content, "---");
 
     let hr2 = &result.content.horizontal_rules[1];
-    assert_eq!(hr2.style, "dash");
-    assert_eq!(hr2.raw_content, "---");
+    assert_eq!(hr2.style, "asterisk");
+    assert_eq!(hr2.raw_content, "***");
 }
 
 #[tokio::test]
@@ -54,10 +53,10 @@ Content
         "Should extract 1 horizontal rule"
     );
 
-    // Note: pulldown-cmark normalizes all horizontal rules to the same representation
+    // markdown-it preserves the original marker style
     let hr = &result.content.horizontal_rules[0];
-    assert_eq!(hr.style, "dash");
-    assert_eq!(hr.raw_content, "---");
+    assert_eq!(hr.style, "underscore");
+    assert_eq!(hr.raw_content, "___");
 }
 
 #[tokio::test]
@@ -104,8 +103,8 @@ Final content.
         "Should extract 3 horizontal rules"
     );
 
-    // Note: All horizontal rules are normalized by pulldown-cmark
+    // markdown-it preserves the original marker style
     assert_eq!(result.content.horizontal_rules[0].style, "dash");
-    assert_eq!(result.content.horizontal_rules[1].style, "dash");
-    assert_eq!(result.content.horizontal_rules[2].style, "dash");
+    assert_eq!(result.content.horizontal_rules[1].style, "asterisk");
+    assert_eq!(result.content.horizontal_rules[2].style, "underscore");
 }

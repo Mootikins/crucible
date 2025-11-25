@@ -1,7 +1,7 @@
 //! Callout plugin for markdown-it (Obsidian-style callouts)
 //!
 //! Implements block-level callout syntax:
-//! ```
+//! ```text
 //! > [!note] Optional title
 //! > Content line 1
 //! > Content line 2
@@ -90,7 +90,8 @@ impl BlockRule for CalloutScanner {
         let mut content_lines = Vec::new();
         let mut current_line = start_line + 1;
 
-        while current_line < state.line_offsets.len() - 1 {
+        // Use state.line_max which is the proper bound for iteration
+        while current_line < state.line_max {
             let line = state.get_line(current_line);
             let line_str = &*line;
 
@@ -101,10 +102,13 @@ impl BlockRule for CalloutScanner {
                 content_lines.push(content.to_string());
                 current_line += 1;
             } else if line_str.trim().is_empty() {
-                // Empty line might be part of callout, check next line
-                if current_line + 1 < state.line_offsets.len() - 1 {
+                // Empty line ends the callout (unless followed by a continuation > line)
+                // Check if next line continues the callout (but NOT if it's a new callout)
+                if current_line + 1 < state.line_max {
                     let next_line = state.get_line(current_line + 1);
-                    if next_line.starts_with('>') {
+                    // Continue only if next line starts with > but is NOT a new callout
+                    if next_line.starts_with('>') && !callout_regex().is_match(&next_line) {
+                        // Skip empty line but continue callout
                         content_lines.push(String::new());
                         current_line += 1;
                         continue;
@@ -128,7 +132,14 @@ impl BlockRule for CalloutScanner {
         };
 
         let mut node = Node::new(callout);
-        node.srcmap = state.get_map(start_line, current_line);
+        // get_map expects end_line to be a valid index, use current_line - 1
+        // since current_line points past the last consumed line
+        let end_line = if current_line > start_line {
+            current_line - 1
+        } else {
+            start_line
+        };
+        node.srcmap = state.get_map(start_line, end_line);
 
         // Return the node and number of lines consumed
         let lines_consumed = current_line - start_line;
@@ -137,8 +148,14 @@ impl BlockRule for CalloutScanner {
 }
 
 /// Add callout plugin to markdown-it parser
+///
+/// Note: Callout rules must be added BEFORE the cmark blockquote rule,
+/// otherwise blockquotes will consume the `>` lines first.
 pub fn add_callout_plugin(md: &mut MarkdownIt) {
-    md.block.add_rule::<CalloutScanner>();
+    // Add rule before blockquote so callouts take priority over regular blockquotes
+    md.block
+        .add_rule::<CalloutScanner>()
+        .before::<markdown_it::plugins::cmark::block::blockquote::BlockquoteScanner>();
 }
 
 #[cfg(test)]
