@@ -1,80 +1,23 @@
-//! Simplified fuzzy search commands for CLI
+//! Deprecated fuzzy search command
 //!
-//! This module provides basic fuzzy search functionality using file system operations.
+//! This module provides backwards compatibility for the old fuzzy command.
+//! The functionality has been integrated into the unified search command.
 
-use crate::commands::search::SearchExecutor;
 use crate::config::CliConfig;
-use crate::interactive::SearchResultWithScore;
 use anyhow::Result;
 
+/// Execute deprecated fuzzy search command
+///
+/// This function maintains backwards compatibility by forwarding to the unified search command
+/// with appropriate parameters and a deprecation warning.
 pub async fn execute(
     config: CliConfig,
-    query: String,
+    query: Option<String>,
     _search_content: bool,
     _search_tags: bool,
     _search_paths: bool,
     limit: u32,
 ) -> Result<()> {
-    let kiln_path = &config.kiln.path;
-
-    // Check if kiln path exists
-    if !kiln_path.exists() {
-        eprintln!("Error: kiln path does not exist: {}", kiln_path.display());
-        eprintln!("Please configure kiln.path in your config file (see: cru config show)");
-        return Err(anyhow::anyhow!("kiln path does not exist"));
-    }
-
-    println!("🔍 Fuzzy search: {}", query);
-
-    let executor = SearchExecutor::new();
-
-    // Use the same search functionality as regular search
-    let results = if !query.is_empty() {
-        executor.search_with_query(kiln_path, &query, limit, true)?
-    } else {
-        // Get all files if no query
-        let files = executor.list_markdown_files(kiln_path)?;
-        let mut results = Vec::new();
-
-        for file_path in files.into_iter().take(limit as usize) {
-            let title = file_path
-                .split('/')
-                .next_back()
-                .unwrap_or(&file_path)
-                .to_string();
-            results.push(SearchResultWithScore {
-                id: file_path,
-                title,
-                content: String::new(),
-                score: 1.0,
-            });
-        }
-        results
-    };
-
-    // Display results
-    if results.is_empty() {
-        println!("❌ No results found for query: {}", query);
-        return Ok(());
-    }
-
-    println!("\n🎯 Found {} results:", results.len());
-    println!("{}", "-".repeat(60));
-
-    for (idx, result) in results.iter().enumerate() {
-        println!("\n{}. {}", idx + 1, result.title);
-        println!("   📁 {}", result.id);
-
-        // Show preview of content (first 100 characters)
-        if !result.content.is_empty() {
-            let preview = if result.content.len() > 100 {
-                format!("{}...", &result.content[..100])
-            } else {
-                result.content.clone()
-            };
-            println!("   📄 {}", preview);
-        }
-    }
-
-    Ok(())
+    // Forward to the new unified search implementation with deprecation warning
+    super::search::execute_fuzzy_deprecated(config, query, limit).await
 }

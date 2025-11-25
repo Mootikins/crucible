@@ -97,13 +97,17 @@ pub enum Commands {
         dry_run: bool,
     },
 
-    /// Interactive search through kiln notes (fuzzy finder)
+    /// Unified search through kiln notes (text and fuzzy search)
     Search {
-        /// Search query (optional - opens picker if omitted)
+        /// Search query (optional - opens interactive picker if omitted)
         query: Option<String>,
 
+        /// Search mode: auto, fuzzy, text [default: auto]
+        #[arg(long = "mode", default_value = "auto")]
+        mode: String,
+
         /// Number of results to show
-        #[arg(short = 'n', long, default_value = "10")]
+        #[arg(short = 'n', long, default_value = "20")]
         limit: u32,
 
         /// Output format (plain, json, table)
@@ -115,22 +119,11 @@ pub enum Commands {
         show_content: bool,
     },
 
-    /// Fuzzy search across all metadata (tags, properties, content)
+    /// (Deprecated) Fuzzy search - use 'cru search' instead
+    #[command(hide = true)] // Hide from help but keep for backwards compatibility
     Fuzzy {
         /// Search query (optional - starts with all results if omitted)
         query: Option<String>,
-
-        /// Search in content
-        #[arg(long, default_value = "true")]
-        content: bool,
-
-        /// Search in tags
-        #[arg(long, default_value = "true")]
-        tags: bool,
-
-        /// Search in file paths
-        #[arg(long, default_value = "true")]
-        paths: bool,
 
         /// Number of results
         #[arg(short = 'n', long, default_value = "20")]
@@ -147,34 +140,7 @@ pub enum Commands {
     #[command(subcommand)]
     Config(ConfigCommands),
 
-    
-    /// Show changes between files or directories
-    Diff {
-        /// First file or directory to compare
-        #[arg(value_name = "PATH1")]
-        path1: PathBuf,
-
-        /// Second file or directory to compare
-        #[arg(value_name = "PATH2")]
-        path2: PathBuf,
-
-        /// Output format (plain, json, detailed)
-        #[arg(short = 'f', long, default_value = "plain")]
-        format: String,
-
-        /// Show similarity scores for moved content
-        #[arg(short = 's', long)]
-        show_similarity: bool,
-
-        /// Include unchanged content in output
-        #[arg(long)]
-        show_unchanged: bool,
-
-        /// Maximum depth for directory comparison
-        #[arg(short = 'd', long, default_value = "10")]
-        max_depth: usize,
-    },
-
+  
     /// Show storage status and statistics
     Status {
         /// Path to analyze (optional - shows global status if omitted)
