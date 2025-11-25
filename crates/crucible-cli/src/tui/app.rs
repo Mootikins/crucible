@@ -7,9 +7,8 @@
 // - Dirty flags trigger re-renders
 
 use super::{
-    events::{LogEntry, ReplResult, StatusUpdate, UiEvent},
+    events::{LogEntry, StatusUpdate, UiEvent},
     log_buffer::LogBuffer,
-    repl_state::{ExecutionState, ReplState},
     TuiConfig,
 };
 use anyhow::Result;
@@ -21,10 +20,8 @@ use tokio::sync::mpsc;
 /// Application mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppMode {
-    /// Normal operation
+    /// Normal operation - viewing logs
     Running,
-    /// User is typing in REPL
-    Input,
     /// Scrolling through logs
     Scrolling,
     /// Shutting down
@@ -38,24 +35,21 @@ pub enum AppMode {
 pub struct RenderState {
     pub header_dirty: bool,
     pub logs_dirty: bool,
-    pub repl_dirty: bool,
 }
 
 impl RenderState {
     pub fn is_dirty(&self) -> bool {
-        self.header_dirty || self.logs_dirty || self.repl_dirty
+        self.header_dirty || self.logs_dirty
     }
 
     pub fn clear(&mut self) {
         self.header_dirty = false;
         self.logs_dirty = false;
-        self.repl_dirty = false;
     }
 
     pub fn mark_all_dirty(&mut self) {
         self.header_dirty = true;
         self.logs_dirty = true;
-        self.repl_dirty = true;
     }
 }
 
@@ -147,9 +141,6 @@ pub struct App {
     /// Status bar state
     pub status: StatusBar,
 
-    /// REPL state
-    pub repl: ReplState,
-
     /// Render optimization
     pub render_state: RenderState,
 
@@ -162,13 +153,9 @@ pub struct App {
     /// Status update throttling
     last_status_update: Instant,
 
-    /// Last REPL result
-    pub last_repl_result: Option<ReplResult>,
-
     /// Channel receivers (owned by App)
     pub log_rx: mpsc::Receiver<LogEntry>,
     pub status_rx: mpsc::Receiver<StatusUpdate>,
-    pub repl_rx: mpsc::Receiver<ReplResult>,
 }
 
 impl App {
@@ -178,9 +165,6 @@ impl App {
         status_rx: mpsc::Receiver<StatusUpdate>,
         config: TuiConfig,
     ) -> Self {
-        // Create REPL result channel
-        let (_, repl_rx) = mpsc::channel(10);
-
         // Initialize last_status_update to a time in the past
         // so the first status update is never throttled
         let last_status_update = Instant::now()
@@ -188,18 +172,15 @@ impl App {
             .unwrap_or_else(Instant::now);
 
         Self {
-            mode: AppMode::Input, // Start in input mode
+            mode: AppMode::Running,
             logs: LogBuffer::new(config.log_capacity),
             status: StatusBar::default(),
-            repl: ReplState::new(config.history_capacity),
             render_state: RenderState::default(),
             log_scroll: ScrollState::default(),
             config,
             last_status_update,
-            last_repl_result: None,
             log_rx,
             status_rx,
-            repl_rx,
         }
     }
 
@@ -229,7 +210,6 @@ impl App {
             UiEvent::Input(input) => self.handle_input(input).await?,
             UiEvent::Log(entry) => self.handle_log(entry),
             UiEvent::Status(update) => self.handle_status(update),
-            UiEvent::ReplResult(result) => self.handle_repl_result(result),
             UiEvent::Shutdown => self.shutdown(),
         }
         Ok(())
@@ -262,13 +242,6 @@ impl App {
         self.last_status_update = now;
     }
 
-    /// Handle REPL result
-    fn handle_repl_result(&mut self, result: ReplResult) {
-        self.last_repl_result = Some(result);
-        self.repl.set_execution_state(ExecutionState::Idle);
-        self.render_state.repl_dirty = true;
-    }
-
     /// Handle keyboard input
     async fn handle_input(&mut self, event: Event) -> Result<()> {
         match event {
@@ -283,73 +256,40 @@ impl App {
                     self.shutdown();
                 }
 
-                // Enter - submit command
-                (KeyCode::Enter, _) if self.mode == AppMode::Input => {
-                    self.submit_command().await?;
+                // q - quit
+                (KeyCode::Char('q'), KeyModifiers::NONE) => {
+                    self.shutdown();
                 }
 
-                // Up/Down - history navigation or log scrolling
-                (KeyCode::Up, _) if self.mode == AppMode::Input => {
-                    self.repl.history_prev();
-                    self.render_state.repl_dirty = true;
-                }
-                (KeyCode::Down, _) if self.mode == AppMode::Input => {
-                    self.repl.history_next();
-                    self.render_state.repl_dirty = true;
-                }
-
-                // Page Up/Down - scroll logs
-                (KeyCode::PageUp, _) => {
+                // Page Up/Down or k/j - scroll logs
+                (KeyCode::PageUp, _) | (KeyCode::Char('k'), KeyModifiers::NONE) => {
                     self.log_scroll.scroll_up(10);
                     self.log_scroll.auto_scroll = false;
                     self.mode = AppMode::Scrolling;
                     self.render_state.logs_dirty = true;
                 }
-                (KeyCode::PageDown, _) => {
+                (KeyCode::PageDown, _) | (KeyCode::Char('j'), KeyModifiers::NONE) => {
                     self.log_scroll.scroll_down(10);
                     if self.log_scroll.offset == 0 {
                         self.log_scroll.auto_scroll = true;
-                        self.mode = AppMode::Input;
+                        self.mode = AppMode::Running;
                     }
                     self.render_state.logs_dirty = true;
                 }
 
-                // Home/End - cursor movement
-                (KeyCode::Home, _) if self.mode == AppMode::Input => {
-                    self.repl.move_cursor_home();
-                    self.render_state.repl_dirty = true;
+                // Home/End or g/G - jump to top/bottom
+                (KeyCode::Home, _) | (KeyCode::Char('g'), KeyModifiers::NONE) => {
+                    // Jump to oldest logs (top)
+                    self.log_scroll.offset = self.logs.len().saturating_sub(1);
+                    self.log_scroll.auto_scroll = false;
+                    self.mode = AppMode::Scrolling;
+                    self.render_state.logs_dirty = true;
                 }
-                (KeyCode::End, _) if self.mode == AppMode::Input => {
-                    self.repl.move_cursor_end();
-                    self.render_state.repl_dirty = true;
-                }
-
-                // Char input
-                (KeyCode::Char(c), _) if self.mode == AppMode::Input => {
-                    self.repl.insert_char(c);
-                    self.render_state.repl_dirty = true;
-                }
-
-                // Backspace
-                (KeyCode::Backspace, _) if self.mode == AppMode::Input => {
-                    self.repl.delete_char();
-                    self.render_state.repl_dirty = true;
-                }
-
-                // Delete
-                (KeyCode::Delete, _) if self.mode == AppMode::Input => {
-                    self.repl.delete_char_forward();
-                    self.render_state.repl_dirty = true;
-                }
-
-                // Left/Right - cursor movement
-                (KeyCode::Left, _) if self.mode == AppMode::Input => {
-                    self.repl.move_cursor_left();
-                    self.render_state.repl_dirty = true;
-                }
-                (KeyCode::Right, _) if self.mode == AppMode::Input => {
-                    self.repl.move_cursor_right();
-                    self.render_state.repl_dirty = true;
+                (KeyCode::End, _) | (KeyCode::Char('G'), KeyModifiers::SHIFT) => {
+                    // Jump to newest logs (bottom)
+                    self.log_scroll.scroll_to_bottom();
+                    self.mode = AppMode::Running;
+                    self.render_state.logs_dirty = true;
                 }
 
                 _ => {}
@@ -361,69 +301,6 @@ impl App {
             }
 
             _ => {}
-        }
-
-        Ok(())
-    }
-
-    /// Submit REPL command
-    async fn submit_command(&mut self) -> Result<()> {
-        let command = self.repl.submit();
-
-        // Handle built-in commands
-        if command.starts_with(':') {
-            self.handle_builtin_command(&command).await?;
-        } else {
-            // TODO: Send to REPL executor
-            // For now, just echo back
-            let result = ReplResult::success(
-                format!("Would execute: {}", command),
-                Duration::from_millis(0),
-            );
-            self.handle_repl_result(result);
-        }
-
-        Ok(())
-    }
-
-    /// Handle built-in commands (:quit, :help, etc.)
-    async fn handle_builtin_command(&mut self, command: &str) -> Result<()> {
-        match command.trim() {
-            ":quit" | ":q" => {
-                self.shutdown();
-            }
-
-            ":help" | ":h" => {
-                let help_text = r#"
-Built-in Commands:
-  :quit, :q       - Exit CLI
-  :help, :h       - Show this help
-  :clear          - Clear REPL output
-  :stats          - Show kiln statistics
-  :tools          - List available tools
-  :log <level>    - Set log level
-
-SurrealQL Queries:
-  SELECT * FROM notes WHERE tags CONTAINS '#project';
-  SELECT ->links->note.title FROM notes WHERE path = 'foo.md';
-
-Tool Execution:
-  :run search_by_tags project ai
-  :run semantic_search "agent orchestration"
-"#;
-                let result = ReplResult::success(help_text, Duration::from_millis(0));
-                self.handle_repl_result(result);
-            }
-
-            ":clear" => {
-                self.last_repl_result = None;
-                self.render_state.repl_dirty = true;
-            }
-
-            _ => {
-                let result = ReplResult::error(format!("Unknown command: {}. Try :help", command));
-                self.handle_repl_result(result);
-            }
         }
 
         Ok(())
