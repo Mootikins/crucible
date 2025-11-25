@@ -55,7 +55,7 @@ echo "Test kiln created at: $TEST_KILN"
 
 ### Set Environment Variables
 ```bash
-export OBSIDIAN_KILN_PATH="$TEST_KILN"
+export CRUCIBLE_KILN_PATH="$TEST_KILN"
 export CRUCIBLE_DB_PATH="/tmp/crucible-test-$(date +%s).db"
 ```
 
