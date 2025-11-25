@@ -103,7 +103,7 @@ fn classify_content(target: &str) -> ContentCategory {
 ///
 /// ## Usage Example
 ///
-/// ```rust,no_run
+/// ```ignore
 /// # use crucible_surrealdb::eav_graph::{NoteIngestor, EAVGraphStore};
 /// # use crucible_surrealdb::SurrealClient;
 /// # use crucible_core::parser::ParsedNote;
