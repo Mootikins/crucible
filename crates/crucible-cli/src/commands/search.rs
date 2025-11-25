@@ -2,10 +2,21 @@ use super::secure_filesystem::{
     PathValidator, SecureFileReader, SecureFileSystemConfig, SecureFileWalker,
 };
 use crate::config::CliConfig;
-use crate::interactive::{FuzzyPicker, SearchResultWithScore};
+use crate::interactive::SearchResultWithScore;
 use crate::output;
 use anyhow::{Context, Result};
+use crossterm::{execute, terminal};
+use nucleo_matcher::{
+    pattern::{CaseMatching, Normalization, Pattern},
+    Config, Matcher, Utf32Str,
+};
+use nucleo_picker::{
+    event::{keybind_default, StdinReader},
+    render::StrRenderer,
+    Picker, PickerOptions,
+};
 use std::fs;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
@@ -53,6 +64,50 @@ const BINARY_SIGNATURES: &[&[u8]] = &[
     &[0x00, 0x00, 0x01, 0x00], // ICO
     &[0x00, 0x00, 0x02, 0x00], // CUR
 ];
+
+/// Search mode for unified search interface
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchMode {
+    /// Auto-detect: interactive if no query, text search if query provided
+    Auto,
+    /// Interactive fuzzy search with nucleo picker
+    Fuzzy,
+    /// Text-based content search
+    Text,
+}
+
+impl SearchMode {
+    /// Parse mode from string
+    pub fn parse(mode: &str) -> Self {
+        match mode.to_lowercase().as_str() {
+            "fuzzy" => SearchMode::Fuzzy,
+            "text" => SearchMode::Text,
+            _ => SearchMode::Auto,
+        }
+    }
+
+    /// Determine effective mode based on query and terminal state
+    pub fn effective_mode(&self, has_query: bool, is_terminal: bool) -> Self {
+        match self {
+            SearchMode::Auto => {
+                if has_query {
+                    SearchMode::Text
+                } else if is_terminal {
+                    SearchMode::Fuzzy
+                } else {
+                    SearchMode::Text
+                }
+            }
+            mode => *mode,
+        }
+    }
+}
+
+impl Default for SearchMode {
+    fn default() -> Self {
+        SearchMode::Auto
+    }
+}
 
 /// Abstraction over filesystem and validation operations used by search commands.
 pub trait SearchBackend: Send + Sync {
@@ -187,6 +242,102 @@ impl SearchExecutor {
 
         Ok(results)
     }
+
+    /// Execute fuzzy search using nucleo matcher (returns file paths only)
+    pub fn fuzzy_search_files(&self, kiln_path: &Path, query: &str, limit: u32) -> Result<Vec<String>> {
+        let all_files = self.list_markdown_files(kiln_path)?;
+
+        if query.is_empty() {
+            // No query: return all files up to limit
+            return Ok(all_files.into_iter().take(limit as usize).collect());
+        }
+
+        // Set up nucleo matcher with default config
+        let mut matcher = Matcher::new(Config::DEFAULT);
+        let pattern = Pattern::parse(query, CaseMatching::Ignore, Normalization::Smart);
+
+        // Filter and score files
+        let mut scored: Vec<(String, u32)> = Vec::new();
+        let mut buf = Vec::new();
+
+        for file in all_files {
+            // Extract basename for matching
+            if let Some(basename) = file.split('/').last() {
+                let haystack = Utf32Str::new(basename, &mut buf);
+                if let Some(score) = pattern.score(haystack, &mut matcher) {
+                    scored.push((file, score));
+                }
+            }
+        }
+
+        // Sort by score (descending - higher scores first)
+        scored.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Return just the file paths up to limit
+        Ok(scored.into_iter().take(limit as usize).map(|(file, _)| file).collect())
+    }
+
+    /// Interactive fuzzy search using nucleo picker
+    pub async fn interactive_fuzzy_search(&self, kiln_path: &Path, limit: u32) -> Result<Option<String>> {
+        let files = self.list_markdown_files(kiln_path)?;
+
+        if files.is_empty() {
+            println!("No markdown files found in kiln: {}", kiln_path.display());
+            return Ok(None);
+        }
+
+        // Check if running in interactive terminal
+        let test_mode = std::env::var("CRUCIBLE_TEST_MODE").is_ok();
+        if !std::io::stderr().is_terminal() || test_mode {
+            // Non-interactive mode: return first file
+            return Ok(files.first().cloned());
+        }
+
+        // Create picker with reversed layout (prompt at top)
+        let options = PickerOptions::default().reversed(true);
+        let mut picker: Picker<String, _> = options.picker(StrRenderer);
+
+        // Populate picker with files
+        let injector = picker.injector();
+        for file in files.into_iter().take(limit as usize) {
+            injector.push(file);
+        }
+
+        // Open interactive picker with default keybindings
+        let mut stderr = std::io::stderr();
+        match picker.pick_with_io(StdinReader::new(keybind_default::<crossterm_028::event::KeyEvent>), &mut stderr)
+            .map_err(|e| anyhow::anyhow!("Picker error: {:?}", e))? {
+            Some(selected_file) => {
+                // Build full path to file and launch editor
+                let file_path = kiln_path.join(&selected_file);
+                let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+
+                // Ensure clean terminal state before launching editor
+                std::io::stderr()
+                    .flush()
+                    .with_context(|| "Failed to flush stderr")?;
+
+                execute!(std::io::stderr(), terminal::Clear(terminal::ClearType::All))
+                    .with_context(|| "Failed to clear terminal")?;
+
+                // Launch editor
+                let status = std::process::Command::new(&editor)
+                    .arg(&file_path)
+                    .status()
+                    .with_context(|| format!("Failed to launch editor: {}", editor))?;
+
+                if !status.success() {
+                    eprintln!("Editor exited with non-zero status");
+                }
+
+                Ok(Some(selected_file.clone()))
+            }
+            None => {
+                println!("No selection made");
+                Ok(None)
+            }
+        }
+    }
 }
 
 /// Detect if file content is binary by analyzing byte patterns
@@ -239,6 +390,7 @@ pub fn is_binary_content(content: &[u8]) -> bool {
 pub async fn execute(
     config: CliConfig,
     query: Option<String>,
+    mode: String,
     limit: u32,
     format: String,
     show_content: bool,
@@ -253,6 +405,10 @@ pub async fn execute(
     }
 
     let service = SearchExecutor::new();
+    let search_mode = SearchMode::parse(&mode);
+    let has_query = query.is_some();
+    let is_terminal = std::io::stderr().is_terminal();
+    let effective_mode = search_mode.effective_mode(has_query, is_terminal);
 
     // Validate query if provided (sanitized copy used for execution)
     let sanitized_query = if let Some(ref q) = query {
@@ -261,66 +417,97 @@ pub async fn execute(
         None
     };
 
-    let results = if let Some(ref q) = sanitized_query {
-        // Direct search with query using the service layer
-        service.search_with_query(kiln_path, q, limit, show_content)?
-    } else {
-        // Interactive picker with available files
-        let files = service.list_markdown_files(kiln_path)?;
+    match effective_mode {
+        SearchMode::Fuzzy => {
+            // Interactive fuzzy search
+            if let Some(_selected_file) = service.interactive_fuzzy_search(kiln_path, limit).await? {
+                // If we have a query and the user made a selection, also show content search results
+                if let Some(ref q) = sanitized_query {
+                    println!("\nShowing text search results for query: '{}'", q);
+                    let results = service.search_with_query(kiln_path, q, limit, show_content)?;
 
-        if files.is_empty() {
-            println!("No markdown files found in kiln: {}", kiln_path.display());
-            return Ok(());
-        }
-
-        let mut picker = FuzzyPicker::new();
-        let filtered_indices = picker.filter_items(&files, "");
-
-        let results: Vec<SearchResultWithScore> = filtered_indices
-            .into_iter()
-            .take(limit as usize)
-            .filter_map(|(idx, score)| {
-                files.get(idx).map(|path| SearchResultWithScore {
-                    id: path.clone(),
-                    title: path.split('/').next_back().unwrap_or(path).to_string(),
-                    content: String::new(),
-                    score: score as f64,
-                })
-            })
-            .collect();
-
-        if let Some(selection) = picker.pick_result(&results)? {
-            let selected = &results[selection];
-            println!("\nSelected: {}\n", selected.title);
-
-            // Get note content from file using secure reader
-            if let Ok(content) = service.read_file_content(kiln_path, &selected.id) {
-                println!("{}", content);
+                    if !results.is_empty() {
+                        let output = output::format_search_results(&results, &format, false, show_content)?;
+                        println!("{}", output);
+                        println!("Found {} results for query: '{}'", results.len(), q);
+                    } else {
+                        println!("No text matches found for query: '{}'", q);
+                    }
+                }
             }
-            return Ok(());
         }
-        results
-    };
+        SearchMode::Text => {
+            // Text-based search
+            if let Some(ref q) = sanitized_query {
+                // Search with query
+                let results = service.search_with_query(kiln_path, q, limit, show_content)?;
 
-    // Output results
-    if results.is_empty() {
-        if let Some(q) = query {
-            println!("No matches found for query: '{}'", q);
-        } else {
-            println!("No files found in kiln.");
+                if results.is_empty() {
+                    println!("No matches found for query: '{}'", q);
+                } else {
+                    let output = output::format_search_results(&results, &format, false, show_content)?;
+                    println!("{}", output);
+                    println!("Found {} results for query: '{}'", results.len(), q);
+                }
+            } else {
+                // No query provided in text mode: list all files
+                let files = service.fuzzy_search_files(kiln_path, "", limit)?;
+                let results: Vec<SearchResultWithScore> = files
+                    .into_iter()
+                    .map(|path| {
+                        let title = path
+                            .split('/')
+                            .next_back()
+                            .unwrap_or(&path)
+                            .trim_end_matches(".md")
+                            .to_string();
+                        SearchResultWithScore {
+                            id: path.clone(),
+                            title,
+                            content: String::new(),
+                            score: 1.0,
+                        }
+                    })
+                    .collect();
+
+                if results.is_empty() {
+                    println!("No files found in kiln.");
+                } else {
+                    let output = output::format_search_results(&results, &format, false, false)?;
+                    println!("{}", output);
+                    println!("Found {} files", results.len());
+                }
+            }
         }
-    } else {
-        let output = output::format_search_results(&results, &format, false, show_content)?;
-        println!("{}", output);
-
-        if let Some(q) = query {
-            println!("Found {} results for query: '{}'", results.len(), q);
-        } else {
-            println!("Found {} files", results.len());
+        SearchMode::Auto => {
+            // This should never happen as effective_mode() should resolve Auto
+            unreachable!("Auto mode should have been resolved by effective_mode()");
         }
     }
 
     Ok(())
+}
+
+/// Execute fuzzy search with deprecation warning
+/// This function maintains backwards compatibility for the old fuzzy command
+pub async fn execute_fuzzy_deprecated(
+    config: CliConfig,
+    query: Option<String>,
+    limit: u32,
+) -> Result<()> {
+    eprintln!("⚠️  Warning: 'cru fuzzy' is deprecated. Use 'cru search' instead.");
+    eprintln!("   For interactive mode: cru search");
+    eprintln!("   For text search: cru search \"query\"");
+    eprintln!();
+
+    // Convert fuzzy parameters to search parameters
+    let mode = if query.is_some() {
+        "text" // If query provided, use text search
+    } else {
+        "fuzzy" // If no query, use interactive fuzzy search
+    };
+
+    execute(config, query, mode.to_string(), limit, "plain".to_string(), true).await
 }
 
 /// Search for files containing the query string in their content

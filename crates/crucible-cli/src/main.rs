@@ -94,11 +94,20 @@ async fn main() -> Result<()> {
     // when needed, and the Arc-wrapped SurrealClient ensures cheap cloning.
 
     // Process any pending files on startup using integrated blocking processing
-    // Skip for interactive fuzzy picker, REPL mode, or when explicitly disabled
+    // Skip for deprecated fuzzy command and interactive search, REPL mode, or when explicitly disabled
     match &cli.command {
+        Some(Commands::Search { query, .. }) => {
+            if query.is_none() {
+                // Skip processing for interactive search (no query provided)
+                debug!("Skipping file processing for interactive search (no query)");
+            } else {
+                // Process for text search (query provided)
+                debug!("Will process files for search command with query");
+            }
+        }
         Some(Commands::Fuzzy { .. }) => {
-            // Skip processing - fuzzy is interactive and users want immediate results
-            debug!("Skipping file processing for fuzzy search command");
+            // Skip processing - deprecated fuzzy is interactive and users want immediate results
+            debug!("Skipping file processing for deprecated fuzzy search command");
         }
         None => {
             // Chat mode - process files in background like other commands
@@ -183,23 +192,18 @@ async fn main() -> Result<()> {
             commands::process::execute(config, path, force, watch, cli.verbose, dry_run).await?
         }
 
-        // Existing commands
+        // Unified search command
         Some(Commands::Search {
             query,
+            mode,
             limit,
             format,
             show_content,
-        }) => commands::search::execute(config, query, limit, format, show_content).await?,
+        }) => commands::search::execute(config, query, mode, limit, format, show_content).await?,
 
-        Some(Commands::Fuzzy {
-            query,
-            content: _, // keep for future use
-            tags: _,    // keep for future use
-            paths: _,   // keep for future use
-            limit,
-        }) => {
-            // Always use interactive mode
-            commands::fuzzy_interactive::execute(config, query.unwrap_or_default(), limit).await?
+        // Deprecated fuzzy command - forwards to unified search
+        Some(Commands::Fuzzy { query, limit }) => {
+            commands::search::execute_fuzzy_deprecated(config, query, limit).await?
         }
 
   
@@ -209,27 +213,7 @@ async fn main() -> Result<()> {
   
         Some(Commands::Config(cmd)) => commands::config::execute(cmd).await?,
 
-    
-        Some(Commands::Diff {
-            path1,
-            path2,
-            format,
-            show_similarity,
-            show_unchanged,
-            max_depth,
-        }) => {
-            commands::diff::execute(
-                config,
-                path1,
-                path2,
-                format,
-                show_similarity,
-                show_unchanged,
-                max_depth,
-            )
-            .await?
-        }
-
+  
         Some(Commands::Status {
             path,
             format,
