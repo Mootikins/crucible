@@ -706,7 +706,8 @@ impl crucible_core::storage::traits::StorageManagement for ContentAddressedStora
         let block_size_bytes = block_count * 1024; // Assume 1KB average size
 
         // Get tree statistics - use proper SurrealDB count query syntax
-        let tree_count_query = "SELECT * FROM hybrid_tree";
+        // Query the actual table being used (merkle_trees, not hybrid_tree)
+        let tree_count_query = "SELECT * FROM merkle_trees";
         let tree_result = self
             .client
             .query(tree_count_query, &[])
