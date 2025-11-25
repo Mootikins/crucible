@@ -28,6 +28,8 @@
 #![warn(clippy::all)]
 
 mod config;
+mod components;
+mod detection;
 mod enrichment;
 mod loader;
 mod profile;
@@ -37,6 +39,8 @@ mod profile;
 mod test_utils;
 
 pub use config::*;
+pub use components::*;
+pub use detection::*;
 pub use enrichment::*;
 pub use loader::*;
 pub use profile::*;
