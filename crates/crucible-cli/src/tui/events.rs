@@ -7,7 +7,6 @@ use chrono::{DateTime, Utc};
 use crossterm::event::Event as CrosstermEvent;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::Duration;
 
 /// Events that trigger UI updates
 #[derive(Debug, Clone)]
@@ -20,9 +19,6 @@ pub enum UiEvent {
 
     /// Status update (doc count, DB size, etc.)
     Status(StatusUpdate),
-
-    /// REPL command execution result
-    ReplResult(ReplResult),
 
     /// Graceful shutdown request
     Shutdown,
@@ -128,54 +124,6 @@ impl StatusUpdate {
     }
 }
 
-/// REPL command execution result
-#[derive(Debug, Clone)]
-pub enum ReplResult {
-    /// Successful execution with output
-    Success {
-        /// Output text
-        output: String,
-        /// Execution duration
-        duration: Duration,
-    },
-
-    /// Error during execution
-    Error {
-        /// Error message
-        message: String,
-    },
-
-    /// Tabular result (e.g., from SQL query)
-    Table {
-        /// Column headers
-        headers: Vec<String>,
-        /// Data rows
-        rows: Vec<Vec<String>>,
-    },
-}
-
-impl ReplResult {
-    /// Create a success result
-    pub fn success(output: impl Into<String>, duration: Duration) -> Self {
-        Self::Success {
-            output: output.into(),
-            duration,
-        }
-    }
-
-    /// Create an error result
-    pub fn error(message: impl Into<String>) -> Self {
-        Self::Error {
-            message: message.into(),
-        }
-    }
-
-    /// Create a table result
-    pub fn table(headers: Vec<String>, rows: Vec<Vec<String>>) -> Self {
-        Self::Table { headers, rows }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,17 +151,5 @@ mod tests {
         assert_eq!(update.db_type, Some("SurrealDB".to_string()));
         assert_eq!(update.doc_count, Some(42));
         assert!(update.db_size.is_none()); // Partial update
-    }
-
-    #[test]
-    fn test_repl_result_types() {
-        let success = ReplResult::success("OK", Duration::from_millis(100));
-        assert!(matches!(success, ReplResult::Success { .. }));
-
-        let error = ReplResult::error("Syntax error");
-        assert!(matches!(error, ReplResult::Error { .. }));
-
-        let table = ReplResult::table(vec!["id".to_string()], vec![vec!["1".to_string()]]);
-        assert!(matches!(table, ReplResult::Table { .. }));
     }
 }

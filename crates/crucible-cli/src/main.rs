@@ -283,11 +283,12 @@ async fn main() -> Result<()> {
             // Default to chat when no command is provided
             commands::chat::execute(
                 config,
-                None,  // No query provided - start interactive mode
-                false, // not act mode by default (plan mode)
-                cli.agent,
-                cli.no_context,
-                cli.context_size,
+                None,   // No agent specified - use default
+                None,   // No query provided - start interactive mode
+                true,   // read_only = true (plan mode is default)
+                false,  // no_context = false
+                cli.no_process,  // Pass the global --no-process flag
+                Some(5), // default context_size = 5
             ).await?
         }
     }
