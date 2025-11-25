@@ -179,8 +179,8 @@ async fn main() -> Result<()> {
             commands::mcp::execute(config).await?
         }
 
-        Some(Commands::Process { path, force, watch }) => {
-            commands::process::execute(config, path, force, watch, cli.verbose).await?
+        Some(Commands::Process { path, force, watch, dry_run }) => {
+            commands::process::execute(config, path, force, watch, cli.verbose, dry_run).await?
         }
 
         // Existing commands

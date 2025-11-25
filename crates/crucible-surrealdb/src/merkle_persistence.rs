@@ -15,6 +15,7 @@ use crate::{DbError, DbResult, RecordId, SurrealClient};
 use crucible_merkle::{HybridMerkleTree, NodeHash, SectionNode, VirtualSection};
 use crucible_core::parser::ParsedNote;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 
 /// Current serialization format version
@@ -192,11 +193,17 @@ impl MerklePersistence {
             content_fields.push_str(&format!(",\n            metadata: {}", metadata_json));
         }
 
+        // Use URL-encoded ID for the record ID to safely handle paths with spaces and special chars
+        // This replaces the problematic sanitize_id() which lost information
+        let record_id = urlencoding::encode(tree_id).to_string();
+
+        // Use the old query pattern but with URL-encoded ID instead of sanitized ID
+        // This preserves the original path while safely handling special characters
         let query = format!(
             "UPSERT hybrid_tree:`{}` CONTENT {{
                 {}
             }}",
-            sanitize_id(tree_id),
+            record_id,
             content_fields
         );
 
@@ -294,11 +301,12 @@ impl MerklePersistence {
     ///
     /// The reconstructed Hybrid Merkle tree or an error
     pub async fn retrieve_tree(&self, tree_id: &str) -> DbResult<HybridMerkleTree> {
-        // 1. Retrieve tree metadata
+        // 1. Retrieve tree metadata using URL-encoded ID
+        let record_id = urlencoding::encode(tree_id).to_string();
         let query_result = self
             .client
             .query(
-                &format!("SELECT * FROM hybrid_tree:`{}`", sanitize_id(tree_id)),
+                &format!("SELECT * FROM hybrid_tree:`{}`", record_id),
                 &[],
             )
             .await
@@ -450,8 +458,9 @@ impl MerklePersistence {
             .await
             .map_err(|e| DbError::Query(format!("Failed to delete sections: {}", e)))?;
 
+        let record_id = urlencoding::encode(tree_id).to_string();
         self.client
-            .query(&format!("DELETE hybrid_tree:`{}`", sanitize_id(tree_id)), &[])
+            .query(&format!("DELETE hybrid_tree:`{}`", record_id), &[])
             .await
             .map_err(|e| DbError::Query(format!("Failed to delete tree metadata: {}", e)))?;
 
@@ -491,10 +500,11 @@ impl MerklePersistence {
 
         let now = chrono::Utc::now();
 
-        // 1. Update tree metadata (inline values to avoid NONE issue)
+        // 1. Update tree metadata using URL-encoded ID
+        let record_id = urlencoding::encode(tree_id).to_string();
         let query = format!(
             "UPDATE hybrid_tree:`{}` SET root_hash = '{}', updated_at = '{}'",
-            sanitize_id(tree_id),
+            record_id,
             tree.root_hash.to_hex(),
             now.to_rfc3339()
         );
@@ -569,10 +579,11 @@ impl MerklePersistence {
     ///
     /// Tree metadata or None if not found
     pub async fn get_tree_metadata(&self, tree_id: &str) -> DbResult<Option<HybridTreeRecord>> {
+        let record_id = urlencoding::encode(tree_id).to_string();
         let query_result = self
             .client
             .query(
-                &format!("SELECT * FROM hybrid_tree:`{}`", sanitize_id(tree_id)),
+                &format!("SELECT * FROM hybrid_tree:`{}`", record_id),
                 &[],
             )
             .await
@@ -637,12 +648,51 @@ impl MerklePersistence {
 ///
 /// # Returns
 ///
+/// Convert tree ID to URL-encoded record ID for SurrealDB
+///
+/// This preserves the original path (including spaces and special characters)
+/// while making it safe for use as a database record ID.
+///
+/// # Arguments
+///
+/// * `tree_id` - The tree identifier (usually a file path)
+///
+/// # Returns
+///
+/// URL-encoded string safe for use in SurrealDB queries
+///
+/// # Panics
+///
+/// Panics if the ID is empty or longer than 255 characters.
+fn tree_record_id(tree_id: &str) -> String {
+    assert!(
+        !tree_id.is_empty() && tree_id.len() <= 255,
+        "Tree ID must be between 1 and 255 characters, got {} characters",
+        tree_id.len()
+    );
+    urlencoding::encode(tree_id).to_string()
+}
+
+/// Deprecated: Convert tree ID to URL-encoded record ID
+///
+/// This helper function URL-encodes tree IDs for safe use as SurrealDB record IDs.
+/// Unlike the deprecated `sanitize_id()`, this preserves the original path.
+fn tree_record_id_helper(tree_id: &str) -> String {
+    tree_record_id(tree_id)
+}
+
 /// Sanitized identifier safe for use in SurrealDB queries
+///
+/// # Deprecated
+///
+/// This function is deprecated because it loses information by converting spaces
+/// to underscores, causing collisions. Use `tree_record_id()` instead.
 ///
 /// # Panics
 ///
 /// Panics if the ID is empty or longer than 255 characters. This is intentional
 /// as these should be caught during development/testing.
+#[allow(dead_code)]
 fn sanitize_id(id: &str) -> String {
     // Validate length
     assert!(
@@ -974,5 +1024,191 @@ mod tests {
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("Invalid section index"));
         assert!(err_msg.contains("999"));
+    }
+
+    // BUG #1 TESTS: File paths with spaces cause SurrealDB parse errors
+    // These tests demonstrate the backslash escaping bug documented in BUGS.md
+    // Expected to FAIL until parameterized queries are implemented
+
+    #[tokio::test]
+    async fn test_store_tree_with_spaces_in_path() {
+        // Bug: File paths with spaces are sanitized to underscores, losing the original path
+        // This means files stored with "Project Notes/File.md" can't be retrieved with that exact path
+
+        // Given: A file path with spaces (like real Obsidian files)
+        let original_path = "Projects/Rune MCP/YouTube Transcript Tool - Implementation.md";
+        let client = create_test_client().await;
+        let persistence = MerklePersistence::new(client);
+        let doc = create_test_note("# Test\n\nContent with some text.");
+        let tree = HybridMerkleTree::from_document(&doc);
+
+        // When: We store the tree using the original path
+        let result = persistence.store_tree(original_path, &tree).await;
+        assert!(result.is_ok(), "Store should succeed");
+
+        // Then: We should be able to retrieve using the EXACT SAME path
+        // Currently this works because sanitize_id is called on both store and retrieve
+        let retrieved = persistence.retrieve_tree(original_path).await;
+        assert!(retrieved.is_ok(), "Retrieve should work with original path");
+
+        // And: The tree metadata should store the original unsanitized path
+        let metadata = persistence.get_tree_metadata(original_path).await.unwrap();
+        assert!(metadata.is_some(), "Metadata should exist");
+        let metadata = metadata.unwrap();
+
+        // THIS IS THE ACTUAL BUG: metadata.id is sanitized to underscores
+        // Expected: "Projects/Rune MCP/YouTube Transcript Tool - Implementation.md"
+        // Actual: "Projects_Rune_MCP_YouTube_Transcript_Tool_-_Implementation.md"
+        assert_eq!(
+            metadata.id, original_path,
+            "BUG: Path is sanitized! Expected spaces preserved but got underscores"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_store_tree_with_multiple_spaces_and_special_chars() {
+        // Given: A complex path with multiple spaces and special characters
+        let tree_id = "My Projects/Research Notes/AI & ML/Deep Learning - Part 1.md";
+        let client = create_test_client().await;
+        let persistence = MerklePersistence::new(client);
+        let doc = create_test_note("# Deep Learning\n\n## Introduction\n\nSome content here.");
+        let tree = HybridMerkleTree::from_document(&doc);
+
+        // When: We store the tree
+        let result = persistence.store_tree(tree_id, &tree).await;
+
+        // Then: It should succeed
+        assert!(
+            result.is_ok(),
+            "Should handle complex paths with spaces and special chars, got: {:?}",
+            result.err()
+        );
+
+        // And: Retrieval should work
+        let retrieved = persistence.retrieve_tree(tree_id).await;
+        assert!(retrieved.is_ok(), "Should retrieve complex path");
+        assert_eq!(tree.root_hash, retrieved.unwrap().root_hash);
+    }
+
+    #[tokio::test]
+    async fn test_update_tree_incremental_with_spaces() {
+        // Given: A tree stored with spaces in path
+        let tree_id = "Notes/Daily Notes/2025-01-15 Meeting Notes.md";
+        let client = create_test_client().await;
+        let persistence = MerklePersistence::new(client);
+
+        // Store initial tree
+        let doc_v1 = create_test_note("# Meeting\n\nInitial notes.");
+        let tree_v1 = HybridMerkleTree::from_document(&doc_v1);
+        persistence.store_tree(tree_id, &tree_v1).await.unwrap();
+
+        // When: We update with new content
+        let doc_v2 = create_test_note("# Meeting\n\nInitial notes.\n\n## Action Items\n\nNew section.");
+        let tree_v2 = HybridMerkleTree::from_document(&doc_v2);
+        let result = persistence
+            .update_tree_incremental(tree_id, &tree_v2, &[0])
+            .await;
+
+        // Then: Update should succeed
+        assert!(
+            result.is_ok(),
+            "Should update tree with spaces in path, got: {:?}",
+            result.err()
+        );
+
+        // And: Retrieved tree should have new hash
+        let retrieved = persistence.retrieve_tree(tree_id).await.unwrap();
+        assert_eq!(
+            tree_v2.root_hash, retrieved.root_hash,
+            "Should have updated hash"
+        );
+        assert_ne!(
+            tree_v1.root_hash, retrieved.root_hash,
+            "Hash should have changed"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_tree_with_spaces() {
+        // Given: A tree stored with spaces
+        let tree_id = "Archive/Old Projects/Legacy System.md";
+        let client = create_test_client().await;
+        let persistence = MerklePersistence::new(client);
+        let doc = create_test_note("# Legacy\n\nOld content.");
+        let tree = HybridMerkleTree::from_document(&doc);
+
+        persistence.store_tree(tree_id, &tree).await.unwrap();
+
+        // Verify it exists
+        assert!(persistence.retrieve_tree(tree_id).await.is_ok());
+
+        // When: We delete the tree
+        let result = persistence.delete_tree(tree_id).await;
+
+        // Then: Deletion should succeed
+        assert!(
+            result.is_ok(),
+            "Should delete tree with spaces in path, got: {:?}",
+            result.err()
+        );
+
+        // And: Tree should no longer exist
+        let retrieved = persistence.retrieve_tree(tree_id).await;
+        assert!(
+            retrieved.is_err(),
+            "Tree should not exist after deletion"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_paths_without_spaces_still_work() {
+        // Regression test: ensure normal paths without spaces still work
+        let tree_id = "projects/notes/test.md";
+        let client = create_test_client().await;
+        let persistence = MerklePersistence::new(client);
+        let doc = create_test_note("# Test\n\nNormal content.");
+        let tree = HybridMerkleTree::from_document(&doc);
+
+        // When/Then: All operations should still work
+        persistence.store_tree(tree_id, &tree).await.unwrap();
+        let retrieved = persistence.retrieve_tree(tree_id).await.unwrap();
+        assert_eq!(tree.root_hash, retrieved.root_hash);
+        persistence.delete_tree(tree_id).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_path_collision_bug_spaces_vs_underscores() {
+        // BUG: sanitize_id() causes collisions between "My File.md" and "My_File.md"
+        // Both paths get sanitized to "My_File.md" causing data loss
+
+        let client = create_test_client().await;
+        let persistence = MerklePersistence::new(client);
+
+        // Given: Two different files, one with spaces and one with underscores
+        let path_with_spaces = "My Project Notes.md";
+        let path_with_underscores = "My_Project_Notes.md";
+
+        let doc1 = create_test_note("# File One\n\nContent from file with spaces.");
+        let doc2 = create_test_note("# File Two\n\nDifferent content from file with underscores.");
+
+        let tree1 = HybridMerkleTree::from_document(&doc1);
+        let tree2 = HybridMerkleTree::from_document(&doc2);
+
+        // Store first file
+        persistence.store_tree(path_with_spaces, &tree1).await.unwrap();
+
+        // Store second file - this will OVERWRITE the first due to ID collision
+        persistence.store_tree(path_with_underscores, &tree2).await.unwrap();
+
+        // Try to retrieve both
+        let retrieved1 = persistence.retrieve_tree(path_with_spaces).await.unwrap();
+        let retrieved2 = persistence.retrieve_tree(path_with_underscores).await.unwrap();
+
+        // BUG: Both retrievals return the SAME tree (tree2)!
+        // This assertion SHOULD FAIL but currently PASSES due to the bug
+        assert_ne!(
+            retrieved1.root_hash, retrieved2.root_hash,
+            "BUG: Paths with spaces and underscores collide! Both resolve to same tree"
+        );
     }
 }

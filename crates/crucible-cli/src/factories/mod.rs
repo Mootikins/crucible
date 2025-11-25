@@ -8,6 +8,7 @@ pub mod storage;
 pub mod enrichment;
 pub mod merkle;
 pub mod pipeline;
+pub mod watch;
 
 pub use storage::{
     create_surrealdb_storage,
@@ -17,3 +18,4 @@ pub use storage::{
 pub use enrichment::create_default_enrichment_service;
 pub use merkle::create_surrealdb_merkle_store;
 pub use pipeline::create_pipeline;
+pub use watch::create_file_watcher;

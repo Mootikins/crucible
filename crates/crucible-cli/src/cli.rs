@@ -91,6 +91,10 @@ pub enum Commands {
         /// Watch for changes and reprocess automatically
         #[arg(short = 'w', long)]
         watch: bool,
+
+        /// Preview what would be processed without making database changes
+        #[arg(long)]
+        dry_run: bool,
     },
 
     /// Interactive search through kiln notes (fuzzy finder)
