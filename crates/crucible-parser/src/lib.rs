@@ -19,6 +19,10 @@
 #[cfg(feature = "pulldown-parser")]
 pub mod basic_markdown;
 
+// markdown-it specific modules
+#[cfg(feature = "markdown-it-parser")]
+pub mod basic_markdown_it;
+
 pub mod block_extractor;
 pub mod block_hasher;
 pub mod blockquotes;
@@ -111,6 +115,8 @@ pub use pulldown::PulldownParser;
 // Convenience factory functions
 #[cfg(feature = "pulldown-parser")]
 pub use basic_markdown::create_basic_markdown_extension;
+#[cfg(feature = "markdown-it-parser")]
+pub use basic_markdown_it::create_basic_markdown_it_extension;
 pub use blockquotes::create_blockquote_extension;
 pub use callouts::create_callout_extension;
 pub use enhanced_tags::create_enhanced_tags_extension;
