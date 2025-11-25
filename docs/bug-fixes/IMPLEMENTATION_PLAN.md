@@ -814,7 +814,7 @@ DB2=/tmp/test-db2.surreal
 rm -f $DB1
 
 # Run process command
-OBSIDIAN_KILN_PATH=/tmp/test-kiln \
+CRUCIBLE_KILN_PATH=/tmp/test-kiln \
   cargo run --bin cru -- process --db-path $DB1
 
 # Export DB1 state
@@ -827,7 +827,7 @@ OBSIDIAN_KILN_PATH=/tmp/test-kiln \
 rm -f $DB2
 
 # Run chat with single query (triggers pre-processing)
-OBSIDIAN_KILN_PATH=/tmp/test-kiln \
+CRUCIBLE_KILN_PATH=/tmp/test-kiln \
   cargo run --bin cru -- chat --db-path $DB2 "test query"
 
 # Exit chat immediately
