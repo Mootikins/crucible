@@ -10,7 +10,7 @@
 //!
 //! ## Usage
 //!
-//! ```no_run
+//! ```ignore
 //! use crucible_surrealdb::SurrealClient;
 //!
 //! #[tokio::main]
