@@ -71,7 +71,7 @@ impl CrucibleCoreFacade {
 
     /// Get the kiln root path
     pub fn kiln_root(&self) -> &Path {
-        &self.config.kiln.path
+        &self.config.kiln_path
     }
 
     /// Perform semantic search
@@ -87,8 +87,8 @@ impl CrucibleCoreFacade {
         query: &str,
         limit: usize,
     ) -> Result<Vec<SemanticSearchResult>> {
-        // Get embedding config
-        let embedding_config = self.config.to_embedding_config()?;
+        // Get embedding config from composite config and convert to provider config
+        let embedding_config = self.config.embedding.to_provider_config();
 
         // Create embedding provider using factory function
         let provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
@@ -141,8 +141,8 @@ impl CrucibleCoreFacade {
         limit: usize,
         rerank_limit: usize,
     ) -> Result<Vec<SemanticSearchResult>> {
-        // Get embedding config
-        let embedding_config = self.config.to_embedding_config()?;
+        // Get embedding config from composite config and convert to provider config
+        let embedding_config = self.config.embedding.to_provider_config();
 
         // Create embedding provider using factory function
         let provider = crucible_llm::embeddings::create_provider(embedding_config).await?;

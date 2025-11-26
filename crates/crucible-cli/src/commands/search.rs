@@ -395,7 +395,7 @@ pub async fn execute(
     format: String,
     show_content: bool,
 ) -> Result<()> {
-    let kiln_path = &config.kiln.path;
+    let kiln_path = &config.kiln_path;
 
     // Check if kiln path exists
     if !kiln_path.exists() {

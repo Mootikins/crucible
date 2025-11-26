@@ -8,7 +8,8 @@
 
 use anyhow::Result;
 use crucible_cli::commands::process;
-use crucible_cli::config::{CliConfig, KilnConfig, LlmConfig};
+use crucible_cli::config::CliConfig;
+use crucible_config::{EmbeddingConfig, AcpConfig, ChatConfig, CliConfig as NewCliConfig, EmbeddingProviderType};
 use std::path::PathBuf;
 use tempfile::TempDir;
 use tokio::time::{sleep, Duration};
@@ -39,19 +40,21 @@ fn create_test_kiln() -> Result<TempDir> {
 }
 
 /// Helper to create test CLI config
-fn create_test_config(kiln_path: PathBuf, db_path: PathBuf) -> CliConfig {
+fn create_test_config(kiln_path: PathBuf, _db_path: PathBuf) -> CliConfig {
     CliConfig {
-        kiln: KilnConfig {
-            path: kiln_path,
-            embedding_url: "https://llama.terminal.krohnos.io".to_string(),
-            embedding_model: Some("nomic-embed-text-v1.5-q8_0".to_string()),
+        kiln_path,
+        embedding: EmbeddingConfig {
+            provider: EmbeddingProviderType::Ollama,
+            model: Some("nomic-embed-text-v1.5-q8_0".to_string()),
+            api_url: Some("https://llama.terminal.krohnos.io".to_string()),
+            batch_size: 16,
         },
-        llm: LlmConfig {
+        acp: AcpConfig {
             default_agent: Some("test-agent".to_string()),
             ..Default::default()
         },
-        custom_database_path: Some(db_path),
-        ..Default::default()
+        chat: ChatConfig::default(),
+        cli: NewCliConfig::default(),
     }
 }
 
