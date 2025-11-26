@@ -28,13 +28,13 @@ use crate::core_facade::CrucibleCoreFacade;
 /// `mcp_servers` field in NewSessionRequest.
 pub async fn execute(config: CliConfig) -> Result<()> {
     info!("Starting Crucible MCP server...");
-    debug!("Kiln path: {}", config.kiln.path.display());
+    debug!("Kiln path: {}", config.kiln_path.display());
 
     // Initialize core facade
     let core = Arc::new(CrucibleCoreFacade::from_config(config).await?);
 
     // Get embedding config and create provider
-    let embedding_config = core.config().to_embedding_config()?;
+    let embedding_config = core.config().embedding.to_provider_config();
     let llm_provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
 
     // Wrap in adapter to implement core EmbeddingProvider trait

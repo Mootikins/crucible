@@ -83,10 +83,8 @@ async fn main() -> Result<()> {
     // Load configuration with CLI overrides
     let mut config = config::CliConfig::load(cli.config, cli.embedding_url, cli.embedding_model)?;
 
-    // Apply database path override if provided
-    if let Some(db_path) = cli.db_path {
-        config.custom_database_path = Some(db_path.into());
-    }
+    // Database path override no longer supported - path is derived from kiln_path
+    // TODO: Update CLI args to use different approach if custom database paths needed
 
     // Note: Storage/Core initialization moved to individual commands that need it.
     // Creating it here caused database lock conflicts as multiple commands would

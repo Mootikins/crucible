@@ -87,7 +87,7 @@ pub async fn execute(
     info!("Initial mode: {}", initial_mode.display_name());
 
     // Get default agent from config before moving config
-    let default_agent_from_config = config.llm.default_agent.clone();
+    let default_agent_from_config = config.acp.default_agent.clone(); // TODO: Add default_agent to ACP config
 
     // Initialize storage using factory pattern
     output::info("Initializing storage...");
@@ -108,7 +108,7 @@ pub async fn execute(
         ).await?;
 
         // Discover markdown files in kiln
-        let kiln_path = &config.kiln.path;
+        let kiln_path = &config.kiln_path;
         let files = discover_markdown_files(kiln_path)?;
 
         if files.is_empty() {
@@ -168,7 +168,7 @@ pub async fn execute(
     output::success(&format!("Using agent: {} ({})", agent.name, agent.command));
 
     // Create ACP client with kiln path for tool initialization
-    let kiln_path = core.config().kiln.path.clone();
+    let kiln_path = core.config().kiln_path.clone();
     let mut client = CrucibleAcpClient::new(agent, initial_mode.is_read_only())
         .with_kiln_path(kiln_path);
 
@@ -417,7 +417,7 @@ async fn spawn_background_watch(
     config: CliConfig,
     pipeline: Arc<NotePipeline>,
 ) -> Result<()> {
-    let kiln_path = config.kiln.path.clone();
+    let kiln_path = config.kiln_path.clone();
 
     // Create watcher via factory (DIP pattern - depends only on FileWatcher trait)
     let mut watcher_arc = factories::create_file_watcher(&config)?;

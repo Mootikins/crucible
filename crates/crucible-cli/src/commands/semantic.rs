@@ -149,7 +149,7 @@ impl SemanticSearchService for DefaultSemanticSearchService {
             progress.set_message("Scanning kiln and generating embeddings...");
             let process_result = process_kiln_integrated(
                 &client,
-                &config.kiln.path,
+                &config.kiln_path,
                 progress.as_ref(),
                 &provider_config,
             )
@@ -177,7 +177,7 @@ impl SemanticSearchService for DefaultSemanticSearchService {
 
             match process_kiln_delta_if_needed(
                 &client,
-                &config.kiln.path,
+                &config.kiln_path,
                 progress.as_ref(),
                 &provider_config,
             )
