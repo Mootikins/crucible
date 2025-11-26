@@ -33,7 +33,7 @@ pub use types::{
 // Re-export configuration types from crucible-config to maintain backward compatibility
 // Configuration lives in crucible-config to simplify dependency graph
 pub use crucible_config::{
-    CohereConfig, CustomConfig, EmbeddingProviderConfig, EmbeddingProviderType,
+    CohereConfig, CustomConfig, EmbeddingProviderConfig, embedding::EmbeddingProviderType,
     EnrichmentConfig, FastEmbedConfig, MockConfig, OllamaConfig, OpenAIConfig, PipelineConfig,
     VertexAIConfig,
 };

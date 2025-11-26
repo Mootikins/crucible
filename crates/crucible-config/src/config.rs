@@ -1,6 +1,10 @@
 //! Core configuration types and structures.
 
 use crate::{EnrichmentConfig, ProfileConfig};
+use crate::components::{CliConfigComponent, EmbeddingConfig, AcpConfig, ChatConfig};
+
+#[cfg(feature = "toml")]
+extern crate toml;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -97,6 +101,22 @@ pub struct Config {
     /// Default database configuration.
     pub database: Option<DatabaseConfig>,
 
+    /// CLI configuration.
+    #[serde(default)]
+    pub cli: Option<CliConfigComponent>,
+
+    /// Embedding configuration.
+    #[serde(default)]
+    pub embedding: Option<EmbeddingConfig>,
+
+    /// ACP (Agent Client Protocol) configuration.
+    #[serde(default)]
+    pub acp: Option<AcpConfig>,
+
+    /// Chat configuration.
+    #[serde(default)]
+    pub chat: Option<ChatConfig>,
+
     /// Server configuration.
     pub server: Option<ServerConfig>,
 
@@ -115,6 +135,10 @@ impl Default for Config {
             profiles: HashMap::from([("default".to_string(), ProfileConfig::default())]),
             enrichment: None,
             database: None,
+            cli: Some(CliConfigComponent::default()),
+            embedding: Some(EmbeddingConfig::default()),
+            acp: Some(AcpConfig::default()),
+            chat: Some(ChatConfig::default()),
             server: None,
             logging: None,
             custom: HashMap::new(),
@@ -239,6 +263,280 @@ impl Config {
     /// Get the kiln path or return None if not set.
     pub fn kiln_path_opt(&self) -> Option<String> {
         self.get::<String>("kiln_path").ok().flatten()
+    }
+
+    /// Get the effective CLI configuration.
+    pub fn cli_config(&self) -> Result<CliConfigComponent, ConfigError> {
+        if let Some(config) = &self.cli {
+            return Ok(config.clone());
+        }
+
+        // Fall back to default
+        Ok(CliConfigComponent::default())
+    }
+
+    /// Get the effective embedding configuration.
+    pub fn embedding_config(&self) -> Result<EmbeddingConfig, ConfigError> {
+        if let Some(config) = &self.embedding {
+            return Ok(config.clone());
+        }
+
+        // Fall back to default with FastEmbed
+        Ok(EmbeddingConfig::default())
+    }
+
+    /// Get the effective ACP configuration.
+    pub fn acp_config(&self) -> Result<AcpConfig, ConfigError> {
+        if let Some(config) = &self.acp {
+            return Ok(config.clone());
+        }
+
+        // Fall back to default
+        Ok(AcpConfig::default())
+    }
+
+    /// Get the effective chat configuration.
+    pub fn chat_config(&self) -> Result<ChatConfig, ConfigError> {
+        if let Some(config) = &self.chat {
+            return Ok(config.clone());
+        }
+
+        // Fall back to default
+        Ok(ChatConfig::default())
+    }
+}
+
+/// CLI-specific composite configuration structure.
+///
+/// This provides the main configuration interface for the CLI application,
+/// combining all necessary components with sensible defaults.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CliConfig {
+    /// Path to the Obsidian kiln directory
+    #[serde(default = "default_kiln_path")]
+    pub kiln_path: std::path::PathBuf,
+
+    /// Embedding configuration
+    #[serde(default)]
+    pub embedding: EmbeddingConfig,
+
+    /// ACP (Agent Client Protocol) configuration
+    #[serde(default)]
+    pub acp: AcpConfig,
+
+    /// Chat configuration
+    #[serde(default)]
+    pub chat: ChatConfig,
+
+    /// CLI-specific configuration
+    #[serde(default)]
+    pub cli: CliConfigComponent,
+}
+
+fn default_kiln_path() -> std::path::PathBuf {
+    std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+}
+
+impl Default for CliConfig {
+    fn default() -> Self {
+        Self {
+            kiln_path: default_kiln_path(),
+            embedding: EmbeddingConfig::default(),
+            acp: AcpConfig::default(),
+            chat: ChatConfig::default(),
+            cli: CliConfigComponent::default(),
+        }
+    }
+}
+
+impl CliConfig {
+    /// Load CLI configuration from file with CLI overrides
+    pub fn load(
+        config_file: Option<std::path::PathBuf>,
+        _embedding_url: Option<String>,
+        _embedding_model: Option<String>,
+    ) -> anyhow::Result<Self> {
+        // If config file exists, load it
+        if let Some(path) = config_file {
+            if path.exists() {
+                let contents = std::fs::read_to_string(&path)
+                    .map_err(|e| anyhow::anyhow!("Failed to read config file: {}", e))?;
+
+                #[cfg(feature = "toml")]
+                {
+                    // Try to parse as complete CLI config first
+                    if let Ok(config) = toml::from_str::<CliConfig>(&contents) {
+                        return Ok(config);
+                    }
+
+                    // If that fails, try to parse as general Config and convert
+                    if let Ok(general_config) = toml::from_str::<Config>(&contents) {
+                        return Ok(Self::from_general_config(general_config));
+                    }
+                }
+
+                return Err(anyhow::anyhow!("Failed to parse config file: TOML feature not enabled or invalid format"));
+            }
+        }
+
+        // Return default config
+        Ok(Self::default())
+    }
+
+    /// Convert from general Config to CliConfig
+    fn from_general_config(general: Config) -> Self {
+        Self {
+            kiln_path: general.kiln_path_opt()
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(default_kiln_path),
+            embedding: general.embedding_config().unwrap_or_default(),
+            acp: general.acp_config().unwrap_or_default(),
+            chat: general.chat_config().unwrap_or_default(),
+            cli: general.cli_config().unwrap_or_default(),
+        }
+    }
+
+    /// Get database path (always derived from kiln path)
+    pub fn database_path(&self) -> std::path::PathBuf {
+        // Only use PID suffix in test mode to prevent RocksDB lock collisions
+        let db_name = if std::env::var("CRUCIBLE_TEST_MODE").is_ok() {
+            let pid = std::process::id();
+            format!("kiln-{}.db", pid)
+        } else {
+            "kiln.db".to_string()
+        };
+        self.kiln_path.join(".crucible").join(db_name)
+    }
+
+    /// Get tools directory path (always derived from kiln path)
+    pub fn tools_path(&self) -> std::path::PathBuf {
+        self.kiln_path.join("tools")
+    }
+
+    /// Get database path as a string
+    pub fn database_path_str(&self) -> anyhow::Result<String> {
+        self.database_path()
+            .to_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| anyhow::anyhow!("Database path is not valid UTF-8"))
+    }
+
+    /// Get kiln path as a string
+    pub fn kiln_path_str(&self) -> anyhow::Result<String> {
+        self.kiln_path
+            .to_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| anyhow::anyhow!("Kiln path is not valid UTF-8"))
+    }
+
+    /// Display the current configuration as TOML
+    #[cfg(feature = "toml")]
+    pub fn display_as_toml(&self) -> anyhow::Result<String> {
+        toml::to_string_pretty(self)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize config as TOML: {}", e))
+    }
+
+    /// Display the current configuration as TOML (placeholder when toml feature is disabled)
+    #[cfg(not(feature = "toml"))]
+    pub fn display_as_toml(&self) -> anyhow::Result<String> {
+        Err(anyhow::anyhow!("TOML feature not enabled"))
+    }
+
+    /// Display the current configuration as JSON
+    pub fn display_as_json(&self) -> anyhow::Result<String> {
+        serde_json::to_string_pretty(self)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize config as JSON: {}", e))
+    }
+
+    /// Create a new config file with example values
+    pub fn create_example(path: &std::path::Path) -> anyhow::Result<()> {
+        let example = r#"# Crucible CLI Configuration
+# Location: ~/.config/crucible/config.toml
+
+# Path to your Obsidian kiln
+# Default: current directory
+kiln_path = "/home/user/Documents/my-kiln"
+
+# Embedding configuration
+[embedding]
+provider = "fastembed"
+model = "BAAI/bge-small-en-v1.5"
+batch_size = 16
+
+# ACP (Agent Client Protocol) configuration
+[acp]
+default_agent = null
+enable_discovery = true
+session_timeout_minutes = 30
+max_message_size_mb = 25
+
+# Chat configuration
+[chat]
+model = null
+enable_markdown = true
+
+# CLI configuration
+[cli]
+show_progress = true
+confirm_destructive = true
+verbose = false
+"#;
+
+        // Create parent directory if it doesn't exist
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| anyhow::anyhow!("Failed to create config directory: {}", e))?;
+        }
+
+        std::fs::write(path, example)
+            .map_err(|e| anyhow::anyhow!("Failed to write config file: {}", e))?;
+        Ok(())
+    }
+
+    // Legacy compatibility methods
+    pub fn chat_model(&self) -> String {
+        self.chat
+            .model
+            .clone()
+            .unwrap_or_else(|| "llama3.2".to_string())
+    }
+
+    pub fn temperature(&self) -> f32 {
+        0.7 // Default temperature
+    }
+
+    pub fn max_tokens(&self) -> u32 {
+        2048 // Default max tokens
+    }
+
+    pub fn streaming(&self) -> bool {
+        true // Default streaming
+    }
+
+    pub fn system_prompt(&self) -> String {
+        "You are a helpful assistant.".to_string()
+    }
+
+    pub fn ollama_endpoint(&self) -> String {
+        "https://llama.terminal.krohnos.io".to_string()
+    }
+
+    pub fn timeout(&self) -> u64 {
+        30 // Default timeout
+    }
+
+    pub fn openai_api_key(&self) -> Option<String> {
+        std::env::var("OPENAI_API_KEY").ok()
+    }
+
+    pub fn anthropic_api_key(&self) -> Option<String> {
+        std::env::var("ANTHROPIC_API_KEY").ok()
+    }
+
+    /// Get the default config file path
+    pub fn default_config_path() -> std::path::PathBuf {
+        let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+        home.join(".config").join("crucible").join("config.toml")
     }
 }
 

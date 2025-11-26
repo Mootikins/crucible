@@ -36,7 +36,7 @@ pub async fn execute(
     // Determine target path
     let target_path = path.as_ref()
         .map(|p| p.as_path())
-        .unwrap_or(config.kiln.path.as_path());
+        .unwrap_or(config.kiln_path.as_path());
 
     info!("Processing path: {}", target_path.display());
     info!("Force reprocess: {}", force);

@@ -64,7 +64,7 @@ impl ProviderType {
 pub use crucible_config::EmbeddingProviderConfig as EmbeddingConfig;
 
 // Re-export EmbeddingProviderType for compatibility
-pub use crucible_config::EmbeddingProviderType;
+pub use crucible_config::embedding::EmbeddingProviderType;
 
 /// Get expected embedding dimensions based on provider and model
 ///

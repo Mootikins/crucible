@@ -1,26 +1,14 @@
-//! Component-based configuration modules
+//! Essential configuration components for Crucible
 //!
-//! This module provides fine-grained configuration components for different
-//! aspects of the Crucible system. Each component has its own configuration
-//! struct with intelligent defaults based on system capabilities.
+//! Simple, focused configuration for the core components that actually need it.
 
 pub mod cli;
 pub mod embedding;
-pub mod storage;
-pub mod processing;
-pub mod networking;
-pub mod services;
-pub mod monitoring;
 pub mod acp;
 pub mod chat;
 
-// Re-export all component types for convenience
+// Re-export essential component types
 pub use cli::*;
 pub use embedding::*;
-pub use storage::*;
-pub use processing::*;
-pub use networking::*;
-pub use services::*;
-pub use monitoring::*;
 pub use acp::*;
 pub use chat::*;

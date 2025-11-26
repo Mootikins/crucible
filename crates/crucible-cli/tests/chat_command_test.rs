@@ -5,7 +5,8 @@
 
 use anyhow::Result;
 use crucible_cli::commands::chat;
-use crucible_cli::config::{CliConfig, KilnConfig};
+use crucible_cli::config::CliConfig;
+use crucible_config::{EmbeddingConfig, AcpConfig, ChatConfig, CliConfig as NewCliConfig, EmbeddingProviderType};
 use tempfile::TempDir;
 
 #[tokio::test]
@@ -21,12 +22,16 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
 
     // Create test config
     let config = CliConfig {
-        kiln: KilnConfig {
-            path: kiln_path.clone(),
-            embedding_url: "https://llama.krohnos.io".to_string(),
-            embedding_model: Some("nomic-embed-text-v1.5-q8_0".to_string()),
+        kiln_path: kiln_path.clone(),
+        embedding: EmbeddingConfig {
+            provider: EmbeddingProviderType::Ollama,
+            model: Some("nomic-embed-text-v1.5-q8_0".to_string()),
+            api_url: Some("https://llama.krohnos.io".to_string()),
+            batch_size: 16,
         },
-        ..Default::default()
+        acp: AcpConfig::default(),
+        chat: ChatConfig::default(),
+        cli: NewCliConfig::default(),
     };
 
     // This should NOT panic with "lock hold by current process" error
@@ -86,12 +91,16 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
     std::fs::create_dir_all(&kiln_path)?;
 
     let config = CliConfig {
-        kiln: KilnConfig {
-            path: kiln_path.clone(),
-            embedding_url: "https://llama.krohnos.io".to_string(),
-            embedding_model: Some("nomic-embed-text-v1.5-q8_0".to_string()),
+        kiln_path: kiln_path.clone(),
+        embedding: EmbeddingConfig {
+            provider: EmbeddingProviderType::Ollama,
+            model: Some("nomic-embed-text-v1.5-q8_0".to_string()),
+            api_url: Some("https://llama.krohnos.io".to_string()),
+            batch_size: 16,
         },
-        ..Default::default()
+        acp: AcpConfig::default(),
+        chat: ChatConfig::default(),
+        cli: NewCliConfig::default(),
     };
 
     // Try to execute with a query - should fail at agent discovery,
