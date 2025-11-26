@@ -1,0 +1,32 @@
+# Crucible Configuration Example
+# Location: ~/.config/crucible/config.toml
+
+# Path to your Obsidian vault (kiln)
+kiln_path = "/home/user/Documents/my-vault"
+
+# Embedding configuration
+[embedding]
+provider = "fastembed"  # fastembed, openai, anthropic
+# model = "custom-model"  # optional, uses provider default if not set
+# batch_size = 32        # optional, for performance tuning
+
+# For remote providers, you can customize API URL:
+# api_url = "https://your-endpoint.com/v1"
+
+# Agent Client Protocol configuration
+[acp]
+# default_agent = "claude"  # optional, auto-discovers if not set
+# enable_discovery = true    # optional
+# session_timeout_minutes = 30  # optional
+# max_message_size_mb = 25     # optional
+
+# Chat configuration
+[chat]
+# model = "llama3.2"     # optional, uses agent default if not set
+# enable_markdown = true  # optional
+
+# CLI configuration
+[cli]
+# show_progress = true         # optional
+# confirm_destructive = true  # optional
+# verbose = false              # optional

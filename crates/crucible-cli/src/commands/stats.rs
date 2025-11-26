@@ -84,7 +84,7 @@ pub async fn execute_with_service(
     service: Arc<dyn KilnStatsService>,
     config: CliConfig,
 ) -> Result<()> {
-    let kiln_path = &config.kiln.path;
+    let kiln_path = &config.kiln_path;
 
     if !kiln_path.exists() {
         eprintln!("Error: kiln path does not exist: {}", kiln_path.display());
