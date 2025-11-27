@@ -158,17 +158,7 @@ pub enum Commands {
         show_content: bool,
     },
 
-    /// (Deprecated) Fuzzy search - use 'cru search' instead
-    #[command(hide = true)] // Hide from help but keep for backwards compatibility
-    Fuzzy {
-        /// Search query (optional - starts with all results if omitted)
-        query: Option<String>,
-
-        /// Number of results
-        #[arg(short = 'n', long, default_value = "20")]
-        limit: u32,
-    },
-
+    
   
     
     /// Display kiln statistics
