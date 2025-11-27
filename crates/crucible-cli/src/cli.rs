@@ -136,28 +136,7 @@ pub enum Commands {
         parallel: Option<usize>,
     },
 
-    /// Unified search through kiln notes (text and fuzzy search)
-    Search {
-        /// Search query (optional - opens interactive picker if omitted)
-        query: Option<String>,
-
-        /// Search mode: auto, fuzzy, text [default: auto]
-        #[arg(long = "mode", default_value = "auto")]
-        mode: String,
-
-        /// Number of results to show
-        #[arg(short = 'n', long, default_value = "20")]
-        limit: u32,
-
-        /// Output format (plain, json, table)
-        #[arg(short = 'f', long, default_value = "plain")]
-        format: String,
-
-        /// Show content preview in results
-        #[arg(short = 'c', long)]
-        show_content: bool,
-    },
-
+    
     
   
     
@@ -192,33 +171,6 @@ pub enum Commands {
     /// Storage management and operations
     #[command(subcommand)]
     Storage(StorageCommands),
-
-    /// Parse and analyze files
-    Parse {
-        /// File or directory to parse
-        #[arg(value_name = "PATH")]
-        path: PathBuf,
-
-        /// Output format (plain, json, detailed)
-        #[arg(short = 'f', long, default_value = "plain")]
-        format: String,
-
-        /// Show Merkle tree information
-        #[arg(short = 't', long)]
-        show_tree: bool,
-
-        /// Display content blocks and hashes
-        #[arg(short = 'b', long)]
-        show_blocks: bool,
-
-        /// Maximum recursion depth for directories
-        #[arg(short = 'd', long, default_value = "5")]
-        max_depth: usize,
-
-        /// Continue processing on errors
-        #[arg(short = 'c', long)]
-        continue_on_error: bool,
-    },
 }
 
 #[derive(Subcommand)]
