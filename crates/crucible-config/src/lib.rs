@@ -37,7 +37,7 @@ mod profile;
 #[cfg(feature = "test-utils")]
 mod test_utils;
 
-pub use config::{Config, DatabaseConfig, ServerConfig, LoggingConfig, CacheConfig, DatabaseType, CacheType, ConfigError, ConfigValidationError, CliConfig};
+pub use config::{Config, DatabaseConfig, ServerConfig, LoggingConfig, CacheConfig, DatabaseType, CacheType, ConfigError, ConfigValidationError, CliAppConfig, ProcessingConfig};
 pub use components::*;
 pub use enrichment::*;
 pub use loader::*;

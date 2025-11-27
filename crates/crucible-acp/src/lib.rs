@@ -61,6 +61,7 @@ pub mod context;
 pub mod streaming;
 pub mod history;
 pub mod chat;
+pub mod mcp_host;
 
 // Mock agent for testing (only included in test builds)
 #[cfg(any(test, feature = "test-utils"))]
@@ -77,6 +78,7 @@ pub use context::{PromptEnricher, ContextConfig};
 pub use streaming::{StreamHandler, StreamConfig};
 pub use history::{ConversationHistory, HistoryConfig, HistoryMessage, MessageRole};
 pub use chat::{ChatSession, ChatConfig, ConversationState, SessionMetadata};
+pub use mcp_host::InProcessMcpHost;
 
 // Re-export test utilities when feature is enabled
 #[cfg(feature = "test-utils")]

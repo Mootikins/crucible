@@ -4,12 +4,16 @@
 
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::{debug, info};
 
 use crucible_acp::{
     ChatSession, ChatConfig, CrucibleAcpClient as AcpClient,
     HistoryConfig, ContextConfig, StreamConfig,
+    InProcessMcpHost,
 };
+use crucible_core::traits::KnowledgeRepository;
+use crucible_core::enrichment::EmbeddingProvider;
 
 use crate::acp::agent::AgentInfo;
 
@@ -22,6 +26,12 @@ pub struct CrucibleAcpClient {
     read_only: bool,
     config: ChatConfig,
     kiln_path: Option<PathBuf>,
+    /// Knowledge repository for semantic search (required for in-process MCP)
+    knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
+    /// Embedding provider for vector operations (required for in-process MCP)
+    embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    /// In-process MCP host (kept alive for the session duration)
+    mcp_host: Option<InProcessMcpHost>,
 }
 
 impl CrucibleAcpClient {
@@ -52,6 +62,9 @@ impl CrucibleAcpClient {
             read_only,
             config,
             kiln_path: None,
+            knowledge_repo: None,
+            embedding_provider: None,
+            mcp_host: None,
         }
     }
 
@@ -61,6 +74,21 @@ impl CrucibleAcpClient {
     /// * `path` - Path to the kiln directory
     pub fn with_kiln_path(mut self, path: PathBuf) -> Self {
         self.kiln_path = Some(path);
+        self
+    }
+
+    /// Set the MCP dependencies for in-process tool execution
+    ///
+    /// # Arguments
+    /// * `knowledge_repo` - Repository for semantic search
+    /// * `embedding_provider` - Provider for generating embeddings
+    pub fn with_mcp_dependencies(
+        mut self,
+        knowledge_repo: Arc<dyn KnowledgeRepository>,
+        embedding_provider: Arc<dyn EmbeddingProvider>,
+    ) -> Self {
+        self.knowledge_repo = Some(knowledge_repo);
+        self.embedding_provider = Some(embedding_provider);
         self
     }
 
@@ -77,12 +105,17 @@ impl CrucibleAcpClient {
             read_only,
             config,
             kiln_path: None,
+            knowledge_repo: None,
+            embedding_provider: None,
+            mcp_host: None,
         }
     }
 
     /// Spawn and connect to the agent
     ///
-    /// Performs the full ACP protocol handshake.
+    /// Performs the full ACP protocol handshake. If MCP dependencies are configured,
+    /// starts an in-process SSE MCP server for tool execution. Otherwise, falls back
+    /// to stdio-based MCP.
     pub async fn spawn(&mut self) -> Result<()> {
         info!("Spawning agent: {} ({})", self.agent.name, self.agent.command);
 
@@ -117,9 +150,34 @@ impl CrucibleAcpClient {
             info!("No kiln path provided - tools will not be available");
         }
 
-        // Connect to the agent (performs protocol handshake)
-        session.connect().await
-            .map_err(|e| anyhow!("Failed to connect to agent: {}", e))?;
+        // Connect to the agent - use in-process SSE if dependencies are available
+        if let (Some(kiln_path), Some(knowledge_repo), Some(embedding_provider)) =
+            (&self.kiln_path, &self.knowledge_repo, &self.embedding_provider)
+        {
+            // Start in-process MCP server
+            info!("Starting in-process MCP server...");
+            let mcp_host = InProcessMcpHost::start(
+                kiln_path.clone(),
+                knowledge_repo.clone(),
+                embedding_provider.clone(),
+            ).await
+                .map_err(|e| anyhow!("Failed to start in-process MCP server: {}", e))?;
+
+            let sse_url = mcp_host.sse_url();
+            info!("In-process MCP server running at {}", sse_url);
+
+            // Connect with SSE MCP
+            session.connect_with_sse_mcp(&sse_url).await
+                .map_err(|e| anyhow!("Failed to connect to agent: {}", e))?;
+
+            // Keep the MCP host alive
+            self.mcp_host = Some(mcp_host);
+        } else {
+            // Fall back to stdio MCP (subprocess)
+            info!("Using stdio MCP server (no in-process dependencies configured)");
+            session.connect().await
+                .map_err(|e| anyhow!("Failed to connect to agent: {}", e))?;
+        }
 
         info!("Agent connected successfully");
 

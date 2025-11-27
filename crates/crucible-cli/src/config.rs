@@ -4,8 +4,14 @@
 //! and provides CLI-specific utilities and backward compatibility.
 
 // Re-export the canonical configuration types from crucible-config
+// Note: We re-export CliAppConfig as CliConfig for CLI backward compatibility
+// - CliAppConfig is the top-level composite config (kiln_path, embedding, acp, chat, cli, etc.)
+// - crucible_config::CliConfig is the small CLI-specific settings (show_progress, verbose, etc.)
 pub use crucible_config::{
-    CliConfig, EmbeddingConfig, AcpConfig, ChatConfig, CliConfigComponent, EmbeddingProviderConfig as EmbeddingProviderConfig,
+    CliAppConfig as CliConfig,      // Top-level config type for CLI
+    CliConfig as CliAppConfig,      // Small CLI settings (renamed for clarity)
+    EmbeddingConfig, AcpConfig, ChatConfig,
+    EmbeddingProviderConfig as EmbeddingProviderConfig,
     EmbeddingProviderType as ProviderType
 };
 
@@ -13,7 +19,7 @@ pub use crucible_config::{
 pub type EmbeddingConfigSection = crucible_config::EmbeddingConfig;
 pub type LlmConfig = crucible_config::AcpConfig;
 
-/// Builder for programmatically constructing CliConfig
+/// Builder for programmatically constructing CliConfig (top-level CLI configuration)
 pub struct CliConfigBuilder {
     kiln_path: Option<std::path::PathBuf>,
 }
@@ -32,9 +38,10 @@ impl CliConfigBuilder {
         self
     }
 
-    /// Build the CliConfig
+    /// Build the CliConfig (returns the top-level CLI configuration)
     pub fn build(self) -> anyhow::Result<CliConfig> {
         // Create default config and override kiln_path if provided
+        // Note: CliConfig here is crucible_config::CliAppConfig via the re-export alias
         let mut config = CliConfig::default();
         if let Some(path) = self.kiln_path {
             config.kiln_path = path;
