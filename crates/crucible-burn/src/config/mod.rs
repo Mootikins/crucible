@@ -10,10 +10,14 @@ use crate::hardware::BackendType;
 pub struct BurnConfig {
     pub default_backend: BackendConfig,
     pub model_dir: PathBuf,
+    #[serde(default)]
+pub model_search_paths: Vec<PathBuf>,  // Additional search paths for models
     pub cache_dir: Option<PathBuf>,
     pub server: ServerConfig,
     pub benchmarks: BenchmarkConfig,
     pub hardware: HardwareConfig,
+    #[serde(default)]
+    pub resource_limits: ResourceLimits,
 }
 
 impl Default for BurnConfig {
@@ -21,13 +25,25 @@ impl Default for BurnConfig {
         let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("~"));
         let models_dir = home_dir.join("models");
 
+        let search_paths = vec![
+            models_dir.join("embeddings"),
+            models_dir.join("language"),
+            models_dir.join("llm"),
+            models_dir.join("models"),
+            home_dir.join(".cache").join("huggingface"),
+            // Direct path to Qwen2.5-7B-Instruct for testing
+            models_dir.join("language").join("Qwen").join("Qwen2.5-7B-Instruct"),
+        ];
+
         Self {
             default_backend: BackendConfig::Auto,
             model_dir: models_dir,
+            model_search_paths: search_paths,
             cache_dir: Some(home_dir.join(".cache").join("crucible-burn")),
             server: ServerConfig::default(),
             benchmarks: BenchmarkConfig::default(),
             hardware: HardwareConfig::default(),
+            resource_limits: ResourceLimits::default(),
         }
     }
 }
@@ -130,6 +146,16 @@ pub struct HardwareConfig {
     pub vulkan_validation: bool,
 }
 
+/// Resource limits for model operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceLimits {
+    pub max_models_loaded: usize,
+    pub max_concurrent_operations: usize,
+    pub max_file_size_mb: usize,
+    pub max_scan_depth: usize,
+    pub enable_scan_limits: bool,
+}
+
 impl Default for HardwareConfig {
     fn default() -> Self {
         Self {
@@ -137,6 +163,18 @@ impl Default for HardwareConfig {
             memory_limit_gb: None,
             prefer_rocm_in_container: true,
             vulkan_validation: false,
+        }
+    }
+}
+
+impl Default for ResourceLimits {
+    fn default() -> Self {
+        Self {
+            max_models_loaded: 10,
+            max_concurrent_operations: 5,
+            max_file_size_mb: 100_000, // 100GB
+            max_scan_depth: 10,
+            enable_scan_limits: true,
         }
     }
 }
@@ -236,13 +274,24 @@ impl BurnConfig {
         }
 
         // Validate server configuration
-        if self.server.port == 0 || self.server.port > 65535 {
+        if self.server.port == 0 {
             return Err(anyhow::anyhow!("Invalid server port: {}", self.server.port));
         }
 
         // Validate benchmark configuration
         if self.benchmarks.default_iterations == 0 {
             return Err(anyhow::anyhow!("Default iterations must be greater than 0"));
+        }
+
+        // Validate resource limits
+        if self.resource_limits.max_models_loaded == 0 {
+            return Err(anyhow::anyhow!("Max models loaded must be greater than 0"));
+        }
+        if self.resource_limits.max_concurrent_operations == 0 {
+            return Err(anyhow::anyhow!("Max concurrent operations must be greater than 0"));
+        }
+        if self.resource_limits.max_scan_depth == 0 {
+            return Err(anyhow::anyhow!("Max scan depth must be greater than 0"));
         }
 
         Ok(())
