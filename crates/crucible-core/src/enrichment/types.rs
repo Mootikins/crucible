@@ -89,8 +89,14 @@ pub struct BlockEmbedding {
     /// Name of the model used to generate this embedding
     pub model: String,
 
+    /// Version of the model (e.g., "q8_0" for quantized, or API version)
+    pub model_version: Option<String>,
+
     /// Dimensions of the vector
     pub dimensions: usize,
+
+    /// BLAKE3 hash of the input text (for incremental embedding)
+    pub content_hash: Option<String>,
 
     /// When this embedding was generated
     pub created_at: DateTime<Utc>,
@@ -104,7 +110,32 @@ impl BlockEmbedding {
             block_id,
             vector,
             model,
+            model_version: None,
             dimensions,
+            content_hash: None,
+            created_at: Utc::now(),
+        }
+    }
+
+    /// Create a new block embedding with content hash for incremental embedding
+    ///
+    /// The content hash enables embedding reuse: if the same content hash
+    /// is found for the same model+version, the cached embedding can be used.
+    pub fn with_content_hash(
+        block_id: String,
+        vector: Vec<f32>,
+        model: String,
+        model_version: Option<String>,
+        content_hash: String,
+    ) -> Self {
+        let dimensions = vector.len();
+        Self {
+            block_id,
+            vector,
+            model,
+            model_version,
+            dimensions,
+            content_hash: Some(content_hash),
             created_at: Utc::now(),
         }
     }
@@ -122,6 +153,16 @@ impl BlockEmbedding {
     /// Get the model name
     pub fn model(&self) -> &str {
         &self.model
+    }
+
+    /// Get the model version
+    pub fn model_version(&self) -> Option<&str> {
+        self.model_version.as_deref()
+    }
+
+    /// Get the content hash (BLAKE3 hash of input text)
+    pub fn content_hash(&self) -> Option<&str> {
+        self.content_hash.as_deref()
     }
 
     /// Get the dimensions
