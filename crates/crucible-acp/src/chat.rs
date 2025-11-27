@@ -12,7 +12,7 @@
 use crate::{
     ConversationHistory, HistoryConfig, HistoryMessage,
     PromptEnricher, ContextConfig,
-    StreamHandler, StreamConfig,
+    StreamHandler, StreamConfig, ToolCallInfo,
     CrucibleAcpClient,
     ToolRegistry, ToolExecutor, discover_crucible_tools,
     AcpError, Result,
@@ -365,12 +365,12 @@ impl ChatSession {
     ///
     /// # Returns
     ///
-    /// The agent's response
+    /// Tuple of (agent_response, tool_calls) - the response text and any tool calls made
     ///
     /// # Errors
     ///
     /// Returns an error if message processing fails
-    pub async fn send_message(&mut self, user_message: &str) -> Result<String> {
+    pub async fn send_message(&mut self, user_message: &str) -> Result<(String, Vec<ToolCallInfo>)> {
         validate_message(user_message)?;
 
 
@@ -386,7 +386,7 @@ impl ChatSession {
         };
 
         // Step 3: Generate agent response (real agent if connected, mock otherwise)
-        let agent_response = self.generate_agent_response(&prompt).await?;
+        let (agent_response, tool_calls) = self.generate_agent_response(&prompt).await?;
 
         // Step 4: Add agent response to history
         let agent_msg = HistoryMessage::agent(agent_response.clone());
@@ -404,7 +404,7 @@ impl ChatSession {
 
         self.metadata.touch();
 
-        Ok(agent_response)
+        Ok((agent_response, tool_calls))
     }
 
     /// Update conversation state after a turn
@@ -423,7 +423,7 @@ impl ChatSession {
     ///
     /// If an agent is connected, sends the prompt via ACP protocol.
     /// Otherwise, returns a mock response for testing.
-    async fn generate_agent_response(&mut self, prompt: &str) -> Result<String> {
+    async fn generate_agent_response(&mut self, prompt: &str) -> Result<(String, Vec<ToolCallInfo>)> {
         if let (Some(client), Some(session)) = (&mut self.agent_client, &self.agent_session) {
             // Real agent mode: Send prompt via ACP protocol with streaming
             use agent_client_protocol::{PromptRequest, ContentBlock, SessionId};
@@ -440,14 +440,14 @@ impl ChatSession {
             let request_id = REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
             // Send prompt with streaming and accumulate content
-            let (content, _stop_reason) = client.send_prompt_with_streaming(prompt_request, request_id).await?;
+            let (content, tool_calls, _stop_reason) = client.send_prompt_with_streaming(prompt_request, request_id).await?;
 
-            tracing::debug!("Accumulated {} bytes of content from agent", content.len());
+            tracing::debug!("Accumulated {} bytes of content from agent, {} tool calls", content.len(), tool_calls.len());
 
-            Ok(content)
+            Ok((content, tool_calls))
         } else {
             // Mock mode: Return mock response for testing
-            Ok("This is a mock agent response. In a real implementation, this would come from the actual agent.".to_string())
+            Ok(("This is a mock agent response. In a real implementation, this would come from the actual agent.".to_string(), vec![]))
         }
     }
 
@@ -555,7 +555,7 @@ mod tests {
         // - Return the response
         assert!(response.is_ok(), "Should send message successfully");
 
-        let response_text = response.unwrap();
+        let (response_text, _tool_calls) = response.unwrap();
         assert!(!response_text.is_empty(), "Response should not be empty");
 
         // History should contain both user and agent messages

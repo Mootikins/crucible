@@ -103,7 +103,7 @@ async fn test_prompt_with_streaming_response() {
 
     assert!(result.is_ok(), "Should successfully receive streaming response: {:?}", result.err());
 
-    let (content, stop_reason) = result.unwrap();
+    let (content, _tool_calls, stop_reason) = result.unwrap();
 
     // Verify we got content
     assert!(!content.is_empty(), "Should receive non-empty response");
