@@ -17,8 +17,8 @@ crucible-core = { path = "../crucible-core" }
 crucible-config = { path = "../crucible-config" }
 
 # Burn ML framework (temporarily disabled for compatibility)
-# burn = { version = "0.14", features = ["std", "ndarray"] }
-# burn-wgpu = { version = "0.14", optional = true }
+burn = { version = "0.20.0-pre.3", features = ["std", "ndarray"] }
+burn-wgpu = { version = "0.20.0-pre.3", optional = true }
 
 # Hardware detection and GPU support (placeholders for now)
 # wgpu = { version = "0.19", optional = true }
@@ -69,13 +69,25 @@ num_cpus = { workspace = true }
 # Performance utilities
 parking_lot = { workspace = true }
 
-# Optional PyTorch dependency for ROCm support
-tch = { version = "0.15", optional = true }
+# Optional PyTorch dependency for ROCm support (disabled for Burn 0.20 compatibility)
+# tch = { version = "0.15", optional = true }
+
+# WGPU backend dependencies for cross-platform GPU acceleration
+wgpu = { version = "0.19", optional = true }
+pollster = { version = "0.3", optional = true }
+
+# TCH backend for PyTorch compatibility (ROCm support)
+tch = { version = "0.22", optional = true }
 
 [features]
 default = []
-# Placeholder features for when Burn integration is ready
-vulkan = []
+# Burn backend features
+wgpu = ["dep:burn-wgpu", "dep:wgpu", "dep:pollster"]
+vulkan = ["wgpu"]
+tch = ["dep:tch"]
+burn-wgpu = ["wgpu"]  # Alias for compatibility
+
+# Existing features
 server = []
 benchmarks = ["criterion"]
 
