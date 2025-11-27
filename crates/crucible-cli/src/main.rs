@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
     );
 
     let log_level = if cli.verbose { "debug" } else { "info" };
-    let env_filter = format!("crucible_cli={},crucible_services={}", log_level, log_level);
+    let env_filter = format!("crucible_cli={},crucible_services={},crucible_config={}", log_level, log_level, log_level);
 
     if uses_stdio {
         // File-only logging for stdio-based commands (MCP, Chat)
@@ -82,6 +82,11 @@ async fn main() -> Result<()> {
 
     // Load configuration with CLI overrides
     let mut config = config::CliConfig::load(cli.config, cli.embedding_url, cli.embedding_model)?;
+
+    // Log configuration in verbose mode
+    if cli.verbose {
+        config.log_config();
+    }
 
     // Database path override no longer supported - path is derived from kiln_path
     // TODO: Update CLI args to use different approach if custom database paths needed
