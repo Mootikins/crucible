@@ -528,15 +528,18 @@ impl CrucibleAcpClient {
 
         let mut line = String::new();
 
-        // Read with optional timeout
-        let read_result = if let Some(timeout_ms) = self.config.timeout_ms {
-            let duration = tokio::time::Duration::from_millis(timeout_ms);
-            match tokio::time::timeout(duration, stdout.read_line(&mut line)).await {
-                Ok(result) => result,
-                Err(_) => return Err(AcpError::Timeout("Read operation timed out".to_string())),
-            }
-        } else {
-            stdout.read_line(&mut line).await
+        // Read with a generous per-read timeout.
+        // Agents may pause for extended periods during tool execution or deep reasoning.
+        // Use 5 minutes per-read minimum, or match the overall streaming timeout if configured.
+        // The overall streaming timeout (in send_prompt_with_streaming) provides the actual limit.
+        let per_read_timeout_ms = self.config.timeout_ms
+            .map(|ms| ms.max(300_000)) // At least 5 minutes per read
+            .unwrap_or(300_000); // Default 5 minutes
+        let duration = tokio::time::Duration::from_millis(per_read_timeout_ms);
+
+        let read_result = match tokio::time::timeout(duration, stdout.read_line(&mut line)).await {
+            Ok(result) => result,
+            Err(_) => return Err(AcpError::Timeout("Read operation timed out".to_string())),
         };
 
         // Handle read result
