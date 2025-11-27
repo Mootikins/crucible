@@ -67,10 +67,72 @@ pub trait EmbeddingProvider: Send + Sync {
     /// "text-embedding-3-small")
     fn model_name(&self) -> &str;
 
+    /// Get the version of the model being used
+    ///
+    /// # Returns
+    ///
+    /// The model version if available (e.g., "q8_0" for quantized models,
+    /// "v1.5" for versioned models). Returns None for providers that don't
+    /// track model versions.
+    fn model_version(&self) -> Option<&str> {
+        None
+    }
+
     /// Get the dimensionality of embeddings produced by this provider
     ///
     /// # Returns
     ///
     /// The number of dimensions in each embedding vector
     fn dimensions(&self) -> usize;
+}
+
+/// A cached embedding result
+///
+/// Contains the embedding vector along with metadata about how it was generated.
+/// Used for incremental embedding where we can reuse embeddings for unchanged content.
+#[derive(Debug, Clone)]
+pub struct CachedEmbedding {
+    /// The embedding vector
+    pub vector: Vec<f32>,
+    /// BLAKE3 hash of the content that was embedded
+    pub content_hash: String,
+    /// Model name used to generate this embedding
+    pub model: String,
+    /// Model version (e.g., "q8_0" for quantized models)
+    pub model_version: Option<String>,
+}
+
+/// Abstract interface for embedding cache
+///
+/// This trait allows looking up previously generated embeddings by content hash,
+/// enabling incremental embedding. If the same content (by BLAKE3 hash) has already
+/// been embedded by the same model+version, we can reuse the cached embedding
+/// instead of calling the embedding provider again.
+///
+/// # Dependency Inversion
+///
+/// The trait is defined in crucible-core (domain layer), while implementations
+/// live in crucible-surrealdb (infrastructure layer). This allows the enrichment
+/// service to use caching without depending on storage implementation details.
+#[async_trait::async_trait]
+pub trait EmbeddingCache: Send + Sync {
+    /// Look up a cached embedding by content hash and model
+    ///
+    /// # Arguments
+    ///
+    /// * `content_hash` - BLAKE3 hash of the content
+    /// * `model` - Model name (e.g., "nomic-embed-text-v1.5")
+    /// * `model_version` - Model version (e.g., "q8_0"), or None for unversioned models
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(CachedEmbedding))` if a matching embedding exists
+    /// * `Ok(None)` if no matching embedding is found
+    /// * `Err(...)` if the lookup fails
+    async fn get_embedding(
+        &self,
+        content_hash: &str,
+        model: &str,
+        model_version: Option<&str>,
+    ) -> Result<Option<CachedEmbedding>>;
 }
