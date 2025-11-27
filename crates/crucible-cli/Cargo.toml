@@ -14,7 +14,7 @@ path = "src/main.rs"
 crucible-core = { path = "../crucible-core" }
 crucible-parser = { path = "../crucible-parser" }
 crucible-surrealdb = { path = "../crucible-surrealdb" }
-crucible-config = { path = "../crucible-config", features = ["toml", "tracing"] }
+crucible-config = { path = "../crucible-config", features = ["toml"] }
 crucible-llm = { path = "../crucible-llm" }
 crucible-pipeline = { path = "../crucible-pipeline" }
 crucible-tools = { path = "../crucible-tools" }
@@ -107,6 +107,9 @@ uuid = { workspace = true, features = ["v4", "serde"] }
 notify = { workspace = true }
 notify-debouncer-mini = "0.7"
 ignore = "0.4"  # For .gitignore parsing
+
+# CPU detection for parallelism
+num_cpus = "1.16"
 
 [dev-dependencies]
 crucible-config = { path = "../crucible-config", features = ["test-utils"] }
