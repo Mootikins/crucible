@@ -264,13 +264,18 @@ impl EventFilter {
         }
 
         // Check directory filters
+        // Check if the event path itself is inside an excluded directory
+        // (either the path starts with the excluded dir, or is the excluded dir)
+        let event_path = &event.path;
+        if self.exclude_dirs.iter().any(|d| event_path.starts_with(d)) {
+            return false;
+        }
+
+        // Also check parent-based include filtering
         if let Some(parent) = event.parent() {
             if !self.include_dirs.is_empty()
                 && !self.include_dirs.iter().any(|d| parent.starts_with(d))
             {
-                return false;
-            }
-            if self.exclude_dirs.iter().any(|d| parent.starts_with(d)) {
                 return false;
             }
         }
