@@ -113,6 +113,9 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
     }
 
     /// Generate embeddings for changed blocks only
+    ///
+    /// Uses Merkle tree diffs to identify changed blocks and only generates
+    /// embeddings for those blocks, avoiding redundant API calls.
     async fn generate_embeddings(
         &self,
         parsed: &ParsedNote,
@@ -124,8 +127,7 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
             return Ok(Vec::new());
         };
 
-        // For now, we'll extract text from changed blocks
-        // TODO: Integrate with actual block structure from ParsedNote
+        // Extract text from changed blocks
         let block_texts = self.extract_block_texts(parsed, changed_blocks);
 
         if block_texts.is_empty() {
@@ -133,30 +135,32 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
             return Ok(Vec::new());
         }
 
+        let model_name = provider.model_name();
+
         info!("Generating embeddings for {} blocks (batches of {})",
             block_texts.len(), self.max_batch_size);
 
         let mut all_embeddings = Vec::new();
 
-        // Process in chunks to limit memory usage
+        // Process in batches to limit memory usage
         for (batch_idx, chunk) in block_texts.chunks(self.max_batch_size).enumerate() {
             debug!("Processing batch {} ({} blocks)", batch_idx + 1, chunk.len());
 
-            // Prepare texts for this batch
             let texts: Vec<&str> = chunk.iter().map(|(_, text)| text.as_str()).collect();
+            let block_ids: Vec<&String> = chunk.iter().map(|(id, _)| id).collect();
 
             // Batch embed
             let vectors = provider.embed_batch(&texts).await?;
 
             // Package results as BlockEmbedding
-            let batch_embeddings: Vec<BlockEmbedding> = chunk
+            let batch_embeddings: Vec<BlockEmbedding> = block_ids
                 .iter()
                 .zip(vectors)
-                .map(|((block_id, _text), vector)| {
+                .map(|(block_id, vector)| {
                     BlockEmbedding::new(
-                        block_id.clone(),
+                        (*block_id).clone(),
                         vector,
-                        provider.model_name().to_string(),
+                        model_name.to_string(),
                     )
                 })
                 .collect();
@@ -164,7 +168,7 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
             all_embeddings.extend(batch_embeddings);
         }
 
-        info!("Generated {} embeddings using {}", all_embeddings.len(), provider.model_name());
+        info!("Generated {} embeddings using {}", all_embeddings.len(), model_name);
 
         Ok(all_embeddings)
     }
@@ -367,7 +371,8 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
 /// Build breadcrumbs (heading hierarchy) for all content positions
 ///
 /// Creates a map from byte offsets to heading paths, allowing blocks to
-/// include their hierarchical context in embeddings.
+/// include their hierarchical context in embeddings. The breadcrumb format is:
+/// `Filename > H1 > H2 > ...` to provide full document context.
 ///
 /// This is a pure function that operates on the AST structure of a parsed note.
 /// It doesn't depend on any service state, making it easier to test and reuse.
@@ -386,6 +391,12 @@ fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, St
     let mut breadcrumbs = HashMap::new();
     let mut heading_stack: Vec<(u8, &str, usize)> = Vec::new(); // (level, text, start_offset)
 
+    // Extract filename (without extension) for breadcrumb prefix
+    let filename = parsed.path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Unknown");
+
     // Process all headings and build hierarchical paths
     for heading in &parsed.content.headings {
         // Pop headings at same or higher level (lower number)
@@ -400,9 +411,10 @@ fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, St
         // Add current heading to stack
         heading_stack.push((heading.level, &heading.text, heading.offset));
 
-        // Build breadcrumb path for this position
-        let path: Vec<&str> = heading_stack.iter().map(|(_, text, _)| *text).collect();
-        let breadcrumb = path.join(" > ");
+        // Build breadcrumb path: Filename > H1 > H2 > ...
+        let mut path_parts: Vec<&str> = vec![filename];
+        path_parts.extend(heading_stack.iter().map(|(_, text, _)| *text));
+        let breadcrumb = path_parts.join(" > ");
 
         // Associate this breadcrumb with the heading's offset
         breadcrumbs.insert(heading.offset, breadcrumb.clone());
