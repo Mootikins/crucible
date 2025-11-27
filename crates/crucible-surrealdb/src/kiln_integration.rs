@@ -1445,6 +1445,126 @@ pub async fn get_document_embeddings(
     Ok(embeddings)
 }
 
+/// Cached embedding result for incremental embedding lookups
+#[derive(Debug, Clone)]
+pub struct CachedEmbedding {
+    /// The embedding vector
+    pub vector: Vec<f32>,
+    /// Model name used to generate this embedding
+    pub model: String,
+    /// Model version (e.g., "q8_0" for quantized models)
+    pub model_version: String,
+    /// Content hash (BLAKE3) of the input text
+    pub content_hash: String,
+    /// Vector dimensions
+    pub dimensions: usize,
+}
+
+/// Look up a cached embedding by content hash and model
+///
+/// This enables incremental embedding: if the same content (by hash) has already
+/// been embedded by the same model+version, we can reuse the cached embedding
+/// instead of calling the embedding service again.
+///
+/// # Arguments
+/// * `client` - SurrealDB client
+/// * `content_hash` - BLAKE3 hash of the content to embed
+/// * `model` - Model name (e.g., "nomic-embed-text-v1.5")
+/// * `model_version` - Model version (e.g., "q8_0")
+///
+/// # Returns
+/// * `Ok(Some(CachedEmbedding))` if a matching embedding exists
+/// * `Ok(None)` if no matching embedding is found
+/// * `Err` if the query fails
+pub async fn get_embedding_by_content_hash(
+    client: &SurrealClient,
+    content_hash: &str,
+    model: &str,
+    model_version: &str,
+) -> Result<Option<CachedEmbedding>> {
+    let params = json!({
+        "content_hash": content_hash,
+        "model": model,
+        "model_version": model_version,
+    });
+
+    // Query using the content hash index for efficient lookup
+    // Note: model field in DB includes chunk suffix, so we use CONTAINS for matching
+    let sql = r#"
+        SELECT embedding, model, model_version, content_used, dimensions
+        FROM embeddings
+        WHERE content_used = $content_hash
+          AND model_version = $model_version
+          AND model CONTAINS $model
+        LIMIT 1
+    "#;
+
+    let result = client
+        .query(sql, &[params])
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to query embedding by content hash: {}", e))?;
+
+    if let Some(record) = result.records.first() {
+        // Extract embedding vector
+        let vector = record
+            .data
+            .get("embedding")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_f64().map(|f| f as f32))
+                    .collect::<Vec<f32>>()
+            })
+            .unwrap_or_default();
+
+        if vector.is_empty() {
+            return Ok(None);
+        }
+
+        let model_str = record
+            .data
+            .get("model")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let model_version_str = record
+            .data
+            .get("model_version")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let content_hash_str = record
+            .data
+            .get("content_used")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let dimensions = record
+            .data
+            .get("dimensions")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(vector.len() as i64) as usize;
+
+        debug!(
+            "Found cached embedding for content_hash={}, model={}",
+            content_hash, model_str
+        );
+
+        Ok(Some(CachedEmbedding {
+            vector,
+            model: model_str,
+            model_version: model_version_str,
+            content_hash: content_hash_str,
+            dimensions,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Clear all embeddings for a note (deletes graph edges and embedding records)
 pub async fn clear_document_embeddings(client: &SurrealClient, document_id: &str) -> Result<()> {
     // Convert document_id to note_id format
