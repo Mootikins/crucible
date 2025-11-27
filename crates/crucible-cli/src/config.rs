@@ -12,10 +12,6 @@ pub use crucible_config::{
 // Legacy type aliases for backward compatibility
 pub type EmbeddingConfigSection = crucible_config::EmbeddingConfig;
 pub type LlmConfig = crucible_config::AcpConfig;
-pub type NetworkConfig = ();
-pub type ServicesConfig = ();
-pub type MigrationConfig = ();
-pub type FileWatcherConfig = ();
 
 /// Builder for programmatically constructing CliConfig
 pub struct CliConfigBuilder {
