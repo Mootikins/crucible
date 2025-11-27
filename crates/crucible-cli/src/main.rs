@@ -123,21 +123,8 @@ async fn main() -> Result<()> {
     // when needed, and the Arc-wrapped SurrealClient ensures cheap cloning.
 
     // Process any pending files on startup using integrated blocking processing
-    // Skip for deprecated fuzzy command and interactive search, REPL mode, or when explicitly disabled
+    // Skip for REPL mode or when explicitly disabled
     match &cli.command {
-        Some(Commands::Search { query, .. }) => {
-            if query.is_none() {
-                // Skip processing for interactive search (no query provided)
-                debug!("Skipping file processing for interactive search (no query)");
-            } else {
-                // Process for text search (query provided)
-                debug!("Will process files for search command with query");
-            }
-        }
-        Some(Commands::Fuzzy { .. }) => {
-            // Skip processing - deprecated fuzzy is interactive and users want immediate results
-            debug!("Skipping file processing for deprecated fuzzy search command");
-        }
         None => {
             // Chat mode - process files in background like other commands
             debug!("No command specified, will use chat mode");
@@ -221,22 +208,6 @@ async fn main() -> Result<()> {
             commands::process::execute(config, path, force, watch, cli.verbose, dry_run, parallel).await?
         }
 
-        // Unified search command
-        Some(Commands::Search {
-            query,
-            mode,
-            limit,
-            format,
-            show_content,
-        }) => commands::search::execute(config, query, mode, limit, format, show_content).await?,
-
-        // Deprecated fuzzy command - forwards to unified search
-        Some(Commands::Fuzzy { query, limit }) => {
-            commands::search::execute_fuzzy_deprecated(config, query, limit).await?
-        }
-
-  
-        
         Some(Commands::Stats) => commands::stats::execute(config).await?,
 
   
@@ -251,26 +222,6 @@ async fn main() -> Result<()> {
         }) => commands::status::execute(config, path, format, detailed, recent).await?,
 
         Some(Commands::Storage(cmd)) => commands::storage::execute(config, cmd).await?,
-
-        Some(Commands::Parse {
-            path,
-            format,
-            show_tree,
-            show_blocks,
-            max_depth,
-            continue_on_error,
-        }) => {
-            commands::parse::execute(
-                config,
-                path,
-                format,
-                show_tree,
-                show_blocks,
-                max_depth,
-                continue_on_error,
-            )
-            .await?
-        }
 
         // Commands::EnhancedChat { // Temporarily disabled
         //     agent,
