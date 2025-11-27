@@ -1,7 +1,7 @@
 //! Core configuration types and structures.
 
 use crate::{EnrichmentConfig, ProfileConfig};
-use crate::components::{CliConfigComponent, EmbeddingConfig, AcpConfig, ChatConfig};
+use crate::components::{CliConfig, EmbeddingConfig, AcpConfig, ChatConfig};
 
 #[cfg(feature = "toml")]
 extern crate toml;
@@ -105,7 +105,7 @@ pub struct Config {
 
     /// CLI configuration.
     #[serde(default)]
-    pub cli: Option<CliConfigComponent>,
+    pub cli: Option<CliConfig>,
 
     /// Embedding configuration.
     #[serde(default)]
@@ -137,7 +137,7 @@ impl Default for Config {
             profiles: HashMap::from([("default".to_string(), ProfileConfig::default())]),
             enrichment: None,
             database: None,
-            cli: Some(CliConfigComponent::default()),
+            cli: Some(CliConfig::default()),
             embedding: Some(EmbeddingConfig::default()),
             acp: Some(AcpConfig::default()),
             chat: Some(ChatConfig::default()),
@@ -268,13 +268,13 @@ impl Config {
     }
 
     /// Get the effective CLI configuration.
-    pub fn cli_config(&self) -> Result<CliConfigComponent, ConfigError> {
+    pub fn cli_config(&self) -> Result<CliConfig, ConfigError> {
         if let Some(config) = &self.cli {
             return Ok(config.clone());
         }
 
         // Fall back to default
-        Ok(CliConfigComponent::default())
+        Ok(CliConfig::default())
     }
 
     /// Get the effective embedding configuration.
@@ -316,12 +316,12 @@ pub struct ProcessingConfig {
     pub parallel_workers: Option<usize>,
 }
 
-/// CLI-specific composite configuration structure.
+/// CLI application composite configuration structure.
 ///
 /// This provides the main configuration interface for the CLI application,
 /// combining all necessary components with sensible defaults.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CliConfig {
+pub struct CliAppConfig {
     /// Path to the Obsidian kiln directory
     #[serde(default = "default_kiln_path")]
     pub kiln_path: std::path::PathBuf,
@@ -340,7 +340,7 @@ pub struct CliConfig {
 
     /// CLI-specific configuration
     #[serde(default)]
-    pub cli: CliConfigComponent,
+    pub cli: CliConfig,
 
     /// Logging configuration
     #[serde(default)]
@@ -355,21 +355,21 @@ fn default_kiln_path() -> std::path::PathBuf {
     std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
 }
 
-impl Default for CliConfig {
+impl Default for CliAppConfig {
     fn default() -> Self {
         Self {
             kiln_path: default_kiln_path(),
             embedding: EmbeddingConfig::default(),
             acp: AcpConfig::default(),
             chat: ChatConfig::default(),
-            cli: CliConfigComponent::default(),
+            cli: CliConfig::default(),
             logging: None,
             processing: ProcessingConfig::default(),
         }
     }
 }
 
-impl CliConfig {
+impl CliAppConfig {
     /// Load CLI configuration from file with CLI overrides
     pub fn load(
         config_file: Option<std::path::PathBuf>,
@@ -392,8 +392,8 @@ impl CliConfig {
 
             #[cfg(feature = "toml")]
             {
-                match toml::from_str::<CliConfig>(&contents) {
-                    Ok(mut config) => {
+                match toml::from_str::<CliAppConfig>(&contents) {
+                    Ok(config) => {
                         // Apply CLI overrides
                         // Note: embedding_url and embedding_model overrides could be applied here if needed
                         
@@ -436,7 +436,7 @@ impl CliConfig {
         info!("  cli.verbose: {}", self.cli.verbose);
     }
 
-    /// Convert from general Config to CliConfig
+    /// Convert from general Config to CliAppConfig
     fn from_general_config(general: Config) -> Self {
         Self {
             kiln_path: general.kiln_path_opt()

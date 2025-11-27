@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Simple CLI configuration - only essential user settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CliConfigComponent {
+pub struct CliConfig {
     /// Show progress bars for long operations
     #[serde(default = "default_true")]
     pub show_progress: bool,
@@ -18,7 +18,7 @@ pub struct CliConfigComponent {
 
 fn default_true() -> bool { true }
 
-impl Default for CliConfigComponent {
+impl Default for CliConfig {
     fn default() -> Self {
         Self {
             show_progress: true,

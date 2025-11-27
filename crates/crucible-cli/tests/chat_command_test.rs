@@ -5,8 +5,8 @@
 
 use anyhow::Result;
 use crucible_cli::commands::chat;
-use crucible_cli::config::CliConfig;
-use crucible_config::{EmbeddingConfig, AcpConfig, ChatConfig, CliConfig as NewCliConfig, EmbeddingProviderType};
+use crucible_cli::config::{CliConfig, CliAppConfig};
+use crucible_config::{EmbeddingConfig, AcpConfig, ChatConfig, EmbeddingProviderType, ProcessingConfig};
 use tempfile::TempDir;
 
 #[tokio::test]
@@ -31,7 +31,9 @@ async fn test_chat_command_does_not_double_open_database() -> Result<()> {
         },
         acp: AcpConfig::default(),
         chat: ChatConfig::default(),
-        cli: NewCliConfig::default(),
+        cli: CliAppConfig::default(),
+        logging: None,
+        processing: ProcessingConfig::default(),
     };
 
     // This should NOT panic with "lock hold by current process" error
@@ -100,7 +102,9 @@ async fn test_chat_command_with_minimal_config() -> Result<()> {
         },
         acp: AcpConfig::default(),
         chat: ChatConfig::default(),
-        cli: NewCliConfig::default(),
+        cli: CliAppConfig::default(),
+        logging: None,
+        processing: ProcessingConfig::default(),
     };
 
     // Try to execute with a query - should fail at agent discovery,

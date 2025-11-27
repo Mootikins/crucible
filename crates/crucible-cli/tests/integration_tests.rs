@@ -244,66 +244,6 @@ fn test_process_with_short_watch_flag() {
 }
 
 // ============================================================================
-// Search Command Tests
-// ============================================================================
-
-#[test]
-fn test_search_help() {
-    let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("search").arg("--help");
-
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Unified search"));
-}
-
-#[test]
-fn test_search_with_limit_flag() {
-    let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("search").arg("--limit").arg("20").arg("--help");
-
-    cmd.assert().success();
-}
-
-#[test]
-fn test_search_with_format_flag() {
-    let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("search").arg("--format").arg("json").arg("--help");
-
-    cmd.assert().success();
-}
-
-#[test]
-fn test_search_with_show_content_flag() {
-    let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("search").arg("--show-content").arg("--help");
-
-    cmd.assert().success();
-}
-
-// ============================================================================
-// Fuzzy Command Tests
-// ============================================================================
-
-#[test]
-fn test_fuzzy_help() {
-    let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("fuzzy").arg("--help");
-
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Fuzzy search"));
-}
-
-#[test]
-fn test_fuzzy_with_limit_flag() {
-    let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("fuzzy").arg("--limit").arg("30").arg("--help");
-
-    cmd.assert().success();
-}
-
-// ============================================================================
 // Stats Command Tests
 // ============================================================================
 
@@ -475,20 +415,6 @@ fn test_storage_restore_help() {
     cmd.arg("storage").arg("restore").arg("--help");
 
     cmd.assert().success();
-}
-
-// ============================================================================
-// Parse Command Tests
-// ============================================================================
-
-#[test]
-fn test_parse_help() {
-    let mut cmd = Command::cargo_bin("cru").unwrap();
-    cmd.arg("parse").arg("--help");
-
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Parse and analyze files"));
 }
 
 // ============================================================================

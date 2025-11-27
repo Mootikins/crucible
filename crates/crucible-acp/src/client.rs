@@ -419,6 +419,69 @@ impl CrucibleAcpClient {
         Ok(AcpSession::new(SessionConfig::default(), session_response.session_id.to_string()))
     }
 
+    /// Connect to agent with full ACP protocol handshake using SSE MCP server
+    ///
+    /// This performs the complete connection sequence with an in-process SSE MCP server:
+    /// 1. Spawn agent process
+    /// 2. Send InitializeRequest
+    /// 3. Send NewSessionRequest with SSE MCP server URL
+    /// 4. Return session
+    ///
+    /// # Arguments
+    ///
+    /// * `sse_url` - URL to the SSE MCP server (e.g., "http://127.0.0.1:12345/sse")
+    ///
+    /// # Returns
+    ///
+    /// An AcpSession ready for communication
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any step of the handshake fails
+    pub async fn connect_with_sse_mcp(&mut self, sse_url: &str) -> Result<AcpSession> {
+        use agent_client_protocol::{InitializeRequest, NewSessionRequest, ProtocolVersion, ClientCapabilities, McpServer};
+
+        tracing::info!("Connecting to agent with SSE MCP server at {}", sse_url);
+
+        // 1. Spawn agent process
+        let _process = self.spawn_agent().await?;
+
+        // 2. Send InitializeRequest
+        let init_request = InitializeRequest {
+            protocol_version: 1u16.into(),
+            client_info: None,
+            client_capabilities: ClientCapabilities::default(),
+            meta: None,
+        };
+
+        let _init_response = self.initialize(init_request).await?;
+
+        // 3. Send NewSessionRequest with SSE MCP server
+        let crucible_mcp_server = McpServer::Sse {
+            name: "crucible".to_string(),
+            url: sse_url.to_string(),
+            headers: vec![],
+        };
+
+        tracing::debug!("Configuring MCP server: {:?}", crucible_mcp_server);
+
+        let session_request = NewSessionRequest {
+            cwd: self.config.working_dir.clone().unwrap_or_else(|| PathBuf::from("/")),
+            mcp_servers: vec![crucible_mcp_server],
+            meta: None,
+        };
+
+        let session_response = self.create_new_session(session_request).await?;
+
+        // 4. Mark as connected and create session
+        self.mark_connected();
+
+        tracing::info!("Agent connected with session: {}", session_response.session_id);
+
+        use crate::session::SessionConfig;
+        Ok(AcpSession::new(SessionConfig::default(), session_response.session_id.to_string()))
+    }
+
 
     /// Write a JSON request to the agent's stdin
     ///
