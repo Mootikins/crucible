@@ -1,12 +1,11 @@
 use anyhow::Result;
 use std::fs;
-use std::io::BufRead;
-use tracing::{info, debug, warn, error};
+use tracing::{info, warn};
 
 use crate::cli::EmbedCommand;
 use crate::config::BurnConfig;
 use crate::hardware::HardwareInfo;
-use crate::models::ModelRegistry;
+use crate::models::{ModelRegistry, ModelType};
 
 pub async fn handle(
     command: EmbedCommand,
@@ -40,12 +39,16 @@ async fn test_embedding(
     info!("Testing embedding with model: {}, backend: {}", model, backend);
 
     // Initialize model registry and find the model
-    let model_registry = ModelRegistry::new(&config.model_dir).await?;
-    let model_info = model_registry.find_model(&model).await?;
+    let search_paths = vec![config.model_dir.clone()]
+        .into_iter()
+        .chain(config.model_search_paths.clone())
+        .collect();
+    let model_registry = ModelRegistry::new(search_paths).await?;
+    let _model_info = model_registry.find_model(&model).await?;
 
     println!("Embedding Test");
     println!("==============");
-    println!("Model: {}", model_info.name);
+    println!("Model: {}", model);
     println!("Backend: {}", backend);
     println!("Text: \"{}\"", text);
     println!();
@@ -68,7 +71,7 @@ async fn batch_embedding(
     file: std::path::PathBuf,
     backend: String,
     config: BurnConfig,
-    hardware_info: HardwareInfo,
+    _hardware_info: HardwareInfo,
 ) -> Result<()> {
     info!("Batch embedding with model: {}, file: {:?}", model, file);
 
@@ -94,8 +97,12 @@ async fn batch_embedding(
     println!();
 
     // Initialize model registry
-    let model_registry = ModelRegistry::new(&config.model_dir).await?;
-    let model_info = model_registry.find_model(&model).await?;
+    let search_paths = vec![config.model_dir.clone()]
+        .into_iter()
+        .chain(config.model_search_paths.clone())
+        .collect();
+    let model_registry = ModelRegistry::new(search_paths).await?;
+    let _model_info = model_registry.find_model(&model).await?;
 
     println!("🔄 Loading model...");
     println!("🔄 Processing {} texts...", texts.len());
@@ -117,7 +124,7 @@ async fn compare_backends(
     model: String,
     text: String,
     iterations: usize,
-    config: BurnConfig,
+    _config: BurnConfig,
     hardware_info: HardwareInfo,
 ) -> Result<()> {
     info!("Comparing backends for model: {}, iterations: {}", model, iterations);
@@ -137,8 +144,12 @@ async fn compare_backends(
     println!();
 
     // Initialize model registry
-    let model_registry = ModelRegistry::new(&config.model_dir).await?;
-    let model_info = model_registry.find_model(&model).await?;
+    let search_paths = vec![_config.model_dir.clone()]
+        .into_iter()
+        .chain(_config.model_search_paths.clone())
+        .collect();
+    let _model_registry = ModelRegistry::new(search_paths).await?;
+    let _model_info = _model_registry.find_model(&model).await?;
 
     for backend in backends {
         println!("Testing {} backend...", backend);
@@ -164,77 +175,54 @@ async fn compare_backends(
 async fn list_models() -> Result<()> {
     info!("Listing available embedding models");
 
-    let models_dir = dirs::home_dir()
-        .ok_or_else(|| anyhow::anyhow!("Could not find home directory"))?
-        .join("models")
-        .join("embeddings");
+    // Load default configuration
+    let config = crate::config::BurnConfig::default();
 
-    if !models_dir.exists() {
-        println!("No embedding models directory found at: {:?}", models_dir);
-        println!("💡 Create the directory and add models in subdirectories (e.g., ~/models/embeddings/nomic-embed-text/)");
-        return Ok(());
-    }
+    // Initialize model registry with all search paths
+    let search_paths = vec![config.model_dir.clone()]
+        .into_iter()
+        .chain(config.model_search_paths.clone())
+        .collect();
+    let model_registry = ModelRegistry::new(search_paths).await?;
 
     println!("Available Embedding Models");
     println!("==========================");
     println!();
 
-    let mut found_models = false;
+    let embedding_models = model_registry.list_models(Some(ModelType::Embedding));
 
-    for entry in fs::read_dir(&models_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.is_dir() {
-            let model_name = path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("unknown");
-
-            println!("📁 {}", model_name);
-
-            // Look for model files
-            let mut has_safetensors = false;
-            let mut has_config = false;
-            let mut has_tokenizer = false;
-
-            for file_entry in fs::read_dir(&path)? {
-                let file_entry = file_entry?;
-                let file_name = file_entry.file_name();
-                let file_name_str = file_name.to_string_lossy();
-
-                if file_name_str.ends_with(".safetensors") {
-                    has_safetensors = true;
-                } else if file_name_str == "config.json" {
-                    has_config = true;
-                } else if file_name_str == "tokenizer.json" {
-                    has_tokenizer = true;
-                }
-            }
-
-            println!("   📄 Model files: {}{}{}",
-                if has_safetensors { "✓ safetensors " } else { "✗ safetensors " },
-                if has_config { "✓ config " } else { "✗ config " },
-                if has_tokenizer { "✓ tokenizer" } else { "✗ tokenizer" }
-            );
-
-            found_models = true;
-            println!();
-        }
-    }
-
-    if !found_models {
-        println!("No models found in: {:?}", models_dir);
+    if embedding_models.is_empty() {
+        println!("No embedding models found in any search path.");
         println!();
-        println!("💡 Expected structure:");
-        println!("   ~/models/embeddings/");
+        println!("💡 Default search paths:");
+        for path in vec![config.model_dir.clone()].into_iter().chain(config.model_search_paths.clone()) {
+            println!("   {:?}", path);
+        }
+        println!();
+        println!("💡 Expected structures:");
+        println!("   ~/models/embeddings/           (SafeTensors + config)");
         println!("   ├── nomic-embed-text/");
         println!("   │   ├── model.safetensors");
         println!("   │   ├── config.json");
         println!("   │   └── tokenizer.json");
-        println!("   └── bge-small-en-v1.5/");
-        println!("       ├── model.safetensors");
-        println!("       ├── config.json");
-        println!("       └── tokenizer.json");
+        println!("   ~/models/language/            (GGUF files)");
+        println!("   ├── nomic-ai/");
+        println!("   │   └── nomic-embed-text-v1.5-GGUF/");
+        println!("   │       └── nomic-embed-text-v1.5.Q8_0.gguf");
+        println!();
+    } else {
+        for model in embedding_models {
+            println!("   📁 {} ({})", model.name, model.format);
+            println!("   📍 Path: {:?}", model.path);
+            if let Some(dim) = model.dimensions {
+                println!("   📏 Dimensions: {}", dim);
+            }
+            if let Some(size) = model.file_size_bytes {
+                println!("   💾 Size: {} MB", size / (1024 * 1024));
+            }
+            println!("   🔧 Complete: {}", if model.is_complete() { "✅" } else { "⚠️  Incomplete" });
+            println!();
+        }
     }
 
     Ok(())

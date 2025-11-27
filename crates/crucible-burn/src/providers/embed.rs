@@ -1,11 +1,21 @@
 use anyhow::Result;
-use std::sync::Arc;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, info};
 
 use crate::config::BurnConfig;
 use crate::hardware::BackendType;
 use crate::models::ModelInfo;
 use crate::providers::base::{BurnProviderBase, BurnProviderError};
+
+// Burn framework imports
+#[cfg(feature = "wgpu")]
+use burn::{
+    tensor::{Tensor, backend::Backend},
+    prelude::*,
+    module::Module,
+};
+
+#[cfg(feature = "wgpu")]
+use burn_wgpu::{Wgpu, graphics::AutoGraphicsApi};
 
 /// Burn-based embedding provider implementing crucible-core EmbeddingProvider trait
 pub struct BurnEmbeddingProvider {
@@ -100,8 +110,6 @@ impl BurnEmbeddingProvider {
                 "Vulkan backend requires wgpu feature".to_string()
             ).into());
         }
-
-        Ok(())
     }
 
     /// Initialize ROCm backend
@@ -126,8 +134,6 @@ impl BurnEmbeddingProvider {
                 "ROCm backend requires tch feature".to_string()
             ).into());
         }
-
-        Ok(())
     }
 
     /// Initialize CPU backend

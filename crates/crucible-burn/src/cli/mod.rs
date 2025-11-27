@@ -45,6 +45,12 @@ pub enum Commands {
         command: LlmCommand,
     },
 
+    /// Model discovery and management
+    Models {
+        #[command(subcommand)]
+        command: ModelsCommand,
+    },
+
     /// Start HTTP inference server
     Server {
         #[command(subcommand)]
@@ -159,6 +165,34 @@ pub enum LlmCommand {
 }
 
 #[derive(Subcommand, Debug)]
+pub enum ModelsCommand {
+    /// Auto-discover and list all available models
+    List {
+        /// Filter by model type (embedding, llm, all)
+        #[arg(long, default_value = "all")]
+        filter: String,
+
+        /// Show detailed information
+        #[arg(short, long)]
+        detailed: bool,
+
+        /// Sort by size (largest first)
+        #[arg(short, long)]
+        by_size: bool,
+    },
+
+    /// Search for models by name
+    Search {
+        /// Search term (model name or directory)
+        query: String,
+
+        /// Show detailed information
+        #[arg(short, long)]
+        detailed: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
 pub enum ServerCommand {
     /// Start inference server
     Start {
@@ -236,7 +270,10 @@ pub async fn handle_command(
         Commands::Llm { command } => {
             crate::cli::commands::llm::handle(command, config, hardware_info).await?
         }
-        Commands::Server { command } => {
+        Commands::Models { command } => {
+            crate::cli::commands::models::handle(command, config, hardware_info).await?
+        }
+        Commands::Server { command: _ } => {
             #[cfg(feature = "server")]
             {
                 crate::cli::commands::server::handle(command, config, hardware_info).await?
@@ -247,7 +284,7 @@ pub async fn handle_command(
                 return Ok(());
             }
         }
-        Commands::Bench { command } => {
+        Commands::Bench { command: _ } => {
             #[cfg(feature = "benchmarks")]
             {
                 crate::cli::commands::bench::handle(command, config, hardware_info).await?
