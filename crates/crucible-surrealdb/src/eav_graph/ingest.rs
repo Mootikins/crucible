@@ -1,12 +1,27 @@
 use anyhow::Result;
 use blake3::Hasher;
+use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use crucible_core::content_category::ContentCategory;
 use crucible_merkle::{HybridMerkleTree, MerkleStore};
 use crucible_core::parser::ParsedNote;
 use crucible_core::storage::{Relation as CoreRelation, RelationStorage};
 use serde_json::{Map, Value};
+use std::fs;
 
 use super::store::EAVGraphStore;
+
+/// Sanitize content for SurrealDB storage by removing null bytes.
+///
+/// SurrealDB's serialization layer (surrealdb-core) panics when strings
+/// contain null bytes (0x00). This can happen in files with:
+/// - ASCII art exported from drawing tools
+/// - Binary data accidentally pasted into markdown
+/// - Copy-pasted content with hidden control characters
+///
+/// This function strips null bytes to allow such files to be stored safely.
+fn sanitize_content(s: &str) -> String {
+    s.replace('\0', "")
+}
 use super::types::{
     BlockNode, Entity, EntityRecord, EntityTag, EntityTagRecord, EntityType, Property,
     PropertyRecord, PropertyValue, RecordId, TagRecord,
@@ -68,6 +83,78 @@ fn classify_content(target: &str) -> ContentCategory {
     } else {
         ContentCategory::Web // General web pages
     }
+}
+
+/// Extract timestamps from frontmatter with fallback to filesystem metadata.
+///
+/// Priority for created timestamp (aligns with Obsidian community conventions):
+/// 1. `created` (most common in Obsidian community)
+/// 2. `date-created` (alternate convention)
+/// 3. `created_at` (programmatic sources fallback)
+/// 4. Filesystem modified time (creation time is unreliable across platforms)
+/// 5. Current time as last resort
+///
+/// Priority for updated timestamp:
+/// 1. `modified` (most common in Obsidian community)
+/// 2. `updated` (alternate convention)
+/// 3. `date-modified` (alternate convention)
+/// 4. `updated_at` (programmatic sources fallback)
+/// 5. Filesystem modified time
+/// 6. Current time as last resort
+///
+/// Supports both date (YYYY-MM-DD) and datetime (RFC 3339) formats.
+fn extract_timestamps(doc: &ParsedNote) -> (DateTime<Utc>, DateTime<Utc>) {
+    let now = Utc::now();
+
+    // Helper to convert NaiveDate to DateTime<Utc> at midnight
+    fn date_to_datetime(date: NaiveDate) -> DateTime<Utc> {
+        let datetime = date.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+        Utc.from_utc_datetime(&datetime)
+    }
+
+    // Helper to parse RFC 3339 datetime from frontmatter string
+    fn parse_datetime_str(fm: &crucible_core::parser::Frontmatter, key: &str) -> Option<DateTime<Utc>> {
+        let value = fm.properties().get(key)?;
+        let datetime_str = value.as_str()?;
+        DateTime::parse_from_rfc3339(datetime_str)
+            .ok()
+            .map(|dt| dt.with_timezone(&Utc))
+    }
+
+    // Helper to get datetime from frontmatter - tries datetime string first, then date
+    fn get_timestamp(fm: &crucible_core::parser::Frontmatter, keys: &[&str]) -> Option<DateTime<Utc>> {
+        for key in keys {
+            // Try RFC 3339 datetime first
+            if let Some(dt) = parse_datetime_str(fm, key) {
+                return Some(dt);
+            }
+            // Try date format (YYYY-MM-DD)
+            if let Some(date) = fm.get_date(key) {
+                return Some(date_to_datetime(date));
+            }
+        }
+        None
+    }
+
+    // Try to get filesystem modified time
+    let fs_mtime = fs::metadata(&doc.path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .map(DateTime::<Utc>::from);
+
+    // Extract created timestamp with priority: created > date-created > created_at > fs_mtime > now
+    let created_at = doc.frontmatter.as_ref()
+        .and_then(|fm| get_timestamp(fm, &["created", "date-created", "created_at"]))
+        .or(fs_mtime)
+        .unwrap_or(now);
+
+    // Extract updated timestamp with priority: modified > updated > date-modified > updated_at > fs_mtime > now
+    let updated_at = doc.frontmatter.as_ref()
+        .and_then(|fm| get_timestamp(fm, &["modified", "updated", "date-modified", "updated_at"]))
+        .or(fs_mtime)
+        .unwrap_or(now);
+
+    (created_at, updated_at)
 }
 
 /// # Note Ingestion with Advanced Embed Processing
@@ -177,9 +264,14 @@ impl<'a> NoteIngestor<'a> {
     ) -> Result<RecordId<EntityRecord>> {
         let entity_id = self.note_entity_id(relative_path);
 
+        // Extract timestamps from frontmatter with FS fallback
+        let (created_at, updated_at) = extract_timestamps(doc);
+
         let mut entity = Entity::new(entity_id.clone(), EntityType::Note)
             .with_content_hash(doc.content_hash.clone())
-            .with_search_text(doc.content.plain_text.clone());
+            .with_search_text(sanitize_content(&doc.content.plain_text));
+        entity.created_at = created_at;
+        entity.updated_at = updated_at;
         entity.data = Some(self.entity_payload(doc, relative_path));
 
         self.store.upsert_entity(&entity).await?;
@@ -1218,7 +1310,7 @@ impl<'a> NoteIngestor<'a> {
         payload.insert("title".to_string(), Value::String(doc.title()));
         payload.insert(
             "content".to_string(),
-            Value::String(doc.content.plain_text.clone()),
+            Value::String(sanitize_content(&doc.content.plain_text)),
         );
         payload.insert("tags".to_string(), Value::Array(tags));
         if let Some(frontmatter) = frontmatter_value {
@@ -6840,6 +6932,184 @@ mod tests {
                     target, expected_type
                 );
             }
+        }
+    }
+
+    // ============================================================================
+    // Timestamp Extraction Tests
+    // ============================================================================
+
+    mod timestamp_extraction_tests {
+        use super::*;
+        use chrono::{NaiveDate, Timelike};
+
+        fn doc_with_frontmatter(yaml: &str) -> ParsedNote {
+            let mut doc = ParsedNote::default();
+            doc.path = PathBuf::from("/tmp/test-note.md");
+            doc.content_hash = "test123".into();
+            doc.frontmatter = Some(Frontmatter::new(yaml.to_string(), FrontmatterFormat::Yaml));
+            doc
+        }
+
+        fn doc_without_frontmatter() -> ParsedNote {
+            let mut doc = ParsedNote::default();
+            doc.path = PathBuf::from("/tmp/test-note.md");
+            doc.content_hash = "test123".into();
+            doc.frontmatter = None;
+            doc
+        }
+
+        #[test]
+        fn test_extract_timestamps_from_created_field() {
+            let doc = doc_with_frontmatter("created: 2024-11-08");
+            let (created_at, _updated_at) = extract_timestamps(&doc);
+
+            assert_eq!(created_at.date_naive(), NaiveDate::from_ymd_opt(2024, 11, 8).unwrap());
+        }
+
+        #[test]
+        fn test_extract_timestamps_from_modified_field() {
+            let doc = doc_with_frontmatter("modified: 2024-11-15");
+            let (_created_at, updated_at) = extract_timestamps(&doc);
+
+            assert_eq!(updated_at.date_naive(), NaiveDate::from_ymd_opt(2024, 11, 15).unwrap());
+        }
+
+        #[test]
+        fn test_extract_timestamps_from_updated_field() {
+            // 'updated' is alternate convention, should also work
+            let doc = doc_with_frontmatter("updated: 2024-12-01");
+            let (_created_at, updated_at) = extract_timestamps(&doc);
+
+            assert_eq!(updated_at.date_naive(), NaiveDate::from_ymd_opt(2024, 12, 1).unwrap());
+        }
+
+        #[test]
+        fn test_extract_timestamps_priority_modified_over_updated() {
+            // 'modified' should take priority over 'updated'
+            let doc = doc_with_frontmatter("modified: 2024-11-10\nupdated: 2024-11-20");
+            let (_created_at, updated_at) = extract_timestamps(&doc);
+
+            assert_eq!(updated_at.date_naive(), NaiveDate::from_ymd_opt(2024, 11, 10).unwrap());
+        }
+
+        #[test]
+        fn test_extract_timestamps_from_rfc3339_datetime() {
+            let doc = doc_with_frontmatter("created_at: \"2024-11-08T10:30:00Z\"");
+            let (created_at, _updated_at) = extract_timestamps(&doc);
+
+            assert_eq!(created_at.date_naive(), NaiveDate::from_ymd_opt(2024, 11, 8).unwrap());
+            assert_eq!(created_at.time().hour(), 10);
+            assert_eq!(created_at.time().minute(), 30);
+        }
+
+        #[test]
+        fn test_extract_timestamps_priority_created_over_created_at() {
+            // 'created' should take priority over 'created_at'
+            let doc = doc_with_frontmatter("created: 2024-11-05\ncreated_at: \"2024-11-10T00:00:00Z\"");
+            let (created_at, _updated_at) = extract_timestamps(&doc);
+
+            assert_eq!(created_at.date_naive(), NaiveDate::from_ymd_opt(2024, 11, 5).unwrap());
+        }
+
+        #[test]
+        fn test_extract_timestamps_without_frontmatter_uses_now() {
+            let doc = doc_without_frontmatter();
+            let (created_at, updated_at) = extract_timestamps(&doc);
+
+            // Without frontmatter and without a real file, should fall back to now
+            // We can't test exact time, but verify they're recent (within last minute)
+            let now = Utc::now();
+            assert!((now - created_at).num_seconds().abs() < 60);
+            assert!((now - updated_at).num_seconds().abs() < 60);
+        }
+
+        #[test]
+        fn test_extract_timestamps_both_fields() {
+            let doc = doc_with_frontmatter("created: 2024-01-01\nmodified: 2024-06-15");
+            let (created_at, updated_at) = extract_timestamps(&doc);
+
+            assert_eq!(created_at.date_naive(), NaiveDate::from_ymd_opt(2024, 1, 1).unwrap());
+            assert_eq!(updated_at.date_naive(), NaiveDate::from_ymd_opt(2024, 6, 15).unwrap());
+        }
+
+        /// This test reproduces the original bug where ingesting a note without
+        /// frontmatter timestamps would fail with "expected a datetime" error
+        #[tokio::test]
+        async fn test_ingest_note_without_frontmatter_timestamps() {
+            let client = SurrealClient::new_memory().await.unwrap();
+            apply_eav_graph_schema(&client).await.unwrap();
+
+            let store = EAVGraphStore::new(client);
+            let ingestor = NoteIngestor::new(&store);
+
+            // Create a note WITHOUT created/modified frontmatter
+            let mut doc = ParsedNote::default();
+            doc.path = PathBuf::from("/tmp/test-vault/no-timestamps.md");
+            doc.content_hash = "hash123".into();
+            doc.content.plain_text = "Test content without timestamp frontmatter".into();
+            // Intentionally no frontmatter with timestamps
+
+            // This should NOT fail - it should use filesystem fallback or current time
+            let result = ingestor.ingest(&doc, "no-timestamps.md").await;
+            assert!(result.is_ok(), "Ingesting note without frontmatter timestamps should succeed: {:?}", result.err());
+        }
+
+        /// Test that notes with frontmatter timestamps are properly stored
+        #[tokio::test]
+        async fn test_ingest_note_with_frontmatter_timestamps() {
+            let client = SurrealClient::new_memory().await.unwrap();
+            apply_eav_graph_schema(&client).await.unwrap();
+
+            let store = EAVGraphStore::new(client);
+            let ingestor = NoteIngestor::new(&store);
+
+            // Create a note WITH created/modified frontmatter
+            let mut doc = ParsedNote::default();
+            doc.path = PathBuf::from("/tmp/test-vault/with-timestamps.md");
+            doc.content_hash = "hash456".into();
+            doc.content.plain_text = "Test content with timestamp frontmatter".into();
+            doc.frontmatter = Some(Frontmatter::new(
+                "created: 2024-11-08\nmodified: 2024-11-15".to_string(),
+                FrontmatterFormat::Yaml,
+            ));
+
+            // This should succeed with proper timestamp extraction
+            let result = ingestor.ingest(&doc, "with-timestamps.md").await;
+            assert!(result.is_ok(), "Ingesting note with frontmatter timestamps should succeed: {:?}", result.err());
+        }
+
+        #[tokio::test]
+        async fn test_ingest_note_with_null_bytes_in_content() {
+            // Bug reproduction: Files with null bytes (0x00) in content cause
+            // SurrealDB serialization to fail with:
+            // "to be serialized string contained a null byte"
+            //
+            // Real-world example: ASCII art diagrams exported from drawing tools
+            // may contain null bytes in the binary representation.
+
+            let client = SurrealClient::new_memory().await.unwrap();
+            apply_eav_graph_schema(&client).await.unwrap();
+
+            let store = EAVGraphStore::new(client);
+            let ingestor = NoteIngestor::new(&store);
+
+            // Given: A note with null bytes in the content (simulating ASCII art)
+            let mut doc = ParsedNote::default();
+            doc.path = PathBuf::from("/tmp/test-vault/ascii-art.md");
+            doc.content_hash = "hash_nullbyte".into();
+            // Content with embedded null bytes - common in copy-pasted ASCII art
+            doc.content.plain_text = "# Architecture\n\n```\n┌──────┐\x00\x00\x00│ Box  │\n└──────┘\n```\n".into();
+
+            // When: We ingest the note
+            let result = ingestor.ingest(&doc, "ascii-art.md").await;
+
+            // Then: It should succeed (null bytes should be sanitized)
+            assert!(
+                result.is_ok(),
+                "Should handle content with null bytes, got: {:?}",
+                result.err()
+            );
         }
     }
 }
