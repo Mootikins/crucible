@@ -25,6 +25,8 @@ The current CLI chat interface has solid functionality but suffers from visual c
 - Add session statistics and context usage information
 - Support command history search and recall
 - Add keyboard shortcuts for common operations
+- Double Ctrl+C to exit (first press shows warning, second within 2s exits)
+- Markdown terminal rendering with ANSI escape codes for formatted output
 
 ## Impact
 
