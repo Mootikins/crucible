@@ -149,7 +149,7 @@ pub(crate) mod utils;
 #[cfg(feature = "embeddings")]
 pub(crate) mod transaction_consumer;
 #[cfg(feature = "embeddings")]
-pub(crate) mod embedding;
+pub mod embedding;
 
 // Internal re-exports for use within this crate only
 pub(crate) use surreal_client::SurrealClient;

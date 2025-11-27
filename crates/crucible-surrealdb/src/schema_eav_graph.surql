@@ -260,6 +260,11 @@ DEFINE FIELD created_at ON TABLE embeddings
 DEFINE INDEX embedding_unique_idx ON TABLE embeddings
     COLUMNS entity_id, model UNIQUE;
 
+-- Index for incremental embedding lookup (content hash + model + version)
+-- Enables efficient "has this content already been embedded by this model?" queries
+DEFINE INDEX embedding_content_hash_idx ON TABLE embeddings
+    COLUMNS content_used, model, model_version;
+
 DEFINE INDEX embedding_vector_384 ON TABLE embeddings
     COLUMNS embedding
     MTREE DIMENSION 384 DISTANCE COSINE;
