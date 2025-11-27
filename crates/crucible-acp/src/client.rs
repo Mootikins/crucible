@@ -25,6 +25,7 @@ use std::process::Stdio;
 
 use crate::{AcpError, Result};
 use crate::session::AcpSession;
+use crate::streaming::ToolCallInfo;
 use crucible_core::traits::acp::{SessionManager, AcpResult};
 use crucible_core::types::acp::{SessionConfig, SessionId};
 
@@ -624,7 +625,7 @@ impl CrucibleAcpClient {
     ///
     /// # Returns
     ///
-    /// Tuple of (accumulated_content, PromptResponse)
+    /// Tuple of (accumulated_content, tool_calls, PromptResponse)
     ///
     /// # Errors
     ///
@@ -633,7 +634,7 @@ impl CrucibleAcpClient {
         &mut self,
         request: agent_client_protocol::PromptRequest,
         request_id: u64,
-    ) -> Result<(String, agent_client_protocol::PromptResponse)> {
+    ) -> Result<(String, Vec<ToolCallInfo>, agent_client_protocol::PromptResponse)> {
         use agent_client_protocol::{SessionNotification, SessionUpdate, ContentBlock};
         use serde_json::json;
 
@@ -652,6 +653,7 @@ impl CrucibleAcpClient {
 
         // Accumulate agent message content from streaming notifications
         let mut accumulated_content = String::new();
+        let mut tool_calls: Vec<ToolCallInfo> = Vec::new();
         let mut final_response: Option<agent_client_protocol::PromptResponse> = None;
         let mut notification_count = 0;
 
@@ -736,11 +738,27 @@ impl CrucibleAcpClient {
                                                 }
                                             }
                                         },
-                                        SessionUpdate::ToolCall(_tool_call) => {
-                                            tracing::info!("Received tool call notification");
+                                        SessionUpdate::ToolCall(tool_call) => {
+                                            tracing::info!("Tool call: {}", tool_call.title);
+                                            tool_calls.push(ToolCallInfo {
+                                                title: tool_call.title.clone(),
+                                                arguments: tool_call.raw_input.clone(),
+                                            });
                                         },
-                                        SessionUpdate::ToolCallUpdate(_update) => {
-                                            tracing::info!("Received tool call update notification");
+                                        SessionUpdate::ToolCallUpdate(update) => {
+                                            tracing::debug!("Tool call update: {:?}", update.id);
+                                            // Updates can contain new info - check if we need to add/update
+                                            if let Some(title) = update.fields.title {
+                                                // Check if we already have this tool call
+                                                let existing = tool_calls.iter_mut()
+                                                    .find(|t| t.title == title);
+                                                if existing.is_none() {
+                                                    tool_calls.push(ToolCallInfo {
+                                                        title,
+                                                        arguments: update.fields.raw_input,
+                                                    });
+                                                }
+                                            }
                                         },
                                         other => {
                                             tracing::debug!("Ignoring update type: {:?}", other);
@@ -759,13 +777,13 @@ impl CrucibleAcpClient {
                 }
             }
 
-            Ok::<_, AcpError>((accumulated_content, final_response))
+            Ok::<_, AcpError>((accumulated_content, tool_calls, final_response))
         };
 
         // Apply overall timeout
         match tokio::time::timeout(overall_timeout, streaming_future).await {
-            Ok(Ok((content, Some(response)))) => Ok((content, response)),
-            Ok(Ok((content, None))) => Err(AcpError::Session(format!(
+            Ok(Ok((content, tools, Some(response)))) => Ok((content, tools, response)),
+            Ok(Ok((content, _tools, None))) => Err(AcpError::Session(format!(
                 "Never received final prompt response (accumulated {} chars)",
                 content.len()
             ))),
