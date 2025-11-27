@@ -180,7 +180,8 @@ pub async fn execute(
 
     // Create ACP client with kiln path and MCP dependencies for in-process tool execution
     let kiln_path = core.config().kiln_path.clone();
-    let mut client = CrucibleAcpClient::new(agent, initial_mode.is_read_only())
+    let acp_config = core.config().acp.clone();
+    let mut client = CrucibleAcpClient::with_acp_config(agent, initial_mode.is_read_only(), acp_config)
         .with_kiln_path(kiln_path)
         .with_mcp_dependencies(knowledge_repo, embedding_provider);
 
@@ -328,17 +329,25 @@ async fn run_interactive_session(
                 io::stdout().flush().unwrap();
 
                 match client.send_message(&message).await {
-                    Ok(response) => {
+                    Ok((response, tool_calls)) => {
                         // Clear the "thinking" indicator
                         print!("\r{}\r", " ".repeat(20));
                         io::stdout().flush().unwrap();
 
-                        // Print agent response with nice border
-                        println!("{}", "╭─ Agent Response ──────────────────────────╮".bright_blue());
-                        for line in response.lines() {
-                            println!("│ {}", line);
+                        // Print agent response with simple indicator
+                        println!("{} {}", "●".bright_blue(), response);
+
+                        // Show tool calls that followed this response (indented)
+                        if !tool_calls.is_empty() {
+                            for tool in &tool_calls {
+                                let args_str = format_tool_args(&tool.arguments);
+                                println!("  {} {}({})",
+                                    "▷".cyan(),
+                                    tool.title,
+                                    args_str.dimmed()
+                                );
+                            }
                         }
-                        println!("{}", "╰────────────────────────────────────────────╯".bright_blue());
                         println!(); // Blank line after response
                     }
                     Err(e) => {
@@ -513,4 +522,40 @@ async fn spawn_background_watch(
 
     info!("Background watch stopped");
     Ok(())
+}
+
+/// Format tool call arguments for display
+fn format_tool_args(args: &Option<serde_json::Value>) -> String {
+    match args {
+        Some(serde_json::Value::Object(map)) => {
+            map.iter()
+                .map(|(k, v)| format!("{}={}", k, format_arg_value(v)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        }
+        Some(other) => other.to_string(),
+        None => String::new(),
+    }
+}
+
+/// Format a single argument value, truncating if too long
+fn format_arg_value(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => {
+            let truncated = if s.len() > 30 {
+                format!("{}...", &s[..27])
+            } else {
+                s.clone()
+            };
+            format!("\"{}\"", truncated)
+        }
+        other => {
+            let s = other.to_string();
+            if s.len() > 30 {
+                format!("{}...", &s[..27])
+            } else {
+                s
+            }
+        }
+    }
 }
