@@ -243,20 +243,7 @@ impl<'a> NoteIngestor<'a> {
         }
     }
 
-    /// Deprecated: Use `with_merkle_store` instead
-    ///
-    /// This method is kept for backward compatibility but will be removed in a future version.
-    #[deprecated(
-        since = "0.1.0",
-        note = "Use `with_merkle_store` instead for better abstraction"
-    )]
-    pub fn with_merkle_persistence(
-        store: &'a EAVGraphStore,
-        persistence: MerklePersistence,
-    ) -> Self {
-        Self::with_merkle_store(store, Box::new(persistence))
-    }
-
+    
     pub async fn ingest(
         &self,
         doc: &ParsedNote,
