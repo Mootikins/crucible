@@ -60,9 +60,6 @@ futures = "0.3"
 [features]
 default = ["core"]
 core = []
-orchestration = []
-hot-reload = []
-full = ["orchestration", "hot-reload"]
 parallel-processing = ["rayon"]
 
 [dev-dependencies]

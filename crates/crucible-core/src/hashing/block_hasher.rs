@@ -968,12 +968,6 @@ pub fn new_sha256_block_hasher() -> Sha256BlockHasher {
     BlockHasher::new(crate::hashing::algorithm::Sha256Algorithm)
 }
 
-// Keep the old constants as deprecated aliases for backward compatibility
-#[deprecated(since = "0.2.0", note = "Use `new_blake3_block_hasher()` instead")]
-pub const BLAKE3_BLOCK_HASHER: fn() -> Blake3BlockHasher = new_blake3_block_hasher;
-
-#[deprecated(since = "0.2.0", note = "Use `new_sha256_block_hasher()` instead")]
-pub const SHA256_BLOCK_HASHER: fn() -> Sha256BlockHasher = new_sha256_block_hasher;
 
 #[cfg(test)]
 mod tests {
