@@ -13,7 +13,7 @@ crucible-config = { workspace = true }
 crucible-llm = { workspace = true, features = ["test-utils"] }
 
 # MCP support
-rmcp = { version = "0.9.0", features = ["macros", "server", "transport-io"] }
+rmcp = { version = "0.9.0", features = ["macros", "server", "transport-io", "transport-sse-server"] }
 
 # Serialization
 serde = { workspace = true }

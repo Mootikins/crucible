@@ -302,7 +302,8 @@ impl ChatSession {
 
     /// Connect to the agent and establish a session
     ///
-    /// This performs the full ACP protocol handshake.
+    /// This performs the full ACP protocol handshake using stdio MCP server.
+    /// For in-process MCP, use `connect_with_sse_mcp` instead.
     ///
     /// # Errors
     ///
@@ -311,6 +312,29 @@ impl ChatSession {
         if let Some(client) = &mut self.agent_client {
             // Perform full protocol handshake
             let session = client.connect_with_handshake().await?;
+            self.agent_session = Some(session);
+            Ok(())
+        } else {
+            Err(AcpError::Connection("No agent client configured".to_string()))
+        }
+    }
+
+    /// Connect to the agent using an in-process SSE MCP server
+    ///
+    /// This performs the full ACP protocol handshake with an SSE MCP server URL.
+    /// Use this for in-process tool execution to avoid DB lock contention.
+    ///
+    /// # Arguments
+    ///
+    /// * `sse_url` - URL to the SSE MCP server (e.g., "http://127.0.0.1:12345/sse")
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the agent connection fails or handshake fails
+    pub async fn connect_with_sse_mcp(&mut self, sse_url: &str) -> Result<()> {
+        if let Some(client) = &mut self.agent_client {
+            // Perform full protocol handshake with SSE MCP
+            let session = client.connect_with_sse_mcp(sse_url).await?;
             self.agent_session = Some(session);
             Ok(())
         } else {
