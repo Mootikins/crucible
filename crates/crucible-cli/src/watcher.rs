@@ -22,7 +22,7 @@ use crate::config::FileWatcherConfig;
 /// Built-in file patterns to exclude from watching
 const DEFAULT_EXCLUDES: &[&str] = &[
     "**/.git/**",
-    "**/.crucible/cache/**",
+    "**/.crucible/**",  // SurrealDB database directory
     "**/.obsidian/workspace*",
     "**/.obsidian/plugins/**/node_modules/**",
     "**/node_modules/**",
@@ -186,10 +186,13 @@ impl SimpleFileWatcher {
 
         // Simple pattern matching for common cases
         if pattern.starts_with("**/") && pattern.ends_with("/**") {
-            // Pattern like **/.git/**
+            // Pattern like **/.git/** or **/.crucible/**
             let dir_name = &pattern[3..pattern.len() - 3];
+            // Check: contains /dir_name/, or starts with dir_name/
             path_str.contains(&format!("/{}/", dir_name))
                 || path_str.starts_with(&format!("{}/", dir_name))
+                // Also check for path components directly
+                || path.components().any(|c| c.as_os_str() == dir_name)
         } else if pattern.starts_with("**/") && pattern.ends_with("*") {
             // Pattern like **/.obsidian/workspace*
             let middle = &pattern[3..pattern.len() - 1];

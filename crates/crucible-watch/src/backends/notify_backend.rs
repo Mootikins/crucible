@@ -2,7 +2,7 @@
 
 use crate::{
     error::{Error, Result},
-    events::{EventMetadata, FileEvent, FileEventKind},
+    events::{EventFilter, EventMetadata, FileEvent, FileEventKind},
     traits::{BackendCapabilities, FileWatcher, WatchConfig, WatchHandle},
 };
 
@@ -11,9 +11,10 @@ use async_trait::async_trait;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{new_debouncer, DebounceEventResult, DebouncedEvent, Debouncer};
 use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 /// Notify-based file watcher with debouncing support.
 pub struct NotifyWatcher {
@@ -25,6 +26,8 @@ pub struct NotifyWatcher {
     watches: std::collections::HashMap<String, WatchHandle>,
     /// Capabilities
     capabilities: BackendCapabilities,
+    /// Event filter (shared with debouncer callback)
+    filter: Arc<RwLock<Option<EventFilter>>>,
 }
 
 impl NotifyWatcher {
@@ -35,12 +38,14 @@ impl NotifyWatcher {
             event_sender: None,
             watches: std::collections::HashMap::new(),
             capabilities: BackendCapabilities::full_support(),
+            filter: Arc::new(RwLock::new(None)),
         }
     }
 
     /// Initialize the watcher with event sender.
     async fn initialize(&mut self, event_sender: mpsc::UnboundedSender<FileEvent>) -> Result<()> {
         let sender = event_sender.clone();
+        let filter = self.filter.clone();
 
         // Create debounced watcher
         let debouncer = new_debouncer(
@@ -48,9 +53,24 @@ impl NotifyWatcher {
             None,                       // No file ID map for now
             move |result: DebounceEventResult| match result {
                 Ok(events) => {
+                    // Get the filter once per batch (read lock)
+                    let filter_guard = filter.read().ok();
+                    let filter_ref = filter_guard.as_ref().and_then(|g| g.as_ref());
+
                     for event in events {
                         match Self::convert_notify_event(event) {
                             Ok(file_event) => {
+                                // Apply filter if configured
+                                if let Some(f) = filter_ref {
+                                    if !f.matches(&file_event) {
+                                        trace!(
+                                            "Event filtered out: {}",
+                                            file_event.path.display()
+                                        );
+                                        continue;
+                                    }
+                                }
+
                                 if let Err(e) = sender.send(file_event) {
                                     error!("Failed to send file event: {}", e);
                                 }
@@ -154,6 +174,19 @@ impl FileWatcher for NotifyWatcher {
 
     async fn watch(&mut self, path: PathBuf, config: WatchConfig) -> Result<WatchHandle> {
         debug!("Adding watch for: {}", path.display());
+
+        // Store filter from config (if provided and not already set)
+        if let Some(filter) = config.filter.clone() {
+            let mut filter_guard = self.filter.write().map_err(|e| {
+                Error::Internal(format!("Failed to acquire filter write lock: {}", e))
+            })?;
+            if filter_guard.is_none() {
+                debug!("Setting event filter for notify watcher");
+                *filter_guard = Some(filter);
+            } else {
+                debug!("Filter already set, ignoring new filter from config");
+            }
+        }
 
         // Initialize if not already done
         if self.debouncer.is_none() {
