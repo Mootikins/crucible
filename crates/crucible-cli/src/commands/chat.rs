@@ -25,8 +25,10 @@ use tokio::sync::mpsc;
 pub enum ChatMode {
     /// Plan mode - read-only, agent cannot modify files
     Plan,
-    /// Act mode - write-enabled, agent can modify files
+    /// Act mode - write-enabled, agent can modify files (with confirmation)
     Act,
+    /// Auto-approve mode - write-enabled, agent can modify files without confirmation
+    AutoApprove,
 }
 
 impl ChatMode {
@@ -35,20 +37,45 @@ impl ChatMode {
         match self {
             ChatMode::Plan => "plan",
             ChatMode::Act => "act",
+            ChatMode::AutoApprove => "auto",
         }
     }
 
-    /// Toggle to the other mode
+    /// Get the mode description for display
+    pub fn description(&self) -> &'static str {
+        match self {
+            ChatMode::Plan => "read-only",
+            ChatMode::Act => "write-enabled",
+            ChatMode::AutoApprove => "auto-approve",
+        }
+    }
+
+    /// Cycle to the next mode (Plan -> Act -> AutoApprove -> Plan)
+    pub fn cycle_next(&self) -> Self {
+        match self {
+            ChatMode::Plan => ChatMode::Act,
+            ChatMode::Act => ChatMode::AutoApprove,
+            ChatMode::AutoApprove => ChatMode::Plan,
+        }
+    }
+
+    /// Toggle to the other mode (legacy, Plan <-> Act only)
     pub fn toggle(&self) -> Self {
         match self {
             ChatMode::Plan => ChatMode::Act,
             ChatMode::Act => ChatMode::Plan,
+            ChatMode::AutoApprove => ChatMode::Plan,
         }
     }
 
     /// Check if this mode allows writes
     pub fn is_read_only(&self) -> bool {
         matches!(self, ChatMode::Plan)
+    }
+
+    /// Check if this mode auto-approves operations
+    pub fn is_auto_approve(&self) -> bool {
+        matches!(self, ChatMode::AutoApprove)
     }
 }
 
@@ -231,32 +258,48 @@ async fn run_interactive_session(
     context_size: Option<usize>,
 ) -> Result<()> {
     use colored::Colorize;
-    use reedline::{DefaultPrompt, Reedline, Signal};
+    use reedline::{DefaultPrompt, Reedline, Signal, default_emacs_keybindings, Emacs, ReedlineEvent, KeyCode, KeyModifiers};
+    use std::time::Instant;
 
     let mut current_mode = initial_mode;
-    let mut line_editor = Reedline::create();
+    let mut last_ctrl_c: Option<Instant> = None;
+
+    // Configure keybindings with Shift+Tab -> silent mode cycle
+    // Using a special prefix so we can handle it without visual feedback
+    let mut keybindings = default_emacs_keybindings();
+    keybindings.add_binding(
+        KeyModifiers::SHIFT,
+        KeyCode::BackTab,
+        ReedlineEvent::ExecuteHostCommand("\x00mode".to_string()),
+    );
+    let edit_mode = Box::new(Emacs::new(keybindings));
+    let mut line_editor = Reedline::create().with_edit_mode(edit_mode);
+
     let enricher = ContextEnricher::new(core.clone(), context_size);
 
     println!("\n{}", "🤖 Crucible Chat".bright_blue().bold());
     println!("{}", "=================".bright_blue());
     println!("Mode: {} {}",
         current_mode.display_name().bright_cyan().bold(),
-        if current_mode == ChatMode::Plan { "(read-only)" } else { "(write-enabled)" }.dimmed()
+        format!("({})", current_mode.description()).dimmed()
     );
     println!();
     println!("{}", "Commands:".bold());
     println!("  {} - Switch to plan mode (read-only)", "/plan".green());
     println!("  {} - Switch to act mode (write-enabled)", "/act".green());
-    println!("  {} - Exit chat", "/exit".green());
+    println!("  {} - Switch to auto-approve mode", "/auto".green());
+    println!("  {} - Cycle modes (or Shift+Tab)", "/mode".green());
     println!();
+    println!("{}", "Press Ctrl+C twice to exit".dimmed());
 
     loop {
         // Create simple prompt based on current mode
-        let prompt_indicator = format!(
-            "{} {} ",
-            current_mode.display_name(),
-            if current_mode == ChatMode::Plan { "📖" } else { "✏️" }
-        );
+        let mode_icon = match current_mode {
+            ChatMode::Plan => "📖",
+            ChatMode::Act => "✏️",
+            ChatMode::AutoApprove => "⚡",
+        };
+        let prompt_indicator = format!("{} {} ", current_mode.display_name(), mode_icon);
         let prompt = DefaultPrompt::new(
             reedline::DefaultPromptSegment::Basic(prompt_indicator),
             reedline::DefaultPromptSegment::Empty,
@@ -271,6 +314,13 @@ async fn run_interactive_session(
 
                 // Handle empty input
                 if input.is_empty() {
+                    continue;
+                }
+
+                // Handle silent mode switch (from Shift+Tab keybinding)
+                // This cycles mode without any visual output - prompt updates on next iteration
+                if input == "\x00mode" {
+                    current_mode = current_mode.cycle_next();
                     continue;
                 }
 
@@ -291,6 +341,23 @@ async fn run_interactive_session(
                     println!("{} Mode switched to: {} (write-enabled)",
                         "→".bright_cyan(),
                         "act".bright_cyan().bold()
+                    );
+                    // Note: In full implementation, would update client permissions here
+                    continue;
+                } else if input == "/auto" {
+                    current_mode = ChatMode::AutoApprove;
+                    println!("{} Mode switched to: {} (auto-approve)",
+                        "→".bright_cyan(),
+                        "auto".bright_cyan().bold()
+                    );
+                    // Note: In full implementation, would update client permissions here
+                    continue;
+                } else if input == "/mode" {
+                    current_mode = current_mode.cycle_next();
+                    println!("{} Mode: {} ({})",
+                        "→".bright_cyan(),
+                        current_mode.display_name().bright_cyan().bold(),
+                        current_mode.description()
                     );
                     // Note: In full implementation, would update client permissions here
                     continue;
@@ -361,7 +428,15 @@ async fn run_interactive_session(
                 }
             }
             Ok(Signal::CtrlC) => {
-                println!("\n{}", "Interrupted. Type /exit to quit.".yellow());
+                use std::time::Duration;
+                if let Some(last) = last_ctrl_c {
+                    if last.elapsed() < Duration::from_secs(2) {
+                        println!("\n{}", "👋 Goodbye!".bright_blue());
+                        break;
+                    }
+                }
+                last_ctrl_c = Some(Instant::now());
+                println!("\n{}", "Press Ctrl+C again to exit".yellow());
                 continue;
             }
             Ok(Signal::CtrlD) => {
