@@ -1,6 +1,36 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
+use tracing_subscriber::filter::LevelFilter;
 
+/// Log level options for CLI
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum LogLevel {
+    /// No logging output
+    Off,
+    /// Error messages only
+    Error,
+    /// Warnings and errors
+    Warn,
+    /// Informational messages (default for verbose)
+    Info,
+    /// Debug messages
+    Debug,
+    /// Trace-level messages (most verbose)
+    Trace,
+}
+
+impl From<LogLevel> for LevelFilter {
+    fn from(level: LogLevel) -> Self {
+        match level {
+            LogLevel::Off => LevelFilter::OFF,
+            LogLevel::Error => LevelFilter::ERROR,
+            LogLevel::Warn => LevelFilter::WARN,
+            LogLevel::Info => LevelFilter::INFO,
+            LogLevel::Debug => LevelFilter::DEBUG,
+            LogLevel::Trace => LevelFilter::TRACE,
+        }
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "cru")]
@@ -12,7 +42,12 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
 
-    /// Enable verbose logging
+    /// Set log level (off, error, warn, info, debug, trace)
+    /// If not specified, uses config file value or defaults to 'off'
+    #[arg(short = 'l', long, global = true, value_enum)]
+    pub log_level: Option<LogLevel>,
+
+    /// Enable verbose logging (shortcut for --log-level=debug)
     #[arg(short, long, global = true)]
     pub verbose: bool,
 
@@ -95,6 +130,10 @@ pub enum Commands {
         /// Preview what would be processed without making database changes
         #[arg(long)]
         dry_run: bool,
+
+        /// Number of parallel workers for processing (default: num_cpus / 2)
+        #[arg(short = 'j', long = "parallel")]
+        parallel: Option<usize>,
     },
 
     /// Unified search through kiln notes (text and fuzzy search)
