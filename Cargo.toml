@@ -8,7 +8,6 @@ members = [
     "crates/crucible-pipeline",
     # "crates/crucible-tauri",  # Removed for CLI MVP - GUI not needed
     "crates/crucible-cli",
-    "crates/crucible-sync",
     "crates/crucible-surrealdb",
     "crates/crucible-config",
     "crates/crucible-a2a",
