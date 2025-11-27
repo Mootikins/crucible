@@ -12,6 +12,7 @@ use crucible_acp::{
     HistoryConfig, ContextConfig, StreamConfig,
     InProcessMcpHost,
 };
+use crucible_config::AcpConfig;
 use crucible_core::traits::KnowledgeRepository;
 use crucible_core::enrichment::EmbeddingProvider;
 
@@ -25,6 +26,7 @@ pub struct CrucibleAcpClient {
     agent: AgentInfo,
     read_only: bool,
     config: ChatConfig,
+    acp_config: AcpConfig,
     kiln_path: Option<PathBuf>,
     /// Knowledge repository for semantic search (required for in-process MCP)
     knowledge_repo: Option<Arc<dyn KnowledgeRepository>>,
@@ -41,6 +43,16 @@ impl CrucibleAcpClient {
     /// * `agent` - Information about the agent to spawn
     /// * `read_only` - If true, deny all write operations
     pub fn new(agent: AgentInfo, read_only: bool) -> Self {
+        Self::with_acp_config(agent, read_only, AcpConfig::default())
+    }
+
+    /// Create a new ACP client with custom ACP configuration
+    ///
+    /// # Arguments
+    /// * `agent` - Information about the agent to spawn
+    /// * `read_only` - If true, deny all write operations
+    /// * `acp_config` - ACP configuration (includes streaming timeout)
+    pub fn with_acp_config(agent: AgentInfo, read_only: bool, acp_config: AcpConfig) -> Self {
         let config = ChatConfig {
             history: HistoryConfig::default(),
             context: ContextConfig {
@@ -61,6 +73,7 @@ impl CrucibleAcpClient {
             agent,
             read_only,
             config,
+            acp_config,
             kiln_path: None,
             knowledge_repo: None,
             embedding_provider: None,
@@ -92,7 +105,7 @@ impl CrucibleAcpClient {
         self
     }
 
-    /// Create a new ACP client with custom configuration
+    /// Create a new ACP client with custom chat configuration
     ///
     /// # Arguments
     /// * `agent` - Information about the agent to spawn
@@ -104,6 +117,7 @@ impl CrucibleAcpClient {
             agent,
             read_only,
             config,
+            acp_config: AcpConfig::default(),
             kiln_path: None,
             knowledge_repo: None,
             embedding_provider: None,
@@ -127,12 +141,19 @@ impl CrucibleAcpClient {
             Some(self.agent.args.clone())
         };
 
+        // Convert streaming timeout from minutes to milliseconds
+        // The lower-level client multiplies timeout_ms by 10 for overall streaming timeout
+        // So we divide by 10 here: minutes * 60 * 1000 / 10 = minutes * 6000
+        let timeout_ms = self.acp_config.streaming_timeout_minutes * 6000;
+        info!("Streaming timeout configured: {} minutes ({} ms base)",
+            self.acp_config.streaming_timeout_minutes, timeout_ms);
+
         let client_config = crucible_acp::client::ClientConfig {
             agent_path,
             agent_args,
             working_dir: None,
             env_vars: None,
-            timeout_ms: None,
+            timeout_ms: Some(timeout_ms),
             max_retries: None,
         };
         let acp_client = AcpClient::new(client_config);
@@ -193,8 +214,8 @@ impl CrucibleAcpClient {
     /// * `message` - The user message to send
     ///
     /// # Returns
-    /// The agent's response
-    pub async fn send_message(&mut self, message: &str) -> Result<String> {
+    /// Tuple of (response, tool_calls)
+    pub async fn send_message(&mut self, message: &str) -> Result<(String, Vec<crucible_acp::ToolCallInfo>)> {
         if let Some(session) = &mut self.session {
             debug!("Sending message to agent: {}", message);
             session.send_message(message).await
@@ -213,7 +234,7 @@ impl CrucibleAcpClient {
         info!("Mode: {}", if self.read_only { "Read-only (plan)" } else { "Write-enabled (act)" });
 
         // Send the initial prompt
-        let response = self.send_message(enriched_prompt).await?;
+        let (response, _tool_calls) = self.send_message(enriched_prompt).await?;
 
         // Print the response
         println!("\n{}", response);
