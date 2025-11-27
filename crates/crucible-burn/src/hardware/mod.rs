@@ -162,12 +162,13 @@ async fn detect_vulkan_gpus() -> Result<Vec<GpuInfo>> {
     {
         // Try to detect GPUs via lspci or similar methods
         if let Ok(output) = std::process::Command::new("lspci")
-            .args(&["-nn", "|", "grep", "-i", "vga\\|3d\\|display"])
+            .arg("-nn")
             .output()
         {
-            if output.status.success() {
-                let output_str = String::from_utf8_lossy(&output.stdout);
-                for line in output_str.lines() {
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            for line in output_str.lines() {
+                if line.contains("VGA") || line.contains("3D") || line.contains("Display") ||
+                   line.contains("Display controller") {
                     if line.to_lowercase().contains("nvidia") {
                         gpus.push(GpuInfo {
                             name: "NVIDIA GPU".to_string(),

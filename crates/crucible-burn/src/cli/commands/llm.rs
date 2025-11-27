@@ -3,6 +3,7 @@ use anyhow::Result;
 use crate::cli::LlmCommand;
 use crate::config::BurnConfig;
 use crate::hardware::HardwareInfo;
+use crate::models::{ModelRegistry, ModelType};
 
 pub async fn handle(
     command: LlmCommand,
@@ -28,8 +29,8 @@ async fn llm_inference(
     prompt: String,
     max_tokens: usize,
     backend: String,
-    config: BurnConfig,
-    hardware_info: HardwareInfo,
+    _config: BurnConfig,
+    _hardware_info: HardwareInfo,
 ) -> Result<()> {
     println!("LLM Inference");
     println!("===============");
@@ -50,8 +51,8 @@ async fn llm_stream(
     prompt: String,
     max_tokens: usize,
     backend: String,
-    config: BurnConfig,
-    hardware_info: HardwareInfo,
+    _config: BurnConfig,
+    _hardware_info: HardwareInfo,
 ) -> Result<()> {
     println!("LLM Streaming");
     println!("=============");
@@ -68,39 +69,43 @@ async fn llm_stream(
 }
 
 async fn list_llm_models() -> Result<()> {
+    // Load default configuration
+    let config = crate::config::BurnConfig::default();
+
+    // Initialize model registry with all search paths
+    let search_paths = vec![config.model_dir.clone()]
+        .into_iter()
+        .chain(config.model_search_paths.clone())
+        .collect();
+    let model_registry = ModelRegistry::new(search_paths).await?;
+
     println!("Available LLM Models");
     println!("====================");
     println!();
 
-    let models_dir = dirs::home_dir()
-        .ok_or_else(|| anyhow::anyhow!("Could not find home directory"))?
-        .join("models")
-        .join("llm");
+    let llm_models = model_registry.list_models(Some(ModelType::Llm));
 
-    if !models_dir.exists() {
-        println!("No LLM models directory found at: {:?}", models_dir);
-        println!("💡 Create the directory and add models in subdirectories");
-        return Ok(());
-    }
-
-    let mut found_models = false;
-
-    for entry in std::fs::read_dir(&models_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.is_dir() {
-            let model_name = path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("unknown");
-
-            println!("📁 {}", model_name);
-            found_models = true;
+    if llm_models.is_empty() {
+        println!("No LLM models found in any search path.");
+        println!();
+        println!("💡 Default search paths:");
+        for path in vec![config.model_dir.clone()].into_iter().chain(config.model_search_paths.clone()) {
+            println!("   {:?}", path);
         }
-    }
-
-    if !found_models {
-        println!("No LLM models found in: {:?}", models_dir);
+        println!();
+    } else {
+        for model in llm_models {
+            println!("   📁 {} ({})", model.name, model.format);
+            println!("   📍 Path: {:?}", model.path);
+            if let Some(params) = model.parameters {
+                println!("   🔢 Parameters: {}B", params);
+            }
+            if let Some(size) = model.file_size_bytes {
+                println!("   💾 Size: {} MB", size / (1024 * 1024));
+            }
+            println!("   🔧 Complete: {}", if model.is_complete() { "✅" } else { "⚠️  Incomplete" });
+            println!();
+        }
     }
 
     Ok(())

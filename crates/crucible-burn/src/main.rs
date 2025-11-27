@@ -1,13 +1,12 @@
 use anyhow::Result;
 use clap::Parser;
-use std::sync::Arc;
-use tracing::{debug, error, info, warn, Level};
+use tracing::{info};
 use tracing_subscriber::prelude::*;
 
 use crucible_burn::{
-    cli::{Cli, Commands},
+    cli::Cli,
     config::BurnConfig,
-    hardware::{HardwareInfo, BackendType},
+    hardware::HardwareInfo,
 };
 
 #[tokio::main]
@@ -25,11 +24,15 @@ async fn main() -> Result<()> {
         .init();
 
     info!("Starting burn-test CLI");
-    debug!("Command: {:?}", cli.command);
+    if cli.verbose {
+        println!("Command: {:?}", cli.command);
+    }
 
     // Load configuration
     let config = BurnConfig::load(cli.config.as_deref()).await?;
-    debug!("Loaded configuration: {:?}", config);
+    if cli.verbose {
+        println!("Loaded configuration: {:?}", config);
+    }
 
     // Detect hardware and select backend
     let hardware_info = HardwareInfo::detect().await?;

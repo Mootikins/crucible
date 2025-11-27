@@ -1,5 +1,5 @@
 use anyhow::Result;
-use tracing::{info, debug, warn};
+use tracing::info;
 
 use crate::cli::DetectCommand;
 use crate::hardware::{HardwareInfo, BackendType};
