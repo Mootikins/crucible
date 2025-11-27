@@ -48,9 +48,10 @@ async fn main() {
     let result = client.send_prompt_with_streaming(prompt_request, 1).await;
 
     match result {
-        Ok((content, response)) => {
+        Ok((content, tool_calls, response)) => {
             println!("\n✅ Streaming successful!");
             println!("Accumulated content: '{}'", content);
+            println!("Tool calls: {}", tool_calls.len());
             println!("Stop reason: {:?}", response.stop_reason);
 
             // Verify we got the expected content
