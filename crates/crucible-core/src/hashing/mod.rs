@@ -29,10 +29,9 @@ pub use ast_converter::{
     ASTBlockConverter, Blake3ASTBlockConverter, ConversionStats, Sha256ASTBlockConverter,
 };
 pub use blake3::{Blake3Hasher, BLAKE3_CONTENT_HASHER};
-#[allow(deprecated)] // Re-exporting for backward compatibility
 pub use block_hasher::{
     new_blake3_block_hasher, new_sha256_block_hasher, Blake3BlockHasher, BlockHashStats,
-    BlockHasher, Sha256BlockHasher, BLAKE3_BLOCK_HASHER, SHA256_BLOCK_HASHER,
+    BlockHasher, Sha256BlockHasher,
 };
 pub use block_link::{compute_block_hash, hash_to_hex, hex_to_hash};
 pub use file_hasher::{
