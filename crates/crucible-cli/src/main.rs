@@ -1,11 +1,12 @@
 use anyhow::Result;
 use clap::Parser;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn, Level};
+use tracing::{debug, error, info, warn};
+use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::prelude::*;  // For SubscriberExt trait
 
 use crucible_cli::{
-    cli::{Cli, Commands},
+    cli::{Cli, Commands, LogLevel},
     commands, config,
 };
 use crucible_core::{types::hashing::HashAlgorithm, CrucibleCore};
@@ -23,9 +24,37 @@ async fn process_files_with_change_detection(_config: &crate::config::CliConfig)
     debug!("File processing disabled for Phase 5 integration testing");
     Ok(())
 }
+/// Parse log level string to LevelFilter
+fn parse_log_level(level: &str) -> Option<LevelFilter> {
+    match level.to_lowercase().as_str() {
+        "off" => Some(LevelFilter::OFF),
+        "error" => Some(LevelFilter::ERROR),
+        "warn" => Some(LevelFilter::WARN),
+        "info" => Some(LevelFilter::INFO),
+        "debug" => Some(LevelFilter::DEBUG),
+        "trace" => Some(LevelFilter::TRACE),
+        _ => None,
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Load configuration first (before logging) to get config file log level
+    let config = config::CliConfig::load(cli.config.clone(), cli.embedding_url.clone(), cli.embedding_model.clone())?;
+
+    // Determine log level from CLI flags, config file, or default to OFF
+    // Priority: --log-level flag > --verbose flag > config file > OFF
+    let level_filter: LevelFilter = if let Some(level) = cli.log_level {
+        level.into()
+    } else if cli.verbose {
+        LevelFilter::DEBUG
+    } else if let Some(config_level) = config.logging_level() {
+        parse_log_level(&config_level).unwrap_or(LevelFilter::OFF)
+    } else {
+        LevelFilter::OFF
+    };
 
     // Initialize logging based on command type
     // MCP and Chat use stdio (stdin/stdout) for JSON-RPC, so we must avoid stderr output
@@ -35,53 +64,50 @@ async fn main() -> Result<()> {
         Some(Commands::Mcp) | Some(Commands::Chat { .. })
     );
 
-    let log_level = if cli.verbose { "debug" } else { "info" };
-    let env_filter = format!("crucible_cli={},crucible_services={},crucible_config={}", log_level, log_level, log_level);
+    // Only initialize logging if level is not OFF
+    if level_filter != LevelFilter::OFF {
+        if uses_stdio {
+            // File-only logging for stdio-based commands (MCP, Chat)
+            // Default to ~/.crucible/<command>.log, override with CRUCIBLE_LOG_FILE
+            let log_file_name = match &cli.command {
+                Some(Commands::Mcp) => "mcp.log",
+                Some(Commands::Chat { .. }) => "chat.log",
+                _ => "crucible.log",
+            };
 
-    if uses_stdio {
-        // File-only logging for stdio-based commands (MCP, Chat)
-        // Default to ~/.crucible/<command>.log, override with CRUCIBLE_LOG_FILE
-        let log_file_name = match &cli.command {
-            Some(Commands::Mcp) => "mcp.log",
-            Some(Commands::Chat { .. }) => "chat.log",
-            _ => "crucible.log",
-        };
+            let log_file_path = std::env::var("CRUCIBLE_LOG_FILE")
+                .unwrap_or_else(|_| {
+                    let home = dirs::home_dir().expect("Failed to get home directory");
+                    home.join(".crucible").join(log_file_name).to_string_lossy().to_string()
+                });
 
-        let log_file_path = std::env::var("CRUCIBLE_LOG_FILE")
-            .unwrap_or_else(|_| {
-                let home = dirs::home_dir().expect("Failed to get home directory");
-                home.join(".crucible").join(log_file_name).to_string_lossy().to_string()
-            });
+            // Create parent directory if it doesn't exist
+            if let Some(parent) = std::path::Path::new(&log_file_path).parent() {
+                std::fs::create_dir_all(parent)?;
+            }
 
-        // Create parent directory if it doesn't exist
-        if let Some(parent) = std::path::Path::new(&log_file_path).parent() {
-            std::fs::create_dir_all(parent)?;
+            let log_file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_file_path)?;
+
+            let file_layer = tracing_subscriber::fmt::layer()
+                .with_writer(std::sync::Arc::new(log_file))
+                .with_ansi(false)  // No ANSI codes in log files
+                .with_target(true)
+                .with_thread_ids(true);
+
+            tracing_subscriber::registry()
+                .with(file_layer)
+                .with(level_filter)
+                .init();
+        } else {
+            // Normal stderr logging for other commands
+            tracing_subscriber::fmt()
+                .with_max_level(level_filter)
+                .init();
         }
-
-        let log_file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_file_path)?;
-
-        let file_layer = tracing_subscriber::fmt::layer()
-            .with_writer(std::sync::Arc::new(log_file))
-            .with_ansi(false)  // No ANSI codes in log files
-            .with_target(true)
-            .with_thread_ids(true);
-
-        tracing_subscriber::registry()
-            .with(file_layer)
-            .with(tracing_subscriber::EnvFilter::new(env_filter))
-            .init();
-    } else {
-        // Normal stderr logging for other commands
-        tracing_subscriber::fmt()
-            .with_env_filter(tracing_subscriber::EnvFilter::new(env_filter))
-            .init();
     }
-
-    // Load configuration with CLI overrides
-    let mut config = config::CliConfig::load(cli.config, cli.embedding_url, cli.embedding_model)?;
 
     // Log configuration in verbose mode
     if cli.verbose {
@@ -191,8 +217,8 @@ async fn main() -> Result<()> {
             commands::mcp::execute(config).await?
         }
 
-        Some(Commands::Process { path, force, watch, dry_run }) => {
-            commands::process::execute(config, path, force, watch, cli.verbose, dry_run).await?
+        Some(Commands::Process { path, force, watch, dry_run, parallel }) => {
+            commands::process::execute(config, path, force, watch, cli.verbose, dry_run, parallel).await?
         }
 
         // Unified search command
