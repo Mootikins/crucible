@@ -15,7 +15,7 @@ toml = { version = "0.9", optional = true }
 uuid = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-tracing = { workspace = true }
+tracing = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["fs"] }
 tempfile = { workspace = true, optional = true }
 schemars = { workspace = true }
@@ -27,6 +27,7 @@ dirs = "5.0"
 default = ["yaml"]
 yaml = ["serde_yaml"]
 toml = ["dep:toml"]
+tracing = ["dep:tracing"]
 test-utils = ["tempfile"]
 
 [dev-dependencies]

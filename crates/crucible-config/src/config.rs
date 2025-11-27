@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
 
+#[cfg(feature = "tracing")]
+use tracing::{info, warn, debug, error};
+
 /// Errors that can occur during configuration validation.
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum ConfigValidationError {
@@ -356,31 +359,65 @@ impl CliConfig {
         _embedding_url: Option<String>,
         _embedding_model: Option<String>,
     ) -> anyhow::Result<Self> {
-        // If config file exists, load it
-        if let Some(path) = config_file {
-            if path.exists() {
-                let contents = std::fs::read_to_string(&path)
-                    .map_err(|e| anyhow::anyhow!("Failed to read config file: {}", e))?;
+        // Determine config file path
+        let config_path = config_file.unwrap_or_else(Self::default_config_path);
 
-                #[cfg(feature = "toml")]
-                {
-                    // Try to parse as complete CLI config first
-                    if let Ok(config) = toml::from_str::<CliConfig>(&contents) {
+        #[cfg(feature = "tracing")]
+        debug!("Attempting to load config from: {}", config_path.display());
+
+        // Try to load config file
+        if config_path.exists() {
+            #[cfg(feature = "tracing")]
+            info!("Found config file at: {}", config_path.display());
+
+            let contents = std::fs::read_to_string(&config_path)
+                .map_err(|e| anyhow::anyhow!("Failed to read config file: {}", e))?;
+
+            #[cfg(feature = "toml")]
+            {
+                match toml::from_str::<CliConfig>(&contents) {
+                    Ok(mut config) => {
+                        // Apply CLI overrides
+                        // Note: embedding_url and embedding_model overrides could be applied here if needed
+                        #[cfg(feature = "tracing")]
+                        info!("Successfully loaded config file: {}", config_path.display());
                         return Ok(config);
                     }
-
-                    // If that fails, try to parse as general Config and convert
-                    if let Ok(general_config) = toml::from_str::<Config>(&contents) {
-                        return Ok(Self::from_general_config(general_config));
+                    Err(e) => {
+                        #[cfg(feature = "tracing")]
+                        error!("Failed to parse config file {}: {}", config_path.display(), e);
+                        return Err(anyhow::anyhow!("Failed to parse config file {}: {}", config_path.display(), e));
                     }
                 }
-
-                return Err(anyhow::anyhow!("Failed to parse config file: TOML feature not enabled or invalid format"));
             }
+
+            #[cfg(not(feature = "toml"))]
+            {
+                return Err(anyhow::anyhow!("Failed to parse config file: TOML feature not enabled"));
+            }
+        } else {
+            #[cfg(feature = "tracing")]
+            debug!("No config file found at {}, using defaults", config_path.display());
         }
 
         // Return default config
         Ok(Self::default())
+    }
+
+    /// Log the effective configuration for debugging
+    #[cfg(feature = "tracing")]
+    pub fn log_config(&self) {
+        info!("Effective configuration:");
+        info!("  kiln_path: {}", self.kiln_path.display());
+        info!("  embedding.provider: {:?}", self.embedding.provider);
+        info!("  embedding.model: {:?}", self.embedding.model);
+        info!("  embedding.batch_size: {}", self.embedding.batch_size);
+        info!("  acp.default_agent: {:?}", self.acp.default_agent);
+        info!("  acp.enable_discovery: {}", self.acp.enable_discovery);
+        info!("  acp.session_timeout_minutes: {}", self.acp.session_timeout_minutes);
+        info!("  cli.show_progress: {}", self.cli.show_progress);
+        info!("  cli.confirm_destructive: {}", self.cli.confirm_destructive);
+        info!("  cli.verbose: {}", self.cli.verbose);
     }
 
     /// Convert from general Config to CliConfig
