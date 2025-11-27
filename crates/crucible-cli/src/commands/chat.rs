@@ -377,6 +377,8 @@ fn print_enriched_prompt(prompt: &str) {
 /// This function recursively searches for .md files in the given path.
 /// If the path is a file, returns it if it's a markdown file.
 /// If the path is a directory, walks the tree to find all markdown files.
+///
+/// Excludes common system directories: .crucible, .git, .obsidian, node_modules
 fn discover_markdown_files(path: &Path) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
 
@@ -388,6 +390,7 @@ fn discover_markdown_files(path: &Path) -> Result<Vec<PathBuf>> {
         for entry in WalkDir::new(path)
             .follow_links(false)
             .into_iter()
+            .filter_entry(|e| !is_excluded_dir(e.path()))
             .filter_map(|e| e.ok())
         {
             let entry_path = entry.path();
@@ -398,6 +401,20 @@ fn discover_markdown_files(path: &Path) -> Result<Vec<PathBuf>> {
     }
 
     Ok(files)
+}
+
+/// Check if a directory should be excluded from file discovery
+fn is_excluded_dir(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| {
+            name == ".crucible"
+                || name == ".git"
+                || name == ".obsidian"
+                || name == "node_modules"
+                || name == ".trash"
+        })
+        .unwrap_or(false)
 }
 
 /// Check if a path is a markdown file
@@ -431,7 +448,11 @@ async fn spawn_background_watch(
     watcher.set_event_sender(tx);
 
     // Configure watch with markdown file filter and debouncing
-    let filter = EventFilter::new().with_extension("md");
+    // Exclude .crucible directory (contains SurrealDB database files)
+    let crucible_dir = kiln_path.join(".crucible");
+    let filter = EventFilter::new()
+        .with_extension("md")
+        .exclude_dir(crucible_dir);
     let watch_config = WatchConfig {
         id: "chat-background-watch".to_string(),
         recursive: true,
