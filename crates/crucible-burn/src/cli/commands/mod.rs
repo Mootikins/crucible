@@ -8,3 +8,4 @@ pub mod server;
 pub mod bench;
 
 pub mod llm;
+pub mod models;
