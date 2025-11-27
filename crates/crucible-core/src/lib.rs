@@ -31,8 +31,8 @@ pub use crucible_core::CrucibleCore;
 
 // Re-export enrichment traits and types (implementations in crucible-enrichment crate)
 pub use enrichment::{
-    BlockEmbedding, EmbeddingProvider, EnrichedNote, EnrichedNoteStore, EnrichmentService,
-    InferredRelation, NoteMetadata, RelationType,
+    BlockEmbedding, CachedEmbedding, EmbeddingCache, EmbeddingProvider, EnrichedNote,
+    EnrichedNoteStore, EnrichmentService, InferredRelation, NoteMetadata, RelationType,
 };
 
 // Re-export merkle tree abstractions
