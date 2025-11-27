@@ -11,6 +11,15 @@
 
 use crate::{AcpError, Result};
 
+/// Information about a tool call for display purposes
+#[derive(Debug, Clone)]
+pub struct ToolCallInfo {
+    /// The tool call title (human-readable description)
+    pub title: String,
+    /// The tool parameters/arguments as JSON
+    pub arguments: Option<serde_json::Value>,
+}
+
 /// Configuration for response streaming
 #[derive(Debug, Clone)]
 pub struct StreamConfig {

@@ -75,7 +75,7 @@ pub use filesystem::FileSystemHandler;
 pub use protocol::MessageHandler;
 pub use tools::{ToolRegistry, ToolDescriptor, ToolExecutor, discover_crucible_tools, get_crucible_system_prompt};
 pub use context::{PromptEnricher, ContextConfig};
-pub use streaming::{StreamHandler, StreamConfig};
+pub use streaming::{StreamHandler, StreamConfig, ToolCallInfo};
 pub use history::{ConversationHistory, HistoryConfig, HistoryMessage, MessageRole};
 pub use chat::{ChatSession, ChatConfig, ConversationState, SessionMetadata};
 pub use mcp_host::InProcessMcpHost;
