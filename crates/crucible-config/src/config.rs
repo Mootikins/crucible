@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
 
-#[cfg(feature = "tracing")]
 use tracing::{info, warn, debug, error};
 
 /// Errors that can occur during configuration validation.
@@ -309,6 +308,14 @@ impl Config {
     }
 }
 
+/// Processing configuration for file processing operations.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProcessingConfig {
+    /// Number of parallel workers for processing (default: num_cpus / 2)
+    #[serde(default)]
+    pub parallel_workers: Option<usize>,
+}
+
 /// CLI-specific composite configuration structure.
 ///
 /// This provides the main configuration interface for the CLI application,
@@ -334,6 +341,14 @@ pub struct CliConfig {
     /// CLI-specific configuration
     #[serde(default)]
     pub cli: CliConfigComponent,
+
+    /// Logging configuration
+    #[serde(default)]
+    pub logging: Option<LoggingConfig>,
+
+    /// Processing configuration
+    #[serde(default)]
+    pub processing: ProcessingConfig,
 }
 
 fn default_kiln_path() -> std::path::PathBuf {
@@ -348,6 +363,8 @@ impl Default for CliConfig {
             acp: AcpConfig::default(),
             chat: ChatConfig::default(),
             cli: CliConfigComponent::default(),
+            logging: None,
+            processing: ProcessingConfig::default(),
         }
     }
 }
@@ -362,12 +379,12 @@ impl CliConfig {
         // Determine config file path
         let config_path = config_file.unwrap_or_else(Self::default_config_path);
 
-        #[cfg(feature = "tracing")]
+        
         debug!("Attempting to load config from: {}", config_path.display());
 
         // Try to load config file
         if config_path.exists() {
-            #[cfg(feature = "tracing")]
+            
             info!("Found config file at: {}", config_path.display());
 
             let contents = std::fs::read_to_string(&config_path)
@@ -379,12 +396,12 @@ impl CliConfig {
                     Ok(mut config) => {
                         // Apply CLI overrides
                         // Note: embedding_url and embedding_model overrides could be applied here if needed
-                        #[cfg(feature = "tracing")]
+                        
                         info!("Successfully loaded config file: {}", config_path.display());
                         return Ok(config);
                     }
                     Err(e) => {
-                        #[cfg(feature = "tracing")]
+                        
                         error!("Failed to parse config file {}: {}", config_path.display(), e);
                         return Err(anyhow::anyhow!("Failed to parse config file {}: {}", config_path.display(), e));
                     }
@@ -396,7 +413,7 @@ impl CliConfig {
                 return Err(anyhow::anyhow!("Failed to parse config file: TOML feature not enabled"));
             }
         } else {
-            #[cfg(feature = "tracing")]
+            
             debug!("No config file found at {}, using defaults", config_path.display());
         }
 
@@ -405,7 +422,6 @@ impl CliConfig {
     }
 
     /// Log the effective configuration for debugging
-    #[cfg(feature = "tracing")]
     pub fn log_config(&self) {
         info!("Effective configuration:");
         info!("  kiln_path: {}", self.kiln_path.display());
@@ -430,6 +446,8 @@ impl CliConfig {
             acp: general.acp_config().unwrap_or_default(),
             chat: general.chat_config().unwrap_or_default(),
             cli: general.cli_config().unwrap_or_default(),
+            logging: general.logging,
+            processing: ProcessingConfig::default(),  // General Config doesn't have processing
         }
     }
 
@@ -517,6 +535,15 @@ enable_markdown = true
 show_progress = true
 confirm_destructive = true
 verbose = false
+
+# Logging configuration (optional)
+# If not set, defaults to "off" unless --verbose or --log-level is specified
+# [logging]
+# level = "info"  # off, error, warn, info, debug, trace
+
+# Processing configuration (optional)
+# [processing]
+# parallel_workers = 4  # Number of parallel workers (default: num_cpus / 2)
 "#;
 
         // Create parent directory if it doesn't exist
@@ -574,6 +601,22 @@ verbose = false
     pub fn default_config_path() -> std::path::PathBuf {
         let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
         home.join(".config").join("crucible").join("config.toml")
+    }
+
+    /// Get the logging level from config, if set
+    ///
+    /// Returns the log level string (e.g., "off", "error", "warn", "info", "debug", "trace")
+    /// from the logging configuration section, or None if not configured.
+    pub fn logging_level(&self) -> Option<String> {
+        self.logging.as_ref().map(|l| l.level.clone())
+    }
+
+    /// Get the parallel workers setting from config, if set
+    ///
+    /// Returns the number of parallel workers for processing, or None if not configured.
+    /// When None, the CLI should use a default (e.g., num_cpus / 2).
+    pub fn parallel_workers(&self) -> Option<usize> {
+        self.processing.parallel_workers
     }
 }
 
