@@ -5,7 +5,9 @@
 use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use tokio::sync::Semaphore;
 use tracing::{info, warn};
 use walkdir::WalkDir;
 
@@ -23,6 +25,7 @@ use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
 /// * `watch` - If true, continue watching for changes after initial processing
 /// * `verbose` - If true, show detailed progress and timing information
 /// * `dry_run` - If true, preview changes without writing to database
+/// * `parallel` - Optional number of parallel workers (default: num_cpus / 2)
 pub async fn execute(
     config: CliConfig,
     path: Option<PathBuf>,
@@ -30,6 +33,7 @@ pub async fn execute(
     watch: bool,
     verbose: bool,
     dry_run: bool,
+    parallel: Option<usize>,
 ) -> Result<()> {
     info!("Starting process command");
 
@@ -49,13 +53,13 @@ pub async fn execute(
     factories::initialize_surrealdb_schema(&storage_client).await?;
     output::success("Storage initialized");
 
-    // Create pipeline
+    // Create pipeline (wrapped in Arc for sharing across tasks)
     output::info("Creating processing pipeline...");
-    let pipeline = factories::create_pipeline(
+    let pipeline = Arc::new(factories::create_pipeline(
         storage_client.clone(),
         &config,
         force,
-    ).await?;
+    ).await?);
     output::success("Pipeline ready");
 
     // Discover files to process
@@ -75,65 +79,88 @@ pub async fn execute(
             .progress_chars("#>-"),
     );
 
+    // Determine number of parallel workers
+    // Priority: CLI flag > config file > default (num_cpus / 2)
+    let default_workers = num_cpus::get() / 2;
+    let workers = parallel
+        .or(config.parallel_workers())
+        .unwrap_or(default_workers)
+        .max(1);  // At least 1 worker
+
+    info!("Using {} parallel workers", workers);
+
     // Process files through pipeline
     if dry_run {
         println!("\n🔍 DRY RUN MODE - No changes will be made");
     }
-    println!("\n🔄 Processing {} files through pipeline...", files.len());
+    println!("\n🔄 Processing {} files through pipeline (with {} workers)...", files.len(), workers);
 
-    let mut processed_count = 0;
-    let mut skipped_count = 0;
-    let mut error_count = 0;
+    // Use atomic counters for thread-safe updates
+    let processed_count = Arc::new(AtomicUsize::new(0));
+    let skipped_count = Arc::new(AtomicUsize::new(0));
+    let error_count = Arc::new(AtomicUsize::new(0));
+
+    // Bounded concurrency with semaphore
+    let semaphore = Arc::new(Semaphore::new(workers));
+    let pb = Arc::new(pb);
+    let mut handles = Vec::new();
 
     for file in files {
-        let file_name = file.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown");
+        let permit = semaphore.clone().acquire_owned().await?;
+        let pipeline = pipeline.clone();
+        let pb = pb.clone();
+        let processed = processed_count.clone();
+        let skipped = skipped_count.clone();
+        let errors = error_count.clone();
 
-        if verbose {
-            println!("📄 Processing: {}", file_name);
-        }
-        pb.set_message(format!("Processing: {}", file_name));
+        let handle = tokio::spawn(async move {
+            let _permit = permit; // Release on drop
 
-        // Run file through the 5-phase pipeline
-        if dry_run {
-            if verbose {
-                println!("   ⏭ Would process (dry-run)");
+            let file_name = file.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+
+            // Run file through the 5-phase pipeline
+            if dry_run {
+                processed.fetch_add(1, Ordering::Relaxed);
             } else {
-                println!("  Would process: {}", file_name);
-            }
-            processed_count += 1;
-        } else {
-            match pipeline.process(&file).await {
-                Ok(crucible_core::processing::ProcessingResult::Success { .. }) => {
-                    processed_count += 1;
-                    if verbose {
-                        println!("   ✓ Success");
+                match pipeline.process(&file).await {
+                    Ok(crucible_core::processing::ProcessingResult::Success { .. }) => {
+                        processed.fetch_add(1, Ordering::Relaxed);
                     }
-                }
-                Ok(crucible_core::processing::ProcessingResult::Skipped) |
-                Ok(crucible_core::processing::ProcessingResult::NoChanges) => {
-                    skipped_count += 1;
-                    if verbose {
-                        println!("   ⏭ Skipped (unchanged)");
+                    Ok(crucible_core::processing::ProcessingResult::Skipped) |
+                    Ok(crucible_core::processing::ProcessingResult::NoChanges) => {
+                        skipped.fetch_add(1, Ordering::Relaxed);
                     }
-                }
-                Err(e) => {
-                    error_count += 1;
-                    let error_msg = format!("{}", e);
-                    if verbose {
-                        println!("   ⚠ Error: {}", error_msg);
+                    Err(e) => {
+                        errors.fetch_add(1, Ordering::Relaxed);
+                        eprintln!("Error processing {}: {:?}", file.display(), e);
+                        warn!("Failed to process {}: {}", file.display(), e);
                     }
-                    eprintln!("Error processing {}: {:?}", file.display(), e);
-                    warn!("Failed to process {}: {}", file.display(), e);
                 }
             }
-        }
 
-        pb.inc(1);
+            pb.inc(1);
+            pb.set_message(format!("Processing: {}", file_name));
+        });
+        handles.push(handle);
+    }
+
+    // Wait for all tasks to complete
+    for handle in handles {
+        if let Err(e) = handle.await {
+            error_count.fetch_add(1, Ordering::Relaxed);
+            eprintln!("Task panic: {:?}", e);
+        }
     }
 
     pb.finish_with_message("Processing complete!");
+
+    // Extract final counts
+    let processed_count = processed_count.load(Ordering::Relaxed);
+    let skipped_count = skipped_count.load(Ordering::Relaxed);
+    let error_count = error_count.load(Ordering::Relaxed);
 
     // Print summary
     if dry_run {
