@@ -24,6 +24,18 @@ use std::collections::HashMap;
 /// This enables migration support for backward compatibility.
 const SECTION_FORMAT_VERSION: u32 = 1;
 
+/// Escape a string for use in SurrealDB single-quoted string literals.
+///
+/// SurrealDB treats backslash as an escape character in single-quoted strings.
+/// Valid escape sequences are: `\\`, `\'`, `/`, `\b`, `\f`, `\n`, `\r`, `\t`, `\u`.
+/// Any other backslash sequence (like `\ `) causes a parse error.
+///
+/// This function escapes backslashes and single quotes to make arbitrary strings
+/// safe for embedding in SurrealQL queries.
+fn escape_surql_string(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
 /// Versioned wrapper for SectionNode binary serialization
 ///
 /// This enables detecting format changes and migrating old data.
@@ -174,7 +186,7 @@ impl MerklePersistence {
             is_virtualized: {},
             created_at: '{}',
             updated_at: '{}'",
-            tree_record.id,
+            escape_surql_string(&tree_record.id),
             tree_record.root_hash,
             tree_record.section_count,
             tree_record.total_blocks,
@@ -1209,6 +1221,49 @@ mod tests {
         assert_ne!(
             retrieved1.root_hash, retrieved2.root_hash,
             "BUG: Paths with spaces and underscores collide! Both resolve to same tree"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_store_tree_with_backslash_in_path() {
+        // Bug reproduction: File paths with literal backslash-space sequences
+        // (like "YouTube\ Transcript\ Tool.md") cause SurrealDB parse errors
+        // because backslash is an escape character in single-quoted strings.
+        //
+        // Error: "Invalid escape character ` `, valid characters are `\`, `'`, `/`, `b`, `f`, `n`, `r`, `t`, or `u`"
+
+        // Given: A file path with literal backslash characters (not shell escaping)
+        let tree_id = r"Projects/Rune MCP/YouTube\ Transcript\ Tool\ -\ Implementation.md";
+        let client = create_test_client().await;
+        let persistence = MerklePersistence::new(client);
+        let doc = create_test_note("# YouTube Transcript Tool\n\nResearch notes.");
+        let tree = HybridMerkleTree::from_document(&doc);
+
+        // When: We store the tree
+        let result = persistence.store_tree(tree_id, &tree).await;
+
+        // Then: It should succeed (currently fails with parse error)
+        assert!(
+            result.is_ok(),
+            "Should handle paths with backslash characters, got: {:?}",
+            result.err()
+        );
+
+        // And: We should be able to retrieve it
+        let retrieved = persistence.retrieve_tree(tree_id).await;
+        assert!(
+            retrieved.is_ok(),
+            "Should retrieve tree with backslash in path"
+        );
+        assert_eq!(tree.root_hash, retrieved.unwrap().root_hash);
+
+        // And: The metadata should preserve the original path
+        let metadata = persistence.get_tree_metadata(tree_id).await.unwrap();
+        assert!(metadata.is_some(), "Metadata should exist");
+        assert_eq!(
+            metadata.unwrap().id,
+            tree_id,
+            "Path should be preserved exactly"
         );
     }
 }

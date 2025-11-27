@@ -158,8 +158,26 @@ impl EAVGraphStore {
             .as_ref()
             .ok_or_else(|| anyhow!("entity id must be provided"))?;
 
-        let content = json!({
-            "type": entity.entity_type.as_str(),
+        // Use SET syntax with <datetime> casting for proper datetime handling
+        let set_clause = r#"
+            type = $entity_type,
+            created_at = <datetime> $created_at,
+            updated_at = <datetime> $updated_at,
+            deleted_at = $deleted_at,
+            version = $version,
+            content_hash = $content_hash,
+            created_by = $created_by,
+            vault_id = $vault_id,
+            data = $data,
+            search_text = $search_text
+        "#;
+
+        let params = json!({
+            "table": id.table,
+            "id": id.id,
+            "entity_type": entity.entity_type.as_str(),
+            "created_at": entity.created_at.to_rfc3339(),
+            "updated_at": entity.updated_at.to_rfc3339(),
             "deleted_at": entity.deleted_at,
             "version": entity.version,
             "content_hash": entity.content_hash,
@@ -169,13 +187,7 @@ impl EAVGraphStore {
             "search_text": entity.search_text,
         });
 
-        let params = json!({
-            "table": id.table,
-            "id": id.id,
-            "content": content,
-        });
-
-        self.upsert_with_content(&params, true).await?;
+        self.upsert_with_set(set_clause, &params, true, false).await?;
 
         Ok(id.clone())
     }

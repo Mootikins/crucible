@@ -1661,6 +1661,7 @@ dependencies = [
  "nucleo",
  "nucleo-matcher",
  "nucleo-picker",
+ "num_cpus",
  "predicates",
  "rand 0.8.5",
  "ratatui",
