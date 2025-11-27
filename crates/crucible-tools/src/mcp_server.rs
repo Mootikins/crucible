@@ -71,6 +71,26 @@ impl CrucibleMcpServer {
             tool_router: Self::tool_router(),
         }
     }
+
+    /// List all available tools with their metadata
+    ///
+    /// This is useful for testing and debugging to verify tool exposure.
+    ///
+    /// # Returns
+    ///
+    /// A vector of tool definitions including name, description, and input schema
+    pub fn list_tools(&self) -> Vec<rmcp::model::Tool> {
+        self.tool_router.list_all()
+    }
+
+    /// Get the number of tools exposed by this server
+    ///
+    /// # Returns
+    ///
+    /// The count of available tools (expected: 12)
+    pub fn tool_count(&self) -> usize {
+        self.tool_router.list_all().len()
+    }
 }
 
 // ===== MCP Server Implementation =====

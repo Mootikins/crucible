@@ -13,6 +13,8 @@ use crate::acp::{discover_agent, ContextEnricher, CrucibleAcpClient};
 use crate::config::CliConfig;
 use crate::core_facade::CrucibleCoreFacade;
 use crate::factories;
+use crucible_core::enrichment::EmbeddingProvider;
+use crucible_llm::embeddings::CoreProviderAdapter;
 use crucible_pipeline::NotePipeline;
 use crucible_watch::{EventFilter, FileEvent, FileEventKind, WatchMode};
 use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
@@ -167,13 +169,25 @@ pub async fn execute(
     let agent = discover_agent(preferred_agent.as_deref()).await?;
     output::success(&format!("Using agent: {} ({})", agent.name, agent.command));
 
-    // Create ACP client with kiln path for tool initialization
+    // Create embedding provider for in-process MCP
+    output::info("Initializing embedding provider...");
+    let embedding_config = core.config().embedding.to_provider_config();
+    let llm_provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
+    let embedding_provider = Arc::new(CoreProviderAdapter::new(llm_provider)) as Arc<dyn EmbeddingProvider>;
+
+    // Get knowledge repository from storage
+    let knowledge_repo = core.storage().as_knowledge_repository();
+
+    // Create ACP client with kiln path and MCP dependencies for in-process tool execution
     let kiln_path = core.config().kiln_path.clone();
     let mut client = CrucibleAcpClient::new(agent, initial_mode.is_read_only())
-        .with_kiln_path(kiln_path);
+        .with_kiln_path(kiln_path)
+        .with_mcp_dependencies(knowledge_repo, embedding_provider);
 
-    // Spawn agent (tools will be initialized automatically)
+    // Spawn agent (tools will be initialized via in-process SSE MCP server)
+    output::info("Starting in-process MCP server and connecting to agent...");
     client.spawn().await?;
+    output::success("Agent connected with in-process MCP tools");
 
     // Handle query
     if let Some(query_text) = query {

@@ -18,6 +18,12 @@ crucible-core = { path = "../crucible-core" }
 # Crucible tools for execution
 crucible-tools = { path = "../crucible-tools" }
 
+# MCP server transport
+rmcp = { version = "0.9.0", features = ["macros", "server", "transport-sse-server"] }
+
+# HTTP server for SSE (required for in-process MCP hosting)
+axum = "0.8"
+
 # Agent Client Protocol
 agent-client-protocol = "0.7.0"
 
@@ -50,6 +56,7 @@ tokio-test = { workspace = true }
 tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { version = "1.11", features = ["v4"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
 # Test binaries for integration testing
 [[test]]

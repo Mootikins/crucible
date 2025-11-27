@@ -102,12 +102,12 @@ api_url = "https://file-url.com"
 }
 
 // ============================================================================
-// Configuration Builder Tests
+// Configuration Default Tests
 // ============================================================================
 
 #[test]
-fn test_config_builder_minimal() {
-    let config = CliConfig::builder().build().unwrap();
+fn test_config_default_minimal() {
+    let config = CliConfig::default();
 
     // Should have defaults
     assert_eq!(config.chat_model(), "llama3.2");
@@ -117,14 +117,12 @@ fn test_config_builder_minimal() {
 }
 
 #[test]
-fn test_config_builder_full() {
+fn test_config_with_custom_kiln_path() {
     let temp = TempDir::new().unwrap();
     let kiln_path = temp.path().join("kiln");
 
-    let config = CliConfig::builder()
-        .kiln_path(&kiln_path)
-        .build()
-        .unwrap();
+    let mut config = CliConfig::default();
+    config.kiln_path = kiln_path.clone();
 
     assert_eq!(config.kiln_path, kiln_path);
     assert_eq!(config.embedding.provider, EmbeddingProviderType::FastEmbed);
@@ -145,9 +143,11 @@ fn test_database_path_unique_per_process() {
     let temp = TempDir::new().unwrap();
     let kiln_path = temp.path().join("kiln");
 
-    let config1 = CliConfig::builder().kiln_path(&kiln_path).build().unwrap();
+    let mut config1 = CliConfig::default();
+    config1.kiln_path = kiln_path.clone();
 
-    let config2 = CliConfig::builder().kiln_path(&kiln_path).build().unwrap();
+    let mut config2 = CliConfig::default();
+    config2.kiln_path = kiln_path.clone();
 
     // Database paths should be the same for the same process
     assert_eq!(config1.database_path(), config2.database_path());
@@ -167,10 +167,8 @@ fn test_database_path_derivation() {
     let temp = TempDir::new().unwrap();
     let kiln_path = temp.path().join("kiln");
 
-    let config = CliConfig::builder()
-        .kiln_path(&kiln_path)
-        .build()
-        .unwrap();
+    let mut config = CliConfig::default();
+    config.kiln_path = kiln_path.clone();
 
     // Database path should be derived from kiln path (no test mode = standard name)
     let expected_db_path = kiln_path.join(".crucible").join("kiln.db");
@@ -182,7 +180,8 @@ fn test_tools_path_derivation() {
     let temp = TempDir::new().unwrap();
     let kiln_path = temp.path().join("kiln");
 
-    let config = CliConfig::builder().kiln_path(&kiln_path).build().unwrap();
+    let mut config = CliConfig::default();
+    config.kiln_path = kiln_path.clone();
 
     let expected = kiln_path.join("tools");
     assert_eq!(config.tools_path(), expected);
@@ -194,10 +193,8 @@ fn test_tools_path_derivation() {
 
 #[test]
 fn test_display_as_toml() {
-    let config = CliConfig::builder()
-        .kiln_path("/tmp/test")
-        .build()
-        .unwrap();
+    let mut config = CliConfig::default();
+    config.kiln_path = "/tmp/test".into();
 
     let toml_str = config.display_as_toml().unwrap();
     assert!(toml_str.contains("kiln_path"));
@@ -207,10 +204,8 @@ fn test_display_as_toml() {
 
 #[test]
 fn test_display_as_json() {
-    let config = CliConfig::builder()
-        .kiln_path("/tmp/test")
-        .build()
-        .unwrap();
+    let mut config = CliConfig::default();
+    config.kiln_path = "/tmp/test".into();
 
     let json_str = config.display_as_json().unwrap();
     assert!(json_str.contains("\"kiln_path\""));
