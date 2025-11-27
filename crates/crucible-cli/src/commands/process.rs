@@ -165,7 +165,11 @@ pub async fn execute(
         watcher.set_event_sender(tx);
 
         // Configure watch with markdown file filter and debouncing
-        let filter = EventFilter::new().with_extension("md");
+        // Exclude .crucible directory (contains SurrealDB database files)
+        let crucible_dir = target_path.join(".crucible");
+        let filter = EventFilter::new()
+            .with_extension("md")
+            .exclude_dir(crucible_dir);
         let watch_config = WatchConfig {
             id: "process-watch".to_string(),
             recursive: true,
@@ -247,6 +251,8 @@ pub async fn execute(
 }
 
 /// Discover markdown files in a directory
+///
+/// Excludes common system directories: .crucible, .git, .obsidian, node_modules
 fn discover_markdown_files(path: &std::path::Path) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
 
@@ -258,6 +264,7 @@ fn discover_markdown_files(path: &std::path::Path) -> Result<Vec<PathBuf>> {
         for entry in WalkDir::new(path)
             .follow_links(false)
             .into_iter()
+            .filter_entry(|e| !is_excluded_dir(e.path()))
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
@@ -268,6 +275,20 @@ fn discover_markdown_files(path: &std::path::Path) -> Result<Vec<PathBuf>> {
     }
 
     Ok(files)
+}
+
+/// Check if a directory should be excluded from file discovery
+fn is_excluded_dir(path: &std::path::Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| {
+            name == ".crucible"
+                || name == ".git"
+                || name == ".obsidian"
+                || name == "node_modules"
+                || name == ".trash"
+        })
+        .unwrap_or(false)
 }
 
 /// Check if a path is a markdown file
