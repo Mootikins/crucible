@@ -3,12 +3,38 @@
 //! These tests verify that agents can discover and use Crucible tools
 //! when connected via the in-process SSE MCP server.
 
-use std::sync::Arc;
-use std::path::PathBuf;
 use crucible_acp::InProcessMcpHost;
-use crucible_core::traits::KnowledgeRepository;
 use crucible_core::enrichment::EmbeddingProvider;
+use crucible_core::traits::KnowledgeRepository;
+use std::path::PathBuf;
+use std::sync::Arc;
 use tempfile::TempDir;
+
+fn is_permission_denied(err: &crucible_acp::AcpError) -> bool {
+    matches!(
+        err,
+        crucible_acp::AcpError::Connection(message) if message.contains("Operation not permitted")
+    )
+}
+
+async fn start_mcp_host(
+    kiln_path: PathBuf,
+    knowledge_repo: Arc<dyn KnowledgeRepository>,
+    embedding_provider: Arc<dyn EmbeddingProvider>,
+) -> InProcessMcpHost {
+    match InProcessMcpHost::start(kiln_path, knowledge_repo, embedding_provider).await {
+        Ok(host) => host,
+        Err(err) => {
+            if is_permission_denied(&err) {
+                panic!(
+                    "In-process MCP SSE server requires binding to localhost (sandbox denied): {}",
+                    err
+                );
+            }
+            panic!("Should start MCP host: {:?}", err);
+        }
+    }
+}
 
 // Mock implementations for testing
 struct MockKnowledgeRepository;
@@ -16,15 +42,24 @@ struct MockEmbeddingProvider;
 
 #[async_trait::async_trait]
 impl KnowledgeRepository for MockKnowledgeRepository {
-    async fn get_note_by_name(&self, _name: &str) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
+    async fn get_note_by_name(
+        &self,
+        _name: &str,
+    ) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
         Ok(None)
     }
 
-    async fn list_notes(&self, _path: Option<&str>) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteMetadata>> {
+    async fn list_notes(
+        &self,
+        _path: Option<&str>,
+    ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteMetadata>> {
         Ok(vec![])
     }
 
-    async fn search_vectors(&self, _vector: Vec<f32>) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+    async fn search_vectors(
+        &self,
+        _vector: Vec<f32>,
+    ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
         Ok(vec![])
     }
 }
@@ -55,16 +90,20 @@ async fn test_in_process_mcp_host_provides_valid_sse_url() {
     let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
     let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
 
-    let host = InProcessMcpHost::start(
+    let host = start_mcp_host(
         temp.path().to_path_buf(),
         knowledge_repo,
         embedding_provider,
-    ).await.expect("Should start MCP host");
+    )
+    .await;
 
     let url = host.sse_url();
 
     // Verify URL format
-    assert!(url.starts_with("http://127.0.0.1:"), "URL should be localhost");
+    assert!(
+        url.starts_with("http://127.0.0.1:"),
+        "URL should be localhost"
+    );
     assert!(url.ends_with("/sse"), "URL should end with /sse path");
 
     // Verify port is non-zero (actually assigned)
@@ -82,17 +121,19 @@ async fn test_in_process_mcp_sse_endpoint_is_reachable() {
     let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
     let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
 
-    let host = InProcessMcpHost::start(
+    let host = start_mcp_host(
         temp.path().to_path_buf(),
         knowledge_repo,
         embedding_provider,
-    ).await.expect("Should start MCP host");
+    )
+    .await;
 
     let url = host.sse_url();
 
     // Try to connect to the SSE endpoint
     let client = reqwest::Client::new();
-    let response = client.get(&url)
+    let response = client
+        .get(&url)
         .header("Accept", "text/event-stream")
         .send()
         .await;
@@ -102,7 +143,10 @@ async fn test_in_process_mcp_sse_endpoint_is_reachable() {
 
     let resp = response.unwrap();
     // SSE connections return 200 OK with text/event-stream content type
-    assert!(resp.status().is_success(), "SSE endpoint should return success status");
+    assert!(
+        resp.status().is_success(),
+        "SSE endpoint should return success status"
+    );
 
     host.shutdown().await;
 }
@@ -116,11 +160,12 @@ async fn test_mcp_server_sse_variant_with_host_url() {
     let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
     let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
 
-    let host = InProcessMcpHost::start(
+    let host = start_mcp_host(
         temp.path().to_path_buf(),
         knowledge_repo,
         embedding_provider,
-    ).await.expect("Should start MCP host");
+    )
+    .await;
 
     let url = host.sse_url();
 
@@ -150,11 +195,12 @@ async fn test_new_session_request_with_sse_mcp() {
     let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
     let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
 
-    let host = InProcessMcpHost::start(
+    let host = start_mcp_host(
         temp.path().to_path_buf(),
         knowledge_repo,
         embedding_provider,
-    ).await.expect("Should start MCP host");
+    )
+    .await;
 
     let url = host.sse_url();
 
@@ -175,7 +221,11 @@ async fn test_new_session_request_with_sse_mcp() {
     assert_eq!(request.mcp_servers.len(), 1);
 
     match &request.mcp_servers[0] {
-        McpServer::Sse { name, url: server_url, headers } => {
+        McpServer::Sse {
+            name,
+            url: server_url,
+            headers,
+        } => {
             assert_eq!(name, "crucible");
             assert_eq!(server_url, &url);
             assert!(headers.is_empty());
@@ -198,17 +248,19 @@ async fn test_in_process_mcp_host_graceful_shutdown() {
     let knowledge_repo = Arc::new(MockKnowledgeRepository) as Arc<dyn KnowledgeRepository>;
     let embedding_provider = Arc::new(MockEmbeddingProvider) as Arc<dyn EmbeddingProvider>;
 
-    let host = InProcessMcpHost::start(
+    let host = start_mcp_host(
         temp.path().to_path_buf(),
         knowledge_repo,
         embedding_provider,
-    ).await.expect("Should start MCP host");
+    )
+    .await;
 
     let url = host.sse_url();
 
     // Verify endpoint works before shutdown
     let client = reqwest::Client::new();
-    let before = client.get(&url)
+    let before = client
+        .get(&url)
         .header("Accept", "text/event-stream")
         .send()
         .await;
@@ -221,12 +273,16 @@ async fn test_in_process_mcp_host_graceful_shutdown() {
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Endpoint should no longer be reachable
-    let after = client.get(&url)
+    let after = client
+        .get(&url)
         .header("Accept", "text/event-stream")
         .timeout(tokio::time::Duration::from_millis(500))
         .send()
         .await;
 
     // Connection should fail or timeout
-    assert!(after.is_err(), "Endpoint should not be reachable after shutdown");
+    assert!(
+        after.is_err(),
+        "Endpoint should not be reachable after shutdown"
+    );
 }
