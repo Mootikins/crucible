@@ -155,7 +155,8 @@ impl FrontmatterExtractor {
         let normalized = self.normalize_line_endings(content, stats.line_ending_style);
 
         // Extract frontmatter based on detected format
-        let (frontmatter_content, body, format) = self.extract_frontmatter_content(&normalized, &mut warnings)?;
+        let (frontmatter_content, body, format) =
+            self.extract_frontmatter_content(&normalized, &mut warnings)?;
 
         // Validate frontmatter size
         if let Some(fm_content) = &frontmatter_content {
@@ -164,11 +165,11 @@ impl FrontmatterExtractor {
                 FrontmatterFormat::Yaml => {
                     // Opening: "---\n" (4 bytes) + Closing: "\n---\n" (5 bytes) = 9 bytes
                     9
-                },
+                }
                 FrontmatterFormat::Toml => {
                     // Opening: "+++\n" (4 bytes) + Closing: "\n+++\n" (5 bytes) = 9 bytes
                     9
-                },
+                }
                 FrontmatterFormat::None => 0,
             };
             stats.frontmatter_size = fm_content.len() + delimiters_len;
@@ -214,8 +215,10 @@ impl FrontmatterExtractor {
         // Check for common frontmatter patterns at the start of content
         let trimmed = content.trim_start();
 
-        trimmed.starts_with("---") || trimmed.starts_with("+++") ||
-        trimmed.starts_with("---\r\n") || trimmed.starts_with("+++\r\n")
+        trimmed.starts_with("---")
+            || trimmed.starts_with("+++")
+            || trimmed.starts_with("---\r\n")
+            || trimmed.starts_with("+++\r\n")
     }
 
     /// Detect the line ending style used in the content
@@ -280,9 +283,9 @@ impl FrontmatterExtractor {
     ) -> ParserResult<Option<(String, &'a str)>> {
         // Check for YAML frontmatter with various patterns
         let patterns = [
-            "---\n",           // Standard Unix
-            "---\r\n",         // Windows (already normalized to \n)
-            "---\r",           // Old Mac (already normalized to \n)
+            "---\n",   // Standard Unix
+            "---\r\n", // Windows (already normalized to \n)
+            "---\r",   // Old Mac (already normalized to \n)
         ];
 
         for pattern in &patterns {
@@ -306,7 +309,10 @@ impl FrontmatterExtractor {
                 } else {
                     // Opening delimiter found but no closing delimiter
                     if self.config.report_errors {
-                        warnings.push("YAML frontmatter opening delimiter found but no closing delimiter".to_string());
+                        warnings.push(
+                            "YAML frontmatter opening delimiter found but no closing delimiter"
+                                .to_string(),
+                        );
                     }
                 }
             }
@@ -323,9 +329,9 @@ impl FrontmatterExtractor {
     ) -> ParserResult<Option<(String, &'a str)>> {
         // Check for TOML frontmatter with various patterns
         let patterns = [
-            "+++\n",           // Standard Unix
-            "+++\r\n",         // Windows (already normalized to \n)
-            "+++\r",           // Old Mac (already normalized to \n)
+            "+++\n",   // Standard Unix
+            "+++\r\n", // Windows (already normalized to \n)
+            "+++\r",   // Old Mac (already normalized to \n)
         ];
 
         for pattern in &patterns {
@@ -349,7 +355,10 @@ impl FrontmatterExtractor {
                 } else {
                     // Opening delimiter found but no closing delimiter
                     if self.config.report_errors {
-                        warnings.push("TOML frontmatter opening delimiter found but no closing delimiter".to_string());
+                        warnings.push(
+                            "TOML frontmatter opening delimiter found but no closing delimiter"
+                                .to_string(),
+                        );
                     }
                 }
             }
@@ -379,7 +388,10 @@ impl FrontmatterExtractor {
 
             // Check for invalid indentation (YAML uses spaces, not tabs)
             if line.starts_with('\t') {
-                warnings.push(format!("Line {}: Tab indentation detected (use spaces instead)", line_num + 1));
+                warnings.push(format!(
+                    "Line {}: Tab indentation detected (use spaces instead)",
+                    line_num + 1
+                ));
             }
 
             // Basic colon check for key-value pairs
@@ -499,7 +511,10 @@ mod tests {
 
         assert!(result.frontmatter.is_some());
         assert!(!result.warnings.is_empty());
-        assert!(result.warnings.iter().any(|w| w.to_lowercase().contains("empty")));
+        assert!(result
+            .warnings
+            .iter()
+            .any(|w| w.to_lowercase().contains("empty")));
     }
 
     #[test]

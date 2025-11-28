@@ -897,7 +897,11 @@ impl ListBlock {
     }
 
     /// Create a new list block with marker style
-    pub fn with_marker_style(list_type: ListType, marker_style: ListMarkerStyle, offset: usize) -> Self {
+    pub fn with_marker_style(
+        list_type: ListType,
+        marker_style: ListMarkerStyle,
+        offset: usize,
+    ) -> Self {
         Self {
             list_type,
             items: Vec::new(),
@@ -933,7 +937,8 @@ impl ListBlock {
 
     /// Get items at a specific nesting level
     pub fn items_at_level(&self, level: usize) -> Vec<&ListItem> {
-        self.items.iter()
+        self.items
+            .iter()
             .filter(|item| item.level == level)
             .collect()
     }
@@ -947,7 +952,8 @@ impl ListBlock {
         let parent_level = self.items[parent_index].level;
         let next_level = parent_level + 1;
 
-        self.items.iter()
+        self.items
+            .iter()
             .skip(parent_index + 1)
             .take_while(|item| item.level >= next_level)
             .filter(|item| item.level == next_level)
@@ -956,11 +962,13 @@ impl ListBlock {
 
     /// Get statistics about the list structure
     pub fn stats(&self) -> ListStats {
-        let level_counts = self.items.iter()
-            .fold(std::collections::HashMap::new(), |mut counts, item| {
-                *counts.entry(item.level).or_insert(0) += 1;
-                counts
-            });
+        let level_counts =
+            self.items
+                .iter()
+                .fold(std::collections::HashMap::new(), |mut counts, item| {
+                    *counts.entry(item.level).or_insert(0) += 1;
+                    counts
+                });
 
         ListStats {
             total_items: self.item_count,
@@ -996,12 +1004,12 @@ impl ListType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum ListMarkerStyle {
     /// Unordered markers
-    Dash,       // -
-    Asterisk,   // *
-    Plus,       // +
+    Dash, // -
+    Asterisk, // *
+    Plus,     // +
 
     /// Ordered markers (Arabic numerals only - standard markdown)
-    Arabic,     // 1., 2., 3.
+    Arabic, // 1., 2., 3.
 }
 
 impl ListMarkerStyle {
@@ -1180,7 +1188,10 @@ impl ListItem {
         if self.task_status.is_some() {
             // Remove task checkbox patterns like "[x] " or "[ ] "
             let content = self.content.trim();
-            if let Some(remaining) = content.strip_prefix("[x] ").or_else(|| content.strip_prefix("[ ] ")) {
+            if let Some(remaining) = content
+                .strip_prefix("[x] ")
+                .or_else(|| content.strip_prefix("[ ] "))
+            {
                 remaining.trim().to_string()
             } else {
                 content.to_string()
@@ -1234,7 +1245,13 @@ pub struct Table {
 
 impl Table {
     /// Create a new table
-    pub fn new(raw_content: String, headers: Vec<String>, columns: usize, rows: usize, offset: usize) -> Self {
+    pub fn new(
+        raw_content: String,
+        headers: Vec<String>,
+        columns: usize,
+        rows: usize,
+        offset: usize,
+    ) -> Self {
         Self {
             raw_content,
             headers,

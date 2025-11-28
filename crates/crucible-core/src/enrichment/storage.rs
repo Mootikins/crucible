@@ -48,11 +48,7 @@ pub trait EnrichedNoteStore: Send + Sync {
     ///
     /// The implementation should handle partial failures gracefully where possible
     /// and ensure transactional consistency.
-    async fn store_enriched(
-        &self,
-        enriched: &EnrichedNote,
-        relative_path: &str,
-    ) -> Result<()>;
+    async fn store_enriched(&self, enriched: &EnrichedNote, relative_path: &str) -> Result<()>;
 
     /// Check if a note exists in storage
     ///

@@ -2,9 +2,9 @@ use anyhow::Result;
 use blake3::Hasher;
 use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use crucible_core::content_category::ContentCategory;
-use crucible_merkle::{HybridMerkleTree, MerkleStore};
 use crucible_core::parser::ParsedNote;
 use crucible_core::storage::{Relation as CoreRelation, RelationStorage};
+use crucible_merkle::{HybridMerkleTree, MerkleStore};
 use serde_json::{Map, Value};
 use std::fs;
 
@@ -113,7 +113,10 @@ fn extract_timestamps(doc: &ParsedNote) -> (DateTime<Utc>, DateTime<Utc>) {
     }
 
     // Helper to parse RFC 3339 datetime from frontmatter string
-    fn parse_datetime_str(fm: &crucible_core::parser::Frontmatter, key: &str) -> Option<DateTime<Utc>> {
+    fn parse_datetime_str(
+        fm: &crucible_core::parser::Frontmatter,
+        key: &str,
+    ) -> Option<DateTime<Utc>> {
         let value = fm.properties().get(key)?;
         let datetime_str = value.as_str()?;
         DateTime::parse_from_rfc3339(datetime_str)
@@ -122,7 +125,10 @@ fn extract_timestamps(doc: &ParsedNote) -> (DateTime<Utc>, DateTime<Utc>) {
     }
 
     // Helper to get datetime from frontmatter - tries datetime string first, then date
-    fn get_timestamp(fm: &crucible_core::parser::Frontmatter, keys: &[&str]) -> Option<DateTime<Utc>> {
+    fn get_timestamp(
+        fm: &crucible_core::parser::Frontmatter,
+        keys: &[&str],
+    ) -> Option<DateTime<Utc>> {
         for key in keys {
             // Try RFC 3339 datetime first
             if let Some(dt) = parse_datetime_str(fm, key) {
@@ -143,13 +149,17 @@ fn extract_timestamps(doc: &ParsedNote) -> (DateTime<Utc>, DateTime<Utc>) {
         .map(DateTime::<Utc>::from);
 
     // Extract created timestamp with priority: created > date-created > created_at > fs_mtime > now
-    let created_at = doc.frontmatter.as_ref()
+    let created_at = doc
+        .frontmatter
+        .as_ref()
         .and_then(|fm| get_timestamp(fm, &["created", "date-created", "created_at"]))
         .or(fs_mtime)
         .unwrap_or(now);
 
     // Extract updated timestamp with priority: modified > updated > date-modified > updated_at > fs_mtime > now
-    let updated_at = doc.frontmatter.as_ref()
+    let updated_at = doc
+        .frontmatter
+        .as_ref()
         .and_then(|fm| get_timestamp(fm, &["modified", "updated", "date-modified", "updated_at"]))
         .or(fs_mtime)
         .unwrap_or(now);
@@ -243,7 +253,6 @@ impl<'a> NoteIngestor<'a> {
         }
     }
 
-    
     pub async fn ingest(
         &self,
         doc: &ParsedNote,
@@ -1103,8 +1112,6 @@ impl<'a> NoteIngestor<'a> {
 
         // Persist the tree if storage is enabled
         if let Some(ref merkle_store) = self.merkle_store {
-
-
             // Try to get the old tree for incremental updates
             if let Ok(Some(old_metadata)) = merkle_store.get_metadata(relative_path).await {
                 // If root hash changed, do incremental update
@@ -2828,7 +2835,8 @@ impl<'a> crucible_core::EnrichedNoteStore for NoteIngestor<'a> {
         };
 
         // Delegate to existing ingest_enriched implementation
-        self.ingest_enriched(&enriched_with_tree, relative_path).await?;
+        self.ingest_enriched(&enriched_with_tree, relative_path)
+            .await?;
         Ok(())
     }
 
@@ -6951,7 +6959,10 @@ mod tests {
             let doc = doc_with_frontmatter("created: 2024-11-08");
             let (created_at, _updated_at) = extract_timestamps(&doc);
 
-            assert_eq!(created_at.date_naive(), NaiveDate::from_ymd_opt(2024, 11, 8).unwrap());
+            assert_eq!(
+                created_at.date_naive(),
+                NaiveDate::from_ymd_opt(2024, 11, 8).unwrap()
+            );
         }
 
         #[test]
@@ -6959,7 +6970,10 @@ mod tests {
             let doc = doc_with_frontmatter("modified: 2024-11-15");
             let (_created_at, updated_at) = extract_timestamps(&doc);
 
-            assert_eq!(updated_at.date_naive(), NaiveDate::from_ymd_opt(2024, 11, 15).unwrap());
+            assert_eq!(
+                updated_at.date_naive(),
+                NaiveDate::from_ymd_opt(2024, 11, 15).unwrap()
+            );
         }
 
         #[test]
@@ -6968,7 +6982,10 @@ mod tests {
             let doc = doc_with_frontmatter("updated: 2024-12-01");
             let (_created_at, updated_at) = extract_timestamps(&doc);
 
-            assert_eq!(updated_at.date_naive(), NaiveDate::from_ymd_opt(2024, 12, 1).unwrap());
+            assert_eq!(
+                updated_at.date_naive(),
+                NaiveDate::from_ymd_opt(2024, 12, 1).unwrap()
+            );
         }
 
         #[test]
@@ -6977,7 +6994,10 @@ mod tests {
             let doc = doc_with_frontmatter("modified: 2024-11-10\nupdated: 2024-11-20");
             let (_created_at, updated_at) = extract_timestamps(&doc);
 
-            assert_eq!(updated_at.date_naive(), NaiveDate::from_ymd_opt(2024, 11, 10).unwrap());
+            assert_eq!(
+                updated_at.date_naive(),
+                NaiveDate::from_ymd_opt(2024, 11, 10).unwrap()
+            );
         }
 
         #[test]
@@ -6985,7 +7005,10 @@ mod tests {
             let doc = doc_with_frontmatter("created_at: \"2024-11-08T10:30:00Z\"");
             let (created_at, _updated_at) = extract_timestamps(&doc);
 
-            assert_eq!(created_at.date_naive(), NaiveDate::from_ymd_opt(2024, 11, 8).unwrap());
+            assert_eq!(
+                created_at.date_naive(),
+                NaiveDate::from_ymd_opt(2024, 11, 8).unwrap()
+            );
             assert_eq!(created_at.time().hour(), 10);
             assert_eq!(created_at.time().minute(), 30);
         }
@@ -6993,10 +7016,14 @@ mod tests {
         #[test]
         fn test_extract_timestamps_priority_created_over_created_at() {
             // 'created' should take priority over 'created_at'
-            let doc = doc_with_frontmatter("created: 2024-11-05\ncreated_at: \"2024-11-10T00:00:00Z\"");
+            let doc =
+                doc_with_frontmatter("created: 2024-11-05\ncreated_at: \"2024-11-10T00:00:00Z\"");
             let (created_at, _updated_at) = extract_timestamps(&doc);
 
-            assert_eq!(created_at.date_naive(), NaiveDate::from_ymd_opt(2024, 11, 5).unwrap());
+            assert_eq!(
+                created_at.date_naive(),
+                NaiveDate::from_ymd_opt(2024, 11, 5).unwrap()
+            );
         }
 
         #[test]
@@ -7016,8 +7043,14 @@ mod tests {
             let doc = doc_with_frontmatter("created: 2024-01-01\nmodified: 2024-06-15");
             let (created_at, updated_at) = extract_timestamps(&doc);
 
-            assert_eq!(created_at.date_naive(), NaiveDate::from_ymd_opt(2024, 1, 1).unwrap());
-            assert_eq!(updated_at.date_naive(), NaiveDate::from_ymd_opt(2024, 6, 15).unwrap());
+            assert_eq!(
+                created_at.date_naive(),
+                NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()
+            );
+            assert_eq!(
+                updated_at.date_naive(),
+                NaiveDate::from_ymd_opt(2024, 6, 15).unwrap()
+            );
         }
 
         /// This test reproduces the original bug where ingesting a note without
@@ -7039,7 +7072,11 @@ mod tests {
 
             // This should NOT fail - it should use filesystem fallback or current time
             let result = ingestor.ingest(&doc, "no-timestamps.md").await;
-            assert!(result.is_ok(), "Ingesting note without frontmatter timestamps should succeed: {:?}", result.err());
+            assert!(
+                result.is_ok(),
+                "Ingesting note without frontmatter timestamps should succeed: {:?}",
+                result.err()
+            );
         }
 
         /// Test that notes with frontmatter timestamps are properly stored
@@ -7063,7 +7100,11 @@ mod tests {
 
             // This should succeed with proper timestamp extraction
             let result = ingestor.ingest(&doc, "with-timestamps.md").await;
-            assert!(result.is_ok(), "Ingesting note with frontmatter timestamps should succeed: {:?}", result.err());
+            assert!(
+                result.is_ok(),
+                "Ingesting note with frontmatter timestamps should succeed: {:?}",
+                result.err()
+            );
         }
 
         #[tokio::test]
@@ -7086,7 +7127,8 @@ mod tests {
             doc.path = PathBuf::from("/tmp/test-vault/ascii-art.md");
             doc.content_hash = "hash_nullbyte".into();
             // Content with embedded null bytes - common in copy-pasted ASCII art
-            doc.content.plain_text = "# Architecture\n\n```\n┌──────┐\x00\x00\x00│ Box  │\n└──────┘\n```\n".into();
+            doc.content.plain_text =
+                "# Architecture\n\n```\n┌──────┐\x00\x00\x00│ Box  │\n└──────┘\n```\n".into();
 
             // When: We ingest the note
             let result = ingestor.ingest(&doc, "ascii-art.md").await;

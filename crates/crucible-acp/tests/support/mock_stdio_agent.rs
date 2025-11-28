@@ -4,15 +4,14 @@
 //! allowing integration tests to simulate real agent behavior without
 //! requiring actual agent binaries.
 
-use std::io::{self, BufRead, Write};
-use std::collections::HashMap;
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::io::{self, BufRead, Write};
 
 // Import ACP protocol types for proper response construction
 use agent_client_protocol::{
-    InitializeResponse, NewSessionResponse, PromptResponse,
-    ProtocolVersion, AgentCapabilities, AuthMethod, AuthMethodId, Implementation,
-    SessionId, StopReason,
+    AgentCapabilities, AuthMethod, AuthMethodId, Implementation, InitializeResponse,
+    NewSessionResponse, PromptResponse, ProtocolVersion, SessionId, StopReason,
 };
 
 /// Defines the behavior profile of a mock agent
@@ -190,7 +189,8 @@ impl MockStdioAgent {
     /// Handle a JSON-RPC request and generate appropriate response
     pub fn handle_request(&mut self, request: &Value) -> Value {
         // Extract method from request
-        let method = request.get("method")
+        let method = request
+            .get("method")
             .and_then(|m| m.as_str())
             .unwrap_or("unknown");
 

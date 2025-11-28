@@ -71,9 +71,11 @@ async fn test_concurrent_services_with_different_builders() {
 
             let mut results = Vec::new();
             for doc_id in 0..2 {
-                let note =
-                    ParsedNoteBuilder::new(PathBuf::from(format!("svc{}_doc{}.md", service_id, doc_id)))
-                        .build();
+                let note = ParsedNoteBuilder::new(PathBuf::from(format!(
+                    "svc{}_doc{}.md",
+                    service_id, doc_id
+                )))
+                .build();
                 let tree = service.process(note).await;
                 results.push(tree);
             }
@@ -136,9 +138,7 @@ async fn test_deterministic_trees_concurrent() {
     for _ in 0..50 {
         let builder = Arc::clone(&builder);
         let note = Arc::clone(&note);
-        tasks.spawn(async move {
-            builder.from_document(&note)
-        });
+        tasks.spawn(async move { builder.from_document(&note) });
     }
 
     // Collect all trees
@@ -166,9 +166,9 @@ async fn test_concurrent_varying_document_sizes() {
 
     // Small, medium, and large documents processed concurrently
     let doc_sizes = vec![
-        ("small", 1),     // 1 section
-        ("medium", 10),   // 10 sections
-        ("large", 100),   // 100 sections
+        ("small", 1),   // 1 section
+        ("medium", 10), // 10 sections
+        ("large", 100), // 100 sections
     ];
 
     for (name, _section_count) in doc_sizes {
@@ -221,8 +221,9 @@ async fn test_enrichment_pipeline_concurrent_pattern() {
             let builder = Arc::clone(&builder);
             tasks.spawn(async move {
                 let note_id = batch * 10 + i;
-                let note = ParsedNoteBuilder::new(PathBuf::from(format!("batch{}_note{}.md", batch, i)))
-                    .build();
+                let note =
+                    ParsedNoteBuilder::new(PathBuf::from(format!("batch{}_note{}.md", batch, i)))
+                        .build();
 
                 // Simulate async enrichment work
                 tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;

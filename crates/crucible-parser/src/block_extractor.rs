@@ -119,7 +119,8 @@ impl HeadingTree {
     /// then adds the new heading to the path
     fn update_path(&mut self, level: u8, block_index: usize) {
         // Remove headings at same or deeper level (higher or equal level numbers)
-        self.current_path.retain(|(path_level, _)| *path_level < level);
+        self.current_path
+            .retain(|(path_level, _)| *path_level < level);
         // Add new heading to path
         self.current_path.push((level, block_index));
     }
@@ -261,12 +262,8 @@ impl BlockExtractor {
                 ExtractionType::Latex => self.extract_latex_block(note, &position)?,
                 ExtractionType::Blockquote => self.extract_blockquote_block(note, &position)?,
                 ExtractionType::Table => self.extract_table_block(note, &position)?,
-                ExtractionType::HorizontalRule => {
-                    self.extract_horizontal_rule(note, &position)?
-                }
-                ExtractionType::ThematicBreak => {
-                    self.extract_thematic_break(note, &position)?
-                }
+                ExtractionType::HorizontalRule => self.extract_horizontal_rule(note, &position)?,
+                ExtractionType::ThematicBreak => self.extract_thematic_break(note, &position)?,
             };
 
             if let Some(mut block) = block {
@@ -380,10 +377,7 @@ impl BlockExtractor {
         }
         for (index, latex) in note.latex_expressions.iter().enumerate() {
             if !note.content.latex_expressions.contains(latex) {
-                map.add_latex(
-                    latex.clone(),
-                    index + note.content.latex_expressions.len(),
-                );
+                map.add_latex(latex.clone(), index + note.content.latex_expressions.len());
             }
         }
 
@@ -652,11 +646,7 @@ impl BlockExtractor {
 
         let table = &note.content.tables[position.index];
 
-        let metadata = ASTBlockMetadata::table(
-            table.rows,
-            table.columns,
-            table.headers.clone(),
-        );
+        let metadata = ASTBlockMetadata::table(table.rows, table.columns, table.headers.clone());
 
         let block = ASTBlock::new(
             ASTBlockType::Table,
@@ -869,7 +859,8 @@ impl ContentMap {
     }
 
     fn add_horizontal_rule(&mut self, hr: HorizontalRule, index: usize) {
-        self.horizontal_rules.push(IndexedHorizontalRule { hr, index });
+        self.horizontal_rules
+            .push(IndexedHorizontalRule { hr, index });
     }
 }
 
@@ -1122,9 +1113,7 @@ mod tests {
         let extractor = BlockExtractor::new();
         let note = create_test_document();
 
-        let paragraphs = extractor
-            .extract_gap_paragraphs(&note, 1000, 1000)
-            .unwrap();
+        let paragraphs = extractor.extract_gap_paragraphs(&note, 1000, 1000).unwrap();
         assert!(paragraphs.is_none());
     }
 

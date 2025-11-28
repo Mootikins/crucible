@@ -14,11 +14,11 @@
 //! - **Single Responsibility**: Focused on test support
 //! - **Test Isolation**: Enables testing without external dependencies
 
-use std::collections::HashMap;
 use serde_json::Value;
+use std::collections::HashMap;
 
-use agent_client_protocol::ClientRequest;
 use crate::{AcpError, Result};
+use agent_client_protocol::ClientRequest;
 
 /// Configuration for the mock agent
 #[derive(Debug, Clone)]
@@ -120,7 +120,8 @@ impl MockAgent {
 
     /// Reset the request counter
     pub fn reset_count(&self) {
-        self.request_count.store(0, std::sync::atomic::Ordering::SeqCst);
+        self.request_count
+            .store(0, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -133,7 +134,9 @@ impl Default for MockAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_client_protocol::{ClientRequest, InitializeRequest, NewSessionRequest, ProtocolVersion, ClientCapabilities};
+    use agent_client_protocol::{
+        ClientCapabilities, ClientRequest, InitializeRequest, NewSessionRequest, ProtocolVersion,
+    };
     use std::path::PathBuf;
 
     #[test]
@@ -161,7 +164,9 @@ mod tests {
         let agent = MockAgent::default();
         assert_eq!(agent.request_count(), 0);
 
-        agent.request_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        agent
+            .request_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         assert_eq!(agent.request_count(), 1);
 
         agent.reset_count();
@@ -182,7 +187,10 @@ mod tests {
 
         // This should succeed and not error
         let result = agent.handle_request(request).await;
-        assert!(result.is_ok(), "Mock agent should respond to initialize request");
+        assert!(
+            result.is_ok(),
+            "Mock agent should respond to initialize request"
+        );
         assert_eq!(agent.request_count(), 1);
     }
 
@@ -199,7 +207,10 @@ mod tests {
 
         // Should handle session creation
         let result = agent.handle_request(request).await;
-        assert!(result.is_ok(), "Mock agent should handle new session request");
+        assert!(
+            result.is_ok(),
+            "Mock agent should handle new session request"
+        );
         assert_eq!(agent.request_count(), 1);
     }
 

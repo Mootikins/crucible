@@ -127,10 +127,7 @@ mod tests {
     #[test]
     fn test_provider_defaults() {
         let ollama = ProviderType::Ollama;
-        assert_eq!(
-            ollama.default_endpoint(),
-            "http://localhost:11434"
-        );
+        assert_eq!(ollama.default_endpoint(), "http://localhost:11434");
         assert_eq!(ollama.default_model(), "nomic-embed-text");
         assert_eq!(ollama.default_dimensions(), 768);
         assert!(!ollama.requires_api_key());

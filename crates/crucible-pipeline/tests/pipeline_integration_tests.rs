@@ -6,7 +6,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use crucible_core::enrichment::{EnrichedNote, EnrichmentService};
-use crucible_core::processing::{ChangeDetectionError, ChangeDetectionResult, ChangeDetectionStore, FileState, ProcessingResult};
+use crucible_core::processing::{
+    ChangeDetectionError, ChangeDetectionResult, ChangeDetectionStore, FileState, ProcessingResult,
+};
 use crucible_core::test_support::mocks::MockEnrichmentService;
 use crucible_core::EnrichedNoteStore;
 use crucible_merkle::{HybridMerkleTree, MerkleStore, StorageError, TreeMetadata};
@@ -75,7 +77,11 @@ impl ChangeDetectionStore for MockChangeDetectionStore {
         Ok(state.file_states.get(&path_str).cloned())
     }
 
-    async fn store_file_state(&self, path: &Path, file_state: FileState) -> ChangeDetectionResult<()> {
+    async fn store_file_state(
+        &self,
+        path: &Path,
+        file_state: FileState,
+    ) -> ChangeDetectionResult<()> {
         let mut state = self.state.lock().unwrap();
 
         if state.simulate_errors {
@@ -106,9 +112,7 @@ impl ChangeDetectionStore for MockChangeDetectionStore {
             return Err(ChangeDetectionError::Storage(state.error_message.clone()));
         }
 
-        Ok(state.file_states.keys()
-            .map(|s| PathBuf::from(s))
-            .collect())
+        Ok(state.file_states.keys().map(|s| PathBuf::from(s)).collect())
     }
 }
 
@@ -508,7 +512,10 @@ async fn test_pipeline_force_reprocess() {
                 "Storage should be called again with force_reprocess"
             );
         }
-        _ => panic!("Expected Success result with force_reprocess, got {:?}", result2),
+        _ => panic!(
+            "Expected Success result with force_reprocess, got {:?}",
+            result2
+        ),
     }
 }
 
@@ -753,7 +760,10 @@ async fn test_pipeline_no_changes_after_merkle_diff() {
             // This is also acceptable if implementation chooses to treat
             // force_reprocess as always enriching
             // Just verify the logic is consistent
-            println!("Note: Got Success instead of NoChanges with {} changed blocks", changed_blocks);
+            println!(
+                "Note: Got Success instead of NoChanges with {} changed blocks",
+                changed_blocks
+            );
         }
         _ => panic!("Unexpected result: {:?}", result2),
     }

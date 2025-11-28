@@ -41,10 +41,7 @@ impl ContextEnricher {
         debug!("Enriching query with {} context results", self.context_size);
 
         // Perform semantic search
-        let results = self
-            .core
-            .semantic_search(query, self.context_size)
-            .await?;
+        let results = self.core.semantic_search(query, self.context_size).await?;
 
         if results.is_empty() {
             info!("No context found for query");

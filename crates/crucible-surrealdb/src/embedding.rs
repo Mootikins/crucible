@@ -11,21 +11,16 @@
 //! - crucible-enrichment: Business logic (generation, orchestration)
 //! - Clear separation of concerns
 
-use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
+use std::sync::Arc;
 
 use crate::SurrealClient;
 
 // Re-export storage functions from kiln_integration
 pub use crate::kiln_integration::{
-    clear_document_embeddings,
-    get_database_stats,
-    get_document_embeddings,
-    get_embedding_by_content_hash,
-    semantic_search,
-    store_document_embedding,
-    CachedEmbedding,
+    clear_document_embeddings, get_database_stats, get_document_embeddings,
+    get_embedding_by_content_hash, semantic_search, store_document_embedding, CachedEmbedding,
 };
 
 /// SurrealDB implementation of the EmbeddingCache trait
@@ -58,14 +53,17 @@ impl crucible_core::enrichment::EmbeddingCache for SurrealEmbeddingCache {
             content_hash,
             model,
             model_version.unwrap_or(""),
-        ).await?;
+        )
+        .await?;
 
         // Convert from our internal CachedEmbedding to the core type
-        Ok(result.map(|cached| crucible_core::enrichment::CachedEmbedding {
-            vector: cached.vector,
-            content_hash: cached.content_hash,
-            model: cached.model,
-            model_version: Some(cached.model_version),
-        }))
+        Ok(
+            result.map(|cached| crucible_core::enrichment::CachedEmbedding {
+                vector: cached.vector,
+                content_hash: cached.content_hash,
+                model: cached.model,
+                model_version: Some(cached.model_version),
+            }),
+        )
     }
 }

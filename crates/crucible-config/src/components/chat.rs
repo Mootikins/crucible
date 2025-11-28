@@ -12,7 +12,9 @@ pub struct ChatConfig {
     pub enable_markdown: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 impl Default for ChatConfig {
     fn default() -> Self {

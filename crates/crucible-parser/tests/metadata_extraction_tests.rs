@@ -49,21 +49,49 @@ Some text with a footnote reference[^1].
     let meta = &parsed.metadata;
 
     // Word count should be computed from content
-    assert!(meta.word_count > 0, "Word count should be extracted: got {}", meta.word_count);
+    assert!(
+        meta.word_count > 0,
+        "Word count should be extracted: got {}",
+        meta.word_count
+    );
 
     // Character count should be computed
-    assert!(meta.char_count > 0, "Character count should be extracted: got {}", meta.char_count);
+    assert!(
+        meta.char_count > 0,
+        "Character count should be extracted: got {}",
+        meta.char_count
+    );
 
     // Element counts should be accurate
-    assert_eq!(meta.heading_count, 3, "Should count all headings: got {}", meta.heading_count);
-    assert_eq!(meta.code_block_count, 1, "Should count code blocks: got {}", meta.code_block_count);
-    assert!(meta.list_count >= 2, "Should count lists (unordered + ordered): got {}", meta.list_count);
-    assert!(meta.paragraph_count > 0, "Should count paragraphs: got {}", meta.paragraph_count);
+    assert_eq!(
+        meta.heading_count, 3,
+        "Should count all headings: got {}",
+        meta.heading_count
+    );
+    assert_eq!(
+        meta.code_block_count, 1,
+        "Should count code blocks: got {}",
+        meta.code_block_count
+    );
+    assert!(
+        meta.list_count >= 2,
+        "Should count lists (unordered + ordered): got {}",
+        meta.list_count
+    );
+    assert!(
+        meta.paragraph_count > 0,
+        "Should count paragraphs: got {}",
+        meta.paragraph_count
+    );
 
     // Note: Callouts and LaTeX may require specific extensions to be enabled
     // We test those separately
 
-    assert_eq!(meta.footnote_count, 1, "Should count footnotes: got {}", meta.footnote_count);
+    assert_eq!(
+        meta.footnote_count, 1,
+        "Should count footnotes: got {}",
+        meta.footnote_count
+    );
 }
 
 #[tokio::test]
@@ -106,7 +134,10 @@ async fn test_metadata_extraction_performance() {
 
     // Performance: should complete quickly (adjust threshold as needed)
     // This is a rough check - actual performance will depend on hardware
-    assert!(duration.as_millis() < 1000, "Parsing should be fast even with metadata extraction");
+    assert!(
+        duration.as_millis() < 1000,
+        "Parsing should be fast even with metadata extraction"
+    );
 }
 
 #[tokio::test]

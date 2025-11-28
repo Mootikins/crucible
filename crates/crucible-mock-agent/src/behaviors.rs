@@ -2,8 +2,8 @@
 //!
 //! Defines different behaviors the mock agent can exhibit for testing various scenarios.
 
-use std::collections::HashMap;
 use serde_json::Value;
+use std::collections::HashMap;
 
 /// Defines the behavior of the mock agent
 #[derive(Debug, Clone, PartialEq, Eq)]

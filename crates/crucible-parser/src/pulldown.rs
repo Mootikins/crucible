@@ -154,7 +154,14 @@ impl MarkdownParser for PulldownParser {
         if let Some(filename) = path.file_stem() {
             if let Some(name_str) = filename.to_str() {
                 // Common markdown files like README, CHANGELOG, etc.
-                let markdown_files = ["README", "CHANGELOG", "LICENSE", "CONTRIBUTING", "INSTALL", "TODO"];
+                let markdown_files = [
+                    "README",
+                    "CHANGELOG",
+                    "LICENSE",
+                    "CONTRIBUTING",
+                    "INSTALL",
+                    "TODO",
+                ];
                 if markdown_files.contains(&name_str) {
                     return true;
                 }
@@ -297,9 +304,10 @@ fn extract_tags(content: &str) -> ParserResult<Vec<Tag>> {
             let normalized_tag = normalize_tag_name(tag_name);
 
             // Enhanced filtering
-            if should_include_tag(full_match.as_str(), content, offset) &&
-               is_valid_tag(&normalized_tag) &&
-               !seen_tags.contains(&normalized_tag) {
+            if should_include_tag(full_match.as_str(), content, offset)
+                && is_valid_tag(&normalized_tag)
+                && !seen_tags.contains(&normalized_tag)
+            {
                 seen_tags.insert(normalized_tag.clone());
                 tags.push(Tag::new(&normalized_tag, offset));
             }
@@ -352,8 +360,15 @@ fn is_valid_tag(tag: &str) -> bool {
     }
 
     // No leading or trailing separators (already handled in normalize but double-check)
-    if tag.starts_with('-') || tag.starts_with('/') || tag.starts_with('.') || tag.starts_with('+') ||
-       tag.ends_with('-') || tag.ends_with('/') || tag.ends_with('.') || tag.ends_with('+') {
+    if tag.starts_with('-')
+        || tag.starts_with('/')
+        || tag.starts_with('.')
+        || tag.starts_with('+')
+        || tag.ends_with('-')
+        || tag.ends_with('/')
+        || tag.ends_with('.')
+        || tag.ends_with('+')
+    {
         return false;
     }
 
@@ -362,8 +377,12 @@ fn is_valid_tag(tag: &str) -> bool {
 
 /// Check if character is valid in tag names
 fn is_valid_tag_char(ch: char) -> bool {
-    ch.is_alphanumeric() || ch == '-' || ch == '/' || ch == '.' || ch == '+' ||
-    (ch.is_ascii() && ch.is_control() == false && ch.is_whitespace() == false)
+    ch.is_alphanumeric()
+        || ch == '-'
+        || ch == '/'
+        || ch == '.'
+        || ch == '+'
+        || (ch.is_ascii() && ch.is_control() == false && ch.is_whitespace() == false)
 }
 
 /// Enhanced false positive filtering for tags
@@ -377,7 +396,11 @@ fn should_include_tag(match_text: &str, content: &str, offset: usize) -> bool {
 
     // Skip if within inline code
     let current_line = lines.get(line_idx).map_or("", |v| v);
-    let line_offset_in_content = content.lines().take(line_idx).map(|l| l.len() + 1).sum::<usize>();
+    let line_offset_in_content = content
+        .lines()
+        .take(line_idx)
+        .map(|l| l.len() + 1)
+        .sum::<usize>();
     let offset_in_line = offset.saturating_sub(line_offset_in_content);
     if is_within_inline_code(current_line, offset_in_line) {
         return false;
@@ -431,14 +454,19 @@ fn looks_like_false_positive(context: &str, tag_match: &str) -> bool {
     }
 
     // Check for CSS color codes
-    if tag_match.starts_with("ff") || tag_match.starts_with("#") &&
-       (context_lower.contains("color:") || context_lower.contains("background:")) {
+    if tag_match.starts_with("ff")
+        || tag_match.starts_with("#")
+            && (context_lower.contains("color:") || context_lower.contains("background:"))
+    {
         return true;
     }
 
     // Check for programming language constructs
-    if context_lower.contains("define ") || context_lower.contains("const ") ||
-       context_lower.contains("let ") || context_lower.contains("var ") {
+    if context_lower.contains("define ")
+        || context_lower.contains("const ")
+        || context_lower.contains("let ")
+        || context_lower.contains("var ")
+    {
         return true;
     }
 
@@ -476,7 +504,10 @@ fn extract_callouts(content: &str) -> ParserResult<Vec<Callout>> {
         // Check if current line starts a callout
         if let Some(cap) = re.captures(lines[i]) {
             let callout_type = cap.get(1).unwrap().as_str();
-            let title = cap.get(2).map(|m| m.as_str().trim().to_string()).filter(|s| !s.is_empty());
+            let title = cap
+                .get(2)
+                .map(|m| m.as_str().trim().to_string())
+                .filter(|s| !s.is_empty());
 
             // Use pre-calculated byte offset
             let offset = line_offsets[i];
@@ -588,9 +619,9 @@ fn extract_latex(content: &str) -> ParserResult<Vec<LatexExpression>> {
         let expr = cap.get(1).unwrap().as_str().trim();
 
         // Check if this match falls within any block math range
-        let is_within_block = block_ranges.iter().any(|(block_start, block_end)| {
-            offset >= *block_start && match_end <= *block_end
-        });
+        let is_within_block = block_ranges
+            .iter()
+            .any(|(block_start, block_end)| offset >= *block_start && match_end <= *block_end);
 
         // Only process if not within a block and passes validation
         if !is_within_block && has_balanced_braces(expr) && !has_dangerous_latex_commands(expr) {
@@ -605,19 +636,37 @@ fn extract_latex(content: &str) -> ParserResult<Vec<LatexExpression>> {
 
     // Sort expressions by their original document order
     use std::io::Write;
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/latex_debug.txt") {
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/latex_debug.txt")
+    {
         writeln!(file, "\n=== Before sort ===").ok();
         for (i, expr) in expressions.iter().enumerate() {
-            writeln!(file, "[{}] offset={}, is_block={}", i, expr.offset, expr.is_block).ok();
+            writeln!(
+                file,
+                "[{}] offset={}, is_block={}",
+                i, expr.offset, expr.is_block
+            )
+            .ok();
         }
     }
 
     expressions.sort_by_key(|expr| expr.offset);
 
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/latex_debug.txt") {
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/latex_debug.txt")
+    {
         writeln!(file, "=== After sort ===").ok();
         for (i, expr) in expressions.iter().enumerate() {
-            writeln!(file, "[{}] offset={}, is_block={}", i, expr.offset, expr.is_block).ok();
+            writeln!(
+                file,
+                "[{}] offset={}, is_block={}",
+                i, expr.offset, expr.is_block
+            )
+            .ok();
         }
     }
 
@@ -631,11 +680,15 @@ fn has_balanced_braces(expr: &str) -> bool {
 
     while let Some(ch) = chars.next() {
         match ch {
-            '\\' => { chars.next(); } // Skip escaped character
+            '\\' => {
+                chars.next();
+            } // Skip escaped character
             '{' => depth += 1,
             '}' => {
                 depth -= 1;
-                if depth < 0 { return false; }
+                if depth < 0 {
+                    return false;
+                }
             }
             _ => {}
         }
@@ -647,9 +700,21 @@ fn has_balanced_braces(expr: &str) -> bool {
 /// Check for dangerous LaTeX commands
 fn has_dangerous_latex_commands(expr: &str) -> bool {
     const DANGEROUS: &[&str] = &[
-        "\\input", "\\include", "\\write", "\\openout", "\\closeout",
-        "\\loop", "\\def", "\\edef", "\\xdef", "\\gdef", "\\let",
-        "\\futurelet", "\\newcommand", "\\renewcommand", "\\catcode",
+        "\\input",
+        "\\include",
+        "\\write",
+        "\\openout",
+        "\\closeout",
+        "\\loop",
+        "\\def",
+        "\\edef",
+        "\\xdef",
+        "\\gdef",
+        "\\let",
+        "\\futurelet",
+        "\\newcommand",
+        "\\renewcommand",
+        "\\catcode",
     ];
 
     for cmd in DANGEROUS {
@@ -662,7 +727,6 @@ fn has_dangerous_latex_commands(expr: &str) -> bool {
 
 /// Extract markdown tables with comprehensive structure analysis
 fn extract_tables(content: &str) -> ParserResult<Vec<Table>> {
-
     let mut tables = Vec::new();
     let lines: Vec<&str> = content.lines().collect();
     let mut current_byte_offset = 0;
@@ -695,7 +759,11 @@ fn extract_tables(content: &str) -> ParserResult<Vec<Table>> {
 }
 
 /// Extract a complete table starting at the given position
-fn extract_table_at_position(lines: &[&str], start_idx: usize, line_offsets: &[usize]) -> Option<Table> {
+fn extract_table_at_position(
+    lines: &[&str],
+    start_idx: usize,
+    line_offsets: &[usize],
+) -> Option<Table> {
     if start_idx >= lines.len() {
         return None;
     }
@@ -742,7 +810,9 @@ fn extract_table_at_position(lines: &[&str], start_idx: usize, line_offsets: &[u
 
         // Validate row has right number of columns (approximately)
         let row_cells = parse_table_row(line);
-        if row_cells.len() == headers.len() || (row_cells.len() > headers.len() && headers.len() == 1) {
+        if row_cells.len() == headers.len()
+            || (row_cells.len() > headers.len() && headers.len() == 1)
+        {
             rows += 1;
             raw_content_lines.push(line);
         } else {
@@ -842,7 +912,6 @@ fn validate_table_separator(separator: &str, expected_cols: usize) -> bool {
 
 /// Extract comprehensive list structures using enhanced regex-based analysis
 fn extract_lists_comprehensive(content: &str) -> ParserResult<Vec<ListBlock>> {
-
     let mut lists = Vec::new();
     let lines: Vec<&str> = content.lines().collect();
     let mut current_byte_offset = 0;
@@ -861,9 +930,7 @@ fn extract_lists_comprehensive(content: &str) -> ParserResult<Vec<ListBlock>> {
         (r"^(\s*)\+\s+(.+)$", ListMarkerStyle::Plus),
     ];
 
-    let ordered_patterns = vec![
-        (r"^(\s*)(\d+)\.\s+(.+)$", ListMarkerStyle::Arabic),
-    ];
+    let ordered_patterns = vec![(r"^(\s*)(\d+)\.\s+(.+)$", ListMarkerStyle::Arabic)];
 
     // Standard task patterns (GitHub Flavored Markdown)
     let task_patterns = vec![
@@ -880,7 +947,11 @@ fn extract_lists_comprehensive(content: &str) -> ParserResult<Vec<ListBlock>> {
         compiled_patterns.push((Regex::new(pattern).unwrap(), *style, true));
     }
     for (pattern, is_ordered) in task_patterns.iter() {
-        compiled_patterns.push((Regex::new(pattern).unwrap(), ListMarkerStyle::Dash, *is_ordered));
+        compiled_patterns.push((
+            Regex::new(pattern).unwrap(),
+            ListMarkerStyle::Dash,
+            *is_ordered,
+        ));
     }
 
     let mut i = 0;
@@ -925,14 +996,15 @@ fn extract_lists_comprehensive(content: &str) -> ParserResult<Vec<ListBlock>> {
                 line_offsets.as_slice(),
                 i,
                 &list_match,
-                &mut processed_indices
+                &mut processed_indices,
             ) {
                 let list_items = list.items.clone(); // Clone to avoid move issues
                 lists.push(list);
 
                 // Mark all processed indices and skip ahead
                 for item in &list_items {
-                    let item_line_idx = find_line_index_for_offset(line_offsets.as_slice(), item.offset);
+                    let item_line_idx =
+                        find_line_index_for_offset(line_offsets.as_slice(), item.offset);
                     if let Some(idx) = item_line_idx {
                         processed_indices.insert(idx);
                     }
@@ -1024,12 +1096,22 @@ fn extract_marker_and_content(
             None
         };
 
-        (marker_text, content, sequence_number, Some(task_status), true)
+        (
+            marker_text,
+            content,
+            sequence_number,
+            Some(task_status),
+            true,
+        )
     } else {
         // Handle regular list items
         let (marker_text, sequence_number) = if is_ordered {
             let number = cap.get(2).unwrap().as_str();
-            let delimiter = if line.contains(number) && line.contains(")") { ")" } else { "." };
+            let delimiter = if line.contains(number) && line.contains(")") {
+                ")"
+            } else {
+                "."
+            };
             let marker_text = format!("{}{}", number, delimiter);
             (marker_text, Some(number.to_string()))
         } else {
@@ -1048,10 +1130,11 @@ fn extract_marker_and_content(
 
 /// Check if this capture represents a task item
 fn is_task_item(cap: &regex::Captures) -> bool {
-    cap.len() >= 3 && cap.get(2).map_or(false, |m| {
-        let text = m.as_str();
-        text == "[x]" || text == "[ ]" || text == "[X]" || text == "[x]" || text == "[ X]"
-    })
+    cap.len() >= 3
+        && cap.get(2).map_or(false, |m| {
+            let text = m.as_str();
+            text == "[x]" || text == "[ ]" || text == "[X]" || text == "[x]" || text == "[ X]"
+        })
 }
 
 /// Extract marker text for task items
@@ -1067,7 +1150,12 @@ fn extract_sequence_number_for_task(cap: &regex::Captures, _line: &str) -> Optio
 }
 
 /// Calculate match score to determine best pattern match
-fn calculate_match_score(match_info: &ListMatch, line: &str, lines: &[&str], line_idx: usize) -> usize {
+fn calculate_match_score(
+    match_info: &ListMatch,
+    line: &str,
+    lines: &[&str],
+    line_idx: usize,
+) -> usize {
     let mut score = 100; // Base score for any match
 
     // Bonus for proper indentation (multiple of 2)
@@ -1108,11 +1196,12 @@ fn should_skip_line_for_lists(line: &str, lines: &[&str], line_idx: usize) -> bo
     }
 
     // Skip code blocks and other markdown structures
-    if is_in_code_block(line, lines, line_idx) ||
-       line.starts_with('>') ||
-       line.trim_start().starts_with("```") ||
-       trimmed.starts_with("---") ||
-       trimmed.starts_with("===") {
+    if is_in_code_block(line, lines, line_idx)
+        || line.starts_with('>')
+        || line.trim_start().starts_with("```")
+        || trimmed.starts_with("---")
+        || trimmed.starts_with("===")
+    {
         return true;
     }
 
@@ -1140,7 +1229,7 @@ fn looks_like_non_list_content(content: &str) -> bool {
     trimmed.starts_with("---") ||         // Horizontal rule
     trimmed.starts_with("===") ||         // Horizontal rule
     (trimmed.starts_with('[') && trimmed.contains("]: ")) || // Reference link
-    (trimmed.starts_with('!') && trimmed.contains('['))      // Image
+    (trimmed.starts_with('!') && trimmed.contains('[')) // Image
 }
 
 /// Check if surrounding lines suggest list context
@@ -1184,7 +1273,7 @@ fn looks_like_list_item(line: &str) -> bool {
             '-' | '*' | '+' => {
                 // Check if followed by space
                 chars.next().map_or(false, |c| c == ' ')
-            },
+            }
             '0'..='9' => {
                 // Check if followed by . and then space (standard ordered lists)
                 if let Some(second_char) = chars.next() {
@@ -1192,7 +1281,7 @@ fn looks_like_list_item(line: &str) -> bool {
                 } else {
                     false
                 }
-            },
+            }
             _ => false,
         }
     } else {
@@ -1207,10 +1296,12 @@ fn has_proper_marker_format(marker_text: &str, marker_style: &ListMarkerStyle) -
         ListMarkerStyle::Asterisk => marker_text == "*",
         ListMarkerStyle::Plus => marker_text == "+",
         ListMarkerStyle::Arabic => {
-            marker_text.len() >= 2 &&
-            marker_text.chars().nth(marker_text.len() - 1) == Some('.') &&
-            marker_text[..marker_text.len() - 1].chars().all(|c| c.is_ascii_digit())
-        },
+            marker_text.len() >= 2
+                && marker_text.chars().nth(marker_text.len() - 1) == Some('.')
+                && marker_text[..marker_text.len() - 1]
+                    .chars()
+                    .all(|c| c.is_ascii_digit())
+        }
     }
 }
 
@@ -1228,7 +1319,8 @@ fn looks_like_misidentified_list(line: &str) -> bool {
 
 /// Find line index for a given byte offset
 fn find_line_index_for_offset(line_offsets: &[usize], target_offset: usize) -> Option<usize> {
-    line_offsets.iter()
+    line_offsets
+        .iter()
         .enumerate()
         .find(|(_, &offset)| offset == target_offset)
         .map(|(idx, _)| idx)
@@ -1245,7 +1337,11 @@ fn extract_complete_list_enhanced(
     let mut items = Vec::new();
     let mut raw_content_lines = Vec::new();
     let mut i = start_idx;
-    let mut list_type = if initial_match.marker_style.is_ordered() { ListType::Ordered } else { ListType::Unordered };
+    let mut list_type = if initial_match.marker_style.is_ordered() {
+        ListType::Ordered
+    } else {
+        ListType::Unordered
+    };
     let mut has_tasks = initial_match.is_task;
     let mut max_depth = 0;
     let mut top_level_count = 0;
@@ -1255,11 +1351,7 @@ fn extract_complete_list_enhanced(
     let patterns = compile_enhanced_list_patterns();
 
     // Add the first item from the initial match
-    let first_item = create_list_item_from_match(
-        &initial_match,
-        line_offsets[i],
-        &mut has_tasks,
-    );
+    let first_item = create_list_item_from_match(&initial_match, line_offsets[i], &mut has_tasks);
     items.push(first_item);
     raw_content_lines.push(lines[i]);
     max_depth = initial_match.level;
@@ -1345,16 +1437,38 @@ fn extract_complete_list_enhanced(
 fn compile_enhanced_list_patterns() -> Vec<(regex::Regex, ListMarkerStyle, bool)> {
     vec![
         // Standard unordered patterns
-        (regex::Regex::new(r"^(\s*)-(.+)$").unwrap(), ListMarkerStyle::Dash, false),
-        (regex::Regex::new(r"^(\s*)\*(.+)$").unwrap(), ListMarkerStyle::Asterisk, false),
-        (regex::Regex::new(r"^(\s*)\+(.+)$").unwrap(), ListMarkerStyle::Plus, false),
-
+        (
+            regex::Regex::new(r"^(\s*)-(.+)$").unwrap(),
+            ListMarkerStyle::Dash,
+            false,
+        ),
+        (
+            regex::Regex::new(r"^(\s*)\*(.+)$").unwrap(),
+            ListMarkerStyle::Asterisk,
+            false,
+        ),
+        (
+            regex::Regex::new(r"^(\s*)\+(.+)$").unwrap(),
+            ListMarkerStyle::Plus,
+            false,
+        ),
         // Standard ordered patterns (Arabic numerals only)
-        (regex::Regex::new(r"^(\s*)(\d+)\.(.+)$").unwrap(), ListMarkerStyle::Arabic, true),
-
+        (
+            regex::Regex::new(r"^(\s*)(\d+)\.(.+)$").unwrap(),
+            ListMarkerStyle::Arabic,
+            true,
+        ),
         // Standard task patterns (GitHub Flavored Markdown)
-        (regex::Regex::new(r"^(\s*)[-*+]\s+\[([ xX])\]\s+(.+)$").unwrap(), ListMarkerStyle::Dash, false),
-        (regex::Regex::new(r"^(\s*)(\d+)\.\s+\[([ xX])\]\s+(.+)$").unwrap(), ListMarkerStyle::Arabic, true),
+        (
+            regex::Regex::new(r"^(\s*)[-*+]\s+\[([ xX])\]\s+(.+)$").unwrap(),
+            ListMarkerStyle::Dash,
+            false,
+        ),
+        (
+            regex::Regex::new(r"^(\s*)(\d+)\.\s+\[([ xX])\]\s+(.+)$").unwrap(),
+            ListMarkerStyle::Arabic,
+            true,
+        ),
     ]
 }
 
@@ -1445,7 +1559,10 @@ fn is_valid_list_level(level: usize, existing_items: &[ListItem]) -> bool {
     // Level should not go negative
     if level > last_item.level && existing_items.iter().any(|item| item.level < level) {
         // This is a nested level, check if it has a parent
-        return existing_items.iter().rev().any(|item| item.level == level - 1);
+        return existing_items
+            .iter()
+            .rev()
+            .any(|item| item.level == level - 1);
     }
 
     true
@@ -1461,10 +1578,11 @@ fn extract_list_item_details(
     let content_part = cap.get(cap.len() - 1).unwrap().as_str().trim();
 
     // Check if this is a task item
-    let (content, task_status) = if cap.len() >= 4 && cap.get(2).map_or(false, |m| {
-        let text = m.as_str();
-        text == "[x]" || text == "[ ]" || text == "[X]"
-    }) {
+    let (content, task_status) = if cap.len() >= 4
+        && cap.get(2).map_or(false, |m| {
+            let text = m.as_str();
+            text == "[x]" || text == "[ ]" || text == "[X]"
+        }) {
         let checkbox = cap.get(2).unwrap().as_str();
         let task_status = if checkbox.trim() == "x" || checkbox.trim() == "X" {
             TaskStatus::Completed
@@ -1514,7 +1632,10 @@ fn extract_list_item_details(
 }
 
 /// Update primary marker if the new marker is compatible with the current list
-fn update_primary_marker_if_compatible(primary_marker: &mut ListMarkerStyle, new_marker: ListMarkerStyle) {
+fn update_primary_marker_if_compatible(
+    primary_marker: &mut ListMarkerStyle,
+    new_marker: ListMarkerStyle,
+) {
     // Only update if markers are compatible (both ordered or both unordered)
     if primary_marker.is_ordered() == new_marker.is_ordered() {
         *primary_marker = new_marker;
@@ -1593,7 +1714,11 @@ fn is_blockquote_list_continuation(line: &str, items: &[ListItem]) -> bool {
 }
 
 /// Check if a line looks like an incompatible list item (standard Markdown only)
-fn looks_like_incompatible_list_item(line: &str, last_item: &ListItem, list_type: ListType) -> bool {
+fn looks_like_incompatible_list_item(
+    line: &str,
+    last_item: &ListItem,
+    list_type: ListType,
+) -> bool {
     if !looks_like_list_item(line) {
         return false;
     }
@@ -1627,8 +1752,7 @@ fn looks_like_list_continuation(line: &str, items: &[ListItem]) -> bool {
 
     // Continuation should have more indentation than the last list item
     // but less than or equal to what would be expected for a nested item
-    indent_spaces > last_item.indent_spaces &&
-    indent_spaces <= (last_item.level + 1) * 2 + 1
+    indent_spaces > last_item.indent_spaces && indent_spaces <= (last_item.level + 1) * 2 + 1
 }
 
 /// Validate and enhance list structure
@@ -1659,7 +1783,9 @@ fn normalize_marker_styles(items: &mut [ListItem]) {
     let mut level_markers = std::collections::HashMap::new();
 
     for item in items.iter() {
-        let entry = level_markers.entry(item.level).or_insert((ListMarkerStyle::Dash, 0));
+        let entry = level_markers
+            .entry(item.level)
+            .or_insert((ListMarkerStyle::Dash, 0));
         entry.1 += 1;
         if entry.1 == 1 {
             entry.0 = item.marker;
@@ -1684,7 +1810,9 @@ fn calculate_list_tightness_enhanced(raw_content_lines: &[&str], items: &[ListIt
                 let prev_line = raw_content_lines[i - 1];
                 let next_line = raw_content_lines[i + 1];
 
-                if let (Some(prev_item), Some(next_item)) = find_items_for_lines(prev_line, next_line, items) {
+                if let (Some(prev_item), Some(next_item)) =
+                    find_items_for_lines(prev_line, next_line, items)
+                {
                     if prev_item.level == next_item.level {
                         return false; // List is loose
                     }
@@ -1697,7 +1825,11 @@ fn calculate_list_tightness_enhanced(raw_content_lines: &[&str], items: &[ListIt
 }
 
 /// Find items corresponding to lines for tightness calculation
-fn find_items_for_lines<'a>(prev_line: &'a str, next_line: &'a str, items: &'a [ListItem]) -> (Option<&'a ListItem>, Option<&'a ListItem>) {
+fn find_items_for_lines<'a>(
+    prev_line: &'a str,
+    next_line: &'a str,
+    items: &'a [ListItem],
+) -> (Option<&'a ListItem>, Option<&'a ListItem>) {
     // This is a simplified implementation - in a more sophisticated version,
     // you'd track line-to-item mappings during parsing
     let prev_indent = prev_line.len() - prev_line.trim_start().len();
@@ -1718,7 +1850,9 @@ fn update_nested_flags_enhanced(items: &mut [ListItem]) {
         let current_level = items[i].level;
 
         // Check if there are any items at a deeper level after this item
-        let has_nested = items.iter().skip(i + 1)
+        let has_nested = items
+            .iter()
+            .skip(i + 1)
             .take_while(|item| item.level >= current_level)
             .any(|item| item.level > current_level);
 
@@ -1779,7 +1913,9 @@ fn normalize_code_block_language(lang_input: &str) -> Option<String> {
         "toml" => Some("toml".to_string()),
         "xml" | "xhtml" | "svg" => Some("xml".to_string()),
         "csv" | "tsv" => Some("csv".to_string()),
-        "sql" | "mysql" | "postgresql" | "postgres" | "sqlite" | "oracle" => Some("sql".to_string()),
+        "sql" | "mysql" | "postgresql" | "postgres" | "sqlite" | "oracle" => {
+            Some("sql".to_string())
+        }
 
         // Shell and scripting
         "sh" | "bash" | "zsh" | "fish" | "shell" | "shellscript" => Some("bash".to_string()),
@@ -2099,11 +2235,7 @@ fn parse_content_structure(body: &str, tables: Vec<Table>) -> ParserResult<NoteC
                 let style = "dash".to_string();
                 let raw_content = "---".to_string();
 
-                horizontal_rules.push(HorizontalRule::new(
-                    raw_content,
-                    style,
-                    current_offset,
-                ));
+                horizontal_rules.push(HorizontalRule::new(raw_content, style, current_offset));
 
                 current_offset += 3; // Approximate length
             }
@@ -2292,14 +2424,20 @@ More inline: $\alpha + \beta = \gamma$
 
         let doc = parser.parse_content(content, &path).await.unwrap();
 
-
-        assert_eq!(doc.latex_expressions.len(), 3, "Should extract 3 LaTeX expressions");
+        assert_eq!(
+            doc.latex_expressions.len(),
+            3,
+            "Should extract 3 LaTeX expressions"
+        );
         assert!(!doc.latex_expressions[0].is_block, "First should be inline");
         assert!(doc.latex_expressions[1].is_block, "Second should be block");
         assert!(!doc.latex_expressions[2].is_block, "Third should be inline");
 
         assert_eq!(doc.latex_expressions[0].expression, "x^2 + y^2 = z^2");
-        assert_eq!(doc.latex_expressions[2].expression, "\\alpha + \\beta = \\gamma");
+        assert_eq!(
+            doc.latex_expressions[2].expression,
+            "\\alpha + \\beta = \\gamma"
+        );
     }
 
     #[tokio::test]
@@ -2327,12 +2465,14 @@ Final wikilink: [[FinalNote]]
 
         let doc = parser.parse_content(content, &path).await.unwrap();
 
-        
         // Should only extract 3 wikilinks, ignoring those in code blocks and inline code
-        assert_eq!(doc.wikilinks.len(), 3, "Should extract only 3 wikilinks, not those in code blocks");
+        assert_eq!(
+            doc.wikilinks.len(),
+            3,
+            "Should extract only 3 wikilinks, not those in code blocks"
+        );
         assert_eq!(doc.wikilinks[0].target, "Note");
         assert_eq!(doc.wikilinks[1].target, "AnotherNote");
         assert_eq!(doc.wikilinks[2].target, "FinalNote");
     }
 }
-

@@ -33,7 +33,12 @@ fn test_table_extraction() {
     let table_block = table_blocks[0];
 
     // Check metadata
-    if let crucible_parser::types::ASTBlockMetadata::Table { rows, columns, headers: block_headers } = &table_block.metadata {
+    if let crucible_parser::types::ASTBlockMetadata::Table {
+        rows,
+        columns,
+        headers: block_headers,
+    } = &table_block.metadata
+    {
         assert_eq!(*rows, 2, "Should have 2 data rows");
         assert_eq!(*columns, 3, "Should have 3 columns");
         assert_eq!(block_headers.len(), 3, "Should have 3 headers");

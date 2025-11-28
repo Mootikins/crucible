@@ -1034,8 +1034,6 @@ fn is_hidden(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-
-
 impl std::fmt::Debug for FileScanner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FileScanner")

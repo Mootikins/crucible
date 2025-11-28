@@ -56,21 +56,21 @@ pub mod text_generation_mock;
 // Re-export commonly used types at crate root
 // SOLID Phase 5: Re-export factory functions and traits, NOT concrete types
 pub use embeddings::{
-    create_provider,  // Factory function
-    CoreProviderAdapter,  // Adapter for core trait
-    EmbeddingConfig,  // Configuration (data type)
-    EmbeddingError,   // Error type
-    EmbeddingProvider, // Trait (abstraction)
-    EmbeddingResponse, // Response type (data)
-    EmbeddingResult,   // Result type alias
+    create_provider,       // Factory function
+    CoreProviderAdapter,   // Adapter for core trait
+    EmbeddingConfig,       // Configuration (data type)
+    EmbeddingError,        // Error type
+    EmbeddingProvider,     // Trait (abstraction)
     EmbeddingProviderType, // Enum for provider selection
     // REMOVED: OllamaProvider, OpenAIProvider - use create_provider() instead
+    EmbeddingResponse, // Response type (data)
+    EmbeddingResult,   // Result type alias
 };
 
 pub use reranking::{FastEmbedReranker, RerankResult, Reranker, RerankerModelInfo};
 
 pub use text_generation::{
-    create_text_provider,  // Factory function
+    create_text_provider, // Factory function
     ChatCompletionChunk,
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -80,7 +80,7 @@ pub use text_generation::{
     CompletionResponse,
     OllamaConfig,
     OpenAIConfig,
-    TextGenerationProvider,  // Trait (abstraction)
+    TextGenerationProvider, // Trait (abstraction)
     TextProviderConfig,
     TokenUsage,
     // REMOVED: OllamaTextProvider, OpenAITextProvider - use create_text_provider() instead

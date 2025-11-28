@@ -77,14 +77,26 @@ All enhanced features are working!
     let path = PathBuf::from("test.md");
     match parser.parse_content(test_content, &path).await {
         Ok(result) => {
-            assert!(result.frontmatter.is_some(), "Frontmatter should be extracted");
+            assert!(
+                result.frontmatter.is_some(),
+                "Frontmatter should be extracted"
+            );
 
             // Check tables
-            assert!(!result.content.tables.is_empty(), "Should extract at least one table");
+            assert!(
+                !result.content.tables.is_empty(),
+                "Should extract at least one table"
+            );
             let table = &result.content.tables[0];
-            println!("   Table extracted: {} columns, {} rows", table.columns, table.rows);
+            println!(
+                "   Table extracted: {} columns, {} rows",
+                table.columns, table.rows
+            );
             println!("   Table headers: {:?}", table.headers);
-            println!("   Table raw content preview: {}", &table.raw_content[..200.min(table.raw_content.len())]);
+            println!(
+                "   Table raw content preview: {}",
+                &table.raw_content[..200.min(table.raw_content.len())]
+            );
 
             // Basic table functionality check (adjust expected values as needed)
             assert_eq!(table.columns, 3, "Table should have 3 columns");
@@ -95,21 +107,39 @@ All enhanced features are working!
             assert!(!result.content.lists.is_empty(), "Should extract lists");
 
             // Check code blocks
-            assert!(!result.content.code_blocks.is_empty(), "Should extract code blocks");
+            assert!(
+                !result.content.code_blocks.is_empty(),
+                "Should extract code blocks"
+            );
 
             // Verify specific languages were detected
-            let languages: Vec<_> = result.content.code_blocks.iter()
+            let languages: Vec<_> = result
+                .content
+                .code_blocks
+                .iter()
                 .filter_map(|cb| cb.language.as_ref())
                 .collect();
-            assert!(languages.contains(&&"rust".to_string()), "Should detect Rust code");
-            assert!(languages.contains(&&"javascript".to_string()), "Should detect JavaScript code");
-            assert!(languages.contains(&&"sql".to_string()), "Should detect SQL code");
+            assert!(
+                languages.contains(&&"rust".to_string()),
+                "Should detect Rust code"
+            );
+            assert!(
+                languages.contains(&&"javascript".to_string()),
+                "Should detect JavaScript code"
+            );
+            assert!(
+                languages.contains(&&"sql".to_string()),
+                "Should detect SQL code"
+            );
 
             println!("✅ All CrucibleParser integration tests passed!");
             println!("   Frontmatter: {}", result.frontmatter.is_some());
             println!("   Tables: {} extracted", result.content.tables.len());
             println!("   Lists: {} extracted", result.content.lists.len());
-            println!("   Code blocks: {} extracted", result.content.code_blocks.len());
+            println!(
+                "   Code blocks: {} extracted",
+                result.content.code_blocks.len()
+            );
         }
         Err(e) => {
             panic!("Parsing failed: {:?}", e);

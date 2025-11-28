@@ -1,7 +1,7 @@
-use async_trait::async_trait;
 use crate::parser::ParsedNote;
 use crate::types::SearchResult;
 use crate::Result;
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 /// Metadata about a note

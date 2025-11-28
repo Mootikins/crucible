@@ -16,7 +16,7 @@ use std::env;
 #[path = "../support/mock_stdio_agent.rs"]
 mod mock_stdio_agent;
 
-use mock_stdio_agent::{MockStdioAgent, MockStdioAgentConfig, AgentBehavior};
+use mock_stdio_agent::{AgentBehavior, MockStdioAgent, MockStdioAgentConfig};
 
 fn main() {
     // Parse command-line arguments
