@@ -175,6 +175,10 @@ impl ChangeDetectionStore for SurrealChangeDetectionStore {
             &record.file_hash[..8]
         );
 
+        let relative_path = record.relative_path.clone();
+        let file_hash = record.file_hash.clone();
+        let file_size = record.file_size;
+
         // Use proper sanitization and parameter binding for secure record creation
         let safe_record_id = sanitize_record_id(&record.relative_path).map_err(|e| {
             ChangeDetectionError::InvalidPath(format!("Failed to sanitize path: {}", e))
@@ -187,31 +191,44 @@ impl ChangeDetectionStore for SurrealChangeDetectionStore {
         let datetime_str = dt.to_rfc3339();
 
         // Use parameterized query to prevent SQL injection
-        let query = r#"
+        let params = vec![serde_json::json!({
+            "record_id": safe_record_id.clone(),
+            "relative_path": relative_path.clone(),
+            "file_hash": file_hash.clone(),
+            "modified_time": datetime_str,
+            "file_size": file_size
+        })];
+
+        let record_exists = self.get_file_state(path).await?.is_some();
+        let query = if record_exists {
+            r#"
+            UPDATE type::thing('file_state', $record_id) CONTENT {
+                relative_path: $relative_path,
+                file_hash: $file_hash,
+                modified_time: type::datetime($modified_time),
+                file_size: $file_size
+            }
+            "#
+        } else {
+            r#"
             CREATE type::thing('file_state', $record_id) CONTENT {
                 relative_path: $relative_path,
                 file_hash: $file_hash,
                 modified_time: type::datetime($modified_time),
                 file_size: $file_size
             }
-        "#;
-
-        let params = vec![serde_json::json!({
-            "record_id": safe_record_id,
-            "relative_path": record.relative_path,
-            "file_hash": record.file_hash,
-            "modified_time": datetime_str,
-            "file_size": record.file_size
-        })];
+            "#
+        };
 
         self.client.query(query, &params).await.map_err(|e| {
             ChangeDetectionError::Storage(format!("Failed to store file state: {}", e))
         })?;
 
-        debug!(
-            "Successfully stored file state for: {}",
-            record.relative_path
-        );
+        if record_exists {
+            debug!("Successfully updated file state for: {}", relative_path);
+        } else {
+            debug!("Successfully stored file state for: {}", relative_path);
+        }
         Ok(())
     }
 
