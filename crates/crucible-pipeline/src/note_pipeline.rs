@@ -19,10 +19,12 @@
 //! - **Single Responsibility**: Pipeline coordinates; infrastructure crates provide capabilities
 
 use anyhow::{Context, Result};
-use crucible_core::processing::{ChangeDetectionStore, FileState, NotePipelineOrchestrator, PipelineMetrics, ProcessingResult};
+use crucible_core::processing::{
+    ChangeDetectionStore, FileState, NotePipelineOrchestrator, PipelineMetrics, ProcessingResult,
+};
 use crucible_core::{EnrichedNoteStore, EnrichmentService};
 use crucible_merkle::{HybridMerkleTree, MerkleStore};
-use crucible_parser::{CrucibleParser, traits::MarkdownParser};
+use crucible_parser::{traits::MarkdownParser, CrucibleParser};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -191,11 +193,12 @@ impl NotePipeline {
 
         // Phase 2: Parse to AST
         let phase2_start = std::time::Instant::now();
-        let parsed = self.parser.parse_file(path).await
-            .with_context(|| format!(
+        let parsed = self.parser.parse_file(path).await.with_context(|| {
+            format!(
                 "Phase 2: Failed to parse markdown file '{}'",
                 path.display()
-            ))?;
+            )
+        })?;
         let phase2_duration = phase2_start.elapsed().as_millis() as u64;
         debug!("Phase 2: Parsed note successfully");
 
@@ -220,16 +223,21 @@ impl NotePipeline {
         // If no changes and not forcing reprocess, update file state and return
         if diff.changed_sections.is_empty() && old_tree.is_some() && !self.config.force_reprocess {
             debug!("Phase 3: No content changes detected");
-            self.update_file_state(path).await
-                .with_context(|| format!(
+            self.update_file_state(path).await.with_context(|| {
+                format!(
                     "Failed to update file state for '{}' after detecting no changes",
                     path.display()
-                ))?;
-            self.merkle_store.store(&path_str, &new_tree).await
-                .with_context(|| format!(
-                    "Failed to update Merkle tree for '{}' after detecting no changes",
-                    path.display()
-                ))?;
+                )
+            })?;
+            self.merkle_store
+                .store(&path_str, &new_tree)
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to update Merkle tree for '{}' after detecting no changes",
+                        path.display()
+                    )
+                })?;
             return Ok(ProcessingResult::NoChanges);
         }
 
@@ -238,7 +246,8 @@ impl NotePipeline {
         // as changed blocks. Future enhancement: block-level granularity.
 
         // Count all types of changes: modified, added, and removed sections
-        let changed_count = diff.changed_sections.len() + diff.added_sections + diff.removed_sections;
+        let changed_count =
+            diff.changed_sections.len() + diff.added_sections + diff.removed_sections;
 
         // Build IDs for all affected sections
         let mut changed_block_ids = Vec::with_capacity(changed_count);
@@ -269,17 +278,22 @@ impl NotePipeline {
         // Phase 4: Enrichment (if enabled)
         let phase4_start = std::time::Instant::now();
         let enriched = if !self.config.skip_enrichment {
-            debug!("Phase 4: Enriching note with {} changed blocks", changed_count);
+            debug!(
+                "Phase 4: Enriching note with {} changed blocks",
+                changed_count
+            );
 
             // Call enrichment service with Merkle tree (avoids recomputation)
             self.enrichment_service
                 .enrich_with_tree(parsed.clone(), changed_block_ids.clone())
                 .await
-                .with_context(|| format!(
-                    "Phase 4: Failed to enrich note '{}' (processing {} changed blocks)",
-                    path.display(),
-                    changed_count
-                ))?
+                .with_context(|| {
+                    format!(
+                        "Phase 4: Failed to enrich note '{}' (processing {} changed blocks)",
+                        path.display(),
+                        changed_count
+                    )
+                })?
         } else {
             debug!("Phase 4: Enrichment skipped (disabled in config)");
 
@@ -287,9 +301,9 @@ impl NotePipeline {
             use crucible_core::enrichment::{EnrichedNote, NoteMetadata};
             EnrichedNote::new(
                 parsed.clone(),
-                Vec::new(),  // No embeddings
+                Vec::new(), // No embeddings
                 NoteMetadata::default(),
-                Vec::new(),  // No inferred relations
+                Vec::new(), // No inferred relations
             )
         };
 
@@ -308,24 +322,31 @@ impl NotePipeline {
         self.storage
             .store_enriched(&enriched, &path_str)
             .await
-            .with_context(|| format!(
-                "Phase 5: Failed to store enriched note for '{}'",
-                path.display()
-            ))?;
+            .with_context(|| {
+                format!(
+                    "Phase 5: Failed to store enriched note for '{}'",
+                    path.display()
+                )
+            })?;
 
         // Store Merkle tree separately for future diffs
-        self.merkle_store.store(&path_str, &new_tree).await
-            .with_context(|| format!(
-                "Phase 5: Failed to store Merkle tree for '{}'",
-                path.display()
-            ))?;
+        self.merkle_store
+            .store(&path_str, &new_tree)
+            .await
+            .with_context(|| {
+                format!(
+                    "Phase 5: Failed to store Merkle tree for '{}'",
+                    path.display()
+                )
+            })?;
 
         // Update file state tracking
-        self.update_file_state(path).await
-            .with_context(|| format!(
+        self.update_file_state(path).await.with_context(|| {
+            format!(
                 "Phase 5: Failed to update file state for '{}'",
                 path.display()
-            ))?;
+            )
+        })?;
 
         let phase5_duration = phase5_start.elapsed().as_millis() as u64;
 
@@ -341,7 +362,10 @@ impl NotePipeline {
             phase5_duration
         );
 
-        Ok(ProcessingResult::success(changed_count, embeddings_generated))
+        Ok(ProcessingResult::success(
+            changed_count,
+            embeddings_generated,
+        ))
     }
 
     /// Phase 1: Quick filter check
@@ -364,7 +388,8 @@ impl NotePipeline {
         // Compare states
         if let Some(stored) = stored_state {
             if stored.file_hash == current_state.file_hash
-                && stored.file_size == current_state.file_size {
+                && stored.file_size == current_state.file_size
+            {
                 debug!(
                     "File unchanged (hash: {}, size: {})",
                     &current_state.file_hash[..8],
@@ -379,10 +404,12 @@ impl NotePipeline {
 
     /// Compute current file state (hash, modified time, size)
     async fn compute_file_state(&self, path: &Path) -> Result<FileState> {
-        let metadata = tokio::fs::metadata(path).await
+        let metadata = tokio::fs::metadata(path)
+            .await
             .context("Failed to read file metadata")?;
 
-        let content = tokio::fs::read(path).await
+        let content = tokio::fs::read(path)
+            .await
             .context("Failed to read file content")?;
 
         let hash = blake3::hash(&content);
@@ -397,7 +424,9 @@ impl NotePipeline {
     /// Update stored file state after successful processing
     async fn update_file_state(&self, path: &Path) -> Result<()> {
         let state = self.compute_file_state(path).await?;
-        self.change_detector.store_file_state(path, state).await
+        self.change_detector
+            .store_file_state(path, state)
+            .await
             .context("Failed to store file state")?;
         Ok(())
     }
@@ -411,7 +440,10 @@ impl NotePipelineOrchestrator for NotePipeline {
         NotePipeline::process(self, path).await
     }
 
-    async fn process_with_metrics(&self, path: &Path) -> Result<(ProcessingResult, PipelineMetrics)> {
+    async fn process_with_metrics(
+        &self,
+        path: &Path,
+    ) -> Result<(ProcessingResult, PipelineMetrics)> {
         // TODO: Collect detailed metrics during processing
         // For now, just call process and return empty metrics
         let result = self.process(path).await?;
@@ -424,9 +456,9 @@ mod tests {
     use super::*;
     use crucible_core::processing::InMemoryChangeDetectionStore;
     use crucible_merkle::InMemoryMerkleStore;
+    use std::io::Write;
     use std::sync::Arc;
     use tempfile::NamedTempFile;
-    use std::io::Write;
 
     // TODO: Add tests once we have mock EnrichmentService
 

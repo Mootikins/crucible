@@ -8,7 +8,6 @@
 use chrono::Utc;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use crucible_core::parser::ParsedNote;
-use std::hint::black_box;
 use crucible_surrealdb::{
     kiln_integration::{
         get_document_embeddings, initialize_kiln_schema, retrieve_parsed_document, store_embedding,
@@ -16,6 +15,7 @@ use crucible_surrealdb::{
     },
     SurrealClient,
 };
+use std::hint::black_box;
 use std::path::PathBuf;
 
 // Helper to create test note
@@ -90,9 +90,18 @@ fn bench_graph_traversal(c: &mut Criterion) {
                     // Store embeddings
                     for i in 0..count {
                         let vector = vec![0.1 * i as f32; 384];
-                        store_embedding(&client, &note_id, vector, "bench-model", 512, i, None, None)
-                            .await
-                            .unwrap();
+                        store_embedding(
+                            &client,
+                            &note_id,
+                            vector,
+                            "bench-model",
+                            512,
+                            i,
+                            None,
+                            None,
+                        )
+                        .await
+                        .unwrap();
                     }
 
                     (client, note_id)

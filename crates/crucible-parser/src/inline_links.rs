@@ -8,7 +8,7 @@
 
 use super::error::ParseError;
 use super::extensions::SyntaxExtension;
-use super::types::{NoteContent, InlineLink};
+use super::types::{InlineLink, NoteContent};
 use async_trait::async_trait;
 
 use regex::Regex;
@@ -29,9 +29,7 @@ impl InlineLinkExtension {
         // - [text](url 'title') - link with single-quoted title
         // Captures: 1=text, 2=url, 3=title (optional)
         Self {
-            link_regex: Regex::new(
-                r#"\[([^\]]+)\]\(([^\s)]+)(?:\s+"([^"]+)")?\)"#
-            ).unwrap(),
+            link_regex: Regex::new(r#"\[([^\]]+)\]\(([^\s)]+)(?:\s+"([^"]+)")?\)"#).unwrap(),
         }
     }
 }
@@ -135,7 +133,8 @@ mod tests {
     #[tokio::test]
     async fn test_inline_link_with_title() {
         let extension = InlineLinkExtension::new();
-        let content = r#"Visit [Rust](https://rust-lang.org "The Rust Programming Language") today!"#;
+        let content =
+            r#"Visit [Rust](https://rust-lang.org "The Rust Programming Language") today!"#;
         let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;
@@ -146,14 +145,18 @@ mod tests {
         let link = &doc_content.inline_links[0];
         assert_eq!(link.text, "Rust");
         assert_eq!(link.url, "https://rust-lang.org");
-        assert_eq!(link.title, Some("The Rust Programming Language".to_string()));
+        assert_eq!(
+            link.title,
+            Some("The Rust Programming Language".to_string())
+        );
         assert!(link.is_external());
     }
 
     #[tokio::test]
     async fn test_multiple_inline_links() {
         let extension = InlineLinkExtension::new();
-        let content = r#"Check [Rust](https://rust-lang.org) and [GitHub](https://github.com) for more."#;
+        let content =
+            r#"Check [Rust](https://rust-lang.org) and [GitHub](https://github.com) for more."#;
         let mut doc_content = NoteContent::new();
 
         let errors = extension.parse(content, &mut doc_content).await;

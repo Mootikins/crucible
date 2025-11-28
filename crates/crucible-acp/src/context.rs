@@ -9,10 +9,10 @@
 //! - **Dependency Inversion**: Uses traits from crucible-core
 //! - **Open/Closed**: Extensible enrichment strategies
 
+use crate::{AcpError, Result};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use crate::{AcpError, Result};
 
 /// Configuration for context enrichment
 #[derive(Debug, Clone)]
@@ -84,10 +84,13 @@ impl ContextCache {
 
     fn insert(&self, query: String, enriched_prompt: String) {
         let mut cache = self.cache.lock().unwrap();
-        cache.insert(query, CachedResult {
-            enriched_prompt,
-            timestamp: Instant::now(),
-        });
+        cache.insert(
+            query,
+            CachedResult {
+                enriched_prompt,
+                timestamp: Instant::now(),
+            },
+        );
     }
 
     fn clear(&self) {
@@ -295,9 +298,15 @@ mod tests {
         assert!(result.is_ok(), "Enrichment should succeed");
 
         let enriched = result.unwrap();
-        assert!(enriched.contains("Context"), "Should include context header");
+        assert!(
+            enriched.contains("Context"),
+            "Should include context header"
+        );
         assert!(enriched.contains(query), "Should include original query");
-        assert!(enriched.len() > query.len(), "Enriched prompt should be longer");
+        assert!(
+            enriched.len() > query.len(),
+            "Enriched prompt should be longer"
+        );
     }
 
     #[tokio::test]
@@ -323,8 +332,10 @@ mod tests {
         assert!(enriched.contains("#"), "Should use markdown headers");
 
         // Should separate context from query
-        assert!(enriched.contains("---") || enriched.contains("User Query"),
-            "Should separate context from query");
+        assert!(
+            enriched.contains("---") || enriched.contains("User Query"),
+            "Should separate context from query"
+        );
     }
 
     #[tokio::test]

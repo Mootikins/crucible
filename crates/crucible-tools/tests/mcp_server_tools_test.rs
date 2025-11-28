@@ -3,11 +3,11 @@
 //! These tests verify that the MCP server correctly exposes all 12 Crucible tools
 //! and that they can be listed and called via the MCP protocol.
 
-use std::sync::Arc;
-use crucible_tools::CrucibleMcpServer;
-use crucible_core::traits::KnowledgeRepository;
 use crucible_core::enrichment::EmbeddingProvider;
+use crucible_core::traits::KnowledgeRepository;
+use crucible_tools::CrucibleMcpServer;
 use rmcp::ServerHandler;
+use std::sync::Arc;
 use tempfile::TempDir;
 
 // Mock implementations for testing
@@ -16,15 +16,24 @@ struct MockEmbeddingProvider;
 
 #[async_trait::async_trait]
 impl KnowledgeRepository for MockKnowledgeRepository {
-    async fn get_note_by_name(&self, _name: &str) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
+    async fn get_note_by_name(
+        &self,
+        _name: &str,
+    ) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
         Ok(None)
     }
 
-    async fn list_notes(&self, _path: Option<&str>) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteMetadata>> {
+    async fn list_notes(
+        &self,
+        _path: Option<&str>,
+    ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteMetadata>> {
         Ok(vec![])
     }
 
-    async fn search_vectors(&self, _vector: Vec<f32>) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+    async fn search_vectors(
+        &self,
+        _vector: Vec<f32>,
+    ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
         Ok(vec![])
     }
 }
@@ -85,7 +94,11 @@ async fn test_mcp_server_exposes_12_tools() {
     let server = create_test_server();
 
     let tool_count = server.tool_count();
-    assert_eq!(tool_count, 12, "Should expose exactly 12 tools, got {}", tool_count);
+    assert_eq!(
+        tool_count, 12,
+        "Should expose exactly 12 tools, got {}",
+        tool_count
+    );
 }
 
 /// Test that all expected tools are present
@@ -181,18 +194,34 @@ async fn test_tool_categories() {
     let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
 
     // Note tools (6)
-    let note_tools = ["create_note", "read_note", "read_metadata", "update_note", "delete_note", "list_notes"];
-    let note_count = note_tools.iter().filter(|t| tool_names.iter().any(|n| n == *t)).count();
+    let note_tools = [
+        "create_note",
+        "read_note",
+        "read_metadata",
+        "update_note",
+        "delete_note",
+        "list_notes",
+    ];
+    let note_count = note_tools
+        .iter()
+        .filter(|t| tool_names.iter().any(|n| n == *t))
+        .count();
     assert_eq!(note_count, 6, "Should have 6 note tools");
 
     // Search tools (3)
     let search_tools = ["semantic_search", "text_search", "property_search"];
-    let search_count = search_tools.iter().filter(|t| tool_names.iter().any(|n| n == *t)).count();
+    let search_count = search_tools
+        .iter()
+        .filter(|t| tool_names.iter().any(|n| n == *t))
+        .count();
     assert_eq!(search_count, 3, "Should have 3 search tools");
 
     // Kiln tools (3)
     let kiln_tools = ["get_kiln_info", "get_kiln_roots", "get_kiln_stats"];
-    let kiln_count = kiln_tools.iter().filter(|t| tool_names.iter().any(|n| n == *t)).count();
+    let kiln_count = kiln_tools
+        .iter()
+        .filter(|t| tool_names.iter().any(|n| n == *t))
+        .count();
     assert_eq!(kiln_count, 3, "Should have 3 kiln tools");
 }
 
@@ -204,7 +233,10 @@ async fn test_tool_descriptions_are_meaningful() {
     let tools = server.list_tools();
 
     for tool in &tools {
-        let desc = tool.description.as_ref().expect("Tool should have description");
+        let desc = tool
+            .description
+            .as_ref()
+            .expect("Tool should have description");
         let name = tool.name.as_ref();
 
         // Description should be longer than just the tool name

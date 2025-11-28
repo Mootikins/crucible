@@ -3,13 +3,12 @@
 //! Provides a configurable mock agent that handles the full ACP protocol,
 //! including streaming responses via `session/update` notifications.
 
-use std::io::{self, BufRead, Write};
 use serde_json::{json, Value};
+use std::io::{self, BufRead, Write};
 
 use agent_client_protocol::{
-    InitializeResponse, NewSessionResponse, PromptResponse,
-    ProtocolVersion, AgentCapabilities, AuthMethod, AuthMethodId, Implementation,
-    SessionId, StopReason,
+    AgentCapabilities, AuthMethod, AuthMethodId, Implementation, InitializeResponse,
+    NewSessionResponse, PromptResponse, ProtocolVersion, SessionId, StopReason,
 };
 
 use crate::behaviors::AgentBehavior;
@@ -197,7 +196,8 @@ impl MockAgent {
 
     /// Handle a JSON-RPC request and generate appropriate response
     fn handle_request(&mut self, request: &Value) -> Value {
-        let method = request.get("method")
+        let method = request
+            .get("method")
             .and_then(|m| m.as_str())
             .unwrap_or("unknown");
 
@@ -248,9 +248,9 @@ impl MockAgent {
             AgentBehavior::ClaudeAcp => ("mock-claude-acp", "1.0.0"),
             AgentBehavior::Gemini => ("mock-gemini", "1.0.0"),
             AgentBehavior::Codex => ("mock-codex", "1.0.0"),
-            AgentBehavior::Streaming |
-            AgentBehavior::StreamingSlow |
-            AgentBehavior::StreamingIncomplete => ("mock-streaming", "1.0.0"),
+            AgentBehavior::Streaming
+            | AgentBehavior::StreamingSlow
+            | AgentBehavior::StreamingIncomplete => ("mock-streaming", "1.0.0"),
             AgentBehavior::Custom(_) => ("mock-custom", "1.0.0"),
         };
 

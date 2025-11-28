@@ -8,8 +8,10 @@
 
 use anyhow::Result;
 use crucible_cli::commands::process;
-use crucible_cli::config::{CliConfig, CliAppConfig};
-use crucible_config::{EmbeddingConfig, AcpConfig, ChatConfig, EmbeddingProviderType, ProcessingConfig};
+use crucible_cli::config::{CliAppConfig, CliConfig};
+use crucible_config::{
+    AcpConfig, ChatConfig, EmbeddingConfig, EmbeddingProviderType, ProcessingConfig,
+};
 use std::path::PathBuf;
 use tempfile::TempDir;
 use tokio::time::{sleep, Duration};
@@ -75,7 +77,10 @@ async fn test_process_executes_pipeline() -> Result<()> {
     let result = process::execute(config, None, false, false, false, false, None).await;
 
     // Then: Command should succeed
-    assert!(result.is_ok(), "Process command should execute successfully");
+    assert!(
+        result.is_ok(),
+        "Process command should execute successfully"
+    );
 
     // TODO: After implementation, verify:
     // 1. Pipeline was actually invoked (not just a stub)
@@ -213,7 +218,16 @@ async fn test_process_single_file() -> Result<()> {
     let config = create_test_config(kiln_path, db_path);
 
     // When: Processing only a specific file
-    let result = process::execute(config, Some(target_file.clone()), false, false, false, false, None).await;
+    let result = process::execute(
+        config,
+        Some(target_file.clone()),
+        false,
+        false,
+        false,
+        false,
+        None,
+    )
+    .await;
 
     // Then: Should succeed
     assert!(result.is_ok(), "Processing single file should succeed");
@@ -466,7 +480,10 @@ async fn test_dry_run_discovers_files_without_processing() -> Result<()> {
     let result = process::execute(config, None, false, false, false, true, None).await;
 
     // THEN: Command should succeed
-    assert!(result.is_ok(), "Dry-run command should execute successfully");
+    assert!(
+        result.is_ok(),
+        "Dry-run command should execute successfully"
+    );
 
     // AND: Database should be empty (no files were actually processed)
     // TODO: After implementation, verify:

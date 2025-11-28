@@ -13,8 +13,8 @@ use walkdir::WalkDir;
 
 use crate::config::CliConfig;
 use crate::{factories, output};
-use crucible_watch::{EventFilter, FileEvent, FileEventKind, WatchMode};
 use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
+use crucible_watch::{EventFilter, FileEvent, FileEventKind, WatchMode};
 
 /// Execute the process command
 ///
@@ -38,7 +38,8 @@ pub async fn execute(
     info!("Starting process command");
 
     // Determine target path
-    let target_path = path.as_ref()
+    let target_path = path
+        .as_ref()
         .map(|p| p.as_path())
         .unwrap_or(config.kiln_path.as_path());
 
@@ -55,11 +56,8 @@ pub async fn execute(
 
     // Create pipeline (wrapped in Arc for sharing across tasks)
     output::info("Creating processing pipeline...");
-    let pipeline = Arc::new(factories::create_pipeline(
-        storage_client.clone(),
-        &config,
-        force,
-    ).await?);
+    let pipeline =
+        Arc::new(factories::create_pipeline(storage_client.clone(), &config, force).await?);
     output::success("Pipeline ready");
 
     // Discover files to process
@@ -75,7 +73,9 @@ pub async fn execute(
     let pb = ProgressBar::new(files.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")?
+            .template(
+                "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}",
+            )?
             .progress_chars("#>-"),
     );
 
@@ -85,7 +85,7 @@ pub async fn execute(
     let workers = parallel
         .or(config.parallel_workers())
         .unwrap_or(default_workers)
-        .max(1);  // At least 1 worker
+        .max(1); // At least 1 worker
 
     info!("Using {} parallel workers", workers);
 
@@ -93,7 +93,11 @@ pub async fn execute(
     if dry_run {
         println!("\n🔍 DRY RUN MODE - No changes will be made");
     }
-    println!("\n🔄 Processing {} files through pipeline (with {} workers)...", files.len(), workers);
+    println!(
+        "\n🔄 Processing {} files through pipeline (with {} workers)...",
+        files.len(),
+        workers
+    );
 
     // Use atomic counters for thread-safe updates
     let processed_count = Arc::new(AtomicUsize::new(0));
@@ -116,7 +120,8 @@ pub async fn execute(
         let handle = tokio::spawn(async move {
             let _permit = permit; // Release on drop
 
-            let file_name = file.file_name()
+            let file_name = file
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown")
                 .to_string();
@@ -129,8 +134,8 @@ pub async fn execute(
                     Ok(crucible_core::processing::ProcessingResult::Success { .. }) => {
                         processed.fetch_add(1, Ordering::Relaxed);
                     }
-                    Ok(crucible_core::processing::ProcessingResult::Skipped) |
-                    Ok(crucible_core::processing::ProcessingResult::NoChanges) => {
+                    Ok(crucible_core::processing::ProcessingResult::Skipped)
+                    | Ok(crucible_core::processing::ProcessingResult::NoChanges) => {
                         skipped.fetch_add(1, Ordering::Relaxed);
                     }
                     Err(e) => {
@@ -209,7 +214,9 @@ pub async fn execute(
 
         // Start watching the target path
         // IMPORTANT: Keep handle alive for duration of watch to prevent premature cleanup
-        let watch_handle = watcher.watch(target_path.to_path_buf(), watch_config).await?;
+        let watch_handle = watcher
+            .watch(target_path.to_path_buf(), watch_config)
+            .await?;
         info!("Watch started on: {}", target_path.display());
 
         // Event processing loop with Ctrl+C handling

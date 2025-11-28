@@ -10,7 +10,9 @@ use crate::block_hasher::SimpleBlockHasher;
 use crate::error::{ParserError, ParserResult};
 use crate::extensions::ExtensionRegistry;
 use crate::traits::{MarkdownParser, ParserCapabilities};
-use crate::types::{Callout, FootnoteMap, LatexExpression, NoteContent, ParsedNote, ParsedNoteMetadata};
+use crate::types::{
+    Callout, FootnoteMap, LatexExpression, NoteContent, ParsedNote, ParsedNoteMetadata,
+};
 
 /// Default implementation of the MarkdownParser trait
 ///
@@ -329,11 +331,7 @@ impl MarkdownParser for CrucibleParser {
         self.parse_content(&content, path).await
     }
 
-    async fn parse_content(
-        &self,
-        content: &str,
-        source_path: &Path,
-    ) -> ParserResult<ParsedNote> {
+    async fn parse_content(&self, content: &str, source_path: &Path) -> ParserResult<ParsedNote> {
         // Parse frontmatter
         let (frontmatter_raw, content, frontmatter_format) = self.parse_frontmatter(content);
 
@@ -396,7 +394,8 @@ impl MarkdownParser for CrucibleParser {
         let inline_links = document_content.inline_links.clone();
 
         // Extract structural metadata from parsed content
-        let metadata = Self::extract_metadata(&document_content, &callouts, &latex_expressions, &footnotes);
+        let metadata =
+            Self::extract_metadata(&document_content, &callouts, &latex_expressions, &footnotes);
 
         // Create the initial parsed note using builder pattern
         let mut parsed_doc = ParsedNote::builder(source_path.to_path_buf())

@@ -56,23 +56,9 @@ pub mod adapters;
 // Public configuration and data types
 pub mod types;
 pub use types::{
-    BatchOperation,
-    BatchOperationType,
-    DatabaseStats,
-    DbError,
-    DbResult,
-    EmbeddingData,
-    EmbeddingDocument,
-    EmbeddingMetadata,
-    Note,
-    QueryResult,
-    Record,
-    RecordId,
-    SearchFilters,
-    SearchQuery,
-    SelectQuery,
-    SurrealDbConfig,
-    TableSchema,
+    BatchOperation, BatchOperationType, DatabaseStats, DbError, DbResult, EmbeddingData,
+    EmbeddingDocument, EmbeddingMetadata, Note, QueryResult, Record, RecordId, SearchFilters,
+    SearchQuery, SelectQuery, SurrealDbConfig, TableSchema,
 };
 
 // Public observability (metrics)
@@ -136,22 +122,22 @@ pub mod kiln_integration;
 // PRIVATE infrastructure modules - use factory functions instead!
 // ============================================================================
 
-pub(crate) mod surreal_client;
+pub(crate) mod batch_aware_client;
+pub(crate) mod change_detection_store;
+pub(crate) mod consistency;
 pub(crate) mod eav_graph;
 pub(crate) mod merkle_persistence;
-pub(crate) mod change_detection_store;
-pub(crate) mod batch_aware_client;
-pub(crate) mod consistency;
 pub(crate) mod migration;
 pub(crate) mod query;
+pub(crate) mod surreal_client;
 pub(crate) mod utils;
 
 #[cfg(feature = "embeddings")]
-pub(crate) mod transaction_consumer;
-#[cfg(feature = "embeddings")]
 pub mod embedding;
+#[cfg(feature = "embeddings")]
+pub(crate) mod transaction_consumer;
 
 // Internal re-exports for use within this crate only
-pub(crate) use surreal_client::SurrealClient;
 pub(crate) use eav_graph::{EAVGraphStore, NoteIngestor};
 pub(crate) use merkle_persistence::MerklePersistence;
+pub(crate) use surreal_client::SurrealClient;

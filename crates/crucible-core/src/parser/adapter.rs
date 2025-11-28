@@ -3,8 +3,8 @@
 //! This module provides functionality to transform ParsedNote instances
 //! into SurrealDB-compatible data structures for indexing.
 
-use anyhow::Result;
 use crate::parser::types::ParsedNote;
+use anyhow::Result;
 use serde_json::{Map, Value};
 
 /// Adapter for converting parsed documents to SurrealDB records

@@ -9,17 +9,14 @@
 //! - **Dependency Inversion**: Uses traits and types from other modules
 //! - **Open/Closed**: Extensible chat strategies and handlers
 
-use crate::{
-    ConversationHistory, HistoryConfig, HistoryMessage,
-    PromptEnricher, ContextConfig,
-    StreamHandler, StreamConfig, ToolCallInfo,
-    CrucibleAcpClient,
-    ToolRegistry, ToolExecutor, discover_crucible_tools,
-    AcpError, Result,
-};
 use crate::session::AcpSession;
-use std::time::{SystemTime, UNIX_EPOCH};
+use crate::{
+    discover_crucible_tools, AcpError, ContextConfig, ConversationHistory, CrucibleAcpClient,
+    HistoryConfig, HistoryMessage, PromptEnricher, Result, StreamConfig, StreamHandler,
+    ToolCallInfo, ToolExecutor, ToolRegistry,
+};
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Maximum allowed message length (50K characters)
 const MAX_MESSAGE_LENGTH: usize = 50_000;
@@ -171,21 +168,22 @@ fn validate_message(message: &str) -> Result<()> {
     // Check for empty or whitespace-only messages
     if message.trim().is_empty() {
         return Err(AcpError::Validation(
-            "Message cannot be empty or whitespace-only".to_string()
+            "Message cannot be empty or whitespace-only".to_string(),
         ));
     }
 
     // Check maximum length
     if message.len() > MAX_MESSAGE_LENGTH {
-        return Err(AcpError::Validation(
-            format!("Message exceeds maximum length of {} characters", MAX_MESSAGE_LENGTH)
-        ));
+        return Err(AcpError::Validation(format!(
+            "Message exceeds maximum length of {} characters",
+            MAX_MESSAGE_LENGTH
+        )));
     }
 
     // Check for null bytes
     if message.contains('\0') {
         return Err(AcpError::Validation(
-            "Message cannot contain null bytes".to_string()
+            "Message cannot contain null bytes".to_string(),
         ));
     }
 
@@ -281,7 +279,8 @@ impl ChatSession {
     /// Returns an error if tool discovery fails
     pub fn initialize_tools(&mut self, kiln_path: PathBuf) -> Result<()> {
         // Discover and register all Crucible tools
-        let count = discover_crucible_tools(&mut self.tool_registry, kiln_path.to_str().unwrap_or(""))?;
+        let count =
+            discover_crucible_tools(&mut self.tool_registry, kiln_path.to_str().unwrap_or(""))?;
         tracing::info!("Registered {} tools for chat session", count);
 
         // Create tool executor
@@ -315,7 +314,9 @@ impl ChatSession {
             self.agent_session = Some(session);
             Ok(())
         } else {
-            Err(AcpError::Connection("No agent client configured".to_string()))
+            Err(AcpError::Connection(
+                "No agent client configured".to_string(),
+            ))
         }
     }
 
@@ -338,7 +339,9 @@ impl ChatSession {
             self.agent_session = Some(session);
             Ok(())
         } else {
-            Err(AcpError::Connection("No agent client configured".to_string()))
+            Err(AcpError::Connection(
+                "No agent client configured".to_string(),
+            ))
         }
     }
 
@@ -370,9 +373,11 @@ impl ChatSession {
     /// # Errors
     ///
     /// Returns an error if message processing fails
-    pub async fn send_message(&mut self, user_message: &str) -> Result<(String, Vec<ToolCallInfo>)> {
+    pub async fn send_message(
+        &mut self,
+        user_message: &str,
+    ) -> Result<(String, Vec<ToolCallInfo>)> {
         validate_message(user_message)?;
-
 
         // Step 1: Add user message to history
         let user_msg = HistoryMessage::user(user_message.to_string());
@@ -423,10 +428,13 @@ impl ChatSession {
     ///
     /// If an agent is connected, sends the prompt via ACP protocol.
     /// Otherwise, returns a mock response for testing.
-    async fn generate_agent_response(&mut self, prompt: &str) -> Result<(String, Vec<ToolCallInfo>)> {
+    async fn generate_agent_response(
+        &mut self,
+        prompt: &str,
+    ) -> Result<(String, Vec<ToolCallInfo>)> {
         if let (Some(client), Some(session)) = (&mut self.agent_client, &self.agent_session) {
             // Real agent mode: Send prompt via ACP protocol with streaming
-            use agent_client_protocol::{PromptRequest, ContentBlock, SessionId};
+            use agent_client_protocol::{ContentBlock, PromptRequest, SessionId};
 
             // Create a proper PromptRequest
             let prompt_request = PromptRequest {
@@ -440,9 +448,15 @@ impl ChatSession {
             let request_id = REQUEST_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
             // Send prompt with streaming and accumulate content
-            let (content, tool_calls, _stop_reason) = client.send_prompt_with_streaming(prompt_request, request_id).await?;
+            let (content, tool_calls, _stop_reason) = client
+                .send_prompt_with_streaming(prompt_request, request_id)
+                .await?;
 
-            tracing::debug!("Accumulated {} bytes of content from agent, {} tool calls", content.len(), tool_calls.len());
+            tracing::debug!(
+                "Accumulated {} bytes of content from agent, {} tool calls",
+                content.len(),
+                tool_calls.len()
+            );
 
             Ok((content, tool_calls))
         } else {
@@ -599,8 +613,10 @@ mod tests {
         // Should have auto-pruned to stay within limits
         // 3 user messages + 3 agent responses = 6 messages
         // After pruning, should have max 4 messages
-        assert!(session.history().message_count() <= 4,
-            "Should auto-prune to stay within message limit");
+        assert!(
+            session.history().message_count() <= 4,
+            "Should auto-prune to stay within message limit"
+        );
     }
 
     #[tokio::test]
@@ -622,8 +638,11 @@ mod tests {
         session.send_message("Message 2").await.unwrap();
 
         // Should NOT auto-prune, so we have 4 messages (2 user + 2 agent)
-        assert_eq!(session.history().message_count(), 4,
-            "Should not auto-prune when disabled");
+        assert_eq!(
+            session.history().message_count(),
+            4,
+            "Should not auto-prune when disabled"
+        );
     }
 
     #[tokio::test]
@@ -661,15 +680,24 @@ mod tests {
         };
 
         let mut session = ChatSession::new(config);
-        assert!(session.config().enrich_prompts, "Should start with enrichment enabled");
+        assert!(
+            session.config().enrich_prompts,
+            "Should start with enrichment enabled"
+        );
 
         // Disable enrichment
         session.set_enrichment_enabled(false);
-        assert!(!session.config().enrich_prompts, "Should disable enrichment");
+        assert!(
+            !session.config().enrich_prompts,
+            "Should disable enrichment"
+        );
 
         // Re-enable enrichment
         session.set_enrichment_enabled(true);
-        assert!(session.config().enrich_prompts, "Should re-enable enrichment");
+        assert!(
+            session.config().enrich_prompts,
+            "Should re-enable enrichment"
+        );
     }
 
     #[test]
@@ -680,7 +708,10 @@ mod tests {
         assert_eq!(state.turn_count, 0, "Should start with zero turns");
         assert_eq!(state.total_tokens_used, 0, "Should start with zero tokens");
         assert_eq!(state.prune_count, 0, "Should start with zero prunes");
-        assert!(state.last_message_at.is_none(), "Should have no last message initially");
+        assert!(
+            state.last_message_at.is_none(),
+            "Should have no last message initially"
+        );
         assert!(state.started_at > 0, "Should have a start timestamp");
     }
 
@@ -693,15 +724,27 @@ mod tests {
 
         // Send first message
         session.send_message("First message").await.unwrap();
-        assert_eq!(session.state().turn_count, 1, "Should have 1 turn after first exchange");
+        assert_eq!(
+            session.state().turn_count,
+            1,
+            "Should have 1 turn after first exchange"
+        );
 
         // Send second message
         session.send_message("Second message").await.unwrap();
-        assert_eq!(session.state().turn_count, 2, "Should have 2 turns after second exchange");
+        assert_eq!(
+            session.state().turn_count,
+            2,
+            "Should have 2 turns after second exchange"
+        );
 
         // Send third message
         session.send_message("Third message").await.unwrap();
-        assert_eq!(session.state().turn_count, 3, "Should have 3 turns after third exchange");
+        assert_eq!(
+            session.state().turn_count,
+            3,
+            "Should have 3 turns after third exchange"
+        );
     }
 
     #[tokio::test]
@@ -716,11 +759,17 @@ mod tests {
 
         // Tokens should be tracked from history
         let tokens_after_turn1 = session.state().total_tokens_used;
-        assert!(tokens_after_turn1 > 0, "Should track tokens after first turn");
+        assert!(
+            tokens_after_turn1 > 0,
+            "Should track tokens after first turn"
+        );
 
         session.send_message("How are you?").await.unwrap();
         let tokens_after_turn2 = session.state().total_tokens_used;
-        assert!(tokens_after_turn2 > tokens_after_turn1, "Tokens should increase with more turns");
+        assert!(
+            tokens_after_turn2 > tokens_after_turn1,
+            "Tokens should increase with more turns"
+        );
     }
 
     #[tokio::test]
@@ -733,15 +782,24 @@ mod tests {
         // After first message, should have timestamp
         session.send_message("Test").await.unwrap();
         let timestamp1 = session.state().last_message_at;
-        assert!(timestamp1.is_some(), "Should have timestamp after first message");
+        assert!(
+            timestamp1.is_some(),
+            "Should have timestamp after first message"
+        );
 
         // Wait a tiny bit and send another
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
         session.send_message("Another test").await.unwrap();
         let timestamp2 = session.state().last_message_at;
 
-        assert!(timestamp2.is_some(), "Should have timestamp after second message");
-        assert!(timestamp2.unwrap() >= timestamp1.unwrap(), "Timestamp should not go backwards");
+        assert!(
+            timestamp2.is_some(),
+            "Should have timestamp after second message"
+        );
+        assert!(
+            timestamp2.unwrap() >= timestamp1.unwrap(),
+            "Timestamp should not go backwards"
+        );
     }
 
     #[tokio::test]
@@ -764,7 +822,10 @@ mod tests {
         session.send_message("Message 2").await.unwrap();
         session.send_message("Message 3").await.unwrap(); // Should trigger prune
 
-        assert!(session.state().prune_count > 0, "Should have pruned at least once");
+        assert!(
+            session.state().prune_count > 0,
+            "Should have pruned at least once"
+        );
     }
 
     #[tokio::test]
@@ -773,14 +834,20 @@ mod tests {
 
         // Duration should be very small initially
         let initial_duration = session.state().duration_secs();
-        assert!(initial_duration < 5, "Initial duration should be very small");
+        assert!(
+            initial_duration < 5,
+            "Initial duration should be very small"
+        );
 
         // Send a message
         session.send_message("Test").await.unwrap();
 
         // Duration should still be small but non-zero
         let duration_after = session.state().duration_secs();
-        assert!(duration_after >= initial_duration, "Duration should not decrease");
+        assert!(
+            duration_after >= initial_duration,
+            "Duration should not decrease"
+        );
     }
 
     #[tokio::test]
@@ -812,7 +879,11 @@ mod tests {
         assert!(result.is_err(), "Should reject whitespace-only messages");
 
         // State should not be updated on error
-        assert_eq!(session.state().turn_count, 0, "Turn count should not increase on error");
+        assert_eq!(
+            session.state().turn_count,
+            0,
+            "Turn count should not increase on error"
+        );
     }
 
     #[tokio::test]
@@ -824,7 +895,10 @@ mod tests {
 
         // Should be rejected
         let result = session.send_message(&long_message).await;
-        assert!(result.is_err(), "Should reject messages exceeding max length");
+        assert!(
+            result.is_err(),
+            "Should reject messages exceeding max length"
+        );
 
         // State should not be updated
         assert_eq!(session.state().turn_count, 0);
@@ -843,8 +917,16 @@ mod tests {
         let _ = session.send_message("").await;
 
         // State should be unchanged (rollback happened)
-        assert_eq!(session.state().turn_count, 1, "Turn count should not change on error");
-        assert_eq!(session.history().message_count(), history_count, "History should be unchanged on error");
+        assert_eq!(
+            session.state().turn_count,
+            1,
+            "Turn count should not change on error"
+        );
+        assert_eq!(
+            session.history().message_count(),
+            history_count,
+            "History should be unchanged on error"
+        );
     }
 
     #[tokio::test]
@@ -904,7 +986,10 @@ mod tests {
 
         // Should still be able to send valid messages
         let result = session.send_message("Valid message after errors").await;
-        assert!(result.is_ok(), "Should recover and process valid messages after errors");
+        assert!(
+            result.is_ok(),
+            "Should recover and process valid messages after errors"
+        );
         assert_eq!(session.state().turn_count, 1);
     }
 
@@ -914,12 +999,25 @@ mod tests {
         let session2 = ChatSession::new(ChatConfig::default());
 
         // Each session should have a unique ID
-        assert!(!session1.session_id().is_empty(), "Session ID should not be empty");
-        assert!(!session2.session_id().is_empty(), "Session ID should not be empty");
-        assert_ne!(session1.session_id(), session2.session_id(), "Session IDs should be unique");
+        assert!(
+            !session1.session_id().is_empty(),
+            "Session ID should not be empty"
+        );
+        assert!(
+            !session2.session_id().is_empty(),
+            "Session ID should not be empty"
+        );
+        assert_ne!(
+            session1.session_id(),
+            session2.session_id(),
+            "Session IDs should be unique"
+        );
 
         // ID should have expected format
-        assert!(session1.session_id().starts_with("session-"), "Session ID should start with 'session-'");
+        assert!(
+            session1.session_id().starts_with("session-"),
+            "Session ID should start with 'session-'"
+        );
     }
 
     #[test]
@@ -931,7 +1029,10 @@ mod tests {
         assert!(metadata.tags.is_empty(), "Tags should initially be empty");
         assert!(metadata.created_at > 0, "Created timestamp should be set");
         assert!(metadata.updated_at > 0, "Updated timestamp should be set");
-        assert_eq!(metadata.created_at, metadata.updated_at, "Initially created_at should equal updated_at");
+        assert_eq!(
+            metadata.created_at, metadata.updated_at,
+            "Initially created_at should equal updated_at"
+        );
     }
 
     #[test]
@@ -943,8 +1044,14 @@ mod tests {
         // Set title
         session.set_title("My Chat Session");
 
-        assert_eq!(session.metadata().title, Some("My Chat Session".to_string()));
-        assert!(session.metadata().updated_at >= initial_updated, "Updated timestamp should advance");
+        assert_eq!(
+            session.metadata().title,
+            Some("My Chat Session".to_string())
+        );
+        assert!(
+            session.metadata().updated_at >= initial_updated,
+            "Updated timestamp should advance"
+        );
 
         // Update title
         session.set_title("Updated Title");
@@ -968,7 +1075,11 @@ mod tests {
 
         // Adding duplicate should be ignored
         session.add_tag("important");
-        assert_eq!(session.metadata().tags.len(), 3, "Duplicate tags should not be added");
+        assert_eq!(
+            session.metadata().tags.len(),
+            3,
+            "Duplicate tags should not be added"
+        );
 
         // Remove tag
         let removed = session.remove_tag("important");
@@ -994,8 +1105,10 @@ mod tests {
         session.send_message("Hello").await.unwrap();
 
         // Metadata should be updated
-        assert!(session.metadata().updated_at > initial_updated,
-            "Updated timestamp should advance after message");
+        assert!(
+            session.metadata().updated_at > initial_updated,
+            "Updated timestamp should advance after message"
+        );
     }
 
     #[test]
@@ -1031,16 +1144,26 @@ mod tests {
         session.set_title("New Title");
         let after_title_update = session.metadata().updated_at;
 
-        assert!(after_title_update > initial_updated, "Timestamp should update on title change");
+        assert!(
+            after_title_update > initial_updated,
+            "Timestamp should update on title change"
+        );
 
         // Add tag
         tokio::time::sleep(tokio::time::Duration::from_millis(1100)).await;
         session.add_tag("test");
         let after_tag_add = session.metadata().updated_at;
 
-        assert!(after_tag_add >= after_title_update, "Timestamp should update on tag add");
+        assert!(
+            after_tag_add >= after_title_update,
+            "Timestamp should update on tag add"
+        );
 
         // Created timestamp should never change
-        assert_eq!(session.metadata().created_at, created, "Created timestamp should never change");
+        assert_eq!(
+            session.metadata().created_at,
+            created,
+            "Created timestamp should never change"
+        );
     }
 }

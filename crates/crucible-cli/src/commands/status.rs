@@ -10,11 +10,11 @@ use crate::formatting::{format_bytes, format_timestamp, render_table, OutputForm
 use crate::output;
 use crucible_core::hashing::blake3::Blake3Hasher;
 use crucible_core::parser::StorageAwareParser;
-use crucible_parser::CrucibleParser;
 use crucible_core::storage::builder::{
     ContentAddressedStorageBuilder, HasherConfig, StorageBackendType,
 };
 use crucible_core::storage::{ContentAddressedStorage, StorageResult};
+use crucible_parser::CrucibleParser;
 
 // Removed: Now using shared OutputFormat from formatting module
 

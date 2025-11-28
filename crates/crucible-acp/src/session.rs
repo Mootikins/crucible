@@ -35,7 +35,7 @@ pub struct SessionConfig {
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
-            timeout_ms: 30000, // 30 seconds
+            timeout_ms: 30000,                  // 30 seconds
             max_message_size: 10 * 1024 * 1024, // 10 MB
             debug: false,
         }

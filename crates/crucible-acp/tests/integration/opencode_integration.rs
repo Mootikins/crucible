@@ -3,10 +3,10 @@
 //! These tests verify that the CrucibleAcpClient can successfully complete
 //! the full handshake with an OpenCode-compatible mock agent and exchange messages.
 
-use std::path::PathBuf;
-use crucible_acp::CrucibleAcpClient;
+use crate::support::{MockStdioAgent, MockStdioAgentConfig};
 use crucible_acp::client::ClientConfig;
-use crate::support::{MockStdioAgentConfig, MockStdioAgent};
+use crucible_acp::CrucibleAcpClient;
+use std::path::PathBuf;
 
 /// Test that the client can complete the full handshake with an OpenCode mock agent
 ///
@@ -25,7 +25,12 @@ async fn test_opencode_complete_handshake() {
     // Create a client configuration pointing to our mock agent
     // Get the workspace root and build the path to the mock agent
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let workspace_root = PathBuf::from(&manifest_dir).parent().unwrap().parent().unwrap().to_path_buf();
+    let workspace_root = PathBuf::from(&manifest_dir)
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
     let mock_agent_path = workspace_root.join("target/debug/mock-acp-agent");
 
     println!("Using mock agent at: {}", mock_agent_path.display());
@@ -35,7 +40,7 @@ async fn test_opencode_complete_handshake() {
     let client_config = ClientConfig {
         agent_path: mock_agent_path,
         agent_args: None,  // OpenCode is default behavior, no args needed
-        working_dir: None,  // Don't set working dir for test
+        working_dir: None, // Don't set working dir for test
         env_vars: None,
         timeout_ms: Some(5000),
         max_retries: Some(1),
@@ -50,13 +55,20 @@ async fn test_opencode_complete_handshake() {
     if let Err(ref e) = result {
         eprintln!("Handshake failed with error: {:?}", e);
     }
-    assert!(result.is_ok(), "Should complete handshake successfully: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Should complete handshake successfully: {:?}",
+        result.err()
+    );
 
     let session = result.unwrap();
     assert!(!session.id().is_empty(), "Should have valid session ID");
 
     // Verify client is connected
-    assert!(client.is_connected(), "Client should be connected after handshake");
+    assert!(
+        client.is_connected(),
+        "Client should be connected after handshake"
+    );
 }
 
 /// Test that initialization request gets proper response

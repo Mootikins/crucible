@@ -4,15 +4,13 @@
 //! metadata extraction, and relation inference. Follows clean architecture
 //! principles with dependency injection.
 
-use crate::types::{
-    BlockEmbedding, EnrichedNoteWithTree, InferredRelation, NoteMetadata,
-};
+use crate::types::{BlockEmbedding, EnrichedNoteWithTree, InferredRelation, NoteMetadata};
+use anyhow::Result;
+use async_trait::async_trait;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_core::{MerkleTreeBuilder, ParsedNote};
-use anyhow::Result;
 use std::sync::Arc;
 use tracing::{debug, info};
-use async_trait::async_trait;
 
 /// Default minimum word count for generating embeddings
 pub const DEFAULT_MIN_WORDS_FOR_EMBEDDING: usize = 5;
@@ -131,20 +129,30 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
         let block_texts = self.extract_block_texts(parsed, changed_blocks);
 
         if block_texts.is_empty() {
-            debug!("No blocks meet embedding criteria (min {} words)", self.min_words_for_embedding);
+            debug!(
+                "No blocks meet embedding criteria (min {} words)",
+                self.min_words_for_embedding
+            );
             return Ok(Vec::new());
         }
 
         let model_name = provider.model_name();
 
-        info!("Generating embeddings for {} blocks (batches of {})",
-            block_texts.len(), self.max_batch_size);
+        info!(
+            "Generating embeddings for {} blocks (batches of {})",
+            block_texts.len(),
+            self.max_batch_size
+        );
 
         let mut all_embeddings = Vec::new();
 
         // Process in batches to limit memory usage
         for (batch_idx, chunk) in block_texts.chunks(self.max_batch_size).enumerate() {
-            debug!("Processing batch {} ({} blocks)", batch_idx + 1, chunk.len());
+            debug!(
+                "Processing batch {} ({} blocks)",
+                batch_idx + 1,
+                chunk.len()
+            );
 
             let texts: Vec<&str> = chunk.iter().map(|(_, text)| text.as_str()).collect();
             let block_ids: Vec<&String> = chunk.iter().map(|(id, _)| id).collect();
@@ -157,18 +165,18 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
                 .iter()
                 .zip(vectors)
                 .map(|(block_id, vector)| {
-                    BlockEmbedding::new(
-                        (*block_id).clone(),
-                        vector,
-                        model_name.to_string(),
-                    )
+                    BlockEmbedding::new((*block_id).clone(), vector, model_name.to_string())
                 })
                 .collect();
 
             all_embeddings.extend(batch_embeddings);
         }
 
-        info!("Generated {} embeddings using {}", all_embeddings.len(), model_name);
+        info!(
+            "Generated {} embeddings using {}",
+            all_embeddings.len(),
+            model_name
+        );
 
         Ok(all_embeddings)
     }
@@ -200,7 +208,10 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
             let word_count = heading.text.split_whitespace().count();
             if word_count >= self.min_words_for_embedding {
                 // Add breadcrumbs for context
-                let context = breadcrumbs.get(&heading.offset).cloned().unwrap_or_default();
+                let context = breadcrumbs
+                    .get(&heading.offset)
+                    .cloned()
+                    .unwrap_or_default();
                 let text_with_context = if context.is_empty() {
                     heading.text.clone()
                 } else {
@@ -221,7 +232,10 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
 
             if paragraph.word_count >= self.min_words_for_embedding {
                 // Add breadcrumbs for context
-                let context = breadcrumbs.get(&paragraph.offset).cloned().unwrap_or_default();
+                let context = breadcrumbs
+                    .get(&paragraph.offset)
+                    .cloned()
+                    .unwrap_or_default();
                 let text_with_context = if context.is_empty() {
                     paragraph.content.clone()
                 } else {
@@ -243,7 +257,10 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
             let word_count = code_block.content.split_whitespace().count();
             if word_count >= self.min_words_for_embedding {
                 // Add breadcrumbs for context
-                let context = breadcrumbs.get(&code_block.offset).cloned().unwrap_or_default();
+                let context = breadcrumbs
+                    .get(&code_block.offset)
+                    .cloned()
+                    .unwrap_or_default();
                 let text_with_context = if context.is_empty() {
                     code_block.content.clone()
                 } else {
@@ -263,7 +280,9 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
             }
 
             // Concatenate all list items
-            let list_text: String = list.items.iter()
+            let list_text: String = list
+                .items
+                .iter()
                 .map(|item| item.content.as_str())
                 .collect::<Vec<_>>()
                 .join(" ");
@@ -293,7 +312,10 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
             let word_count = blockquote.content.split_whitespace().count();
             if word_count >= self.min_words_for_embedding {
                 // Add breadcrumbs for context
-                let context = breadcrumbs.get(&blockquote.offset).cloned().unwrap_or_default();
+                let context = breadcrumbs
+                    .get(&blockquote.offset)
+                    .cloned()
+                    .unwrap_or_default();
                 let text_with_context = if context.is_empty() {
                     blockquote.content.clone()
                 } else {
@@ -307,9 +329,11 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
             "Extracted {} blocks from {} ({} total blocks in note)",
             blocks.len(),
             parsed.path.display(),
-            parsed.content.headings.len() + parsed.content.paragraphs.len() +
-            parsed.content.code_blocks.len() + parsed.content.lists.len() +
-            parsed.content.blockquotes.len()
+            parsed.content.headings.len()
+                + parsed.content.paragraphs.len()
+                + parsed.content.code_blocks.len()
+                + parsed.content.lists.len()
+                + parsed.content.blockquotes.len()
         );
 
         blocks
@@ -317,7 +341,10 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
 
     /// Extract metadata from the parsed note
     async fn extract_metadata(&self, parsed: &ParsedNote) -> Result<NoteMetadata> {
-        debug!("Computing enrichment metadata for {}", parsed.path.display());
+        debug!(
+            "Computing enrichment metadata for {}",
+            parsed.path.display()
+        );
 
         let mut metadata = NoteMetadata::new();
 
@@ -341,8 +368,7 @@ impl<M: MerkleTreeBuilder> DefaultEnrichmentService<M> {
 
         debug!(
             "Enrichment metadata computed: {:.1} min read, complexity {:.2}",
-            metadata.reading_time_minutes,
-            metadata.complexity_score
+            metadata.reading_time_minutes, metadata.complexity_score
         );
 
         Ok(metadata)
@@ -392,7 +418,8 @@ fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, St
     let mut heading_stack: Vec<(u8, &str, usize)> = Vec::new(); // (level, text, start_offset)
 
     // Extract filename (without extension) for breadcrumb prefix
-    let filename = parsed.path
+    let filename = parsed
+        .path
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("Unknown");
@@ -420,7 +447,9 @@ fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, St
         breadcrumbs.insert(heading.offset, breadcrumb.clone());
 
         // Find the next heading offset or use file end
-        let next_offset = parsed.content.headings
+        let next_offset = parsed
+            .content
+            .headings
             .iter()
             .find(|h| h.offset > heading.offset)
             .map(|h| h.offset)
@@ -456,11 +485,12 @@ fn build_breadcrumbs(parsed: &ParsedNote) -> std::collections::HashMap<usize, St
     breadcrumbs
 }
 
-
 // Trait implementation for SOLID principles (Dependency Inversion)
 // Returns core::EnrichedNote (without merkle_tree) to match trait signature
 #[async_trait]
-impl<M: MerkleTreeBuilder> crucible_core::enrichment::EnrichmentService for DefaultEnrichmentService<M> {
+impl<M: MerkleTreeBuilder> crucible_core::enrichment::EnrichmentService
+    for DefaultEnrichmentService<M>
+{
     async fn enrich(
         &self,
         parsed: ParsedNote,
@@ -470,7 +500,9 @@ impl<M: MerkleTreeBuilder> crucible_core::enrichment::EnrichmentService for Defa
         let merkle_tree = self.merkle_builder.from_document(&parsed);
 
         // Delegate to internal method
-        let enriched_with_tree = self.enrich_internal(parsed, merkle_tree, changed_block_ids).await?;
+        let enriched_with_tree = self
+            .enrich_internal(parsed, merkle_tree, changed_block_ids)
+            .await?;
 
         // Return core enriched note (without merkle tree)
         Ok(enriched_with_tree.core)
@@ -485,7 +517,9 @@ impl<M: MerkleTreeBuilder> crucible_core::enrichment::EnrichmentService for Defa
         let merkle_tree = self.merkle_builder.from_document(&parsed);
 
         // Delegate to internal method
-        let enriched_with_tree = self.enrich_internal(parsed, merkle_tree, changed_block_ids).await?;
+        let enriched_with_tree = self
+            .enrich_internal(parsed, merkle_tree, changed_block_ids)
+            .await?;
 
         // Return core enriched note (without merkle tree)
         Ok(enriched_with_tree.core)
@@ -578,7 +612,8 @@ mod tests {
         use crucible_merkle::HybridMerkleTreeBuilder;
 
         let provider = Arc::new(MockEmbeddingProvider::new());
-        let service = DefaultEnrichmentService::new(HybridMerkleTreeBuilder, provider).with_min_words(10);
+        let service =
+            DefaultEnrichmentService::new(HybridMerkleTreeBuilder, provider).with_min_words(10);
 
         assert_eq!(service.min_words_for_embedding, 10);
     }

@@ -16,22 +16,20 @@
 //! - Easy testing of individual tool categories
 //! - Future composition of additional tool routers
 
-use rmcp::{tool, tool_router, tool_handler, model::CallToolResult, ServerHandler};
-use rmcp::handler::server::wrapper::Parameters;
-use rmcp::handler::server::tool::ToolRouter;
-use crate::{NoteTools, SearchTools, KilnTools};
-use std::sync::Arc;
-use crucible_core::traits::KnowledgeRepository;
+use crate::{KilnTools, NoteTools, SearchTools};
 use crucible_core::enrichment::EmbeddingProvider;
+use crucible_core::traits::KnowledgeRepository;
+use rmcp::handler::server::tool::ToolRouter;
+use rmcp::handler::server::wrapper::Parameters;
+use rmcp::{model::CallToolResult, tool, tool_handler, tool_router, ServerHandler};
+use std::sync::Arc;
 
 // Re-export parameter types from individual modules
 use crate::notes::{
-    CreateNoteParams, ReadNoteParams, ReadMetadataParams,
-    UpdateNoteParams, DeleteNoteParams, ListNotesParams,
+    CreateNoteParams, DeleteNoteParams, ListNotesParams, ReadMetadataParams, ReadNoteParams,
+    UpdateNoteParams,
 };
-use crate::search::{
-    SemanticSearchParams, TextSearchParams, PropertySearchParams,
-};
+use crate::search::{PropertySearchParams, SemanticSearchParams, TextSearchParams};
 
 /// Unified MCP server exposing all Crucible tools
 ///
@@ -62,11 +60,7 @@ impl CrucibleMcpServer {
     ) -> Self {
         Self {
             note_tools: NoteTools::new(kiln_path.clone()),
-            search_tools: SearchTools::new(
-                kiln_path.clone(),
-                knowledge_repo,
-                embedding_provider,
-            ),
+            search_tools: SearchTools::new(kiln_path.clone(), knowledge_repo, embedding_provider),
             kiln_tools: KilnTools::new(kiln_path),
             tool_router: Self::tool_router(),
         }
@@ -221,9 +215,9 @@ impl ServerHandler for CrucibleMcpServer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-    use std::sync::Arc;
     use async_trait::async_trait;
+    use std::sync::Arc;
+    use tempfile::TempDir;
 
     // Mock implementations for testing
     struct MockKnowledgeRepository;
@@ -231,15 +225,24 @@ mod tests {
 
     #[async_trait::async_trait]
     impl crucible_core::traits::KnowledgeRepository for MockKnowledgeRepository {
-        async fn get_note_by_name(&self, _name: &str) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
+        async fn get_note_by_name(
+            &self,
+            _name: &str,
+        ) -> crucible_core::Result<Option<crucible_core::parser::ParsedNote>> {
             Ok(None)
         }
 
-        async fn list_notes(&self, _path: Option<&str>) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteMetadata>> {
+        async fn list_notes(
+            &self,
+            _path: Option<&str>,
+        ) -> crucible_core::Result<Vec<crucible_core::traits::knowledge::NoteMetadata>> {
             Ok(vec![])
         }
 
-        async fn search_vectors(&self, _vector: Vec<f32>) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
+        async fn search_vectors(
+            &self,
+            _vector: Vec<f32>,
+        ) -> crucible_core::Result<Vec<crucible_core::types::SearchResult>> {
             Ok(vec![])
         }
     }

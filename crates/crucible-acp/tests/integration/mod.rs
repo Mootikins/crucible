@@ -10,9 +10,9 @@
 mod support;
 
 // Test modules
+mod claude_acp_integration;
 mod mock_agent_framework;
 mod opencode_integration;
-mod claude_acp_integration;
 mod streaming_chat;
 
 // Re-export support for use in test modules

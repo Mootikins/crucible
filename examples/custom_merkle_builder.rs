@@ -6,10 +6,10 @@
 //!
 //! Run with: `cargo run --example custom_merkle_builder`
 
+use crucible_core::enrichment::EnrichmentService;
 use crucible_core::parser::{ParsedNote, ParsedNoteBuilder};
 use crucible_core::MerkleTreeBuilder;
 use crucible_enrichment::create_default_enrichment_service;
-use crucible_core::enrichment::EnrichmentService;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -77,8 +77,7 @@ fn main() {
     println!("====================================\n");
 
     // Create a sample document
-    let note = ParsedNoteBuilder::new(PathBuf::from("example.md"))
-        .build();
+    let note = ParsedNoteBuilder::new(PathBuf::from("example.md")).build();
 
     println!("📄 Created test document: {}", note.path.display());
     println!("   Word count: {}", note.metadata.word_count);
@@ -102,8 +101,8 @@ fn main() {
 
     // Create enrichment service using factory function (SOLID compliant)
     // Note: DefaultEnrichmentService is private; use factory function instead
-    let _service = create_default_enrichment_service(None)
-        .expect("Failed to create enrichment service");
+    let _service =
+        create_default_enrichment_service(None).expect("Failed to create enrichment service");
 
     println!("✓ Created enrichment service using factory function");
     println!("  Service is created via dependency injection pattern");

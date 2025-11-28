@@ -10,10 +10,12 @@
 //! - **Path-based lookups**: Fast queries by relative file path
 //! - **Hash indexing**: Support for hash-based queries
 
-use crate::{DbError, SurrealClient};
 use crate::utils::sanitize_record_id;
-use crucible_core::processing::{ChangeDetectionError, ChangeDetectionResult, ChangeDetectionStore, FileState};
+use crate::{DbError, SurrealClient};
 use async_trait::async_trait;
+use crucible_core::processing::{
+    ChangeDetectionError, ChangeDetectionResult, ChangeDetectionStore, FileState,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -95,19 +97,19 @@ impl ChangeDetectionStore for SurrealChangeDetectionStore {
         trace!("Getting file state for: {}", relative_path);
 
         // Use proper parameter binding to prevent SQL injection and handle special characters
-        let record_id = sanitize_record_id(&relative_path)
-            .map_err(|e| ChangeDetectionError::InvalidPath(format!("Failed to sanitize path: {}", e)))?;
+        let record_id = sanitize_record_id(&relative_path).map_err(|e| {
+            ChangeDetectionError::InvalidPath(format!("Failed to sanitize path: {}", e))
+        })?;
 
-        let query = "SELECT * FROM file_state WHERE id = type::thing('file_state', $record_id) LIMIT 1";
+        let query =
+            "SELECT * FROM file_state WHERE id = type::thing('file_state', $record_id) LIMIT 1";
         let params = vec![serde_json::json!({
             "record_id": record_id
         })];
 
-        let result = self
-            .client
-            .query(query, &params)
-            .await
-            .map_err(|e| ChangeDetectionError::Storage(format!("Failed to query file state: {}", e)))?;
+        let result = self.client.query(query, &params).await.map_err(|e| {
+            ChangeDetectionError::Storage(format!("Failed to query file state: {}", e))
+        })?;
 
         // Parse the first result
         if result.records.is_empty() {
@@ -115,31 +117,39 @@ impl ChangeDetectionStore for SurrealChangeDetectionStore {
             return Ok(None);
         }
 
-        let data_value = serde_json::to_value(&result.records[0].data)
-            .map_err(|e| ChangeDetectionError::Serialization(format!("Failed to convert record data: {}", e)))?;
+        let data_value = serde_json::to_value(&result.records[0].data).map_err(|e| {
+            ChangeDetectionError::Serialization(format!("Failed to convert record data: {}", e))
+        })?;
 
         // Extract fields manually to handle datetime conversion
-        let obj = data_value.as_object()
+        let obj = data_value
+            .as_object()
             .ok_or_else(|| ChangeDetectionError::Serialization("Expected object".to_string()))?;
 
-        let file_hash = obj.get("file_hash")
+        let file_hash = obj
+            .get("file_hash")
             .and_then(|v| v.as_str())
             .ok_or_else(|| ChangeDetectionError::Serialization("Missing file_hash".to_string()))?
             .to_string();
 
-        let file_size = obj.get("file_size")
+        let file_size = obj
+            .get("file_size")
             .and_then(|v| v.as_i64())
             .ok_or_else(|| ChangeDetectionError::Serialization("Missing file_size".to_string()))?;
 
         // Parse datetime string to Unix timestamp
-        let datetime_str = obj.get("modified_time")
+        let datetime_str = obj
+            .get("modified_time")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| ChangeDetectionError::Serialization("Missing modified_time".to_string()))?;
+            .ok_or_else(|| {
+                ChangeDetectionError::Serialization("Missing modified_time".to_string())
+            })?;
 
         use chrono::{DateTime, Utc};
         let dt = DateTime::parse_from_rfc3339(datetime_str)
             .map_err(|e| ChangeDetectionError::Serialization(format!("Invalid datetime: {}", e)))?;
-        let modified_time = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(dt.timestamp() as u64);
+        let modified_time =
+            SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(dt.timestamp() as u64);
 
         let file_state = FileState {
             file_hash: file_hash.clone(),
@@ -147,7 +157,11 @@ impl ChangeDetectionStore for SurrealChangeDetectionStore {
             file_size: file_size as u64,
         };
 
-        trace!("Found stored state for {}: hash={}", relative_path, &file_hash[..8]);
+        trace!(
+            "Found stored state for {}: hash={}",
+            relative_path,
+            &file_hash[..8]
+        );
         Ok(Some(file_state))
     }
 
@@ -155,11 +169,16 @@ impl ChangeDetectionStore for SurrealChangeDetectionStore {
         let record = FileStateRecord::from_file_state(path, &state)
             .map_err(|e| ChangeDetectionError::InvalidPath(e))?;
 
-        trace!("Storing file state for {}: hash={}", record.relative_path, &record.file_hash[..8]);
+        trace!(
+            "Storing file state for {}: hash={}",
+            record.relative_path,
+            &record.file_hash[..8]
+        );
 
         // Use proper sanitization and parameter binding for secure record creation
-        let safe_record_id = sanitize_record_id(&record.relative_path)
-            .map_err(|e| ChangeDetectionError::InvalidPath(format!("Failed to sanitize path: {}", e)))?;
+        let safe_record_id = sanitize_record_id(&record.relative_path).map_err(|e| {
+            ChangeDetectionError::InvalidPath(format!("Failed to sanitize path: {}", e))
+        })?;
 
         // Convert Unix timestamp to ISO 8601 datetime string for SurrealDB
         use chrono::{DateTime, Utc};
@@ -185,12 +204,14 @@ impl ChangeDetectionStore for SurrealChangeDetectionStore {
             "file_size": record.file_size
         })];
 
-        self.client
-            .query(query, &params)
-            .await
-            .map_err(|e| ChangeDetectionError::Storage(format!("Failed to store file state: {}", e)))?;
+        self.client.query(query, &params).await.map_err(|e| {
+            ChangeDetectionError::Storage(format!("Failed to store file state: {}", e))
+        })?;
 
-        debug!("Successfully stored file state for: {}", record.relative_path);
+        debug!(
+            "Successfully stored file state for: {}",
+            record.relative_path
+        );
         Ok(())
     }
 
@@ -200,18 +221,18 @@ impl ChangeDetectionStore for SurrealChangeDetectionStore {
             .ok_or_else(|| ChangeDetectionError::InvalidPath("Invalid UTF-8 in path".to_string()))?
             .to_string();
 
-        let safe_record_id = sanitize_record_id(&relative_path)
-            .map_err(|e| ChangeDetectionError::InvalidPath(format!("Failed to sanitize path: {}", e)))?;
+        let safe_record_id = sanitize_record_id(&relative_path).map_err(|e| {
+            ChangeDetectionError::InvalidPath(format!("Failed to sanitize path: {}", e))
+        })?;
 
         let query = "DELETE type::thing('file_state', $record_id)";
         let params = vec![serde_json::json!({
             "record_id": safe_record_id
         })];
 
-        self.client
-            .query(query, &params)
-            .await
-            .map_err(|e| ChangeDetectionError::Storage(format!("Failed to delete file state: {}", e)))?;
+        self.client.query(query, &params).await.map_err(|e| {
+            ChangeDetectionError::Storage(format!("Failed to delete file state: {}", e))
+        })?;
 
         Ok(())
     }
@@ -219,19 +240,22 @@ impl ChangeDetectionStore for SurrealChangeDetectionStore {
     async fn list_tracked_files(&self) -> ChangeDetectionResult<Vec<PathBuf>> {
         let query = "SELECT relative_path FROM file_state";
 
-        let result = self
-            .client
-            .query(query, &[])
-            .await
-            .map_err(|e| ChangeDetectionError::Storage(format!("Failed to list tracked files: {}", e)))?;
+        let result = self.client.query(query, &[]).await.map_err(|e| {
+            ChangeDetectionError::Storage(format!("Failed to list tracked files: {}", e))
+        })?;
 
         let mut paths = Vec::new();
         for record in result.records {
-            let data_value = serde_json::to_value(&record.data)
-                .map_err(|e| ChangeDetectionError::Serialization(format!("Failed to convert record data: {}", e)))?;
+            let data_value = serde_json::to_value(&record.data).map_err(|e| {
+                ChangeDetectionError::Serialization(format!("Failed to convert record data: {}", e))
+            })?;
 
-            let file_record: FileStateRecord = serde_json::from_value(data_value)
-                .map_err(|e| ChangeDetectionError::Serialization(format!("Failed to parse file state record: {}", e)))?;
+            let file_record: FileStateRecord = serde_json::from_value(data_value).map_err(|e| {
+                ChangeDetectionError::Serialization(format!(
+                    "Failed to parse file state record: {}",
+                    e
+                ))
+            })?;
 
             paths.push(PathBuf::from(file_record.relative_path));
         }
@@ -367,7 +391,9 @@ mod tests {
         let store = SurrealChangeDetectionStore::new(client);
 
         // And: A file path with spaces and special characters that match the user's error case
-        let path = Path::new("Projects/Rune MCP/YouTube Transcript Tool - Rune Implementation Research.md");
+        let path = Path::new(
+            "Projects/Rune MCP/YouTube Transcript Tool - Rune Implementation Research.md",
+        );
         let state = FileState {
             file_hash: "abc123def456789".to_string(),
             modified_time: SystemTime::now(),
@@ -400,8 +426,14 @@ mod tests {
         assert_eq!(retrieved_data.file_hash, state.file_hash);
         assert_eq!(retrieved_data.file_size, state.file_size);
         // Allow small time differences due to conversion precision
-        let time_diff = retrieved_data.modified_time.duration_since(state.modified_time).unwrap_or_default();
-        assert!(time_diff.as_secs() < 1, "Timestamps should be within 1 second");
+        let time_diff = retrieved_data
+            .modified_time
+            .duration_since(state.modified_time)
+            .unwrap_or_default();
+        assert!(
+            time_diff.as_secs() < 1,
+            "Timestamps should be within 1 second"
+        );
     }
 
     /// Additional test for single quotes in file paths (common issue)
@@ -511,6 +543,9 @@ mod tests {
         assert_eq!(retrieved_data.file_hash, state.file_hash);
         assert_eq!(retrieved_data.file_size, state.file_size);
 
-        println!("Successfully resolved user's SQL parsing error for path: {:?}", path);
+        println!(
+            "Successfully resolved user's SQL parsing error for path: {:?}",
+            path
+        );
     }
 }

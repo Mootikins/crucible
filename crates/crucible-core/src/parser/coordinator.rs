@@ -872,4 +872,3 @@ pub mod factory {
         DefaultParserStorageCoordinator::new(parser, storage, config)
     }
 }
-

@@ -75,7 +75,6 @@ pub struct Cli {
     #[arg(short = 'f', long, global = true, default_value = "table")]
     pub format: String,
 
-  
     /// Skip file processing on startup (useful for quick commands with potentially stale data)
     #[arg(long = "no-process", global = true)]
     pub no_process: bool,
@@ -136,19 +135,13 @@ pub enum Commands {
         parallel: Option<usize>,
     },
 
-    
-    
-  
-    
     /// Display kiln statistics
     Stats,
 
-  
     /// Configuration management
     #[command(subcommand)]
     Config(ConfigCommands),
 
-  
     /// Show storage status and statistics
     Status {
         /// Path to analyze (optional - shows global status if omitted)
@@ -298,4 +291,3 @@ pub enum StorageCommands {
         format: String,
     },
 }
-

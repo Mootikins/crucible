@@ -4,11 +4,11 @@
 //! trait objects, allowing commands to depend on abstractions rather than
 //! concrete types.
 
+use crate::config::CliConfig;
 use anyhow::Result;
-use std::sync::Arc;
 use crucible_watch::FileWatcher;
 use crucible_watch::NotifyWatcher;
-use crate::config::CliConfig;
+use std::sync::Arc;
 
 /// Create a FileWatcher implementation
 ///

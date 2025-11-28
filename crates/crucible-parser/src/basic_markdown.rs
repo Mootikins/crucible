@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use crate::error::ParseError;
 use crate::extensions::SyntaxExtension;
-use crate::types::{CodeBlock, NoteContent, Heading, ListBlock, ListItem, ListType, Paragraph};
+use crate::types::{CodeBlock, Heading, ListBlock, ListItem, ListType, NoteContent, Paragraph};
 
 /// Extension for parsing basic markdown structures
 #[derive(Debug, Clone)]
@@ -299,11 +299,13 @@ impl SyntaxExtension for BasicMarkdownExtension {
                     let style = "dash".to_string();
                     let raw_content = "---".to_string();
 
-                    doc_content.horizontal_rules.push(crate::types::HorizontalRule::new(
-                        raw_content,
-                        style,
-                        current_offset,
-                    ));
+                    doc_content
+                        .horizontal_rules
+                        .push(crate::types::HorizontalRule::new(
+                            raw_content,
+                            style,
+                            current_offset,
+                        ));
 
                     current_offset += 3; // Approximate length
                 }
@@ -324,11 +326,7 @@ impl SyntaxExtension for BasicMarkdownExtension {
             if !item_text.is_empty() {
                 if let Some(ref mut list) = current_list {
                     if let Some(task_content) = Self::extract_task_content(&item_text) {
-                        list.add_item(ListItem::new_task(
-                            task_content.0,
-                            0,
-                            task_content.1,
-                        ));
+                        list.add_item(ListItem::new_task(task_content.0, 0, task_content.1));
                     } else {
                         list.add_item(ListItem::new(item_text, 0));
                     }
