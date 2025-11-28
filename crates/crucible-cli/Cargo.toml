@@ -45,6 +45,9 @@ chrono = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 
+# Lazy statics
+once_cell = "1.21"
+
 # Output formatting
 comfy-table = { workspace = true }
 colored = { workspace = true }
