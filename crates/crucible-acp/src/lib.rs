@@ -44,24 +44,22 @@
 // Re-export commonly used types from agent-client-protocol
 // Note: agent-client-protocol exports types directly, not in a types module
 pub use agent_client_protocol::{
-    ClientRequest, ClientResponse, AgentRequest, AgentResponse,
-    ClientNotification, AgentNotification,
-    IncomingMessage, OutgoingMessage,
-    Error as ProtocolError,
+    AgentNotification, AgentRequest, AgentResponse, ClientNotification, ClientRequest,
+    ClientResponse, Error as ProtocolError, IncomingMessage, OutgoingMessage,
 };
 
 // Module declarations
 pub mod acp_client;
-pub mod client;
-pub mod session;
-pub mod filesystem;
-pub mod protocol;
-pub mod tools;
-pub mod context;
-pub mod streaming;
-pub mod history;
 pub mod chat;
+pub mod client;
+pub mod context;
+pub mod filesystem;
+pub mod history;
 pub mod mcp_host;
+pub mod protocol;
+pub mod session;
+pub mod streaming;
+pub mod tools;
 
 // Mock agent for testing (only included in test builds)
 #[cfg(any(test, feature = "test-utils"))]
@@ -69,16 +67,18 @@ pub mod mock_agent;
 
 // Public exports - Export traits and types, following Dependency Inversion
 pub use acp_client::CrucibleClient;
+pub use chat::{ChatConfig, ChatSession, ConversationState, SessionMetadata};
 pub use client::CrucibleAcpClient; // Legacy, will be removed
-pub use session::{AcpSession, SessionConfig};
+pub use context::{ContextConfig, PromptEnricher};
 pub use filesystem::FileSystemHandler;
-pub use protocol::MessageHandler;
-pub use tools::{ToolRegistry, ToolDescriptor, ToolExecutor, discover_crucible_tools, get_crucible_system_prompt};
-pub use context::{PromptEnricher, ContextConfig};
-pub use streaming::{StreamHandler, StreamConfig, ToolCallInfo};
 pub use history::{ConversationHistory, HistoryConfig, HistoryMessage, MessageRole};
-pub use chat::{ChatSession, ChatConfig, ConversationState, SessionMetadata};
 pub use mcp_host::InProcessMcpHost;
+pub use protocol::MessageHandler;
+pub use session::{AcpSession, SessionConfig};
+pub use streaming::{humanize_tool_title, StreamConfig, StreamHandler, ToolCallInfo};
+pub use tools::{
+    discover_crucible_tools, get_crucible_system_prompt, ToolDescriptor, ToolExecutor, ToolRegistry,
+};
 
 // Re-export test utilities when feature is enabled
 #[cfg(feature = "test-utils")]
