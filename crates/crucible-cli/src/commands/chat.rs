@@ -4,9 +4,10 @@
 //! Supports toggleable plan (read-only) and act (write-enabled) modes.
 
 use anyhow::Result;
+use crucible_acp::humanize_tool_title;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{error, info, warn, debug, trace};
+use tracing::{debug, error, info, trace, warn};
 use walkdir::WalkDir;
 
 use crate::acp::{discover_agent, ContextEnricher, CrucibleAcpClient};
@@ -16,8 +17,8 @@ use crate::factories;
 use crucible_core::enrichment::EmbeddingProvider;
 use crucible_llm::embeddings::CoreProviderAdapter;
 use crucible_pipeline::NotePipeline;
-use crucible_watch::{EventFilter, FileEvent, FileEventKind, WatchMode};
 use crucible_watch::traits::{DebounceConfig, HandlerConfig, WatchConfig};
+use crucible_watch::{EventFilter, FileEvent, FileEventKind, WatchMode};
 use tokio::sync::mpsc;
 
 /// Chat mode - can be toggled during session
@@ -108,9 +109,24 @@ pub async fn execute(
     use crate::output;
     use colored::Colorize;
 
-    println!("{}", "╔═══════════════════════════════════════════╗".bright_blue().bold());
-    println!("{}", "║       🤖 Initializing Crucible Chat       ║".bright_blue().bold());
-    println!("{}", "╚═══════════════════════════════════════════╝".bright_blue().bold());
+    println!(
+        "{}",
+        "╔═══════════════════════════════════════════╗"
+            .bright_blue()
+            .bold()
+    );
+    println!(
+        "{}",
+        "║       🤖 Initializing Crucible Chat       ║"
+            .bright_blue()
+            .bold()
+    );
+    println!(
+        "{}",
+        "╚═══════════════════════════════════════════╝"
+            .bright_blue()
+            .bold()
+    );
 
     info!("Starting chat command");
     info!("Initial mode: {}", initial_mode.display_name());
@@ -134,7 +150,8 @@ pub async fn execute(
             storage_client.clone(),
             &config,
             false, // force=false for incremental processing
-        ).await?;
+        )
+        .await?;
 
         // Discover markdown files in kiln
         let kiln_path = &config.kiln_path;
@@ -186,7 +203,7 @@ pub async fn execute(
     output::info("Initializing core...");
     let core = Arc::new(CrucibleCoreFacade::from_storage(
         storage_client.clone(),
-        config
+        config,
     ));
     output::success("Core initialized");
 
@@ -200,7 +217,8 @@ pub async fn execute(
     output::info("Initializing embedding provider...");
     let embedding_config = core.config().embedding.to_provider_config();
     let llm_provider = crucible_llm::embeddings::create_provider(embedding_config).await?;
-    let embedding_provider = Arc::new(CoreProviderAdapter::new(llm_provider)) as Arc<dyn EmbeddingProvider>;
+    let embedding_provider =
+        Arc::new(CoreProviderAdapter::new(llm_provider)) as Arc<dyn EmbeddingProvider>;
 
     // Get knowledge repository from storage
     let knowledge_repo = core.storage().as_knowledge_repository();
@@ -208,9 +226,10 @@ pub async fn execute(
     // Create ACP client with kiln path and MCP dependencies for in-process tool execution
     let kiln_path = core.config().kiln_path.clone();
     let acp_config = core.config().acp.clone();
-    let mut client = CrucibleAcpClient::with_acp_config(agent, initial_mode.is_read_only(), acp_config)
-        .with_kiln_path(kiln_path)
-        .with_mcp_dependencies(knowledge_repo, embedding_provider);
+    let mut client =
+        CrucibleAcpClient::with_acp_config(agent, initial_mode.is_read_only(), acp_config)
+            .with_kiln_path(kiln_path)
+            .with_mcp_dependencies(knowledge_repo, embedding_provider);
 
     // Spawn agent (tools will be initialized via in-process SSE MCP server)
     output::info("Starting in-process MCP server and connecting to agent...");
@@ -258,7 +277,10 @@ async fn run_interactive_session(
     context_size: Option<usize>,
 ) -> Result<()> {
     use colored::Colorize;
-    use reedline::{DefaultPrompt, Reedline, Signal, default_emacs_keybindings, Emacs, ReedlineEvent, KeyCode, KeyModifiers};
+    use reedline::{
+        default_emacs_keybindings, DefaultPrompt, Emacs, KeyCode, KeyModifiers, Reedline,
+        ReedlineEvent, Signal,
+    };
     use std::time::Instant;
 
     let mut current_mode = initial_mode;
@@ -279,7 +301,8 @@ async fn run_interactive_session(
 
     println!("\n{}", "🤖 Crucible Chat".bright_blue().bold());
     println!("{}", "=================".bright_blue());
-    println!("Mode: {} {}",
+    println!(
+        "Mode: {} {}",
         current_mode.display_name().bright_cyan().bold(),
         format!("({})", current_mode.description()).dimmed()
     );
@@ -330,7 +353,8 @@ async fn run_interactive_session(
                     break;
                 } else if input == "/plan" {
                     current_mode = ChatMode::Plan;
-                    println!("{} Mode switched to: {} (read-only)",
+                    println!(
+                        "{} Mode switched to: {} (read-only)",
                         "→".bright_cyan(),
                         "plan".bright_cyan().bold()
                     );
@@ -338,7 +362,8 @@ async fn run_interactive_session(
                     continue;
                 } else if input == "/act" {
                     current_mode = ChatMode::Act;
-                    println!("{} Mode switched to: {} (write-enabled)",
+                    println!(
+                        "{} Mode switched to: {} (write-enabled)",
                         "→".bright_cyan(),
                         "act".bright_cyan().bold()
                     );
@@ -346,7 +371,8 @@ async fn run_interactive_session(
                     continue;
                 } else if input == "/auto" {
                     current_mode = ChatMode::AutoApprove;
-                    println!("{} Mode switched to: {} (auto-approve)",
+                    println!(
+                        "{} Mode switched to: {} (auto-approve)",
                         "→".bright_cyan(),
                         "auto".bright_cyan().bold()
                     );
@@ -354,7 +380,8 @@ async fn run_interactive_session(
                     continue;
                 } else if input == "/mode" {
                     current_mode = current_mode.cycle_next();
-                    println!("{} Mode: {} ({})",
+                    println!(
+                        "{} Mode: {} ({})",
                         "→".bright_cyan(),
                         current_mode.display_name().bright_cyan().bold(),
                         current_mode.description()
@@ -368,7 +395,10 @@ async fn run_interactive_session(
                     input.to_string()
                 } else {
                     // Show context enrichment indicator
-                    print!("{} ", "🔍 Finding relevant context...".bright_cyan().dimmed());
+                    print!(
+                        "{} ",
+                        "🔍 Finding relevant context...".bright_cyan().dimmed()
+                    );
                     io::stdout().flush().unwrap();
 
                     let enriched_result = enricher.enrich(input).await;
@@ -404,13 +434,18 @@ async fn run_interactive_session(
                         // Print agent response with simple indicator
                         println!("{} {}", "●".bright_blue(), response);
 
-                        // Show tool calls that followed this response (indented)
-                        if !tool_calls.is_empty() {
+                        // Show tool calls that are missing from the inline stream (fallback)
+                        let has_inline_tools = response.contains('▷');
+                        if !tool_calls.is_empty()
+                            && (response.trim().is_empty() || !has_inline_tools)
+                        {
                             for tool in &tool_calls {
                                 let args_str = format_tool_args(&tool.arguments);
-                                println!("  {} {}({})",
+                                let display_title = humanize_tool_title(&tool.title);
+                                println!(
+                                    "  {} {}({})",
                                     "▷".cyan(),
-                                    tool.title,
+                                    display_title,
                                     args_str.dimmed()
                                 );
                             }
@@ -457,7 +492,10 @@ async fn run_interactive_session(
 fn print_enriched_prompt(prompt: &str) {
     use colored::Colorize;
 
-    println!("\n{}", "╭─ Enriched Prompt ─────────────────────────╮".blue());
+    println!(
+        "\n{}",
+        "╭─ Enriched Prompt ─────────────────────────╮".blue()
+    );
     for line in prompt.lines() {
         if line.starts_with("# ") {
             println!("{}", line.bright_blue().bold());
@@ -467,7 +505,10 @@ fn print_enriched_prompt(prompt: &str) {
             println!("{}", line);
         }
     }
-    println!("{}", "╰────────────────────────────────────────────╯".blue());
+    println!(
+        "{}",
+        "╰────────────────────────────────────────────╯".blue()
+    );
 }
 
 /// Discover markdown files in a directory
@@ -528,10 +569,7 @@ fn is_markdown_file(path: &Path) -> bool {
 ///
 /// The background task will be automatically cancelled when the chat
 /// command exits (tokio runtime cleanup).
-async fn spawn_background_watch(
-    config: CliConfig,
-    pipeline: Arc<NotePipeline>,
-) -> Result<()> {
+async fn spawn_background_watch(config: CliConfig, pipeline: Arc<NotePipeline>) -> Result<()> {
     let kiln_path = config.kiln_path.clone();
 
     // Create watcher via factory (DIP pattern - depends only on FileWatcher trait)
@@ -563,7 +601,10 @@ async fn spawn_background_watch(
 
     // Start watching the kiln directory
     let _handle = watcher.watch(kiln_path.clone(), watch_config).await?;
-    info!("Background watch started for chat mode on: {}", kiln_path.display());
+    info!(
+        "Background watch started for chat mode on: {}",
+        kiln_path.display()
+    );
 
     // Event processing loop (runs until chat exits)
     while let Some(event) = rx.recv().await {
@@ -576,12 +617,16 @@ async fn spawn_background_watch(
                     Ok(crucible_core::processing::ProcessingResult::Success { .. }) => {
                         debug!("Background reprocessed: {}", event.path.display());
                     }
-                    Ok(crucible_core::processing::ProcessingResult::Skipped) |
-                    Ok(crucible_core::processing::ProcessingResult::NoChanges) => {
+                    Ok(crucible_core::processing::ProcessingResult::Skipped)
+                    | Ok(crucible_core::processing::ProcessingResult::NoChanges) => {
                         trace!("Background skipped (unchanged): {}", event.path.display());
                     }
                     Err(e) => {
-                        warn!("Background reprocess failed for {}: {}", event.path.display(), e);
+                        warn!(
+                            "Background reprocess failed for {}: {}",
+                            event.path.display(),
+                            e
+                        );
                     }
                 }
             }
@@ -590,7 +635,11 @@ async fn spawn_background_watch(
                 // Could mark as deleted in DB in future
             }
             _ => {
-                trace!("Ignoring event: {:?} for {}", event.kind, event.path.display());
+                trace!(
+                    "Ignoring event: {:?} for {}",
+                    event.kind,
+                    event.path.display()
+                );
             }
         }
     }
@@ -602,12 +651,11 @@ async fn spawn_background_watch(
 /// Format tool call arguments for display
 fn format_tool_args(args: &Option<serde_json::Value>) -> String {
     match args {
-        Some(serde_json::Value::Object(map)) => {
-            map.iter()
-                .map(|(k, v)| format!("{}={}", k, format_arg_value(v)))
-                .collect::<Vec<_>>()
-                .join(", ")
-        }
+        Some(serde_json::Value::Object(map)) => map
+            .iter()
+            .map(|(k, v)| format!("{}={}", k, format_arg_value(v)))
+            .collect::<Vec<_>>()
+            .join(", "),
         Some(other) => other.to_string(),
         None => String::new(),
     }
